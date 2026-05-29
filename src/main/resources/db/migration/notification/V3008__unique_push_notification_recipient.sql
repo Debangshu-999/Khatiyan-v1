@@ -1,0 +1,3 @@
+ALTER TABLE notification.push_notifications
+ADD CONSTRAINT uq_push_notifications_recipient
+UNIQUE (notification_recipient_id);

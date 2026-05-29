@@ -1,0 +1,616 @@
+package com.khatiyan.d_modules.billing.service;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.d_modules.billing.api.dto.AdjustBillingLineItemRequest;
+import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
+import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
+import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.model.BillingCycle;
+import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
+import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
+import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
+import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
+import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
+import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
+import com.khatiyan.d_modules.property.PropertyModule;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Handles editable billing-cycle line items.
+ *
+ * <p>
+ * The billing cycle owns period/status/payment lifecycle. This service owns the
+ * tenant-visible breakdown rows such as extra charges, discounts, and manual
+ * late-fee adjustments.
+ */
+@Slf4j
+@Service
+public class BillingCycleLineItemService {
+
+    private final BillingCycleRepository billingCycleRepository;
+    private final BillingCycleLineItemRepository lineItemRepository;
+    private final PropertyModule propertyModule;
+    private final DepositManagerService depositManagerService;
+
+    public BillingCycleLineItemService(
+            BillingCycleRepository billingCycleRepository,
+            BillingCycleLineItemRepository lineItemRepository,
+            PropertyModule propertyModule,
+            DepositManagerService depositManagerService) {
+        this.billingCycleRepository = billingCycleRepository;
+        this.lineItemRepository = lineItemRepository;
+        this.propertyModule = propertyModule;
+        this.depositManagerService = depositManagerService;
+    }
+
+    /**
+     * Lists all line items for a managed tenancy, including pending rows waiting
+     * for the upcoming billing cycle.
+     */
+    @Transactional(readOnly = true)
+    public List<BillingCycleLineItemResponse> listManagedTenancyLineItems(UUID actorUserId, UUID tenancyId) {
+        BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+
+        return lineItemRepository.findByTenancyId(tenancyId)
+                .stream()
+                .map(lineItem -> BillingCycleLineItemResponse.from(lineItem))
+                .toList();
+    }
+
+    /**
+     * Lists all line items visible to the tenant for one of their tenancies.
+     */
+    @Transactional(readOnly = true)
+    public List<BillingCycleLineItemResponse> listMyTenancyLineItems(UUID tenantUserId, UUID tenancyId) {
+        return lineItemRepository.findByTenancyIdForTenant(tenancyId, tenantUserId)
+                .stream()
+                .map(lineItem -> BillingCycleLineItemResponse.from(lineItem))
+                .toList();
+    }
+
+    /**
+     * Adds one or more extra charge lines using a tenancy as the owner-facing
+     * billing context.
+     *
+     * <p>
+     * The latest cycle is only used to identify the tenancy, property, and
+     * tenant. Newly created owner charges are pending rows and are picked up by
+     * the next generated cycle.
+     */
+    @Transactional
+    public BillingCycleResponse addExtraChargeForTenancy(
+            UUID actorUserId,
+            UUID tenancyId,
+            List<CreateExtraChargeRequest> requests) {
+        BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+
+        if (requests == null || requests.isEmpty()) {
+            throw new ValidationException("At least one extra charge is required");
+        }
+
+        int displayOrder = nextDisplayOrder(cycle.getId());
+
+        for (CreateExtraChargeRequest request : requests) {
+            BillingCycleLineItem lineItem = createExtraChargeLineItem(
+                    cycle,
+                    actorUserId,
+                    request,
+                    displayOrder);
+
+            lineItemRepository.save(lineItem);
+            displayOrder++;
+        }
+
+        log.info(
+                "Pending billing extra charges added tenancyId={} sourceBillingCycleId={} actorUserId={} count={}",
+                tenancyId,
+                cycle.getId(),
+                actorUserId,
+                requests.size());
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Adds a discount using a tenancy as the owner-facing billing context.
+     */
+    @Transactional
+    public BillingCycleResponse addDiscountForTenancy(
+            UUID actorUserId,
+            UUID tenancyId,
+            CreateDiscountRequest request) {
+        BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+
+        BillingCycleLineItem lineItem = createDiscountLineItem(
+                cycle,
+                actorUserId,
+                request);
+
+        lineItemRepository.save(lineItem);
+        if (lineItem.getStatus() == BillingCycleLineItemStatus.ADDED) {
+            calculateCycle(cycle);
+        }
+
+        log.info(
+                "Billing discount added tenancyId={} sourceBillingCycleId={} lineItemId={} actorUserId={} amount={} status={}",
+                tenancyId,
+                cycle.getId(),
+                lineItem.getId(),
+                actorUserId,
+                request.amountPaise(),
+                lineItem.getStatus());
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Compatibility path for older cycle-scoped callers.
+     */
+    @Transactional
+    public BillingCycleResponse addExtraCharge(
+            UUID actorUserId,
+            UUID billingCycleId,
+            List<CreateExtraChargeRequest> requests) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        return addExtraChargeForTenancy(actorUserId, cycle.getTenancyId(), requests);
+    }
+
+    /**
+     * Compatibility path for older cycle-scoped callers.
+     */
+    @Transactional
+    public BillingCycleResponse addDiscount(
+            UUID actorUserId,
+            UUID billingCycleId,
+            CreateDiscountRequest request) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        return addDiscountForTenancy(actorUserId, cycle.getTenancyId(), request);
+    }
+
+    /**
+     * Replaces an editable line item amount.
+     */
+    @Transactional
+    public BillingCycleResponse adjustLineItem(
+            UUID actorUserId,
+            UUID billingCycleId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        BillingCycleLineItem lineItem = getLineItem(cycle.getId(), lineItemId);
+
+        ensureLineEditableForCurrentDate(cycle, lineItem);
+        lineItem.adjust(requiredAmount(request), actorUserId);
+        syncDepositMovementAfterLineChange(actorUserId, cycle, lineItem);
+
+        calculateCycle(cycle);
+
+        log.info(
+                "Billing line adjusted billingCycleId={} lineItemId={} actorUserId={} amount={}",
+                billingCycleId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Clears an editable line item by making its amount zero.
+     */
+    @Transactional
+    public BillingCycleResponse clearLineItem(UUID actorUserId, UUID billingCycleId, UUID lineItemId) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        BillingCycleLineItem lineItem = getLineItem(cycle.getId(), lineItemId);
+
+        ensureLineEditableForCurrentDate(cycle, lineItem);
+        depositManagerService.clearBillingLineMovement(actorUserId, cycle.getTenancyId(), lineItem.getId());
+        lineItem.clear(actorUserId);
+
+        calculateCycle(cycle);
+
+        log.info(
+                "Billing line cleared billingCycleId={} lineItemId={} actorUserId={}",
+                billingCycleId,
+                lineItemId,
+                actorUserId);
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Changes an editable charge line so it is deducted from deposit instead of
+     * being payable in the cycle.
+     */
+    @Transactional
+    public BillingCycleResponse adjustLineItemFromDeposit(
+            UUID actorUserId,
+            UUID billingCycleId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        BillingCycleLineItem lineItem = getLineItem(cycle.getId(), lineItemId);
+
+        ensureLineEditableForCurrentDate(cycle, lineItem);
+
+        lineItem.adjustFromDeposit(request.amountPaise(), actorUserId);
+        depositManagerService.upsertBillingLineDeduction(
+                actorUserId,
+                cycle.getTenancyId(),
+                cycle.getId(),
+                lineItem.getId(),
+                lineItem.getSettlementAmountPaise(),
+                lineItem.getLabel());
+        calculateCycle(cycle);
+
+        log.info(
+                "Billing line adjusted from deposit billingCycleId={} lineItemId={} actorUserId={} amount={}",
+                billingCycleId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Changes an editable charge line so it is payable in the cycle instead of
+     * being deducted from deposit.
+     */
+    @Transactional
+    public BillingCycleResponse adjustLineItemToBill(
+            UUID actorUserId,
+            UUID billingCycleId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        BillingCycleLineItem lineItem = getLineItem(cycle.getId(), lineItemId);
+
+        ensureLineEditableForCurrentDate(cycle, lineItem);
+
+        lineItem.adjustToBill(request.amountPaise(), actorUserId);
+        depositManagerService.clearBillingLineMovement(actorUserId, cycle.getTenancyId(), lineItem.getId());
+        calculateCycle(cycle);
+
+        log.info(
+                "Billing line adjusted to bill billingCycleId={} lineItemId={} actorUserId={} amount={}",
+                billingCycleId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return toResponse(cycle);
+    }
+
+    /**
+     * Replaces a pending line amount before it is attached to the next cycle.
+     */
+    @Transactional
+    public BillingCycleLineItemResponse adjustPendingLineItem(
+            UUID actorUserId,
+            UUID tenancyId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        getLatestManagedCycle(actorUserId, tenancyId);
+        BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
+
+        lineItem.adjust(requiredAmount(request), actorUserId);
+
+        log.info(
+                "Pending billing line adjusted tenancyId={} lineItemId={} actorUserId={} amount={}",
+                tenancyId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return BillingCycleLineItemResponse.from(lineItem);
+    }
+
+    /**
+     * Clears a pending line amount before it is attached to the next cycle.
+     */
+    @Transactional
+    public BillingCycleLineItemResponse clearPendingLineItem(
+            UUID actorUserId,
+            UUID tenancyId,
+            UUID lineItemId) {
+        getLatestManagedCycle(actorUserId, tenancyId);
+        BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
+
+        lineItem.clear(actorUserId);
+
+        log.info(
+                "Pending billing line cleared tenancyId={} lineItemId={} actorUserId={}",
+                tenancyId,
+                lineItemId,
+                actorUserId);
+
+        return BillingCycleLineItemResponse.from(lineItem);
+    }
+
+    /**
+     * Marks a pending charge as a future deposit deduction.
+     */
+    @Transactional
+    public BillingCycleLineItemResponse adjustPendingLineItemFromDeposit(
+            UUID actorUserId,
+            UUID tenancyId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        getLatestManagedCycle(actorUserId, tenancyId);
+        BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
+
+        lineItem.adjustFromDeposit(request.amountPaise(), actorUserId);
+
+        log.info(
+                "Pending billing line adjusted from deposit tenancyId={} lineItemId={} actorUserId={} amount={}",
+                tenancyId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return BillingCycleLineItemResponse.from(lineItem);
+    }
+
+    /**
+     * Marks a pending charge as payable in the future cycle.
+     */
+    @Transactional
+    public BillingCycleLineItemResponse adjustPendingLineItemToBill(
+            UUID actorUserId,
+            UUID tenancyId,
+            UUID lineItemId,
+            AdjustBillingLineItemRequest request) {
+        getLatestManagedCycle(actorUserId, tenancyId);
+        BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
+
+        lineItem.adjustToBill(request.amountPaise(), actorUserId);
+
+        log.info(
+                "Pending billing line adjusted to bill tenancyId={} lineItemId={} actorUserId={} amount={}",
+                tenancyId,
+                lineItemId,
+                actorUserId,
+                request.amountPaise());
+
+        return BillingCycleLineItemResponse.from(lineItem);
+    }
+
+    /**
+     * Converts one extra-charge request into the correct billing line type.
+     */
+    private BillingCycleLineItem createExtraChargeLineItem(
+            BillingCycle cycle,
+            UUID actorUserId,
+            CreateExtraChargeRequest request,
+            int displayOrder) {
+        if (request.adjustFromDeposit()) {
+            return BillingCycleLineItem.pendingExtraChargeAdjustedFromDeposit(
+                    cycle,
+                    request.label().trim(),
+                    cleanDescription(request.description()),
+                    request.amountPaise(),
+                    actorUserId,
+                    displayOrder);
+        }
+
+        return BillingCycleLineItem.pendingExtraChargeAddedToBill(
+                cycle,
+                request.label().trim(),
+                cleanDescription(request.description()),
+                request.amountPaise(),
+                actorUserId,
+                displayOrder);
+    }
+
+    /**
+     * Discounts are safer than charges because they reduce payable amount. If
+     * the latest cycle is still unpaid, the discount is attached immediately;
+     * otherwise it waits for the next generated cycle.
+     */
+    private BillingCycleLineItem createDiscountLineItem(
+            BillingCycle cycle,
+            UUID actorUserId,
+            CreateDiscountRequest request) {
+        if (cycle.getStatus() == BillingCycleStatus.UNPAID
+                || cycle.getStatus() == BillingCycleStatus.OVERDUE) {
+            return BillingCycleLineItem.discount(
+                    cycle,
+                    request.label().trim(),
+                    cleanDescription(request.description()),
+                    request.amountPaise(),
+                    actorUserId,
+                    nextDisplayOrder(cycle.getId()));
+        }
+
+        return BillingCycleLineItem.pendingDiscount(
+                cycle,
+                request.label().trim(),
+                cleanDescription(request.description()),
+                request.amountPaise(),
+                actorUserId,
+                nextDisplayOrder(cycle.getId()));
+    }
+
+    /**
+     * Loads a billing cycle and verifies the actor can manage its property.
+     */
+    private BillingCycle getManagedCycle(UUID actorUserId, UUID billingCycleId) {
+        BillingCycle cycle = billingCycleRepository.findById(billingCycleId)
+                .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
+
+        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        return cycle;
+    }
+
+    /**
+     * Loads the latest cycle for a tenancy and verifies the actor can manage the
+     * cycle property.
+     */
+    private BillingCycle getLatestManagedCycle(UUID actorUserId, UUID tenancyId) {
+        BillingCycle cycle = billingCycleRepository.findLatestByTenancyId(tenancyId, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("BillingCycle for tenancy", tenancyId));
+
+        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        return cycle;
+    }
+
+    /**
+     * Loads a line item only when it belongs to the requested billing cycle.
+     */
+    private BillingCycleLineItem getLineItem(UUID billingCycleId, UUID lineItemId) {
+        return lineItemRepository.findByIdAndBillingCycleId(lineItemId, billingCycleId)
+                .orElseThrow(() -> new NotFoundException("BillingCycleLineItem", lineItemId));
+    }
+
+    /**
+     * Loads a pending line item for tenancy-scoped editing.
+     */
+    private BillingCycleLineItem getPendingLineItem(UUID tenancyId, UUID lineItemId) {
+        return lineItemRepository.findByIdAndTenancyIdAndStatus(
+                lineItemId,
+                tenancyId,
+                BillingCycleLineItemStatus.PENDING)
+                .orElseThrow(() -> new NotFoundException("PendingBillingCycleLineItem", lineItemId));
+    }
+
+    /**
+     * Builds the API response with the current line-item breakdown.
+     */
+    private BillingCycleResponse toResponse(BillingCycle cycle) {
+        List<BillingCycleLineItemResponse> lineItems = lineItemRepository.findByBillingCycleId(cycle.getId())
+                .stream()
+                .map(lineItem -> BillingCycleLineItemResponse.from(lineItem))
+                .toList();
+
+        return BillingCycleResponse.from(cycle, lineItems);
+    }
+
+    /**
+     * Returns the next display order for appending a new line item to a cycle.
+     */
+    private int nextDisplayOrder(UUID billingCycleId) {
+        return lineItemRepository.findMaxDisplayOrder(billingCycleId) + 1;
+    }
+
+    /**
+     * Recomputes the cycle summary amounts from its line-item breakdown.
+     */
+    private void calculateCycle(BillingCycle cycle) {
+        List<BillingCycleLineItem> lineItems = lineItemRepository.findByBillingCycleId(cycle.getId());
+
+        long baseAmount = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBaseAmount())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        long depositAmount = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBaseDeposit())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        long extraAmount = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToExtraAmount())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        long lateFeeAmount = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToLateFeeAmount())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        long discountAmount = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToDiscountAmount())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        cycle.recalculateTotals(baseAmount, depositAmount, extraAmount, lateFeeAmount, discountAmount);
+    }
+
+    /**
+     * Enforces the edit window for extra charges and discounts.
+     */
+    private void ensureExtraChargeEditable(BillingCycle cycle) {
+        ensureCycleStillEditable(cycle);
+
+        if (!cycle.isEditableForExtraCharges(LocalDate.now())) {
+            throw new ValidationException("Billing cycle is not editable for extra charges today");
+        }
+    }
+
+    /**
+     * Enforces type-specific edit windows for an existing line item.
+     */
+    private void ensureLineEditableForCurrentDate(BillingCycle cycle, BillingCycleLineItem lineItem) {
+        ensureCycleStillEditable(cycle);
+
+        if (lineItem.getType() == BillingCycleLineItemType.LATE_FEE) {
+            if (!cycle.isEditableForLateFee(LocalDate.now())) {
+                throw new ValidationException("Late fee can be edited only after due date");
+            }
+
+            return;
+        }
+
+        ensureExtraChargeEditable(cycle);
+    }
+
+    /**
+     * Blocks all billing-cycle amount edits after payment or cancellation.
+     */
+    private void ensureCycleStillEditable(BillingCycle cycle) {
+        if (cycle.isPaid()) {
+            throw new ValidationException("Paid billing cycle cannot be edited");
+        }
+
+        if (cycle.isCancelled()) {
+            throw new ValidationException("Cancelled billing cycle cannot be edited");
+        }
+    }
+
+    private long requiredAmount(AdjustBillingLineItemRequest request) {
+        if (request.amountPaise() == null) {
+            throw new ValidationException("Billing line amount is required");
+        }
+
+        return request.amountPaise();
+    }
+
+    private void syncDepositMovementAfterLineChange(
+            UUID actorUserId,
+            BillingCycle cycle,
+            BillingCycleLineItem lineItem) {
+        if (lineItem.getSettlementAmountPaise() > 0
+                && lineItem.getAmountPaise() == 0) {
+            depositManagerService.upsertBillingLineDeduction(
+                    actorUserId,
+                    cycle.getTenancyId(),
+                    cycle.getId(),
+                    lineItem.getId(),
+                    lineItem.getSettlementAmountPaise(),
+                    lineItem.getLabel());
+        }
+    }
+
+    private String cleanDescription(String description) {
+        if (description == null || description.isBlank()) {
+            return null;
+        }
+
+        return description.trim();
+    }
+}

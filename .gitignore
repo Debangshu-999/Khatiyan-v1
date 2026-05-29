@@ -1,0 +1,73 @@
+# Build output
+target/
+out/
+build/
+dist/
+
+# Maven wrapper
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE / editor
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and runtime output
+logs/
+*.log
+*.log.*
+*.pid
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.yaml
+application-secret.yml
+application-secret.yaml
+
+# Credentials / keys / downloaded provider secrets
+*firebase-adminsdk*.json
+*service-account*.json
+*serviceAccount*.json
+*razorpay*.csv
+*Razorpay*.csv
+*.pem
+*.p12
+*.pfx
+*.key
+*.crt
+
+# Frontend dependencies and generated assets
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.cache/
+frontend/.vite/
+frontend/.parcel-cache/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Generated analysis artifacts
+graphify-out/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.swo

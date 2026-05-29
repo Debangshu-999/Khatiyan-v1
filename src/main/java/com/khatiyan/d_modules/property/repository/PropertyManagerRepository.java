@@ -1,0 +1,37 @@
+package com.khatiyan.d_modules.property.repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import com.khatiyan.d_modules.property.model.PropertyManager;
+
+/**
+ * Persistence access for property manager assignments.
+ */
+@Repository
+public interface PropertyManagerRepository extends JpaRepository<PropertyManager, UUID> {
+
+    boolean existsByPropertyIdAndManagerUserIdAndActiveTrue(UUID propertyId, UUID managerUserId);
+
+    List<PropertyManager> findByPropertyIdAndActiveTrue(UUID propertyId);
+
+    @Query("""
+        SELECT manager.managerUserId
+        FROM PropertyManager manager
+        WHERE manager.propertyId = :propertyId
+          AND manager.active = true
+        ORDER BY manager.createdAt ASC
+    """)
+    List<UUID> findActiveManagerUserIdsByPropertyId(UUID propertyId);
+
+    Optional<PropertyManager> findByPropertyIdAndManagerUserIdAndActiveTrue(
+            UUID propertyId,
+            UUID managerUserId);
+
+    boolean existsByManagerUserIdAndActiveTrue(UUID managerUserId);
+}

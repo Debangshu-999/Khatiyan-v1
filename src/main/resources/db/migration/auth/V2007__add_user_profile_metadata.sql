@@ -1,0 +1,4 @@
+ALTER TABLE auth.users
+    ADD COLUMN IF NOT EXISTS profile_photo_url VARCHAR(500) NULL,
+    ADD COLUMN IF NOT EXISTS profile_photo_public_id VARCHAR(255) NULL,
+    ADD COLUMN IF NOT EXISTS is_profile_completed BOOLEAN NOT NULL DEFAULT FALSE;

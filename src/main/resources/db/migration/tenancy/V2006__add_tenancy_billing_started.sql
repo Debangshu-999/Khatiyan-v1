@@ -1,0 +1,2 @@
+ALTER TABLE tenancy.tenancies
+    ADD COLUMN IF NOT EXISTS billing_started BOOLEAN NOT NULL DEFAULT FALSE;

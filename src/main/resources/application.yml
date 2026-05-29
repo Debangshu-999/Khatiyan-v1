@@ -1,0 +1,221 @@
+spring:
+  application:
+    name: khatiyan
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/khatiyan_db
+    username: debu
+    password: Debu@1234
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 3
+      connection-timeout: 5000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      leak-detection-threshold: 30000
+      pool-name: KhatiyanDB-Pool
+      data-source-properties:
+        cachePrepStmts: true
+        prepStmtCacheSize: 250
+        prepStmtCacheSqlLimit: 2048
+        useServerPrepStmts: true
+        ApplicationName: khatiyan
+
+  data:
+    redis:
+      host: ${VALKEY_HOST:localhost}
+      port: ${VALKEY_PORT:6379}
+      password: ${VALKEY_PASSWORD:Ddnhksnu@1234}
+      database: ${VALKEY_DATABASE:0}
+      timeout: ${VALKEY_TIMEOUT:2s}
+      connect-timeout: ${VALKEY_CONNECT_TIMEOUT:2s}
+      repositories:
+        enabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations:
+      - classpath:db/migration/shared
+      - classpath:db/migration/auth
+      - classpath:db/migration/property
+      - classpath:db/migration/tenancy
+      - classpath:db/migration/concern
+      - classpath:db/migration/notice
+      - classpath:db/migration/discovery
+      - classpath:db/migration/notification
+      - classpath:db/migration/payment
+      - classpath:db/migration/billing
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:khatiyan-notification-service}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.khatiyan.d_modules.notification.queue
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      razorpay:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: ${RAZORPAY_CIRCUIT_BREAKER_WINDOW_SIZE:10}
+        minimum-number-of-calls: ${RAZORPAY_CIRCUIT_BREAKER_MIN_CALLS:5}
+        failure-rate-threshold: ${RAZORPAY_CIRCUIT_BREAKER_FAILURE_RATE:50}
+        wait-duration-in-open-state: ${RAZORPAY_CIRCUIT_BREAKER_OPEN_WAIT:30s}
+        permitted-number-of-calls-in-half-open-state: ${RAZORPAY_CIRCUIT_BREAKER_HALF_OPEN_CALLS:2}
+        automatic-transition-from-open-to-half-open-enabled: true
+
+app:
+  logging:
+    dir: ${KHATIYAN_LOG_DIR:logs}
+  jwt:
+    secret: ${JWT_SECRET:dev-secret-only-for-local-testing-not-secure-replace-in-production}
+    access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:60}
+  auth:
+    login-rate-limit:
+      phone-limit-attempts: ${LOGIN_PHONE_LIMIT_ATTEMPTS:20}
+      phone-limit-duration-minutes: ${LOGIN_PHONE_LIMIT_DURATION_MINUTES:15}
+      ip-limit-attempts: ${LOGIN_IP_LIMIT_ATTEMPTS:100}
+      ip-limit-duration-minutes: ${LOGIN_IP_LIMIT_DURATION_MINUTES:15}
+      permanent-lock-failed-attempts: ${LOGIN_PERMANENT_LOCK_FAILED_ATTEMPTS:100}
+  rate-limit:
+    enabled: ${API_RATE_LIMIT_ENABLED:true}
+    fail-open: ${API_RATE_LIMIT_FAIL_OPEN:true}
+    default-rule:
+      attempts: ${API_RATE_LIMIT_DEFAULT_ATTEMPTS:300}
+      duration-seconds: ${API_RATE_LIMIT_DEFAULT_DURATION_SECONDS:60}
+    routes:
+      - method: POST
+        path-prefix: /api/v1/auth/login
+        attempts: ${API_RATE_LIMIT_LOGIN_IP_ATTEMPTS:100}
+        duration-seconds: ${API_RATE_LIMIT_LOGIN_IP_DURATION_SECONDS:900}
+        identity: IP
+      - method: POST
+        path-prefix: /api/v1/auth/otp
+        attempts: ${API_RATE_LIMIT_OTP_IP_ATTEMPTS:30}
+        duration-seconds: ${API_RATE_LIMIT_OTP_IP_DURATION_SECONDS:3600}
+        identity: IP
+      - method: POST
+        path-prefix: /api/v1/payments
+        attempts: ${API_RATE_LIMIT_PAYMENT_ATTEMPTS:30}
+        duration-seconds: ${API_RATE_LIMIT_PAYMENT_DURATION_SECONDS:600}
+        identity: USER_OR_IP
+      - method: POST
+        path-prefix: /api/v1/concerns
+        attempts: ${API_RATE_LIMIT_CONCERN_ATTEMPTS:20}
+        duration-seconds: ${API_RATE_LIMIT_CONCERN_DURATION_SECONDS:86400}
+        identity: USER_OR_IP
+      - method: POST
+        path-prefix: /api/v1/notifications/device-tokens
+        attempts: ${API_RATE_LIMIT_DEVICE_TOKEN_ATTEMPTS:20}
+        duration-seconds: ${API_RATE_LIMIT_DEVICE_TOKEN_DURATION_SECONDS:3600}
+        identity: USER_OR_IP
+  firebase:
+    enabled: ${FIREBASE_AUTH_ENABLED:false}
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
+    service-account-json-base64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:}
+  otp:
+    delivery:
+      sms:
+        provider: ${OTP_SMS_PROVIDER:log}
+        url: ${OTP_SMS_URL:}
+        auth-header: ${OTP_SMS_AUTH_HEADER:authkey}
+        auth-value: ${OTP_SMS_AUTH_VALUE:}
+        sender-id: ${OTP_SMS_SENDER_ID:}
+        template-id: ${OTP_SMS_TEMPLATE_ID:}
+        otp-variable-name: ${OTP_SMS_OTP_VARIABLE_NAME:OTP}
+      whatsapp:
+        provider: ${OTP_WHATSAPP_PROVIDER:log}
+        url: ${OTP_WHATSAPP_URL:}
+        auth-header: ${OTP_WHATSAPP_AUTH_HEADER:Authorization}
+        auth-value: ${OTP_WHATSAPP_AUTH_VALUE:}
+        sender-id: ${OTP_WHATSAPP_SENDER_ID:}
+        template-id: ${OTP_WHATSAPP_TEMPLATE_ID:}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081}
+  notice:
+    recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */2 * * * *}
+    recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}
+    archive-expired-cron: ${NOTICE_ARCHIVE_EXPIRED_CRON:0 */2 * * * *}
+    archive-expired-zone: ${NOTICE_ARCHIVE_EXPIRED_ZONE:Asia/Kolkata}
+  tenancy:
+    exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 5 0 * * *}
+    exit-execution-zone: ${TENANCY_EXIT_EXECUTION_ZONE:Asia/Kolkata}
+    exit-execution-batch-size: ${TENANCY_EXIT_EXECUTION_BATCH_SIZE:50}
+  billing:
+    monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 */5 * * * *}
+    monthly-cycle-generation-zone: ${BILLING_MONTHLY_CYCLE_GENERATION_ZONE:Asia/Kolkata}
+    monthly-cycle-generation-batch-size: ${BILLING_MONTHLY_CYCLE_GENERATION_BATCH_SIZE:50}
+    overdue-marker-cron: ${BILLING_OVERDUE_MARKER_CRON:0/10 * * * * *}
+    overdue-marker-zone: ${BILLING_OVERDUE_MARKER_ZONE:Asia/Kolkata}
+    late-fee-recalculation-cron: ${BILLING_LATE_FEE_RECALCULATION_CRON:5/10 * * * * *}
+    late-fee-recalculation-zone: ${BILLING_LATE_FEE_RECALCULATION_ZONE:Asia/Kolkata}
+  payment:
+    default-provider: ${PAYMENT_DEFAULT_PROVIDER:RAZORPAY}
+    currency: ${PAYMENT_CURRENCY:INR}
+    order-expiry-minutes: ${PAYMENT_ORDER_EXPIRY_MINUTES:30}
+    razorpay:
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+  notification:
+    push-delivery-cron: ${NOTIFICATION_PUSH_DELIVERY_CRON:0 */1 * * * *}
+    push-delivery-zone: ${NOTIFICATION_PUSH_DELIVERY_ZONE:Asia/Kolkata}
+    cleanup-cron: ${NOTIFICATION_CLEANUP_CRON:0 30 3 * * *}
+    cleanup-zone: ${NOTIFICATION_CLEANUP_ZONE:Asia/Kolkata}
+    kafka:
+      push-topic: ${NOTIFICATION_PUSH_TOPIC:notification.push.delivery}
+
+logging:
+  config: classpath:logback-spring.xml
+  file:
+    name: ${KHATIYAN_LOG_DIR:logs}/khatiyan-app.log
+  level:
+    root: INFO
+    com.khatiyan: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN

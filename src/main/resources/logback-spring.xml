@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="LOG_DIR" source="app.logging.dir" defaultValue="logs"/>
+
+    <property name="APP_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%logger{36}] - %msg%n"/>
+    <property name="MODULE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger{36}] - %msg%n"/>
+    <property name="SCHEDULER_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger{36}] - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${APP_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="APP" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/khatiyan-app.log</file>
+        <encoder>
+            <pattern>${APP_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archive/khatiyan-app.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="SQL" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/debug/sql.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/debug/archive/sql.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="SCHEDULER" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/schedulers/schedulers.log</file>
+        <encoder>
+            <pattern>${SCHEDULER_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/schedulers/archive/schedulers.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="AUTH" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/auth.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/auth.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="PROPERTY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/property.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/property.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="TENANCY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/tenancy.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/tenancy.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="BILLING" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/billing.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/billing.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="PAYMENT" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/payment.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/payment.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="NOTICE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/notice.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/notice.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="CONCERN" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/concern.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/concern.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="NOTIFICATION" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/notification.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/notification.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <logger name="org.hibernate.SQL" level="${SQL_LOG_LEVEL:-WARN}" additivity="false">
+        <appender-ref ref="SQL"/>
+    </logger>
+    <logger name="org.hibernate.orm.jdbc.bind" level="${SQL_BIND_LOG_LEVEL:-WARN}" additivity="false">
+        <appender-ref ref="SQL"/>
+    </logger>
+
+    <logger name="com.khatiyan.d_modules.billing.service.BillingCycleSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.notice.service.NoticeSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.notification.service.NotificationSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.tenancy.service.TenancyExitSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+
+    <logger name="com.khatiyan.a_auth" level="${AUTH_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="AUTH"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.property" level="${PROPERTY_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="PROPERTY"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.tenancy" level="${TENANCY_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="TENANCY"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.billing" level="${BILLING_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="BILLING"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.payment" level="${PAYMENT_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="PAYMENT"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.notice" level="${NOTICE_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="NOTICE"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.concerns" level="${CONCERN_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="CONCERN"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.notification" level="${NOTIFICATION_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="NOTIFICATION"/>
+        <appender-ref ref="APP"/>
+    </logger>
+
+    <logger name="com.khatiyan" level="${KHATIYAN_LOG_LEVEL:-INFO}"/>
+    <logger name="org.springframework.security" level="${SPRING_SECURITY_LOG_LEVEL:-WARN}"/>
+
+    <root level="${ROOT_LOG_LEVEL:-INFO}">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP"/>
+    </root>
+</configuration>

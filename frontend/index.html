@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Khatiyan Test App</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">K</div>
+          <div>
+            <h1>Khatiyan</h1>
+            <p>Backend test app</p>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="auth">Auth</button>
+          <button class="nav-item" data-view="owner" data-authority="admin">Owner</button>
+          <button class="nav-item" data-view="modules" data-authority="admin">Modules</button>
+          <button class="nav-item" data-view="concerns" data-authority="admin tenant">Concerns</button>
+          <button class="nav-item" data-view="notices" data-authority="admin">Notices</button>
+          <button class="nav-item" data-view="billing" data-authority="admin tenant">Billing</button>
+          <button class="nav-item" data-view="tenant" data-authority="tenant">Tenant</button>
+          <button class="nav-item" data-view="raw">Raw API</button>
+        </nav>
+
+        <div class="session-card">
+          <label for="baseUrl">API Base URL</label>
+          <input id="baseUrl" value="http://localhost:8080" />
+          <button id="saveBaseUrl" class="secondary">Save URL</button>
+          <div class="session-status">
+            <span id="sessionDot" class="dot"></span>
+            <span id="sessionLabel">Not logged in</span>
+          </div>
+          <button id="loadProfile" class="secondary">Load Profile</button>
+          <button id="logout" class="danger">Clear Session</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local API wiring</p>
+            <h2 id="viewTitle">Auth</h2>
+          </div>
+          <div id="userSummary" class="user-summary">No active user</div>
+        </header>
+
+        <section id="auth" class="view active">
+          <div class="module-layout">
+            <div class="panel module-context">
+              <div>
+                <h3>Backend OTP And PIN</h3>
+                <p class="hint">Valkey/database OTP flow for local testing, provisioned users, first PIN setup, and PIN reset.</p>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel" id="registerUserForm">
+                <h3>User Signup</h3>
+                <label>Phone <input name="phone" placeholder="User phone, e.g. 9876543210" required /></label>
+                <label>Full name <input name="fullName" placeholder="User full name, e.g. Test User" required /></label>
+                <button>Register User</button>
+              </form>
+
+              <form class="panel" id="registerOwnerForm">
+                <h3>Owner Signup</h3>
+                <label>Phone <input name="phone" placeholder="Owner phone, e.g. 9876543210" required /></label>
+                <label>Full name <input name="fullName" placeholder="Owner full name, e.g. Test Owner" required /></label>
+                <button>Register Owner</button>
+              </form>
+
+              <form class="panel" id="requestOtpForm">
+                <h3>Request Set PIN / Reset PIN OTP</h3>
+                <label>Phone <input name="phone" placeholder="Registered or provisioned phone, e.g. 9876543210" required /></label>
+                <label>Delivery channel
+                  <select name="channel">
+                    <option>SMS</option>
+                    <option>SMS_AND_WHATSAPP</option>
+                  </select>
+                </label>
+                <label>Purpose
+                  <select name="purpose">
+                    <option value="LOGIN">SET_PIN</option>
+                    <option value="PIN_RESET">RESET_PIN</option>
+                  </select>
+                </label>
+                <button>Request Set PIN OTP</button>
+              </form>
+
+              <form class="panel" id="verifyOtpForm">
+                <h3>Verify OTP</h3>
+                <label>Phone <input name="phone" placeholder="Phone used for OTP" required /></label>
+                <label>OTP <input name="otp" placeholder="6 digit OTP, e.g. 123456" required /></label>
+                <label>Purpose
+                  <select name="purpose">
+                    <option value="LOGIN">SET_PIN</option>
+                    <option value="PIN_RESET">RESET_PIN</option>
+                  </select>
+                </label>
+                <button>Verify OTP</button>
+              </form>
+
+              <form class="panel" id="setPinForm">
+                <h3>Set PIN</h3>
+                <label>Phone <input name="phone" placeholder="Phone used for signup or provisioning" required /></label>
+                <label>OTP <input name="otp" placeholder="Verified OTP, e.g. 123456" required /></label>
+                <label>PIN <input name="pin" type="password" placeholder="Set 6 digit PIN, e.g. 123456" required /></label>
+                <button>Set PIN And Login</button>
+              </form>
+
+              <form class="panel" id="loginForm">
+                <h3>PIN Login</h3>
+                <label>Phone <input name="phone" placeholder="Registered phone number" required /></label>
+                <label>PIN <input name="pin" type="password" placeholder="Your 6 digit PIN" required /></label>
+                <button>Login</button>
+              </form>
+
+              <form class="panel" id="resetPinForm">
+                <h3>Reset PIN</h3>
+                <label>Phone <input name="phone" placeholder="Phone used for reset OTP" required /></label>
+                <label>OTP <input name="otp" placeholder="PIN reset OTP, e.g. 123456" required /></label>
+                <label>New PIN <input name="newPin" type="password" placeholder="New 6 digit PIN" required /></label>
+                <button>Reset PIN And Login</button>
+              </form>
+            </div>
+
+            <div class="panel module-context">
+              <div>
+                <h3>Firebase Phone Verification</h3>
+                <p class="hint">Firebase sends/verifies OTP. Khatiyan then creates the account and requires PIN setup before issuing JWT.</p>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel" id="firebaseConfigForm">
+                <h3>Firebase Config</h3>
+                <label>Firebase web config JSON
+                  <textarea name="config" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}' required></textarea>
+                </label>
+                <button>Save Firebase Config</button>
+                <p class="hint">Use Firebase web app config here. This is not the backend service account JSON.</p>
+              </form>
+
+              <form class="panel" id="firebasePhoneForm">
+                <h3>Firebase Signup And PIN</h3>
+                <label>Phone
+                  <input name="phone" placeholder="E.164 phone, e.g. +919876543210" required />
+                </label>
+                <label>Full name
+                  <input name="fullName" placeholder="Required for registration" />
+                </label>
+                <label>Account type
+                  <select name="accountType">
+                    <option>USER</option>
+                    <option>OWNER</option>
+                  </select>
+                </label>
+                <div id="firebaseRecaptcha"></div>
+                <button id="sendFirebaseOtp" type="button">Send Firebase OTP</button>
+                <label>OTP
+                  <input name="otp" placeholder="Firebase OTP" />
+                </label>
+                <div class="row">
+                  <button id="verifyFirebaseOtp" type="button" class="secondary">Verify OTP</button>
+                  <button id="registerWithFirebase" type="button">Verify And Register</button>
+                </div>
+                <label>PIN
+                  <input name="pin" type="password" placeholder="Set 6 digit PIN after registration" />
+                </label>
+                <button id="setFirebasePin" type="button">Set PIN And Login</button>
+                <p class="hint">Firebase verifies OTP and gives an ID token. Backend registers the account, then re-verifies that Firebase proof while setting the first PIN.</p>
+              </form>
+            </div>
+
+            <form class="panel" id="updateProfileForm">
+              <h3>Update Profile</h3>
+              <label>Full name <input name="fullName" placeholder="New profile name" required /></label>
+              <label>Profile image URL <input name="profilePhotoUrl" placeholder="Image URL from frontend upload" /></label>
+              <button>Update Name</button>
+              <p class="hint">Image URL storage endpoint is not wired yet; this field is kept visible to track the product decision.</p>
+            </form>
+          </div>
+        </section>
+
+        <section id="owner" class="view">
+          <div class="owner-layout">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Create Property</h3>
+              </div>
+              <form id="createPropertyForm" class="stack compact">
+                <input name="name" placeholder="Property name, e.g. Sky Prime PG" required />
+                <input name="address" placeholder="Full address, e.g. Gachibowli Main Road" required />
+                <div class="row">
+                  <input name="city" placeholder="City, e.g. Hyderabad" required />
+                  <input name="pincode" placeholder="Pincode, e.g. 500046" required />
+                </div>
+                <div class="row">
+                  <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Latitude, e.g. 17.3850" />
+                  <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Longitude, e.g. 78.4867" />
+                </div>
+                <select name="type" aria-label="Property type" title="Property type">
+                  <option>PG</option>
+                  <option>HOSTEL</option>
+                  <option>APARTMENT</option>
+                  <option>SOCIETY</option>
+                </select>
+                <div>
+                  <p class="field-label">Facilities</p>
+                  <div class="facility-grid" data-facilities-for="createPropertyForm"></div>
+                </div>
+                <textarea name="customFacilities" rows="2" placeholder="Custom facilities, comma separated, e.g. Rooftop dining, Biometric entry"></textarea>
+                <div class="row">
+                  <input name="dailyGuestAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest AC rate, e.g. 1500" />
+                  <input name="dailyGuestNonAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest non-AC rate, e.g. 1000" />
+                </div>
+                <div class="row">
+                  <input name="standardDepositRupees" type="number" min="0" step="0.01" placeholder="Standard deposit, e.g. 10000" />
+                  <input name="rentLateFeePerDayRupees" type="number" min="0" step="0.01" placeholder="Late fee per day, e.g. 100" />
+                </div>
+                <div class="row">
+                  <input name="rentGraceDays" type="number" min="0" max="30" placeholder="Rent grace days, e.g. 3" />
+                  <input name="noticePeriodDays" type="number" min="0" max="365" placeholder="Notice period days, e.g. 30" />
+                </div>
+                <button>Create Property</button>
+              </form>
+            </div>
+
+            <div class="workspace">
+              <div class="panel" data-authority="admin">
+                <div class="panel-head">
+                  <h3>My Properties</h3>
+                  <button id="refreshProperties" class="secondary">Refresh</button>
+                </div>
+                <div id="propertiesSummary" class="summary-strip"></div>
+                <div id="propertiesList" class="property-grid"></div>
+              </div>
+
+              <div class="panel" data-authority="admin">
+                <div class="panel-head">
+                  <h3>Admin Notifications</h3>
+                  <div class="panel-actions">
+                    <span id="ownerUnreadCount" class="badge">Unread 0</span>
+                    <button id="markAllOwnerNotificationsRead" type="button" class="secondary">Mark All Read</button>
+                    <button id="refreshOwnerNotifications" type="button" class="secondary">Refresh</button>
+                  </div>
+                </div>
+                <div id="ownerNotificationsList" class="list"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Selected Property</h3>
+                  <span id="selectedPropertyLabel" class="badge">None</span>
+                </div>
+                <form id="updatePropertyForm" class="stack compact">
+                  <input name="name" placeholder="Updated property name" required />
+                  <input name="address" placeholder="Updated full address" required />
+                  <div class="row">
+                    <input name="city" placeholder="Updated city" required />
+                    <input name="pincode" placeholder="Updated pincode" required />
+                  </div>
+                  <div class="row">
+                    <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Updated latitude, e.g. 17.3850" />
+                    <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Updated longitude, e.g. 78.4867" />
+                  </div>
+                  <select name="type" aria-label="Updated property type" title="Updated property type">
+                    <option>PG</option>
+                    <option>HOSTEL</option>
+                    <option>APARTMENT</option>
+                    <option>SOCIETY</option>
+                  </select>
+                  <div>
+                    <p class="field-label">Facilities</p>
+                    <div class="facility-grid" data-facilities-for="updatePropertyForm"></div>
+                  </div>
+                  <textarea name="customFacilities" rows="2" placeholder="Custom facilities, comma separated"></textarea>
+                  <div class="row">
+                    <input name="dailyGuestAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest AC rate, e.g. 1500" />
+                    <input name="dailyGuestNonAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest non-AC rate, e.g. 1000" />
+                  </div>
+                  <div class="row">
+                    <input name="standardDepositRupees" type="number" min="0" step="0.01" placeholder="Standard deposit, e.g. 10000" />
+                    <input name="rentLateFeePerDayRupees" type="number" min="0" step="0.01" placeholder="Late fee per day, e.g. 100" />
+                  </div>
+                  <div class="row">
+                    <input name="rentGraceDays" type="number" min="0" max="30" placeholder="Rent grace days, e.g. 3" />
+                    <input name="noticePeriodDays" type="number" min="0" max="365" placeholder="Notice period days, e.g. 30" />
+                  </div>
+                  <div class="row">
+                    <button>Update Property</button>
+                    <button id="deleteProperty" type="button" class="danger">Deactivate</button>
+                  </div>
+                </form>
+
+                <form id="updateDailyGuestRatesForm" class="stack compact divided">
+                  <h3>Daily Guest Rates</h3>
+                  <div class="row">
+                    <label>AC daily rate
+                      <input name="dailyGuestAcRateRupees" type="number" min="1" step="0.01" placeholder="AC daily rate, e.g. 1500" />
+                    </label>
+                    <label>Non-AC daily rate
+                      <input name="dailyGuestNonAcRateRupees" type="number" min="1" step="0.01" placeholder="Non-AC daily rate, e.g. 1000" />
+                    </label>
+                  </div>
+                  <button type="submit" class="secondary">Update Daily Rates</button>
+                </form>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <section id="modules" class="view">
+          <div class="module-layout">
+            <div class="panel module-context">
+              <div>
+                <h3>Selected Property Modules</h3>
+                <p id="modulePropertyLabel" class="hint">Select a property from Owner first.</p>
+              </div>
+              <button id="refreshModules" class="secondary">Refresh All</button>
+            </div>
+
+            <div class="grid two">
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Rooms</h3>
+                  <div class="panel-actions">
+                    <button id="toggleRoomsList" type="button" class="secondary">Minimize List</button>
+                    <button id="refreshRooms" class="secondary">Refresh</button>
+                  </div>
+                </div>
+                <form id="createRoomForm" class="stack compact">
+                  <div class="row">
+                    <label>Room number
+                      <input name="roomNumber" placeholder="Room number, e.g. 101" required />
+                    </label>
+                    <label>Floor
+                      <input name="floor" placeholder="Floor, e.g. 1" />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Capacity
+                      <input name="capacity" type="number" min="1" value="1" placeholder="Beds allowed, e.g. 2" required />
+                    </label>
+                    <label>Base rent
+                      <input name="baseRentRupees" type="number" min="1" step="0.01" placeholder="Room rent in rupees, e.g. 8000" required />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Sharing type
+                      <select name="roomType" aria-label="Room sharing type" title="Room sharing type">
+                        <option>SINGLE</option>
+                        <option>DOUBLE</option>
+                        <option>TRIPLE</option>
+                        <option>FOUR_SHARING</option>
+                        <option>FIVE_SHARING</option>
+                        <option>DORMITORY</option>
+                      </select>
+                    </label>
+                    <label>Conditioning
+                      <select name="conditioning" aria-label="Room conditioning" title="Room conditioning">
+                        <option>NON_AC</option>
+                        <option>AC</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="hint">Sharing type fills capacity automatically. Change capacity manually only when the room has a custom bed count.</p>
+                  <button>Create Room</button>
+                </form>
+
+                <form id="updateRoomForm" class="stack compact divided">
+                  <h3>Update Room</h3>
+                  <label>Room ID
+                    <input name="roomId" placeholder="Room UUID selected from Rooms list" required />
+                  </label>
+                  <div class="row">
+                    <label>Room number
+                      <input name="roomNumber" placeholder="Room number, e.g. 101" required />
+                    </label>
+                    <label>Floor
+                      <input name="floor" placeholder="Floor, e.g. 1" />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Capacity
+                      <input name="capacity" type="number" min="1" placeholder="Beds allowed, e.g. 2" required />
+                    </label>
+                    <label>Base rent
+                      <input name="baseRentRupees" type="number" min="0" step="0.01" placeholder="Room rent in rupees, e.g. 8000" required />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Sharing type
+                      <select name="roomType" aria-label="Updated room sharing type" title="Updated room sharing type">
+                        <option>SINGLE</option>
+                        <option>DOUBLE</option>
+                        <option>TRIPLE</option>
+                        <option>FOUR_SHARING</option>
+                        <option>FIVE_SHARING</option>
+                        <option>DORMITORY</option>
+                      </select>
+                    </label>
+                    <label>Conditioning
+                      <select name="conditioning" aria-label="Updated room conditioning" title="Updated room conditioning">
+                        <option>NON_AC</option>
+                        <option>AC</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button>Update Room</button>
+                </form>
+
+                <form id="createRoomRangeForm" class="stack compact divided">
+                  <h3>Bulk Room Range</h3>
+                  <div class="row">
+                    <label>Prefix
+                      <input name="prefix" placeholder="Optional prefix, e.g. A-" />
+                    </label>
+                    <label>Floor
+                      <input name="floor" placeholder="Floor, e.g. 1" />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Start number
+                      <input name="startNumber" type="number" min="1" placeholder="Start, e.g. 101" required />
+                    </label>
+                    <label>End number
+                      <input name="endNumber" type="number" min="1" placeholder="End, e.g. 120" required />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Capacity
+                      <input name="capacity" type="number" min="1" value="1" placeholder="Beds allowed, e.g. 2" required />
+                    </label>
+                    <label>Base rent
+                      <input name="baseRentRupees" type="number" min="1" step="0.01" placeholder="Room rent in rupees, e.g. 8000" required />
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label>Sharing type
+                      <select name="roomType" aria-label="Bulk room sharing type" title="Bulk room sharing type">
+                        <option>SINGLE</option>
+                        <option>DOUBLE</option>
+                        <option>TRIPLE</option>
+                        <option>FOUR_SHARING</option>
+                        <option>FIVE_SHARING</option>
+                        <option>DORMITORY</option>
+                      </select>
+                    </label>
+                    <label>Conditioning
+                      <select name="conditioning" aria-label="Bulk room conditioning" title="Bulk room conditioning">
+                        <option>NON_AC</option>
+                        <option>AC</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="hint">Example: prefix A-, start 101, end 103 creates A-101, A-102, and A-103.</p>
+                  <button>Create Room Range</button>
+                </form>
+
+                <div class="stack compact divided">
+                  <h3>Bulk Custom Rooms</h3>
+                  <form id="stageBulkRoomForm" class="stack compact">
+                    <div class="row">
+                      <label>Room number
+                        <input name="roomNumber" placeholder="Room number, e.g. G-12" required />
+                      </label>
+                      <label>Floor
+                        <input name="floor" placeholder="Floor, e.g. Ground" />
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label>Capacity
+                        <input name="capacity" type="number" min="1" value="1" placeholder="Beds allowed, e.g. 2" required />
+                      </label>
+                      <label>Base rent
+                        <input name="baseRentRupees" type="number" min="1" step="0.01" placeholder="Room rent in rupees, e.g. 8000" required />
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label>Sharing type
+                        <select name="roomType" aria-label="Custom bulk room sharing type" title="Custom bulk room sharing type">
+                          <option>SINGLE</option>
+                          <option>DOUBLE</option>
+                          <option>TRIPLE</option>
+                          <option>FOUR_SHARING</option>
+                          <option>FIVE_SHARING</option>
+                          <option>DORMITORY</option>
+                        </select>
+                      </label>
+                      <label>Conditioning
+                        <select name="conditioning" aria-label="Custom bulk room conditioning" title="Custom bulk room conditioning">
+                          <option>NON_AC</option>
+                          <option>AC</option>
+                        </select>
+                      </label>
+                    </div>
+                    <button type="submit" class="secondary">Add To Bulk List</button>
+                  </form>
+                  <div id="bulkRoomsList" class="list"></div>
+                  <div class="row">
+                    <button id="submitBulkRooms" type="button">Create Custom Rooms</button>
+                    <button id="clearBulkRooms" type="button" class="secondary">Clear List</button>
+                  </div>
+                </div>
+                <div id="roomsListSection" class="collapsible-section">
+                  <div id="roomsList" class="list"></div>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Managers</h3>
+                  <div class="panel-actions">
+                    <button id="toggleManagersList" type="button" class="secondary">Minimize List</button>
+                    <button id="refreshManagers" class="secondary">Refresh</button>
+                  </div>
+                </div>
+                <form id="addManagerForm" class="stack compact">
+                  <input name="phone" placeholder="Manager phone, e.g. 9876543210" required />
+                  <input name="fullName" placeholder="Manager full name" required />
+                  <button>Add Manager</button>
+                </form>
+                <div id="managersListSection" class="collapsible-section">
+                  <div id="managersList" class="list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Active Tenancies</h3>
+                <button id="refreshTenancies" class="secondary">Refresh</button>
+              </div>
+              <form id="createTenancyForm" class="stack compact">
+                <div class="row">
+                  <label>Tenant phone
+                    <input name="tenantPhone" placeholder="Tenant phone, e.g. 9876543210" required />
+                  </label>
+                  <label>Room ID
+                    <input name="roomId" placeholder="Room UUID selected from Rooms list" required />
+                  </label>
+                </div>
+                <label>Billing type
+                  <select name="billingType">
+                    <option>MONTHLY</option>
+                    <option>DAILY</option>
+                  </select>
+                </label>
+                <div class="row" data-tenancy-monthly>
+                  <label>Room rent
+                    <input name="roomRentPreviewRupees" type="number" placeholder="Auto-filled from selected room" readonly />
+                  </label>
+                  <label>Deposit
+                    <input name="depositAmountRupees" type="number" min="0" step="0.01" value="0" placeholder="Property controlled deposit" readonly />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Start date
+                    <input name="startDate" type="date" aria-label="Tenancy start date" title="Tenancy start date" required />
+                  </label>
+                  <label data-tenancy-daily>Planned checkout
+                    <input name="plannedEndDate" type="date" aria-label="Daily guest planned checkout date" title="Daily guest planned checkout date" />
+                  </label>
+                </div>
+                <div class="row" data-tenancy-daily>
+                  <label>Daily rate
+                    <input name="dailyRatePreviewRupees" type="number" placeholder="Auto-filled after room selection" readonly />
+                  </label>
+                </div>
+                <div data-tenancy-daily>
+                  <p class="hint">Daily guest rate is copied from selected property based on the room conditioning. Stay must be 1 to 29 days.</p>
+                </div>
+                <button>Create Tenancy</button>
+              </form>
+              <div id="tenanciesList" class="list"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Past Tenancies</h3>
+                <button id="refreshPastTenancies" type="button" class="secondary">Refresh</button>
+              </div>
+              <div id="pastTenanciesList" class="list"></div>
+            </div>
+
+            <div class="grid two">
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Past Tenancy Billing</h3>
+                </div>
+                <div id="pastTenancyBillingHistory" class="list"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Past Tenancy Deposit</h3>
+                </div>
+                <div id="pastTenancyDepositHistory" class="list"></div>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel stack compact" id="updateTenancyForm">
+                <h3>Update Tenancy Setup</h3>
+                <label>Tenancy ID
+                  <input name="tenancyId" placeholder="Tenancy UUID selected from Tenancies list" required />
+                </label>
+                <label>Tenant rent
+                  <input name="rentAmountRupees" type="number" min="1" step="0.01" placeholder="Updated tenant rent in rupees" />
+                </label>
+                <label>Deposit
+                  <input name="depositAmountRupees" type="number" min="0" step="0.01" placeholder="Property controlled deposit" readonly />
+                </label>
+                <button>Update Tenancy</button>
+              </form>
+
+              <form class="panel stack compact" id="endTenancyForm">
+                <h3>End Tenancy</h3>
+                <label>Tenancy ID
+                  <input name="tenancyId" placeholder="Tenancy UUID selected from Tenancies list" required />
+                </label>
+                <label>End date
+                  <input name="endDate" type="date" aria-label="Tenancy end date" title="Tenancy end date" required />
+                </label>
+                <label>Reason
+                  <input name="reason" placeholder="End reason, e.g. tenant vacated" />
+                </label>
+                <button class="danger">End Tenancy</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section id="concerns" class="view">
+          <div class="module-layout">
+            <div class="panel module-context">
+              <div>
+                <h3>Concern Testing</h3>
+                <p id="concernPropertyLabel" class="hint">Select a property from Owner first for owner/manager concern queues.</p>
+              </div>
+              <div class="panel-actions">
+                <button id="refreshTenantConcerns" class="secondary" data-authority="tenant">Refresh Tenant</button>
+                <button id="refreshAdminConcerns" class="secondary" data-authority="admin">Refresh Admin</button>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel stack compact" id="raiseConcernForm" data-authority="tenant">
+                <h3>Raise Concern</h3>
+                <div class="row">
+                  <label>Category
+                    <select name="category">
+                      <option>MAINTENANCE</option>
+                      <option>CLEANING</option>
+                      <option>WIFI</option>
+                      <option>MESS</option>
+                      <option>WATER</option>
+                      <option>ELECTRICITY</option>
+                      <option>NOISE</option>
+                      <option>SECURITY</option>
+                      <option>PAYMENT</option>
+                      <option>LIFT</option>
+                      <option>OTHER</option>
+                    </select>
+                  </label>
+                  <label>Priority
+                    <select name="priority">
+                      <option>LOW</option>
+                      <option selected>MEDIUM</option>
+                      <option>HIGH</option>
+                      <option>URGENT</option>
+                    </select>
+                  </label>
+                </div>
+                <label>Title
+                  <input name="title" placeholder="Short issue title, e.g. WiFi not working" required />
+                </label>
+                <label>Description
+                  <textarea name="description" rows="4" placeholder="Describe the issue clearly" required></textarea>
+                </label>
+                <div class="row">
+                  <label>Photo URL 1
+                    <input name="photoUrl1" placeholder="Optional uploaded image URL" />
+                  </label>
+                  <label>Photo public ID 1
+                    <input name="photoPublicId1" placeholder="Optional Cloudinary public id" />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Photo URL 2
+                    <input name="photoUrl2" placeholder="Optional uploaded image URL" />
+                  </label>
+                  <label>Photo public ID 2
+                    <input name="photoPublicId2" placeholder="Optional Cloudinary public id" />
+                  </label>
+                </div>
+                <button>Raise Concern</button>
+              </form>
+
+              <div class="panel stack compact">
+                <h3>Concern Actions</h3>
+                <form id="assignConcernForm" class="stack compact" data-authority="admin">
+                  <label>Concern ID
+                    <input name="concernId" placeholder="Concern UUID" required />
+                  </label>
+                  <label>Assign to user ID
+                    <input name="assignedToUserId" placeholder="Owner/manager user UUID" required />
+                  </label>
+                  <button>Assign Concern</button>
+                </form>
+                <form id="updateConcernStatusForm" class="stack compact divided" data-authority="admin">
+                  <label>Concern ID
+                    <input name="concernId" placeholder="Concern UUID" required />
+                  </label>
+                  <label>Status
+                    <select name="status">
+                      <option>OPEN</option>
+                      <option>IN_PROGRESS</option>
+                    </select>
+                  </label>
+                  <button>Update Status</button>
+                </form>
+                <form id="resolveConcernForm" class="stack compact divided" data-authority="admin">
+                  <label>Concern ID
+                    <input name="concernId" placeholder="Concern UUID" required />
+                  </label>
+                  <label>Resolution note
+                    <textarea name="resolutionNote" rows="3" placeholder="What was fixed?" required></textarea>
+                  </label>
+                  <button>Resolve Concern</button>
+                </form>
+                <form id="reopenConcernForm" class="stack compact divided" data-authority="tenant">
+                  <label>Concern ID
+                    <input name="concernId" placeholder="Resolved concern UUID" required />
+                  </label>
+                  <label>Reopen reason
+                    <textarea name="reopenReason" rows="3" placeholder="Why is the issue still not fixed?" required></textarea>
+                  </label>
+                  <button>Reopen Concern</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <div class="panel" data-authority="tenant">
+                <div class="panel-head">
+                  <h3>Tenant Current</h3>
+                  <button id="loadTenantCurrentConcerns" class="secondary">Refresh</button>
+                </div>
+                <div id="tenantCurrentConcernsList" class="list"></div>
+              </div>
+
+              <div class="panel" data-authority="tenant">
+                <div class="panel-head">
+                  <h3>Tenant History</h3>
+                  <button id="loadTenantConcernHistory" class="secondary">Refresh</button>
+                </div>
+                <div id="tenantConcernHistoryList" class="list"></div>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <div class="panel" data-authority="admin">
+                <div class="panel-head">
+                  <h3>Available For Property</h3>
+                  <button id="loadAvailableConcerns" class="secondary">Refresh</button>
+                </div>
+                <div id="availableConcernsList" class="list"></div>
+              </div>
+
+              <div class="panel" data-authority="admin">
+                <div class="panel-head">
+                  <h3>My Undertaken</h3>
+                  <button id="loadUndertakenConcerns" class="secondary">Refresh</button>
+                </div>
+                <div id="undertakenConcernsList" class="list"></div>
+              </div>
+            </div>
+
+            <div class="panel" data-authority="admin">
+              <div class="panel-head">
+                <h3>Property Concern History</h3>
+                <button id="loadPropertyConcernHistory" class="secondary">Refresh</button>
+              </div>
+              <div id="propertyConcernHistoryList" class="list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="notices" class="view">
+          <div class="module-layout">
+            <div class="panel module-context">
+              <div>
+                <h3>Notice And Property Board Testing</h3>
+                <p id="noticePropertyLabel" class="hint">Select a property from Owner first for owner/manager notice tools.</p>
+              </div>
+              <div class="panel-actions">
+                <button id="refreshPropertyBoard" class="secondary">Refresh Board</button>
+                <button id="refreshNotices" class="secondary">Refresh Notices</button>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel stack compact" id="createBoardCategoryForm">
+                <h3>Property Board Category</h3>
+                <label>Name
+                  <input name="name" placeholder="Category name, e.g. Meal Timings" required />
+                </label>
+                <label>Slug
+                  <input name="slug" placeholder="Stable slug, e.g. meal-timings" required />
+                </label>
+                <label>Display order
+                  <input name="displayOrder" type="number" placeholder="Order, e.g. 1" />
+                </label>
+                <button>Create Category</button>
+              </form>
+
+              <form class="panel stack compact" id="createBoardItemForm">
+                <h3>Property Board Item</h3>
+                <label>Category ID
+                  <input name="categoryId" placeholder="Category UUID selected from category list" required />
+                </label>
+                <label>Title
+                  <input name="title" placeholder="Item title, e.g. Dinner Timing" required />
+                </label>
+                <label>Body
+                  <textarea name="body" rows="4" placeholder="Board item details, e.g. Dinner is served from 8 PM to 10 PM" required></textarea>
+                </label>
+                <label>Display order
+                  <input name="displayOrder" type="number" placeholder="Order, e.g. 1" />
+                </label>
+                <button>Create Board Item</button>
+              </form>
+            </div>
+
+            <div class="grid two">
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Board Categories</h3>
+                  <button id="loadBoardCategories" class="secondary">Refresh</button>
+                </div>
+                <div id="boardCategoriesList" class="list"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Board Items</h3>
+                  <button id="loadBoardItems" class="secondary">Refresh</button>
+                </div>
+                <div id="boardItemsList" class="list"></div>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <form class="panel stack compact" id="publishNoticeForm">
+                <h3>Publish Notice</h3>
+                <label>Title
+                  <input name="title" placeholder="Notice title, e.g. Dinner is ready" required />
+                </label>
+                <label>Body
+                  <textarea name="body" rows="4" placeholder="Notice body" required></textarea>
+                </label>
+                <label>Priority
+                  <select name="priority">
+                    <option>NORMAL</option>
+                    <option>IMPORTANT</option>
+                    <option>URGENT</option>
+                    <option>EMERGENCY</option>
+                  </select>
+                </label>
+                <div class="row">
+                  <label>Visible from
+                    <input name="visibleFrom" type="datetime-local" title="When tenants should start seeing this notice" />
+                  </label>
+                  <label>Visible until
+                    <input name="visibleUntil" type="datetime-local" title="When tenants should stop seeing this notice" />
+                  </label>
+                </div>
+                <button>Publish Notice</button>
+              </form>
+
+              <form class="panel stack compact" id="updateNoticeForm">
+                <h3>Update Notice</h3>
+                <label>Notice ID
+                  <input name="noticeId" placeholder="Notice UUID selected from notice list" required />
+                </label>
+                <label>Title
+                  <input name="title" placeholder="Updated notice title" required />
+                </label>
+                <label>Body
+                  <textarea name="body" rows="4" placeholder="Updated notice body" required></textarea>
+                </label>
+                <label>Priority
+                  <select name="priority">
+                    <option>NORMAL</option>
+                    <option>IMPORTANT</option>
+                    <option>URGENT</option>
+                    <option>EMERGENCY</option>
+                  </select>
+                </label>
+                <div class="row">
+                  <label>Visible from
+                    <input name="visibleFrom" type="datetime-local" title="Updated visible from" />
+                  </label>
+                  <label>Visible until
+                    <input name="visibleUntil" type="datetime-local" title="Updated visible until" />
+                  </label>
+                </div>
+                <div class="row">
+                  <button>Update Notice</button>
+                  <button id="archiveNotice" type="button" class="danger">Archive Notice</button>
+                </div>
+                <button id="deleteNotice" type="button" class="danger">Delete Notice</button>
+              </form>
+            </div>
+
+            <div class="grid two">
+              <form class="panel stack compact" id="createRecurringNoticeForm">
+                <h3>Create Recurring Notice</h3>
+                <label>Title
+                  <input name="title" placeholder="Recurring notice title, e.g. Dinner ready" required />
+                </label>
+                <label>Body
+                  <textarea name="body" rows="4" placeholder="Recurring notice body" required></textarea>
+                </label>
+                <label>Priority
+                  <select name="priority">
+                    <option>NORMAL</option>
+                    <option>IMPORTANT</option>
+                    <option>URGENT</option>
+                    <option>EMERGENCY</option>
+                  </select>
+                </label>
+                <label>Frequency
+                  <select name="frequency">
+                    <option>DAILY</option>
+                    <option>WEEKLY</option>
+                    <option>MONTHLY</option>
+                  </select>
+                </label>
+                <div class="row">
+                  <label>Start time
+                    <input name="startTime" type="time" required />
+                  </label>
+                  <label>End time
+                    <input name="endTime" type="time" required />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Active from
+                    <input name="activeFrom" type="date" />
+                  </label>
+                  <label>Active until
+                    <input name="activeUntil" type="date" />
+                  </label>
+                </div>
+                <p class="hint">Leave active until empty for a recurring template that runs until deleted.</p>
+                <button>Create Recurring Notice</button>
+              </form>
+
+              <form class="panel stack compact" id="updateRecurringNoticeForm">
+                <h3>Update Recurring Notice</h3>
+                <label>Recurring Notice ID
+                  <input name="recurringNoticeId" placeholder="Recurring notice UUID selected from list" required />
+                </label>
+                <label>Title
+                  <input name="title" placeholder="Updated recurring title" required />
+                </label>
+                <label>Body
+                  <textarea name="body" rows="4" placeholder="Updated recurring body" required></textarea>
+                </label>
+                <label>Priority
+                  <select name="priority">
+                    <option>NORMAL</option>
+                    <option>IMPORTANT</option>
+                    <option>URGENT</option>
+                    <option>EMERGENCY</option>
+                  </select>
+                </label>
+                <label>Frequency
+                  <select name="frequency">
+                    <option>DAILY</option>
+                    <option>WEEKLY</option>
+                    <option>MONTHLY</option>
+                  </select>
+                </label>
+                <div class="row">
+                  <label>Start time
+                    <input name="startTime" type="time" required />
+                  </label>
+                  <label>End time
+                    <input name="endTime" type="time" required />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Active from
+                    <input name="activeFrom" type="date" />
+                  </label>
+                  <label>Active until
+                    <input name="activeUntil" type="date" />
+                  </label>
+                </div>
+                <div class="row">
+                  <button>Update Recurring</button>
+                  <button id="deleteRecurringNotice" type="button" class="danger">Delete Recurring</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Recurring Notices</h3>
+                <button id="loadRecurringNotices" class="secondary">Refresh</button>
+              </div>
+              <div id="recurringNoticesList" class="list"></div>
+            </div>
+
+            <div class="grid two">
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Published Notices</h3>
+                  <button id="loadPublishedNotices" class="secondary">Refresh</button>
+                </div>
+                <div id="publishedNoticesList" class="list"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Visible Notices</h3>
+                  <button id="loadVisibleAdminNotices" class="secondary">Refresh</button>
+                </div>
+                <div id="visibleAdminNoticesList" class="list"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Archived Notices</h3>
+                <button id="loadArchivedNotices" class="secondary">Refresh</button>
+              </div>
+              <div id="archivedNoticesList" class="list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="billing" class="view">
+          <div class="module-layout">
+            <div class="panel module-context">
+              <div>
+                <h3>Billing, Deposit Ledger, And Exit Testing</h3>
+                <p id="billingPropertyLabel" class="hint">Select a property from Owner, then select a tenancy from Modules. Cycles are payable records; deposits are calculated from movement rows.</p>
+              </div>
+              <div class="panel-actions">
+                <span id="billingTenancyLabel" class="badge">No tenancy selected</span>
+                <button id="refreshBilling" type="button" class="secondary">Refresh Billing</button>
+                <button id="clearBillingTenancy" type="button" class="secondary">Unselect Tenancy</button>
+              </div>
+            </div>
+
+            <div class="billing-workbench" data-authority="admin">
+              <div class="panel selector-panel">
+                <div class="panel-head">
+                  <h3>Property Tenancies</h3>
+                  <button id="loadBillingTenancies" type="button" class="secondary">Refresh</button>
+                </div>
+                <div id="billingTenanciesList" class="list tenancy-selector-list"></div>
+              </div>
+
+              <div class="workspace">
+                <div class="panel selected-context">
+                  <div>
+                    <p class="eyebrow">Selected for billing</p>
+                    <h3 id="billingSelectedTenancyTitle">No tenancy selected</h3>
+                    <p id="billingSelectedTenancyMeta" class="hint">Choose a tenancy from the list to load cycles, deposit ledger, and exit actions.</p>
+                  </div>
+                  <div class="panel-actions">
+                    <button id="loadManagedCycles" type="button" class="secondary">Cycles</button>
+                    <button id="loadManagedDeposit" type="button" class="secondary">Deposit</button>
+                    <button id="loadManagedExitRequests" type="button" class="secondary">Exit Requests</button>
+                    <button id="clearBillingTenancyInline" type="button" class="secondary">Unselect</button>
+                  </div>
+                </div>
+
+                <div class="grid two">
+                  <div class="panel">
+                    <div class="panel-head">
+                      <h3>Managed Billing Cycles</h3>
+                    </div>
+                    <div id="managedBillingCyclesList" class="list"></div>
+                  </div>
+
+                  <div class="panel">
+                    <div class="panel-head">
+                      <h3>Managed Deposit Ledger</h3>
+                    </div>
+                    <div id="managedDepositView" class="list"></div>
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel-head">
+                    <h3>Tenancy Line Items</h3>
+                    <button id="loadManagedLineItems" type="button" class="secondary">Refresh Lines</button>
+                  </div>
+                  <p class="hint">Grouped by billing cycle. Pending rows are shown under Upcoming cycle and will be attached when the next cycle is generated.</p>
+                  <div id="managedBillingLineItemsList" class="list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid two admin-action-grid" data-authority="admin">
+              <div class="panel action-group">
+                <div class="panel-head">
+                  <h3>Cycle Adjustments</h3>
+                  <span class="badge">Selected tenancy</span>
+                </div>
+                <form class="stack compact" id="addBillingExtraChargesForm">
+                  <h3>New Charge For Tenancy</h3>
+                  <p class="hint">If the selected cycle is already paid, this charge is stored for the next generated cycle.</p>
+                  <label>Selected tenancy
+                    <input name="selectedTenancyLabel" placeholder="Select a tenancy from Property Tenancies" readonly />
+                  </label>
+                  <div class="row">
+                    <label>Label
+                      <input name="label" placeholder="Charge label, e.g. Damage repair" required />
+                    </label>
+                    <label>Amount
+                      <input name="amountRupees" type="number" min="1" step="0.01" placeholder="Amount in rupees" required />
+                    </label>
+                  </div>
+                  <label>Description
+                    <textarea name="description" rows="3" placeholder="Optional charge details"></textarea>
+                  </label>
+                  <label class="check-line">
+                    <input name="adjustFromDeposit" type="checkbox" />
+                    <span>Adjust from deposit instead of adding to cycle payable</span>
+                  </label>
+                  <button>Add Charge</button>
+                </form>
+
+                <form class="stack compact divided" id="addBillingDiscountForm">
+                  <h3>New Discount For Tenancy</h3>
+                  <p class="hint">Discounts entered after a paid cycle are picked up by the next generated cycle.</p>
+                  <label>Selected tenancy
+                    <input name="selectedTenancyLabel" placeholder="Select a tenancy from Property Tenancies" readonly />
+                  </label>
+                  <div class="row">
+                    <label>Label
+                      <input name="label" placeholder="Discount label, e.g. Goodwill discount" required />
+                    </label>
+                    <label>Amount
+                      <input name="amountRupees" type="number" min="1" step="0.01" placeholder="Amount in rupees" required />
+                    </label>
+                  </div>
+                  <label>Description
+                    <textarea name="description" rows="3" placeholder="Optional discount details"></textarea>
+                  </label>
+                  <button>Add Discount</button>
+                </form>
+              </div>
+
+              <div class="panel action-group">
+                <div class="panel-head">
+                  <h3>Selected Line And Payment</h3>
+                  <span class="badge">Use a line or cycle card</span>
+                </div>
+                <form class="stack compact" id="adjustBillingLineForm">
+                  <h3>Line Actions</h3>
+                  <label>Billing cycle ID
+                    <input name="billingCycleId" placeholder="Required only for attached cycle lines; leave blank for pending lines" />
+                  </label>
+                  <label>Line item ID
+                    <input name="lineItemId" placeholder="Line item UUID selected from a cycle" required />
+                  </label>
+                  <label>New amount
+                    <input name="amountRupees" type="number" min="0" step="0.01" placeholder="Optional for deposit/cycle switch" />
+                  </label>
+                  <div class="row">
+                    <button name="action" value="adjust">Adjust</button>
+                    <button name="action" value="clear" class="secondary">Clear</button>
+                  </div>
+                  <div class="row">
+                    <button name="action" value="deposit" class="secondary">From Deposit</button>
+                    <button name="action" value="bill" class="secondary">Add To Cycle</button>
+                  </div>
+                </form>
+
+              </div>
+            </div>
+
+            <form class="panel stack compact payment-panel" id="recordPaymentSuccessForm" data-authority="admin tenant">
+              <div class="panel-head">
+                <h3>Dummy Tenant Payment</h3>
+                <span class="badge">Temporary test action</span>
+              </div>
+              <div class="row">
+                <label>Billing cycle ID
+                  <input name="billingCycleId" placeholder="Cycle UUID selected from cycles list" required />
+                </label>
+                <label>Paid amount
+                  <input name="paidAmountRupees" type="number" min="1" step="0.01" placeholder="Must match cycle total" required />
+                </label>
+              </div>
+              <button>Record Payment</button>
+            </form>
+
+            <form class="panel stack compact payment-panel" id="createPaymentOrderForm" data-authority="tenant">
+              <div class="panel-head">
+                <h3>Razorpay Order</h3>
+                <span class="badge">Real provider order</span>
+              </div>
+              <div class="row">
+                <label>Billing cycle ID
+                  <input name="billingCycleId" placeholder="Cycle UUID selected from cycles list" required />
+                </label>
+                <label>Provider
+                  <select name="provider">
+                    <option>RAZORPAY</option>
+                  </select>
+                </label>
+              </div>
+              <label>Idempotency key
+                <input name="idempotencyKey" placeholder="Unique key for this create-order attempt" required />
+              </label>
+              <label>Razorpay key ID
+                <input name="razorpayKeyId" placeholder="rzp_test_xxxxxxxxx" required />
+              </label>
+              <div class="row">
+                <button type="button" id="generatePaymentIdempotencyKey" class="secondary">Generate Key</button>
+                <button>Create Provider Order</button>
+              </div>
+              <p class="hint">Use the same key to confirm idempotency returns the same payment order. Checkout verification marks the cycle paid after Razorpay returns a valid signature.</p>
+            </form>
+
+            <div class="grid two" data-authority="admin">
+              <form class="panel stack compact" id="depositCorrectionForm">
+                <h3>Manual Deposit Corrections</h3>
+                <label>Tenancy ID
+                  <input name="tenancyId" placeholder="Tenancy UUID selected from tenancies list" required />
+                </label>
+                <label>Reason
+                  <input name="reason" placeholder="Reason, e.g. Manual correction" required />
+                </label>
+                <label>Amount
+                  <input name="amountRupees" type="number" min="0" step="0.01" placeholder="Required for add/deduct; ignored for settle" />
+                </label>
+                <div class="row">
+                  <button name="action" value="add">Add Correction</button>
+                  <button name="action" value="deduct" class="secondary">Deduct Correction</button>
+                </div>
+                <button name="action" value="settle" class="danger">Settle Remaining Balance</button>
+                <p class="hint">Direct ledger corrections only. Cycle charges should normally be added from the cycle adjustment forms.</p>
+              </form>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h3>Property Exit Requests</h3>
+                  <div class="panel-actions">
+                    <button id="loadPropertyExitRequests" type="button" class="secondary">Property</button>
+                  </div>
+                </div>
+                <div id="adminExitRequestsList" class="list"></div>
+              </div>
+            </div>
+
+            <div class="grid two" data-authority="admin">
+              <form class="panel stack compact" id="adminExitRequestActionForm">
+                <h3>Admin Exit Actions</h3>
+                <label>Exit request ID
+                  <input name="requestId" placeholder="Exit request UUID selected from list" required />
+                </label>
+                <label>Approved checkout date
+                  <input name="approvedCheckoutDate" type="date" />
+                </label>
+                <label>Admin notes
+                  <textarea name="adminNotes" rows="3" placeholder="Approval or rejection notes"></textarea>
+                </label>
+                <div class="row">
+                  <label>Approved cycle total
+                    <input name="finalBillingAmountRupees" type="number" min="0" step="0.01" placeholder="Leave blank to keep current total" />
+                  </label>
+                  <label>Deposit deduction
+                    <input name="depositSettlementAmountRupees" type="number" min="0" step="0.01" placeholder="Premature exit deposit deduction" />
+                  </label>
+                </div>
+                <label class="check-line">
+                  <input name="depositPayable" type="checkbox" />
+                  <span>Deposit payable</span>
+                </label>
+                <div class="row">
+                  <button name="action" value="approve">Approve</button>
+                  <button name="action" value="reject" class="secondary">Reject</button>
+                </div>
+                <button name="action" value="execute" class="danger">Execute Due Exit</button>
+              </form>
+            </div>
+
+            <div class="grid two">
+              <div class="panel" data-authority="tenant">
+                <div class="panel-head">
+                  <h3>My Active Billing Cycles</h3>
+                  <button id="loadMyCycles" type="button" class="secondary">Refresh</button>
+                </div>
+                <div id="myBillingCyclesList" class="list"></div>
+              </div>
+
+              <div class="panel" data-authority="tenant">
+                <div class="panel-head">
+                  <h3>My Active Deposit Ledger</h3>
+                  <div class="panel-actions">
+                    <button id="loadMyDeposit" type="button" class="secondary">Deposit</button>
+                  </div>
+                </div>
+                <div id="myDepositView" class="list"></div>
+              </div>
+            </div>
+
+            <div class="panel" data-authority="tenant">
+              <div class="panel-head">
+                <h3>My Billing Line Items</h3>
+                <button id="loadMyLineItems" type="button" class="secondary">Refresh Lines</button>
+              </div>
+              <p class="hint">Upcoming cycle shows pending charges or discounts that are not attached to a generated cycle yet.</p>
+              <div id="myBillingLineItemsList" class="list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tenant" class="view">
+          <div class="grid two">
+            <div class="panel">
+              <h3>Tenant Home</h3>
+              <button id="tenantLoadProfile">Load My Profile</button>
+              <pre id="tenantProfile" class="code"></pre>
+            </div>
+            <div class="panel">
+              <h3>Active Tenancy</h3>
+              <button id="tenantLoadActiveTenancy">Load Active Tenancy</button>
+              <pre id="tenantActiveTenancy" class="code"></pre>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Past Tenancies</h3>
+              <button id="tenantLoadPastTenancies" type="button" class="secondary">Refresh</button>
+            </div>
+            <div id="tenantPastTenanciesList" class="list"></div>
+          </div>
+
+          <div class="grid two">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Past Billing Cycles</h3>
+              </div>
+              <div id="tenantPastBillingHistory" class="list"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Past Deposit Ledger</h3>
+              </div>
+              <div id="tenantPastDepositHistory" class="list"></div>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <form class="panel stack compact" id="requestNormalExitForm">
+              <h3>Tenant Normal Exit Request</h3>
+              <label>Reason
+                <textarea name="reason" rows="3" placeholder="Optional tenant reason"></textarea>
+              </label>
+              <button>Request Normal Exit</button>
+            </form>
+
+            <form class="panel stack compact" id="requestPrematureExitForm">
+              <h3>Tenant Premature Exit Request</h3>
+              <label>Requested checkout date
+                <input name="requestedCheckoutDate" type="date" required />
+              </label>
+              <label>Reason
+                <textarea name="reason" rows="3" placeholder="Why tenant wants early checkout"></textarea>
+              </label>
+              <button>Request Premature Exit</button>
+            </form>
+          </div>
+
+          <div class="grid two">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Exit Requests</h3>
+                <div class="panel-actions">
+                  <button id="loadTenantExitRequests" type="button" class="secondary">Mine</button>
+                </div>
+              </div>
+              <div id="exitRequestsList" class="list"></div>
+            </div>
+
+            <form class="panel stack compact" id="exitRequestActionForm" data-authority="tenant">
+              <h3>Tenant Exit Actions</h3>
+              <label>Exit request ID
+                <input name="requestId" placeholder="Exit request UUID selected from list" required />
+              </label>
+              <button name="action" value="cancel" class="secondary">Cancel Mine</button>
+            </form>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Available Notices</h3>
+              <button id="tenantLoadVisibleNotices" class="secondary">Refresh</button>
+            </div>
+            <div id="tenantVisibleNoticesList" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Tenant Notifications</h3>
+              <div class="panel-actions">
+                <span id="tenantUnreadCount" class="badge">Unread 0</span>
+                <button id="markAllTenantNotificationsRead" type="button" class="secondary">Mark All Read</button>
+                <button id="refreshTenantNotifications" type="button" class="secondary">Refresh</button>
+              </div>
+            </div>
+            <div id="tenantNotificationsList" class="list"></div>
+          </div>
+        </section>
+
+        <section id="raw" class="view">
+          <form class="panel" id="rawRequestForm">
+            <h3>Raw API Request</h3>
+            <div class="row">
+              <select name="method" aria-label="HTTP method" title="HTTP method">
+                <option>GET</option>
+                <option>POST</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+              </select>
+              <input name="path" placeholder="API path, e.g. /api/v1/auth/me" required />
+            </div>
+            <textarea name="body" rows="10" placeholder='JSON body, e.g. {"phone":"9876543210"}'></textarea>
+            <button>Send</button>
+          </form>
+        </section>
+
+        <section class="panel output-panel">
+          <div class="panel-head">
+            <h3>Last Response</h3>
+            <div class="panel-actions">
+              <button id="toggleOutput" type="button" class="secondary">Minimize</button>
+              <button id="clearOutput" class="secondary">Clear</button>
+            </div>
+          </div>
+          <div id="outputBody" class="collapsible-section">
+            <pre id="output" class="code"></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./firebase-auth.js"></script>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
