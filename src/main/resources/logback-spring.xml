@@ -155,6 +155,19 @@
         </rollingPolicy>
     </appender>
 
+    <appender name="REMINDER" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/modules/reminder.log</file>
+        <encoder>
+            <pattern>${MODULE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/modules/archive/reminder.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
     <logger name="org.hibernate.SQL" level="${SQL_LOG_LEVEL:-WARN}" additivity="false">
         <appender-ref ref="SQL"/>
     </logger>
@@ -175,6 +188,14 @@
         <appender-ref ref="APP"/>
     </logger>
     <logger name="com.khatiyan.d_modules.tenancy.service.TenancyExitSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.concerns.service.ConcernSchedulerService" level="INFO" additivity="false">
+        <appender-ref ref="SCHEDULER"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.reminder.service.ReminderSchedulerService" level="INFO" additivity="false">
         <appender-ref ref="SCHEDULER"/>
         <appender-ref ref="APP"/>
     </logger>
@@ -209,6 +230,10 @@
     </logger>
     <logger name="com.khatiyan.d_modules.notification" level="${NOTIFICATION_LOG_LEVEL:-INFO}" additivity="false">
         <appender-ref ref="NOTIFICATION"/>
+        <appender-ref ref="APP"/>
+    </logger>
+    <logger name="com.khatiyan.d_modules.reminder" level="${REMINDER_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="REMINDER"/>
         <appender-ref ref="APP"/>
     </logger>
 

@@ -3,6 +3,8 @@ package com.khatiyan.d_modules.billing.service;
 import java.time.LocalDate;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +30,17 @@ public class BillingCycleSchedulerService {
             @Value("${app.billing.monthly-cycle-generation-batch-size:50}") int monthlyCycleBatchSize) {
         this.billingCycleService = billingCycleService;
         this.monthlyCycleBatchSize = monthlyCycleBatchSize;
+    }
+
+    /**
+     * Creates the next monthly billing cycle for due active monthly tenancies.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void runBillingCatchUpOnStartup() {
+        log.info("Billing scheduler startup catch-up started");
+        generateDueMonthlyCycles();
+        markPastDueCycles();
+        recalculateLateFees();
     }
 
     /**

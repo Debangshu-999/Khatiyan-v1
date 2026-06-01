@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,8 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationAction;
+import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
@@ -42,16 +45,19 @@ public class BillingCycleLineItemService {
     private final BillingCycleLineItemRepository lineItemRepository;
     private final PropertyModule propertyModule;
     private final DepositManagerService depositManagerService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BillingCycleLineItemService(
             BillingCycleRepository billingCycleRepository,
             BillingCycleLineItemRepository lineItemRepository,
             PropertyModule propertyModule,
-            DepositManagerService depositManagerService) {
+            DepositManagerService depositManagerService,
+            ApplicationEventPublisher eventPublisher) {
         this.billingCycleRepository = billingCycleRepository;
         this.lineItemRepository = lineItemRepository;
         this.propertyModule = propertyModule;
         this.depositManagerService = depositManagerService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -110,6 +116,7 @@ public class BillingCycleLineItemService {
                     displayOrder);
 
             lineItemRepository.save(lineItem);
+            publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CREATED);
             displayOrder++;
         }
 
@@ -142,6 +149,7 @@ public class BillingCycleLineItemService {
         if (lineItem.getStatus() == BillingCycleLineItemStatus.ADDED) {
             calculateCycle(cycle);
         }
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CREATED);
 
         log.info(
                 "Billing discount added tenancyId={} sourceBillingCycleId={} lineItemId={} actorUserId={} amount={} status={}",
@@ -196,6 +204,7 @@ public class BillingCycleLineItemService {
         syncDepositMovementAfterLineChange(actorUserId, cycle, lineItem);
 
         calculateCycle(cycle);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.ADJUSTED);
 
         log.info(
                 "Billing line adjusted billingCycleId={} lineItemId={} actorUserId={} amount={}",
@@ -220,6 +229,7 @@ public class BillingCycleLineItemService {
         lineItem.clear(actorUserId);
 
         calculateCycle(cycle);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CLEARED);
 
         log.info(
                 "Billing line cleared billingCycleId={} lineItemId={} actorUserId={}",
@@ -254,6 +264,7 @@ public class BillingCycleLineItemService {
                 lineItem.getSettlementAmountPaise(),
                 lineItem.getLabel());
         calculateCycle(cycle);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.MOVED_TO_DEPOSIT);
 
         log.info(
                 "Billing line adjusted from deposit billingCycleId={} lineItemId={} actorUserId={} amount={}",
@@ -283,6 +294,7 @@ public class BillingCycleLineItemService {
         lineItem.adjustToBill(request.amountPaise(), actorUserId);
         depositManagerService.clearBillingLineMovement(actorUserId, cycle.getTenancyId(), lineItem.getId());
         calculateCycle(cycle);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.MOVED_TO_BILL);
 
         log.info(
                 "Billing line adjusted to bill billingCycleId={} lineItemId={} actorUserId={} amount={}",
@@ -307,6 +319,7 @@ public class BillingCycleLineItemService {
         BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
 
         lineItem.adjust(requiredAmount(request), actorUserId);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.ADJUSTED);
 
         log.info(
                 "Pending billing line adjusted tenancyId={} lineItemId={} actorUserId={} amount={}",
@@ -330,6 +343,7 @@ public class BillingCycleLineItemService {
         BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
 
         lineItem.clear(actorUserId);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CLEARED);
 
         log.info(
                 "Pending billing line cleared tenancyId={} lineItemId={} actorUserId={}",
@@ -353,6 +367,7 @@ public class BillingCycleLineItemService {
         BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
 
         lineItem.adjustFromDeposit(request.amountPaise(), actorUserId);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.MOVED_TO_DEPOSIT);
 
         log.info(
                 "Pending billing line adjusted from deposit tenancyId={} lineItemId={} actorUserId={} amount={}",
@@ -377,6 +392,7 @@ public class BillingCycleLineItemService {
         BillingCycleLineItem lineItem = getPendingLineItem(tenancyId, lineItemId);
 
         lineItem.adjustToBill(request.amountPaise(), actorUserId);
+        publishLineItemEvent(lineItem, BillingLineItemNotificationAction.MOVED_TO_BILL);
 
         log.info(
                 "Pending billing line adjusted to bill tenancyId={} lineItemId={} actorUserId={} amount={}",
@@ -612,5 +628,11 @@ public class BillingCycleLineItemService {
         }
 
         return description.trim();
+    }
+
+    private void publishLineItemEvent(
+            BillingCycleLineItem lineItem,
+            BillingLineItemNotificationAction action) {
+        eventPublisher.publishEvent(BillingLineItemNotificationEvent.from(lineItem, action));
     }
 }

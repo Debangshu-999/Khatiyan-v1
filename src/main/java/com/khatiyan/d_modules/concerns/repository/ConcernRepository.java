@@ -52,7 +52,10 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         SELECT c
         FROM Concern c
         WHERE c.assignedToUserId = :actorUserId
-          AND c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
+          AND c.status IN (
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
+          )
         ORDER BY c.updatedAt DESC
     """)
     List<Concern> findInProgressByAssignedToUserId(UUID actorUserId);
@@ -63,6 +66,7 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         WHERE c.raisedByUserId = :tenantUserId
           AND c.status IN (
               com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
               com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS,
               com.khatiyan.d_modules.concerns.model.ConcernStatus.RESOLVED
           )
@@ -87,4 +91,14 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         ORDER BY c.reopenUntil ASC
     """)
     List<Concern> findResolvedConcernsPastReopenWindow(Instant now);
+
+    @Query("""
+        SELECT c
+        FROM Concern c
+        WHERE c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN
+          AND c.assignedToUserId IS NULL
+          AND c.createdAt <= :createdBefore
+        ORDER BY c.createdAt ASC
+    """)
+    List<Concern> findOpenUnassignedCreatedBefore(Instant createdBefore);
 }

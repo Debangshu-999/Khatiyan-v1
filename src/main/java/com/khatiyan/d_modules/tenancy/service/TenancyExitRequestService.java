@@ -142,7 +142,7 @@ public class TenancyExitRequestService {
                     payload.depositPayable(),
                     depositSettlementAmountPaise,
                     payload.adminNotes());
-            tenancyService.markOnNotice(request.getTenancyId());
+            tenancyService.markOnNotice(request.getTenancyId(), request.getApprovedCheckoutDate());
         } else {
             billingModule.preparePrematureExitBilling(actorUserId, request.getTenancyId());
             logExitApprovalBillingInput(actorUserId, request, payload);
@@ -163,7 +163,7 @@ public class TenancyExitRequestService {
                     payload.depositPayable(),
                     depositSettlementAmountPaise,
                     payload.adminNotes());
-            tenancyService.markOnPrematureNotice(request.getTenancyId());
+            tenancyService.markOnPrematureNotice(request.getTenancyId(), request.getApprovedCheckoutDate());
         }
 
         log.info("Tenancy exit request approved requestId={} actorUserId={}", requestId, actorUserId);

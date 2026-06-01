@@ -468,6 +468,35 @@ public class BillingCycleService {
         return updatedCount;
     }
 
+    @Transactional(readOnly = true)
+    public List<BillingCycleResponse> findCyclesDueTodayForReminders(LocalDate today) {
+        return billingCycleRepository.findCyclesDueToday(
+                List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
+                today)
+                .stream()
+                .map(cycle -> toResponse(cycle))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<BillingCycleResponse> findCyclesDueBetweenForReminders(LocalDate startDate, LocalDate endDate) {
+        return billingCycleRepository.findCyclesDueBetween(
+                List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
+                startDate,
+                endDate)
+                .stream()
+                .map(cycle -> toResponse(cycle))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<BillingCycleResponse> findOverdueCyclesForReminders() {
+        return billingCycleRepository.findOverdueCycles()
+                .stream()
+                .map(cycle -> toResponse(cycle))
+                .toList();
+    }
+
     private boolean applyLateFeeIfNeeded(BillingCycle cycle, LocalDate today) {
         if (cycle.isPaid() || cycle.isCancelled()) {
             return false;

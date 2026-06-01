@@ -862,8 +862,8 @@
                   <label>Concern ID
                     <input name="concernId" placeholder="Concern UUID" required />
                   </label>
-                  <label>Assign to user ID
-                    <input name="assignedToUserId" placeholder="Owner/manager user UUID" required />
+                  <label>Assign to manager user ID
+                    <input name="assignedToUserId" placeholder="Manager user UUID" required />
                   </label>
                   <button>Assign Concern</button>
                 </form>
@@ -874,6 +874,7 @@
                   <label>Status
                     <select name="status">
                       <option>OPEN</option>
+                      <option>UNDER_REVIEW</option>
                       <option>IN_PROGRESS</option>
                     </select>
                   </label>

@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.notification.service;
 
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +38,15 @@ public class NotificationSchedulerService {
         } else {
             log.info("Notification scheduler found no push notifications to deliver");
         }
+    }
+
+    /**
+     * Archives old in-app notification recipient rows.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void archiveOldNotificationsOnStartup() {
+        log.info("Notification cleanup scheduler startup catch-up started");
+        archiveOldNotifications();
     }
 
     /**

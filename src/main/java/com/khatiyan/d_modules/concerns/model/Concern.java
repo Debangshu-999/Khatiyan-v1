@@ -150,6 +150,7 @@ public class Concern extends BaseEntity {
     public void assignTo(UUID assignedToUserId) {
         ensureOpenForWork();
         this.assignedToUserId = assignedToUserId;
+        this.status = ConcernStatus.UNDER_REVIEW;
     }
 
     public void markOpen() {
@@ -161,8 +162,17 @@ public class Concern extends BaseEntity {
         this.status = ConcernStatus.OPEN;
     }
 
+    public void markUnderReview(UUID assignedToUserId) {
+        ensureOpenForWork();
+        this.assignedToUserId = assignedToUserId;
+        this.status = ConcernStatus.UNDER_REVIEW;
+    }
+
     public void markInProgress(UUID assignedToUserId) {
         ensureOpenForWork();
+        if (this.assignedToUserId != null && !this.assignedToUserId.equals(assignedToUserId)) {
+            throw new IllegalStateException("Only the assigned user can mark this concern in progress");
+        }
         this.assignedToUserId = assignedToUserId;
         this.status = ConcernStatus.IN_PROGRESS;
     }

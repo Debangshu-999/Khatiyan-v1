@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.concerns;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -71,5 +72,9 @@ public class ConcernModule {
 
     public int closeExpiredResolvedConcerns() {
         return concernService.closeExpiredResolvedConcerns();
+    }
+
+    public List<ConcernResponse> findOpenUnassignedCreatedBefore(Instant createdBefore) {
+        return concernService.findOpenUnassignedCreatedBefore(createdBefore);
     }
 }

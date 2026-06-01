@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.tenancy.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +61,16 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
         ORDER BY tenancy.createdAt ASC
         """)
     List<Tenancy> findActiveBillingStartedByBillingType(TenancyBillingType billingType);
+
+    @Query("""
+        SELECT tenancy
+        FROM Tenancy tenancy
+        WHERE tenancy.active = true
+          AND tenancy.endDate IS NOT NULL
+          AND tenancy.endDate BETWEEN :startDate AND :endDate
+        ORDER BY tenancy.endDate ASC, tenancy.createdAt ASC
+        """)
+    List<Tenancy> findActiveEndingBetween(LocalDate startDate, LocalDate endDate);
 
     @Query("""
         SELECT COUNT(t) > 0 FROM Tenancy t

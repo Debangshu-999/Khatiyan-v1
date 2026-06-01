@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.notice.service;
 
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +45,15 @@ public class NoticeSchedulerService {
         } else {
             log.info("Notice scheduler found no recurring notices to generate");
         }
+    }
+
+    /**
+     * Archives expired published notices for management history.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void archiveExpiredNoticesOnStartup() {
+        log.info("Notice archive scheduler startup catch-up started");
+        archiveExpiredNotices();
     }
 
     /**

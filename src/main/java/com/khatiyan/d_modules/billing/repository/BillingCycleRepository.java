@@ -114,6 +114,45 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     List<BillingCycle> findCyclesEligibleForLateFee(List<BillingCycleStatus> statuses, LocalDate today);
 
     /**
+     * Finds open cycles whose due date is today for reminder generation.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.status IN :statuses
+          AND cycle.rentDueDate = :today
+        ORDER BY cycle.rentDueDate ASC, cycle.createdAt ASC
+        """)
+    List<BillingCycle> findCyclesDueToday(List<BillingCycleStatus> statuses, LocalDate today);
+
+    /**
+     * Finds open cycles whose due dates fall inside the reminder look-ahead
+     * window.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.status IN :statuses
+          AND cycle.rentDueDate BETWEEN :startDate AND :endDate
+        ORDER BY cycle.rentDueDate ASC, cycle.createdAt ASC
+        """)
+    List<BillingCycle> findCyclesDueBetween(
+            List<BillingCycleStatus> statuses,
+            LocalDate startDate,
+            LocalDate endDate);
+
+    /**
+     * Finds overdue cycles for reminder generation.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.status = com.khatiyan.d_modules.billing.model.BillingCycleStatus.OVERDUE
+        ORDER BY cycle.rentDueDate ASC, cycle.createdAt ASC
+        """)
+    List<BillingCycle> findOverdueCycles();
+
+    /**
      * Finds currently open cycles for a property.
      */
     @Query("""

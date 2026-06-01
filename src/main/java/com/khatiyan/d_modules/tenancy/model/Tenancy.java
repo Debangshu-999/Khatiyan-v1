@@ -174,6 +174,17 @@ public class Tenancy extends BaseEntity {
         this.status = TenancyStatus.ON_PREMATURE_NOTICE;
     }
 
+    public void scheduleEndDate(LocalDate endDate) {
+        ensureActive();
+        if (endDate == null) {
+            throw new IllegalArgumentException("end_date is required");
+        }
+        if (endDate.isBefore(this.startDate)) {
+            throw new IllegalArgumentException("end_date cannot be before start_date");
+        }
+        this.endDate = endDate;
+    }
+
     public void transferRoom(UUID newRoomId, long newRentAmountPaise) {
         ensureActive();
         ensureMonthly();

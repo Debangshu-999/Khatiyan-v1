@@ -152,7 +152,8 @@ public class ConcernService {
     }
 
     /**
-     * Lists in-progress concerns currently undertaken by the actor.
+     * Lists concerns currently assigned to the actor, whether under review or
+     * actively in progress.
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listUndertakenConcerns(UUID actorUserId) {
@@ -218,6 +219,7 @@ public class ConcernService {
         try {
             switch (request.status()) {
                 case OPEN -> concern.markOpen();
+                case UNDER_REVIEW -> concern.markUnderReview(actorUserId);
                 case IN_PROGRESS -> concern.markInProgress(actorUserId);
                 default -> throw new ValidationException("Use resolve or close-expired flow for this concern status");
             }
@@ -321,5 +323,13 @@ public class ConcernService {
         }
 
         return concerns.size();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConcernResponse> findOpenUnassignedCreatedBefore(Instant createdBefore) {
+        return concernRepository.findOpenUnassignedCreatedBefore(createdBefore)
+                .stream()
+                .map(concern -> toResponse(concern))
+                .toList();
     }
 }

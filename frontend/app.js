@@ -85,6 +85,10 @@ function isAdminUser() {
   return store.user?.role === "OWNER";
 }
 
+function isOwnerUser() {
+  return store.user?.role === "OWNER";
+}
+
 function isTenantUser() {
   return store.user?.role === "TENANT"
     || store.user?.role === "USER"
@@ -2517,6 +2521,7 @@ function updateDepositSettlementInput(form) {
 function renderConcerns(selector, concerns, mode = "tenant") {
   const list = $(selector);
   list.innerHTML = "";
+  const canAssignConcern = mode === "admin" && isOwnerUser();
 
   if (!concerns.length) {
     list.innerHTML = `
@@ -2546,8 +2551,10 @@ function renderConcerns(selector, concerns, mode = "tenant") {
       <div class="item-meta">photos: ${(concern.photos || []).length}</div>
       <div class="item-actions">
         <button class="secondary" type="button" data-action="use-concern">Use In Forms</button>
+        ${canAssignConcern && concern.status !== "RESOLVED" && concern.status !== "CLOSED" ? `<button class="secondary" type="button" data-action="assign-concern">Assign To</button>` : ""}
         ${mode === "admin" && concern.status === "OPEN" ? `<button class="secondary" type="button" data-action="take-concern">Take</button>` : ""}
-        ${mode === "admin" && concern.status === "IN_PROGRESS" ? `<button class="secondary" type="button" data-action="release-concern">Release</button>` : ""}
+        ${mode === "admin" && concern.status === "UNDER_REVIEW" ? `<button class="secondary" type="button" data-action="start-concern">Mark In Progress</button>` : ""}
+        ${mode === "admin" && (concern.status === "UNDER_REVIEW" || concern.status === "IN_PROGRESS") ? `<button class="secondary" type="button" data-action="release-concern">Release</button>` : ""}
         ${mode === "admin" && concern.status !== "RESOLVED" && concern.status !== "CLOSED" ? `<button class="secondary" type="button" data-action="fill-resolve">Fill Resolve</button>` : ""}
         ${mode === "tenant" && concern.status === "RESOLVED" ? `<button class="secondary" type="button" data-action="fill-reopen">Fill Reopen</button>` : ""}
       </div>
@@ -2558,9 +2565,32 @@ function renderConcerns(selector, concerns, mode = "tenant") {
       setOutput("Concern selected", concern);
     });
 
+    const assignButton = item.querySelector("[data-action='assign-concern']");
+    if (assignButton) {
+      assignButton.addEventListener("click", () => {
+        fillConcernActionForms(concern);
+        const assignForm = $("#assignConcernForm");
+        assignForm.assignedToUserId.focus();
+        assignForm.scrollIntoView({ behavior: "smooth", block: "center" });
+        setOutput("Concern ready to assign", {
+          concernId: concern.id,
+          propertyId: concern.propertyId,
+          currentAssignedToUserId: concern.assignedToUserId || null,
+        });
+      });
+    }
+
     const takeButton = item.querySelector("[data-action='take-concern']");
     if (takeButton) {
       takeButton.addEventListener("click", async () => {
+        await updateConcernStatus(concern.id, "UNDER_REVIEW");
+        loadAdminConcerns();
+      });
+    }
+
+    const startButton = item.querySelector("[data-action='start-concern']");
+    if (startButton) {
+      startButton.addEventListener("click", async () => {
         await updateConcernStatus(concern.id, "IN_PROGRESS");
         loadAdminConcerns();
       });

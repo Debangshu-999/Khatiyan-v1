@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.tenancy;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,6 +46,12 @@ public class TenancyModule {
 
     public List<TenancyResponse> findActiveBillingStartedMonthlyTenancies() {
         return tenancyService.findActiveBillingStartedMonthlyTenancies().stream()
+            .map(tenancy -> TenancyResponse.from(tenancy))
+            .toList();
+    }
+
+    public List<TenancyResponse> findActiveEndingBetween(LocalDate startDate, LocalDate endDate) {
+        return tenancyService.findActiveEndingBetween(startDate, endDate).stream()
             .map(tenancy -> TenancyResponse.from(tenancy))
             .toList();
     }

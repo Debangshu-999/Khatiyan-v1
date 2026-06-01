@@ -362,11 +362,37 @@ public class TenancyService {
     }
 
     @Transactional
+    public void markOnNotice(UUID tenancyId, LocalDate endDate) {
+        Tenancy tenancy = getActiveTenancy(tenancyId);
+        tenancy.markOnNotice();
+        tenancy.scheduleEndDate(endDate);
+
+        log.info(
+                "Tenancy marked on notice tenancyId={} userId={} plannedEndDate={}",
+                tenancy.getId(),
+                tenancy.getUserId(),
+                tenancy.getEndDate());
+    }
+
+    @Transactional
     public void markOnPrematureNotice(UUID tenancyId) {
         Tenancy tenancy = getActiveTenancy(tenancyId);
         tenancy.markOnPrematureNotice();
 
         log.info("Tenancy marked on premature notice tenancyId={} userId={}", tenancy.getId(), tenancy.getUserId());
+    }
+
+    @Transactional
+    public void markOnPrematureNotice(UUID tenancyId, LocalDate endDate) {
+        Tenancy tenancy = getActiveTenancy(tenancyId);
+        tenancy.markOnPrematureNotice();
+        tenancy.scheduleEndDate(endDate);
+
+        log.info(
+                "Tenancy marked on premature notice tenancyId={} userId={} plannedEndDate={}",
+                tenancy.getId(),
+                tenancy.getUserId(),
+                tenancy.getEndDate());
     }
 
     @Transactional(readOnly = true)
@@ -421,6 +447,11 @@ public class TenancyService {
     @Transactional(readOnly = true)
     public List<Tenancy> findActiveBillingStartedMonthlyTenancies() {
         return tenancyRepository.findActiveBillingStartedByBillingType(TenancyBillingType.MONTHLY);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Tenancy> findActiveEndingBetween(LocalDate startDate, LocalDate endDate) {
+        return tenancyRepository.findActiveEndingBetween(startDate, endDate);
     }
 
     @Transactional(readOnly = true)

@@ -62,6 +62,7 @@ spring:
       - classpath:db/migration/notification
       - classpath:db/migration/payment
       - classpath:db/migration/billing
+      - classpath:db/migration/reminder
 
   jackson:
     default-property-inclusion: non_null
@@ -182,6 +183,9 @@ app:
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}
     archive-expired-cron: ${NOTICE_ARCHIVE_EXPIRED_CRON:0 */2 * * * *}
     archive-expired-zone: ${NOTICE_ARCHIVE_EXPIRED_ZONE:Asia/Kolkata}
+  concern:
+    close-expired-resolved-cron: ${CONCERN_CLOSE_EXPIRED_RESOLVED_CRON:0 30 2 * * *}
+    close-expired-resolved-zone: ${CONCERN_CLOSE_EXPIRED_RESOLVED_ZONE:Asia/Kolkata}
   tenancy:
     exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 5 0 * * *}
     exit-execution-zone: ${TENANCY_EXIT_EXECUTION_ZONE:Asia/Kolkata}
@@ -209,6 +213,12 @@ app:
     cleanup-zone: ${NOTIFICATION_CLEANUP_ZONE:Asia/Kolkata}
     kafka:
       push-topic: ${NOTIFICATION_PUSH_TOPIC:notification.push.delivery}
+  reminder:
+    scan-cron: ${REMINDER_SCAN_CRON:0 40 0 * * *}
+    scan-zone: ${REMINDER_SCAN_ZONE:Asia/Kolkata}
+    process-cron: ${REMINDER_PROCESS_CRON:0 */5 * * * *}
+    process-zone: ${REMINDER_PROCESS_ZONE:Asia/Kolkata}
+    processing-batch-size: ${REMINDER_PROCESSING_BATCH_SIZE:100}
 
 logging:
   config: "classpath:logback-spring.xml"

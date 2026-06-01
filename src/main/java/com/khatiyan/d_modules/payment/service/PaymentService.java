@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,8 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
+import com.khatiyan.d_modules.payment.event.PaymentFailedEvent;
+import com.khatiyan.d_modules.payment.event.PaymentSucceededEvent;
 import com.khatiyan.d_modules.payment.api.dto.CreatePaymentOrderRequest;
 import com.khatiyan.d_modules.payment.api.dto.PaymentOrderResponse;
 import com.khatiyan.d_modules.payment.api.dto.PaymentWebhookEventResponse;
@@ -69,6 +72,7 @@ public class PaymentService {
     private final PaymentProviderRegistry paymentProviderRegistry;
     private final PaymentProperties paymentProperties;
     private final BillingModule billingModule;
+    private final ApplicationEventPublisher eventPublisher;
 
     public PaymentService(
             PaymentOrderRepository paymentOrderRepository,
@@ -77,7 +81,8 @@ public class PaymentService {
             PaymentIdempotencyKeyRepository idempotencyKeyRepository,
             PaymentProviderRegistry paymentProviderRegistry,
             PaymentProperties paymentProperties,
-            BillingModule billingModule) {
+            BillingModule billingModule,
+            ApplicationEventPublisher eventPublisher) {
         this.paymentOrderRepository = paymentOrderRepository;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.paymentWebhookEventRepository = paymentWebhookEventRepository;
@@ -85,6 +90,7 @@ public class PaymentService {
         this.paymentProviderRegistry = paymentProviderRegistry;
         this.paymentProperties = paymentProperties;
         this.billingModule = billingModule;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -333,7 +339,11 @@ public class PaymentService {
             Optional<PaymentTransaction> existingTransaction = paymentTransactionRepository
                     .findByProviderPaymentId(order.getProvider(), request.providerPaymentId());
             if (existingTransaction.isPresent()) {
+                boolean alreadyFailed = order.getStatus() == PaymentOrderStatus.FAILED;
                 order.markFailed(clientFailureMessage(request), Instant.now());
+                if (!alreadyFailed) {
+                    publishPaymentFailedEvent(order, clientFailureMessage(request));
+                }
                 return PaymentOrderResponse.from(order);
             }
         }
@@ -351,7 +361,11 @@ public class PaymentService {
                 clientFailureMessage(request));
 
         paymentTransactionRepository.save(transaction);
+        boolean alreadyFailed = order.getStatus() == PaymentOrderStatus.FAILED;
         order.markFailed(clientFailureMessage(request), Instant.now());
+        if (!alreadyFailed) {
+            publishPaymentFailedEvent(order, clientFailureMessage(request));
+        }
 
         log.info(
                 "Client payment failure recorded paymentOrderId={} providerOrderId={} providerPaymentId={} code={} reason={}",
@@ -455,6 +469,7 @@ public class PaymentService {
                     order.getTenantUserId(),
                     order.getBillingCycleId(),
                     order.getAmountPaise());
+            publishPaymentSucceededEvent(order, providerPaymentId);
         }
 
         log.info(
@@ -532,7 +547,11 @@ public class PaymentService {
 
         paymentTransactionRepository.save(transaction);
         if (order.getStatus() != PaymentOrderStatus.PAID) {
+            boolean alreadyFailed = order.getStatus() == PaymentOrderStatus.FAILED;
             order.markFailed(verification.failureReason(), Instant.now());
+            if (!alreadyFailed) {
+                publishPaymentFailedEvent(order, verification.failureReason());
+            }
         }
     }
 
@@ -668,6 +687,30 @@ public class PaymentService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is not available", exception);
         }
+    }
+
+    private void publishPaymentSucceededEvent(PaymentOrder order, String providerPaymentId) {
+        eventPublisher.publishEvent(new PaymentSucceededEvent(
+                order.getId(),
+                order.getBillingCycleId(),
+                order.getTenancyId(),
+                order.getTenantUserId(),
+                order.getPropertyId(),
+                order.getAmountPaise(),
+                order.getCurrency(),
+                providerPaymentId));
+    }
+
+    private void publishPaymentFailedEvent(PaymentOrder order, String failureReason) {
+        eventPublisher.publishEvent(new PaymentFailedEvent(
+                order.getId(),
+                order.getBillingCycleId(),
+                order.getTenancyId(),
+                order.getTenantUserId(),
+                order.getPropertyId(),
+                order.getAmountPaise(),
+                order.getCurrency(),
+                failureReason));
     }
 
     private record IdempotencyClaim(

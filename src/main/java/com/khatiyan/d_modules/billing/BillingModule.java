@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.billing;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -83,6 +84,18 @@ public class BillingModule {
 
     public BillingCycleResponse refreshManagedCycle(UUID actorUserId, UUID billingCycleId) {
         return billingCycleService.refreshManagedCycle(actorUserId, billingCycleId);
+    }
+
+    public List<BillingCycleResponse> findCyclesDueTodayForReminders(LocalDate today) {
+        return billingCycleService.findCyclesDueTodayForReminders(today);
+    }
+
+    public List<BillingCycleResponse> findCyclesDueBetweenForReminders(LocalDate startDate, LocalDate endDate) {
+        return billingCycleService.findCyclesDueBetweenForReminders(startDate, endDate);
+    }
+
+    public List<BillingCycleResponse> findOverdueCyclesForReminders() {
+        return billingCycleService.findOverdueCyclesForReminders();
     }
 
     public BillingCycleResponse addExtraCharge(
