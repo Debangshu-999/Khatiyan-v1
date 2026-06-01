@@ -10,6 +10,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import com.khatiyan.d_modules.notice.event.NoticePublishedEvent;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 
@@ -44,6 +45,7 @@ public class NoticeNotificationEventListener {
                 event.title(),
                 NotificationCategory.NOTICE,
                 NotificationPriority.NORMAL,
-                event.noticeId());
+                event.noticeId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 }

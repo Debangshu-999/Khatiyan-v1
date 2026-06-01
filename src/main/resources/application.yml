@@ -211,9 +211,9 @@ app:
       push-topic: ${NOTIFICATION_PUSH_TOPIC:notification.push.delivery}
 
 logging:
-  config: classpath:logback-spring.xml
+  config: "classpath:logback-spring.xml"
   file:
-    name: ${KHATIYAN_LOG_DIR:logs}/khatiyan-app.log
+    name: "${KHATIYAN_LOG_DIR:logs}/khatiyan-app.log"
   level:
     root: INFO
     com.khatiyan: INFO

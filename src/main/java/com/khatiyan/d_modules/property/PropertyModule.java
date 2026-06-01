@@ -51,6 +51,10 @@ public class PropertyModule {
         propertyManagerService.ensureCanManageProperty(actorUserId, propertyId);
     }
 
+    public void markDiscoveryProfileCreated(UUID propertyId) {
+        propertyService.markDiscoveryProfileCreated(propertyId);
+    }
+
     public List<UUID> findActiveManagerUserIds(UUID propertyId) {
         return propertyManagerService.findActiveManagerUserIds(propertyId);
     }

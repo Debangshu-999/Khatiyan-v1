@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -35,6 +36,7 @@ public record UpdatePropertyRequest(
 
     @NotBlank
     @Size(max = 10)
+    @Pattern(regexp = "^[1-9][0-9]{5}$", message = "Pincode must be a valid 6 digit Indian pincode")
     String pincode,
 
     @DecimalMin(value = "-90.0", message = "must be greater than or equal to -90")

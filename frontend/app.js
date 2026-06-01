@@ -12,6 +12,12 @@ const store = {
   selectedBillingCycle: null,
   managedBillingCycles: [],
   myBillingCycles: [],
+  localPlaceTags: [],
+  discoveryPage: 0,
+  locationPicker: {
+    map: null,
+    targetForm: null,
+  },
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -185,6 +191,13 @@ function applyCollapsedState(key) {
       closedText: "Show",
       panel: ".output-panel",
     },
+    ownerNotifications: {
+      section: "#ownerNotificationsBody",
+      button: "#toggleOwnerNotifications",
+      openText: "Minimize",
+      closedText: "Show",
+      panel: "#ownerNotificationsPanel",
+    },
   }[key];
 
   const isCollapsed = Boolean(store.collapsed[key]);
@@ -273,6 +286,10 @@ function clearSession() {
   updateUnreadBadge("#tenantUnreadCount", 0);
   renderRecurringNotices([]);
   renderBulkRooms();
+  renderDiscoveryProperties(null);
+  renderLocalPlaces("#tenantLocalPlacesList", []);
+  renderLocalPlaces("#discoveryTenantLocalPlacesList", []);
+  renderLocalPlaces("#managedLocalPlacesList", []);
 }
 
 function renderSession() {
@@ -400,6 +417,10 @@ function formData(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
+function checkedValues(form, name) {
+  return new FormData(form).getAll(name);
+}
+
 function optionalNumber(value) {
   if (value === undefined || value === null || value === "") return undefined;
   return Number(value);
@@ -489,6 +510,204 @@ function propertyBodyFromForm(form) {
     rentGraceDays: optionalNumber(data.rentGraceDays),
     standardDepositPaise: rupeesToPaise(data.standardDepositRupees),
     noticePeriodDays: optionalNumber(data.noticePeriodDays),
+  });
+}
+
+function propertyAddressQueryFromForm(form) {
+  const data = formData(form);
+  return [data.address || data.addressText, data.city, data.pincode]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function defaultMapCenter() {
+  const latitude = Number(store.selectedProperty?.latitude);
+  const longitude = Number(store.selectedProperty?.longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return [latitude, longitude];
+  }
+
+  return [17.385044, 78.486671];
+}
+
+function openAddressInMaps(form) {
+  const query = propertyAddressQueryFromForm(form);
+  if (!query) {
+    setOutput("Missing address", { message: "Enter address, city, or pincode before opening Maps." });
+    return;
+  }
+
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+  setOutput("Opened address in Maps", {
+    query,
+    note: "Use the selected Maps location to copy accurate latitude/longitude if needed.",
+  });
+}
+
+function openLocationPicker(form) {
+  if (!window.L) {
+    setOutput("Map unavailable", { message: "Leaflet map library is still loading or unavailable." });
+    return;
+  }
+
+  store.locationPicker.targetForm = form;
+  $("#locationPickerOverlay").hidden = false;
+
+  const formLatitude = Number(form.latitude.value);
+  const formLongitude = Number(form.longitude.value);
+  const center = Number.isFinite(formLatitude) && Number.isFinite(formLongitude)
+    ? [formLatitude, formLongitude]
+    : defaultMapCenter();
+
+  if (!store.locationPicker.map) {
+    const map = window.L.map("propertyLocationPickerMap").setView(center, 16);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    map.on("moveend", updateLocationPickerPreview);
+    store.locationPicker.map = map;
+  } else {
+    store.locationPicker.map.setView(center, 16);
+  }
+
+  refreshLocationPickerMapSize();
+
+  centerPickerOnCurrentLocation(false);
+}
+
+function closeLocationPicker() {
+  $("#locationPickerOverlay").hidden = true;
+}
+
+function centerPickerOnCurrentLocation(showOutput = true) {
+  if (!navigator.geolocation || !store.locationPicker.map) {
+    if (showOutput) {
+      setOutput("Location unavailable", { message: "This browser does not support geolocation." });
+    }
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      store.locationPicker.map.setView([position.coords.latitude, position.coords.longitude], 17);
+      refreshLocationPickerMapSize();
+      updateLocationPickerPreview();
+      if (showOutput) {
+        setOutput("Picker centered on current location", {
+          latitude: Number(position.coords.latitude.toFixed(7)),
+          longitude: Number(position.coords.longitude.toFixed(7)),
+          accuracyMeters: position.coords.accuracy,
+        });
+      }
+    },
+    (error) => {
+      if (showOutput) {
+        setOutput("Current location failed", {
+          code: error.code,
+          message: error.message,
+        });
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000,
+    }
+  );
+}
+
+function refreshLocationPickerMapSize() {
+  const map = store.locationPicker.map;
+  if (!map) return;
+
+  [50, 200, 500].forEach((delay) => {
+    setTimeout(() => {
+      map.invalidateSize();
+      updateLocationPickerPreview();
+    }, delay);
+  });
+}
+
+function updateLocationPickerPreview() {
+  const map = store.locationPicker.map;
+  if (!map) return;
+
+  const center = map.getCenter();
+  const latitude = Number(center.lat.toFixed(7));
+  const longitude = Number(center.lng.toFixed(7));
+  $("#locationPickerCoords").textContent = `${latitude}, ${longitude}`;
+  $("#locationPickerAddress").textContent = "Move the map to adjust the pointer.";
+}
+
+async function reverseGeocodePickedLocation(latitude, longitude) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Reverse geocode failed with HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function applyReverseGeocodeToForm(form, result) {
+  if (!result?.address) return;
+
+  const address = result.address;
+  const addressParts = [
+    address.house_number,
+    address.road,
+    address.neighbourhood,
+    address.suburb,
+  ].filter(Boolean);
+  const city = address.city || address.town || address.village || address.county;
+  const pincode = address.postcode;
+
+  if (form.address && !form.address.value) {
+    form.address.value = addressParts.length ? addressParts.join(", ") : result.display_name || "";
+  }
+  if (form.addressText && !form.addressText.value) {
+    form.addressText.value = result.display_name || addressParts.join(", ");
+  }
+  if (city && form.city && !form.city.value) {
+    form.city.value = city;
+  }
+  if (pincode && form.pincode && !form.pincode.value) {
+    form.pincode.value = pincode;
+  }
+}
+
+async function usePickedLocation() {
+  const map = store.locationPicker.map;
+  const form = store.locationPicker.targetForm;
+  if (!map || !form) return;
+
+  const center = map.getCenter();
+  const latitude = Number(center.lat.toFixed(7));
+  const longitude = Number(center.lng.toFixed(7));
+  form.latitude.value = latitude;
+  form.longitude.value = longitude;
+
+  let reverseGeocode = null;
+  try {
+    reverseGeocode = await reverseGeocodePickedLocation(latitude, longitude);
+    applyReverseGeocodeToForm(form, reverseGeocode);
+  } catch {
+    reverseGeocode = null;
+  }
+
+  closeLocationPicker();
+  setOutput("Picked location applied", {
+    latitude,
+    longitude,
+    address: reverseGeocode?.display_name || null,
   });
 }
 
@@ -622,6 +841,16 @@ function useView(id) {
   if (id === "owner" && store.token && isAdminUser()) {
     loadProperties();
     loadOwnerNotifications();
+    if (store.selectedProperty) {
+      loadManagedDiscoveryProfile();
+      loadManagedLocalPlaces();
+    }
+  }
+  if (id === "discovery") {
+    loadDiscoveryProperties();
+    if (store.token && isTenantUser()) {
+      loadTenantLocalPlaces();
+    }
   }
   if (id === "modules" && store.token && store.selectedProperty && isAdminUser()) {
     loadModules();
@@ -645,6 +874,11 @@ function useView(id) {
     loadTenantNotifications();
     loadTenantExitRequests();
     loadTenantPastTenancies();
+    if (store.user?.activeTenant) {
+      loadTenantLocalPlaces();
+    } else {
+      renderLocalPlaces("#tenantLocalPlacesList", []);
+    }
   }
 }
 
@@ -669,6 +903,139 @@ async function loadProperties() {
   const properties = await run("GET /api/v1/properties", () => api("/api/v1/properties"));
   renderProperties(properties || []);
   return properties;
+}
+
+function discoverySearchParams() {
+  const form = $("#discoverySearchForm");
+  const data = formData(form);
+  const params = new URLSearchParams();
+  const page = store.discoveryPage || 0;
+
+  if (data.city) params.set("city", data.city);
+  if (data.locality) params.set("locality", data.locality);
+  if (data.latitude) params.set("latitude", data.latitude);
+  if (data.longitude) params.set("longitude", data.longitude);
+  if (data.radiusKm) params.set("radiusKm", data.radiusKm);
+  params.set("page", page);
+  params.set("size", data.size || "20");
+
+  return params;
+}
+
+function getCurrentBrowserLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("This browser does not support geolocation."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve(position),
+      (error) => reject(new Error(error.message || "Current location permission failed.")),
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      }
+    );
+  });
+}
+
+async function fillDiscoveryCurrentLocation(force = false) {
+  const form = $("#discoverySearchForm");
+  if (!force && form.latitude.value && form.longitude.value) {
+    return true;
+  }
+
+  try {
+    const position = await getCurrentBrowserLocation();
+    form.latitude.value = Number(position.coords.latitude.toFixed(7));
+    form.longitude.value = Number(position.coords.longitude.toFixed(7));
+    return true;
+  } catch (error) {
+    renderDiscoveryProperties(null);
+    setOutput("Discovery location required", {
+      message: error.message,
+      note: "Allow location access or enter latitude/longitude manually to search nearby properties.",
+    });
+    return false;
+  }
+}
+
+async function localPlaceLocationParams() {
+  const discoveryForm = $("#discoverySearchForm");
+  if (discoveryForm?.latitude.value && discoveryForm?.longitude.value) {
+    const params = new URLSearchParams();
+    params.set("latitude", discoveryForm.latitude.value);
+    params.set("longitude", discoveryForm.longitude.value);
+    return params;
+  }
+
+  const position = await getCurrentBrowserLocation();
+  const params = new URLSearchParams();
+  params.set("latitude", Number(position.coords.latitude.toFixed(7)));
+  params.set("longitude", Number(position.coords.longitude.toFixed(7)));
+  return params;
+}
+
+async function loadDiscoveryProperties() {
+  const hasLocation = await fillDiscoveryCurrentLocation(false);
+  if (!hasLocation) {
+    return null;
+  }
+
+  const params = discoverySearchParams();
+  const page = await run("GET discovery properties", () => api(`/api/v1/discovery/properties?${params.toString()}`));
+  renderDiscoveryProperties(page);
+  return page;
+}
+
+async function loadManagedDiscoveryProfile() {
+  if (!requireProperty()) return;
+  const profile = await run("GET discovery profile", () => api(`/api/v1/properties/${store.selectedProperty.id}/discovery-profile`));
+  fillDiscoveryProfileForm(profile);
+  return profile;
+}
+
+async function loadManagedLocalPlaces() {
+  if (!requireProperty()) return;
+  const params = new URLSearchParams();
+  if (store.selectedProperty.latitude && store.selectedProperty.longitude) {
+    params.set("latitude", store.selectedProperty.latitude);
+    params.set("longitude", store.selectedProperty.longitude);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const places = await run("GET managed local places", () => api(`/api/v1/properties/${store.selectedProperty.id}/local-places${suffix}`));
+  renderLocalPlaces("#managedLocalPlacesList", places || [], "admin");
+  return places;
+}
+
+async function loadTenantLocalPlaces() {
+  if (!store.user?.activeTenant) {
+    renderLocalPlaces("#tenantLocalPlacesList", []);
+    renderLocalPlaces("#discoveryTenantLocalPlacesList", []);
+    setOutput("No active tenancy", { message: "Local discovery is available after the user has an active tenancy." });
+    return [];
+  }
+
+  let params;
+  try {
+    params = await localPlaceLocationParams();
+  } catch (error) {
+    renderLocalPlaces("#tenantLocalPlacesList", []);
+    renderLocalPlaces("#discoveryTenantLocalPlacesList", []);
+    setOutput("Local place distance unavailable", {
+      message: error.message,
+      note: "Allow location access or search discovery with latitude/longitude to see nearby local places.",
+    });
+    return [];
+  }
+
+  const places = await run("GET tenant local places", () => api(`/api/v1/discovery/me/local-places?${params.toString()}`));
+  renderLocalPlaces("#tenantLocalPlacesList", places || [], "tenant");
+  renderLocalPlaces("#discoveryTenantLocalPlacesList", places || [], "tenant");
+  return places;
 }
 
 async function loadRooms() {
@@ -1113,6 +1480,7 @@ function renderProperties(properties) {
       <div class="item-meta">daily AC Rs ${paiseToRupees(property.dailyGuestAcRatePaise) || "-"} | daily non-AC Rs ${paiseToRupees(property.dailyGuestNonAcRatePaise) || "-"}</div>
       <div class="item-meta">deposit Rs ${paiseToRupees(property.standardDepositPaise)} | grace ${property.rentGraceDays} days | notice ${property.noticePeriodDays} days</div>
       <div class="item-meta">late fee/day Rs ${paiseToRupees(property.rentLateFeePerDayPaise)} | billing ${property.billingCollectionTiming}</div>
+      <div class="item-meta">discovery profile: ${property.discoveryProfileCreated ? "created" : "missing"}</div>
       ${renderFacilityTags(property)}
       <div class="item-meta">id: ${property.id}</div>
       <div class="item-actions">
@@ -1156,6 +1524,8 @@ function selectProperty(property, properties) {
   loadAdminConcerns();
   loadNoticeAdmin();
   loadBillingWorkspace();
+  loadManagedDiscoveryProfile();
+  loadManagedLocalPlaces();
 }
 
 function fillPropertyForm(property) {
@@ -1181,6 +1551,118 @@ function fillPropertyForm(property) {
   dailyRatesForm.dailyGuestNonAcRateRupees.value = property.dailyGuestNonAcRatePaise ? Number(property.dailyGuestNonAcRatePaise) / 100 : "";
 }
 
+function fillDiscoveryProfileForm(profile) {
+  const form = $("#discoveryProfileForm");
+  if (!form || !profile) return;
+
+  form.headline.value = profile.headline || "";
+  form.description.value = profile.description || "";
+  form.profileImageUrl.value = profile.profileImageUrl || "";
+  form.showOwnerContact.checked = profile.showOwnerContact !== false;
+  form.showManagerContact.checked = profile.showManagerContact !== false;
+
+  $("#discoveryProfileStatus").textContent = profile.publicVisible
+    ? `Listed ${profile.publishedAt || ""}`.trim()
+    : "Unlisted";
+  $("#discoveryProfileStatus").className = `badge ${profile.publicVisible ? "good" : "warn"}`;
+}
+
+function renderDiscoveryProperties(page) {
+  const list = $("#discoveryPropertiesList");
+  const label = $("#discoveryPageLabel");
+  if (!list || !label) return;
+
+  const items = page?.items || [];
+  label.textContent = page
+    ? `Page ${page.page + 1} of ${page.totalPages || 1} | ${page.totalElements} listings`
+    : "No search yet";
+  list.innerHTML = "";
+
+  if (!items.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <strong>No data</strong>
+        <span>No listed properties matched this search.</span>
+      </div>
+    `;
+    return;
+  }
+
+  items.forEach((property) => {
+    const item = document.createElement("div");
+    item.className = "property-card";
+    item.innerHTML = `
+      <div class="item-title">
+        <span>${escapeHtml(property.name)}</span>
+        <span class="badge">${escapeHtml(property.type)}</span>
+      </div>
+      <div class="item-meta">${escapeHtml(property.headline || "No headline")}</div>
+      <div class="item-meta">${escapeHtml(property.address)}</div>
+      <div class="item-meta">${escapeHtml(property.city)} ${escapeHtml(property.pincode)}</div>
+      <div class="item-meta">${property.distanceKm == null ? "Distance unavailable" : `${Number(property.distanceKm).toFixed(2)} km away`}</div>
+      <div class="item-meta">deposit ${moneyText(property.standardDepositPaise)} | daily AC ${moneyText(property.dailyGuestAcRatePaise || 0)}</div>
+      ${renderFacilityTags(property)}
+      <div class="item-actions">
+        ${property.directionsUrl ? `<a class="button-link" href="${escapeHtml(property.directionsUrl)}" target="_blank" rel="noreferrer">Directions</a>` : ""}
+      </div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+function renderLocalPlaces(selector, places, mode = "tenant") {
+  const list = $(selector);
+  if (!list) return;
+
+  list.innerHTML = "";
+  if (!places.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <strong>No data</strong>
+        <span>No local places are available yet.</span>
+      </div>
+    `;
+    return;
+  }
+
+  places.forEach((place) => {
+    const tagBadges = (place.tags || [])
+      .map((tag) => `<span class="badge">${escapeHtml(displayEnum(tag))}</span>`)
+      .join("");
+    const item = document.createElement("div");
+    item.className = "property-card";
+    item.innerHTML = `
+      <div class="item-title">
+        <span>${escapeHtml(place.name)}</span>
+        ${place.ownerRecommended ? `<span class="badge good">Owner recommended</span>` : ""}
+      </div>
+      <div class="item-meta">${escapeHtml(place.description || "No description")}</div>
+      <div class="item-meta">${escapeHtml(place.addressText || "No address added")}</div>
+      <div class="item-meta">${place.phone ? `phone: ${escapeHtml(place.phone)}` : "No phone added"}</div>
+      <div class="item-meta">${place.distanceKm == null ? "Distance unavailable" : `${Number(place.distanceKm).toFixed(2)} km away`}</div>
+      <div class="tag-row">
+        ${tagBadges || `<span class="badge warn">No tags</span>`}
+      </div>
+      <div class="item-actions">
+        ${place.directionsUrl ? `<a class="button-link" href="${escapeHtml(place.directionsUrl)}" target="_blank" rel="noreferrer">Directions</a>` : ""}
+        ${mode === "admin" ? `<button class="danger" type="button" data-action="delete-local-place">Delete</button>` : ""}
+      </div>
+    `;
+
+    const deleteButton = item.querySelector("[data-action='delete-local-place']");
+    if (deleteButton) {
+      deleteButton.addEventListener("click", async () => {
+        await run("DELETE local place", () => api(`/api/v1/properties/${store.selectedProperty.id}/local-places/${place.id}`, {
+          method: "DELETE",
+        }));
+        loadManagedLocalPlaces();
+      });
+    }
+
+    list.appendChild(item);
+  });
+}
+
 function setFacilityCheckboxes(form, facilities) {
   const selected = new Set(facilities);
   Array.from(form.querySelectorAll("input[name='facilities']")).forEach((input) => {
@@ -1199,6 +1681,47 @@ function renderFacilityControls() {
       `)
       .join("");
   });
+}
+
+function renderLocalPlaceTagControls() {
+  $$("[data-local-place-tags]").forEach((container) => {
+    if (!store.localPlaceTags.length) {
+      container.innerHTML = `
+        <div class="empty-state compact-empty">
+          <strong>No tags loaded</strong>
+          <span>Refresh tags before adding local places.</span>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = store.localPlaceTags
+      .map((tag) => `
+        <label class="facility-option">
+          <input type="checkbox" name="tags" value="${tag}" />
+          <span>${displayEnum(tag)}</span>
+        </label>
+      `)
+      .join("");
+  });
+}
+
+async function loadLocalPlaceTags(showOutput = false) {
+  try {
+    const tags = await api("/api/v1/discovery/local-place-tags");
+    store.localPlaceTags = tags || [];
+    renderLocalPlaceTagControls();
+    if (showOutput) {
+      setOutput("Local place tags refreshed", store.localPlaceTags);
+    }
+    return store.localPlaceTags;
+  } catch (error) {
+    renderLocalPlaceTagControls();
+    if (showOutput) {
+      setOutput("Local place tags failed", { message: error.message });
+    }
+    return [];
+  }
 }
 
 function renderRooms(rooms) {
@@ -2556,6 +3079,7 @@ $("#clearOutput").addEventListener("click", () => (output.textContent = ""));
 $("#toggleRoomsList").addEventListener("click", () => toggleCollapsed("rooms"));
 $("#toggleManagersList").addEventListener("click", () => toggleCollapsed("managers"));
 $("#toggleOutput").addEventListener("click", () => toggleCollapsed("output"));
+$("#toggleOwnerNotifications").addEventListener("click", () => toggleCollapsed("ownerNotifications"));
 $("#tenantLoadProfile").addEventListener("click", async () => {
   const user = await loadProfile();
   $("#tenantProfile").textContent = JSON.stringify(user, null, 2);
@@ -2701,8 +3225,21 @@ $("#updateProfileForm").addEventListener("submit", async (event) => {
 });
 
 $("#refreshProperties").addEventListener("click", loadProperties);
+$("#refreshDiscoveryProperties").addEventListener("click", loadDiscoveryProperties);
+$("#useCurrentLocationDiscovery").addEventListener("click", async () => {
+  const hasLocation = await fillDiscoveryCurrentLocation(true);
+  if (hasLocation) {
+    setOutput("Discovery location updated", {
+      latitude: $("#discoverySearchForm").latitude.value,
+      longitude: $("#discoverySearchForm").longitude.value,
+    });
+  }
+});
+$("#discoveryLoadLocalPlaces").addEventListener("click", loadTenantLocalPlaces);
+$("#refreshLocalPlaceTags").addEventListener("click", () => loadLocalPlaceTags(true));
 $("#refreshOwnerNotifications").addEventListener("click", loadOwnerNotifications);
 $("#markAllOwnerNotificationsRead").addEventListener("click", () => markAllNotificationsRead(loadOwnerNotifications));
+$("#loadDiscoveryProfile").addEventListener("click", loadManagedDiscoveryProfile);
 $("#refreshRooms").addEventListener("click", loadRooms);
 $("#refreshManagers").addEventListener("click", loadManagers);
 $("#refreshTenancies").addEventListener("click", loadTenancies);
@@ -2735,6 +3272,7 @@ $("#loadVisibleAdminNotices").addEventListener("click", loadVisibleAdminNotices)
 $("#loadArchivedNotices").addEventListener("click", loadArchivedNotices);
 $("#loadRecurringNotices").addEventListener("click", loadRecurringNotices);
 $("#tenantLoadVisibleNotices").addEventListener("click", loadTenantVisibleNotices);
+$("#tenantLoadLocalPlaces").addEventListener("click", loadTenantLocalPlaces);
 $("#refreshTenantNotifications").addEventListener("click", loadTenantNotifications);
 $("#markAllTenantNotificationsRead").addEventListener("click", () => markAllNotificationsRead(loadTenantNotifications));
 $("#createRoomForm").roomType.addEventListener("change", syncRoomCapacityFromType);
@@ -2744,6 +3282,8 @@ $("#updateRoomForm").roomType.addEventListener("change", syncUpdateRoomCapacityF
 $("#createTenancyForm").billingType.addEventListener("change", syncTenancyBillingFields);
 $("#createTenancyForm").roomId.addEventListener("input", syncTenancyRoomRentPreview);
 renderFacilityControls();
+renderLocalPlaceTagControls();
+loadLocalPlaceTags(false);
 
 $("#loadBillingTenancies")?.addEventListener("click", loadBillingTenancies);
 $("#clearBillingTenancy")?.addEventListener("click", () => {
@@ -2762,7 +3302,10 @@ $("#createPropertyForm").addEventListener("submit", async (event) => {
   const body = propertyBodyFromForm(event.currentTarget);
   await run("POST /api/v1/properties", () => api("/api/v1/properties", { method: "POST", body }));
   event.currentTarget.reset();
-  loadProperties();
+  await loadProperties();
+  window.setTimeout(() => {
+    loadProperties();
+  }, 500);
 });
 
 $("#updatePropertyForm").addEventListener("submit", async (event) => {
@@ -2795,6 +3338,102 @@ $("#deleteProperty").addEventListener("click", async () => {
   localStorage.removeItem("khatiyan.selectedProperty");
   renderSession();
   loadProperties();
+});
+
+$("#useCurrentLocationCreate").addEventListener("click", () => {
+  openLocationPicker($("#createPropertyForm"));
+});
+
+$("#openCreateAddressMap").addEventListener("click", () => {
+  openAddressInMaps($("#createPropertyForm"));
+});
+
+$("#useCurrentLocationUpdate").addEventListener("click", () => {
+  openLocationPicker($("#updatePropertyForm"));
+});
+
+$("#openUpdateAddressMap").addEventListener("click", () => {
+  openAddressInMaps($("#updatePropertyForm"));
+});
+
+$("#pickLocalPlaceLocation").addEventListener("click", () => {
+  openLocationPicker($("#createLocalPlaceForm"));
+});
+
+$("#openLocalPlaceAddressMap").addEventListener("click", () => {
+  openAddressInMaps($("#createLocalPlaceForm"));
+});
+
+$("#closeLocationPicker").addEventListener("click", closeLocationPicker);
+$("#centerPickerOnCurrentLocation").addEventListener("click", () => centerPickerOnCurrentLocation(true));
+$("#usePickedLocation").addEventListener("click", usePickedLocation);
+
+$("#discoverySearchForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  store.discoveryPage = 0;
+  await loadDiscoveryProperties();
+});
+
+$("#discoveryProfileForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!requireProperty()) return;
+  const data = formData(event.currentTarget);
+  const profile = await run("PATCH discovery profile", () => api(`/api/v1/properties/${store.selectedProperty.id}/discovery-profile`, {
+    method: "PATCH",
+    body: cleanBody({
+      headline: data.headline,
+      description: data.description,
+      profileImageUrl: data.profileImageUrl,
+      showOwnerContact: Boolean(data.showOwnerContact),
+      showManagerContact: Boolean(data.showManagerContact),
+    }),
+  }));
+  fillDiscoveryProfileForm(profile);
+});
+
+$("#publishDiscoveryProfile").addEventListener("click", async () => {
+  if (!requireProperty()) return;
+  const profile = await run("POST discovery profile publish", () => api(`/api/v1/properties/${store.selectedProperty.id}/discovery-profile/publish`, {
+    method: "POST",
+  }));
+  fillDiscoveryProfileForm(profile);
+  loadDiscoveryProperties();
+});
+
+$("#unpublishDiscoveryProfile").addEventListener("click", async () => {
+  if (!requireProperty()) return;
+  const profile = await run("POST discovery profile unpublish", () => api(`/api/v1/properties/${store.selectedProperty.id}/discovery-profile/unpublish`, {
+    method: "POST",
+  }));
+  fillDiscoveryProfileForm(profile);
+  loadDiscoveryProperties();
+});
+
+$("#loadManagedLocalPlaces").addEventListener("click", loadManagedLocalPlaces);
+
+$("#createLocalPlaceForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!requireProperty()) return;
+  const data = formData(event.currentTarget);
+  const body = cleanBody({
+    name: data.name,
+    tags: checkedValues(event.currentTarget, "tags"),
+    description: data.description,
+    phone: data.phone,
+    addressText: data.addressText,
+    latitude: optionalNumber(data.latitude),
+    longitude: optionalNumber(data.longitude),
+    photoUrl: data.photoUrl,
+    ownerRecommended: Boolean(data.ownerRecommended),
+  });
+
+  await run("POST local place", () => api(`/api/v1/properties/${store.selectedProperty.id}/local-places`, {
+    method: "POST",
+    body,
+  }));
+
+  event.currentTarget.reset();
+  loadManagedLocalPlaces();
 });
 
 $("#createRoomForm").addEventListener("submit", async (event) => {
@@ -3452,3 +4091,4 @@ renderBulkRooms();
 applyCollapsedState("rooms");
 applyCollapsedState("managers");
 applyCollapsedState("output");
+applyCollapsedState("ownerNotifications");

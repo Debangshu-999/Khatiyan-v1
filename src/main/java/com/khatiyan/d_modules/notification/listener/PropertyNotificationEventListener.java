@@ -6,6 +6,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
@@ -38,7 +39,8 @@ public class PropertyNotificationEventListener {
                 "You can now manage " + property.name() + ".",
                 NotificationCategory.PROPERTY,
                 NotificationPriority.NORMAL,
-                event.propertyId());
+                event.propertyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -51,6 +53,7 @@ public class PropertyNotificationEventListener {
                 "Your manager access was removed from " + property.name() + ".",
                 NotificationCategory.PROPERTY,
                 NotificationPriority.NORMAL,
-                event.propertyId());
+                event.propertyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 }

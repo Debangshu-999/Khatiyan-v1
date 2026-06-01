@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Khatiyan Test App</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQbPXRrt5j6nkNgcLY3T6M8kJkLLV0="
+      crossorigin=""
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -19,6 +25,7 @@
 
         <nav class="nav">
           <button class="nav-item active" data-view="auth">Auth</button>
+          <button class="nav-item" data-view="discovery">Discovery</button>
           <button class="nav-item" data-view="owner" data-authority="admin">Owner</button>
           <button class="nav-item" data-view="modules" data-authority="admin">Modules</button>
           <button class="nav-item" data-view="concerns" data-authority="admin tenant">Concerns</button>
@@ -187,6 +194,60 @@
           </div>
         </section>
 
+        <section id="discovery" class="view">
+          <div class="module-layout">
+            <form class="panel stack compact" id="discoverySearchForm">
+              <div class="panel-head">
+                <h3>Property Discovery</h3>
+                <button id="refreshDiscoveryProperties" type="button" class="secondary">Refresh</button>
+              </div>
+              <div class="row">
+                <label>City
+                  <input name="city" placeholder="City, e.g. Hyderabad" />
+                </label>
+                <label>Locality
+                  <input name="locality" placeholder="Locality/address contains, e.g. Gachibowli" />
+                </label>
+              </div>
+              <div class="row">
+                <label>Latitude
+                  <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Current latitude" />
+                </label>
+                <label>Longitude
+                  <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Current longitude" />
+                </label>
+              </div>
+              <button id="useCurrentLocationDiscovery" type="button" class="secondary">Use Current Location</button>
+              <div class="row">
+                <label>Radius KM
+                  <input name="radiusKm" type="number" min="0" step="0.1" placeholder="Optional radius, e.g. 5" />
+                </label>
+                <label>Page size
+                  <input name="size" type="number" min="1" max="100" value="20" />
+                </label>
+              </div>
+              <button>Search Listings</button>
+            </form>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Available Properties</h3>
+                <span id="discoveryPageLabel" class="badge">No search yet</span>
+              </div>
+              <div id="discoveryPropertiesList" class="property-grid"></div>
+            </div>
+
+            <div class="panel" data-authority="tenant">
+              <div class="panel-head">
+                <h3>Local Places Near My Property</h3>
+                <button id="discoveryLoadLocalPlaces" type="button" class="secondary">Refresh Places</button>
+              </div>
+              <p class="hint">Available only after the user has an active tenancy.</p>
+              <div id="discoveryTenantLocalPlacesList" class="property-grid"></div>
+            </div>
+          </div>
+        </section>
+
         <section id="owner" class="view">
           <div class="owner-layout">
             <div class="panel">
@@ -204,6 +265,10 @@
                   <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Latitude, e.g. 17.3850" />
                   <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Longitude, e.g. 78.4867" />
                 </div>
+                <div class="row">
+                  <button id="useCurrentLocationCreate" type="button" class="secondary">Pick Location</button>
+                  <button id="openCreateAddressMap" type="button" class="secondary">Open Address In Maps</button>
+                </div>
                 <select name="type" aria-label="Property type" title="Property type">
                   <option>PG</option>
                   <option>HOSTEL</option>
@@ -215,6 +280,12 @@
                   <div class="facility-grid" data-facilities-for="createPropertyForm"></div>
                 </div>
                 <textarea name="customFacilities" rows="2" placeholder="Custom facilities, comma separated, e.g. Rooftop dining, Biometric entry"></textarea>
+                <div class="divided stack compact">
+                  <h3>Discovery Listing Draft</h3>
+                  <input name="discoveryHeadline" placeholder="Listing headline, e.g. Clean PG near metro" />
+                  <textarea name="discoveryDescription" rows="3" placeholder="Listing description shown in discovery"></textarea>
+                  <input name="discoveryProfileImageUrl" placeholder="Listing image URL" />
+                </div>
                 <div class="row">
                   <input name="dailyGuestAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest AC rate, e.g. 1500" />
                   <input name="dailyGuestNonAcRateRupees" type="number" min="1" step="0.01" placeholder="Daily guest non-AC rate, e.g. 1000" />
@@ -241,16 +312,19 @@
                 <div id="propertiesList" class="property-grid"></div>
               </div>
 
-              <div class="panel" data-authority="admin">
+              <div id="ownerNotificationsPanel" class="panel" data-authority="admin">
                 <div class="panel-head">
                   <h3>Admin Notifications</h3>
                   <div class="panel-actions">
                     <span id="ownerUnreadCount" class="badge">Unread 0</span>
+                    <button id="toggleOwnerNotifications" type="button" class="secondary">Minimize</button>
                     <button id="markAllOwnerNotificationsRead" type="button" class="secondary">Mark All Read</button>
                     <button id="refreshOwnerNotifications" type="button" class="secondary">Refresh</button>
                   </div>
                 </div>
-                <div id="ownerNotificationsList" class="list"></div>
+                <div id="ownerNotificationsBody">
+                  <div id="ownerNotificationsList" class="list"></div>
+                </div>
               </div>
 
               <div class="panel">
@@ -268,6 +342,10 @@
                   <div class="row">
                     <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Updated latitude, e.g. 17.3850" />
                     <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Updated longitude, e.g. 78.4867" />
+                  </div>
+                  <div class="row">
+                    <button id="useCurrentLocationUpdate" type="button" class="secondary">Pick Location</button>
+                    <button id="openUpdateAddressMap" type="button" class="secondary">Open Address In Maps</button>
                   </div>
                   <select name="type" aria-label="Updated property type" title="Updated property type">
                     <option>PG</option>
@@ -309,6 +387,80 @@
                     </label>
                   </div>
                   <button type="submit" class="secondary">Update Daily Rates</button>
+                </form>
+
+                <form id="discoveryProfileForm" class="stack compact divided">
+                  <div class="panel-head">
+                    <h3>Discovery Listing</h3>
+                    <div class="panel-actions">
+                      <span id="discoveryProfileStatus" class="badge">Not loaded</span>
+                      <button id="loadDiscoveryProfile" type="button" class="secondary">Load Profile</button>
+                      <button id="publishDiscoveryProfile" type="button" class="secondary">List Property</button>
+                      <button id="unpublishDiscoveryProfile" type="button" class="danger">Unlist Property</button>
+                    </div>
+                  </div>
+                  <p class="hint">Draft is created automatically. Listing makes it visible in public discovery.</p>
+                  <label>Headline
+                    <input name="headline" placeholder="Public headline, e.g. Clean PG near metro" />
+                  </label>
+                  <label>Description
+                    <textarea name="description" rows="3" placeholder="Public listing description"></textarea>
+                  </label>
+                  <label>Profile image URL
+                    <input name="profileImageUrl" placeholder="Image URL" />
+                  </label>
+                  <div class="row">
+                    <label class="check-line">
+                      <input name="showOwnerContact" type="checkbox" checked />
+                      <span>Show owner contact</span>
+                    </label>
+                    <label class="check-line">
+                      <input name="showManagerContact" type="checkbox" checked />
+                      <span>Show manager contact</span>
+                    </label>
+                  </div>
+                  <button>Save Discovery Profile</button>
+                </form>
+
+                <form id="createLocalPlaceForm" class="stack compact divided">
+                  <div class="panel-head">
+                    <h3>Local Discovery Places</h3>
+                    <button id="loadManagedLocalPlaces" type="button" class="secondary">Refresh Places</button>
+                  </div>
+                  <div class="row">
+                    <label>Name
+                      <input name="name" placeholder="Local place, e.g. Sharma Laundry" required />
+                    </label>
+                    <label>Photo URL
+                      <input name="photoUrl" placeholder="Photo URL" />
+                    </label>
+                  </div>
+                  <div>
+                    <div class="field-label inline-field-label">
+                      <span>Tags</span>
+                      <button id="refreshLocalPlaceTags" type="button" class="secondary icon-button" title="Refresh tags">↻</button>
+                    </div>
+                    <div class="tag-check-grid" data-local-place-tags></div>
+                  </div>
+                  <textarea name="description" rows="2" placeholder="Short description"></textarea>
+                  <div class="row">
+                    <input name="phone" placeholder="Phone number" />
+                    <input name="addressText" placeholder="Address or landmark from picked location" />
+                  </div>
+                  <div class="row">
+                    <input name="latitude" type="number" min="-90" max="90" step="0.0000001" placeholder="Latitude" />
+                    <input name="longitude" type="number" min="-180" max="180" step="0.0000001" placeholder="Longitude" />
+                  </div>
+                  <div class="row">
+                    <button id="pickLocalPlaceLocation" type="button" class="secondary">Pick Place Location</button>
+                    <button id="openLocalPlaceAddressMap" type="button" class="secondary">Open Address In Maps</button>
+                  </div>
+                  <label class="check-line">
+                    <input name="ownerRecommended" type="checkbox" />
+                    <span>Owner recommended</span>
+                  </label>
+                  <button>Add Local Place</button>
+                  <div id="managedLocalPlacesList" class="list"></div>
                 </form>
               </div>
 
@@ -1349,6 +1501,14 @@
 
           <div class="panel">
             <div class="panel-head">
+              <h3>Local Discovery</h3>
+              <button id="tenantLoadLocalPlaces" type="button" class="secondary">Refresh</button>
+            </div>
+            <div id="tenantLocalPlacesList" class="property-grid"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
               <h3>Past Tenancies</h3>
               <button id="tenantLoadPastTenancies" type="button" class="secondary">Refresh</button>
             </div>
@@ -1432,6 +1592,32 @@
           </div>
         </section>
 
+        <section id="locationPickerOverlay" class="modal-overlay" hidden>
+          <div class="modal-panel location-picker-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Pick Property Location</h3>
+                <p class="hint">Move the map under the fixed pointer, then use the selected location.</p>
+              </div>
+              <button id="closeLocationPicker" type="button" class="secondary">Close</button>
+            </div>
+            <div class="map-picker-modal">
+              <div id="propertyLocationPickerMap" class="map-picker"></div>
+              <div class="fixed-map-pin"></div>
+            </div>
+            <div class="location-picker-footer">
+              <div>
+                <strong id="locationPickerCoords">No location selected</strong>
+                <p id="locationPickerAddress" class="hint">Address will be filled when available.</p>
+              </div>
+              <div class="panel-actions">
+                <button id="centerPickerOnCurrentLocation" type="button" class="secondary">Use Current GPS</button>
+                <button id="usePickedLocation" type="button">Use This Location</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="raw" class="view">
           <form class="panel" id="rawRequestForm">
             <h3>Raw API Request</h3>
@@ -1465,6 +1651,11 @@
     </div>
 
     <script type="module" src="./firebase-auth.js"></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="./app.js"></script>
   </body>

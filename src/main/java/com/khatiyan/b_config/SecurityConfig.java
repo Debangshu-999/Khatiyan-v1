@@ -51,6 +51,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/discovery/properties",
+                                "/api/v1/discovery/properties/**",
+                                "/api/v1/discovery/local-place-tags").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/discovery/me/local-places").hasRole("USER")
 
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/properties").hasRole("OWNER")
@@ -64,6 +68,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/properties/{propertyId}/rooms", "/api/v1/properties/{propertyId}/rooms/**").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/properties/{propertyId}/rooms/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/properties/{propertyId}/rooms/**").authenticated()
+                        .requestMatchers("/api/v1/properties/{propertyId}/discovery-profile",
+                                "/api/v1/properties/{propertyId}/discovery-profile/**").authenticated()
+                        .requestMatchers("/api/v1/properties/{propertyId}/local-places",
+                                "/api/v1/properties/{propertyId}/local-places/**").authenticated()
                         .requestMatchers("/api/v1/properties/{propertyId}/property-board/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties/{propertyId}/notices").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/properties/{propertyId}/notices/**").authenticated()

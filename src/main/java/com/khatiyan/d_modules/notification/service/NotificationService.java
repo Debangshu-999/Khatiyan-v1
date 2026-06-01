@@ -17,6 +17,7 @@ import com.khatiyan.d_modules.notification.api.dto.NotificationResponse;
 import com.khatiyan.d_modules.notification.api.dto.RegisterNotificationDeviceRequest;
 import com.khatiyan.d_modules.notification.model.Notification;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationDeviceToken;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.notification.model.NotificationRecipient;
@@ -67,8 +68,9 @@ public class NotificationService {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
-            UUID sourceId) {
-        createNotification(List.of(userId), title, body, category, priority, sourceId);
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode) {
+        createNotification(List.of(userId), title, body, category, priority, sourceId, deliveryMode);
     }
 
     /**
@@ -81,8 +83,9 @@ public class NotificationService {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
-            UUID sourceId) {
-        createNotification(userIds, title, body, category, priority, sourceId);
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode) {
+        createNotification(userIds, title, body, category, priority, sourceId, deliveryMode);
     }
 
     private void createNotification(
@@ -91,11 +94,14 @@ public class NotificationService {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
-            UUID sourceId) {
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode) {
         if (userIds == null || userIds.isEmpty()) {
             log.debug("Notification skipped because recipient list is empty category={} sourceId={}", category, sourceId);
             return;
         }
+        NotificationDeliveryMode resolvedDeliveryMode =
+                deliveryMode == null ? NotificationDeliveryMode.IN_APP_ONLY : deliveryMode;
 
         Instant now = Instant.now();
         Notification notification = Notification.create(title, body, category, priority, sourceId);
@@ -108,18 +114,24 @@ public class NotificationService {
 
         List<NotificationRecipient> savedRecipients = notificationRecipientRepository.saveAll(recipients);
 
-        List<PushNotification> pushNotifications = savedRecipients.stream()
-                .map(recipient -> PushNotification.create(recipient, now))
-                .toList();
+        int pushCount = 0;
+        if (resolvedDeliveryMode.isPushEnabled()) {
+            List<PushNotification> pushNotifications = savedRecipients.stream()
+                    .map(recipient -> PushNotification.create(recipient, now))
+                    .toList();
 
-        pushNotificationRepository.saveAll(pushNotifications);
+            pushNotificationRepository.saveAll(pushNotifications);
+            pushCount = pushNotifications.size();
+        }
 
         log.info(
-                "Notification created notificationId={} category={} priority={} recipients={}",
+                "Notification created notificationId={} category={} priority={} deliveryMode={} recipients={} pushJobs={}",
                 savedNotification.getId(),
                 category,
                 priority,
-                savedRecipients.size());
+                resolvedDeliveryMode,
+                savedRecipients.size(),
+                pushCount);
     }
 
     /**

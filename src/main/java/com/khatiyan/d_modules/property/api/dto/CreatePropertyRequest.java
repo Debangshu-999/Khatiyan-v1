@@ -12,9 +12,11 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import org.hibernate.validator.constraints.URL;
 
 /**
  * Request body used by an owner to register a new property.
@@ -35,6 +37,7 @@ public record CreatePropertyRequest(
 
     @NotBlank
     @Size(max = 10)
+    @Pattern(regexp = "^[1-9][0-9]{5}$", message = "Pincode must be a valid 6 digit Indian pincode")
     String pincode,
 
     @DecimalMin(value = "-90.0", message = "must be greater than or equal to -90")
@@ -72,6 +75,16 @@ public record CreatePropertyRequest(
 
     @PositiveOrZero
     @Max(365)
-    Integer noticePeriodDays
+    Integer noticePeriodDays,
+
+    @Size(max = 160)
+    String discoveryHeadline,
+
+    @Size(max = 1000)
+    String discoveryDescription,
+
+    @URL
+    @Size(max = 600)
+    String discoveryProfileImageUrl
 ) {
 }

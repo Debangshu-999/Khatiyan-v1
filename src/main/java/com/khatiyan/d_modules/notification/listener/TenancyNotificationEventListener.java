@@ -10,6 +10,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
@@ -44,7 +45,8 @@ public class TenancyNotificationEventListener {
                 "Your tenancy has started at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
 
         List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
@@ -53,7 +55,8 @@ public class TenancyNotificationEventListener {
                 "A tenancy has started at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -66,7 +69,8 @@ public class TenancyNotificationEventListener {
                 "Your tenancy at " + property.name() + " has ended.",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
 
         List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
@@ -75,7 +79,8 @@ public class TenancyNotificationEventListener {
                 "A tenancy has ended at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -89,7 +94,8 @@ public class TenancyNotificationEventListener {
                 "Your room at " + property.name() + " has been changed to room " + newRoom.roomNumber() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
 
         List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
@@ -98,7 +104,8 @@ public class TenancyNotificationEventListener {
                 "A tenant has been moved to room " + newRoom.roomNumber() + " at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
-                event.tenancyId());
+                event.tenancyId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     private List<UUID> adminRecipients(PropertyResponse property) {

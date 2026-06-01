@@ -85,6 +85,9 @@ public class Property extends BaseEntity {
     @Column(name = "notice_period_days", nullable = false)
     private int noticePeriodDays;
 
+    @Column(name = "discovery_profile_created", nullable = false)
+    private boolean discoveryProfileCreated;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "billing_collection_timing", nullable = false, length = 20)
     private BillingCollectionTiming billingCollectionTiming;
@@ -126,6 +129,7 @@ public class Property extends BaseEntity {
         this.longitude = longitude;
         this.type = type;
         this.active = true;
+        this.discoveryProfileCreated = false;
         updateDailyGuestRates(dailyGuestAcRatePaise, dailyGuestNonAcRatePaise);
         updateRentLateFee(rentLateFeePerDayPaise);
         updateBillingPolicy(rentGraceDays);
@@ -196,6 +200,10 @@ public class Property extends BaseEntity {
 
     public boolean isCurrentlyActive() {
         return active;
+    }
+
+    public void markDiscoveryProfileCreated() {
+        this.discoveryProfileCreated = true;
     }
 
     private void replaceFacilities(Set<PropertyFacility> facilities, Set<String> customFacilities) {

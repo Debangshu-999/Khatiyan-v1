@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.notification.service.NotificationService;
 
@@ -30,8 +31,9 @@ public class NotificationModule {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
-            UUID sourceId) {
-        notificationService.notifyUser(userId, title, body, category, priority, sourceId);
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode) {
+        notificationService.notifyUser(userId, title, body, category, priority, sourceId, deliveryMode);
     }
 
     public void notifyUsers(
@@ -40,7 +42,8 @@ public class NotificationModule {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
-            UUID sourceId) {
-        notificationService.notifyUsers(userIds, title, body, category, priority, sourceId);
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode) {
+        notificationService.notifyUsers(userIds, title, body, category, priority, sourceId, deliveryMode);
     }
 }

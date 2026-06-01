@@ -3,15 +3,19 @@ package com.khatiyan.d_modules.property.service;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
+import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.property.model.Property;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
 
@@ -30,9 +34,16 @@ import lombok.extern.slf4j.Slf4j;
 public class PropertyService {
 
     private final PropertyRepository propertyRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final DiscoveryModule discoveryModule;
 
-    public PropertyService(PropertyRepository propertyRepository) {
+    public PropertyService(
+            PropertyRepository propertyRepository,
+            ApplicationEventPublisher eventPublisher,
+            @Lazy DiscoveryModule discoveryModule) {
         this.propertyRepository = propertyRepository;
+        this.eventPublisher = eventPublisher;
+        this.discoveryModule = discoveryModule;
     }
 
     /**
@@ -79,6 +90,13 @@ public class PropertyService {
                 ownerId,
                 saved.getName(),
                 saved.getCity());
+
+        eventPublisher.publishEvent(new PropertyCreatedEvent(
+                saved.getId(),
+                ownerId,
+                request.discoveryHeadline(),
+                request.discoveryDescription(),
+                request.discoveryProfileImageUrl()));
 
         return PropertyResponse.from(saved);
     }
@@ -166,9 +184,20 @@ public class PropertyService {
     @Transactional
     public void deactivateProperty(UUID ownerId, UUID propertyId) {
         Property property = getOwnedActiveProperty(ownerId, propertyId);
+        discoveryModule.unlistPropertyProfileForDeactivation(propertyId);
         property.deactivate();
 
         log.info("Property deactivated propertyId={} ownerId={}", propertyId, ownerId);
+    }
+
+    @Transactional
+    public void markDiscoveryProfileCreated(UUID propertyId) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+
+        property.markDiscoveryProfileCreated();
+        propertyRepository.save(property);
+        log.info("Property discovery profile marked created propertyId={}", propertyId);
     }
 
 }

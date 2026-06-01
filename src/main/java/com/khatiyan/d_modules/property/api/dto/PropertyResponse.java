@@ -32,6 +32,7 @@ public record PropertyResponse(
     int rentGraceDays,
     long standardDepositPaise,
     int noticePeriodDays,
+    boolean discoveryProfileCreated,
     boolean active
 ) {
 
@@ -55,6 +56,7 @@ public record PropertyResponse(
             property.getRentGraceDays(),
             property.getStandardDepositPaise(),
             property.getNoticePeriodDays(),
+            property.isDiscoveryProfileCreated(),
             property.isCurrentlyActive()
         );
     }

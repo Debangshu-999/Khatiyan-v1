@@ -8,6 +8,7 @@ import com.khatiyan.a_auth.event.PinChangedEvent;
 import com.khatiyan.a_auth.event.UserRegisteredEvent;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 
 /**
@@ -31,7 +32,8 @@ public class AuthNotificationEventListener {
                 "Your " + event.role().name().toLowerCase() + " account has been created.",
                 NotificationCategory.AUTH,
                 NotificationPriority.NORMAL,
-                event.userId());
+                event.userId(),
+                NotificationDeliveryMode.IN_APP_ONLY);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -42,6 +44,7 @@ public class AuthNotificationEventListener {
                 "Your account PIN was changed.",
                 NotificationCategory.AUTH,
                 NotificationPriority.HIGH,
-                event.userId());
+                event.userId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 }

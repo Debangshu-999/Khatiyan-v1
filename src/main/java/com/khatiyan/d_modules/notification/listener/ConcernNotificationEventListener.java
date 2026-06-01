@@ -16,6 +16,7 @@ import com.khatiyan.d_modules.concerns.event.ConcernStatusChangedEvent;
 import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
@@ -46,7 +47,8 @@ public class ConcernNotificationEventListener {
                 "A tenant raised a concern: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
-                event.concernId());
+                event.concernId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -57,7 +59,8 @@ public class ConcernNotificationEventListener {
                 "A concern has been assigned to you: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
-                event.concernId());
+                event.concernId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -72,7 +75,8 @@ public class ConcernNotificationEventListener {
                 "Your concern is now in progress: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
-                event.concernId());
+                event.concernId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -83,7 +87,8 @@ public class ConcernNotificationEventListener {
                 "Your concern was marked resolved: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
-                event.concernId());
+                event.concernId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -98,7 +103,8 @@ public class ConcernNotificationEventListener {
                 "A resolved concern was reopened: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.HIGH,
-                event.concernId());
+                event.concernId(),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     private List<UUID> adminRecipients(PropertyResponse property) {
