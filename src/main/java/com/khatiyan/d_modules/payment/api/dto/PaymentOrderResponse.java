@@ -15,6 +15,7 @@ import com.khatiyan.d_modules.payment.model.PaymentProviderType;
  */
 public record PaymentOrderResponse(
         UUID id,
+        String referenceCode,
         UUID billingCycleId,
         UUID tenancyId,
         UUID tenantUserId,
@@ -36,6 +37,7 @@ public record PaymentOrderResponse(
     public static PaymentOrderResponse from(PaymentOrder order) {
         return new PaymentOrderResponse(
                 order.getId(),
+                order.getReferenceCode(),
                 order.getBillingCycleId(),
                 order.getTenancyId(),
                 order.getTenantUserId(),

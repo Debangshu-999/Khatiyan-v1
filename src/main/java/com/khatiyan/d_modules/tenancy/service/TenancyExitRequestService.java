@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,11 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
+import com.khatiyan.d_modules.tenancy.event.TenancyExitApprovedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyExitCancelledEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyExitExecutedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyExitRejectedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyExitRequestedEvent;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
@@ -43,18 +49,21 @@ public class TenancyExitRequestService {
     private final PropertyModule propertyModule;
     private final BillingModule billingModule;
     private final TenancyService tenancyService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TenancyExitRequestService(
             TenancyExitRequestRepository exitRequestRepository,
             TenancyRepository tenancyRepository,
             PropertyModule propertyModule,
             BillingModule billingModule,
-            TenancyService tenancyService) {
+            TenancyService tenancyService,
+            ApplicationEventPublisher eventPublisher) {
         this.exitRequestRepository = exitRequestRepository;
         this.tenancyRepository = tenancyRepository;
         this.propertyModule = propertyModule;
         this.billingModule = billingModule;
         this.tenancyService = tenancyService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -81,6 +90,7 @@ public class TenancyExitRequestService {
         TenancyExitRequest saved = exitRequestRepository.save(request);
         log.info("Normal tenancy exit requested requestId={} tenancyId={} checkoutDate={}",
                 saved.getId(), tenancy.getId(), checkoutDate);
+        publishExitRequested(saved);
 
         return TenancyExitRequestResponse.from(saved);
     }
@@ -110,6 +120,7 @@ public class TenancyExitRequestService {
         TenancyExitRequest saved = exitRequestRepository.save(request);
         log.info("Premature tenancy exit requested requestId={} tenancyId={} checkoutDate={}",
                 saved.getId(), tenancy.getId(), requestedCheckoutDate);
+        publishExitRequested(saved);
 
         return TenancyExitRequestResponse.from(saved);
     }
@@ -167,6 +178,7 @@ public class TenancyExitRequestService {
         }
 
         log.info("Tenancy exit request approved requestId={} actorUserId={}", requestId, actorUserId);
+        publishExitApproved(request);
         return TenancyExitRequestResponse.from(request);
     }
 
@@ -206,6 +218,7 @@ public class TenancyExitRequestService {
 
         request.reject(actorUserId, adminNotes);
         log.info("Tenancy exit request rejected requestId={} actorUserId={}", requestId, actorUserId);
+        publishExitRejected(request);
 
         return TenancyExitRequestResponse.from(request);
     }
@@ -219,6 +232,7 @@ public class TenancyExitRequestService {
         request.cancel(tenantUserId);
 
         log.info("Tenancy exit request cancelled requestId={} tenantUserId={}", requestId, tenantUserId);
+        publishExitCancelled(request);
         return TenancyExitRequestResponse.from(request);
     }
 
@@ -310,7 +324,56 @@ public class TenancyExitRequestService {
         request.markExecuted();
 
         log.info("Tenancy exit request executed requestId={} actorUserId={}", request.getId(), actorUserId);
+        publishExitExecuted(request);
         return TenancyExitRequestResponse.from(request);
+    }
+
+    private void publishExitRequested(TenancyExitRequest request) {
+        eventPublisher.publishEvent(new TenancyExitRequestedEvent(
+                request.getId(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getType(),
+                request.getRequestedCheckoutDate()));
+    }
+
+    private void publishExitApproved(TenancyExitRequest request) {
+        eventPublisher.publishEvent(new TenancyExitApprovedEvent(
+                request.getId(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getType(),
+                request.getApprovedCheckoutDate()));
+    }
+
+    private void publishExitRejected(TenancyExitRequest request) {
+        eventPublisher.publishEvent(new TenancyExitRejectedEvent(
+                request.getId(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getType()));
+    }
+
+    private void publishExitCancelled(TenancyExitRequest request) {
+        eventPublisher.publishEvent(new TenancyExitCancelledEvent(
+                request.getId(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getType()));
+    }
+
+    private void publishExitExecuted(TenancyExitRequest request) {
+        eventPublisher.publishEvent(new TenancyExitExecutedEvent(
+                request.getId(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getType(),
+                request.getApprovedCheckoutDate()));
     }
 
     private Tenancy getTenantActiveTenancy(UUID tenantUserId) {

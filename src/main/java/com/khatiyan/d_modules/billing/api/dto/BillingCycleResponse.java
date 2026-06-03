@@ -15,6 +15,7 @@ import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
  */
 public record BillingCycleResponse(
     UUID id,
+    String referenceCode,
     UUID tenancyId,
     UUID tenantUserId,
     String tenantNameSnapshot,
@@ -43,6 +44,7 @@ public record BillingCycleResponse(
             List<BillingCycleLineItemResponse> lineItems) {
         return new BillingCycleResponse(
             cycle.getId(),
+            cycle.getReferenceCode(),
             cycle.getTenancyId(),
             cycle.getTenantUserId(),
             cycle.getTenantNameSnapshot(),

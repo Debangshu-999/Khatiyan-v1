@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +17,11 @@ import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
+import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
@@ -53,6 +57,8 @@ public class BillingCycleService {
     private final PropertyModule propertyModule;
     private final AuthModule authModule;
     private final DepositManagerService depositManagerService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public BillingCycleService(
             BillingCycleRepository billingCycleRepository,
@@ -60,13 +66,17 @@ public class BillingCycleService {
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
             AuthModule authModule,
-            DepositManagerService depositManagerService) {
+            DepositManagerService depositManagerService,
+            ApplicationEventPublisher eventPublisher,
+            ReferenceCodeGenerator referenceCodeGenerator) {
         this.billingCycleRepository = billingCycleRepository;
         this.lineItemRepository = lineItemRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
         this.authModule = authModule;
         this.depositManagerService = depositManagerService;
+        this.eventPublisher = eventPublisher;
+        this.referenceCodeGenerator = referenceCodeGenerator;
     }
 
     /**
@@ -95,6 +105,7 @@ public class BillingCycleService {
         billingCycleRepository.saveAndFlush(savedCycle);
 
         tenancyModule.markBillingStarted(tenancyId);
+        publishBillingCycleGenerated(savedCycle);
 
         log.info(
                 "Billing cycle created billingCycleId={} tenancyId={} actorUserId={} cycleNumber={}",
@@ -404,6 +415,7 @@ public class BillingCycleService {
         calculateCycle(savedCycle);
         lineItemRepository.flush();
         billingCycleRepository.saveAndFlush(savedCycle);
+        publishBillingCycleGenerated(savedCycle);
 
         log.info(
                 "Monthly billing cycle generated billingCycleId={} tenancyId={} cycleNumber={} periodStart={}",
@@ -527,6 +539,7 @@ public class BillingCycleService {
                     nextDisplayOrder(cycle.getId()));
             lineItemRepository.save(lateFeeLine);
             calculateCycle(cycle);
+            publishLateFeeApplied(cycle, lateFeeLine);
             return true;
         }
 
@@ -544,6 +557,7 @@ public class BillingCycleService {
 
         lateFeeLine.replaceSystemLateFee(lateFeeAmountPaise);
         calculateCycle(cycle);
+        publishLateFeeApplied(cycle, lateFeeLine);
         return true;
     }
 
@@ -554,6 +568,27 @@ public class BillingCycleService {
         }
 
         return billingPolicy.rentLateFeePerDayPaise();
+    }
+
+    private void publishBillingCycleGenerated(BillingCycle cycle) {
+        eventPublisher.publishEvent(new BillingCycleGeneratedEvent(
+                cycle.getId(),
+                cycle.getTenancyId(),
+                cycle.getTenantUserId(),
+                cycle.getPropertyId(),
+                cycle.getCycleNumber(),
+                cycle.getRentDueDate(),
+                cycle.getTotalAmountPaise()));
+    }
+
+    private void publishLateFeeApplied(BillingCycle cycle, BillingCycleLineItem lineItem) {
+        eventPublisher.publishEvent(new BillingLateFeeAppliedEvent(
+                cycle.getId(),
+                lineItem.getId(),
+                cycle.getTenancyId(),
+                cycle.getTenantUserId(),
+                cycle.getPropertyId(),
+                lineItem.getAmountPaise()));
     }
 
     /**
@@ -641,6 +676,7 @@ public class BillingCycleService {
 
             return BillingCycle.create(
                     tenancy.id(),
+                    referenceCodeGenerator.nextCode("BIL"),
                     tenancy.userId(),
                     tenantNameSnapshot,
                     tenancy.propertyId(),
@@ -661,6 +697,7 @@ public class BillingCycleService {
 
         return BillingCycle.create(
                 tenancy.id(),
+                referenceCodeGenerator.nextCode("BIL"),
                 tenancy.userId(),
                 tenantNameSnapshot,
                 tenancy.propertyId(),

@@ -15,6 +15,7 @@ import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
@@ -40,18 +41,21 @@ public class TenancyService {
     private final PropertyModule propertyModule;
     private final AuthModule authModule;
     private final BillingModule billingModule;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public TenancyService(
             TenancyRepository tenancyRepository,
             ApplicationEventPublisher eventPublisher,
             PropertyModule propertyModule,
             AuthModule authModule,
-            @Lazy BillingModule billingModule) {
+            @Lazy BillingModule billingModule,
+            ReferenceCodeGenerator referenceCodeGenerator) {
         this.tenancyRepository = tenancyRepository;
         this.eventPublisher = eventPublisher;
         this.propertyModule = propertyModule;
         this.authModule = authModule;
         this.billingModule = billingModule;
+        this.referenceCodeGenerator = referenceCodeGenerator;
     }
 
     private String placeholderTenantName(String tenantPhone) {
@@ -175,6 +179,7 @@ public class TenancyService {
         }
 
         return Tenancy.start(
+                referenceCodeGenerator.nextCode("TEN"),
                 tenantId,
                 propertyId,
                 roomId,
@@ -216,6 +221,7 @@ public class TenancyService {
         }
 
         return Tenancy.startDaily(
+                referenceCodeGenerator.nextCode("TEN"),
                 tenantId,
                 propertyId,
                 roomId,

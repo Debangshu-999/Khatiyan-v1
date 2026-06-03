@@ -53,7 +53,7 @@ public class NotificationSchedulerService {
      * Archives old in-app notification recipient rows.
      */
     @Scheduled(
-            cron = "${app.notification.cleanup-cron:0 30 3 * * *}",
+            cron = "${app.notification.cleanup-cron:0 0 0 * * *}",
             zone = "${app.notification.cleanup-zone:Asia/Kolkata}")
     public void archiveOldNotifications() {
         int archivedCount = notificationService.archiveOldNotifications();

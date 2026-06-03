@@ -37,6 +37,9 @@ public class BillingCycle extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "reference_code", nullable = false, length = 40, unique = true)
+    private String referenceCode;
+
     @Column(name = "tenancy_id", nullable = false)
     private UUID tenancyId;
 
@@ -100,6 +103,7 @@ public class BillingCycle extends BaseEntity {
     @Builder
     private BillingCycle(
             UUID tenancyId,
+            String referenceCode,
             UUID tenantUserId,
             String tenantNameSnapshot,
             UUID propertyId,
@@ -123,6 +127,7 @@ public class BillingCycle extends BaseEntity {
         }
 
         this.id = UUID.randomUUID();
+        this.referenceCode = referenceCode;
         this.tenancyId = tenancyId;
         this.tenantUserId = tenantUserId;
         this.tenantNameSnapshot = tenantNameSnapshot;
@@ -156,8 +161,39 @@ public class BillingCycle extends BaseEntity {
             LocalDate rentDueDate,
             BillingCollectionTiming billingCollectionTiming,
             int rentGraceDays) {
+        return create(
+                tenancyId,
+                "BIL-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                tenantUserId,
+                tenantNameSnapshot,
+                propertyId,
+                roomId,
+                billingType,
+                cycleNumber,
+                periodStartDate,
+                periodEndDate,
+                rentDueDate,
+                billingCollectionTiming,
+                rentGraceDays);
+    }
+
+    public static BillingCycle create(
+            UUID tenancyId,
+            String referenceCode,
+            UUID tenantUserId,
+            String tenantNameSnapshot,
+            UUID propertyId,
+            UUID roomId,
+            TenancyBillingType billingType,
+            int cycleNumber,
+            LocalDate periodStartDate,
+            LocalDate periodEndDate,
+            LocalDate rentDueDate,
+            BillingCollectionTiming billingCollectionTiming,
+            int rentGraceDays) {
         return BillingCycle.builder()
                 .tenancyId(tenancyId)
+                .referenceCode(referenceCode)
                 .tenantUserId(tenantUserId)
                 .tenantNameSnapshot(tenantNameSnapshot)
                 .propertyId(propertyId)

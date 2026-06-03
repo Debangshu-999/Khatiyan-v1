@@ -15,6 +15,7 @@ import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
  */
 public record TenancyResponse(
     UUID id,
+    String referenceCode,
     UUID userId,
     UUID propertyId,
     UUID roomId,
@@ -33,6 +34,7 @@ public record TenancyResponse(
     public static TenancyResponse from(Tenancy t) {
         return new TenancyResponse(
             t.getId(),
+            t.getReferenceCode(),
             t.getUserId(),
             t.getPropertyId(),
             t.getRoomId(),

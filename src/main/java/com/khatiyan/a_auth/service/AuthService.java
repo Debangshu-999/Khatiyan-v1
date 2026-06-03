@@ -17,6 +17,7 @@ import com.khatiyan.a_auth.event.UserRegisteredEvent;
 import com.khatiyan.a_auth.model.OtpDeliveryChannel;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.model.User;
+import com.khatiyan.a_auth.model.LoginFailureReason;
 import com.khatiyan.a_auth.model.UserRole;
 import com.khatiyan.a_auth.repository.UserRepository;
 import com.khatiyan.c_shared.exception.NotFoundException;
@@ -36,6 +37,7 @@ public class AuthService {
     private final ApplicationEventPublisher eventPublisher;
     private final RateLimitService rateLimitService;
     private final LoginRateLimitProperties loginRateLimitProperties;
+    private final LoginAttemptService loginAttemptService;
 
     public AuthService(
             UserRepository userRepository,
@@ -45,7 +47,8 @@ public class AuthService {
             PhoneNumberNormalizer phoneNumberNormalizer,
             ApplicationEventPublisher eventPublisher,
             RateLimitService rateLimitService,
-            LoginRateLimitProperties loginRateLimitProperties) {
+            LoginRateLimitProperties loginRateLimitProperties,
+            LoginAttemptService loginAttemptService) {
         this.userRepository = userRepository;
         this.otpService = otpService;
         this.pinService = pinService;
@@ -54,6 +57,7 @@ public class AuthService {
         this.eventPublisher = eventPublisher;
         this.rateLimitService = rateLimitService;
         this.loginRateLimitProperties = loginRateLimitProperties;
+        this.loginAttemptService = loginAttemptService;
     }
 
     private TokenResponse tokenFor(User user) {
@@ -183,21 +187,36 @@ public class AuthService {
     public TokenResponse loginWithPIN(String phone, String pin, String ipAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
 
-        checkLoginRateLimits(normalizedPhone);
+        try {
+            checkLoginRateLimits(normalizedPhone);
+        } catch (ValidationException exception) {
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.TEMPORARY_RATE_LIMITED);
+            throw exception;
+        }
+
+        try {
+            loginAttemptService.checkDurableWindow(normalizedPhone, ipAddress);
+        } catch (ValidationException exception) {
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.DURABLE_RATE_LIMITED);
+            throw exception;
+        }
 
         Optional<User> maybeUser = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
         if (maybeUser.isEmpty()) {
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.USER_NOT_FOUND);
             throw new ValidationException("Invalid phone or PIN");
         }
 
         User user = maybeUser.get();
         if (user.isLoginLocked()) {
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.ACCOUNT_LOCKED);
             throw new ValidationException("Account is locked. Please reset your PIN.");
         }
 
         Instant now = Instant.now();
         if (!user.hasPin() || !pinService.matches(pin, user.getPinHash())) {
             user.recordFailedLoginAttempt(loginRateLimitProperties.permanentLockFailedAttempts(), now);
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.INVALID_PIN);
 
             if (user.isLoginLocked()) {
                 log.warn(
@@ -211,6 +230,7 @@ public class AuthService {
         }
 
         user.recordSuccessfulLogin(now);
+        loginAttemptService.recordSuccess(normalizedPhone, ipAddress);
 
         return tokenFor(user);
     }

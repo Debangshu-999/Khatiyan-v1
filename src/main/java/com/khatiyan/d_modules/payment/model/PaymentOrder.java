@@ -33,6 +33,9 @@ public class PaymentOrder extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "reference_code", nullable = false, length = 40, unique = true)
+    private String referenceCode;
+
     @Column(name = "billing_cycle_id", nullable = false)
     private UUID billingCycleId;
 
@@ -82,6 +85,7 @@ public class PaymentOrder extends BaseEntity {
 
     private PaymentOrder(
             UUID billingCycleId,
+            String referenceCode,
             UUID tenancyId,
             UUID tenantUserId,
             UUID propertyId,
@@ -93,6 +97,7 @@ public class PaymentOrder extends BaseEntity {
         validateAmount(amountPaise);
 
         this.id = UUID.randomUUID();
+        this.referenceCode = referenceCode;
         this.billingCycleId = billingCycleId;
         this.tenancyId = tenancyId;
         this.tenantUserId = tenantUserId;
@@ -115,8 +120,33 @@ public class PaymentOrder extends BaseEntity {
             PaymentProviderType provider,
             UUID createdByUserId,
             Instant expiresAt) {
+        return create(
+                billingCycleId,
+                "PAY-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                tenancyId,
+                tenantUserId,
+                propertyId,
+                amountPaise,
+                currency,
+                provider,
+                createdByUserId,
+                expiresAt);
+    }
+
+    public static PaymentOrder create(
+            UUID billingCycleId,
+            String referenceCode,
+            UUID tenancyId,
+            UUID tenantUserId,
+            UUID propertyId,
+            long amountPaise,
+            String currency,
+            PaymentProviderType provider,
+            UUID createdByUserId,
+            Instant expiresAt) {
         return new PaymentOrder(
                 billingCycleId,
+                referenceCode,
                 tenancyId,
                 tenantUserId,
                 propertyId,

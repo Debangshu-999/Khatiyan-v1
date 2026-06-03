@@ -42,6 +42,9 @@ public class Property extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "reference_code", nullable = false, length = 40, unique = true)
+    private String referenceCode;
+
     @Column(name = "owner_id", nullable = false)
     private UUID ownerId;
 
@@ -112,7 +115,7 @@ public class Property extends BaseEntity {
     @Column(name = "name", nullable = false, length = 80)
     private Set<String> customFacilities = new HashSet<>();
 
-    private Property(UUID ownerId, String name, String address, String city,
+    private Property(String referenceCode, UUID ownerId, String name, String address, String city,
                      String pincode, BigDecimal latitude, BigDecimal longitude,
                      PropertyType type, Set<PropertyFacility> facilities,
                      Set<String> customFacilities, Long dailyGuestAcRatePaise,
@@ -120,6 +123,7 @@ public class Property extends BaseEntity {
                      Integer rentGraceDays,
                      Long standardDepositPaise, Integer noticePeriodDays) {
         this.id = UUID.randomUUID();
+        this.referenceCode = referenceCode;
         this.ownerId = ownerId;
         this.name = name;
         this.address = address;
@@ -145,7 +149,35 @@ public class Property extends BaseEntity {
                                   Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                                   Integer rentGraceDays, Long standardDepositPaise,
                                   Integer noticePeriodDays) {
+        return create(
+                "PROP-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                ownerId,
+                name,
+                address,
+                city,
+                pincode,
+                latitude,
+                longitude,
+                type,
+                facilities,
+                customFacilities,
+                dailyGuestAcRatePaise,
+                dailyGuestNonAcRatePaise,
+                rentLateFeePerDayPaise,
+                rentGraceDays,
+                standardDepositPaise,
+                noticePeriodDays);
+    }
+
+    public static Property create(String referenceCode, UUID ownerId, String name, String address, String city,
+                                  String pincode, BigDecimal latitude, BigDecimal longitude,
+                                  PropertyType type, Set<PropertyFacility> facilities,
+                                  Set<String> customFacilities, Long dailyGuestAcRatePaise,
+                                  Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
+                                  Integer rentGraceDays, Long standardDepositPaise,
+                                  Integer noticePeriodDays) {
         return new Property(
+                referenceCode,
                 ownerId,
                 name,
                 address,

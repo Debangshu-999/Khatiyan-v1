@@ -32,6 +32,16 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     Optional<BillingCycle> findByIdForTenant(UUID cycleId, UUID tenantUserId);
 
     /**
+     * Loads one cycle by its user-facing reference code.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.referenceCode = :referenceCode
+        """)
+    Optional<BillingCycle> findByReferenceCode(String referenceCode);
+
+    /**
      * Lists tenant billing cycles newest first.
      */
     @Query("""

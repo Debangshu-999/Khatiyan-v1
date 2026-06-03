@@ -35,7 +35,7 @@ public class NoticeSchedulerService {
      * is still controlled by each notice's visibleFrom and visibleUntil window.
      */
     @Scheduled(
-            cron = "${app.notice.recurring-generation-cron:0 0 2 * * *}",
+            cron = "${app.notice.recurring-generation-cron:0 5 0 * * *}",
             zone = "${app.notice.recurring-generation-zone:Asia/Kolkata}")
     public void generateDueRecurringNotices() {
         int generatedCount = recurringNoticeService.generateDueRecurringNotices();
@@ -60,7 +60,7 @@ public class NoticeSchedulerService {
      * Archives expired published notices for management history.
      */
     @Scheduled(
-            cron = "${app.notice.archive-expired-cron:0 15 2 * * *}",
+            cron = "${app.notice.archive-expired-cron:0 45 0 * * *}",
             zone = "${app.notice.archive-expired-zone:Asia/Kolkata}")
     public void archiveExpiredNotices() {
         int archivedCount = noticeService.archiveExpiredNotices();

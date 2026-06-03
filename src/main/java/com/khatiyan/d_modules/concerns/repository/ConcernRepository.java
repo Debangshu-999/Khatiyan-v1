@@ -30,6 +30,13 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
     @Query("""
         SELECT c
         FROM Concern c
+        WHERE c.referenceCode = :referenceCode
+    """)
+    Optional<Concern> findConcernByReferenceCode(String referenceCode);
+
+    @Query("""
+        SELECT c
+        FROM Concern c
         WHERE c.propertyId = :propertyId
           AND c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN
         ORDER BY c.createdAt DESC
@@ -101,4 +108,29 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         ORDER BY c.createdAt ASC
     """)
     List<Concern> findOpenUnassignedCreatedBefore(Instant createdBefore);
+
+    @Query("""
+        SELECT c
+        FROM Concern c
+        WHERE c.status IN (
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW
+          )
+          AND c.createdAt <= :createdBefore
+        ORDER BY c.createdAt ASC
+    """)
+    List<Concern> findEscalationCandidates(Instant createdBefore);
+
+    @Query("""
+        SELECT c
+        FROM Concern c
+        WHERE c.propertyId = :propertyId
+          AND c.escalationLevel <> com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel.NONE
+          AND c.status IN (
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW
+          )
+        ORDER BY c.escalationLevel DESC, c.createdAt ASC
+    """)
+    List<Concern> findEscalatedByPropertyId(UUID propertyId);
 }

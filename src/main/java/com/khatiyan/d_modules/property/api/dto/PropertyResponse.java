@@ -15,6 +15,7 @@ import java.util.UUID;
  */
 public record PropertyResponse(
     UUID id,
+    String referenceCode,
     UUID ownerId,
     String name,
     String address,
@@ -39,6 +40,7 @@ public record PropertyResponse(
     public static PropertyResponse from(Property property) {
         return new PropertyResponse(
             property.getId(),
+            property.getReferenceCode(),
             property.getOwnerId(),
             property.getName(),
             property.getAddress(),

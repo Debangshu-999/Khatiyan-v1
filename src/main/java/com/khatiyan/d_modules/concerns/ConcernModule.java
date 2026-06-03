@@ -54,6 +54,10 @@ public class ConcernModule {
         return concernService.listPropertyConcernHistory(actorUserId, propertyId);
     }
 
+    public List<ConcernResponse> listEscalatedConcerns(UUID actorUserId, UUID propertyId) {
+        return concernService.listEscalatedConcerns(actorUserId, propertyId);
+    }
+
     public ConcernResponse assignConcern(UUID actorUserId, UUID concernId, AssignConcernRequest request) {
         return concernService.assignConcern(actorUserId, concernId, request);
     }
@@ -76,5 +80,9 @@ public class ConcernModule {
 
     public List<ConcernResponse> findOpenUnassignedCreatedBefore(Instant createdBefore) {
         return concernService.findOpenUnassignedCreatedBefore(createdBefore);
+    }
+
+    public int updateConcernEscalationLevels() {
+        return concernService.updateConcernEscalationLevels();
     }
 }

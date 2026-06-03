@@ -47,7 +47,7 @@ public class BillingCycleSchedulerService {
      * Creates the next monthly billing cycle for due active monthly tenancies.
      */
     @Scheduled(
-            cron = "${app.billing.monthly-cycle-generation-cron:0 10 0 * * *}",
+            cron = "${app.billing.monthly-cycle-generation-cron:0 15 0 * * *}",
             zone = "${app.billing.monthly-cycle-generation-zone:Asia/Kolkata}")
     public void generateDueMonthlyCycles() {
         LocalDate today = LocalDate.now();
@@ -65,7 +65,7 @@ public class BillingCycleSchedulerService {
      * Moves unpaid cycles into overdue status after their rent due date.
      */
     @Scheduled(
-            cron = "${app.billing.overdue-marker-cron:0 15 0 * * *}",
+            cron = "${app.billing.overdue-marker-cron:0 20 0 * * *}",
             zone = "${app.billing.overdue-marker-zone:Asia/Kolkata}")
     public void markPastDueCycles() {
         LocalDate today = LocalDate.now();
@@ -83,7 +83,7 @@ public class BillingCycleSchedulerService {
      * Creates or refreshes visible late-fee line items for overdue cycles.
      */
     @Scheduled(
-            cron = "${app.billing.late-fee-recalculation-cron:0 20 0 * * *}",
+            cron = "${app.billing.late-fee-recalculation-cron:0 25 0 * * *}",
             zone = "${app.billing.late-fee-recalculation-zone:Asia/Kolkata}")
     public void recalculateLateFees() {
         LocalDate today = LocalDate.now();

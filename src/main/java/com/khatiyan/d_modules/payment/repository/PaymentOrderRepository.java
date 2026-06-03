@@ -24,6 +24,13 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID
     @Query("""
             SELECT paymentOrder
             FROM PaymentOrder paymentOrder
+            WHERE paymentOrder.referenceCode = :referenceCode
+            """)
+    Optional<PaymentOrder> findByReferenceCode(String referenceCode);
+
+    @Query("""
+            SELECT paymentOrder
+            FROM PaymentOrder paymentOrder
             WHERE paymentOrder.billingCycleId = :billingCycleId
             ORDER BY paymentOrder.createdAt DESC
             """)

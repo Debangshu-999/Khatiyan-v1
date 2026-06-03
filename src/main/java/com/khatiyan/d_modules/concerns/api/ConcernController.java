@@ -88,6 +88,13 @@ public class ConcernController {
         return concernModule.listPropertyConcernHistory(user.userId(), propertyId);
     }
 
+    @GetMapping("/properties/{propertyId}/concerns/escalated")
+    public List<ConcernResponse> listEscalatedConcerns(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return concernModule.listEscalatedConcerns(user.userId(), propertyId);
+    }
+
     @GetMapping("/concerns/undertaken")
     public List<ConcernResponse> listUndertakenConcerns(@AuthenticationPrincipal UserPrincipal user) {
         return concernModule.listUndertakenConcerns(user.userId());

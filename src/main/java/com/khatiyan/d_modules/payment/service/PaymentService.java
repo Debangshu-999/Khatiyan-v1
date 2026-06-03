@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
@@ -73,6 +74,7 @@ public class PaymentService {
     private final PaymentProperties paymentProperties;
     private final BillingModule billingModule;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public PaymentService(
             PaymentOrderRepository paymentOrderRepository,
@@ -82,7 +84,8 @@ public class PaymentService {
             PaymentProviderRegistry paymentProviderRegistry,
             PaymentProperties paymentProperties,
             BillingModule billingModule,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ReferenceCodeGenerator referenceCodeGenerator) {
         this.paymentOrderRepository = paymentOrderRepository;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.paymentWebhookEventRepository = paymentWebhookEventRepository;
@@ -91,6 +94,7 @@ public class PaymentService {
         this.paymentProperties = paymentProperties;
         this.billingModule = billingModule;
         this.eventPublisher = eventPublisher;
+        this.referenceCodeGenerator = referenceCodeGenerator;
     }
 
     /**
@@ -147,6 +151,7 @@ public class PaymentService {
 
         PaymentOrder order = PaymentOrder.create(
                 cycle.id(),
+                referenceCodeGenerator.nextCode("PAY"),
                 cycle.tenancyId(),
                 cycle.tenantUserId(),
                 cycle.propertyId(),

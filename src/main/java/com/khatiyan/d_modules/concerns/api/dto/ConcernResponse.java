@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.khatiyan.d_modules.concerns.model.Concern;
 import com.khatiyan.d_modules.concerns.model.ConcernCategory;
+import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
 import com.khatiyan.d_modules.concerns.model.ConcernPriority;
 import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 
@@ -15,6 +16,7 @@ import com.khatiyan.d_modules.concerns.model.ConcernStatus;
  */
 public record ConcernResponse(
     UUID id,
+    String referenceCode,
     UUID propertyId,
     UUID roomId,
     UUID tenancyId,
@@ -23,6 +25,7 @@ public record ConcernResponse(
     UUID resolvedByUserId,
     ConcernCategory category,
     ConcernPriority priority,
+    ConcernEscalationLevel escalationLevel,
     ConcernStatus status,
     String title,
     String description,
@@ -45,6 +48,7 @@ public record ConcernResponse(
 
         return new ConcernResponse(
             concern.getId(),
+            concern.getReferenceCode(),
             concern.getPropertyId(),
             concern.getRoomId(),
             concern.getTenancyId(),
@@ -53,6 +57,7 @@ public record ConcernResponse(
             concern.getResolvedByUserId(),
             concern.getCategory(),
             concern.getPriority(),
+            concern.getEscalationLevel(),
             concern.getStatus(),
             concern.getTitle(),
             concern.getDescription(),

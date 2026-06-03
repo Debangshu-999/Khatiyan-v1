@@ -16,6 +16,8 @@ import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 @Repository
 public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
 
+    Optional<Tenancy> findByReferenceCode(String referenceCode);
+
     Optional<Tenancy> findByUserIdAndActiveTrue(UUID userId);
 
     @Query("""

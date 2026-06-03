@@ -30,6 +30,7 @@ public class ConcernSchedulerService {
     @EventListener(ApplicationReadyEvent.class)
     public void closeExpiredResolvedConcernsOnStartup() {
         log.info("Concern scheduler startup catch-up started");
+        updateConcernEscalationLevels();
         closeExpiredResolvedConcerns();
     }
 
@@ -37,7 +38,7 @@ public class ConcernSchedulerService {
      * Closes resolved concerns after their tenant reopen window has expired.
      */
     @Scheduled(
-            cron = "${app.concern.close-expired-resolved-cron:0 30 2 * * *}",
+            cron = "${app.concern.close-expired-resolved-cron:0 35 0 * * *}",
             zone = "${app.concern.close-expired-resolved-zone:Asia/Kolkata}")
     public void closeExpiredResolvedConcerns() {
         int closedCount = concernService.closeExpiredResolvedConcerns();
@@ -46,6 +47,22 @@ public class ConcernSchedulerService {
             log.info("Concern scheduler closed expired resolved concerns count={}", closedCount);
         } else {
             log.info("Concern scheduler found no expired resolved concerns to close");
+        }
+    }
+
+    /**
+     * Updates escalation levels for old open/under-review concerns.
+     */
+    @Scheduled(
+            cron = "${app.concern.update-escalations-cron:0 30 0 * * *}",
+            zone = "${app.concern.update-escalations-zone:Asia/Kolkata}")
+    public void updateConcernEscalationLevels() {
+        int updatedCount = concernService.updateConcernEscalationLevels();
+
+        if (updatedCount > 0) {
+            log.info("Concern scheduler updated escalation levels count={}", updatedCount);
+        } else {
+            log.info("Concern scheduler found no concern escalation levels to update");
         }
     }
 }

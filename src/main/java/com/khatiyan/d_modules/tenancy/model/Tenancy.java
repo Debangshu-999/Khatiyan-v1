@@ -41,6 +41,9 @@ public class Tenancy extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "reference_code", nullable = false, length = 40, unique = true)
+    private String referenceCode;
+
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
@@ -89,11 +92,12 @@ public class Tenancy extends BaseEntity {
     private boolean billingStarted;
 
     @Builder
-    private Tenancy(UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
+    private Tenancy(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
             TenancyBillingType billingType, Long rentAmountPaise, Long depositAmountPaise,
             Long dailyRatePaise, LocalDate startDate,
             LocalDate plannedEndDate) {
         this.id = UUID.randomUUID();
+        this.referenceCode = referenceCode;
         this.userId = userId;
         this.propertyId = propertyId;
         this.roomId = roomId;
@@ -115,7 +119,22 @@ public class Tenancy extends BaseEntity {
     public static Tenancy start(UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
             long rentAmountPaise, long depositAmountPaise,
             LocalDate startDate) {
+        return start(
+                "TEN-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                userId,
+                propertyId,
+                roomId,
+                createdByUserId,
+                rentAmountPaise,
+                depositAmountPaise,
+                startDate);
+    }
+
+    public static Tenancy start(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
+            long rentAmountPaise, long depositAmountPaise,
+            LocalDate startDate) {
         return Tenancy.builder()
+                .referenceCode(referenceCode)
                 .userId(userId)
                 .propertyId(propertyId)
                 .roomId(roomId)
@@ -134,12 +153,26 @@ public class Tenancy extends BaseEntity {
      */
     public static Tenancy startDaily(UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
             long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate) {
+        return startDaily(
+                "TEN-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                userId,
+                propertyId,
+                roomId,
+                createdByUserId,
+                dailyRatePaise,
+                startDate,
+                plannedEndDate);
+    }
+
+    public static Tenancy startDaily(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
+            long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate) {
         if (dailyRatePaise <= 0) {
             throw new IllegalArgumentException("Daily rate must be positive");
         }
         validateDailyStayDates(startDate, plannedEndDate);
 
         return Tenancy.builder()
+                .referenceCode(referenceCode)
                 .userId(userId)
                 .propertyId(propertyId)
                 .roomId(roomId)

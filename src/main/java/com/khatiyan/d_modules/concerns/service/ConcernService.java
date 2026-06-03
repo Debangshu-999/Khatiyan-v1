@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernPhotoRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
@@ -23,6 +24,7 @@ import com.khatiyan.d_modules.concerns.event.ConcernReopenedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernResolvedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernStatusChangedEvent;
 import com.khatiyan.d_modules.concerns.model.Concern;
+import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
 import com.khatiyan.d_modules.concerns.repository.ConcernRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
@@ -45,16 +47,19 @@ public class ConcernService {
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public ConcernService(
             ConcernRepository concernRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ReferenceCodeGenerator referenceCodeGenerator) {
         this.concernRepository = concernRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
         this.eventPublisher = eventPublisher;
+        this.referenceCodeGenerator = referenceCodeGenerator;
     }
 
     private Concern getConcern(UUID concernId) {
@@ -81,6 +86,7 @@ public class ConcernService {
                 .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
 
         Concern concern = Concern.raise(
+                referenceCodeGenerator.nextCode("CON"),
                 activeTenancy.propertyId(),
                 activeTenancy.roomId(),
                 activeTenancy.id(),
@@ -171,6 +177,19 @@ public class ConcernService {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
         return concernRepository.findHistoryByPropertyId(propertyId)
+                .stream()
+                .map(concern -> toResponse(concern))
+                .toList();
+    }
+
+    /**
+     * Lists escalated concerns for a managed property.
+     */
+    @Transactional(readOnly = true)
+    public List<ConcernResponse> listEscalatedConcerns(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        return concernRepository.findEscalatedByPropertyId(propertyId)
                 .stream()
                 .map(concern -> toResponse(concern))
                 .toList();
@@ -331,5 +350,28 @@ public class ConcernService {
                 .stream()
                 .map(concern -> toResponse(concern))
                 .toList();
+    }
+
+    /**
+     * Promotes old open/under-review concerns into visible escalation levels.
+     */
+    @Transactional
+    public int updateConcernEscalationLevels() {
+        Instant now = Instant.now();
+        Instant attentionThreshold = now.minus(ConcernEscalationLevel.ATTENTION_THRESHOLD);
+        List<Concern> concerns = concernRepository.findEscalationCandidates(attentionThreshold);
+        int updatedCount = 0;
+
+        for (Concern concern : concerns) {
+            if (concern.refreshEscalationLevel(now)) {
+                updatedCount = updatedCount + 1;
+            }
+        }
+
+        if (updatedCount > 0) {
+            log.info("Concern escalation levels updated checked={} updated={}", concerns.size(), updatedCount);
+        }
+
+        return updatedCount;
     }
 }

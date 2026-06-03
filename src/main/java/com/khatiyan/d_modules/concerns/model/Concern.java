@@ -41,6 +41,9 @@ public class Concern extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "reference_code", nullable = false, length = 40, unique = true)
+    private String referenceCode;
+
     @Column(name = "property_id", nullable = false)
     private UUID propertyId;
 
@@ -66,6 +69,10 @@ public class Concern extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ConcernPriority priority;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "escalation_level", nullable = false, length = 20)
+    private ConcernEscalationLevel escalationLevel;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
@@ -99,6 +106,7 @@ public class Concern extends BaseEntity {
     private List<ConcernPhoto> photos = new ArrayList<>();
 
     private Concern(
+            String referenceCode,
             UUID propertyId,
             UUID roomId,
             UUID tenancyId,
@@ -108,12 +116,14 @@ public class Concern extends BaseEntity {
             String title,
             String description) {
         this.id = UUID.randomUUID();
+        this.referenceCode = referenceCode;
         this.propertyId = propertyId;
         this.roomId = roomId;
         this.tenancyId = tenancyId;
         this.raisedByUserId = raisedByUserId;
         this.category = category;
         this.priority = priority;
+        this.escalationLevel = ConcernEscalationLevel.NONE;
         this.status = ConcernStatus.OPEN;
         this.title = title;
         this.description = description;
@@ -128,7 +138,30 @@ public class Concern extends BaseEntity {
             ConcernPriority priority,
             String title,
             String description) {
+        return raise(
+                "CON-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                propertyId,
+                roomId,
+                tenancyId,
+                raisedByUserId,
+                category,
+                priority,
+                title,
+                description);
+    }
+
+    public static Concern raise(
+            String referenceCode,
+            UUID propertyId,
+            UUID roomId,
+            UUID tenancyId,
+            UUID raisedByUserId,
+            ConcernCategory category,
+            ConcernPriority priority,
+            String title,
+            String description) {
         return new Concern(
+                referenceCode,
                 propertyId,
                 roomId,
                 tenancyId,
@@ -175,11 +208,13 @@ public class Concern extends BaseEntity {
         }
         this.assignedToUserId = assignedToUserId;
         this.status = ConcernStatus.IN_PROGRESS;
+        this.escalationLevel = ConcernEscalationLevel.NONE;
     }
 
     public void resolve(UUID resolvedByUserId, String resolutionNote, Instant resolvedAt) {
         ensureOpenForWork();
         this.status = ConcernStatus.RESOLVED;
+        this.escalationLevel = ConcernEscalationLevel.NONE;
         this.resolvedByUserId = resolvedByUserId;
         this.resolutionNote = resolutionNote;
         this.resolvedAt = resolvedAt;
@@ -204,6 +239,7 @@ public class Concern extends BaseEntity {
 
         this.assignedToUserId = resolvedByUserId;
         this.status = ConcernStatus.IN_PROGRESS;
+        this.escalationLevel = ConcernEscalationLevel.NONE;
         this.reopened = true;
         this.reopenReason = reopenReason;
         this.reopenedAt = now;
@@ -224,6 +260,29 @@ public class Concern extends BaseEntity {
         }
 
         this.status = ConcernStatus.CLOSED;
+        this.escalationLevel = ConcernEscalationLevel.NONE;
+    }
+
+    public boolean refreshEscalationLevel(Instant now) {
+        ConcernEscalationLevel nextLevel = nextEscalationLevel(now);
+        if (this.escalationLevel == nextLevel) {
+            return false;
+        }
+
+        this.escalationLevel = nextLevel;
+        return true;
+    }
+
+    private ConcernEscalationLevel nextEscalationLevel(Instant now) {
+        if (status != ConcernStatus.OPEN && status != ConcernStatus.UNDER_REVIEW) {
+            return ConcernEscalationLevel.NONE;
+        }
+
+        if (getCreatedAt() == null || now == null || now.isBefore(getCreatedAt())) {
+            return ConcernEscalationLevel.NONE;
+        }
+
+        return ConcernEscalationLevel.fromWaitingAge(Duration.between(getCreatedAt(), now));
     }
 
     private void ensureOpenForWork() {

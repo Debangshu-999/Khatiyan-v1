@@ -21,6 +21,8 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
     Optional<Property> findByIdAndActiveTrue(UUID id);
 
+    Optional<Property> findByReferenceCodeAndActiveTrue(String referenceCode);
+
     List<Property> findByOwnerIdAndActiveTrue(UUID ownerId);
 
     boolean existsByIdAndOwnerIdAndActiveTrue(UUID id, UUID ownerId);

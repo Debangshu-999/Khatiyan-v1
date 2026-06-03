@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
@@ -36,14 +37,17 @@ public class PropertyService {
     private final PropertyRepository propertyRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final DiscoveryModule discoveryModule;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public PropertyService(
             PropertyRepository propertyRepository,
             ApplicationEventPublisher eventPublisher,
-            @Lazy DiscoveryModule discoveryModule) {
+            @Lazy DiscoveryModule discoveryModule,
+            ReferenceCodeGenerator referenceCodeGenerator) {
         this.propertyRepository = propertyRepository;
         this.eventPublisher = eventPublisher;
         this.discoveryModule = discoveryModule;
+        this.referenceCodeGenerator = referenceCodeGenerator;
     }
 
     /**
@@ -66,6 +70,7 @@ public class PropertyService {
     @Transactional
     public PropertyResponse createProperty(UUID ownerId, CreatePropertyRequest request) {
         Property property = Property.create(
+                referenceCodeGenerator.nextCode("PROP"),
                 ownerId,
                 request.name(),
                 request.address(),

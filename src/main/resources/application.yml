@@ -179,24 +179,26 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081}
   notice:
-    recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */2 * * * *}
+    recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 5 0 * * *}
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}
-    archive-expired-cron: ${NOTICE_ARCHIVE_EXPIRED_CRON:0 */2 * * * *}
+    archive-expired-cron: ${NOTICE_ARCHIVE_EXPIRED_CRON:0 45 0 * * *}
     archive-expired-zone: ${NOTICE_ARCHIVE_EXPIRED_ZONE:Asia/Kolkata}
   concern:
-    close-expired-resolved-cron: ${CONCERN_CLOSE_EXPIRED_RESOLVED_CRON:0 30 2 * * *}
+    update-escalations-cron: ${CONCERN_UPDATE_ESCALATIONS_CRON:0 30 0 * * *}
+    update-escalations-zone: ${CONCERN_UPDATE_ESCALATIONS_ZONE:Asia/Kolkata}
+    close-expired-resolved-cron: ${CONCERN_CLOSE_EXPIRED_RESOLVED_CRON:0 35 0 * * *}
     close-expired-resolved-zone: ${CONCERN_CLOSE_EXPIRED_RESOLVED_ZONE:Asia/Kolkata}
   tenancy:
-    exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 5 0 * * *}
+    exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 10 0 * * *}
     exit-execution-zone: ${TENANCY_EXIT_EXECUTION_ZONE:Asia/Kolkata}
     exit-execution-batch-size: ${TENANCY_EXIT_EXECUTION_BATCH_SIZE:50}
   billing:
-    monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 */5 * * * *}
+    monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 15 0 * * *}
     monthly-cycle-generation-zone: ${BILLING_MONTHLY_CYCLE_GENERATION_ZONE:Asia/Kolkata}
     monthly-cycle-generation-batch-size: ${BILLING_MONTHLY_CYCLE_GENERATION_BATCH_SIZE:50}
-    overdue-marker-cron: ${BILLING_OVERDUE_MARKER_CRON:0/10 * * * * *}
+    overdue-marker-cron: ${BILLING_OVERDUE_MARKER_CRON:0 20 0 * * *}
     overdue-marker-zone: ${BILLING_OVERDUE_MARKER_ZONE:Asia/Kolkata}
-    late-fee-recalculation-cron: ${BILLING_LATE_FEE_RECALCULATION_CRON:5/10 * * * * *}
+    late-fee-recalculation-cron: ${BILLING_LATE_FEE_RECALCULATION_CRON:0 25 0 * * *}
     late-fee-recalculation-zone: ${BILLING_LATE_FEE_RECALCULATION_ZONE:Asia/Kolkata}
   payment:
     default-provider: ${PAYMENT_DEFAULT_PROVIDER:RAZORPAY}
@@ -209,7 +211,7 @@ app:
   notification:
     push-delivery-cron: ${NOTIFICATION_PUSH_DELIVERY_CRON:0 */1 * * * *}
     push-delivery-zone: ${NOTIFICATION_PUSH_DELIVERY_ZONE:Asia/Kolkata}
-    cleanup-cron: ${NOTIFICATION_CLEANUP_CRON:0 30 3 * * *}
+    cleanup-cron: ${NOTIFICATION_CLEANUP_CRON:0 0 0 * * *}
     cleanup-zone: ${NOTIFICATION_CLEANUP_ZONE:Asia/Kolkata}
     kafka:
       push-topic: ${NOTIFICATION_PUSH_TOPIC:notification.push.delivery}

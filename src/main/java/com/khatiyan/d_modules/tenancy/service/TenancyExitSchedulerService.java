@@ -48,7 +48,7 @@ public class TenancyExitSchedulerService {
      * Executes approved tenancy exit requests whose checkout date has arrived.
      */
     @Scheduled(
-            cron = "${app.tenancy.exit-execution-cron:0 5 0 * * *}",
+            cron = "${app.tenancy.exit-execution-cron:0 10 0 * * *}",
             zone = "${app.tenancy.exit-execution-zone:Asia/Kolkata}")
     public void executeDueExitRequests() {
         LocalDate today = LocalDate.now();
