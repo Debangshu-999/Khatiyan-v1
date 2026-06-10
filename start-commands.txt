@@ -1,3 +1,0 @@
-$env:RAZORPAY_KEY_ID="rzp_test_SupTJk3s1mIHPe"
-$env:RAZORPAY_KEY_SECRET="NSf2jmSq5Xfx0RVs1sEmseXi"
-$env:RAZORPAY_WEBHOOK_SECRET="khatiyan_rzp_whsec_test_9f4c7b2a6e1d48a3b8c2f05d91a7e6c4"
