@@ -5,9 +5,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
+import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
+import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
 
 /**
@@ -23,9 +28,21 @@ import com.khatiyan.d_modules.tenancy.service.TenancyService;
 public class TenancyModule {
 
     private final TenancyService tenancyService;
+    private final TenancyExitRequestService tenancyExitRequestService;
+    private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
 
-    public TenancyModule(TenancyService tenancyService) {
+    // TenancyExitRequestService / TenancyRoomChangeRequestService transitively
+    // depend on BillingModule, which depends back on TenancyModule
+    // (BillingCycleService needs tenancy reads). @Lazy defers these edges so the
+    // bean-init graph stays acyclic; the proxies resolve on first use, by which
+    // point all beans exist.
+    public TenancyModule(
+            TenancyService tenancyService,
+            @Lazy TenancyExitRequestService tenancyExitRequestService,
+            @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService) {
         this.tenancyService = tenancyService;
+        this.tenancyExitRequestService = tenancyExitRequestService;
+        this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
     }
 
     public Optional<TenancyResponse> findById(UUID tenancyId) {
@@ -44,6 +61,12 @@ public class TenancyModule {
             .toList();
     }
 
+    public List<TenancyResponse> findInactiveByPropertyId(UUID propertyId) {
+        return tenancyService.findInactiveByPropertyId(propertyId).stream()
+            .map(tenancy -> TenancyResponse.from(tenancy))
+            .toList();
+    }
+
     public List<TenancyResponse> findActiveBillingStartedMonthlyTenancies() {
         return tenancyService.findActiveBillingStartedMonthlyTenancies().stream()
             .map(tenancy -> TenancyResponse.from(tenancy))
@@ -54,6 +77,22 @@ public class TenancyModule {
         return tenancyService.findActiveEndingBetween(startDate, endDate).stream()
             .map(tenancy -> TenancyResponse.from(tenancy))
             .toList();
+    }
+
+    /**
+     * Exit requests for a property the actor manages. Used by the owner action
+     * center to derive pending / upcoming / ending-today exit counts.
+     */
+    public List<TenancyExitRequestResponse> listPropertyExitRequests(UUID actorUserId, UUID propertyId) {
+        return tenancyExitRequestService.listForProperty(actorUserId, propertyId);
+    }
+
+    /**
+     * Room-change requests for a property the actor manages. Used by the owner
+     * action center to derive the pending room-change count.
+     */
+    public List<TenancyRoomChangeRequestResponse> listPropertyRoomChangeRequests(UUID actorUserId, UUID propertyId) {
+        return tenancyRoomChangeRequestService.listForProperty(actorUserId, propertyId);
     }
 
     public boolean isUserTenantOfProperty(UUID userId, UUID propertyId) {

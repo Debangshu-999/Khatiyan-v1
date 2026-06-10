@@ -202,16 +202,38 @@ public class PaymentService {
     public PaymentOrderResponse verifyCheckoutReturn(
             UUID tenantUserId,
             VerifyProviderPaymentRequest request) {
-        PaymentProviderType providerType = PaymentProviderType.RAZORPAY;
-        PaymentProvider provider = paymentProviderRegistry.get(providerType);
-        PaymentOrder order = paymentOrderRepository
-                .findByProviderOrderId(providerType, request.providerOrderId())
-                .orElseThrow(() -> new NotFoundException("PaymentOrder", request.providerOrderId()));
+        PaymentOrder order = findVerifiedOrder(request);
 
         if (!order.getTenantUserId().equals(tenantUserId)) {
             throw new ForbiddenException("You cannot verify this payment order");
         }
 
+        return completeVerifiedOrder(order, request);
+    }
+
+    @Transactional
+    public PaymentOrderResponse verifyCheckoutReturnPublic(VerifyProviderPaymentRequest request) {
+        PaymentOrder order = findVerifiedOrder(request);
+        return completeVerifiedOrder(order, request);
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentOrderResponse getCheckoutOrder(UUID paymentOrderId) {
+        PaymentOrder order = paymentOrderRepository.findById(paymentOrderId)
+                .orElseThrow(() -> new NotFoundException("PaymentOrder", paymentOrderId));
+        return PaymentOrderResponse.from(order);
+    }
+
+    private PaymentOrder findVerifiedOrder(VerifyProviderPaymentRequest request) {
+        PaymentProviderType providerType = PaymentProviderType.RAZORPAY;
+        return paymentOrderRepository
+                .findByProviderOrderId(providerType, request.providerOrderId())
+                .orElseThrow(() -> new NotFoundException("PaymentOrder", request.providerOrderId()));
+    }
+
+    private PaymentOrderResponse completeVerifiedOrder(PaymentOrder order, VerifyProviderPaymentRequest request) {
+        PaymentProviderType providerType = PaymentProviderType.RAZORPAY;
+        PaymentProvider provider = paymentProviderRegistry.get(providerType);
         ProviderPaymentVerification verification = provider.verifyReturnPayload(
                 new VerifyProviderPaymentCommand(
                         request.providerOrderId(),

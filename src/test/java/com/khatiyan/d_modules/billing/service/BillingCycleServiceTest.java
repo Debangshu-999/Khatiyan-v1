@@ -33,6 +33,8 @@ import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
 import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
+import com.khatiyan.d_modules.billing.repository.BillingManualPaymentRepository;
+import com.khatiyan.d_modules.billing.repository.BillingMonthlyReportRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
@@ -54,6 +56,12 @@ class BillingCycleServiceTest {
 
     @Mock
     private BillingCycleLineItemRepository lineItemRepository;
+
+    @Mock
+    private BillingManualPaymentRepository manualPaymentRepository;
+
+    @Mock
+    private BillingMonthlyReportRepository monthlyReportRepository;
 
     @Mock
     private TenancyModule tenancyModule;
@@ -81,6 +89,8 @@ class BillingCycleServiceTest {
         billingCycleService = new BillingCycleService(
                 billingCycleRepository,
                 lineItemRepository,
+                manualPaymentRepository,
+                monthlyReportRepository,
                 tenancyModule,
                 propertyModule,
                 authModule,

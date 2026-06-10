@@ -1,6 +1,9 @@
 package com.khatiyan.d_modules.concerns.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,6 +15,7 @@ import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
+import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernPhotoRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
 import com.khatiyan.d_modules.concerns.api.dto.CreateConcernRequest;
@@ -127,7 +131,13 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listTenantCurrentConcerns(UUID tenantUserId) {
-        return concernRepository.findCurrentByRaisedByUserId(tenantUserId)
+        List<Concern> concerns = tenancyModule.findActiveByUserId(tenantUserId)
+                .map(activeTenancy -> concernRepository.findCurrentByRaisedByUserIdAndPropertyId(
+                        tenantUserId,
+                        activeTenancy.propertyId()))
+                .orElseGet(() -> concernRepository.findCurrentByRaisedByUserId(tenantUserId));
+
+        return concerns
                 .stream()
                 .map(concern -> toResponse(concern))
                 .toList();
@@ -138,7 +148,13 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listTenantConcernHistory(UUID tenantUserId) {
-        return concernRepository.findHistoryByRaisedByUserId(tenantUserId)
+        List<Concern> concerns = tenancyModule.findActiveByUserId(tenantUserId)
+                .map(activeTenancy -> concernRepository.findHistoryByRaisedByUserIdAndPropertyId(
+                        tenantUserId,
+                        activeTenancy.propertyId()))
+                .orElseGet(() -> concernRepository.findHistoryByRaisedByUserId(tenantUserId));
+
+        return concerns
                 .stream()
                 .map(concern -> toResponse(concern))
                 .toList();
@@ -155,6 +171,42 @@ public class ConcernService {
                 .stream()
                 .map(concern -> toResponse(concern))
                 .toList();
+    }
+
+    private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * Property-scoped concern rollup for the owner action center.
+     *
+     * <p>"Raised today" uses the current IST date; "resolved this week" uses a
+     * rolling 7-day window; "unattended 24h" counts open, still-unassigned
+     * concerns older than 24 hours.
+     */
+    @Transactional(readOnly = true)
+    public ConcernDashboardSummary getPropertyConcernSummary(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        Instant now = Instant.now();
+        Instant todayStart = LocalDate.now(DASHBOARD_ZONE).atStartOfDay(DASHBOARD_ZONE).toInstant();
+        Instant weekStart = now.minus(7, ChronoUnit.DAYS);
+        Instant unattendedCutoff = now.minus(24, ChronoUnit.HOURS);
+
+        long open = concernRepository.countByPropertyIdAndStatus(
+                propertyId, com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN);
+        long inProgress = concernRepository.countByPropertyIdAndStatus(
+                propertyId, com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS);
+        long escalated = concernRepository.countEscalatedByPropertyId(propertyId);
+        long resolvedThisWeek = concernRepository.countResolvedByPropertyIdAfter(propertyId, weekStart);
+        long raisedToday = concernRepository.countByPropertyIdAndCreatedAtAfter(propertyId, todayStart);
+        long unattended24h = concernRepository.countUnattendedOpenByPropertyId(propertyId, unattendedCutoff);
+
+        return new ConcernDashboardSummary(
+                open,
+                inProgress,
+                escalated,
+                resolvedThisWeek,
+                raisedToday,
+                unattended24h);
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.billing.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -140,10 +142,12 @@ public class BillingCycleLineItemService {
             CreateDiscountRequest request) {
         BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
 
+        long discountAmountPaise = computeDiscountAmount(cycle.getTotalAmountPaise(), request.discountPercent());
         BillingCycleLineItem lineItem = createDiscountLineItem(
                 cycle,
                 actorUserId,
-                request);
+                request,
+                discountAmountPaise);
 
         lineItemRepository.save(lineItem);
         if (lineItem.getStatus() == BillingCycleLineItemStatus.ADDED) {
@@ -152,12 +156,13 @@ public class BillingCycleLineItemService {
         publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CREATED);
 
         log.info(
-                "Billing discount added tenancyId={} sourceBillingCycleId={} lineItemId={} actorUserId={} amount={} status={}",
+                "Billing discount added tenancyId={} sourceBillingCycleId={} lineItemId={} actorUserId={} percent={} amount={} status={}",
                 tenancyId,
                 cycle.getId(),
                 lineItem.getId(),
                 actorUserId,
-                request.amountPaise(),
+                request.discountPercent(),
+                discountAmountPaise,
                 lineItem.getStatus());
 
         return toResponse(cycle);
@@ -439,14 +444,15 @@ public class BillingCycleLineItemService {
     private BillingCycleLineItem createDiscountLineItem(
             BillingCycle cycle,
             UUID actorUserId,
-            CreateDiscountRequest request) {
+            CreateDiscountRequest request,
+            long discountAmountPaise) {
         if (cycle.getStatus() == BillingCycleStatus.UNPAID
                 || cycle.getStatus() == BillingCycleStatus.OVERDUE) {
             return BillingCycleLineItem.discount(
                     cycle,
                     request.label().trim(),
                     cleanDescription(request.description()),
-                    request.amountPaise(),
+                    discountAmountPaise,
                     actorUserId,
                     nextDisplayOrder(cycle.getId()));
         }
@@ -455,9 +461,32 @@ public class BillingCycleLineItemService {
                 cycle,
                 request.label().trim(),
                 cleanDescription(request.description()),
-                request.amountPaise(),
+                discountAmountPaise,
                 actorUserId,
                 nextDisplayOrder(cycle.getId()));
+    }
+
+    /**
+     * Converts a discount percentage into a money amount against the cycle's
+     * current total, rounded to the nearest paise and capped at the total so a
+     * discount can never exceed the payable amount.
+     */
+    private long computeDiscountAmount(long cycleTotalPaise, BigDecimal discountPercent) {
+        if (discountPercent == null || discountPercent.signum() <= 0) {
+            throw new ValidationException("Discount percent must be positive");
+        }
+
+        long amountPaise = BigDecimal.valueOf(cycleTotalPaise)
+                .multiply(discountPercent)
+                .divide(BigDecimal.valueOf(100))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValueExact();
+
+        if (amountPaise <= 0) {
+            throw new ValidationException("Discount amount must be greater than zero");
+        }
+
+        return Math.min(amountPaise, cycleTotalPaise);
     }
 
     /**

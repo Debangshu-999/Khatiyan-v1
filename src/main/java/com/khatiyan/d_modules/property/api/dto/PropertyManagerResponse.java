@@ -18,6 +18,9 @@ public record PropertyManagerResponse(
     String managerProfilePhotoUrl,
     UUID assignedByUserId,
     boolean active,
+    boolean phoneVerified,
+    boolean profileCompleted,
+    boolean accountActive,
     Instant createdAt
 ) {
     public static PropertyManagerResponse from(PropertyManager manager, UserSummaryResponse managerUser) {
@@ -30,6 +33,9 @@ public record PropertyManagerResponse(
             managerUser.profilePhotoUrl(),
             manager.getAssignedByUserId(),
             manager.isCurrentlyActive(),
+            managerUser.phoneVerified(),
+            managerUser.profileCompleted(),
+            managerUser.active(),
             manager.getCreatedAt()
         );
     }

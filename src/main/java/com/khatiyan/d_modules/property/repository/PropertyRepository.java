@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.property.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +24,11 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
     Optional<Property> findByReferenceCodeAndActiveTrue(String referenceCode);
 
+    List<Property> findByActiveTrue();
+
     List<Property> findByOwnerIdAndActiveTrue(UUID ownerId);
+
+    List<Property> findByIdInAndActiveTrue(Collection<UUID> ids);
 
     boolean existsByIdAndOwnerIdAndActiveTrue(UUID id, UUID ownerId);
 }

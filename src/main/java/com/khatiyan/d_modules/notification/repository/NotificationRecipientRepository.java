@@ -35,6 +35,53 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
     List<NotificationRecipient> findVisibleByUserId(UUID userId);
 
     /**
+     * Loads visible notifications for a user created on or after the given
+     * instant. Used by the tenancy-scoped feed: callers compute the floor
+     * (active tenancy start, or epoch for owners) and pass it in.
+     */
+    @Query("""
+        SELECT recipient
+        FROM NotificationRecipient recipient
+        JOIN FETCH recipient.notification notification
+        WHERE recipient.userId = :userId
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+        ORDER BY recipient.createdAt DESC
+    """)
+    List<NotificationRecipient> findVisibleByUserIdSince(UUID userId, Instant since);
+
+    /**
+     * Loads visible notifications for a user created on or after the floor
+     * AND strictly before the upper bound. Used for the "recent" bucket
+     * (since-floor to now) and the "older" bucket (floor to cutoff).
+     */
+    @Query("""
+        SELECT recipient
+        FROM NotificationRecipient recipient
+        JOIN FETCH recipient.notification notification
+        WHERE recipient.userId = :userId
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+          AND recipient.createdAt < :until
+        ORDER BY recipient.createdAt DESC
+    """)
+    List<NotificationRecipient> findVisibleByUserIdBetween(UUID userId, Instant since, Instant until);
+
+    /**
+     * Counts unread, non-archived notifications for the user since the given
+     * floor. Used by the tenancy-scoped bell badge.
+     */
+    @Query("""
+        SELECT COUNT(recipient)
+        FROM NotificationRecipient recipient
+        WHERE recipient.userId = :userId
+          AND recipient.readAt IS NULL
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+    """)
+    long countUnreadByUserIdSince(UUID userId, Instant since);
+
+    /**
      * Loads one notification recipient row only if it belongs to the user.
      *
      * <p>This is used before user actions such as mark-read/archive so one user

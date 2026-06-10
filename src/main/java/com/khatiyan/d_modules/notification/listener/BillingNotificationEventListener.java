@@ -1,5 +1,8 @@
 package com.khatiyan.d_modules.notification.listener;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -13,6 +16,7 @@ import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 
 /**
  * Converts tenant-visible billing line changes into notifications.
@@ -32,13 +36,37 @@ public class BillingNotificationEventListener {
             return;
         }
 
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("lineItemId", event.lineItemId().toString());
+        if (event.billingCycleId() != null) {
+            data.put("billingCycleId", event.billingCycleId().toString());
+        }
+        data.put("tenancyId", event.tenancyId().toString());
+        data.put("propertyId", event.propertyId().toString());
+        data.put("tenantUserId", event.tenantUserId().toString());
+        data.put("lineType", event.type().name());
+        if (event.status() != null) {
+            data.put("status", event.status().name());
+        }
+        if (event.settlementAction() != null) {
+            data.put("settlementAction", event.settlementAction().name());
+        }
+        data.put("action", event.action().name());
+        if (event.label() != null) {
+            data.put("label", event.label());
+        }
+        data.put("amountPaise", Long.toString(event.amountPaise()));
+        data.put("settlementAmountPaise", Long.toString(event.settlementAmountPaise()));
+
         notificationModule.notifyUser(
                 event.tenantUserId(),
                 title(event),
                 body(event),
                 NotificationCategory.PAYMENT,
                 priority(event),
+                NotificationSubtype.BILLING_LINE_ITEM_CHANGED,
                 event.billingCycleId() != null ? event.billingCycleId() : event.lineItemId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 

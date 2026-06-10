@@ -40,6 +40,14 @@ public class PaymentModule {
         return paymentService.verifyCheckoutReturn(tenantUserId, request);
     }
 
+    public PaymentOrderResponse verifyCheckoutReturnPublic(VerifyProviderPaymentRequest request) {
+        return paymentService.verifyCheckoutReturnPublic(request);
+    }
+
+    public PaymentOrderResponse getCheckoutOrder(UUID paymentOrderId) {
+        return paymentService.getCheckoutOrder(paymentOrderId);
+    }
+
     public PaymentWebhookEventResponse handleRazorpayWebhook(
             String payloadJson,
             String signature,

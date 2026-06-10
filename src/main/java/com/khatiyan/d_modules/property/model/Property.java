@@ -57,6 +57,9 @@ public class Property extends BaseEntity {
     @Column(nullable = false, length = 80)
     private String city;
 
+    @Column(length = 80)
+    private String state;
+
     @Column(nullable = false, length = 10)
     private String pincode;
 
@@ -116,6 +119,7 @@ public class Property extends BaseEntity {
     private Set<String> customFacilities = new HashSet<>();
 
     private Property(String referenceCode, UUID ownerId, String name, String address, String city,
+                     String state,
                      String pincode, BigDecimal latitude, BigDecimal longitude,
                      PropertyType type, Set<PropertyFacility> facilities,
                      Set<String> customFacilities, Long dailyGuestAcRatePaise,
@@ -128,6 +132,7 @@ public class Property extends BaseEntity {
         this.name = name;
         this.address = address;
         this.city = city;
+        this.state = normalizeState(state);
         this.pincode = pincode;
         this.latitude = latitude;
         this.longitude = longitude;
@@ -143,6 +148,7 @@ public class Property extends BaseEntity {
     }
 
     public static Property create(UUID ownerId, String name, String address, String city,
+                                  String state,
                                   String pincode, BigDecimal latitude, BigDecimal longitude,
                                   PropertyType type, Set<PropertyFacility> facilities,
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
@@ -155,6 +161,7 @@ public class Property extends BaseEntity {
                 name,
                 address,
                 city,
+                state,
                 pincode,
                 latitude,
                 longitude,
@@ -170,6 +177,7 @@ public class Property extends BaseEntity {
     }
 
     public static Property create(String referenceCode, UUID ownerId, String name, String address, String city,
+                                  String state,
                                   String pincode, BigDecimal latitude, BigDecimal longitude,
                                   PropertyType type, Set<PropertyFacility> facilities,
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
@@ -182,6 +190,7 @@ public class Property extends BaseEntity {
                 name,
                 address,
                 city,
+                state,
                 pincode,
                 latitude,
                 longitude,
@@ -196,7 +205,7 @@ public class Property extends BaseEntity {
                 noticePeriodDays);
     }
 
-    public void updateDetails(String name, String address, String city, String pincode,
+    public void updateDetails(String name, String address, String city, String state, String pincode,
                               BigDecimal latitude, BigDecimal longitude, PropertyType type,
                               Set<PropertyFacility> facilities, Set<String> customFacilities,
                               Long dailyGuestAcRatePaise, Long dailyGuestNonAcRatePaise,
@@ -206,6 +215,7 @@ public class Property extends BaseEntity {
         this.name = name;
         this.address = address;
         this.city = city;
+        this.state = normalizeState(state);
         this.pincode = pincode;
         this.latitude = latitude;
         this.longitude = longitude;
@@ -335,5 +345,18 @@ public class Property extends BaseEntity {
         }
 
         return normalized;
+    }
+
+    private String normalizeState(String state) {
+        if (state == null) {
+            return null;
+        }
+
+        String normalized = state.trim();
+        if (normalized.length() > 80) {
+            throw new ValidationException("State must be at most 80 characters");
+        }
+
+        return normalized.isBlank() ? null : normalized;
     }
 }

@@ -264,6 +264,7 @@ function clearSession() {
   renderConcerns("#tenantConcernHistoryList", []);
   renderConcerns("#availableConcernsList", []);
   renderConcerns("#undertakenConcernsList", []);
+  renderConcerns("#escalatedConcernsList", []);
   renderConcerns("#propertyConcernHistoryList", []);
   renderBoardCategories([]);
   renderBoardItems([]);
@@ -1151,6 +1152,12 @@ async function loadUndertakenConcerns() {
   renderConcerns("#undertakenConcernsList", concerns || [], "admin");
 }
 
+async function loadEscalatedConcerns() {
+  if (!requireProperty()) return;
+  const concerns = await run("GET escalated concerns", () => api(`/api/v1/properties/${store.selectedProperty.id}/concerns/escalated`));
+  renderConcerns("#escalatedConcernsList", concerns || [], "admin");
+}
+
 async function loadPropertyConcernHistory() {
   if (!requireProperty()) return;
   const concerns = await run("GET property concern history", () => api(`/api/v1/properties/${store.selectedProperty.id}/concerns/history`));
@@ -1162,6 +1169,7 @@ async function loadAdminConcerns() {
   await Promise.all([
     loadAvailableConcerns(),
     loadUndertakenConcerns(),
+    loadEscalatedConcerns(),
     loadPropertyConcernHistory(),
   ]);
 }
@@ -2540,9 +2548,10 @@ function renderConcerns(selector, concerns, mode = "tenant") {
       <div class="item-title">
         <span>${escapeHtml(concern.title)}</span>
         <span class="badge">${concern.status}${concern.reopened ? " | REOPENED" : ""}</span>
+        ${concern.escalationLevel && concern.escalationLevel !== "NONE" ? `<span class="badge bad">${concern.escalationLevel}</span>` : ""}
       </div>
       <div class="item-meta">id: ${concern.id}</div>
-      <div class="item-meta">${concern.category} | ${concern.priority} | room ${concern.roomId}</div>
+      <div class="item-meta">${concern.category} | ${concern.priority} | escalation ${concern.escalationLevel || "NONE"} | room ${concern.roomId}</div>
       <div class="item-meta">${escapeHtml(concern.description)}</div>
       ${concern.assignedToUserId ? `<div class="item-meta">assigned to ${concern.assignedToUserId}</div>` : ""}
       ${concern.resolutionNote ? `<div class="item-meta">resolution: ${escapeHtml(concern.resolutionNote)}</div>` : ""}
@@ -2794,9 +2803,8 @@ function renderNotifications(selector, notifications) {
         <span>${escapeHtml(notification.title)}</span>
         <span class="badge">${notification.category} | ${notification.priority}</span>
       </div>
-      <div class="item-meta">recipient id: ${notification.recipientId}</div>
-      <div class="item-meta">source id: ${notification.sourceId || "none"}</div>
       <div class="item-meta">${escapeHtml(notification.body)}</div>
+      ${notificationDetailsHtml(notification)}
       <div class="item-meta">created ${formatDateTime(notification.createdAt)}</div>
       <div class="item-meta">${notification.readAt ? `read ${formatDateTime(notification.readAt)}` : "unread"}</div>
       <div class="item-actions">
@@ -2824,6 +2832,141 @@ function renderNotifications(selector, notifications) {
 
     list.appendChild(item);
   });
+}
+
+function notificationDetailsHtml(notification) {
+  const rows = notificationDetailRows(notification);
+  if (!rows.length) return "";
+
+  return `
+    <div class="item-meta">
+      ${rows.map((row) => `<div><strong>${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value)}</div>`).join("")}
+    </div>
+  `;
+}
+
+function notificationDetailRows(notification) {
+  const data = notification.data || {};
+  const rows = [];
+
+  switch (notification.subtype) {
+    case "USER_REGISTERED":
+      addDetail(rows, "Role", displayEnum(data.role));
+      addDetail(rows, "Phone", data.phone);
+      break;
+    case "PIN_CHANGED":
+      addDetail(rows, "Security event", "PIN updated");
+      break;
+    case "TENANCY_STARTED":
+    case "TENANCY_ENDED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "Room", data.roomNumber);
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      addDetail(rows, notification.subtype === "TENANCY_STARTED" ? "Start date" : "End date", formatDateOnly(data.startDate || data.endDate));
+      break;
+    case "TENANCY_ROOM_TRANSFERRED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "New room", data.newRoomNumber);
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      addDetail(rows, "Transfer date", formatDateOnly(data.transferDate));
+      break;
+    case "TENANCY_EXIT_REQUESTED":
+    case "TENANCY_EXIT_CANCELLED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "Type", displayEnum(data.exitType));
+      addDetail(rows, "Checkout date", formatDateOnly(data.requestedCheckoutDate));
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      break;
+    case "TENANCY_EXIT_APPROVED":
+    case "TENANCY_EXIT_EXECUTED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "Checkout date", formatDateOnly(data.approvedCheckoutDate || data.checkoutDate));
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      break;
+    case "CONCERN_RAISED":
+    case "CONCERN_ASSIGNED":
+    case "CONCERN_IN_PROGRESS":
+    case "CONCERN_RESOLVED":
+    case "CONCERN_REOPENED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "Concern", data.concernTitle);
+      addDetail(rows, "Status", displayEnum(data.status));
+      addDetail(rows, "Concern ID", shortId(data.concernId));
+      break;
+    case "NOTICE_PUBLISHED":
+      addDetail(rows, "Property", data.propertyName);
+      addDetail(rows, "Notice", data.noticeTitle);
+      break;
+    case "MANAGER_ASSIGNED":
+    case "MANAGER_REMOVED":
+      addDetail(rows, "Property", data.propertyName);
+      break;
+    case "BILLING_CYCLE_GENERATED":
+      addDetail(rows, "Cycle", data.cycleNumber);
+      addDetail(rows, "Due date", formatDateOnly(data.rentDueDate));
+      addDetail(rows, "Amount", formatPaise(data.totalAmountPaise));
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      break;
+    case "BILLING_LATE_FEE_APPLIED":
+      addDetail(rows, "Late fee", formatPaise(data.lateFeeAmountPaise));
+      addDetail(rows, "Billing cycle ID", shortId(data.billingCycleId));
+      addDetail(rows, "Tenancy ID", shortId(data.tenancyId));
+      break;
+    case "BILLING_LINE_ITEM_CHANGED":
+      addDetail(rows, "Line", data.label);
+      addDetail(rows, "Type", displayEnum(data.lineType));
+      addDetail(rows, "Amount", formatPaise(data.amountPaise));
+      addDetail(rows, "Status", displayEnum(data.status));
+      break;
+    case "PAYMENT_SUCCEEDED":
+    case "PAYMENT_FAILED":
+      addDetail(rows, "Amount", formatPaise(data.amountPaise));
+      addDetail(rows, "Billing cycle ID", shortId(data.billingCycleId));
+      addDetail(rows, "Reason", data.failureReason);
+      break;
+  }
+
+  if (!rows.length) {
+    addFallbackNotificationSourceDetail(rows, notification);
+  }
+
+  return rows.slice(0, 5);
+}
+
+function addFallbackNotificationSourceDetail(rows, notification) {
+  const sourceId = shortId(notification.sourceId);
+  if (!sourceId) return;
+
+  switch (notification.category) {
+    case "TENANCY":
+      addDetail(rows, "Tenancy ID", sourceId);
+      break;
+    case "CONCERN":
+      addDetail(rows, "Concern ID", sourceId);
+      break;
+    case "NOTICE":
+      addDetail(rows, "Notice ID", sourceId);
+      break;
+    case "PAYMENT":
+      addDetail(rows, "Payment reference", sourceId);
+      break;
+    case "PROPERTY":
+      addDetail(rows, "Property ID", sourceId);
+      break;
+    case "AUTH":
+      addDetail(rows, "Account ID", sourceId);
+      break;
+  }
+}
+
+function addDetail(rows, label, value) {
+  if (!value || value === "null") return;
+  rows.push({ label, value });
+}
+
+function shortId(value) {
+  if (!value) return "";
+  return value.length > 12 ? value.slice(0, 8) : value;
 }
 
 async function reloadNotificationsForSelector(selector) {
@@ -2921,6 +3064,22 @@ function fillRecurringNoticeForm(recurringNotice) {
 function formatDateTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString();
+}
+
+function formatDateOnly(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatPaise(value) {
+  if (!value) return "";
+  const amountPaise = Number(value);
+  if (!Number.isFinite(amountPaise)) return "";
+  return new Intl.NumberFormat("en-IN", {
+    currency: "INR",
+    maximumFractionDigits: amountPaise % 100 === 0 ? 0 : 2,
+    style: "currency",
+  }).format(amountPaise / 100);
 }
 
 function instantToDateTimeLocal(value) {
@@ -3294,6 +3453,7 @@ $("#loadTenantCurrentConcerns").addEventListener("click", loadTenantCurrentConce
 $("#loadTenantConcernHistory").addEventListener("click", loadTenantConcernHistory);
 $("#loadAvailableConcerns").addEventListener("click", loadAvailableConcerns);
 $("#loadUndertakenConcerns").addEventListener("click", loadUndertakenConcerns);
+$("#loadEscalatedConcerns").addEventListener("click", loadEscalatedConcerns);
 $("#loadPropertyConcernHistory").addEventListener("click", loadPropertyConcernHistory);
 $("#loadBoardCategories").addEventListener("click", loadBoardCategories);
 $("#loadBoardItems").addEventListener("click", loadBoardItems);

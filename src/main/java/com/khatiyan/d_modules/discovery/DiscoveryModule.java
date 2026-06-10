@@ -27,7 +27,9 @@ public class DiscoveryModule {
     }
 
     public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
+            String state,
             String city,
+            String countryCode,
             String locality,
             BigDecimal latitude,
             BigDecimal longitude,
@@ -35,7 +37,9 @@ public class DiscoveryModule {
             int page,
             int size) {
         return propertyDiscoveryService.searchVisibleProperties(
+                state,
                 city,
+                countryCode,
                 locality,
                 latitude,
                 longitude,

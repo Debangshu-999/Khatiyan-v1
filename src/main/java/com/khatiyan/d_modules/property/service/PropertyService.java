@@ -1,6 +1,8 @@
 package com.khatiyan.d_modules.property.service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,6 +20,7 @@ import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
 import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.property.model.Property;
+import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
 
 import lombok.extern.slf4j.Slf4j;
@@ -35,16 +38,19 @@ import lombok.extern.slf4j.Slf4j;
 public class PropertyService {
 
     private final PropertyRepository propertyRepository;
+    private final PropertyManagerRepository propertyManagerRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final DiscoveryModule discoveryModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
 
     public PropertyService(
             PropertyRepository propertyRepository,
+            PropertyManagerRepository propertyManagerRepository,
             ApplicationEventPublisher eventPublisher,
             @Lazy DiscoveryModule discoveryModule,
             ReferenceCodeGenerator referenceCodeGenerator) {
         this.propertyRepository = propertyRepository;
+        this.propertyManagerRepository = propertyManagerRepository;
         this.eventPublisher = eventPublisher;
         this.discoveryModule = discoveryModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
@@ -75,6 +81,7 @@ public class PropertyService {
                 request.name(),
                 request.address(),
                 request.city(),
+                request.state(),
                 request.pincode(),
                 request.latitude(),
                 request.longitude(),
@@ -112,6 +119,38 @@ public class PropertyService {
     @Transactional(readOnly = true)
     public List<PropertyResponse> listOwnerProperties(UUID ownerId) {
         return propertyRepository.findByOwnerIdAndActiveTrue(ownerId)
+                .stream()
+                .map(property -> PropertyResponse.from(property))
+                .toList();
+    }
+
+    /**
+     * Lists every active property the user can operate — owned properties plus
+     * properties where the user is an active manager. Powers the unified owner /
+     * manager workspace.
+     */
+    @Transactional(readOnly = true)
+    public List<PropertyResponse> listManageableProperties(UUID userId) {
+        Map<UUID, Property> byId = new LinkedHashMap<>();
+        for (Property property : propertyRepository.findByOwnerIdAndActiveTrue(userId)) {
+            byId.put(property.getId(), property);
+        }
+
+        List<UUID> managedIds = propertyManagerRepository.findActivePropertyIdsByManagerUserId(userId);
+        if (!managedIds.isEmpty()) {
+            for (Property property : propertyRepository.findByIdInAndActiveTrue(managedIds)) {
+                byId.putIfAbsent(property.getId(), property);
+            }
+        }
+
+        return byId.values().stream()
+                .map(property -> PropertyResponse.from(property))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PropertyResponse> listActiveProperties() {
+        return propertyRepository.findByActiveTrue()
                 .stream()
                 .map(property -> PropertyResponse.from(property))
                 .toList();
@@ -160,6 +199,7 @@ public class PropertyService {
                 request.name(),
                 request.address(),
                 request.city(),
+                request.state(),
                 request.pincode(),
                 request.latitude(),
                 request.longitude(),

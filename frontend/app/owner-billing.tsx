@@ -1,0 +1,1777 @@
+import { useMemo, useState } from "react";
+import { Image, Linking, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import { useRouter } from "expo-router";
+import {
+  ArrowLeft,
+  Banknote,
+  CalendarDays,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Eye,
+  FileDown,
+  ImagePlus,
+  IndianRupee,
+  MoreHorizontal,
+  Percent,
+  Plus,
+  ReceiptText,
+  Search,
+  X,
+} from "lucide-react-native";
+
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { Card } from "@/components/card";
+import { EmptyState } from "@/components/empty-state";
+import { ScreenHeader } from "@/components/screen-header";
+import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { Section } from "@/components/section";
+import { useAppSelector } from "@/store/hooks";
+import {
+  type BillingCycle,
+  type BillingCycleLineItem,
+  type BillingMonthSummary,
+  type BillingPastSummary,
+  type ManualPaymentMethod,
+  useAddTenancyDiscountMutation,
+  useAddTenancyExtraChargesMutation,
+  useGetPropertyMonthSummaryQuery,
+  useGetPropertyPastSummaryQuery,
+  useLazyExportPropertyBillingCyclesQuery,
+  useListPastPropertyBillingCyclesQuery,
+  useListPropertyBillingCyclesQuery,
+  useRecordManualPaymentMutation,
+} from "@/store/services/billing-api";
+import { useListMyPropertiesQuery } from "@/store/services/property-api";
+import { spacing } from "@/theme/spacing";
+import { useTheme } from "@/theme/use-theme";
+
+type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
+type CycleView = "active" | "past";
+type ReportActionMode = "actions" | "month-picker";
+type SummaryFilter = "all" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount" | "manual";
+
+const CYCLE_LIST_MAX_HEIGHT = 440;
+
+function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): BillingCycle[] {
+  switch (filter) {
+    case "overdue":
+      return cycles.filter((cycle) => cycle.status === "OVERDUE");
+    case "paid":
+    case "manual":
+      return cycles.filter((cycle) => cycle.status === "PAID");
+    case "unpaid":
+      return cycles.filter((cycle) => cycle.status === "UNPAID");
+    case "outstanding":
+      return cycles.filter((cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE");
+    case "discount":
+      return cycles.filter((cycle) => cycle.discountAmountPaise > 0);
+    case "collectable":
+      return cycles.filter((cycle) => cycle.status !== "CANCELLED");
+    case "all":
+    default:
+      return cycles;
+  }
+}
+
+function summaryFilterTitle(filter: SummaryFilter): string {
+  switch (filter) {
+    case "overdue":
+      return "Overdue cycles";
+    case "paid":
+      return "Paid cycles";
+    case "manual":
+      return "Manually paid cycles";
+    case "unpaid":
+      return "Unpaid cycles";
+    case "outstanding":
+      return "Unpaid & overdue cycles";
+    case "discount":
+      return "Cycles with a discount";
+    case "collectable":
+      return "Collectable cycles";
+    case "all":
+    default:
+      return "All cycles";
+  }
+}
+
+const manualPaymentMethods: ManualPaymentMethod[] = ["CASH", "UPI", "CARD", "CHEQUE", "OTHER"];
+
+export default function OwnerBillingScreen() {
+  const router = useRouter();
+  const { colors, type } = useTheme();
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const propertiesQuery = useListMyPropertiesQuery();
+  const properties = propertiesQuery.data ?? [];
+  const selectedProperty = selectedPropertyId
+    ? properties.find((property) => property.id === selectedPropertyId) ?? null
+    : properties.length === 1
+      ? properties[0]
+      : null;
+
+  const [cycleView, setCycleView] = useState<CycleView>("active");
+  const [activeSearchDraft, setActiveSearchDraft] = useState("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState("");
+  const [pastSearchDraft, setPastSearchDraft] = useState("");
+  const [pastSearchQuery, setPastSearchQuery] = useState("");
+  const [reportMonth, setReportMonth] = useState(currentMonth());
+  const [summaryMonth, setSummaryMonth] = useState(currentMonth());
+  const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
+  const [selectedCycle, setSelectedCycle] = useState<BillingCycle | null>(null);
+  const [actionMode, setActionMode] = useState<ActionMode | null>(null);
+  const [reportActionMode, setReportActionMode] = useState<ReportActionMode | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [summaryFilter, setSummaryFilter] = useState<SummaryFilter | null>(null);
+  const [receiptCycle, setReceiptCycle] = useState<BillingCycle | null>(null);
+
+  const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
+    { month: summaryMonth, propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty || cycleView !== "active" },
+  );
+  const pastSummaryQuery = useGetPropertyPastSummaryQuery(
+    { month: summaryMonth, propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty || cycleView !== "past" },
+  );
+  const activeCyclesQuery = useListPropertyBillingCyclesQuery(
+    { month: summaryMonth, propertyId: selectedProperty?.id ?? "", query: activeSearchQuery },
+    { skip: !selectedProperty },
+  );
+  const pastCyclesQuery = useListPastPropertyBillingCyclesQuery(
+    { month: summaryMonth, propertyId: selectedProperty?.id ?? "", query: pastSearchQuery },
+    { skip: !selectedProperty },
+  );
+  const [exportMonthlyReport, exportState] = useLazyExportPropertyBillingCyclesQuery();
+
+  const activeCycles = activeCyclesQuery.data ?? [];
+  const pastCycles = pastCyclesQuery.data ?? [];
+  const visibleCycles = cycleView === "active" ? activeCycles : pastCycles;
+  const visibleQuery = cycleView === "active" ? activeSearchQuery : pastSearchQuery;
+
+  function openAction(cycle: BillingCycle, mode: ActionMode) {
+    setSelectedCycle(cycle);
+    setActionMode(mode);
+    setStatusMessage(null);
+  }
+
+  function closeAction() {
+    setSelectedCycle(null);
+    setActionMode(null);
+  }
+
+  async function downloadMonthlyReport() {
+    if (!selectedProperty) {
+      return;
+    }
+
+    try {
+      const csv = await exportMonthlyReport({ month: reportMonth, propertyId: selectedProperty.id }).unwrap();
+      await downloadTextFile(`billing-cycles-${reportMonth}.csv`, csv, "text/csv");
+      setStatusMessage("Monthly billing report download started.");
+    } catch {
+      setStatusMessage("This month is not finalized yet, or no report is available for the selected month.");
+    }
+  }
+
+  async function downloadCycleReceipt(cycle: BillingCycle) {
+    try {
+      const html = buildReceiptHtml(cycle, selectedProperty?.name ?? null);
+
+      if (Platform.OS === "web") {
+        await Print.printAsync({ html });
+        setStatusMessage(`Receipt ready to print or save for ${cycle.referenceCode}.`);
+        return;
+      }
+
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          UTI: "com.adobe.pdf",
+          dialogTitle: `Receipt ${cycle.referenceCode}`,
+          mimeType: "application/pdf",
+        });
+      }
+      setStatusMessage(`Receipt PDF prepared for ${cycle.referenceCode}.`);
+    } catch {
+      setStatusMessage("Could not generate the receipt PDF. Please try again.");
+    }
+  }
+
+  return (
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+      <BackButton onPress={() => router.back()} />
+
+      <ScreenHeader
+        eyebrow="Owner billing"
+        title="Billing"
+        italicTail="control."
+        subtitle={selectedProperty ? `Billing workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
+      />
+
+      {!selectedProperty && !propertiesQuery.isFetching ? (
+        <EmptyState
+          icon={Banknote}
+          eyebrow="Property required"
+          title="Select a property"
+          description="Billing is scoped to the active owner property selected on Home."
+        />
+      ) : null}
+
+      {selectedProperty ? (
+        <>
+          <MonthDropdown active={summaryMonth} onChange={setSummaryMonth} />
+
+          {cycleView === "active" ? (
+            <ActiveSummarySection
+              loading={monthSummaryQuery.isFetching}
+              month={summaryMonth}
+              onOpenFilter={setSummaryFilter}
+              summary={monthSummaryQuery.data}
+            />
+          ) : (
+            <PastSummaryGrid loading={pastSummaryQuery.isFetching} onOpenFilter={setSummaryFilter} summary={pastSummaryQuery.data} />
+          )}
+
+          <SegmentedControl
+            active={cycleView}
+            onChange={setCycleView}
+            options={[
+              { label: "This month", value: "active" },
+              { label: "Past cycles", value: "past" },
+            ]}
+          />
+
+          {cycleView === "active" ? (
+            <CycleSearchCard
+              onClear={() => {
+                setActiveSearchDraft("");
+                setActiveSearchQuery("");
+              }}
+              onSearch={() => setActiveSearchQuery(activeSearchDraft)}
+              placeholder="Search by tenant name or tenancy ID"
+              value={activeSearchDraft}
+              onChange={setActiveSearchDraft}
+            />
+          ) : (
+            <CycleSearchCard
+              onClear={() => {
+                setPastSearchDraft("");
+                setPastSearchQuery("");
+              }}
+              onSearch={() => setPastSearchQuery(pastSearchDraft)}
+              placeholder="Search by tenant name or tenancy ID"
+              value={pastSearchDraft}
+              onChange={setPastSearchDraft}
+            />
+          )}
+
+          <Section
+            eyebrow={cycleView === "active" ? "Current" : "Past"}
+            title={`${visibleCycles.length} billing cycle${visibleCycles.length === 1 ? "" : "s"}`}
+          >
+            {visibleCycles.length === 0 ? (
+              <EmptyState
+                icon={ReceiptText}
+                eyebrow="No cycles"
+                title="No billing cycles found"
+                description={
+                  visibleQuery
+                    ? "No cycle matched that tenant name or tenancy ID for this period."
+                    : cycleView === "active"
+                      ? "No billing cycles started in this month."
+                      : "No billing cycles from months before this one."
+                }
+              />
+            ) : (
+              <ScrollView nestedScrollEnabled style={{ maxHeight: CYCLE_LIST_MAX_HEIGHT }} showsVerticalScrollIndicator>
+                <CycleTable
+                  cycles={visibleCycles}
+                  expandedCycleId={expandedCycleId}
+                  onAction={(cycle) => openAction(cycle, "menu")}
+                  onDownloadReceipt={downloadCycleReceipt}
+                  onViewReceipt={setReceiptCycle}
+                  onToggleLineItems={(cycle) => setExpandedCycleId(expandedCycleId === cycle.id ? null : cycle.id)}
+                />
+              </ScrollView>
+            )}
+          </Section>
+
+          {cycleView === "active" ? (
+            <ReportDownloadCard
+              busy={exportState.isFetching}
+              month={reportMonth}
+              onOpenActions={() => setReportActionMode("actions")}
+              onOpenMonthPicker={() => setReportActionMode("month-picker")}
+            />
+          ) : null}
+
+          {statusMessage ? (
+            <Text style={[type.caption, { color: colors.primary }]} selectable>
+              {statusMessage}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
+
+      {selectedCycle && actionMode ? (
+        <BillingActionModal cycle={selectedCycle} mode={actionMode} onClose={closeAction} onSelectMode={setActionMode} />
+      ) : null}
+      {reportActionMode ? (
+        <MonthlyReportModal
+          busy={exportState.isFetching}
+          mode={reportActionMode}
+          month={reportMonth}
+          onChangeMonth={setReportMonth}
+          onClose={() => setReportActionMode(null)}
+          onDownload={downloadMonthlyReport}
+          onSelectMode={setReportActionMode}
+        />
+      ) : null}
+      {summaryFilter ? (
+        <SummaryCyclesModal
+          cycles={filterSummaryCycles(visibleCycles, summaryFilter)}
+          onClose={() => setSummaryFilter(null)}
+          title={summaryFilterTitle(summaryFilter)}
+        />
+      ) : null}
+      {receiptCycle ? (
+        <ReceiptModal
+          cycle={receiptCycle}
+          onClose={() => setReceiptCycle(null)}
+          onDownload={() => downloadCycleReceipt(receiptCycle)}
+          propertyName={selectedProperty?.name ?? null}
+        />
+      ) : null}
+    </ScreenScrollView>
+  );
+}
+
+function ActiveSummarySection({
+  loading,
+  month,
+  onOpenFilter,
+  summary,
+}: {
+  loading: boolean;
+  month: string;
+  onOpenFilter: (filter: SummaryFilter) => void;
+  summary?: BillingMonthSummary;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {!summary && loading ? (
+        <Text style={[type.caption, { color: colors.muted }]} selectable>
+          Loading summary...
+        </Text>
+      ) : null}
+
+      {summary && !summary.hasData ? (
+        <EmptyState
+          icon={ReceiptText}
+          eyebrow={monthLabel(month)}
+          title="No data available"
+          description="No billing cycles started in this month."
+        />
+      ) : null}
+
+      {summary && summary.hasData ? (
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile label="Cycles" value={String(summary.activeCycleCount)} hint="Tap to view all" onPress={() => onOpenFilter("all")} />
+            <SummaryTile label="Overdue" value={String(summary.overdueCount)} hint={formatMoney(summary.overduePaise)} tone="danger" onPress={() => onOpenFilter("overdue")} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile label="Paid" value={String(summary.paidCycleCount)} hint="Incl. manual" tone="success" onPress={() => onOpenFilter("paid")} />
+            <SummaryTile label="Unpaid" value={String(summary.unpaidCycleCount)} hint="Awaiting payment" onPress={() => onOpenFilter("unpaid")} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile
+              label="Collectable rent"
+              value={`${formatMoney(summary.collectedPaise)}/${formatMoney(summary.billedPaise)}`}
+              hint="Collected / billed"
+              tone="success"
+              onPress={() => onOpenFilter("collectable")}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile label="Discount given" value={formatMoney(summary.totalDiscountPaise)} hint="This month" onPress={() => onOpenFilter("discount")} />
+            <SummaryTile label="Manually paid" value={formatMoney(summary.manuallyPaidPaise)} hint={`${summary.manuallyPaidCycleCount} cycle(s)`} onPress={() => onOpenFilter("manual")} />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PastSummaryGrid({
+  loading,
+  onOpenFilter,
+  summary,
+}: {
+  loading: boolean;
+  onOpenFilter: (filter: SummaryFilter) => void;
+  summary?: BillingPastSummary;
+}) {
+  const { colors, type } = useTheme();
+
+  if (!summary) {
+    return loading ? (
+      <Text style={[type.caption, { color: colors.muted }]} selectable>
+        Loading past summary...
+      </Text>
+    ) : null;
+  }
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SummaryTile label="Older cycles" value={String(summary.olderCycleCount)} hint="Earlier months" onPress={() => onOpenFilter("all")} />
+        <SummaryTile label="Paid" value={String(summary.paidCount)} hint={formatMoney(summary.paidPaise)} tone="success" onPress={() => onOpenFilter("paid")} />
+      </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SummaryTile label="Unpaid" value={String(summary.unpaidCount)} hint={formatMoney(summary.unpaidPaise)} tone="danger" onPress={() => onOpenFilter("outstanding")} />
+        <View style={{ flex: 1 }} />
+      </View>
+    </View>
+  );
+}
+
+function MonthDropdown({ active, onChange }: { active: string; onChange: (value: string) => void }) {
+  const { colors, fonts, type } = useTheme();
+  const [open, setOpen] = useState(false);
+  const options = useMemo(() => reportMonthOptions(), []);
+
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+        Summary month
+      </Text>
+      <AnimatedPressable
+        accessibilityRole="button"
+        onPress={() => setOpen(true)}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: 14,
+          borderWidth: 1,
+          flexDirection: "row",
+          justifyContent: "space-between",
+          minHeight: 46,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <CalendarDays color={colors.kicker} size={18} strokeWidth={2.2} />
+          <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+            {monthLabel(active)}
+          </Text>
+        </View>
+        <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
+      </AnimatedPressable>
+
+      {open ? (
+        <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible>
+          <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: 22,
+                borderWidth: 1,
+                gap: spacing.sm,
+                padding: spacing.lg,
+              }}
+            >
+              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+                  Choose month
+                </Text>
+                <IconButton accessibilityLabel="Close month picker" icon={X} onPress={() => setOpen(false)} />
+              </View>
+              {options.map((option) => (
+                <ChoiceButton
+                  active={option.value === active}
+                  key={option.value}
+                  label={option.label}
+                  onPress={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                />
+              ))}
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+    </View>
+  );
+}
+
+function ReportDownloadCard({
+  busy,
+  month,
+  onOpenActions,
+  onOpenMonthPicker,
+}: {
+  busy: boolean;
+  month: string;
+  onOpenActions: () => void;
+  onOpenMonthPicker: () => void;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <Card>
+      <View style={{ gap: spacing.md }}>
+        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          Monthly report
+        </Text>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <ActionButton icon={CalendarDays} label={monthLabel(month)} onPress={onOpenMonthPicker} variant="secondary" />
+          <ActionButton disabled={busy} icon={MoreHorizontal} label={busy ? "Loading" : "Actions" } onPress={onOpenActions} />
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function MonthlyReportModal({
+  busy,
+  mode,
+  month,
+  onChangeMonth,
+  onClose,
+  onDownload,
+  onSelectMode,
+}: {
+  busy: boolean;
+  mode: ReportActionMode;
+  month: string;
+  onChangeMonth: (value: string) => void;
+  onClose: () => void;
+  onDownload: () => void;
+  onSelectMode: (mode: ReportActionMode) => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const monthOptions = useMemo(() => reportMonthOptions(), []);
+
+  async function handleDownload() {
+    await onDownload();
+    onClose();
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Monthly report
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600" }} selectable>
+                {mode === "month-picker" ? "Choose month" : "Report actions"}
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close monthly report" icon={X} onPress={onClose} />
+          </View>
+
+          {mode === "actions" ? (
+            <View style={{ gap: spacing.sm }}>
+              <View
+                style={{
+                  alignItems: "center",
+                  borderColor: colors.border,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  padding: spacing.md,
+                }}
+              >
+                <View>
+                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                    Selected month
+                  </Text>
+                  <Text style={[type.body, { color: colors.ink, fontWeight: "900" }]} selectable>
+                    {monthLabel(month)}
+                  </Text>
+                </View>
+                <ActionButton icon={CalendarDays} label="Change" onPress={() => onSelectMode("month-picker")} variant="secondary" />
+              </View>
+              <ActionButton disabled={busy} icon={Download} label={busy ? "Preparing" : "Download CSV"} onPress={handleDownload} />
+            </View>
+          ) : (
+            <View style={{ gap: spacing.sm }}>
+              {monthOptions.map((option) => (
+                <ChoiceButton
+                  active={option.value === month}
+                  key={option.value}
+                  label={option.label}
+                  onPress={() => {
+                    onChangeMonth(option.value);
+                    onSelectMode("actions");
+                  }}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CycleSearchCard({
+  onChange,
+  onClear,
+  onSearch,
+  placeholder,
+  value,
+}: {
+  onChange: (value: string) => void;
+  onClear: () => void;
+  onSearch: () => void;
+  placeholder: string;
+  value: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Card>
+      <View style={{ gap: spacing.md }}>
+        <View
+          style={{
+            alignItems: "center",
+            borderColor: colors.border,
+            borderRadius: 14,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            paddingHorizontal: spacing.md,
+          }}
+        >
+          <Search color={colors.kicker} size={18} strokeWidth={2.2} />
+          <TextInput
+            autoCapitalize="none"
+            onChangeText={onChange}
+            onSubmitEditing={onSearch}
+            placeholder={placeholder}
+            placeholderTextColor={colors.kicker}
+            returnKeyType="search"
+            style={{ color: colors.ink, flex: 1, fontSize: 15, minHeight: 46 }}
+            value={value}
+          />
+          {value ? <IconButton accessibilityLabel="Clear billing search" icon={X} onPress={onClear} /> : null}
+        </View>
+        <ActionButton icon={Search} label="Search" onPress={onSearch} />
+      </View>
+    </Card>
+  );
+}
+
+function CycleTable({
+  cycles,
+  expandedCycleId,
+  onAction,
+  onDownloadReceipt,
+  onViewReceipt,
+  onToggleLineItems,
+  readOnly = false,
+}: {
+  cycles: BillingCycle[];
+  expandedCycleId: string | null;
+  onAction?: (cycle: BillingCycle) => void;
+  onDownloadReceipt?: (cycle: BillingCycle) => void;
+  onViewReceipt?: (cycle: BillingCycle) => void;
+  onToggleLineItems: (cycle: BillingCycle) => void;
+  readOnly?: boolean;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <Card>
+      <View style={{ gap: spacing.sm }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm, paddingBottom: spacing.xs }}>
+          <Text style={[type.caption, { color: colors.muted, flex: 1.2, fontWeight: "800" }]}>Cycle</Text>
+          <Text style={[type.caption, { color: colors.muted, flex: 0.9, fontWeight: "800" }]}>Status</Text>
+          <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "800" }]}>Due</Text>
+          <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "800", textAlign: "right" }]}>Total</Text>
+        </View>
+        {cycles.map((cycle) => (
+          <View
+            key={cycle.id}
+            style={{
+              borderColor: colors.border,
+              borderTopWidth: 1,
+              gap: spacing.sm,
+              paddingTop: spacing.sm,
+            }}
+          >
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <View style={{ flex: 1.2 }}>
+                <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+                  {cycle.referenceCode}
+                </Text>
+                <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  {cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`}
+                </Text>
+                <Text style={[type.caption, { color: colors.kicker }]} selectable>
+                  #{cycle.cycleNumber} · Tenancy {shortId(cycle.tenancyId)}
+                </Text>
+              </View>
+              <StatusText status={cycle.status} />
+              <Text style={[type.caption, { color: colors.ink, flex: 1 }]} selectable>
+                {formatDate(cycle.rentDueDate)}
+              </Text>
+              <Text style={[type.body, { color: colors.primary, flex: 1, fontWeight: "900", textAlign: "right" }]} selectable>
+                {formatMoney(cycle.totalAmountPaise)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              <ActionButton
+                icon={expandedCycleId === cycle.id ? ChevronUp : ChevronDown}
+                label="Line items"
+                onPress={() => onToggleLineItems(cycle)}
+                variant="secondary"
+              />
+              {!readOnly && onAction ? (
+                <ActionButton icon={MoreHorizontal} label="Actions" onPress={() => onAction(cycle)} variant="secondary" />
+              ) : null}
+              {!readOnly && onViewReceipt ? (
+                <ActionButton icon={Eye} label="View receipt" onPress={() => onViewReceipt(cycle)} variant="secondary" />
+              ) : null}
+              {!readOnly && onDownloadReceipt ? (
+                <ActionButton icon={FileDown} label="Download" onPress={() => onDownloadReceipt(cycle)} variant="secondary" />
+              ) : null}
+            </View>
+            {expandedCycleId === cycle.id ? <LineItemTable items={cycle.lineItems} /> : null}
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function SummaryCyclesModal({
+  cycles,
+  onClose,
+  title,
+}: {
+  cycles: BillingCycle[];
+  onClose: () => void;
+  title: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "85%",
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                {cycles.length} cycle{cycles.length === 1 ? "" : "s"}
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+                {title}
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close cycle list" icon={X} onPress={onClose} />
+          </View>
+
+          {cycles.length === 0 ? (
+            <EmptyState
+              icon={ReceiptText}
+              eyebrow="No cycles"
+              title="No matching cycles"
+              description="There are no billing cycles in this category for the selected period."
+            />
+          ) : (
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+              <CycleTable
+                cycles={cycles}
+                expandedCycleId={expandedCycleId}
+                onToggleLineItems={(cycle) => setExpandedCycleId(expandedCycleId === cycle.id ? null : cycle.id)}
+                readOnly
+              />
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function LineItemTable({ items }: { items: BillingCycleLineItem[] }) {
+  const { colors, type } = useTheme();
+  if (items.length === 0) {
+    return (
+      <Text style={[type.caption, { color: colors.muted }]} selectable>
+        No line items available.
+      </Text>
+    );
+  }
+
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.sm }}>
+      {items.map((item) => (
+        <View key={item.id} style={{ flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]} selectable>
+              {item.label}
+            </Text>
+            <Text style={[type.caption, { color: colors.muted }]} selectable>
+              {humanizeToken(item.type)} · {humanizeToken(item.settlementAction)}
+            </Text>
+          </View>
+          <Text style={[type.caption, { color: colors.ink, fontWeight: "900" }]} selectable>
+            {formatMoney(item.amountPaise)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function StatusText({ status }: { status: BillingCycle["status"] }) {
+  const { colors, type } = useTheme();
+  const tone =
+    status === "PAID"
+      ? colors.successText
+      : status === "OVERDUE"
+        ? colors.danger
+        : status === "CANCELLED"
+          ? colors.muted
+          : colors.primary;
+
+  return (
+    <Text style={[type.caption, { color: tone, flex: 0.9, fontWeight: "900" }]} selectable>
+      {humanizeToken(status)}
+    </Text>
+  );
+}
+
+function BillingActionModal({
+  cycle,
+  mode,
+  onClose,
+  onSelectMode,
+}: {
+  cycle: BillingCycle;
+  mode: ActionMode;
+  onClose: () => void;
+  onSelectMode: (mode: ActionMode) => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const [method, setMethod] = useState<ManualPaymentMethod>("CASH");
+  const [referenceText, setReferenceText] = useState("");
+  const [proofImageUrl, setProofImageUrl] = useState("");
+  const [note, setNote] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("");
+  const [chargeLabel, setChargeLabel] = useState("");
+  const [chargeAmount, setChargeAmount] = useState("");
+  const [chargeDescription, setChargeDescription] = useState("");
+  const [chargeAdjustFromDeposit, setChargeAdjustFromDeposit] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ message: string; title: string } | null>(null);
+  const [recordManualPayment, manualPaymentState] = useRecordManualPaymentMutation();
+  const [addDiscount, discountState] = useAddTenancyDiscountMutation();
+  const [addExtraCharges, extraChargeState] = useAddTenancyExtraChargesMutation();
+  const busy = manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading;
+  const mutable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
+
+  const title = useMemo(() => {
+    if (mode === "menu") {
+      return "Cycle actions";
+    }
+    if (mode === "manual-payment") {
+      return "Mark manually paid";
+    }
+    if (mode === "discount") {
+      return "Add discount";
+    }
+    return "Add extra charge";
+  }, [mode]);
+
+  // Validates the active form, then shows a final confirmation dialog before
+  // performing the action.
+  function handleSave() {
+    if (busy) {
+      return;
+    }
+    setError(null);
+
+    if (mode === "manual-payment") {
+      setConfirm({
+        message: `Mark ${cycle.referenceCode} as paid for ${formatMoney(cycle.totalAmountPaise)} via ${humanizeToken(method)}?`,
+        title: "Mark manually paid?",
+      });
+      return;
+    }
+
+    if (mode === "discount") {
+      const percent = Number(discountPercent);
+      if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+        setError("Enter a discount percentage between 0 and 100.");
+        return;
+      }
+      setConfirm({
+        message: `Apply a ${percent}% discount to ${cycle.referenceCode}?`,
+        title: "Apply discount?",
+      });
+      return;
+    }
+
+    if (mode === "extra-charge") {
+      const amountPaise = Math.round(Number(chargeAmount) * 100);
+      if (!chargeLabel.trim()) {
+        setError("Enter a charge label.");
+        return;
+      }
+      if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
+        setError("Enter a valid charge amount.");
+        return;
+      }
+      setConfirm({
+        message: chargeAdjustFromDeposit
+          ? `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and adjust it from the deposit?`
+          : `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and bill it to the tenant?`,
+        title: "Add extra charge?",
+      });
+    }
+  }
+
+  async function submit() {
+    setError(null);
+    try {
+      if (mode === "manual-payment") {
+        await recordManualPayment({
+          billingCycleId: cycle.id,
+          payload: {
+            method,
+            note: note.trim() || null,
+            proofImageUrl: proofImageUrl.trim() || null,
+            referenceText: referenceText.trim() || null,
+          },
+        }).unwrap();
+      } else if (mode === "discount") {
+        const percent = Number(discountPercent);
+        if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+          setError("Enter a discount percentage between 0 and 100.");
+          return;
+        }
+        await addDiscount({
+          discount: {
+            description: note.trim() || null,
+            discountPercent: percent,
+            label: "Owner discount",
+          },
+          tenancyId: cycle.tenancyId,
+        }).unwrap();
+      } else if (mode === "extra-charge") {
+        const amountPaise = Math.round(Number(chargeAmount) * 100);
+        if (!chargeLabel.trim()) {
+          setError("Enter a charge label.");
+          return;
+        }
+        if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
+          setError("Enter a valid charge amount.");
+          return;
+        }
+        await addExtraCharges({
+          charges: [
+            {
+              adjustFromDeposit: chargeAdjustFromDeposit,
+              amountPaise,
+              description: chargeDescription.trim() || null,
+              label: chargeLabel.trim(),
+            },
+          ],
+          tenancyId: cycle.tenancyId,
+        }).unwrap();
+      }
+      onClose();
+    } catch {
+      setError("Action failed. Refresh and try again.");
+    }
+  }
+
+  return (
+    <>
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", flex: 1, gap: spacing.sm }}>
+              {mode !== "menu" ? (
+                <IconButton
+                  accessibilityLabel="Back to actions"
+                  icon={ArrowLeft}
+                  onPress={() => {
+                    setError(null);
+                    onSelectMode("menu");
+                  }}
+                />
+              ) : null}
+              <View style={{ flex: 1 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                  {cycle.referenceCode}
+                </Text>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600" }} selectable>
+                  {title}
+                </Text>
+              </View>
+            </View>
+            <IconButton accessibilityLabel="Close billing action" icon={X} onPress={onClose} />
+          </View>
+
+          {mode === "menu" ? (
+            <View style={{ gap: spacing.sm }}>
+              <ActionButton disabled={!mutable} icon={Banknote} label="Mark manually paid" onPress={() => onSelectMode("manual-payment")} />
+              <ActionButton disabled={!mutable} icon={Percent} label="Add discount" onPress={() => onSelectMode("discount")} variant="secondary" />
+              <ActionButton disabled={!mutable} icon={Plus} label="Add extra charge" onPress={() => onSelectMode("extra-charge")} variant="secondary" />
+              {!mutable ? (
+                <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  Paid or cancelled cycles cannot be edited.
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {mode === "manual-payment" ? (
+            <>
+              <Text style={[type.caption, { color: colors.muted }]} selectable>
+                This marks the full cycle amount {formatMoney(cycle.totalAmountPaise)} as manually collected.
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+                {manualPaymentMethods.map((item) => (
+                  <ChoiceButton active={item === method} key={item} label={humanizeToken(item)} onPress={() => setMethod(item)} />
+                ))}
+              </View>
+              <FormInput label="Reference" onChangeText={setReferenceText} placeholder="UPI ref, cheque no, cash note" value={referenceText} />
+              <ProofImageField onChange={setProofImageUrl} uri={proofImageUrl} />
+              <FormInput label="Note" onChangeText={setNote} placeholder="Optional note" value={note} />
+            </>
+          ) : null}
+
+          {mode === "discount" ? (
+            <>
+              <FormInput
+                keyboardType="decimal-pad"
+                label="Discount percentage"
+                onChangeText={setDiscountPercent}
+                placeholder="Example: 10"
+                value={discountPercent}
+              />
+              <DiscountPreview percent={discountPercent} totalPaise={cycle.totalAmountPaise} />
+              <FormInput label="Reason" onChangeText={setNote} placeholder="Optional reason" value={note} />
+            </>
+          ) : null}
+
+          {mode === "extra-charge" ? (
+            <>
+              <FormInput label="Charge label" onChangeText={setChargeLabel} placeholder="Damage, cleaning, extra usage" value={chargeLabel} />
+              <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setChargeAmount} placeholder="Amount in rupees" value={chargeAmount} />
+              <FormInput label="Description" onChangeText={setChargeDescription} placeholder="Optional description" value={chargeDescription} />
+              <View style={{ gap: spacing.xs }}>
+                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+                  Settlement
+                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+                  <ChoiceButton active={!chargeAdjustFromDeposit} label="Add to bill" onPress={() => setChargeAdjustFromDeposit(false)} />
+                  <ChoiceButton active={chargeAdjustFromDeposit} label="Adjust from deposit" onPress={() => setChargeAdjustFromDeposit(true)} />
+                </View>
+              </View>
+            </>
+          ) : null}
+
+          {error ? (
+            <Text style={[type.caption, { color: colors.danger }]} selectable>
+              {error}
+            </Text>
+          ) : null}
+
+          {mode !== "menu" ? <ActionButton disabled={busy} icon={IndianRupee} label={busy ? "Saving" : "Save"} onPress={handleSave} /> : null}
+        </View>
+      </View>
+    </Modal>
+    {confirm ? (
+      <ConfirmDialog
+        confirmLabel="Yes, confirm"
+        message={confirm.message}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          setConfirm(null);
+          void submit();
+        }}
+        title={confirm.title}
+      />
+    ) : null}
+    </>
+  );
+}
+
+function ConfirmDialog({
+  confirmLabel,
+  message,
+  onCancel,
+  onConfirm,
+  title,
+}: {
+  confirmLabel: string;
+  message: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  title: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 20,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxWidth: 420,
+            padding: spacing.lg,
+            width: "100%",
+          }}
+        >
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }} selectable>
+            {title}
+          </Text>
+          <Text style={[type.body, { color: colors.muted }]} selectable>
+            {message}
+          </Text>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={onCancel}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surfaceSunken,
+                borderColor: colors.border,
+                borderRadius: 14,
+                borderWidth: 1,
+                flex: 1,
+                justifyContent: "center",
+                paddingVertical: spacing.md,
+              }}
+            >
+              <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+                Cancel
+              </Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={onConfirm}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.primary,
+                borderRadius: 14,
+                flex: 1,
+                justifyContent: "center",
+                paddingVertical: spacing.md,
+              }}
+            >
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+                {confirmLabel}
+              </Text>
+            </AnimatedPressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function DiscountPreview({ percent, totalPaise }: { percent: string; totalPaise: number }) {
+  const { colors, type } = useTheme();
+  const parsed = Number(percent);
+
+  if (!percent.trim() || !Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  const valid = parsed <= 100;
+  const discountPaise = Math.min(Math.round((totalPaise * parsed) / 100), totalPaise);
+  const netPaise = totalPaise - discountPaise;
+
+  return (
+    <Text style={[type.caption, { color: valid ? colors.primary : colors.danger }]} selectable>
+      {valid
+        ? `Amounts to ${formatMoney(discountPaise)} off · new total ${formatMoney(netPaise)}`
+        : "Enter a percentage between 0 and 100."}
+    </Text>
+  );
+}
+
+function ProofImageField({ onChange, uri }: { onChange: (value: string) => void; uri: string }) {
+  const { colors, type } = useTheme();
+  const [error, setError] = useState<string | null>(null);
+
+  async function pickFromLibrary() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("Allow photo library access to attach a proof image.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.75 });
+    if (!result.canceled && result.assets[0]) {
+      onChange(result.assets[0].uri);
+      setError(null);
+    }
+  }
+
+  async function capturePhoto() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setError("Allow camera access to capture a proof image.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.75 });
+    if (!result.canceled && result.assets[0]) {
+      onChange(result.assets[0].uri);
+      setError(null);
+    }
+  }
+
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+        Payment proof (optional)
+      </Text>
+
+      {uri ? (
+        <View
+          style={{
+            alignItems: "center",
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            padding: spacing.sm,
+          }}
+        >
+          <Image source={{ uri }} style={{ borderRadius: 8, height: 48, width: 48 }} resizeMode="cover" />
+          <Text style={[type.caption, { color: colors.muted, flex: 1 }]} numberOfLines={1}>
+            Image attached
+          </Text>
+          <IconButton accessibilityLabel="Remove proof image" icon={X} onPress={() => onChange("")} />
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <ActionButton icon={ImagePlus} label={uri ? "Replace" : "Choose image"} onPress={pickFromLibrary} variant="secondary" />
+        <ActionButton icon={Camera} label="Camera" onPress={capturePhoto} variant="secondary" />
+      </View>
+
+      {error ? (
+        <Text style={[type.caption, { color: colors.danger }]} selectable>
+          {error}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function SegmentedControl({
+  active,
+  onChange,
+  options,
+}: {
+  active: CycleView;
+  onChange: (value: CycleView) => void;
+  options: { label: string; value: CycleView }[];
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 16, flexDirection: "row", padding: 4 }}>
+      {options.map((option) => {
+        const selected = option.value === active;
+        return (
+          <AnimatedPressable
+            accessibilityRole="button"
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={{
+              alignItems: "center",
+              backgroundColor: selected ? colors.surface : "transparent",
+              borderColor: selected ? colors.border : "transparent",
+              borderRadius: 13,
+              borderWidth: 1,
+              flex: 1,
+              minHeight: 44,
+              justifyContent: "center",
+              paddingHorizontal: spacing.sm,
+            }}
+          >
+            <Text
+              style={{
+                color: selected ? colors.ink : colors.muted,
+                fontFamily: fonts.sans,
+                fontSize: 13,
+                fontWeight: selected ? "900" : "700",
+                textAlign: "center",
+              }}
+              selectable
+            >
+              {option.label}
+            </Text>
+          </AnimatedPressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function SummaryTile({
+  hint,
+  label,
+  onPress,
+  tone = "default",
+  value,
+}: {
+  hint: string;
+  label: string;
+  onPress?: () => void;
+  tone?: "danger" | "default" | "success";
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const accent = tone === "danger" ? colors.danger : tone === "success" ? colors.successText : colors.primary;
+  const style = {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  } as const;
+  const content = (
+    <>
+      <Text style={[type.caption, { color: colors.muted }]} selectable={!onPress}>
+        {label}
+      </Text>
+      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable={!onPress}>
+        {value}
+      </Text>
+      <Text style={[type.caption, { color: colors.kicker }]} selectable={!onPress}>
+        {hint}
+      </Text>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <AnimatedPressable accessibilityRole="button" onPress={onPress} style={style}>
+        {content}
+      </AnimatedPressable>
+    );
+  }
+
+  return <View style={style}>{content}</View>;
+}
+
+function FormInput({
+  keyboardType,
+  label,
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  keyboardType?: "decimal-pad";
+  label: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+        {label}
+      </Text>
+      <TextInput
+        keyboardType={keyboardType}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.kicker}
+        style={{ borderColor: colors.border, borderRadius: 12, borderWidth: 1, color: colors.ink, minHeight: 46, paddingHorizontal: spacing.md }}
+        value={value}
+      />
+    </View>
+  );
+}
+
+function ChoiceButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      style={{
+        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        borderColor: active ? colors.primary : colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontWeight: "800" }} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+function ActionButton({
+  disabled,
+  icon: Icon,
+  label,
+  onPress,
+  variant = "primary",
+}: {
+  disabled?: boolean;
+  icon: typeof Search;
+  label: string;
+  onPress: () => void;
+  variant?: "primary" | "secondary";
+}) {
+  const { colors, fonts } = useTheme();
+  const primary = variant === "primary";
+  const foreground = disabled ? colors.muted : primary ? colors.onPrimary : colors.primary;
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: disabled ? colors.neutralSoft : primary ? colors.primary : colors.primarySoft,
+        borderRadius: 14,
+        flexDirection: "row",
+        gap: spacing.xs,
+        justifyContent: "center",
+        opacity: disabled ? 0.65 : 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <Icon color={foreground} size={16} strokeWidth={2.2} />
+      <Text style={{ color: foreground, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+function IconButton({ accessibilityLabel, icon: Icon, onPress }: { accessibilityLabel: string; icon: typeof X; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <AnimatedPressable accessibilityLabel={accessibilityLabel} onPress={onPress} style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}>
+      <Icon color={colors.ink} size={18} strokeWidth={2.2} />
+    </AnimatedPressable>
+  );
+}
+
+function BackButton({ onPress }: { onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Back"
+      onPress={onPress}
+      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, height: 36, paddingHorizontal: spacing.sm, width: 86 }}
+    >
+      <ArrowLeft color={colors.ink} size={16} strokeWidth={2.2} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
+        Back
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+async function downloadTextFile(fileName: string, content: string, mimeType: string) {
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  const dataUrl = `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`;
+  await Linking.openURL(dataUrl);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function receiptRows(cycle: BillingCycle): { label: string; value: string }[] {
+  return [
+    { label: "Reference", value: cycle.referenceCode },
+    { label: "Status", value: humanizeToken(cycle.status) },
+    { label: "Tenant", value: cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}` },
+    { label: "Tenancy ID", value: cycle.tenancyId },
+    { label: "Cycle number", value: `#${cycle.cycleNumber}` },
+    { label: "Period", value: `${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}` },
+    { label: "Due date", value: formatDate(cycle.rentDueDate) },
+    { label: "Paid at", value: cycle.paidAt ? formatDate(cycle.paidAt) : "—" },
+  ];
+}
+
+function receiptAmounts(cycle: BillingCycle): { label: string; value: string }[] {
+  return [
+    { label: "Base rent", value: formatMoney(cycle.baseAmountPaise) },
+    { label: "Extra charges", value: formatMoney(cycle.extraChargePaise) },
+    { label: "Late fee", value: formatMoney(cycle.lateFeeAmountPaise) },
+    { label: "Discount", value: `- ${formatMoney(cycle.discountAmountPaise)}` },
+  ];
+}
+
+function buildReceiptHtml(cycle: BillingCycle, propertyName: string | null) {
+  const detailRows = receiptRows(cycle)
+    .map((row) => `<tr><td class="k">${escapeHtml(row.label)}</td><td class="v">${escapeHtml(row.value)}</td></tr>`)
+    .join("");
+  const amountRows = receiptAmounts(cycle)
+    .map((row) => `<tr><td class="k">${escapeHtml(row.label)}</td><td class="v">${escapeHtml(row.value)}</td></tr>`)
+    .join("");
+  const lineItems = cycle.lineItems.length
+    ? cycle.lineItems
+        .map(
+          (item) =>
+            `<tr><td>${escapeHtml(item.label)}</td><td class="muted">${escapeHtml(humanizeToken(item.type))}</td><td class="v">${escapeHtml(formatMoney(item.amountPaise))}</td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="3" class="muted">No line items.</td></tr>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+    <style>
+      * { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1c1c1e; }
+      body { padding: 28px; }
+      h1 { font-size: 22px; margin: 0 0 2px; }
+      .eyebrow { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #8a8a8e; margin-bottom: 18px; }
+      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #8a8a8e; margin: 22px 0 6px; }
+      table { width: 100%; border-collapse: collapse; }
+      td { padding: 6px 0; font-size: 13px; border-bottom: 1px solid #ececec; vertical-align: top; }
+      td.k { color: #6b6b70; }
+      td.v { text-align: right; font-weight: 700; }
+      td.muted { color: #8a8a8e; }
+      .total { margin-top: 14px; padding: 12px 14px; background: #f4f4f5; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
+      .total .label { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #6b6b70; }
+      .total .amount { font-size: 22px; font-weight: 800; }
+      .footer { margin-top: 26px; font-size: 11px; color: #a0a0a5; }
+    </style></head><body>
+      <div class="eyebrow">Billing receipt${propertyName ? " · " + escapeHtml(propertyName) : ""}</div>
+      <h1>${escapeHtml(cycle.referenceCode)}</h1>
+      <h2>Cycle details</h2>
+      <table>${detailRows}</table>
+      <h2>Charges</h2>
+      <table>${amountRows}</table>
+      <h2>Line items</h2>
+      <table>${lineItems}</table>
+      <div class="total"><span class="label">Total payable</span><span class="amount">${escapeHtml(formatMoney(cycle.totalAmountPaise))}</span></div>
+      <div class="footer">Generated ${escapeHtml(formatDate(new Date().toISOString()))} · Khatiyan</div>
+    </body></html>`;
+}
+
+function ReceiptModal({
+  cycle,
+  onClose,
+  onDownload,
+  propertyName,
+}: {
+  cycle: BillingCycle;
+  onClose: () => void;
+  onDownload: () => void;
+  propertyName: string | null;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "88%",
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Receipt{propertyName ? ` · ${propertyName}` : ""}
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+                {cycle.referenceCode}
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close receipt" icon={X} onPress={onClose} />
+          </View>
+
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+            <View style={{ gap: spacing.md }}>
+              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+                {receiptRows(cycle).map((row) => (
+                  <ReceiptLine key={row.label} label={row.label} value={row.value} />
+                ))}
+              </View>
+
+              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                  Charges
+                </Text>
+                {receiptAmounts(cycle).map((row) => (
+                  <ReceiptLine key={row.label} label={row.label} value={row.value} />
+                ))}
+                <View style={{ borderTopColor: colors.border, borderTopWidth: 1, marginTop: spacing.xs, paddingTop: spacing.sm }}>
+                  <ReceiptLine label="Total payable" strong value={formatMoney(cycle.totalAmountPaise)} />
+                </View>
+              </View>
+
+              {cycle.lineItems.length ? (
+                <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+                  <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                    Line items
+                  </Text>
+                  {cycle.lineItems.map((item) => (
+                    <ReceiptLine key={item.id} label={`${item.label} · ${humanizeToken(item.type)}`} value={formatMoney(item.amountPaise)} />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          </ScrollView>
+
+          <ActionButton
+            icon={FileDown}
+            label="Download PDF"
+            onPress={() => {
+              void onDownload();
+              onClose();
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ReceiptLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+      <Text style={[type.caption, { color: strong ? colors.ink : colors.muted, flex: 1, fontWeight: strong ? "800" : "400" }]} selectable>
+        {label}
+      </Text>
+      <Text style={[type.caption, { color: strong ? colors.primary : colors.ink, fontWeight: strong ? "900" : "700", textAlign: "right" }]} selectable>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function currentMonth() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${now.getFullYear()}-${month}`;
+}
+
+function reportMonthOptions() {
+  const options: { label: string; value: string }[] = [];
+  const cursor = new Date();
+  cursor.setDate(1);
+
+  for (let index = 0; index < 12; index += 1) {
+    const value = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    options.push({ label: monthLabel(value), value });
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+
+  return options;
+}
+
+function monthLabel(value: string) {
+  const [year, month] = value.split("-").map((part) => Number(part));
+  if (!year || !month) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-IN", { currency: "INR", maximumFractionDigits: 0, style: "currency" }).format(value / 100);
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(new Date(value));
+}
+
+function humanizeToken(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function shortId(value: string) {
+  return value.slice(0, 8).toUpperCase();
+}

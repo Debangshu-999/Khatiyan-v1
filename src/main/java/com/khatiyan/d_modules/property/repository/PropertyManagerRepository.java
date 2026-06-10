@@ -34,4 +34,12 @@ public interface PropertyManagerRepository extends JpaRepository<PropertyManager
             UUID managerUserId);
 
     boolean existsByManagerUserIdAndActiveTrue(UUID managerUserId);
+
+    @Query("""
+        SELECT manager.propertyId
+        FROM PropertyManager manager
+        WHERE manager.managerUserId = :managerUserId
+          AND manager.active = true
+    """)
+    List<UUID> findActivePropertyIdsByManagerUserId(UUID managerUserId);
 }

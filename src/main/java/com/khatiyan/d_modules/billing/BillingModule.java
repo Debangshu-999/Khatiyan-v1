@@ -11,8 +11,13 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
+import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
+import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
+import com.khatiyan.d_modules.billing.api.dto.BillingPastSummary;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
+import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
+import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
@@ -48,6 +53,51 @@ public class BillingModule {
 
     public List<BillingCycleResponse> listMyCycles(UUID tenantUserId) {
         return billingCycleService.listMyCycles(tenantUserId);
+    }
+
+    /**
+     * Property-scoped billing rollup for the owner action center.
+     */
+    public BillingDashboardSummary getPropertyBillingSummary(UUID actorUserId, UUID propertyId) {
+        return billingCycleService.getPropertyBillingSummary(actorUserId, propertyId);
+    }
+
+    public BillingMonthSummary getPropertyMonthSummary(UUID actorUserId, UUID propertyId, String month) {
+        return billingCycleService.getPropertyMonthSummary(actorUserId, propertyId, month);
+    }
+
+    public BillingPastSummary getPropertyPastSummary(UUID actorUserId, UUID propertyId, String month) {
+        return billingCycleService.getPropertyPastSummary(actorUserId, propertyId, month);
+    }
+
+    public List<BillingCycleResponse> listPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
+        return billingCycleService.listPropertyCycles(actorUserId, propertyId, query, month);
+    }
+
+    public List<BillingCycleResponse> listPastPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
+        return billingCycleService.listPastPropertyCycles(actorUserId, propertyId, query, month);
+    }
+
+    public String exportPropertyCyclesCsv(UUID actorUserId, UUID propertyId, String month) {
+        return billingCycleService.exportPropertyCyclesCsv(actorUserId, propertyId, month);
+    }
+
+    public int generateClosedMonthlyReports(LocalDate today) {
+        return billingCycleService.generateClosedMonthlyReports(today);
+    }
+
+    /**
+     * Owner/manager records an offline payment and marks the cycle paid.
+     */
+    public ManualPaymentResponse recordManualPayment(
+            UUID actorUserId,
+            UUID billingCycleId,
+            RecordManualPaymentRequest request) {
+        return billingCycleService.recordManualPayment(actorUserId, billingCycleId, request);
+    }
+
+    public List<ManualPaymentResponse> listManualPayments(UUID actorUserId, UUID billingCycleId) {
+        return billingCycleService.listManualPayments(actorUserId, billingCycleId);
     }
 
     public List<BillingCycleResponse> listMyTenancyCycles(UUID tenantUserId, UUID tenancyId) {

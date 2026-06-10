@@ -22,8 +22,10 @@ import com.khatiyan.d_modules.property.api.dto.AddPropertyManagerRequest;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomBulkRequest;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomRequest;
+import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.ShiftManagerRequest;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomRequest;
@@ -73,7 +75,7 @@ public class PropertyController {
 
     @GetMapping
     public List<PropertyResponse> listProperties(@AuthenticationPrincipal UserPrincipal user) {
-        return propertyService.listOwnerProperties(user.userId());
+        return propertyService.listManageableProperties(user.userId());
     }
 
     @GetMapping("/{propertyId}")
@@ -116,11 +118,28 @@ public class PropertyController {
                 .body(response);
     }
 
+    @GetMapping("/{propertyId}/managers/lookup")
+    public ManagerLookupResponse lookupManager(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam String phone) {
+        return propertyManagerService.lookupManager(user.userId(), propertyId, phone);
+    }
+
     @GetMapping("/{propertyId}/managers")
     public List<PropertyManagerResponse> listManagers(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return propertyManagerService.listManagers(user.userId(), propertyId);
+    }
+
+    @PostMapping("/{propertyId}/managers/{managerUserId}/shift")
+    public PropertyManagerResponse shiftManager(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID managerUserId,
+            @Valid @RequestBody ShiftManagerRequest request) {
+        return propertyManagerService.shiftManager(user.userId(), propertyId, managerUserId, request.targetPropertyId());
     }
 
     @DeleteMapping("/{propertyId}/managers/{managerUserId}")

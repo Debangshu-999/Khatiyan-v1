@@ -1,0 +1,151 @@
+{
+  "cities": [
+    {
+      "name": "Hyderabad",
+      "state": "Telangana",
+      "latitude": 17.385,
+      "longitude": 78.4867,
+      "areas": ["Madhapur", "Gachibowli", "Hitech City", "Kondapur", "Kukatpally", "Banjara Hills", "Jubilee Hills", "Begumpet", "Ameerpet", "Secunderabad", "Mehdipatnam", "Tolichowki", "Tarnaka", "Manikonda", "Nallagandla", "Miyapur", "Uppal"]
+    },
+    {
+      "name": "Bengaluru",
+      "state": "Karnataka",
+      "latitude": 12.9716,
+      "longitude": 77.5946,
+      "areas": ["Indiranagar", "Koramangala", "HSR Layout", "Whitefield", "Marathahalli", "Electronic City", "BTM Layout", "JP Nagar", "Jayanagar", "Rajajinagar", "Malleshwaram", "MG Road", "Hebbal", "Bellandur", "Sarjapur Road", "Banashankari", "Yelahanka"]
+    },
+    {
+      "name": "Mumbai",
+      "state": "Maharashtra",
+      "latitude": 19.076,
+      "longitude": 72.8777,
+      "areas": ["Andheri", "Bandra", "Powai", "Borivali", "Malad", "Goregaon", "Lower Parel", "Worli", "Dadar", "Juhu", "Vile Parle", "Kandivali", "Chembur", "Mulund", "Kurla", "Sion"]
+    },
+    {
+      "name": "Thane",
+      "state": "Maharashtra",
+      "latitude": 19.2183,
+      "longitude": 72.9781,
+      "areas": ["Ghodbunder Road", "Majiwada", "Hiranandani Estate", "Kasarvadavli", "Manpada", "Vartak Nagar", "Wagle Estate"]
+    },
+    {
+      "name": "Pune",
+      "state": "Maharashtra",
+      "latitude": 18.5204,
+      "longitude": 73.8567,
+      "areas": ["Koregaon Park", "Viman Nagar", "Hinjewadi", "Wakad", "Baner", "Aundh", "Kothrud", "Hadapsar", "Magarpatta", "Kharadi", "Pimpri-Chinchwad", "Camp", "Shivaji Nagar", "Kalyani Nagar", "NIBM"]
+    },
+    {
+      "name": "Delhi",
+      "state": "Delhi",
+      "latitude": 28.6139,
+      "longitude": 77.209,
+      "areas": ["Connaught Place", "Saket", "Hauz Khas", "Karol Bagh", "Lajpat Nagar", "Dwarka", "Rohini", "Vasant Kunj", "Greater Kailash", "Janakpuri", "Pitampura", "Mayur Vihar", "Patel Nagar", "Rajouri Garden", "Munirka"]
+    },
+    {
+      "name": "Noida",
+      "state": "Uttar Pradesh",
+      "latitude": 28.5355,
+      "longitude": 77.391,
+      "areas": ["Sector 18", "Sector 62", "Sector 137", "Sector 76", "Sector 50", "Greater Noida", "Sector 16", "Sector 15", "Sector 110"]
+    },
+    {
+      "name": "Gurugram",
+      "state": "Haryana",
+      "latitude": 28.4595,
+      "longitude": 77.0266,
+      "areas": ["Cyber City", "MG Road", "Golf Course Road", "Sohna Road", "DLF Phase 1", "DLF Phase 2", "DLF Phase 3", "DLF Phase 4", "Sector 14", "Sector 56", "Udyog Vihar", "Sushant Lok"]
+    },
+    {
+      "name": "Chennai",
+      "state": "Tamil Nadu",
+      "latitude": 13.0827,
+      "longitude": 80.2707,
+      "areas": ["Velachery", "Anna Nagar", "T Nagar", "Adyar", "OMR", "ECR", "Tambaram", "Porur", "Mylapore", "Nungambakkam", "Guindy", "Sholinganallur", "Perungudi", "Egmore", "Kilpauk"]
+    },
+    {
+      "name": "Kolkata",
+      "state": "West Bengal",
+      "latitude": 22.5726,
+      "longitude": 88.3639,
+      "areas": ["Salt Lake", "New Town", "Park Street", "Ballygunge", "Tollygunge", "Behala", "Garia", "Dum Dum", "Howrah", "Bidhannagar", "Rajarhat", "Jadavpur", "Esplanade"]
+    },
+    {
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "latitude": 23.0225,
+      "longitude": 72.5714,
+      "areas": ["Vastrapur", "Bodakdev", "Satellite", "SG Highway", "Maninagar", "Navrangpura", "Prahlad Nagar", "Bopal", "Thaltej", "Paldi", "CG Road"]
+    },
+    {
+      "name": "Jaipur",
+      "state": "Rajasthan",
+      "latitude": 26.9124,
+      "longitude": 75.7873,
+      "areas": ["Malviya Nagar", "Vaishali Nagar", "C Scheme", "Mansarovar", "Jagatpura", "Tonk Road", "Sitapura", "Raja Park"]
+    },
+    {
+      "name": "Lucknow",
+      "state": "Uttar Pradesh",
+      "latitude": 26.8467,
+      "longitude": 80.9462,
+      "areas": ["Gomti Nagar", "Hazratganj", "Aliganj", "Indira Nagar", "Mahanagar", "Aminabad", "Vibhuti Khand", "Charbagh"]
+    },
+    {
+      "name": "Chandigarh",
+      "state": "Chandigarh",
+      "latitude": 30.7333,
+      "longitude": 76.7794,
+      "areas": ["Sector 17", "Sector 22", "Sector 35", "Sector 8", "Sector 26", "Mohali", "Panchkula", "Sector 43"]
+    },
+    {
+      "name": "Indore",
+      "state": "Madhya Pradesh",
+      "latitude": 22.7196,
+      "longitude": 75.8577,
+      "areas": ["Vijay Nagar", "Palasia", "AB Road", "Bhawarkua", "Rau", "Sudama Nagar", "MG Road"]
+    },
+    {
+      "name": "Bhopal",
+      "state": "Madhya Pradesh",
+      "latitude": 23.2599,
+      "longitude": 77.4126,
+      "areas": ["MP Nagar", "Arera Colony", "Kolar Road", "Shahpura", "New Market", "Bairagarh"]
+    },
+    {
+      "name": "Kochi",
+      "state": "Kerala",
+      "latitude": 9.9312,
+      "longitude": 76.2673,
+      "areas": ["Kakkanad", "Edappally", "Marine Drive", "MG Road", "Vyttila", "Aluva", "Palarivattom", "Fort Kochi"]
+    },
+    {
+      "name": "Coimbatore",
+      "state": "Tamil Nadu",
+      "latitude": 11.0168,
+      "longitude": 76.9558,
+      "areas": ["RS Puram", "Peelamedu", "Saibaba Colony", "Singanallur", "Race Course", "Gandhipuram"]
+    },
+    {
+      "name": "Mysuru",
+      "state": "Karnataka",
+      "latitude": 12.2958,
+      "longitude": 76.6394,
+      "areas": ["Vijayanagar", "Kuvempunagar", "Hebbal", "Saraswathipuram", "Yadavagiri", "Bogadi"]
+    },
+    {
+      "name": "Visakhapatnam",
+      "state": "Andhra Pradesh",
+      "latitude": 17.6868,
+      "longitude": 83.2185,
+      "areas": ["MVP Colony", "Madhurawada", "Dwaraka Nagar", "Gajuwaka", "Seethammadhara", "Rushikonda"]
+    },
+    {
+      "name": "Bhubaneswar",
+      "state": "Odisha",
+      "latitude": 20.2961,
+      "longitude": 85.8245,
+      "areas": ["Patia", "Jaydev Vihar", "Saheed Nagar", "Chandrasekharpur", "Khandagiri", "Nayapalli"]
+    }
+  ]
+}

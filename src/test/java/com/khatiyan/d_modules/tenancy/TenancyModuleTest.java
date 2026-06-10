@@ -17,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
+import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
+import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,11 +27,17 @@ class TenancyModuleTest {
     @Mock
     private TenancyService tenancyService;
 
+    @Mock
+    private TenancyExitRequestService tenancyExitRequestService;
+
+    @Mock
+    private TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
+
     private TenancyModule tenancyModule;
 
     @BeforeEach
     void setUp() {
-        tenancyModule = new TenancyModule(tenancyService);
+        tenancyModule = new TenancyModule(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService);
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.notification.listener;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -12,8 +14,10 @@ import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
@@ -38,6 +42,11 @@ public class TenancyNotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onTenancyStarted(TenancyStartedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        RoomResponse room = propertyModule.getActiveRoom(event.propertyId(), event.roomId());
+        Map<String, String> data = baseTenancyData(event.tenancyId(), event.userId(), property);
+        data.put("roomId", event.roomId().toString());
+        data.put("roomNumber", room.roomNumber());
+        data.put("startDate", event.startDate().toString());
 
         notificationModule.notifyUser(
                 event.userId(),
@@ -45,23 +54,31 @@ public class TenancyNotificationEventListener {
                 "Your tenancy has started at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_STARTED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
 
-        List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
-                adminRecipients,
+                adminRecipients(property),
                 "Tenancy started",
                 "A tenancy has started at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_STARTED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onTenancyEnded(TenancyEndedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        RoomResponse room = propertyModule.getActiveRoom(event.propertyId(), event.roomId());
+        Map<String, String> data = baseTenancyData(event.tenancyId(), event.userId(), property);
+        data.put("roomId", event.roomId().toString());
+        data.put("roomNumber", room.roomNumber());
+        data.put("endDate", event.endDate().toString());
 
         notificationModule.notifyUser(
                 event.userId(),
@@ -69,17 +86,20 @@ public class TenancyNotificationEventListener {
                 "Your tenancy at " + property.name() + " has ended.",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_ENDED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
 
-        List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
-                adminRecipients,
+                adminRecipients(property),
                 "Tenancy ended",
                 "A tenancy has ended at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_ENDED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
@@ -87,6 +107,11 @@ public class TenancyNotificationEventListener {
     public void onTenancyRoomTransferred(TenancyRoomTransferredEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         RoomResponse newRoom = propertyModule.getActiveRoom(event.propertyId(), event.newRoomId());
+        Map<String, String> data = baseTenancyData(event.tenancyId(), event.userId(), property);
+        data.put("oldRoomId", event.oldRoomId().toString());
+        data.put("newRoomId", event.newRoomId().toString());
+        data.put("newRoomNumber", newRoom.roomNumber());
+        data.put("transferDate", event.transferDate().toString());
 
         notificationModule.notifyUser(
                 event.userId(),
@@ -94,18 +119,30 @@ public class TenancyNotificationEventListener {
                 "Your room at " + property.name() + " has been changed to room " + newRoom.roomNumber() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_ROOM_TRANSFERRED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
 
-        List<UUID> adminRecipients = adminRecipients(property);
         notificationModule.notifyUsers(
-                adminRecipients,
+                adminRecipients(property),
                 "Room transferred",
                 "A tenant has been moved to room " + newRoom.roomNumber() + " at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_ROOM_TRANSFERRED,
                 event.tenancyId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    private Map<String, String> baseTenancyData(UUID tenancyId, UUID tenantUserId, PropertyResponse property) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("tenancyId", tenancyId.toString());
+        data.put("tenantUserId", tenantUserId.toString());
+        data.put("propertyId", property.id().toString());
+        data.put("propertyName", property.name());
+        return data;
     }
 
     private List<UUID> adminRecipients(PropertyResponse property) {

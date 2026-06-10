@@ -95,9 +95,11 @@ class TenancyServiceTest {
         Tenancy tenancy = tenancyService.create(
                 ACTOR_ID,
                 "+919007433360",
+                null,
                 PROPERTY_ID,
                 ROOM_ID,
                 TenancyBillingType.MONTHLY,
+                null,
                 null,
                 LocalDate.of(2026, 6, 1),
                 null);
@@ -118,27 +120,30 @@ class TenancyServiceTest {
     }
 
     @Test
-    void rejectsMonthlyTenancyWhenDepositIsSuppliedByClient() {
+    void appliesRentAndDepositOverridesForMonthlyTenancy() {
         when(authModule.provisionTenantUser("+919007433360", "Tenant 3360", ACTOR_ID)).thenReturn(TENANT_ID);
+        when(referenceCodeGenerator.nextCode("TEN")).thenReturn("TEN-2026-000002");
         when(authModule.findById(TENANT_ID)).thenReturn(Optional.of(userSummary(false)));
         when(tenancyRepository.findActiveByUserId(TENANT_ID)).thenReturn(java.util.List.of());
         when(propertyModule.hasAvailableVacancy(PROPERTY_ID, ROOM_ID)).thenReturn(true);
+        when(propertyModule.getActiveProperty(PROPERTY_ID)).thenReturn(propertyResponse());
+        when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(roomResponse(12_000_00));
+        when(tenancyRepository.save(any(Tenancy.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> tenancyService.create(
+        Tenancy tenancy = tenancyService.create(
                 ACTOR_ID,
                 "+919007433360",
+                null,
                 PROPERTY_ID,
                 ROOM_ID,
                 TenancyBillingType.MONTHLY,
+                15_000_00L,
                 5_000_00L,
                 LocalDate.of(2026, 6, 1),
-                null))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Deposit amount is controlled by property policy");
+                null);
 
-        verify(tenancyRepository, never()).save(any(Tenancy.class));
-        verify(authModule, never()).markActiveTenant(TENANT_ID);
-        verify(billingModule, never()).initializeStartedTenancy(any(), any());
+        assertThat(tenancy.getRentAmountPaise()).isEqualTo(15_000_00);
+        assertThat(tenancy.getDepositAmountPaise()).isEqualTo(5_000_00);
     }
 
     @Test
@@ -149,9 +154,11 @@ class TenancyServiceTest {
         assertThatThrownBy(() -> tenancyService.create(
                 ACTOR_ID,
                 "+919007433360",
+                null,
                 PROPERTY_ID,
                 ROOM_ID,
                 TenancyBillingType.MONTHLY,
+                null,
                 null,
                 LocalDate.of(2026, 6, 1),
                 null))
@@ -206,6 +213,7 @@ class TenancyServiceTest {
                 "Sky PG",
                 "Address",
                 "Hyderabad",
+                "Telangana",
                 "500046",
                 null,
                 null,

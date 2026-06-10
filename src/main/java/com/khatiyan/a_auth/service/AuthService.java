@@ -92,8 +92,26 @@ public class AuthService {
      */
     @Transactional
     public void registerUser(String phone, String fullName, String requestIpAddress) {
-        User user = registerNewAccount(phone, fullName, UserRole.USER);
+        String normalizedPhone = phoneNumberNormalizer.normalize(phone);
 
+        // A provisioned tenant already has a USER account but no PIN. Let them
+        // "sign up" by resuming first PIN setup instead of erroring, optionally
+        // upgrading their placeholder name to the one they provided.
+        Optional<User> existing = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
+        if (existing.isPresent()) {
+            User user = existing.get();
+            if (user.getRole() == UserRole.USER && !user.hasPin()) {
+                // Resume first PIN setup for a provisioned, not-yet-activated
+                // tenant. The user-submitted signup name becomes the final
+                // profile name before PIN setup completes.
+                user.updateProfile(fullName.trim());
+                otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+                return;
+            }
+            throw new ValidationException("A user with this phone number already exists");
+        }
+
+        User user = registerNewAccount(phone, fullName, UserRole.USER);
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
     }
 
@@ -251,6 +269,27 @@ public class AuthService {
     }
 
     /**
+     * Changes the authenticated user's PIN after verifying both current PIN and
+     * phone ownership through a reset OTP.
+     */
+    @Transactional
+    public TokenResponse changePIN(UUID userId, String currentPin, String otp, String newPin) {
+        User user = findActiveUserById(userId)
+                .orElseThrow(() -> new NotFoundException("User_", userId));
+
+        if (!user.hasPin() || !pinService.matches(currentPin, user.getPinHash())) {
+            throw new ValidationException("Current PIN is incorrect");
+        }
+
+        otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.PIN_RESET, otp);
+        user.setPin(pinService.hashPIN(newPin));
+
+        eventPublisher.publishEvent(new PinChangedEvent(user.getId()));
+
+        return tokenFor(user);
+    }
+
+    /**
      * Finds or creates a manager account for property management assignment.
      */
     @Transactional
@@ -324,6 +363,10 @@ public class AuthService {
                         provisionedBy,
                         user.getId());
                 throw new ValidationException("User already has an active tenancy");
+            }
+
+            if (fullName != null && !fullName.isBlank()) {
+                user.updateProfile(fullName.trim());
             }
 
             log.info(

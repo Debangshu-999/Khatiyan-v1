@@ -19,20 +19,27 @@ import org.springframework.web.bind.annotation.RestController;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.CreateRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateNormalExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.RejectTenancyExitRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.ReviewRoomChangeRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TransferTenancyRoomRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.UpdateTenancyRequest;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
+import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
 
 import jakarta.validation.Valid;
 
@@ -43,26 +50,36 @@ public class TenancyController {
 
     private final TenancyService tenancyService;
     private final TenancyExitRequestService tenancyExitRequestService;
+    private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
 
-    public TenancyController(TenancyService tenancyService, TenancyExitRequestService tenancyExitRequestService) {
+    public TenancyController(
+            TenancyService tenancyService,
+            TenancyExitRequestService tenancyExitRequestService,
+            TenancyRoomChangeRequestService tenancyRoomChangeRequestService) {
         this.tenancyService = tenancyService;
         this.tenancyExitRequestService = tenancyExitRequestService;
+        this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
+    }
+
+    @GetMapping("/tenant-lookup")
+    public TenantLookupResponse lookupTenant(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam String phone) {
+        return tenancyService.lookupTenant(phone);
     }
 
     @PostMapping
-    public ResponseEntity<TenancyResponse> createTenancy(
+    public ResponseEntity<TenancyOnboardingResponse> createTenancy(
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody CreateTenancyRequest req) {
-        Tenancy tenancy = tenancyService.create(
-                user.userId(), req.tenantPhone(), req.propertyId(), req.roomId(),
-                req.resolvedBillingType(), req.depositAmountPaise(),
+        TenancyOnboardingResponse body = tenancyService.onboard(
+                user.userId(), req.tenantPhone(), req.tenantName(), req.propertyId(), req.roomId(),
+                req.resolvedBillingType(), req.rentAmountPaise(), req.depositAmountPaise(),
                 req.startDate(), req.plannedEndDate());
-
-        TenancyResponse body = TenancyResponse.from(tenancy);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .location(URI.create("/api/v1/tenancies/" + tenancy.getId()))
+                .location(URI.create("/api/v1/tenancies/" + body.tenancy().id()))
                 .body(body);
     }
 
@@ -70,6 +87,32 @@ public class TenancyController {
     @GetMapping("/me/active")
     public TenantActiveTenancyResponse getMyActiveTenancy(@AuthenticationPrincipal UserPrincipal user) {
         return tenancyService.getTenantActiveTenancyProfile(user.userId());
+    }
+
+    @GetMapping("/me/property-rooms")
+    public List<RoomResponse> listMyActivePropertyRooms(@AuthenticationPrincipal UserPrincipal user) {
+        return tenancyService.listActivePropertyRoomsForTenant(user.userId());
+    }
+
+    @PostMapping("/me/room-change-requests")
+    public ResponseEntity<TenancyRoomChangeRequestResponse> requestRoomChange(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody CreateRoomChangeRequest req) {
+        TenancyRoomChangeRequestResponse response = tenancyRoomChangeRequestService.requestRoomChange(
+                user.userId(),
+                req.targetRoomId(),
+                req.reason());
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .location(URI.create("/api/v1/tenancies/room-change-requests/" + response.id()))
+                .body(response);
+    }
+
+    @GetMapping("/me/room-change-requests")
+    public List<TenancyRoomChangeRequestResponse> listMyRoomChangeRequests(
+            @AuthenticationPrincipal UserPrincipal user) {
+        return tenancyRoomChangeRequestService.listMine(user.userId());
     }
 
     @GetMapping("/me")
@@ -186,6 +229,50 @@ public class TenancyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID id) {
         return tenancyExitRequestService.listForTenancy(user.userId(), id);
+    }
+
+    @GetMapping("/properties/{propertyId}/room-change-requests")
+    public List<TenancyRoomChangeRequestResponse> listPropertyRoomChangeRequests(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return tenancyRoomChangeRequestService.listForProperty(user.userId(), propertyId);
+    }
+
+    @GetMapping("/{id}/room-change-requests")
+    public List<TenancyRoomChangeRequestResponse> listTenancyRoomChangeRequests(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID id) {
+        return tenancyRoomChangeRequestService.listForTenancy(user.userId(), id);
+    }
+
+    @PostMapping("/room-change-requests/{requestId}/approve")
+    public TenancyRoomChangeRequestResponse approveRoomChangeRequest(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID requestId,
+            @Valid @RequestBody ReviewRoomChangeRequest req) {
+        return tenancyRoomChangeRequestService.approve(user.userId(), requestId, req.adminNotes());
+    }
+
+    @PostMapping("/room-change-requests/{requestId}/reject")
+    public TenancyRoomChangeRequestResponse rejectRoomChangeRequest(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID requestId,
+            @Valid @RequestBody ReviewRoomChangeRequest req) {
+        return tenancyRoomChangeRequestService.reject(user.userId(), requestId, req.adminNotes());
+    }
+
+    @PostMapping("/room-change-requests/{requestId}/cancel")
+    public TenancyRoomChangeRequestResponse cancelRoomChangeRequest(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID requestId) {
+        return tenancyRoomChangeRequestService.cancel(user.userId(), requestId);
+    }
+
+    @PostMapping("/room-change-requests/{requestId}/execute")
+    public TenancyRoomChangeRequestResponse executeRoomChangeRequest(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID requestId) {
+        return tenancyRoomChangeRequestService.execute(user.userId(), requestId);
     }
 
     @PostMapping("/exit-requests/{requestId}/approve")

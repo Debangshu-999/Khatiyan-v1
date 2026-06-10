@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.billing.repository;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -173,4 +174,107 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         ORDER BY cycle.rentDueDate ASC
         """)
     List<BillingCycle> findByPropertyIdAndStatuses(UUID propertyId, List<BillingCycleStatus> statuses);
+
+    // ----- Owner dashboard (action center) aggregates -----
+
+    /**
+     * Sum of cycle totals for a property whose period starts within a
+     * half-open date range. Used for "billed this month".
+     */
+    @Query("""
+        SELECT COALESCE(SUM(cycle.totalAmountPaise), 0)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.periodStartDate >= :fromDate
+          AND cycle.periodStartDate < :toDate
+        """)
+    long sumTotalForPropertyByPeriodStartBetween(UUID propertyId, LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Sum of cycle totals for a property in a given status whose payment
+     * landed within a half-open instant range. Used for "collected this
+     * month" and the value of "payments made today".
+     */
+    @Query("""
+        SELECT COALESCE(SUM(cycle.totalAmountPaise), 0)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status = :status
+          AND cycle.paidAt >= :fromInstant
+          AND cycle.paidAt < :toInstant
+        """)
+    long sumTotalForPropertyByStatusAndPaidAtBetween(
+            UUID propertyId,
+            BillingCycleStatus status,
+            Instant fromInstant,
+            Instant toInstant);
+
+    /**
+     * Count of cycles for a property in a given status paid within a
+     * half-open instant range. Used for "payments made today".
+     */
+    @Query("""
+        SELECT COUNT(cycle)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status = :status
+          AND cycle.paidAt >= :fromInstant
+          AND cycle.paidAt < :toInstant
+        """)
+    long countForPropertyByStatusAndPaidAtBetween(
+            UUID propertyId,
+            BillingCycleStatus status,
+            Instant fromInstant,
+            Instant toInstant);
+
+    /**
+     * Sum of cycle totals for a property across a set of statuses. Used for
+     * "pending" (UNPAID + OVERDUE).
+     */
+    @Query("""
+        SELECT COALESCE(SUM(cycle.totalAmountPaise), 0)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status IN :statuses
+        """)
+    long sumTotalForPropertyByStatusIn(UUID propertyId, List<BillingCycleStatus> statuses);
+
+    /**
+     * Sum of cycle totals for a property in a single status. Used for the
+     * overdue amount.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(cycle.totalAmountPaise), 0)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status = :status
+        """)
+    long sumTotalForPropertyByStatus(UUID propertyId, BillingCycleStatus status);
+
+    /**
+     * Count of cycles for a property in a single status. Used for the overdue
+     * count.
+     */
+    @Query("""
+        SELECT COUNT(cycle)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status = :status
+        """)
+    long countForPropertyByStatus(UUID propertyId, BillingCycleStatus status);
+
+    @Query("""
+        SELECT COUNT(cycle)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+         AND cycle.status IN :statuses
+        """)
+    long countForPropertyByStatusIn(UUID propertyId, List<BillingCycleStatus> statuses);
+
+    @Query("""
+        SELECT COALESCE(SUM(cycle.discountAmountPaise), 0)
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+        """)
+    long sumDiscountForProperty(UUID propertyId);
 }

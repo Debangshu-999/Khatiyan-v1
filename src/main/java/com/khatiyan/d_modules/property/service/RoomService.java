@@ -346,6 +346,20 @@ public class RoomService {
     }
 
     /**
+     * Lists active rooms for tenant-side read models already scoped by tenancy.
+     */
+    @Transactional(readOnly = true)
+    public List<RoomResponse> listActiveRoomsForProperty(UUID propertyId) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+
+        return roomRepository.findByPropertyIdAndActiveTrue(property.getId())
+                .stream()
+                .map(room -> RoomResponse.from(room))
+                .toList();
+    }
+
+    /**
      * Lists active rooms by occupancy or maintenance status for a manageable property.
      */
     @Transactional(readOnly = true)
@@ -365,6 +379,14 @@ public class RoomService {
     public RoomResponse getActiveRoom(UUID propertyId, UUID roomId) {
         Room room = getActiveRoomInProperty(propertyId, roomId);
         return RoomResponse.from(room);
+    }
+
+    /**
+     * Returns the lowest active room rent for discovery price summaries.
+     */
+    @Transactional(readOnly = true)
+    public Long findLowestActiveRoomRentPaise(UUID propertyId) {
+        return roomRepository.findLowestActiveRoomRentPaise(propertyId).orElse(null);
     }
 
     /**

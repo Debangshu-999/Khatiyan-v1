@@ -64,4 +64,11 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
         @Param("propertyId") UUID propertyId,
         @Param("roomNumbers") Collection<String> roomNumbers
     );
+
+    @Query("""
+        SELECT MIN(r.baseRentPaise) FROM Room r
+        WHERE r.propertyId = :propertyId
+          AND r.active = true
+    """)
+    Optional<Long> findLowestActiveRoomRentPaise(@Param("propertyId") UUID propertyId);
 }

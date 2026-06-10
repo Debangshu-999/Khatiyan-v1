@@ -179,7 +179,7 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081}
   notice:
-    recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 5 0 * * *}
+    recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */5 * * * *}
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}
     archive-expired-cron: ${NOTICE_ARCHIVE_EXPIRED_CRON:0 45 0 * * *}
     archive-expired-zone: ${NOTICE_ARCHIVE_EXPIRED_ZONE:Asia/Kolkata}
@@ -192,6 +192,9 @@ app:
     exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 10 0 * * *}
     exit-execution-zone: ${TENANCY_EXIT_EXECUTION_ZONE:Asia/Kolkata}
     exit-execution-batch-size: ${TENANCY_EXIT_EXECUTION_BATCH_SIZE:50}
+    room-change-execution-cron: ${TENANCY_ROOM_CHANGE_EXECUTION_CRON:0 12 0 * * *}
+    room-change-execution-zone: ${TENANCY_ROOM_CHANGE_EXECUTION_ZONE:Asia/Kolkata}
+    room-change-execution-batch-size: ${TENANCY_ROOM_CHANGE_EXECUTION_BATCH_SIZE:50}
   billing:
     monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 15 0 * * *}
     monthly-cycle-generation-zone: ${BILLING_MONTHLY_CYCLE_GENERATION_ZONE:Asia/Kolkata}
@@ -200,6 +203,10 @@ app:
     overdue-marker-zone: ${BILLING_OVERDUE_MARKER_ZONE:Asia/Kolkata}
     late-fee-recalculation-cron: ${BILLING_LATE_FEE_RECALCULATION_CRON:0 25 0 * * *}
     late-fee-recalculation-zone: ${BILLING_LATE_FEE_RECALCULATION_ZONE:Asia/Kolkata}
+    monthly-report-generation-cron: ${BILLING_MONTHLY_REPORT_GENERATION_CRON:0 44 0 * * *}
+    monthly-report-generation-zone: ${BILLING_MONTHLY_REPORT_GENERATION_ZONE:Asia/Kolkata}
+  dashboard:
+    upcoming-exit-days: ${DASHBOARD_UPCOMING_EXIT_DAYS:7}
   payment:
     default-provider: ${PAYMENT_DEFAULT_PROVIDER:RAZORPAY}
     currency: ${PAYMENT_CURRENCY:INR}

@@ -1,0 +1,124 @@
+name: Development CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-smoke:
+    name: Backend tests and startup smoke
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: khatiyan_db
+          POSTGRES_USER: debu
+          POSTGRES_PASSWORD: Debu@1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U debu -d khatiyan_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/khatiyan_db
+      SPRING_DATASOURCE_USERNAME: debu
+      SPRING_DATASOURCE_PASSWORD: Debu@1234
+      VALKEY_HOST: localhost
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD: ""
+      VALKEY_DATABASE: 0
+      RAZORPAY_KEY_ID: test_key_not_used_by_ci
+      RAZORPAY_KEY_SECRET: test_secret_not_used_by_ci
+      RAZORPAY_WEBHOOK_SECRET: test_webhook_secret_not_used_by_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Maven tests
+        run: mvn -B test
+
+      - name: Check frontend test-app JavaScript syntax
+        run: node --check frontend/app.js
+
+      - name: Spring Boot startup smoke test
+        run: |
+          set -euo pipefail
+
+          mvn -B spring-boot:run > spring-boot-smoke.log 2>&1 &
+          APP_PID=$!
+
+          for attempt in {1..90}; do
+            if grep -q "Started KhatiyanApplication" spring-boot-smoke.log; then
+              echo "Spring Boot startup smoke test passed."
+              kill "$APP_PID" || true
+              wait "$APP_PID" || true
+              exit 0
+            fi
+
+            if grep -q "APPLICATION FAILED TO START" spring-boot-smoke.log; then
+              cat spring-boot-smoke.log
+              kill "$APP_PID" || true
+              wait "$APP_PID" || true
+              exit 1
+            fi
+
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              cat spring-boot-smoke.log
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          echo "Spring Boot did not start within 90 seconds."
+          cat spring-boot-smoke.log
+          kill "$APP_PID" || true
+          wait "$APP_PID" || true
+          exit 1
+
+      - name: Upload startup log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-boot-smoke-log
+          path: spring-boot-smoke.log
+          if-no-files-found: ignore

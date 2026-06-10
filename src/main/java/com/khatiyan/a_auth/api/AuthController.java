@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.a_auth.api.dto.OtpVerifyResponse;
+import com.khatiyan.a_auth.api.dto.ChangePinRequest;
 import com.khatiyan.a_auth.api.dto.PinLoginRequest;
 import com.khatiyan.a_auth.api.dto.RegisterOwnerRequest;
 import com.khatiyan.a_auth.api.dto.RegisterUserRequest;
@@ -125,6 +126,13 @@ public class AuthController {
     @PostMapping("/pin/reset/confirm")
     public TokenResponse resetPin(@Valid @RequestBody ResetPinRequest request) {
         return authService.resetPIN(request.phone(), request.otp(), request.newPin());
+    }
+
+    @PostMapping("/pin/change")
+    public TokenResponse changePin(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody ChangePinRequest request) {
+        return authService.changePIN(user.userId(), request.currentPin(), request.otp(), request.newPin());
     }
 
     @PatchMapping("/me")

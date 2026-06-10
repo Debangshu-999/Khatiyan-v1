@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,7 +87,7 @@ class BillingModuleTest {
         UUID lineItemId = UUID.randomUUID();
         List<CreateExtraChargeRequest> extraCharges = List.of(
                 new CreateExtraChargeRequest("Damage", "Window repair", 800_00, false));
-        CreateDiscountRequest discountRequest = new CreateDiscountRequest("Goodwill", "Owner discount", 500_00);
+        CreateDiscountRequest discountRequest = new CreateDiscountRequest("Goodwill", "Owner discount", BigDecimal.TEN);
         AdjustBillingLineItemRequest adjustRequest = new AdjustBillingLineItemRequest(700_00L);
         when(billingCycleLineItemService.addExtraChargeForTenancy(actorUserId, tenancyId, extraCharges))
                 .thenReturn(billingCycleResponse);

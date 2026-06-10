@@ -20,8 +20,10 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
@@ -82,18 +84,23 @@ public class TenancyService {
     public Tenancy create(
             UUID actorUserId,
             String tenantPhone,
+            String tenantName,
             UUID propertyId,
             UUID roomId,
-            TenancyBillingType billingType, 
+            TenancyBillingType billingType,
+            Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate, LocalDate plannedEndDate) {
 
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
         TenancyBillingType resolvedBillingType = billingType != null ? billingType : TenancyBillingType.MONTHLY;
 
+        String provisionName = (tenantName != null && !tenantName.isBlank())
+                ? tenantName.trim()
+                : placeholderTenantName(tenantPhone);
         UUID tenantId = authModule.provisionTenantUser(
                 tenantPhone,
-                placeholderTenantName(tenantPhone),
+                provisionName,
                 actorUserId);
 
         UserSummaryResponse tenantUser = authModule.findById(tenantId)
@@ -126,6 +133,7 @@ public class TenancyService {
                     propertyId,
                     roomId,
                     actorUserId,
+                    rentAmountPaise,
                     depositAmountPaise,
                     startDate,
                     plannedEndDate);
@@ -156,11 +164,61 @@ public class TenancyService {
         return tenancy;
     }
 
+    /**
+     * Admin onboarding: looks up whether the phone is eligible to become a
+     * tenant. Used by the onboarding wizard's first step.
+     */
+    @Transactional(readOnly = true)
+    public TenantLookupResponse lookupTenant(String tenantPhone) {
+        return authModule.findByPhone(tenantPhone)
+                .map(user -> {
+                    if (user.role() != com.khatiyan.a_auth.model.UserRole.USER) {
+                        return new TenantLookupResponse(true, user.fullName(), false, false,
+                                "This phone belongs to a non-tenant account.");
+                    }
+                    if (user.activeTenant()) {
+                        return new TenantLookupResponse(true, user.fullName(), true, false,
+                                "This user already has an active tenancy.");
+                    }
+                    return new TenantLookupResponse(true, user.fullName(), false, true,
+                            "Existing user — a new tenancy will be added.");
+                })
+                .orElseGet(() -> new TenantLookupResponse(false, null, false, true,
+                        "New user — an account will be created."));
+    }
+
+    /**
+     * Admin onboarding: creates the tenancy (provisioning the tenant account if
+     * needed) and reports whether a new account was created, so the wizard can
+     * show the right success message.
+     */
+    @Transactional
+    public TenancyOnboardingResponse onboard(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            TenancyBillingType billingType,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate,
+            LocalDate plannedEndDate) {
+        boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
+
+        Tenancy tenancy = create(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate);
+
+        return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+    }
+
     private Tenancy createMonthlyTenancy(
             UUID tenantId,
             UUID propertyId,
             UUID roomId,
             UUID actorUserId,
+            Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate,
             LocalDate plannedEndDate) {
@@ -168,15 +226,22 @@ public class TenancyService {
             throw new ValidationException("Planned end date is only allowed for daily tenancy");
         }
 
-        if (depositAmountPaise != null && depositAmountPaise > 0) {
-            throw new ValidationException("Deposit amount is controlled by property policy");
-        }
-
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         RoomResponse room = propertyModule.getActiveRoom(propertyId, roomId);
-        if (room.baseRentPaise() <= 0) {
+
+        // Rent and deposit default from room/property, but the onboarding admin
+        // may override either; the overridden values are snapshotted on the
+        // tenancy. A blank/zero override falls back to the inventory/policy value.
+        long resolvedRent = (rentAmountPaise != null && rentAmountPaise > 0)
+                ? rentAmountPaise
+                : room.baseRentPaise();
+        if (resolvedRent <= 0) {
             throw new ValidationException("Room rent must be configured before starting tenancy");
         }
+
+        long resolvedDeposit = (depositAmountPaise != null && depositAmountPaise >= 0)
+                ? depositAmountPaise
+                : property.standardDepositPaise();
 
         return Tenancy.start(
                 referenceCodeGenerator.nextCode("TEN"),
@@ -184,8 +249,8 @@ public class TenancyService {
                 propertyId,
                 roomId,
                 actorUserId,
-                room.baseRentPaise(),
-                property.standardDepositPaise(),
+                resolvedRent,
+                resolvedDeposit,
                 startDate);
     }
 
@@ -435,8 +500,21 @@ public class TenancyService {
     }
 
     @Transactional(readOnly = true)
+    public List<RoomResponse> listActivePropertyRoomsForTenant(UUID userId) {
+        Tenancy tenancy = findActiveByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy_", userId));
+
+        return propertyModule.listActiveRoomsForProperty(tenancy.getPropertyId());
+    }
+
+    @Transactional(readOnly = true)
     public List<Tenancy> findActiveByPropertyId(UUID propertyId) {
         return tenancyRepository.findByPropertyIdAndActiveTrue(propertyId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Tenancy> findInactiveByPropertyId(UUID propertyId) {
+        return tenancyRepository.findByPropertyIdAndActiveFalse(propertyId);
     }
 
     @Transactional(readOnly = true)

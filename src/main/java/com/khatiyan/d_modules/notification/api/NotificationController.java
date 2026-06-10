@@ -48,6 +48,34 @@ public class NotificationController {
         return notificationService.countMyUnreadNotifications(user.userId());
     }
 
+    /**
+     * Recent feed for the bell — last 7 days, scoped to current tenancy for
+     * USERs with an active tenancy, all-time for OWNERs, empty for USERs
+     * without an active tenancy.
+     */
+    @GetMapping("/me/feed/recent")
+    public List<NotificationResponse> listMyRecentFeed(@AuthenticationPrincipal UserPrincipal user) {
+        return notificationService.listMyRecentNotifications(user.userId(), user.role());
+    }
+
+    /**
+     * Older feed for the bell — older than 7 days, still within the current
+     * tenancy window for USERs.
+     */
+    @GetMapping("/me/feed/older")
+    public List<NotificationResponse> listMyOlderFeed(@AuthenticationPrincipal UserPrincipal user) {
+        return notificationService.listMyOlderNotifications(user.userId(), user.role());
+    }
+
+    /**
+     * Unread count for the bell badge — counts unread in the current scope
+     * across both recent and older buckets.
+     */
+    @GetMapping("/me/feed/unread-count")
+    public long countMyCurrentUnread(@AuthenticationPrincipal UserPrincipal user) {
+        return notificationService.countMyCurrentUnreadNotifications(user.userId(), user.role());
+    }
+
     @PatchMapping("/{recipientId}/read")
     public NotificationResponse markRead(
             @AuthenticationPrincipal UserPrincipal user,

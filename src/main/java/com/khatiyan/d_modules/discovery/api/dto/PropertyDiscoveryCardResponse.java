@@ -16,6 +16,7 @@ public record PropertyDiscoveryCardResponse(
         String description,
         String address,
         String city,
+        String state,
         String pincode,
         BigDecimal latitude,
         BigDecimal longitude,
@@ -25,6 +26,8 @@ public record PropertyDiscoveryCardResponse(
         Set<PropertyFacility> facilities,
         Set<String> customFacilities,
         long standardDepositPaise,
+        Long startingRoomRentPaise,
+        boolean dailyRentingAvailable,
         Long dailyGuestAcRatePaise,
         Long dailyGuestNonAcRatePaise,
         String profileImageUrl
@@ -34,7 +37,8 @@ public record PropertyDiscoveryCardResponse(
             PropertyResponse property,
             PropertyDiscoveryProfile profile,
             Double distanceKm,
-            String directionsUrl) {
+            String directionsUrl,
+            Long startingRoomRentPaise) {
         return new PropertyDiscoveryCardResponse(
                 property.id(),
                 property.name(),
@@ -42,6 +46,7 @@ public record PropertyDiscoveryCardResponse(
                 profile.getDescription(),
                 property.address(),
                 property.city(),
+                property.state(),
                 property.pincode(),
                 property.latitude(),
                 property.longitude(),
@@ -51,8 +56,15 @@ public record PropertyDiscoveryCardResponse(
                 property.facilities(),
                 property.customFacilities(),
                 property.standardDepositPaise(),
+                startingRoomRentPaise,
+                hasPositiveDailyRate(property.dailyGuestAcRatePaise())
+                        || hasPositiveDailyRate(property.dailyGuestNonAcRatePaise()),
                 property.dailyGuestAcRatePaise(),
                 property.dailyGuestNonAcRatePaise(),
                 profile.getProfileImageUrl());
+    }
+
+    private static boolean hasPositiveDailyRate(Long value) {
+        return value != null && value > 0;
     }
 }

@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
+import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
 import com.khatiyan.d_modules.concerns.api.dto.CreateConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ReopenConcernRequest;
@@ -44,6 +45,13 @@ public class ConcernModule {
 
     public List<ConcernResponse> listAvailableConcerns(UUID actorUserId, UUID propertyId) {
         return concernService.listAvailableConcerns(actorUserId, propertyId);
+    }
+
+    /**
+     * Property-scoped concern rollup for the owner action center.
+     */
+    public ConcernDashboardSummary getPropertyConcernSummary(UUID actorUserId, UUID propertyId) {
+        return concernService.getPropertyConcernSummary(actorUserId, propertyId);
     }
 
     public List<ConcernResponse> listUndertakenConcerns(UUID actorUserId) {

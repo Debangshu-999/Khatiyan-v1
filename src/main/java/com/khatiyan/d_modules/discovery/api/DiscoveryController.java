@@ -14,10 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
+import com.khatiyan.d_modules.discovery.api.dto.LocationAreaResponse;
+import com.khatiyan.d_modules.discovery.api.dto.LocationCityResponse;
+import com.khatiyan.d_modules.discovery.api.dto.LocationSuggestionResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
 import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
+import com.khatiyan.d_modules.discovery.service.LocationCatalogService;
 
 @RestController
 @RequestMapping("/api/v1/discovery")
@@ -25,21 +29,25 @@ import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
 public class DiscoveryController {
 
     private final DiscoveryModule discoveryModule;
+    private final LocationCatalogService locationCatalogService;
 
-    public DiscoveryController(DiscoveryModule discoveryModule) {
+    public DiscoveryController(DiscoveryModule discoveryModule, LocationCatalogService locationCatalogService) {
         this.discoveryModule = discoveryModule;
+        this.locationCatalogService = locationCatalogService;
     }
 
     @GetMapping("/properties")
     public PageResponse<PropertyDiscoveryCardResponse> searchProperties(
+            @RequestParam(required = false) String state,
             @RequestParam(required = false) String city,
+            @RequestParam(required = false) String countryCode,
             @RequestParam(required = false) String locality,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(required = false) Double radiusKm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return discoveryModule.searchVisibleProperties(city, locality, latitude, longitude, radiusKm, page, size);
+        return discoveryModule.searchVisibleProperties(state, city, countryCode, locality, latitude, longitude, radiusKm, page, size);
     }
 
     @GetMapping("/properties/{propertyId}")
@@ -48,6 +56,21 @@ public class DiscoveryController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude) {
         return discoveryModule.getVisibleProperty(propertyId, latitude, longitude);
+    }
+
+    @GetMapping("/locations/suggest")
+    public List<LocationSuggestionResponse> suggestLocations(@RequestParam String q) {
+        return locationCatalogService.suggest(q);
+    }
+
+    @GetMapping("/locations/cities")
+    public List<LocationCityResponse> listCities() {
+        return locationCatalogService.listCities();
+    }
+
+    @GetMapping("/locations/areas")
+    public List<LocationAreaResponse> listAreas(@RequestParam String city) {
+        return locationCatalogService.listAreas(city);
     }
 
     @GetMapping("/local-place-tags")

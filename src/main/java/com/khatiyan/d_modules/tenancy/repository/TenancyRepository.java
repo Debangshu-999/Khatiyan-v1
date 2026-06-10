@@ -57,6 +57,15 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
     @Query("""
         SELECT tenancy
         FROM Tenancy tenancy
+        WHERE tenancy.propertyId = :propertyId
+          AND tenancy.active = false
+        ORDER BY tenancy.createdAt DESC
+    """)
+    List<Tenancy> findByPropertyIdAndActiveFalse(UUID propertyId);
+
+    @Query("""
+        SELECT tenancy
+        FROM Tenancy tenancy
         WHERE tenancy.active = true
           AND tenancy.billingStarted = true
           AND tenancy.billingType = :billingType

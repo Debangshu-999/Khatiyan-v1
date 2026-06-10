@@ -35,6 +35,9 @@ public record CreatePropertyRequest(
     @Size(max = 80)
     String city,
 
+    @Size(max = 80)
+    String state,
+
     @NotBlank
     @Size(max = 10)
     @Pattern(regexp = "^[1-9][0-9]{5}$", message = "Pincode must be a valid 6 digit Indian pincode")

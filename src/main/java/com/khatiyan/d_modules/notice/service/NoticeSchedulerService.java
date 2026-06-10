@@ -33,9 +33,11 @@ public class NoticeSchedulerService {
      *
      * <p>The generated notices can be created early because tenant visibility
      * is still controlled by each notice's visibleFrom and visibleUntil window.
+     * This runs frequently so templates created later in the day can still
+     * generate today's notice without waiting until tomorrow.
      */
     @Scheduled(
-            cron = "${app.notice.recurring-generation-cron:0 5 0 * * *}",
+            cron = "${app.notice.recurring-generation-cron:0 */5 * * * *}",
             zone = "${app.notice.recurring-generation-zone:Asia/Kolkata}")
     public void generateDueRecurringNotices() {
         int generatedCount = recurringNoticeService.generateDueRecurringNotices();

@@ -17,6 +17,7 @@ public record PropertyDiscoveryDetailResponse(
         String description,
         String address,
         String city,
+        String state,
         String pincode,
         BigDecimal latitude,
         BigDecimal longitude,
@@ -26,9 +27,13 @@ public record PropertyDiscoveryDetailResponse(
         Set<PropertyFacility> facilities,
         Set<String> customFacilities,
         long standardDepositPaise,
+        Long startingRoomRentPaise,
+        boolean dailyRentingAvailable,
         Long dailyGuestAcRatePaise,
         Long dailyGuestNonAcRatePaise,
         String profileImageUrl,
+        String ownerName,
+        String ownerPhone,
         boolean showOwnerContact,
         boolean showManagerContact
 ) {
@@ -37,7 +42,10 @@ public record PropertyDiscoveryDetailResponse(
             PropertyResponse property,
             PropertyDiscoveryProfile profile,
             Double distanceKm,
-            String directionsUrl) {
+            String directionsUrl,
+            Long startingRoomRentPaise,
+            String ownerName,
+            String ownerPhone) {
         return new PropertyDiscoveryDetailResponse(
                 property.id(),
                 property.ownerId(),
@@ -46,6 +54,7 @@ public record PropertyDiscoveryDetailResponse(
                 profile.getDescription(),
                 property.address(),
                 property.city(),
+                property.state(),
                 property.pincode(),
                 property.latitude(),
                 property.longitude(),
@@ -55,10 +64,19 @@ public record PropertyDiscoveryDetailResponse(
                 property.facilities(),
                 property.customFacilities(),
                 property.standardDepositPaise(),
+                startingRoomRentPaise,
+                hasPositiveDailyRate(property.dailyGuestAcRatePaise())
+                        || hasPositiveDailyRate(property.dailyGuestNonAcRatePaise()),
                 property.dailyGuestAcRatePaise(),
                 property.dailyGuestNonAcRatePaise(),
                 profile.getProfileImageUrl(),
+                ownerName,
+                ownerPhone,
                 profile.isShowOwnerContact(),
                 profile.isShowManagerContact());
+    }
+
+    private static boolean hasPositiveDailyRate(Long value) {
+        return value != null && value > 0;
     }
 }

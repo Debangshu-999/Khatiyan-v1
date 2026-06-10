@@ -41,6 +41,7 @@ public class BillingCycleSchedulerService {
         generateDueMonthlyCycles();
         markPastDueCycles();
         recalculateLateFees();
+        generateClosedMonthlyReports();
     }
 
     /**
@@ -95,5 +96,23 @@ public class BillingCycleSchedulerService {
         }
 
         log.info("Billing late-fee scheduler updated cycles count={} today={}", updatedCount, today);
+    }
+
+    /**
+     * Generates finalized monthly CSV reports after a month has closed.
+     */
+    @Scheduled(
+            cron = "${app.billing.monthly-report-generation-cron:0 44 0 * * *}",
+            zone = "${app.billing.monthly-report-generation-zone:Asia/Kolkata}")
+    public void generateClosedMonthlyReports() {
+        LocalDate today = LocalDate.now();
+        int generatedCount = billingCycleService.generateClosedMonthlyReports(today);
+
+        if (generatedCount == 0) {
+            log.info("Billing monthly-report scheduler found no reports to generate today={}", today);
+            return;
+        }
+
+        log.info("Billing monthly-report scheduler generated reports count={} today={}", generatedCount, today);
     }
 }

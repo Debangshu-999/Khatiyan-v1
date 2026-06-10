@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.notification.listener;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -18,6 +20,7 @@ import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 
@@ -40,6 +43,8 @@ public class ConcernNotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onConcernRaised(ConcernRaisedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
+        data.put("raisedByUserId", event.raisedByUserId().toString());
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
@@ -47,19 +52,27 @@ public class ConcernNotificationEventListener {
                 "A tenant raised a concern: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.CONCERN_RAISED,
                 event.concernId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onConcernAssigned(ConcernAssignedEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
+        data.put("assignedToUserId", event.assignedToUserId().toString());
+
         notificationModule.notifyUser(
                 event.assignedToUserId(),
                 "Concern assigned",
                 "A concern has been assigned to you: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.CONCERN_ASSIGNED,
                 event.concernId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
@@ -69,31 +82,52 @@ public class ConcernNotificationEventListener {
             return;
         }
 
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
+        data.put("raisedByUserId", event.raisedByUserId().toString());
+        if (event.assignedToUserId() != null) {
+            data.put("assignedToUserId", event.assignedToUserId().toString());
+        }
+        data.put("status", event.status().name());
+
         notificationModule.notifyUser(
                 event.raisedByUserId(),
                 "Concern in progress",
                 "Your concern is now in progress: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.CONCERN_IN_PROGRESS,
                 event.concernId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onConcernResolved(ConcernResolvedEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
+        data.put("raisedByUserId", event.raisedByUserId().toString());
+        data.put("resolvedByUserId", event.resolvedByUserId().toString());
+
         notificationModule.notifyUser(
                 event.raisedByUserId(),
                 "Concern resolved",
                 "Your concern was marked resolved: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
+                NotificationSubtype.CONCERN_RESOLVED,
                 event.concernId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onConcernReopened(ConcernReopenedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
+        data.put("raisedByUserId", event.raisedByUserId().toString());
+        data.put("assignedToUserId", event.assignedToUserId().toString());
+
         List<UUID> recipients = new ArrayList<>(adminRecipients(property));
         recipients.add(event.assignedToUserId());
 
@@ -103,8 +137,21 @@ public class ConcernNotificationEventListener {
                 "A resolved concern was reopened: " + event.title(),
                 NotificationCategory.CONCERN,
                 NotificationPriority.HIGH,
+                NotificationSubtype.CONCERN_REOPENED,
                 event.concernId(),
+                data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    private Map<String, String> baseConcernData(UUID concernId, PropertyResponse property, String concernTitle) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("concernId", concernId.toString());
+        data.put("propertyId", property.id().toString());
+        data.put("propertyName", property.name());
+        if (concernTitle != null) {
+            data.put("concernTitle", concernTitle);
+        }
+        return data;
     }
 
     private List<UUID> adminRecipients(PropertyResponse property) {

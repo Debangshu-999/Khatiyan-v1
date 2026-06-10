@@ -14,9 +14,11 @@ import jakarta.validation.constraints.Size;
 
 public record CreateTenancyRequest(
     @NotBlank @Size(max = 15) String tenantPhone,
+    @Size(max = 120) String tenantName,
     @NotNull UUID propertyId,
     @NotNull UUID roomId,
     TenancyBillingType billingType,
+    @PositiveOrZero Long rentAmountPaise,
     @PositiveOrZero Long depositAmountPaise,
     @NotNull LocalDate startDate,
     LocalDate plannedEndDate

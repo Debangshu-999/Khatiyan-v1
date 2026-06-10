@@ -2,8 +2,11 @@ package com.khatiyan.d_modules.notification.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -21,11 +24,14 @@ import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationDeviceToken;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.notification.model.NotificationRecipient;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.notification.model.PushNotification;
 import com.khatiyan.d_modules.notification.repository.NotificationDeviceTokenRepository;
 import com.khatiyan.d_modules.notification.repository.NotificationRecipientRepository;
 import com.khatiyan.d_modules.notification.repository.NotificationRepository;
 import com.khatiyan.d_modules.notification.repository.PushNotificationRepository;
+import com.khatiyan.d_modules.tenancy.TenancyModule;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,25 +47,32 @@ public class NotificationService {
 
     private static final Duration READ_NOTIFICATION_RETENTION = Duration.ofDays(30);
     private static final Duration UNREAD_NOTIFICATION_RETENTION = Duration.ofDays(90);
+    private static final Duration RECENT_BUCKET = Duration.ofDays(7);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String ROLE_OWNER = "OWNER";
 
     private final NotificationRepository notificationRepository;
     private final NotificationRecipientRepository notificationRecipientRepository;
     private final PushNotificationRepository pushNotificationRepository;
     private final NotificationDeviceTokenRepository notificationDeviceTokenRepository;
+    private final TenancyModule tenancyModule;
 
     public NotificationService(
             NotificationRepository notificationRepository,
             NotificationRecipientRepository notificationRecipientRepository,
             PushNotificationRepository pushNotificationRepository,
-            NotificationDeviceTokenRepository notificationDeviceTokenRepository) {
+            NotificationDeviceTokenRepository notificationDeviceTokenRepository,
+            TenancyModule tenancyModule) {
         this.notificationRepository = notificationRepository;
         this.notificationRecipientRepository = notificationRecipientRepository;
         this.pushNotificationRepository = pushNotificationRepository;
         this.notificationDeviceTokenRepository = notificationDeviceTokenRepository;
+        this.tenancyModule = tenancyModule;
     }
 
     /**
-     * Creates one notification for one user.
+     * Creates one notification for one user (legacy signature — no subtype or
+     * structured data; used by reminder pipeline).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyUser(
@@ -70,11 +83,12 @@ public class NotificationService {
             NotificationPriority priority,
             UUID sourceId,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(List.of(userId), title, body, category, priority, sourceId, deliveryMode);
+        createNotification(List.of(userId), title, body, category, priority, null, sourceId, Map.of(), deliveryMode);
     }
 
     /**
-     * Creates one shared notification and one recipient/push row per user.
+     * Creates one shared notification and one recipient/push row per user
+     * (legacy signature).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyUsers(
@@ -85,7 +99,43 @@ public class NotificationService {
             NotificationPriority priority,
             UUID sourceId,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(userIds, title, body, category, priority, sourceId, deliveryMode);
+        createNotification(userIds, title, body, category, priority, null, sourceId, Map.of(), deliveryMode);
+    }
+
+    /**
+     * Full signature with subtype and structured data — used by event
+     * listeners that produce richly-contextual notifications.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyUser(
+            UUID userId,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode) {
+        createNotification(List.of(userId), title, body, category, priority, subtype, sourceId, data, deliveryMode);
+    }
+
+    /**
+     * Full signature with subtype and structured data for multi-recipient
+     * fan-out.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyUsers(
+            Collection<UUID> userIds,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode) {
+        createNotification(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode);
     }
 
     private void createNotification(
@@ -94,7 +144,9 @@ public class NotificationService {
             String body,
             NotificationCategory category,
             NotificationPriority priority,
+            NotificationSubtype subtype,
             UUID sourceId,
+            Map<String, String> data,
             NotificationDeliveryMode deliveryMode) {
         if (userIds == null || userIds.isEmpty()) {
             log.debug("Notification skipped because recipient list is empty category={} sourceId={}", category, sourceId);
@@ -104,7 +156,7 @@ public class NotificationService {
                 deliveryMode == null ? NotificationDeliveryMode.IN_APP_ONLY : deliveryMode;
 
         Instant now = Instant.now();
-        Notification notification = Notification.create(title, body, category, priority, sourceId);
+        Notification notification = Notification.create(title, body, category, priority, subtype, sourceId, data);
         Notification savedNotification = notificationRepository.save(notification);
 
         List<NotificationRecipient> recipients = userIds.stream()
@@ -151,6 +203,87 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public long countMyUnreadNotifications(UUID userId) {
         return notificationRecipientRepository.countUnreadByUserId(userId);
+    }
+
+    /**
+     * Tenancy-scoped recent feed (last 7 days). For users with an active
+     * tenancy, only notifications created on/after the tenancy start are
+     * returned, so notifications from past tenancies stay out. For OWNERs,
+     * all of their notifications in the last 7 days are returned. For USERs
+     * without an active tenancy, returns an empty list.
+     */
+    @Transactional(readOnly = true)
+    public List<NotificationResponse> listMyRecentNotifications(UUID userId, String role) {
+        Optional<Instant> floor = resolveCurrentTenancyFloor(userId, role);
+        if (floor.isEmpty()) {
+            return List.of();
+        }
+
+        Instant now = Instant.now();
+        Instant recentBoundary = now.minus(RECENT_BUCKET);
+        Instant since = floor.get().isAfter(recentBoundary) ? floor.get() : recentBoundary;
+
+        return notificationRecipientRepository
+                .findVisibleByUserIdSince(userId, since)
+                .stream()
+                .map(NotificationResponse::from)
+                .toList();
+    }
+
+    /**
+     * Tenancy-scoped older feed (older than 7 days, still within the current
+     * tenancy window for USERs). Used by the "older notifications" screen.
+     */
+    @Transactional(readOnly = true)
+    public List<NotificationResponse> listMyOlderNotifications(UUID userId, String role) {
+        Optional<Instant> floor = resolveCurrentTenancyFloor(userId, role);
+        if (floor.isEmpty()) {
+            return List.of();
+        }
+
+        Instant recentBoundary = Instant.now().minus(RECENT_BUCKET);
+        if (!floor.get().isBefore(recentBoundary)) {
+            // The whole tenancy window is inside the last 7 days — no older bucket.
+            return List.of();
+        }
+
+        return notificationRecipientRepository
+                .findVisibleByUserIdBetween(userId, floor.get(), recentBoundary)
+                .stream()
+                .map(NotificationResponse::from)
+                .toList();
+    }
+
+    /**
+     * Tenancy-scoped unread count for the bell badge — counts unread visible
+     * notifications in the current scope across both recent and older buckets.
+     */
+    @Transactional(readOnly = true)
+    public long countMyCurrentUnreadNotifications(UUID userId, String role) {
+        return resolveCurrentTenancyFloor(userId, role)
+                .map(since -> notificationRecipientRepository.countUnreadByUserIdSince(userId, since))
+                .orElse(0L);
+    }
+
+    /**
+     * Resolves the "since" floor for the current notification scope.
+     *
+     * <ul>
+     *   <li>OWNER -> {@link Instant#EPOCH} (no floor, see everything).</li>
+     *   <li>USER with active tenancy -> start-of-day in IST on the tenancy
+     *       start date.</li>
+     *   <li>USER without active tenancy -> empty (caller returns empty feed).</li>
+     * </ul>
+     */
+    private Optional<Instant> resolveCurrentTenancyFloor(UUID userId, String role) {
+        if (ROLE_OWNER.equalsIgnoreCase(role)) {
+            return Optional.of(Instant.EPOCH);
+        }
+
+        return tenancyModule.findActiveByUserId(userId)
+                .map(TenancyResponse::startDate)
+                .map(startDate -> startDate.atStartOfDay(IST).toInstant())
+                .or(() -> Optional.of(Instant.EPOCH));
     }
 
     /**

@@ -39,12 +39,35 @@ public class PropertyModule {
         return propertyService.getActiveProperty(propertyId);
     }
 
+    public List<PropertyResponse> listActiveProperties() {
+        return propertyService.listActiveProperties();
+    }
+
     public PropertyBillingPolicyResponse getBillingPolicy(UUID propertyId) {
         return propertyService.getBillingPolicy(propertyId);
     }
 
     public RoomResponse getActiveRoom(UUID propertyId, UUID roomId) {
         return roomService.getActiveRoom(propertyId, roomId);
+    }
+
+    /**
+     * Active rooms for a property the actor manages. Used by the owner action
+     * center to compute the occupancy snapshot (beds, occupied, vacant).
+     */
+    public List<RoomResponse> listRooms(UUID actorUserId, UUID propertyId) {
+        return roomService.listRooms(actorUserId, propertyId);
+    }
+
+    /**
+     * Active rooms for tenant-side views after tenancy has scoped the property.
+     */
+    public List<RoomResponse> listActiveRoomsForProperty(UUID propertyId) {
+        return roomService.listActiveRoomsForProperty(propertyId);
+    }
+
+    public Long findLowestActiveRoomRentPaise(UUID propertyId) {
+        return roomService.findLowestActiveRoomRentPaise(propertyId);
     }
 
     public void ensureCanManageProperty(UUID actorUserId, UUID propertyId) {

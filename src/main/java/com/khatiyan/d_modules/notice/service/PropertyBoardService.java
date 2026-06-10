@@ -19,6 +19,8 @@ import com.khatiyan.d_modules.notice.model.PropertyBoardItem;
 import com.khatiyan.d_modules.notice.repository.PropertyBoardCategoryRepository;
 import com.khatiyan.d_modules.notice.repository.PropertyBoardItemRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.tenancy.TenancyModule;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 
 /**
  * Application service for long-lived property board content.
@@ -31,14 +33,17 @@ import com.khatiyan.d_modules.property.PropertyModule;
 public class PropertyBoardService {
 
     private final PropertyModule propertyModule;
+    private final TenancyModule tenancyModule;
     private final PropertyBoardCategoryRepository categoryRepository;
     private final PropertyBoardItemRepository itemRepository;
 
     public PropertyBoardService(
             PropertyModule propertyModule,
+            TenancyModule tenancyModule,
             PropertyBoardCategoryRepository categoryRepository,
             PropertyBoardItemRepository itemRepository) {
         this.propertyModule = propertyModule;
+        this.tenancyModule = tenancyModule;
         this.categoryRepository = categoryRepository;
         this.itemRepository = itemRepository;
     }
@@ -158,6 +163,20 @@ public class PropertyBoardService {
         getActiveCategoryForProperty(propertyId, categoryId);
 
         return itemRepository.findActiveByPropertyIdAndCategoryId(propertyId, categoryId)
+                .stream()
+                .map(item -> PropertyBoardItemResponse.from(item))
+                .toList();
+    }
+
+    /**
+     * Lists active board items for the authenticated tenant's current property.
+     */
+    @Transactional(readOnly = true)
+    public List<PropertyBoardItemResponse> listActiveItemsForTenant(UUID tenantUserId) {
+        TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
+                .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
+
+        return itemRepository.findActiveByPropertyId(tenancy.propertyId())
                 .stream()
                 .map(item -> PropertyBoardItemResponse.from(item))
                 .toList();

@@ -99,6 +99,7 @@ class PropertyModuleTest {
                 "Sky PG",
                 "Plot 1",
                 "Hyderabad",
+                "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),

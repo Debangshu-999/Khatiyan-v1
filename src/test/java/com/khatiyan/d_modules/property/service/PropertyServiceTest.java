@@ -29,6 +29,7 @@ import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.property.model.Property;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
 import com.khatiyan.d_modules.property.model.PropertyType;
+import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +39,9 @@ class PropertyServiceTest {
 
     @Mock
     private PropertyRepository propertyRepository;
+
+    @Mock
+    private PropertyManagerRepository propertyManagerRepository;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -52,7 +56,7 @@ class PropertyServiceTest {
 
     @BeforeEach
     void setUp() {
-        propertyService = new PropertyService(propertyRepository, eventPublisher, discoveryModule, referenceCodeGenerator);
+        propertyService = new PropertyService(propertyRepository, propertyManagerRepository, eventPublisher, discoveryModule, referenceCodeGenerator);
     }
 
     @Test
@@ -99,6 +103,7 @@ class PropertyServiceTest {
                 "Sky Prime PG",
                 "Plot 1",
                 "Hyderabad",
+                "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),
@@ -118,6 +123,7 @@ class PropertyServiceTest {
                 "Sky Prime PG",
                 "Plot 1",
                 "Hyderabad",
+                "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),

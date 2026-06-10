@@ -441,6 +441,30 @@ Room transfer keeps the same tenancy and updates its room/rent snapshot:
 This keeps billing cycles, deposit account, exit requests, and tenant active
 state attached to the same tenancy while still moving occupancy correctly.
 
+## Tenancy Room Change Requests
+
+Tenant-driven room changes use a request workflow instead of directly
+transferring rooms from the tenant side.
+
+1. Tenant selects a target room from their active property's room list.
+2. Tenancy verifies the target room belongs to the same property, is not the
+   current room, is active, has vacancy, and has rent configured.
+3. Tenancy loads the latest billing cycle and stores that cycle id on the
+   request.
+4. The request's `effectiveTransferDate` is always the current billing cycle's
+   `periodEndDate`.
+5. Owner/manager can approve or reject the request on any day.
+6. Approval does not immediately transfer the tenant.
+7. Manual or scheduled execution can run only on or after
+   `effectiveTransferDate`.
+8. The room-change scheduler runs before monthly billing generation by default,
+   so due approved transfers can update tenancy room/rent before the next cycle
+   snapshots billing details.
+9. Execution delegates to `TenancyService.transferRoom(...)`, preserving the
+   same tenancy, billing history, deposit account, and active-tenant identity.
+10. The request stores the requested target room rent and the executed rent
+    amount for audit.
+
 ## Tenancy End And Room Vacancy
 
 Ending a tenancy releases one occupied room slot.
@@ -707,19 +731,23 @@ A scheduled cleanup flow can archive published notices whose `visibleUntil` has 
 PostgreSQL as the source of truth, while vector search or pgvector can later be
 added as a rebuildable search index for older notice lookup.
 
-`NoticeSchedulerService` owns notice-module scheduled jobs. It prepares today's
-recurring notices at 2:00 AM and then archives expired published notices at
-2:15 AM by default. Both schedules are configurable:
+`NoticeSchedulerService` owns notice-module scheduled jobs. It checks for due
+recurring notices every few minutes so same-day templates created after midnight
+can still generate today's visible notice. It archives expired published notices
+at the configured archive time. Both schedules are configurable:
 
 ```text
-app.notice.recurring-generation-cron=0 0 2 * * *
+app.notice.recurring-generation-cron=0 */5 * * * *
 app.notice.recurring-generation-zone=Asia/Kolkata
 app.notice.archive-expired-cron=0 15 2 * * *
 app.notice.archive-expired-zone=Asia/Kolkata
 ```
 
 Recurring notices can be generated early because tenant visibility still depends
-on the generated notice's visibleFrom and visibleUntil window.
+on the generated notice's visibleFrom and visibleUntil window. The template's
+`last_processed_for_date` and `last_generated_for_date` guards prevent repeated
+same-day generation while still allowing newly-created templates to be picked up
+by the next scheduler interval.
 
 Management property-board endpoints use property-scoped dynamic categories:
 
