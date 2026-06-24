@@ -45,20 +45,29 @@ export type RegisterDeviceRequest = {
   platform: DevicePlatform;
 };
 
+// Feed queries are scoped to the active account (tenant vs manager/owner) so a
+// multi-role user sees a separated inbox. Account may be null before one is
+// chosen — the backend then falls back to role-based scoping.
+type FeedAccount = string | null | undefined;
+
+function feedUrl(path: string, account: FeedAccount) {
+  return account ? `${path}?account=${encodeURIComponent(account)}` : path;
+}
+
 export const notificationApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    getRecentNotifications: builder.query<NotificationItem[], void>({
-      query: () => "/api/v1/notifications/me/feed/recent",
+    getRecentNotifications: builder.query<NotificationItem[], FeedAccount>({
+      query: (account) => feedUrl("/api/v1/notifications/me/feed/recent", account),
       providesTags: ["Notification"],
     }),
 
-    getOlderNotifications: builder.query<NotificationItem[], void>({
-      query: () => "/api/v1/notifications/me/feed/older",
+    getOlderNotifications: builder.query<NotificationItem[], FeedAccount>({
+      query: (account) => feedUrl("/api/v1/notifications/me/feed/older", account),
       providesTags: ["Notification"],
     }),
 
-    getUnreadNotificationCount: builder.query<number, void>({
-      query: () => "/api/v1/notifications/me/feed/unread-count",
+    getUnreadNotificationCount: builder.query<number, FeedAccount>({
+      query: (account) => feedUrl("/api/v1/notifications/me/feed/unread-count", account),
       providesTags: ["Notification"],
     }),
 
@@ -70,9 +79,9 @@ export const notificationApi = api.injectEndpoints({
       invalidatesTags: ["Notification"],
     }),
 
-    markAllNotificationsRead: builder.mutation<void, void>({
-      query: () => ({
-        url: "/api/v1/notifications/me/read-all",
+    markAllNotificationsRead: builder.mutation<void, FeedAccount>({
+      query: (account) => ({
+        url: feedUrl("/api/v1/notifications/me/read-all", account),
         method: "PATCH",
       }),
       invalidatesTags: ["Notification"],

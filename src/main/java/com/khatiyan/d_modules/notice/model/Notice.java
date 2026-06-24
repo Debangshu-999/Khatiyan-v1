@@ -107,6 +107,18 @@ public class Notice extends BaseEntity {
                 now);
     }
 
+    /**
+     * Refreshes the visible window for a recurring notice's managed row so it
+     * shows during the given slot. Keeps the row PUBLISHED.
+     */
+    public void republishForWindow(Instant visibleFrom, Instant visibleUntil, Instant now) {
+        this.status = NoticeStatus.PUBLISHED;
+        this.archivedAt = null;
+        this.visibleFrom = visibleFrom;
+        this.visibleUntil = visibleUntil;
+        this.publishedAt = now;
+    }
+
     public void updateDetails(
             String title,
             String body,

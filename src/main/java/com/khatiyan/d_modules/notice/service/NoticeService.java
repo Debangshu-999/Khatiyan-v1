@@ -102,7 +102,7 @@ public class NoticeService {
     public List<NoticeResponse> listPublishedNotices(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return noticeRepository.findPublishedByPropertyId(propertyId)
+        return noticeRepository.findPublishedManualByPropertyId(propertyId)
                 .stream()
                 .map(notice -> NoticeResponse.from(notice))
                 .toList();
@@ -115,7 +115,7 @@ public class NoticeService {
     public List<NoticeResponse> listVisibleNoticesForProperty(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return noticeRepository.findVisibleByPropertyId(propertyId, Instant.now())
+        return noticeRepository.findVisibleManualByPropertyId(propertyId, Instant.now())
                 .stream()
                 .map(notice -> NoticeResponse.from(notice))
                 .toList();
@@ -128,7 +128,7 @@ public class NoticeService {
     public List<NoticeResponse> listArchivedNotices(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return noticeRepository.findArchivedByPropertyId(propertyId)
+        return noticeRepository.findArchivedManualByPropertyId(propertyId)
                 .stream()
                 .map(notice -> NoticeResponse.from(notice))
                 .toList();

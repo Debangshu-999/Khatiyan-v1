@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { Modal, Text, TextInput, View } from "react-native";
 import { ArrowLeft, X, type LucideProps } from "lucide-react-native";
 
@@ -34,10 +34,15 @@ export function BackButton({ onPress }: { onPress: () => void }) {
 
 export function IconButton({
   accessibilityLabel,
+  bordered,
   icon: Icon,
   onPress,
 }: {
   accessibilityLabel: string;
+  // When true, renders a bordered square that lines up with secondary
+  // ActionButtons (same border, radius and 48px height) — used when the
+  // icon button sits in an action row alongside them.
+  bordered?: boolean;
   icon: ComponentType<LucideProps>;
   onPress: () => void;
 }) {
@@ -46,7 +51,16 @@ export function IconButton({
     <AnimatedPressable
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}
+      style={{
+        alignItems: "center",
+        backgroundColor: bordered ? colors.surface : "transparent",
+        borderColor: bordered ? colors.border : "transparent",
+        borderRadius: bordered ? 14 : 18,
+        borderWidth: bordered ? 1 : 0,
+        height: bordered ? 48 : 36,
+        justifyContent: "center",
+        width: bordered ? 48 : 36,
+      }}
     >
       <Icon color={colors.ink} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
@@ -108,40 +122,52 @@ export function ActionButton({
 }
 
 export function FormInput({
+  autoCapitalize = "sentences",
   keyboardType,
   label,
+  maxLength,
   multiline,
   onChangeText,
   placeholder,
   value,
 }: {
+  autoCapitalize?: "characters" | "none" | "sentences" | "words";
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
   label: string;
+  maxLength?: number;
   multiline?: boolean;
   onChangeText: (value: string) => void;
   placeholder: string;
   value: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+    <View style={{ gap: 6 }}>
+      <Text style={[type.label, { color: colors.inkSoft }]} selectable>
         {label}
       </Text>
       <TextInput
-        autoCapitalize="none"
+        autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
+        maxLength={maxLength}
         multiline={multiline}
         numberOfLines={multiline ? 4 : undefined}
+        onBlur={() => setFocused(false)}
         onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
         style={{
-          borderColor: colors.border,
-          borderRadius: 12,
-          borderWidth: 1,
+          backgroundColor: colors.surface,
+          borderColor: focused ? colors.primary : colors.border,
+          borderRadius: 14,
+          borderWidth: focused ? 1.5 : 1,
           color: colors.ink,
-          minHeight: multiline ? 96 : 46,
+          fontFamily: fonts.sans,
+          fontSize: 15,
+          fontWeight: "500",
+          minHeight: multiline ? 104 : 50,
           paddingHorizontal: spacing.md,
           paddingVertical: multiline ? spacing.sm : 0,
           textAlignVertical: multiline ? "top" : "center",
@@ -156,17 +182,26 @@ export function ChoiceButton({ active, label, onPress }: { active: boolean; labe
   const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
       onPress={onPress}
       style={{
-        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        backgroundColor: active ? colors.primary : colors.surface,
         borderColor: active ? colors.primary : colors.border,
-        borderRadius: 12,
+        borderRadius: 999,
         borderWidth: 1,
+        elevation: active ? 2 : 0,
+        justifyContent: "center",
+        minHeight: 40,
         paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        paddingVertical: 9,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 3, width: 0 },
+        shadowOpacity: active ? 1 : 0,
+        shadowRadius: 6,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "700" }} selectable>
         {label}
       </Text>
     </AnimatedPressable>

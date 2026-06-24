@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -74,7 +75,8 @@ public class BillingReminderScannerService {
                     dueReminderBody(cycle, daysUntilDue),
                     NotificationCategory.PAYMENT,
                     NotificationPriority.HIGH,
-                    NotificationDeliveryMode.IN_APP_AND_PUSH);
+                    NotificationDeliveryMode.IN_APP_AND_PUSH,
+                    NotificationAudience.TENANT);
 
             if (created.isPresent()) {
                 createdCount = createdCount + 1;
@@ -108,7 +110,8 @@ public class BillingReminderScannerService {
                             formatPaise(cycle.totalAmountPaise())),
                     NotificationCategory.PAYMENT,
                     NotificationPriority.URGENT,
-                    NotificationDeliveryMode.IN_APP_AND_PUSH);
+                    NotificationDeliveryMode.IN_APP_AND_PUSH,
+                    NotificationAudience.TENANT);
 
             if (tenantReminder.isPresent()) {
                 createdCount = createdCount + 1;

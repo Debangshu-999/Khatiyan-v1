@@ -1,7 +1,8 @@
+import type { ComponentType } from "react";
 import { Text, View } from "react-native";
+import { AlertTriangle, Siren, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { StatusPill } from "@/components/status-pill";
 import type { NotificationItem } from "@/store/services/notification-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -11,19 +12,16 @@ type Props = {
   onPress?: () => void;
 };
 
-const PRIORITY_TONE = {
-  EMERGENCY: "danger",
-  URGENT: "warning",
-  HIGH: "warning",
-  IMPORTANT: "accent",
-  NORMAL: "neutral",
-} as const;
+type UrgencySignal = {
+  icon: ComponentType<LucideProps>;
+  label: "High" | "Urgent";
+  tone: "danger" | "warning";
+};
 
 export function NotificationRow({ notification, onPress }: Props) {
   const { colors, fonts, type } = useTheme();
   const isUnread = !notification.readAt;
-  const priorityKey = (notification.priority as keyof typeof PRIORITY_TONE) ?? "NORMAL";
-  const tone = PRIORITY_TONE[priorityKey] ?? "neutral";
+  const urgency = urgencySignal(notification.priority);
   const details = notificationDetails(notification);
 
   return (
@@ -40,15 +38,10 @@ export function NotificationRow({ notification, onPress }: Props) {
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          {isUnread ? (
-            <View style={{ backgroundColor: colors.primary, borderRadius: 999, height: 8, width: 8 }} />
-          ) : null}
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-            {humanizeCategory(notification.category)}
-          </Text>
-        </View>
-        <StatusPill label={notification.priority} tone={tone} />
+        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          {humanizeCategory(notification.category)}
+        </Text>
+        {urgency ? <UrgencyMarker signal={urgency} /> : null}
       </View>
 
       <Text
@@ -88,6 +81,42 @@ export function NotificationRow({ notification, onPress }: Props) {
   );
 }
 
+function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
+  const { colors, fonts } = useTheme();
+  const Icon = signal.icon;
+  const tone = signal.tone === "danger" ? colors.danger : colors.warningText;
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+      <Icon color={tone} size={15} strokeWidth={2.5} />
+      <Text
+        style={{
+          color: tone,
+          fontFamily: fonts.sans,
+          fontSize: 11,
+          fontWeight: "900",
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+        }}
+        selectable
+      >
+        {signal.label}
+      </Text>
+    </View>
+  );
+}
+
+function urgencySignal(priority: string): UrgencySignal | null {
+  const normalized = priority.toUpperCase();
+  if (normalized === "EMERGENCY" || normalized === "URGENT") {
+    return { icon: Siren, label: "Urgent", tone: "danger" };
+  }
+  if (normalized === "HIGH") {
+    return { icon: AlertTriangle, label: "High", tone: "warning" };
+  }
+  return null;
+}
+
 function notificationDetails(notification: NotificationItem) {
   const data = notification.data ?? {};
   const details: Array<{ label: string; value: string }> = [];
@@ -121,7 +150,9 @@ function notificationDetails(notification: NotificationItem) {
       break;
     case "CONCERN_RAISED":
     case "CONCERN_ASSIGNED":
+    case "CONCERN_UNDER_REVIEW":
     case "CONCERN_IN_PROGRESS":
+    case "CONCERN_RELEASED":
     case "CONCERN_RESOLVED":
     case "CONCERN_REOPENED":
       add(details, "Property", data.propertyName);
@@ -158,7 +189,22 @@ function notificationDetails(notification: NotificationItem) {
       break;
     case "MANAGER_ASSIGNED":
     case "MANAGER_REMOVED":
+    case "MANAGER_EMPLOYMENT_UPDATED":
       add(details, "Property", data.propertyName);
+      break;
+    case "STAFF_ADDED":
+    case "STAFF_REMOVED":
+      add(details, "Property", data.propertyName);
+      add(details, "Staff", data.staffName);
+      add(details, "Category", data.categoryName);
+      break;
+    case "ROOM_MAINTENANCE_STARTED":
+    case "ROOM_MAINTENANCE_ENDED":
+    case "ROOM_DEACTIVATED":
+    case "ROOM_REACTIVATED":
+      add(details, "Property", data.propertyName);
+      add(details, "Room", data.roomNumber);
+      add(details, "Reason", data.reason);
       break;
     default:
       break;

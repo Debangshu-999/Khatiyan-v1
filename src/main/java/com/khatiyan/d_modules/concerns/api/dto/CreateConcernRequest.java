@@ -3,7 +3,6 @@ package com.khatiyan.d_modules.concerns.api.dto;
 import java.util.List;
 
 import com.khatiyan.d_modules.concerns.model.ConcernCategory;
-import com.khatiyan.d_modules.concerns.model.ConcernPriority;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -17,9 +16,6 @@ public record CreateConcernRequest(
 
     @NotNull
     ConcernCategory category,
-
-    @NotNull
-    ConcernPriority priority,
 
     @NotBlank
     @Size(max = 160)

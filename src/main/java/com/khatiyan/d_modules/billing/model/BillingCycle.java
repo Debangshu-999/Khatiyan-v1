@@ -277,8 +277,22 @@ public class BillingCycle extends BaseEntity {
             return;
         }
 
-        if (today.isAfter(rentDueDate)) {
+        if (today.isAfter(rentDueDate) && !today.isAfter(periodEndDate)) {
             this.status = BillingCycleStatus.OVERDUE;
+        }
+    }
+
+    public void markUnpaidAfterOverdueWindow(LocalDate nextPeriodStartDate) {
+        if (status != BillingCycleStatus.OVERDUE) {
+            return;
+        }
+
+        if (nextPeriodStartDate == null) {
+            throw new ValidationException("Next period start date is required");
+        }
+
+        if (nextPeriodStartDate.isAfter(periodEndDate)) {
+            this.status = BillingCycleStatus.UNPAID;
         }
     }
 

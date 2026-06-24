@@ -1,4 +1,5 @@
 import { api } from "@/store/api";
+import type { Page } from "@/store/pagination";
 
 export type TenancyBillingType = "DAILY" | "MONTHLY";
 export type TenancyStatus = "ACTIVE" | "ON_NOTICE" | "ON_PREMATURE_NOTICE" | "EXITED" | "EVICTED";
@@ -7,6 +8,10 @@ export type TenancySummary = {
   id: string;
   referenceCode: string;
   userId: string;
+  tenantName: string | null;
+  tenantPhone: string | null;
+  tenantPhoneVerified: boolean;
+  tenantProfileCompleted: boolean;
   propertyId: string;
   roomId: string;
   createdByUserId: string;
@@ -170,6 +175,21 @@ export const tenancyApi = api.injectEndpoints({
       providesTags: ["Tenancy"],
     }),
 
+    listActivePropertyTenancies: builder.query<Page<TenancySummary>, { page?: number; propertyId: string; query?: string; size?: number }>({
+      query: ({ page = 0, propertyId, query, size = 10 }) => ({
+        params: { page, size, ...(query?.trim() ? { query: query.trim() } : {}) },
+        url: `/api/v1/tenancies/properties/${propertyId}/active`,
+      }),
+      providesTags: ["Tenancy"],
+    }),
+
+    listPastPropertyTenancies: builder.query<Page<TenancySummary>, { page?: number; propertyId: string; query?: string; size?: number }>({
+      query: ({ page = 0, propertyId, query, size = 10 }) => ({
+        params: { page, size, ...(query?.trim() ? { query: query.trim() } : {}) },
+        url: `/api/v1/tenancies/properties/${propertyId}/past`,
+      }),
+      providesTags: ["Tenancy"],
+    }),
     listPropertyTenancies: builder.query<TenancySummary[], { includePast?: boolean; propertyId: string }>({
       query: ({ includePast = false, propertyId }) => ({
         params: { includePast, propertyId },
@@ -284,6 +304,8 @@ export const {
   useListMyTenanciesQuery,
   useListPropertyExitRequestsQuery,
   useListPropertyRoomChangeRequestsQuery,
+  useListActivePropertyTenanciesQuery,
+  useListPastPropertyTenanciesQuery,
   useListPropertyTenanciesQuery,
   useOnboardTenantMutation,
   useRejectExitRequestMutation,

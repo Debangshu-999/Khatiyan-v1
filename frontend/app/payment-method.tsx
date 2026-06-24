@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Linking, Text, View } from "react-native";
 import {
@@ -13,8 +13,8 @@ import {
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useToast } from "@/components/toast";
 import { Section } from "@/components/section";
 import { useAppSelector } from "@/store/hooks";
 import { useCreatePaymentOrderMutation } from "@/store/services/payment-api";
@@ -87,22 +87,19 @@ function errorMessage(error: unknown) {
 export default function PaymentMethodScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const params = useLocalSearchParams<{ billingCycleId?: string; amountPaise?: string }>();
   const apiBaseUrl = useAppSelector((state) => state.appConfig.apiBaseUrl);
   const [createPaymentOrder] = useCreatePaymentOrderMutation();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
+  const setStatus = (value: { text: string; error: boolean } | null) => {
+    if (value) {
+      toast.show(value.text, value.error ? "error" : "success");
+    }
+  };
 
   const billingCycleId = params.billingCycleId ?? "";
   const amountPaise = Number(params.amountPaise ?? "0");
-
-  useEffect(() => {
-    if (!status) {
-      return;
-    }
-    const timeoutId = setTimeout(() => setStatus(null), 6000);
-    return () => clearTimeout(timeoutId);
-  }, [status]);
 
   async function handleSelect(option: MethodOption) {
     if (!billingCycleId || busyId) {
@@ -167,13 +164,6 @@ export default function PaymentMethodScreen() {
         </Text>
       </Text>
 
-      {status ? (
-        <Card tone="sunken">
-          <Text style={[type.body, { color: status.error ? colors.danger : colors.primary, fontWeight: "800" }]} selectable>
-            {status.text}
-          </Text>
-        </Card>
-      ) : null}
 
       {SECTIONS.map((section) => (
         <Section key={section.title} eyebrow="Pay with" title={section.title}>

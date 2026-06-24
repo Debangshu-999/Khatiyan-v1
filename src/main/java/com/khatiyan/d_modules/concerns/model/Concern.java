@@ -16,6 +16,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -59,16 +60,24 @@ public class Concern extends BaseEntity {
     @Column(name = "assigned_to_user_id")
     private UUID assignedToUserId;
 
+    @Column(name = "assigned_by_user_id")
+    private UUID assignedByUserId;
+
+    @Column(name = "assigned_at")
+    private Instant assignedAt;
+
+    @Column(name = "in_progress_by_user_id")
+    private UUID inProgressByUserId;
+
+    @Column(name = "in_progress_at")
+    private Instant inProgressAt;
+
     @Column(name = "resolved_by_user_id")
     private UUID resolvedByUserId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
     private ConcernCategory category;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ConcernPriority priority;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "escalation_level", nullable = false, length = 20)
@@ -87,6 +96,9 @@ public class Concern extends BaseEntity {
     @Column(name = "resolution_note", length = 1000)
     private String resolutionNote;
 
+    @Column(name = "status_note", length = 1000)
+    private String statusNote;
+
     @Column(name = "resolved_at")
     private Instant resolvedAt;
 
@@ -102,6 +114,7 @@ public class Concern extends BaseEntity {
     @Column(name = "reopened_at")
     private Instant reopenedAt;
 
+    @BatchSize(size = 50)
     @OneToMany(mappedBy = "concern", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ConcernPhoto> photos = new ArrayList<>();
 
@@ -112,7 +125,6 @@ public class Concern extends BaseEntity {
             UUID tenancyId,
             UUID raisedByUserId,
             ConcernCategory category,
-            ConcernPriority priority,
             String title,
             String description) {
         this.id = UUID.randomUUID();
@@ -122,7 +134,6 @@ public class Concern extends BaseEntity {
         this.tenancyId = tenancyId;
         this.raisedByUserId = raisedByUserId;
         this.category = category;
-        this.priority = priority;
         this.escalationLevel = ConcernEscalationLevel.NONE;
         this.status = ConcernStatus.OPEN;
         this.title = title;
@@ -135,7 +146,6 @@ public class Concern extends BaseEntity {
             UUID tenancyId,
             UUID raisedByUserId,
             ConcernCategory category,
-            ConcernPriority priority,
             String title,
             String description) {
         return raise(
@@ -145,7 +155,6 @@ public class Concern extends BaseEntity {
                 tenancyId,
                 raisedByUserId,
                 category,
-                priority,
                 title,
                 description);
     }
@@ -157,7 +166,6 @@ public class Concern extends BaseEntity {
             UUID tenancyId,
             UUID raisedByUserId,
             ConcernCategory category,
-            ConcernPriority priority,
             String title,
             String description) {
         return new Concern(
@@ -167,7 +175,6 @@ public class Concern extends BaseEntity {
                 tenancyId,
                 raisedByUserId,
                 category,
-                priority,
                 title,
                 description);
     }
@@ -180,9 +187,11 @@ public class Concern extends BaseEntity {
         photos.add(ConcernPhoto.create(this, photoUrl, photoPublicId, photos.size()));
     }
 
-    public void assignTo(UUID assignedToUserId) {
+    public void assignTo(UUID assignedToUserId, UUID assignedByUserId, Instant assignedAt) {
         ensureOpenForWork();
         this.assignedToUserId = assignedToUserId;
+        this.assignedByUserId = assignedByUserId;
+        this.assignedAt = assignedAt;
         this.status = ConcernStatus.UNDER_REVIEW;
     }
 
@@ -195,20 +204,30 @@ public class Concern extends BaseEntity {
         this.status = ConcernStatus.OPEN;
     }
 
-    public void markUnderReview(UUID assignedToUserId) {
+    public void updateStatusNote(String statusNote) {
+        this.statusNote = statusNote;
+    }
+
+    public void markUnderReview(UUID assignedToUserId, Instant assignedAt) {
         ensureOpenForWork();
         this.assignedToUserId = assignedToUserId;
+        this.assignedByUserId = assignedToUserId;
+        this.assignedAt = assignedAt;
         this.status = ConcernStatus.UNDER_REVIEW;
     }
 
-    public void markInProgress(UUID assignedToUserId) {
+    public void markInProgress(UUID assignedToUserId, Instant inProgressAt) {
         ensureOpenForWork();
         if (this.assignedToUserId != null && !this.assignedToUserId.equals(assignedToUserId)) {
             throw new IllegalStateException("Only the assigned user can mark this concern in progress");
         }
         this.assignedToUserId = assignedToUserId;
+        this.inProgressByUserId = assignedToUserId;
+        this.inProgressAt = inProgressAt;
         this.status = ConcernStatus.IN_PROGRESS;
-        this.escalationLevel = ConcernEscalationLevel.NONE;
+        // Escalation level is preserved while a concern is worked on (only
+        // cleared on resolve) so that releasing it sends it back to the
+        // escalation queue rather than the normal available list.
     }
 
     public void resolve(UUID resolvedByUserId, String resolutionNote, Instant resolvedAt) {
@@ -217,6 +236,7 @@ public class Concern extends BaseEntity {
         this.escalationLevel = ConcernEscalationLevel.NONE;
         this.resolvedByUserId = resolvedByUserId;
         this.resolutionNote = resolutionNote;
+        this.statusNote = null;
         this.resolvedAt = resolvedAt;
         this.reopenUntil = resolvedAt.plus(REOPEN_WINDOW);
         this.reopened = false;
@@ -242,6 +262,7 @@ public class Concern extends BaseEntity {
         this.escalationLevel = ConcernEscalationLevel.NONE;
         this.reopened = true;
         this.reopenReason = reopenReason;
+        this.statusNote = reopenReason;
         this.reopenedAt = now;
         
         this.resolvedByUserId = null;

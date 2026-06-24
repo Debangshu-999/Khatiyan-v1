@@ -18,10 +18,14 @@ import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.RoomConditioning;
 import com.khatiyan.d_modules.property.model.RoomStatus;
 import com.khatiyan.d_modules.property.model.RoomType;
+import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.service.PropertyService;
 import com.khatiyan.d_modules.property.service.RoomService;
@@ -98,12 +102,20 @@ class PropertyModuleTest {
                 UUID.randomUUID(),
                 "Sky PG",
                 "Plot 1",
+                "Madhapur",
                 "Hyderabad",
                 "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),
                 PropertyType.PG,
+                PgFor.ANYONE,
+                PreferredTenantType.ANYONE,
+                false,
+                Set.of(),
+                false,
+                BathroomType.COMMON,
+                Set.of(SharingType.DOUBLE),
                 Set.of(),
                 Set.of(),
                 2_000_00L,
@@ -130,6 +142,12 @@ class PropertyModuleTest {
                 RoomConditioning.NON_AC,
                 12_000_00,
                 RoomStatus.VACANT,
-                true);
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 }

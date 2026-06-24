@@ -9,6 +9,8 @@ public record MoneySnapshot(
     long collectedThisMonthPaise,
     long pendingPaise,
     long overduePaise,
-    long overdueCount
+    long overdueCount,
+    long billedPrevMonthPaise,
+    long collectedPrevMonthPaise
 ) {
 }

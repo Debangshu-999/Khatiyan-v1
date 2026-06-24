@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -30,10 +32,14 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.RoomConditioning;
 import com.khatiyan.d_modules.property.model.RoomStatus;
 import com.khatiyan.d_modules.property.model.RoomType;
+import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
@@ -192,6 +198,41 @@ class TenancyServiceTest {
         assertThat(eventCaptor.getValue()).isInstanceOf(TenancyEndedEvent.class);
     }
 
+    @Test
+    void pagesManagedActiveAndPastTenanciesSeparately() {
+        Tenancy activeTenancy = Tenancy.start(
+                TENANT_ID,
+                PROPERTY_ID,
+                ROOM_ID,
+                ACTOR_ID,
+                12_000_00,
+                10_000_00,
+                LocalDate.of(2026, 6, 1));
+        Tenancy pastTenancy = Tenancy.start(
+                TENANT_ID,
+                PROPERTY_ID,
+                ROOM_ID,
+                ACTOR_ID,
+                12_000_00,
+                10_000_00,
+                LocalDate.of(2026, 5, 1));
+        pastTenancy.end(LocalDate.of(2026, 5, 31), "Completed");
+
+        when(authModule.findByIds(any())).thenReturn(java.util.Map.of(TENANT_ID, userSummary(false)));
+        when(tenancyRepository.findByPropertyIdAndActiveTrue(PROPERTY_ID))
+                .thenReturn(java.util.List.of(activeTenancy));
+        when(tenancyRepository.findByPropertyIdAndActiveFalse(PROPERTY_ID))
+                .thenReturn(java.util.List.of(pastTenancy));
+
+        var activePage = tenancyService.listActiveForManagedProperty(ACTOR_ID, PROPERTY_ID, null, 0, 10);
+        var pastPage = tenancyService.listPastForManagedProperty(ACTOR_ID, PROPERTY_ID, null, 0, 10);
+
+        assertThat(activePage.items()).extracting(TenancyResponse::id).containsExactly(activeTenancy.getId());
+        assertThat(activePage.totalElements()).isEqualTo(1);
+        assertThat(pastPage.items()).extracting(TenancyResponse::id).containsExactly(pastTenancy.getId());
+        assertThat(pastPage.totalElements()).isEqualTo(1);
+        verify(propertyModule, org.mockito.Mockito.times(2)).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
+    }
     private static UserSummaryResponse userSummary(boolean activeTenant) {
         return new UserSummaryResponse(
                 TENANT_ID,
@@ -212,12 +253,20 @@ class TenancyServiceTest {
                 ACTOR_ID,
                 "Sky PG",
                 "Address",
+                "Madhapur",
                 "Hyderabad",
                 "Telangana",
                 "500046",
                 null,
                 null,
                 PropertyType.PG,
+                PgFor.ANYONE,
+                PreferredTenantType.ANYONE,
+                false,
+                Set.of(),
+                false,
+                BathroomType.COMMON,
+                Set.of(SharingType.DOUBLE),
                 Set.of(),
                 Set.of(),
                 2_000_00L,
@@ -244,6 +293,12 @@ class TenancyServiceTest {
                 RoomConditioning.NON_AC,
                 baseRentPaise,
                 RoomStatus.VACANT,
-                true);
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 }

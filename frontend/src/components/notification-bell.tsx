@@ -18,7 +18,8 @@ export function NotificationBell() {
   const router = useRouter();
   const { colors, fonts } = useTheme();
   const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
-  const { data: unreadCount = 0 } = useGetUnreadNotificationCountQuery(undefined, {
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const { data: unreadCount = 0 } = useGetUnreadNotificationCountQuery(activeAccount, {
     ...NOTIFICATION_REFETCH_OPTIONS,
     skip: !hasSession,
     // Poll while the app is foregrounded so the badge stays live without the

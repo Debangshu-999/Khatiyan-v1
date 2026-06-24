@@ -1,4 +1,5 @@
 import { api } from "@/store/api";
+import type { BathroomType, MealType, PgFor, PreferredTenantType, RoomType } from "@/store/services/property-api";
 
 export type PageResponse<T> = {
   items: T[];
@@ -16,6 +17,7 @@ export type PropertyDiscoveryCard = {
   headline: string | null;
   description: string | null;
   address: string;
+  area: string;
   city: string;
   state: string | null;
   pincode: string;
@@ -24,6 +26,13 @@ export type PropertyDiscoveryCard = {
   distanceKm: number | null;
   directionsUrl: string | null;
   type: string;
+  pgFor: PgFor;
+  preferredFor: PreferredTenantType;
+  foodIncluded: boolean;
+  includedMeals: MealType[];
+  electricityIncluded: boolean;
+  bathroomType: BathroomType;
+  availableSharingTypes: RoomType[];
   facilities: string[];
   customFacilities: string[];
   standardDepositPaise: number;
@@ -51,6 +60,15 @@ export type PropertyDiscoverySearch = {
   latitude?: number | null;
   longitude?: number | null;
   radiusKm?: number | null;
+  pgFor?: PgFor | null;
+  minRentPaise?: number | null;
+  maxRentPaise?: number | null;
+  preferredFor?: PreferredTenantType | null;
+  foodIncluded?: boolean | null;
+  mealTypes?: MealType[];
+  electricityIncluded?: boolean | null;
+  bathroomType?: BathroomType | null;
+  sharingTypes?: RoomType[];
   page?: number;
   size?: number;
 };
@@ -106,6 +124,19 @@ function cleanParams(values: Record<string, unknown>) {
   );
 }
 
+export type OwnerDiscoveryProfile = {
+  id: string;
+  propertyId: string;
+  headline: string | null;
+  description: string | null;
+  profileImageUrl: string | null;
+  publicVisible: boolean;
+  showOwnerContact: boolean;
+  showManagerContact: boolean;
+  publishedAt: string | null;
+  active: boolean;
+};
+
 export const discoveryApi = api.injectEndpoints({
   endpoints: (builder) => ({
     searchDiscoveryProperties: builder.query<PageResponse<PropertyDiscoveryCard>, PropertyDiscoverySearch>({
@@ -119,6 +150,15 @@ export const discoveryApi = api.injectEndpoints({
           latitude: params.latitude,
           longitude: params.longitude,
           radiusKm: params.radiusKm,
+          pgFor: params.pgFor,
+          minRentPaise: params.minRentPaise,
+          maxRentPaise: params.maxRentPaise,
+          preferredFor: params.preferredFor,
+          foodIncluded: params.foodIncluded,
+          mealTypes: params.mealTypes?.join(","),
+          electricityIncluded: params.electricityIncluded,
+          bathroomType: params.bathroomType,
+          sharingTypes: params.sharingTypes?.join(","),
           page: params.page ?? 0,
           size: params.size ?? 10,
         }),
@@ -164,15 +204,36 @@ export const discoveryApi = api.injectEndpoints({
       }),
       providesTags: ["Discovery"],
     }),
+    getOwnerDiscoveryProfile: builder.query<OwnerDiscoveryProfile, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/discovery-profile`,
+      providesTags: ["Discovery"],
+    }),
+    publishOwnerDiscoveryProfile: builder.mutation<OwnerDiscoveryProfile, string>({
+      query: (propertyId) => ({
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/discovery-profile/publish`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    unpublishOwnerDiscoveryProfile: builder.mutation<OwnerDiscoveryProfile, string>({
+      query: (propertyId) => ({
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/discovery-profile/unpublish`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
   }),
 });
 
 export const {
   useGetDiscoveryPropertyQuery,
+  useGetOwnerDiscoveryProfileQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
   useListLocalPlaceTagsQuery,
   useListMyLocalPlacesQuery,
+  usePublishOwnerDiscoveryProfileMutation,
   useSearchDiscoveryPropertiesQuery,
   useSuggestLocationsQuery,
+  useUnpublishOwnerDiscoveryProfileMutation,
 } = discoveryApi;

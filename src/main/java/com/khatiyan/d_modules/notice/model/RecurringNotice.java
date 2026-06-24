@@ -75,6 +75,10 @@ public class RecurringNotice extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RecurringNoticeStatus status;
 
+    // The single managed notice row this rule keeps republished each period.
+    @Column(name = "notice_id")
+    private UUID noticeId;
+
     private RecurringNotice(
             UUID propertyId,
             UUID createdByUserId,
@@ -85,7 +89,8 @@ public class RecurringNotice extends BaseEntity {
             LocalTime startTime,
             LocalTime endTime,
             LocalDate activeFrom,
-            LocalDate activeUntil) {
+            LocalDate activeUntil,
+            UUID noticeId) {
         validateTimeWindow(startTime, endTime);
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
@@ -99,6 +104,7 @@ public class RecurringNotice extends BaseEntity {
         this.activeFrom = activeFrom;
         this.activeUntil = activeUntil;
         this.status = RecurringNoticeStatus.ACTIVE;
+        this.noticeId = noticeId;
     }
 
     public static RecurringNotice create(
@@ -111,7 +117,8 @@ public class RecurringNotice extends BaseEntity {
             LocalTime startTime,
             LocalTime endTime,
             LocalDate activeFrom,
-            LocalDate activeUntil) {
+            LocalDate activeUntil,
+            UUID noticeId) {
         return new RecurringNotice(
                 propertyId,
                 createdByUserId,
@@ -122,7 +129,12 @@ public class RecurringNotice extends BaseEntity {
                 startTime,
                 endTime,
                 activeFrom,
-                activeUntil);
+                activeUntil,
+                noticeId);
+    }
+
+    public void linkNotice(UUID noticeId) {
+        this.noticeId = noticeId;
     }
 
     public void updateDetails(

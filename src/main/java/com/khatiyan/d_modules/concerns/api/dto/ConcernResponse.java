@@ -8,7 +8,6 @@ import java.util.UUID;
 import com.khatiyan.d_modules.concerns.model.Concern;
 import com.khatiyan.d_modules.concerns.model.ConcernCategory;
 import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
-import com.khatiyan.d_modules.concerns.model.ConcernPriority;
 import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 
 /**
@@ -18,17 +17,23 @@ public record ConcernResponse(
     UUID id,
     String referenceCode,
     UUID propertyId,
-    UUID roomId,
-    UUID tenancyId,
+    String roomNumber,
+    String tenancyReferenceCode,
     UUID raisedByUserId,
     UUID assignedToUserId,
+    String assignedToName,
+    UUID assignedByUserId,
+    String assignedByName,
+    Instant assignedAt,
+    UUID inProgressByUserId,
+    Instant inProgressAt,
     UUID resolvedByUserId,
     ConcernCategory category,
-    ConcernPriority priority,
     ConcernEscalationLevel escalationLevel,
     ConcernStatus status,
     String title,
     String description,
+    String statusNote,
     String resolutionNote,
     Instant resolvedAt,
     Instant reopenUntil,
@@ -39,7 +44,12 @@ public record ConcernResponse(
     Instant updatedAt,
     List<ConcernPhotoResponse> photos
 ) {
-    public static ConcernResponse from(Concern concern) {
+    public static ConcernResponse from(
+            Concern concern,
+            String roomNumber,
+            String tenancyReferenceCode,
+            String assignedToName,
+            String assignedByName) {
         List<ConcernPhotoResponse> photos = concern.getPhotos()
             .stream()
             .sorted(Comparator.comparingInt(photo -> photo.getDisplayOrder()))
@@ -50,17 +60,23 @@ public record ConcernResponse(
             concern.getId(),
             concern.getReferenceCode(),
             concern.getPropertyId(),
-            concern.getRoomId(),
-            concern.getTenancyId(),
+            roomNumber,
+            tenancyReferenceCode,
             concern.getRaisedByUserId(),
             concern.getAssignedToUserId(),
+            assignedToName,
+            concern.getAssignedByUserId(),
+            assignedByName,
+            concern.getAssignedAt(),
+            concern.getInProgressByUserId(),
+            concern.getInProgressAt(),
             concern.getResolvedByUserId(),
             concern.getCategory(),
-            concern.getPriority(),
             concern.getEscalationLevel(),
             concern.getStatus(),
             concern.getTitle(),
             concern.getDescription(),
+            concern.getStatusNote(),
             concern.getResolutionNote(),
             concern.getResolvedAt(),
             concern.getReopenUntil(),

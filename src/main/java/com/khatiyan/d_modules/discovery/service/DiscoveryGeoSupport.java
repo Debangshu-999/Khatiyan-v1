@@ -51,20 +51,19 @@ final class DiscoveryGeoSupport {
             BigDecimal latitude,
             BigDecimal longitude,
             String address,
+            String area,
             String city,
+            String state,
             String pincode) {
-        String coordinateUrl = directionsUrl(latitude, longitude, null);
-        if (coordinateUrl != null) {
-            return coordinateUrl;
-        }
-
         StringBuilder query = new StringBuilder();
         appendQueryPart(query, address);
+        appendQueryPart(query, area);
         appendQueryPart(query, city);
+        appendQueryPart(query, state);
         appendQueryPart(query, pincode);
 
         if (query.isEmpty()) {
-            return null;
+            return directionsUrl(latitude, longitude, null);
         }
 
         return "https://www.google.com/maps/dir/?api=1&destination="

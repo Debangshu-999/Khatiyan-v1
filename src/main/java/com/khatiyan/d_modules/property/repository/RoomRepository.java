@@ -28,6 +28,10 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 
     Optional<Room> findByIdAndActiveTrue(UUID id);
 
+    Optional<Room> findByIdAndPropertyId(UUID id, UUID propertyId);
+
+    List<Room> findByPropertyIdAndIdIn(UUID propertyId, Collection<UUID> ids);
+
     Optional<Room> findByIdAndPropertyIdAndActiveTrue(UUID id, UUID propertyId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -43,6 +47,8 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
     );
 
     List<Room> findByPropertyIdAndActiveTrue(UUID propertyId);
+
+    List<Room> findByPropertyId(UUID propertyId);
 
     List<Room> findByPropertyIdAndStatusAndActiveTrue(UUID propertyId, RoomStatus status);
 

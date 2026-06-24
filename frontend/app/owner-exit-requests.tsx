@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ArrowLeft, CalendarDays, Check, DoorOpen, FileText, Info, IndianRupee, KeyRound, X } from "lucide-react-native";
@@ -7,8 +7,10 @@ import { ArrowLeft, CalendarDays, Check, DoorOpen, FileText, Info, IndianRupee, 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import {
@@ -24,7 +26,7 @@ type ReviewMode = "approve" | "reject";
 
 export default function OwnerExitRequestsScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
@@ -42,9 +44,11 @@ export default function OwnerExitRequestsScreen() {
 
   const [selected, setSelected] = useState<TenancyExitRequest | null>(null);
   const [mode, setMode] = useState<ReviewMode | null>(null);
+  const [pastOpen, setPastOpen] = useState(false);
 
   const requests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
-  const pendingCount = requests.filter((request) => request.status === "REQUESTED").length;
+  const activeRequests = requests.filter((request) => request.status === "REQUESTED");
+  const pastRequests = requests.filter((request) => request.status !== "REQUESTED");
 
   function openReview(request: TenancyExitRequest, reviewMode: ReviewMode) {
     setSelected(request);
@@ -72,25 +76,25 @@ export default function OwnerExitRequestsScreen() {
       {selectedProperty ? (
         <>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile label="Active" value={String(activeRequests.length)} hint="Awaiting review" tone={activeRequests.length > 0 ? "primary" : "default"} />
             <SummaryTile label="Total" value={String(requests.length)} hint="Exit requests" />
-            <SummaryTile label="Pending" value={String(pendingCount)} hint="Awaiting review" tone={pendingCount > 0 ? "primary" : "default"} />
           </View>
 
-          <Section eyebrow="Queue" title={`${requests.length} request${requests.length === 1 ? "" : "s"}`}>
+          <Section eyebrow="Active" title={`${activeRequests.length} active request${activeRequests.length === 1 ? "" : "s"}`}>
             {requestsQuery.isFetching && requests.length === 0 ? (
               <Card>
                 <ActivityIndicator color={colors.primary} />
               </Card>
-            ) : requests.length === 0 ? (
+            ) : activeRequests.length === 0 ? (
               <EmptyState
                 icon={DoorOpen}
                 eyebrow="All clear"
-                title="No exit requests"
-                description="Tenant exit requests for this property will appear here."
+                title="No active exit requests"
+                description="Tenant exit requests awaiting your review will appear here."
               />
             ) : (
               <View style={{ gap: spacing.sm }}>
-                {requests.map((request) => (
+                {activeRequests.map((request) => (
                   <ExitRequestCard
                     key={request.id}
                     request={request}
@@ -102,11 +106,83 @@ export default function OwnerExitRequestsScreen() {
               </View>
             )}
           </Section>
+
+          <Card>
+            <View style={{ gap: spacing.sm }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Past requests</Text>
+              <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]} selectable>Reviewed exit requests</Text>
+              <Text style={[type.body, { color: colors.muted }]} selectable>Approved, executed, rejected and cancelled exit requests for this property.</Text>
+              <ActionButton label={`${pastRequests.length} past request${pastRequests.length === 1 ? "" : "s"}`} onPress={() => setPastOpen(true)} variant="secondary" />
+            </View>
+          </Card>
         </>
       ) : null}
 
       {selected && mode ? <ExitReviewModal mode={mode} onClose={closeReview} request={selected} /> : null}
+      {pastOpen ? <PastExitRequestsModal onClose={() => setPastOpen(false)} requests={pastRequests} roomLabels={roomLabels} /> : null}
     </ScreenScrollView>
+  );
+}
+
+const PAST_PAGE_SIZE = 8;
+
+function paginateArray<T>(items: T[], page: number, size: number) {
+  const totalElements = items.length;
+  const totalPages = Math.ceil(totalElements / size);
+  const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
+  const start = safePage * size;
+  return {
+    hasNext: safePage + 1 < totalPages,
+    hasPrevious: safePage > 0,
+    page: safePage,
+    pageItems: items.slice(start, start + size),
+    totalElements,
+    totalPages,
+  };
+}
+
+// Reviewed (non-pending) exit requests, paginated in a modal like concern history.
+function PastExitRequestsModal({ onClose, requests, roomLabels }: { onClose: () => void; requests: TenancyExitRequest[]; roomLabels: Record<string, string> }) {
+  const { colors, fonts, type } = useTheme();
+  const [page, setPage] = useState(0);
+  const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, maxHeight: "86%", padding: spacing.lg }}>
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Past requests</Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>Reviewed exits</Text>
+            </View>
+            <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
+          </View>
+          {requests.length === 0 ? (
+            <EmptyState icon={DoorOpen} eyebrow="Nothing yet" title="No past requests" description="Reviewed exit requests will appear here once you approve or reject them." />
+          ) : (
+            <>
+              <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+                {paged.pageItems.map((request) => (
+                  <ExitRequestCard key={request.id} onApprove={() => {}} onReject={() => {}} request={request} roomLabel={roomLabels[request.roomId]} />
+                ))}
+              </ScrollView>
+              {paged.totalElements > 0 ? (
+                <PaginationBar
+                  hasNext={paged.hasNext}
+                  hasPrevious={paged.hasPrevious}
+                  onNext={() => setPage((current) => current + 1)}
+                  onPrevious={() => setPage((current) => Math.max(0, current - 1))}
+                  page={paged.page}
+                  totalElements={paged.totalElements}
+                  totalPages={paged.totalPages}
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -196,6 +272,7 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
   const [depositSettlement, setDepositSettlement] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ confirmLabel: string; destructive?: boolean; message: string; title: string } | null>(null);
 
   const [approveExit, approveState] = useApproveExitRequestMutation();
   const [rejectExit, rejectState] = useRejectExitRequestMutation();
@@ -210,10 +287,12 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
     setError(null);
 
     if (mode === "reject") {
-      Alert.alert("Reject exit request?", `Reject this ${humanizeToken(request.type).toLowerCase()} request?`, [
-        { style: "cancel", text: "Cancel" },
-        { onPress: () => void submit(), style: "destructive", text: "Reject" },
-      ]);
+      setConfirm({
+        confirmLabel: "Reject",
+        destructive: true,
+        message: `Reject this ${humanizeToken(request.type).toLowerCase()} request?`,
+        title: "Reject exit request?",
+      });
       return;
     }
 
@@ -222,14 +301,11 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
       return;
     }
 
-    Alert.alert(
-      "Approve exit request?",
-      `Approve checkout on ${formatDate(approvedCheckoutDate)}${depositPayable ? " with deposit settlement" : ""}?`,
-      [
-        { style: "cancel", text: "Cancel" },
-        { onPress: () => void submit(), text: "Approve" },
-      ],
-    );
+    setConfirm({
+      confirmLabel: "Approve",
+      message: `Approve checkout on ${formatDate(approvedCheckoutDate)}${depositPayable ? " with deposit settlement" : ""}?`,
+      title: "Approve exit request?",
+    });
   }
 
   async function submit() {
@@ -258,6 +334,7 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
   const reject = mode === "reject";
 
   return (
+    <>
     <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
@@ -345,6 +422,20 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
         </View>
       </KeyboardAvoidingView>
     </Modal>
+    {confirm ? (
+      <ConfirmDialog
+        confirmLabel={confirm.confirmLabel}
+        destructive={confirm.destructive}
+        message={confirm.message}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          setConfirm(null);
+          void submit();
+        }}
+        title={confirm.title}
+      />
+    ) : null}
+    </>
   );
 }
 

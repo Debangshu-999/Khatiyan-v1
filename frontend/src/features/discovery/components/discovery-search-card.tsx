@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, Text, TextInput, View } from "react-native";
-import { ChevronDown, MapPin, Search, X } from "lucide-react-native";
+import { ChevronDown, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -14,9 +14,10 @@ type DiscoverySearchCardProps = {
   areaOptions: LocationArea[];
   cityOptions: LocationCity[];
   loadingSuggestions: boolean;
+  activeFilterCount: number;
   onAreaSelect: (area: LocationArea | null) => void;
   onCitySelect: (city: LocationCity | null) => void;
-  onClearFilters: () => void;
+  onOpenFilters: () => void;
   onSearch: () => void;
   onSearchTextChange: (value: string) => void;
   onSuggestionSelect: (suggestion: LocationSuggestion) => void;
@@ -30,9 +31,10 @@ export function DiscoverySearchCard({
   areaOptions,
   cityOptions,
   loadingSuggestions,
+  activeFilterCount,
   onAreaSelect,
   onCitySelect,
-  onClearFilters,
+  onOpenFilters,
   onSearch,
   onSearchTextChange,
   onSuggestionSelect,
@@ -97,6 +99,40 @@ export function DiscoverySearchCard({
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
         ) : null}
+        <View style={{ backgroundColor: colors.border, height: 24, width: 1 }} />
+        <AnimatedPressable
+          accessibilityLabel="Open property filters"
+          accessibilityRole="button"
+          onPress={onOpenFilters}
+          style={{
+            alignItems: "center",
+            height: 36,
+            justifyContent: "center",
+            position: "relative",
+            width: 36,
+          }}
+        >
+          <SlidersHorizontal color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
+          {activeFilterCount > 0 ? (
+            <View
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.primary,
+                borderRadius: 999,
+                height: 16,
+                justifyContent: "center",
+                position: "absolute",
+                right: -2,
+                top: 0,
+                width: 16,
+              }}
+            >
+              <Text style={{ color: colors.onPrimary, fontSize: 10, fontWeight: "900" }}>
+                {activeFilterCount}
+              </Text>
+            </View>
+          ) : null}
+        </AnimatedPressable>
       </View>
 
       {showSuggestions ? (
@@ -157,10 +193,7 @@ export function DiscoverySearchCard({
         />
       </View>
 
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <DiscoveryButton label="Search" onPress={onSearch} style={{ flex: 1 }} />
-        <DiscoveryButton label="Clear" muted onPress={onClearFilters} style={{ flex: 1 }} />
-      </View>
+      <DiscoveryButton label="Search" onPress={onSearch} />
 
       <LocationFilterModal
         emptyLabel="No cities found"

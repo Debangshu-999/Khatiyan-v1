@@ -10,5 +10,6 @@ package com.khatiyan.a_auth.model;
 public enum OtpPurpose {
     LOGIN,
     PIN_RESET,
+    EMAIL_LOGIN,
     NEW_DEVICE
 }

@@ -2,13 +2,25 @@ package com.khatiyan.a_auth.service;
 
 import java.time.Instant;
 import java.time.Duration;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.time.temporal.ChronoUnit;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.a_auth.api.dto.EmailRecoveryStatusResponse;
 import com.khatiyan.a_auth.api.dto.OtpVerifyResponse;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
@@ -38,6 +50,7 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final LoginRateLimitProperties loginRateLimitProperties;
     private final LoginAttemptService loginAttemptService;
+    private final EmailVerificationLinkSender emailVerificationLinkSender;
 
     public AuthService(
             UserRepository userRepository,
@@ -48,7 +61,8 @@ public class AuthService {
             ApplicationEventPublisher eventPublisher,
             RateLimitService rateLimitService,
             LoginRateLimitProperties loginRateLimitProperties,
-            LoginAttemptService loginAttemptService) {
+            LoginAttemptService loginAttemptService,
+            EmailVerificationLinkSender emailVerificationLinkSender) {
         this.userRepository = userRepository;
         this.otpService = otpService;
         this.pinService = pinService;
@@ -58,6 +72,7 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.loginRateLimitProperties = loginRateLimitProperties;
         this.loginAttemptService = loginAttemptService;
+        this.emailVerificationLinkSender = emailVerificationLinkSender;
     }
 
     private TokenResponse tokenFor(User user) {
@@ -75,6 +90,20 @@ public class AuthService {
                 .orElseThrow(() -> new NotFoundException("User_", normalizedPhone));
     }
 
+    private User findActiveByEmail(String email) {
+        return userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizeEmail(email))
+                .orElseThrow(() -> new NotFoundException("User_", email));
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
+    }
+
+    private void ensureVerifiedEmail(User user) {
+        if (user.getEmail() == null || user.getEmail().isBlank() || !user.isEmailVerified()) {
+            throw new ValidationException("Verify your email before using email login or PIN reset");
+        }
+    }
     private void checkLoginRateLimits(String normalizedPhone) {
         int durationSeconds = (int) Duration.ofMinutes(
                 loginRateLimitProperties.phoneLimitDurationMinutes()).toSeconds();
@@ -91,7 +120,7 @@ public class AuthService {
      * verification.
      */
     @Transactional
-    public void registerUser(String phone, String fullName, String requestIpAddress) {
+    public void registerUser(String phone, String email, String fullName, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
 
         // A provisioned tenant already has a USER account but no PIN. Let them
@@ -105,14 +134,15 @@ public class AuthService {
                 // tenant. The user-submitted signup name becomes the final
                 // profile name before PIN setup completes.
                 user.updateProfile(fullName.trim());
-                otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+                user.updateRecoveryEmail(email);
+                otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
                 return;
             }
             throw new ValidationException("A user with this phone number already exists");
         }
 
-        User user = registerNewAccount(phone, fullName, UserRole.USER);
-        otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+        User user = registerNewAccount(phone, email, fullName, UserRole.USER);
+        otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
     }
 
     /**
@@ -120,13 +150,13 @@ public class AuthService {
      * verification.
      */
     @Transactional
-    public void registerOwner(String phone, String fullName, String requestIpAddress) {
-        User user = registerNewAccount(phone, fullName, UserRole.OWNER);
+    public void registerOwner(String phone, String email, String fullName, String requestIpAddress) {
+        User user = registerNewAccount(phone, email, fullName, UserRole.OWNER);
 
-        otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+        otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
     }
 
-    private User registerNewAccount(String phone, String fullName, UserRole role) {
+    private User registerNewAccount(String phone, String email, String fullName, UserRole role) {
         String newPhone = phoneNumberNormalizer.normalize(phone);
 
         if (userRepository.existsByPhoneAndActiveTrue(newPhone)) {
@@ -160,6 +190,7 @@ public class AuthService {
     @Transactional
     public void requestPINResetOTP(String phone, OtpDeliveryChannel channel, String requestIpAddress) {
         User user = findActiveByPhone(phone);
+        ensurePinResetAllowed(user, Instant.now());
 
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.PIN_RESET, channel);
     }
@@ -168,8 +199,112 @@ public class AuthService {
      * Checks an OTP without consuming it, so the client can choose the next screen.
      */
     @Transactional
+    public EmailRecoveryStatusResponse emailRecoveryStatus(UUID userId) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+        return new EmailRecoveryStatusResponse(user.getEmail(), user.isEmailVerified());
+    }
+
+    @Transactional
+    public EmailRecoveryStatusResponse updateRecoveryEmail(UUID userId, String email) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+        String normalizedEmail = normalizeEmail(email);
+        Optional<User> existing = userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizedEmail);
+        if (existing.isPresent() && !existing.get().getId().equals(userId)) {
+            throw new ValidationException("A user with this email address already exists");
+        }
+        user.updateRecoveryEmail(normalizedEmail);
+        return new EmailRecoveryStatusResponse(user.getEmail(), false);
+    }
+    @Transactional
+    public void requestEmailVerification(UUID userId) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new ValidationException("Add an email address before requesting verification");
+        }
+        if (user.isEmailVerified()) {
+            return;
+        }
+        String token = newVerificationToken();
+        user.beginEmailVerification(hashToken(token), Instant.now().plus(30, ChronoUnit.MINUTES));
+        emailVerificationLinkSender.send(user.getEmail(), token);
+    }
+
+    @Transactional
+    public boolean verifyEmail(String token) {
+        if (token == null || token.isBlank()) return false;
+        String hash = hashToken(token);
+        User user = userRepository.findByEmailVerificationTokenHash(hash).orElse(null);
+        if (user == null || !user.hasActiveEmailVerificationToken(hash, Instant.now())) return false;
+        user.markEmailVerified();
+        return true;
+    }
+
+    @Transactional
+    public void requestEmailLoginOTP(String email, String requestIpAddress) {
+        User user = findActiveByEmail(email);
+        ensureVerifiedEmail(user);
+        otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.EMAIL_LOGIN, OtpDeliveryChannel.EMAIL);
+    }
+
+    @Transactional
+    public TokenResponse loginWithEmailOTP(String email, String otp) {
+        User user = findActiveByEmail(email);
+        ensureVerifiedEmail(user);
+        otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.EMAIL_LOGIN, otp);
+        user.recordSuccessfulLogin(Instant.now());
+        return tokenFor(user);
+    }
+
+    @Transactional
+    public void requestPINResetOTPByEmail(String email, String requestIpAddress) {
+        User user = findActiveByEmail(email);
+        ensureVerifiedEmail(user);
+        ensurePinResetAllowed(user, Instant.now());
+        otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.PIN_RESET, OtpDeliveryChannel.EMAIL);
+    }
+
+    @Transactional
+    public OtpVerifyResponse verifyOTPByEmail(String email, String otp, OtpPurpose purpose) {
+        User user = findActiveByEmail(email);
+        ensureVerifiedEmail(user);
+        if (purpose == OtpPurpose.PIN_RESET) ensurePinResetAllowed(user, Instant.now());
+        otpService.verifyOTPWithoutConsuming(user.getPhone(), purpose, otp);
+        return new OtpVerifyResponse(user.getId(), !user.hasPin());
+    }
+
+    @Transactional
+    public TokenResponse resetPINByEmail(String email, String otp, String newPin) {
+        User user = findActiveByEmail(email);
+        ensureVerifiedEmail(user);
+        ensurePinResetAllowed(user, Instant.now());
+        otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.PIN_RESET, otp);
+        user.setPin(pinService.hashPIN(newPin));
+        eventPublisher.publishEvent(new PinChangedEvent(user.getId()));
+        return tokenFor(user);
+    }
+
+    private String newVerificationToken() {
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String hashToken(String token) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(hash.length * 2);
+            for (byte value : hash) result.append(String.format("%02x", value));
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
+        }
+    }
+    @Transactional
     public OtpVerifyResponse verifyOTP(String phone, String otp, OtpPurpose purpose) {
         User user = findActiveByPhone(phone);
+        if (purpose == OtpPurpose.PIN_RESET) {
+            ensurePinResetAllowed(user, Instant.now());
+        }
 
         otpService.verifyOTPWithoutConsuming(user.getPhone(), purpose, otp);
 
@@ -226,24 +361,35 @@ public class AuthService {
         }
 
         User user = maybeUser.get();
-        if (user.isLoginLocked()) {
+        Instant now = Instant.now();
+        user.releaseExpiredLoginLock(now);
+        if (user.isLoginTemporarilyLocked(now)) {
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.ACCOUNT_LOCKED);
-            throw new ValidationException("Account is locked. Please reset your PIN.");
+            throw new ValidationException("Account is temporarily locked. Try again later.");
         }
 
-        Instant now = Instant.now();
         if (!user.hasPin() || !pinService.matches(pin, user.getPinHash())) {
-            user.recordFailedLoginAttempt(loginRateLimitProperties.permanentLockFailedAttempts(), now);
+            int nextFailedAttempts = user.getFailedLoginAttempts() + 1;
+            user.recordFailedLoginAttempt(
+                    loginRateLimitProperties.progressiveLockFailedAttempts(),
+                    loginRateLimitProperties.lockDurationForFailedAttempt(nextFailedAttempts),
+                    now);
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.INVALID_PIN);
 
-            if (user.isLoginLocked()) {
+            if (user.isLoginTemporarilyLocked(now)) {
                 log.warn(
-                        "User login locked after failed attempts userId={} phone={} failedAttempts={}",
+                        "User login temporarily locked after failed attempts userId={} phone={} failedAttempts={} lockedUntil={}",
                         user.getId(),
                         user.getPhone(),
-                        user.getFailedLoginAttempts());
+                        user.getFailedLoginAttempts(),
+                        user.getLoginLockedUntil());
             }
-            
+
+            if (user.getFailedLoginAttempts() > loginRateLimitProperties.progressiveLockFailedAttempts()) {
+                throw new ValidationException(
+                        "Invalid phone or PIN. Account risk detected. Consider resetting your PIN before more failed attempts.");
+            }
+
             throw new ValidationException("Invalid phone or PIN");
         }
 
@@ -259,6 +405,7 @@ public class AuthService {
     @Transactional
     public TokenResponse resetPIN(String phone, String otp, String newPin) {
         User user = findActiveByPhone(phone);
+        ensurePinResetAllowed(user, Instant.now());
 
         otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.PIN_RESET, otp);
         user.setPin(pinService.hashPIN(newPin));
@@ -266,6 +413,14 @@ public class AuthService {
         eventPublisher.publishEvent(new PinChangedEvent(user.getId()));
 
         return tokenFor(user);
+    }
+
+
+    private void ensurePinResetAllowed(User user, Instant now) {
+        user.releaseExpiredLoginLock(now);
+        if (user.isLoginTemporarilyLocked(now)) {
+            throw new ValidationException("PIN reset is temporarily unavailable. Try again later.");
+        }
     }
 
     /**
@@ -427,6 +582,22 @@ public class AuthService {
         return userRepository.findById(userId)
                 .filter(user -> user.isCurrentlyActive())
                 .map(user -> UserSummaryResponse.from(user));
+    }
+
+    /**
+     * Looks up active users by id and returns public auth DTOs keyed by user id.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, UserSummaryResponse> findByIds(Collection<UUID> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        return userRepository.findAllById(userIds)
+                .stream()
+                .filter(user -> user.isCurrentlyActive())
+                .map(user -> UserSummaryResponse.from(user))
+                .collect(Collectors.toMap(UserSummaryResponse::id, Function.identity(), (left, right) -> left));
     }
 
     /**

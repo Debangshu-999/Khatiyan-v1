@@ -8,6 +8,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -36,6 +38,7 @@ public class BillingCycleSchedulerService {
      * Creates the next monthly billing cycle for due active monthly tenancies.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "billing-startupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void runBillingCatchUpOnStartup() {
         log.info("Billing scheduler startup catch-up started");
         generateDueMonthlyCycles();
@@ -50,6 +53,7 @@ public class BillingCycleSchedulerService {
     @Scheduled(
             cron = "${app.billing.monthly-cycle-generation-cron:0 15 0 * * *}",
             zone = "${app.billing.monthly-cycle-generation-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "billing-generateDueMonthlyCycles", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void generateDueMonthlyCycles() {
         LocalDate today = LocalDate.now();
         int generatedCount = billingCycleService.generateDueMonthlyCycles(today, monthlyCycleBatchSize);
@@ -68,6 +72,7 @@ public class BillingCycleSchedulerService {
     @Scheduled(
             cron = "${app.billing.overdue-marker-cron:0 20 0 * * *}",
             zone = "${app.billing.overdue-marker-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "billing-markPastDueCycles", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void markPastDueCycles() {
         LocalDate today = LocalDate.now();
         int updatedCount = billingCycleService.markPastDueCycles(today);
@@ -86,6 +91,7 @@ public class BillingCycleSchedulerService {
     @Scheduled(
             cron = "${app.billing.late-fee-recalculation-cron:0 25 0 * * *}",
             zone = "${app.billing.late-fee-recalculation-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "billing-recalculateLateFees", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void recalculateLateFees() {
         LocalDate today = LocalDate.now();
         int updatedCount = billingCycleService.recalculateLateFees(today);
@@ -104,6 +110,7 @@ public class BillingCycleSchedulerService {
     @Scheduled(
             cron = "${app.billing.monthly-report-generation-cron:0 44 0 * * *}",
             zone = "${app.billing.monthly-report-generation-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "billing-generateClosedMonthlyReports", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void generateClosedMonthlyReports() {
         LocalDate today = LocalDate.now();
         int generatedCount = billingCycleService.generateClosedMonthlyReports(today);

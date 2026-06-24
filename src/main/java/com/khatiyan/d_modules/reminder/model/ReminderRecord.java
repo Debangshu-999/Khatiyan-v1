@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -72,6 +73,11 @@ public class ReminderRecord extends BaseEntity {
     @Column(name = "delivery_mode", nullable = false, length = 40)
     private NotificationDeliveryMode deliveryMode;
 
+    /** Workspace this reminder belongs to; null = show in either. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "audience", length = 20)
+    private NotificationAudience audience;
+
     @Column(name = "sent_at")
     private Instant sentAt;
 
@@ -92,7 +98,8 @@ public class ReminderRecord extends BaseEntity {
             String body,
             NotificationCategory notificationCategory,
             NotificationPriority notificationPriority,
-            NotificationDeliveryMode deliveryMode) {
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
         this.id = UUID.randomUUID();
         this.reminderKey = reminderKey;
         this.reminderType = reminderType;
@@ -107,6 +114,7 @@ public class ReminderRecord extends BaseEntity {
         this.notificationCategory = notificationCategory;
         this.notificationPriority = notificationPriority;
         this.deliveryMode = deliveryMode;
+        this.audience = audience;
         this.status = ReminderStatus.PENDING;
     }
 
@@ -123,7 +131,8 @@ public class ReminderRecord extends BaseEntity {
             String body,
             NotificationCategory notificationCategory,
             NotificationPriority notificationPriority,
-            NotificationDeliveryMode deliveryMode) {
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
         return new ReminderRecord(
                 reminderKey,
                 reminderType,
@@ -137,7 +146,8 @@ public class ReminderRecord extends BaseEntity {
                 body,
                 notificationCategory,
                 notificationPriority,
-                deliveryMode);
+                deliveryMode,
+                audience);
     }
 
     public void markSent(Instant sentAt) {

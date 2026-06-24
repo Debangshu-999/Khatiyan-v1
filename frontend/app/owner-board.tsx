@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
 
@@ -43,7 +43,7 @@ export default function OwnerBoardScreen() {
   const [deactivateItem] = useDeactivateBoardItemMutation();
 
   const [categoryModal, setCategoryModal] = useState<{ category: BoardCategory | null } | null>(null);
-  const [itemModal, setItemModal] = useState<{ item: BoardItem | null } | null>(null);
+  const [itemModal, setItemModal] = useState<{ item: BoardItem | null; categoryId?: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ kind: "category" | "item"; id: string; label: string } | null>(null);
 
   return (
@@ -75,7 +75,6 @@ export default function OwnerBoardScreen() {
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ActionButton icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} variant="secondary" />
-            <ActionButton icon={Plus} label="Add item" onPress={() => (categories.length ? setItemModal({ item: null }) : undefined)} />
           </View>
 
           {categories.length === 0 ? (
@@ -94,7 +93,7 @@ export default function OwnerBoardScreen() {
                   eyebrow="Category"
                   title={category.name}
                 >
-                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
                     <ActionButton icon={Pencil} label="Edit category" onPress={() => setCategoryModal({ category })} variant="secondary" />
                     <ActionButton
                       icon={Trash2}
@@ -117,6 +116,14 @@ export default function OwnerBoardScreen() {
                       />
                     ))
                   )}
+                  <View style={{ flexDirection: "row" }}>
+                    <ActionButton
+                      icon={Plus}
+                      label="Add item"
+                      onPress={() => setItemModal({ categoryId: category.id, item: null })}
+                      variant="secondary"
+                    />
+                  </View>
                 </Section>
               );
             })
@@ -135,7 +142,13 @@ export default function OwnerBoardScreen() {
       ) : null}
 
       {itemModal && selectedProperty ? (
-        <ItemModal categories={categories} item={itemModal.item} onClose={() => setItemModal(null)} propertyId={selectedProperty.id} />
+        <ItemModal
+          categories={categories}
+          initialCategoryId={itemModal.categoryId}
+          item={itemModal.item}
+          onClose={() => setItemModal(null)}
+          propertyId={selectedProperty.id}
+        />
       ) : null}
 
       {pendingDelete ? (
@@ -207,7 +220,10 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
       return;
     }
     setError(null);
-    const payload = { displayOrder: order.trim() ? Number(order) : null, name: name.trim() };
+    const trimmedName = name.trim();
+    // Backend requires a non-blank, property-unique slug; derive it from the
+    // name so management never has to type one by hand.
+    const payload = { displayOrder: order.trim() ? Number(order) : null, name: trimmedName, slug: slugify(trimmedName) };
     try {
       if (category) {
         await updateCategory({ categoryId: category.id, payload, propertyId }).unwrap();
@@ -221,7 +237,8 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -242,23 +259,26 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 function ItemModal({
   categories,
+  initialCategoryId,
   item,
   onClose,
   propertyId,
 }: {
   categories: BoardCategory[];
+  initialCategoryId?: string;
   item: BoardItem | null;
   onClose: () => void;
   propertyId: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const [categoryId, setCategoryId] = useState(item?.categoryId ?? categories[0]?.id ?? "");
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? initialCategoryId ?? categories[0]?.id ?? "");
   const [title, setTitle] = useState(item?.title ?? "");
   const [body, setBody] = useState(item?.body ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -279,7 +299,9 @@ function ItemModal({
       return;
     }
     setError(null);
-    const payload = { body: body.trim(), categoryId, title: title.trim() };
+    // The update endpoint requires a non-null displayOrder; preserve the
+    // item's existing order on edit and let the backend default it on create.
+    const payload = { body: body.trim(), categoryId, displayOrder: item ? item.displayOrder : null, title: title.trim() };
     try {
       if (item) {
         await updateItem({ itemId: item.id, payload, propertyId }).unwrap();
@@ -293,7 +315,8 @@ function ItemModal({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -324,8 +347,20 @@ function ItemModal({
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
+}
+
+// Turns a display name into a URL-safe, property-unique-ish slug. Falls back to
+// a timestamp suffix when the name has no alphanumeric characters (e.g. emoji).
+function slugify(value: string) {
+  const base = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return base || `category-${Date.now().toString(36)}`;
 }
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {

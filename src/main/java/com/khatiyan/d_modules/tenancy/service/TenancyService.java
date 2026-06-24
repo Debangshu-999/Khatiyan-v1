@@ -2,9 +2,15 @@ package com.khatiyan.d_modules.tenancy.service;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
@@ -13,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -103,6 +110,11 @@ public class TenancyService {
                 provisionName,
                 actorUserId);
 
+        // A person who manages this property cannot also be a tenant of it.
+        if (propertyModule.findActiveManagerUserIds(propertyId).contains(tenantId)) {
+            throw new ValidationException("This person manages this property and cannot also be a tenant here.");
+        }
+
         UserSummaryResponse tenantUser = authModule.findById(tenantId)
                 .orElseThrow(() -> new NotFoundException("User_", tenantId));
         if (tenantUser.activeTenant()) {
@@ -181,10 +193,10 @@ public class TenancyService {
                                 "This user already has an active tenancy.");
                     }
                     return new TenantLookupResponse(true, user.fullName(), false, true,
-                            "Existing user — a new tenancy will be added.");
+                            "Existing user Ã¢â‚¬â€ a new tenancy will be added.");
                 })
                 .orElseGet(() -> new TenantLookupResponse(false, null, false, true,
-                        "New user — an account will be created."));
+                        "New user Ã¢â‚¬â€ an account will be created."));
     }
 
     /**
@@ -512,6 +524,23 @@ public class TenancyService {
         return tenancyRepository.findByPropertyIdAndActiveTrue(propertyId);
     }
 
+    public TenancyResponse toResponse(Tenancy tenancy) {
+        UserSummaryResponse user = authModule.findById(tenancy.getUserId()).orElse(null);
+        return TenancyResponse.from(tenancy, user);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, TenancyResponse> findByIds(Collection<UUID> tenancyIds) {
+        if (tenancyIds == null || tenancyIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        return tenancyRepository.findAllById(tenancyIds)
+                .stream()
+                .map(tenancy -> TenancyResponse.from(tenancy))
+                .collect(Collectors.toMap(TenancyResponse::id, Function.identity(), (left, right) -> left));
+    }
+
     @Transactional(readOnly = true)
     public List<Tenancy> findInactiveByPropertyId(UUID propertyId) {
         return tenancyRepository.findByPropertyIdAndActiveFalse(propertyId);
@@ -523,6 +552,97 @@ public class TenancyService {
         return tenancyRepository.findByPropertyId(propertyId);
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<TenancyResponse> listActiveForManagedProperty(
+            UUID actorUserId,
+            UUID propertyId,
+            String query,
+            int page,
+            int size) {
+        return listPropertyTenancies(actorUserId, propertyId, true, query, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<TenancyResponse> listPastForManagedProperty(
+            UUID actorUserId,
+            UUID propertyId,
+            String query,
+            int page,
+            int size) {
+        return listPropertyTenancies(actorUserId, propertyId, false, query, page, size);
+    }
+
+    /**
+     * Lists a managed property's tenancies, newest first, optionally filtered by a
+     * free-text query matched against tenant name, tenancy reference code and
+     * tenancy id. The tenant name lives in the auth module, so responses are built
+     * (with a batched name lookup) and filtered in memory before paging.
+     */
+    private PageResponse<TenancyResponse> listPropertyTenancies(
+            UUID actorUserId,
+            UUID propertyId,
+            boolean active,
+            String query,
+            int page,
+            int size) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
+        List<Tenancy> tenancies = active
+                ? tenancyRepository.findByPropertyIdAndActiveTrue(propertyId)
+                : tenancyRepository.findByPropertyIdAndActiveFalse(propertyId);
+
+        Map<UUID, UserSummaryResponse> users = authModule.findByIds(
+                tenancies.stream().map(Tenancy::getUserId).toList());
+
+        Comparator<Tenancy> order = active
+                ? Comparator.comparing(Tenancy::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                : Comparator.comparing(Tenancy::getEndDate, Comparator.nullsLast(Comparator.<LocalDate>reverseOrder()))
+                        .thenComparing(Tenancy::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
+
+        List<TenancyResponse> responses = tenancies.stream()
+                .sorted(order)
+                .map(tenancy -> TenancyResponse.from(tenancy, users.get(tenancy.getUserId())))
+                .filter(response -> matchesTenancyQuery(response, normalizedQuery))
+                .toList();
+
+        return PageResponse.of(responses, page, size);
+    }
+
+    private static boolean matchesTenancyQuery(TenancyResponse response, String normalizedQuery) {
+        if (normalizedQuery.isEmpty()) {
+            return true;
+        }
+
+        String tenantName = response.tenantName() == null ? "" : response.tenantName().toLowerCase();
+        String referenceCode = response.referenceCode() == null ? "" : response.referenceCode().toLowerCase();
+        String tenancyId = response.id() == null ? "" : response.id().toString().toLowerCase();
+
+        // Phone match ignores the country code: compare the local subscriber digits
+        // on both sides, so searching the 10-digit number matches but "91"/"+91"
+        // doesn't match every tenant.
+        String phoneLocal = localPhoneDigits(response.tenantPhone());
+        String queryDigits = localPhoneDigits(normalizedQuery);
+        boolean phoneMatch = !queryDigits.isEmpty() && phoneLocal.contains(queryDigits);
+
+        return tenantName.contains(normalizedQuery)
+                || referenceCode.contains(normalizedQuery)
+                || tenancyId.contains(normalizedQuery)
+                || phoneMatch;
+    }
+
+    /** Digits of a phone with the +91 country code stripped, so phone search is
+     * country-code-agnostic on both the stored number and the query. */
+    private static String localPhoneDigits(String value) {
+        if (value == null) {
+            return "";
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        if (digits.length() == 12 && digits.startsWith("91")) {
+            digits = digits.substring(2);
+        }
+        return digits;
+    }
     @Transactional(readOnly = true)
     public List<Tenancy> findByUserId(UUID userId) {
         return tenancyRepository.findByUserId(userId);

@@ -6,13 +6,15 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
-import java.util.stream.Collectors;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +29,6 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
-import com.khatiyan.d_modules.billing.api.dto.BillingPastSummary;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
@@ -47,6 +48,7 @@ import com.khatiyan.d_modules.billing.repository.BillingMonthlyReportRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
@@ -143,10 +145,7 @@ public class BillingCycleService {
      */
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> listMyCycles(UUID tenantUserId) {
-        return billingCycleRepository.findByTenantUserId(tenantUserId)
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+        return toResponses(billingCycleRepository.findByTenantUserId(tenantUserId));
     }
 
     private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Kolkata");
@@ -263,27 +262,6 @@ public class BillingCycleService {
     }
 
     /**
-     * Summary for the owner billing "past cycles" tab — cycles from months
-     * before the selected month, independent of tenancy status.
-     */
-    @Transactional(readOnly = true)
-    public BillingPastSummary getPropertyPastSummary(UUID actorUserId, UUID propertyId, String month) {
-        List<BillingCycleResponse> past = listPastPropertyCycles(actorUserId, propertyId, null, month);
-
-        long paidCount = past.stream().filter(c -> c.status() == BillingCycleStatus.PAID).count();
-        long paidPaise = past.stream().filter(c -> c.status() == BillingCycleStatus.PAID)
-                .mapToLong(BillingCycleResponse::totalAmountPaise).sum();
-        long unpaidCount = past.stream()
-                .filter(c -> c.status() == BillingCycleStatus.UNPAID || c.status() == BillingCycleStatus.OVERDUE)
-                .count();
-        long unpaidPaise = past.stream()
-                .filter(c -> c.status() == BillingCycleStatus.UNPAID || c.status() == BillingCycleStatus.OVERDUE)
-                .mapToLong(BillingCycleResponse::totalAmountPaise).sum();
-
-        return new BillingPastSummary(past.size(), paidCount, paidPaise, unpaidCount, unpaidPaise);
-    }
-
-    /**
      * Lists billing cycles whose period starts in the selected month, for the
      * whole property and independent of tenancy status.
      */
@@ -293,28 +271,14 @@ public class BillingCycleService {
             UUID propertyId,
             String query,
             String month) {
-        return listPropertyCyclesForMonth(actorUserId, propertyId, query, month, true);
+        return listPropertyCyclesForSelectedMonth(actorUserId, propertyId, query, month);
     }
 
-    /**
-     * Lists billing cycles from months before the selected month, for the whole
-     * property and independent of tenancy status.
-     */
-    @Transactional(readOnly = true)
-    public List<BillingCycleResponse> listPastPropertyCycles(
+    private List<BillingCycleResponse> listPropertyCyclesForSelectedMonth(
             UUID actorUserId,
             UUID propertyId,
             String query,
             String month) {
-        return listPropertyCyclesForMonth(actorUserId, propertyId, query, month, false);
-    }
-
-    private List<BillingCycleResponse> listPropertyCyclesForMonth(
-            UUID actorUserId,
-            UUID propertyId,
-            String query,
-            String month,
-            boolean inSelectedMonth) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
         LocalDate parsed = parseMonthStart(month);
@@ -322,16 +286,18 @@ public class BillingCycleService {
         LocalDate nextMonth = monthStart.plusMonths(1);
         String normalizedQuery = normalize(query);
 
-        return billingCycleRepository.findByPropertyId(propertyId)
+        List<BillingCycle> cycles = billingCycleRepository.findByPropertyId(propertyId)
                 .stream()
-                .filter(cycle -> inSelectedMonth
-                        ? (!cycle.getPeriodStartDate().isBefore(monthStart)
-                                && cycle.getPeriodStartDate().isBefore(nextMonth))
-                        : cycle.getPeriodStartDate().isBefore(monthStart))
-                .filter(cycle -> matchesCycleSearch(cycle, normalizedQuery))
-                .sorted(Comparator.comparing(BillingCycle::getPeriodStartDate).reversed())
-                .map(cycle -> toResponse(cycle))
+                .filter(cycle -> !cycle.getPeriodStartDate().isBefore(monthStart)
+                        && cycle.getPeriodStartDate().isBefore(nextMonth))
                 .toList();
+        Map<UUID, String> tenancyReferenceCodes = tenancyReferenceCodes(cycles);
+        List<BillingCycle> filteredCycles = cycles.stream()
+                .filter(cycle -> matchesCycleSearch(cycle, normalizedQuery, tenancyReferenceCodes))
+                .sorted(Comparator.comparing(BillingCycle::getPeriodStartDate).reversed())
+                .toList();
+
+        return toResponses(filteredCycles, tenancyReferenceCodes);
     }
 
     /**
@@ -401,10 +367,7 @@ public class BillingCycleService {
             throw new ValidationException("Tenancy does not belong to current user");
         }
 
-        return billingCycleRepository.findByTenancyId(tenancyId)
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+        return toResponses(billingCycleRepository.findByTenancyId(tenancyId));
     }
 
     /**
@@ -415,10 +378,7 @@ public class BillingCycleService {
         TenancyResponse tenancy = getTenancy(tenancyId);
         propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
 
-        return billingCycleRepository.findByTenancyId(tenancyId)
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+        return toResponses(billingCycleRepository.findByTenancyId(tenancyId));
     }
 
     /**
@@ -595,13 +555,16 @@ public class BillingCycleService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private boolean matchesCycleSearch(BillingCycle cycle, String normalizedQuery) {
+    private boolean matchesCycleSearch(
+            BillingCycle cycle,
+            String normalizedQuery,
+            Map<UUID, String> tenancyReferenceCodes) {
         if (normalizedQuery == null) {
             return true;
         }
 
         return contains(cycle.getTenantNameSnapshot(), normalizedQuery)
-                || contains(cycle.getTenancyId().toString(), normalizedQuery)
+                || contains(tenancyReferenceCodes.get(cycle.getTenancyId()), normalizedQuery)
                 || contains(cycle.getReferenceCode(), normalizedQuery);
     }
 
@@ -883,6 +846,8 @@ public class BillingCycleService {
         UserSummaryResponse tenant = authModule.findById(tenancy.userId())
                 .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
 
+        latest.markUnpaidAfterOverdueWindow(nextPeriodStart);
+
         BillingCycle cycle = createCycleEntity(tenancy, tenant.fullName(), nextCycleNumber, nextPeriodStart);
         BillingCycle savedCycle = billingCycleRepository.save(cycle);
 
@@ -958,39 +923,37 @@ public class BillingCycleService {
 
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> findCyclesDueTodayForReminders(LocalDate today) {
-        return billingCycleRepository.findCyclesDueToday(
+        return toResponses(billingCycleRepository.findCyclesDueToday(
                 List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
-                today)
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+                today));
     }
 
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> findCyclesDueBetweenForReminders(LocalDate startDate, LocalDate endDate) {
-        return billingCycleRepository.findCyclesDueBetween(
+        return toResponses(billingCycleRepository.findCyclesDueBetween(
                 List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
                 startDate,
-                endDate)
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+                endDate));
     }
 
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> findOverdueCyclesForReminders() {
-        return billingCycleRepository.findOverdueCycles()
-                .stream()
-                .map(cycle -> toResponse(cycle))
-                .toList();
+        return toResponses(billingCycleRepository.findOverdueCycles());
     }
 
     private boolean applyLateFeeIfNeeded(BillingCycle cycle, LocalDate today) {
         if (cycle.isPaid() || cycle.isCancelled()) {
             return false;
         }
+        if (today.isAfter(cycle.getPeriodEndDate())) {
+            return false;
+        }
 
         cycle.markOverdue(today);
+        if (cycle.getStatus() != BillingCycleStatus.OVERDUE) {
+            return false;
+        }
+
         long lateFeePerDayPaise = lateFeePerDayPaise(cycle.getPropertyId());
         long lateDays = ChronoUnit.DAYS.between(cycle.getRentDueDate(), today);
         if (lateDays <= 0) {
@@ -1343,7 +1306,80 @@ public class BillingCycleService {
                 .map(lineItem -> BillingCycleLineItemResponse.from(lineItem))
                 .toList();
 
-        return BillingCycleResponse.from(cycle, lineItems);
+        return BillingCycleResponse.from(cycle, lineItems, resolveTenancyReferenceCode(cycle), resolveRoomNumber(cycle));
+    }
+
+    private List<BillingCycleResponse> toResponses(List<BillingCycle> cycles) {
+        return toResponses(cycles, tenancyReferenceCodes(cycles));
+    }
+
+    private List<BillingCycleResponse> toResponses(
+            List<BillingCycle> cycles,
+            Map<UUID, String> tenancyReferenceCodes) {
+        if (cycles.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> cycleIds = cycles.stream()
+                .map(BillingCycle::getId)
+                .toList();
+        Map<UUID, List<BillingCycleLineItemResponse>> lineItemsByCycleId = lineItemRepository
+                .findByBillingCycleIds(cycleIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        BillingCycleLineItem::getBillingCycleId,
+                        Collectors.mapping(BillingCycleLineItemResponse::from, Collectors.toList())));
+
+        Map<RoomDisplayKey, String> roomNumbers = roomNumbers(cycles);
+
+        return cycles.stream()
+                .map(cycle -> BillingCycleResponse.from(
+                        cycle,
+                        lineItemsByCycleId.getOrDefault(cycle.getId(), List.of()),
+                        tenancyReferenceCodes.get(cycle.getTenancyId()),
+                        roomNumbers.get(new RoomDisplayKey(cycle.getPropertyId(), cycle.getRoomId()))))
+                .toList();
+    }
+
+    private Map<UUID, String> tenancyReferenceCodes(List<BillingCycle> cycles) {
+        if (cycles.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<UUID> tenancyIds = cycles.stream()
+                .map(BillingCycle::getTenancyId)
+                .collect(Collectors.toSet());
+        return tenancyModule.findByIds(tenancyIds)
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().referenceCode()));
+    }
+
+    private Map<RoomDisplayKey, String> roomNumbers(List<BillingCycle> cycles) {
+        Map<UUID, Set<UUID>> roomIdsByProperty = cycles.stream()
+                .collect(Collectors.groupingBy(
+                        BillingCycle::getPropertyId,
+                        Collectors.mapping(BillingCycle::getRoomId, Collectors.toSet())));
+        Map<RoomDisplayKey, String> roomNumbers = new HashMap<>();
+        roomIdsByProperty.forEach((propertyId, roomIds) -> propertyModule.findRoomsForDisplay(propertyId, roomIds)
+                .forEach((roomId, room) -> roomNumbers.put(new RoomDisplayKey(propertyId, roomId), room.roomNumber())));
+        return roomNumbers;
+    }
+
+    private record RoomDisplayKey(UUID propertyId, UUID roomId) {
+    }
+
+    private String resolveTenancyReferenceCode(BillingCycle cycle) {
+        return getTenancy(cycle.getTenancyId()).referenceCode();
+    }
+
+    private String resolveRoomNumber(BillingCycle cycle) {
+        try {
+            RoomResponse room = propertyModule.getActiveRoom(cycle.getPropertyId(), cycle.getRoomId());
+            return room.roomNumber();
+        } catch (NotFoundException ex) {
+            return null;
+        }
     }
 
     /**

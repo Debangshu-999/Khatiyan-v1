@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationRecipient;
 
 /**
@@ -35,6 +36,22 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
     List<NotificationRecipient> findVisibleByUserId(UUID userId);
 
     /**
+     * Audience-scoped visible inbox — used by account-scoped mark-all-read so a
+     * manager marking all read does not clear their tenant notifications. Rows
+     * with a null audience (account-level/legacy) are always included.
+     */
+    @Query("""
+        SELECT recipient
+        FROM NotificationRecipient recipient
+        JOIN FETCH recipient.notification notification
+        WHERE recipient.userId = :userId
+          AND recipient.archivedAt IS NULL
+          AND (recipient.audience IS NULL OR recipient.audience = :audience)
+        ORDER BY recipient.createdAt DESC
+    """)
+    List<NotificationRecipient> findVisibleByUserIdAndAudience(UUID userId, NotificationAudience audience);
+
+    /**
      * Loads visible notifications for a user created on or after the given
      * instant. Used by the tenancy-scoped feed: callers compute the floor
      * (active tenancy start, or epoch for owners) and pass it in.
@@ -49,6 +66,22 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
         ORDER BY recipient.createdAt DESC
     """)
     List<NotificationRecipient> findVisibleByUserIdSince(UUID userId, Instant since);
+
+    /**
+     * Audience-scoped variant of {@link #findVisibleByUserIdSince}. Rows with a
+     * null audience (account-level/legacy) are always included.
+     */
+    @Query("""
+        SELECT recipient
+        FROM NotificationRecipient recipient
+        JOIN FETCH recipient.notification notification
+        WHERE recipient.userId = :userId
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+          AND (recipient.audience IS NULL OR recipient.audience = :audience)
+        ORDER BY recipient.createdAt DESC
+    """)
+    List<NotificationRecipient> findVisibleByUserIdSinceAndAudience(UUID userId, Instant since, NotificationAudience audience);
 
     /**
      * Loads visible notifications for a user created on or after the floor
@@ -68,6 +101,22 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
     List<NotificationRecipient> findVisibleByUserIdBetween(UUID userId, Instant since, Instant until);
 
     /**
+     * Audience-scoped variant of {@link #findVisibleByUserIdBetween}.
+     */
+    @Query("""
+        SELECT recipient
+        FROM NotificationRecipient recipient
+        JOIN FETCH recipient.notification notification
+        WHERE recipient.userId = :userId
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+          AND recipient.createdAt < :until
+          AND (recipient.audience IS NULL OR recipient.audience = :audience)
+        ORDER BY recipient.createdAt DESC
+    """)
+    List<NotificationRecipient> findVisibleByUserIdBetweenAndAudience(UUID userId, Instant since, Instant until, NotificationAudience audience);
+
+    /**
      * Counts unread, non-archived notifications for the user since the given
      * floor. Used by the tenancy-scoped bell badge.
      */
@@ -80,6 +129,20 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
           AND recipient.createdAt >= :since
     """)
     long countUnreadByUserIdSince(UUID userId, Instant since);
+
+    /**
+     * Audience-scoped variant of {@link #countUnreadByUserIdSince}.
+     */
+    @Query("""
+        SELECT COUNT(recipient)
+        FROM NotificationRecipient recipient
+        WHERE recipient.userId = :userId
+          AND recipient.readAt IS NULL
+          AND recipient.archivedAt IS NULL
+          AND recipient.createdAt >= :since
+          AND (recipient.audience IS NULL OR recipient.audience = :audience)
+    """)
+    long countUnreadByUserIdSinceAndAudience(UUID userId, Instant since, NotificationAudience audience);
 
     /**
      * Loads one notification recipient row only if it belongs to the user.

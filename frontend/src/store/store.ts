@@ -3,17 +3,21 @@ import { setupListeners } from "@reduxjs/toolkit/query";
 import { AppState } from "react-native";
 
 import { api } from "@/store/api";
+import { accountReducer } from "@/store/slices/account-slice";
 import { appConfigReducer } from "@/store/slices/app-config-slice";
 import { authReducer } from "@/store/slices/auth-slice";
 import { locationReducer } from "@/store/slices/location-slice";
+import { ownerPinsReducer } from "@/store/slices/owner-pins-slice";
 import { ownerWorkspaceReducer } from "@/store/slices/owner-workspace-slice";
 import { paymentCheckoutReducer } from "@/store/slices/payment-checkout-slice";
 
 export const store = configureStore({
   reducer: {
+    account: accountReducer,
     appConfig: appConfigReducer,
     auth: authReducer,
     location: locationReducer,
+    ownerPins: ownerPinsReducer,
     ownerWorkspace: ownerWorkspaceReducer,
     paymentCheckout: paymentCheckoutReducer,
     [api.reducerPath]: api.reducer,

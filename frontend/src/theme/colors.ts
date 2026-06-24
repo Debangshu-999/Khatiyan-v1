@@ -1,41 +1,43 @@
 export type ThemeMode = "light" | "dark";
 
-// "Modern Khatiyan Ledger" palette — parchment, ink, terracotta, saffron, jade.
-// The name "Khatiyan" means a land-record / property ledger; the palette
-// borrows from that — paper-warm backgrounds, ink-deep text, clay-red accents.
+// Khatiyan Neutral: white-first surfaces with blue reserved for actions,
+// selected states, and small accents.
 export const themes = {
   light: {
-    background: "#FFFFFF",
+    background: "#FAFAFB",
     surface: "#FFFFFF",
     surfaceRaised: "#F8FAFC",
-    surfaceSunken: "#F1F5F9",
-    border: "#E2E8F0",
+    surfaceSunken: "#F2F4F7",
+    border: "#E5E7EB",
     borderStrong: "#CBD5E1",
 
     text: "#0F172A",
     ink: "#0F172A",
-    inkSoft: "#334155",
+    inkSoft: "#1E293B",
     muted: "#64748B",
-    kicker: "#94A3B8",
+    kicker: "#93A4BC",
 
-    primary: "#B8472A",
-    primarySoft: "#FFF1ED",
-    primaryDeep: "#8C3520",
+    primary: "#3F6ED8",
+    primarySoft: "#EAF1FF",
+    primaryDeep: "#2F56B3",
     onPrimary: "#FFFFFF",
 
-    accent: "#D89441",
-    accentSoft: "#FFF7E8",
+    accent: "#A16207",
+    accentSoft: "#FEF3C7",
 
-    jade: "#3F7257",
-    jadeSoft: "#ECFDF3",
+    terracotta: "#BE5B3D",
+    terracottaSoft: "#FBEDE7",
 
-    danger: "#9B2C2C",
+    jade: "#047857",
+    jadeSoft: "#ECFDF5",
+
+    danger: "#DC2626",
     dangerSoft: "#FEF2F2",
 
-    successSoft: "#ECFDF3",
-    successText: "#166534",
-    warningSoft: "#FFF7E8",
-    warningText: "#92400E",
+    successSoft: "#ECFDF5",
+    successText: "#047857",
+    warningSoft: "#FFFBEB",
+    warningText: "#B45309",
     neutralSoft: "#F1F5F9",
     neutralText: "#334155",
 
@@ -43,41 +45,44 @@ export const themes = {
     overlay: "rgba(15, 23, 42, 0.45)",
   },
   dark: {
-    background: "#161210",
-    surface: "#1F1A16",
-    surfaceRaised: "#26201B",
-    surfaceSunken: "#100C0A",
-    border: "#3A2F26",
-    borderStrong: "#5A4A3C",
+    background: "#050505",
+    surface: "#101010",
+    surfaceRaised: "#171717",
+    surfaceSunken: "#080808",
+    border: "#262626",
+    borderStrong: "#3A3A3A",
 
-    text: "#F0E5D2",
-    ink: "#F0E5D2",
-    inkSoft: "#D7C9B0",
-    muted: "#A89880",
-    kicker: "#8A7762",
+    text: "#F7F7F7",
+    ink: "#F7F7F7",
+    inkSoft: "#E5E5E5",
+    muted: "#A3A3A3",
+    kicker: "#737373",
 
-    primary: "#E07A52",
-    primarySoft: "#3A1F15",
-    primaryDeep: "#F19A77",
-    onPrimary: "#1B1410",
+    primary: "#8FB2FF",
+    primarySoft: "#151C2B",
+    primaryDeep: "#BFD0FF",
+    onPrimary: "#050505",
 
-    accent: "#E8B66A",
-    accentSoft: "#3A2C16",
+    accent: "#D4D4D4",
+    accentSoft: "#1F1F1F",
 
-    jade: "#7CB395",
-    jadeSoft: "#1F2F26",
+    terracotta: "#E0916F",
+    terracottaSoft: "#2A1812",
 
-    danger: "#E27871",
-    dangerSoft: "#3A1C1A",
+    jade: "#6EE7B7",
+    jadeSoft: "#102018",
 
-    successSoft: "#1F2F26",
-    successText: "#7CB395",
-    warningSoft: "#3A2C16",
-    warningText: "#E8B66A",
-    neutralSoft: "#26201B",
-    neutralText: "#D7C9B0",
+    danger: "#F87171",
+    dangerSoft: "#3B1118",
 
-    shadow: "rgba(0, 0, 0, 0.4)",
+    successSoft: "#0B2A20",
+    successText: "#34D399",
+    warningSoft: "#221A08",
+    warningText: "#FBBF24",
+    neutralSoft: "#1C1C1C",
+    neutralText: "#D4D4D4",
+
+    shadow: "rgba(0, 0, 0, 0.42)",
     overlay: "rgba(0, 0, 0, 0.7)",
   },
 };

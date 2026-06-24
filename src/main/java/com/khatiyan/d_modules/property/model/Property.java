@@ -54,6 +54,9 @@ public class Property extends BaseEntity {
     @Column(nullable = false, length = 300)
     private String address;
 
+    @Column(nullable = false, length = 120)
+    private String area;
+
     @Column(nullable = false, length = 80)
     private String city;
 
@@ -72,6 +75,24 @@ public class Property extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PropertyType type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pg_for", nullable = false, length = 20)
+    private PgFor pgFor;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_for", nullable = false, length = 20)
+    private PreferredTenantType preferredFor;
+
+    @Column(name = "food_included", nullable = false)
+    private boolean foodIncluded;
+
+    @Column(name = "electricity_included", nullable = false)
+    private boolean electricityIncluded;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "bathroom_type", nullable = false, length = 20)
+    private BathroomType bathroomType;
 
     @Column(name = "is_active", nullable = false)
     private boolean active;
@@ -118,10 +139,31 @@ public class Property extends BaseEntity {
     @Column(name = "name", nullable = false, length = 80)
     private Set<String> customFacilities = new HashSet<>();
 
-    private Property(String referenceCode, UUID ownerId, String name, String address, String city,
+    @ElementCollection
+    @CollectionTable(
+            name = "property_included_meals",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "property_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "meal_type", nullable = false, length = 20)
+    private Set<MealType> includedMeals = new HashSet<>();
+
+    @ElementCollection
+    @CollectionTable(
+            name = "property_available_sharing_types",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "property_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sharing_type", nullable = false, length = 30)
+    private Set<SharingType> availableSharingTypes = new HashSet<>();
+
+    private Property(String referenceCode, UUID ownerId, String name, String address, String area, String city,
                      String state,
                      String pincode, BigDecimal latitude, BigDecimal longitude,
-                     PropertyType type, Set<PropertyFacility> facilities,
+                     PropertyType type, PgFor pgFor, PreferredTenantType preferredFor,
+                     Boolean foodIncluded, Set<MealType> includedMeals,
+                     Boolean electricityIncluded, BathroomType bathroomType,
+                     Set<SharingType> availableSharingTypes, Set<PropertyFacility> facilities,
                      Set<String> customFacilities, Long dailyGuestAcRatePaise,
                      Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                      Integer rentGraceDays,
@@ -131,14 +173,22 @@ public class Property extends BaseEntity {
         this.ownerId = ownerId;
         this.name = name;
         this.address = address;
+        this.area = normalizeArea(area);
         this.city = city;
         this.state = normalizeState(state);
         this.pincode = pincode;
-        this.latitude = latitude;
-        this.longitude = longitude;
+        updateCoordinates(latitude, longitude, true);
         this.type = type;
         this.active = true;
         this.discoveryProfileCreated = false;
+        updateDiscoveryFilters(
+                pgFor,
+                preferredFor,
+                foodIncluded,
+                includedMeals,
+                electricityIncluded,
+                bathroomType,
+                availableSharingTypes);
         updateDailyGuestRates(dailyGuestAcRatePaise, dailyGuestNonAcRatePaise);
         updateRentLateFee(rentLateFeePerDayPaise);
         updateBillingPolicy(rentGraceDays);
@@ -147,10 +197,13 @@ public class Property extends BaseEntity {
         replaceFacilities(facilities, customFacilities);
     }
 
-    public static Property create(UUID ownerId, String name, String address, String city,
+    public static Property create(UUID ownerId, String name, String address, String area, String city,
                                   String state,
                                   String pincode, BigDecimal latitude, BigDecimal longitude,
-                                  PropertyType type, Set<PropertyFacility> facilities,
+                                  PropertyType type, PgFor pgFor, PreferredTenantType preferredFor,
+                                  Boolean foodIncluded, Set<MealType> includedMeals,
+                                  Boolean electricityIncluded, BathroomType bathroomType,
+                                  Set<SharingType> availableSharingTypes, Set<PropertyFacility> facilities,
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
                                   Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                                   Integer rentGraceDays, Long standardDepositPaise,
@@ -160,12 +213,20 @@ public class Property extends BaseEntity {
                 ownerId,
                 name,
                 address,
+                area,
                 city,
                 state,
                 pincode,
                 latitude,
                 longitude,
                 type,
+                pgFor,
+                preferredFor,
+                foodIncluded,
+                includedMeals,
+                electricityIncluded,
+                bathroomType,
+                availableSharingTypes,
                 facilities,
                 customFacilities,
                 dailyGuestAcRatePaise,
@@ -176,10 +237,13 @@ public class Property extends BaseEntity {
                 noticePeriodDays);
     }
 
-    public static Property create(String referenceCode, UUID ownerId, String name, String address, String city,
+    public static Property create(String referenceCode, UUID ownerId, String name, String address, String area, String city,
                                   String state,
                                   String pincode, BigDecimal latitude, BigDecimal longitude,
-                                  PropertyType type, Set<PropertyFacility> facilities,
+                                  PropertyType type, PgFor pgFor, PreferredTenantType preferredFor,
+                                  Boolean foodIncluded, Set<MealType> includedMeals,
+                                  Boolean electricityIncluded, BathroomType bathroomType,
+                                  Set<SharingType> availableSharingTypes, Set<PropertyFacility> facilities,
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
                                   Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                                   Integer rentGraceDays, Long standardDepositPaise,
@@ -189,12 +253,20 @@ public class Property extends BaseEntity {
                 ownerId,
                 name,
                 address,
+                area,
                 city,
                 state,
                 pincode,
                 latitude,
                 longitude,
                 type,
+                pgFor,
+                preferredFor,
+                foodIncluded,
+                includedMeals,
+                electricityIncluded,
+                bathroomType,
+                availableSharingTypes,
                 facilities,
                 customFacilities,
                 dailyGuestAcRatePaise,
@@ -205,8 +277,12 @@ public class Property extends BaseEntity {
                 noticePeriodDays);
     }
 
-    public void updateDetails(String name, String address, String city, String state, String pincode,
+    public void updateDetails(String name, String address, String area, String city, String state, String pincode,
                               BigDecimal latitude, BigDecimal longitude, PropertyType type,
+                              PgFor pgFor, PreferredTenantType preferredFor,
+                              Boolean foodIncluded, Set<MealType> includedMeals,
+                              Boolean electricityIncluded, BathroomType bathroomType,
+                              Set<SharingType> availableSharingTypes,
                               Set<PropertyFacility> facilities, Set<String> customFacilities,
                               Long dailyGuestAcRatePaise, Long dailyGuestNonAcRatePaise,
                               Long rentLateFeePerDayPaise,
@@ -214,18 +290,68 @@ public class Property extends BaseEntity {
                               Integer noticePeriodDays) {
         this.name = name;
         this.address = address;
+        this.area = normalizeArea(area);
         this.city = city;
         this.state = normalizeState(state);
         this.pincode = pincode;
-        this.latitude = latitude;
-        this.longitude = longitude;
+        updateCoordinates(latitude, longitude, false);
         this.type = type;
+        updateDiscoveryFilters(
+                pgFor,
+                preferredFor,
+                foodIncluded,
+                includedMeals,
+                electricityIncluded,
+                bathroomType,
+                availableSharingTypes);
         updateDailyGuestRates(dailyGuestAcRatePaise, dailyGuestNonAcRatePaise);
         updateRentLateFee(rentLateFeePerDayPaise);
         updateBillingPolicy(rentGraceDays);
         updateDepositPolicy(standardDepositPaise);
         updateExitPolicy(noticePeriodDays);
         replaceFacilities(facilities, customFacilities);
+    }
+
+    private void updateDiscoveryFilters(
+            PgFor pgFor,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            Set<MealType> includedMeals,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            Set<SharingType> availableSharingTypes) {
+        this.pgFor = pgFor == null ? PgFor.ANYONE : pgFor;
+        this.preferredFor = preferredFor == null ? PreferredTenantType.ANYONE : preferredFor;
+        this.foodIncluded = Boolean.TRUE.equals(foodIncluded);
+        this.electricityIncluded = Boolean.TRUE.equals(electricityIncluded);
+        this.bathroomType = bathroomType == null ? BathroomType.COMMON : bathroomType;
+
+        this.includedMeals.clear();
+        if (this.foodIncluded && includedMeals != null) {
+            this.includedMeals.addAll(includedMeals);
+        }
+
+        this.availableSharingTypes.clear();
+        if (availableSharingTypes != null) {
+            this.availableSharingTypes.addAll(availableSharingTypes);
+        }
+    }
+
+    private void updateCoordinates(BigDecimal latitude, BigDecimal longitude, boolean creating) {
+        if (latitude == null && longitude == null) {
+            if (creating) {
+                this.latitude = null;
+                this.longitude = null;
+            }
+            return;
+        }
+
+        if (latitude == null || longitude == null) {
+            throw new ValidationException("Latitude and longitude must be provided together");
+        }
+
+        this.latitude = latitude;
+        this.longitude = longitude;
     }
 
     public Long dailyGuestRateFor(RoomConditioning conditioning) {
@@ -358,5 +484,18 @@ public class Property extends BaseEntity {
         }
 
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private String normalizeArea(String area) {
+        if (area == null || area.isBlank()) {
+            throw new ValidationException("Area is required");
+        }
+
+        String normalized = area.trim();
+        if (normalized.length() > 120) {
+            throw new ValidationException("Area must be at most 120 characters");
+        }
+
+        return normalized;
     }
 }

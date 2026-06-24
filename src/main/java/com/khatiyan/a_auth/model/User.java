@@ -1,5 +1,6 @@
 package com.khatiyan.a_auth.model;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -41,6 +42,9 @@ public class User extends BaseEntity {
     @Column(name = "full_name", nullable = false, length = 120)
     private String fullName;
 
+    @Column(length = 254)
+    private String email;
+
     @Column(name = "profile_photo_url", length = 500)
     private String profilePhotoUrl;
 
@@ -60,6 +64,15 @@ public class User extends BaseEntity {
     @Column(name = "is_phone_verified", nullable = false)
     private boolean phoneVerified;
 
+    @Column(name = "is_email_verified", nullable = false)
+    private boolean emailVerified;
+
+    @Column(name = "email_verification_token_hash", length = 64)
+    private String emailVerificationTokenHash;
+
+    @Column(name = "email_verification_expires_at")
+    private Instant emailVerificationExpiresAt;
+
     @Column(name = "is_profile_completed", nullable = false)
     private boolean profileCompleted;
 
@@ -78,6 +91,9 @@ public class User extends BaseEntity {
     @Column(name = "login_locked_at")
     private Instant loginLockedAt;
 
+    @Column(name = "login_locked_until")
+    private Instant loginLockedUntil;
+
     @Column(name = "last_failed_login_at")
     private Instant lastFailedLoginAt;
 
@@ -91,6 +107,7 @@ public class User extends BaseEntity {
         this.role = role;
         this.active = true;
         this.phoneVerified = false;
+        this.emailVerified = false;
         this.profileCompleted = false;
         this.activeTenant = false;
         this.credentialVersion = 0;
@@ -105,6 +122,37 @@ public class User extends BaseEntity {
     public void updateProfile(String fullName) {
         this.fullName = fullName;
         this.profileCompleted = true;
+    }
+    public void updateRecoveryEmail(String email) {
+        this.email = normalizeEmail(email);
+        this.emailVerified = false;
+    }
+
+    public void beginEmailVerification(String tokenHash, Instant expiresAt) {
+        this.emailVerificationTokenHash = tokenHash;
+        this.emailVerificationExpiresAt = expiresAt;
+    }
+
+    public boolean hasActiveEmailVerificationToken(String tokenHash, Instant now) {
+        return !emailVerified
+                && tokenHash != null
+                && tokenHash.equals(emailVerificationTokenHash)
+                && emailVerificationExpiresAt != null
+                && emailVerificationExpiresAt.isAfter(now);
+    }
+
+    public void markEmailVerified() {
+        if (this.email == null || this.email.isBlank()) {
+            return;
+        }
+        this.emailVerified = true;
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return email.trim().toLowerCase();
     }
 
     public void updateProfilePhoto(String profilePhotoUrl, String profilePhotoPublicId) {
@@ -146,15 +194,29 @@ public class User extends BaseEntity {
 
     public void recordSuccessfulLogin(Instant now) {
         this.lastSuccessfulLoginAt = now;
+        clearLoginLock();
     }
 
-    public void recordFailedLoginAttempt(int maxFailedAttempts, Instant now) {
+    public void recordFailedLoginAttempt(int lockThreshold, Duration lockDuration, Instant now) {
         this.failedLoginAttempts++;
         this.lastFailedLoginAt = now;
 
-        if (this.failedLoginAttempts >= maxFailedAttempts) {
+        if (this.failedLoginAttempts >= lockThreshold && !lockDuration.isZero() && !lockDuration.isNegative()) {
             this.loginLocked = true;
             this.loginLockedAt = now;
+            this.loginLockedUntil = now.plus(lockDuration);
+        }
+    }
+
+    public boolean isLoginTemporarilyLocked(Instant now) {
+        return loginLocked && loginLockedUntil != null && loginLockedUntil.isAfter(now);
+    }
+
+    public void releaseExpiredLoginLock(Instant now) {
+        if (loginLocked && loginLockedUntil != null && !loginLockedUntil.isAfter(now)) {
+            this.loginLocked = false;
+            this.loginLockedAt = null;
+            this.loginLockedUntil = null;
         }
     }
 
@@ -162,5 +224,6 @@ public class User extends BaseEntity {
         this.failedLoginAttempts = 0;
         this.loginLocked = false;
         this.loginLockedAt = null;
+        this.loginLockedUntil = null;
     }
 }

@@ -22,6 +22,11 @@ import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
 import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
 import com.khatiyan.d_modules.discovery.service.LocationCatalogService;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.SharingType;
 
 @RestController
 @RequestMapping("/api/v1/discovery")
@@ -45,9 +50,36 @@ public class DiscoveryController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(required = false) Double radiusKm,
+            @RequestParam(required = false) PgFor pgFor,
+            @RequestParam(required = false) Long minRentPaise,
+            @RequestParam(required = false) Long maxRentPaise,
+            @RequestParam(required = false) PreferredTenantType preferredFor,
+            @RequestParam(required = false) Boolean foodIncluded,
+            @RequestParam(required = false) List<MealType> mealTypes,
+            @RequestParam(required = false) Boolean electricityIncluded,
+            @RequestParam(required = false) BathroomType bathroomType,
+            @RequestParam(required = false) List<SharingType> sharingTypes,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return discoveryModule.searchVisibleProperties(state, city, countryCode, locality, latitude, longitude, radiusKm, page, size);
+        return discoveryModule.searchVisibleProperties(
+                state,
+                city,
+                countryCode,
+                locality,
+                latitude,
+                longitude,
+                radiusKm,
+                pgFor,
+                minRentPaise,
+                maxRentPaise,
+                preferredFor,
+                foodIncluded,
+                mealTypes,
+                electricityIncluded,
+                bathroomType,
+                sharingTypes,
+                page,
+                size);
     }
 
     @GetMapping("/properties/{propertyId}")

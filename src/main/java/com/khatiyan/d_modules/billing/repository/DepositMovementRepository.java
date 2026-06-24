@@ -26,6 +26,17 @@ public interface DepositMovementRepository extends JpaRepository<DepositMovement
     List<DepositMovement> findByDepositAccountId(UUID depositAccountId);
 
     /**
+     * Lists movements for multiple deposit accounts newest first per account.
+     */
+    @Query("""
+        SELECT movement
+        FROM DepositMovement movement
+        WHERE movement.depositAccountId IN :depositAccountIds
+        ORDER BY movement.depositAccountId ASC, movement.createdAt DESC
+        """)
+    List<DepositMovement> findByDepositAccountIds(List<UUID> depositAccountIds);
+
+    /**
      * Lists deposit movements linked to one billing cycle.
      */
     @Query("""

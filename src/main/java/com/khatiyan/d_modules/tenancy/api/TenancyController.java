@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
@@ -119,14 +120,14 @@ public class TenancyController {
     public List<TenancyResponse> listMyTenancies(@AuthenticationPrincipal UserPrincipal user) {
         return tenancyService.findByUserId(user.userId())
             .stream()
-            .map(tenancy -> TenancyResponse.from(tenancy))
+            .map(tenancyService::toResponse)
             .toList();
     }
 
     @GetMapping("/{id}")
     public TenancyResponse getTenancyById(@PathVariable UUID id) {
         return tenancyService.findById(id)
-            .map(tenancy -> TenancyResponse.from(tenancy))
+            .map(tenancyService::toResponse)
             .orElseThrow(() -> new NotFoundException("Tenancy_", id));
     }
 
@@ -140,10 +141,29 @@ public class TenancyController {
             : tenancyService.findActiveByPropertyId(propertyId);
 
         return tenancies.stream()
-            .map(tenancy -> TenancyResponse.from(tenancy))
+            .map(tenancyService::toResponse)
             .toList();
     }
 
+    @GetMapping("/properties/{propertyId}/active")
+    public PageResponse<TenancyResponse> listActivePropertyTenancies(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return tenancyService.listActiveForManagedProperty(user.userId(), propertyId, query, page, size);
+    }
+
+    @GetMapping("/properties/{propertyId}/past")
+    public PageResponse<TenancyResponse> listPastPropertyTenancies(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return tenancyService.listPastForManagedProperty(user.userId(), propertyId, query, page, size);
+    }
     @PatchMapping("/{id}")
     public TenancyResponse updateTenancy(
             @AuthenticationPrincipal UserPrincipal user,
@@ -155,7 +175,7 @@ public class TenancyController {
                 req.rentAmountPaise(),
                 req.depositAmountPaise());
 
-        return TenancyResponse.from(tenancy);
+        return tenancyService.toResponse(tenancy);
     }
 
     @PostMapping("/{id}/transfer-room")
@@ -172,7 +192,7 @@ public class TenancyController {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .location(URI.create("/api/v1/tenancies/" + tenancy.getId()))
-                .body(TenancyResponse.from(tenancy));
+                .body(tenancyService.toResponse(tenancy));
     }
 
     @PostMapping("/{id}/end")

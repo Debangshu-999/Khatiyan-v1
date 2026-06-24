@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.tenancy;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,6 +50,10 @@ public class TenancyModule {
     public Optional<TenancyResponse> findById(UUID tenancyId) {
         return tenancyService.findById(tenancyId)
             .map(tenancy -> TenancyResponse.from(tenancy));
+    }
+
+    public Map<UUID, TenancyResponse> findByIds(Collection<UUID> tenancyIds) {
+        return tenancyService.findByIds(tenancyIds);
     }
 
     public Optional<TenancyResponse> findActiveByUserId(UUID userId) {

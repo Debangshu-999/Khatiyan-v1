@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Building2, ClipboardList, Pencil, ShieldCheck, BedDouble, X } from "lucide-react-native";
+import { Building2, ClipboardList, Eye, EyeOff, Globe, Pencil, ShieldCheck, BedDouble, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -10,6 +10,8 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { useToast } from "@/components/toast";
+import { FacilitiesField } from "@/features/owner/facilities-field";
 import {
   ActionButton,
   BackButton,
@@ -23,15 +25,29 @@ import {
 } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
-  PROPERTY_FACILITIES,
   PROPERTY_TYPES,
+  BATHROOM_TYPES,
+  MEAL_TYPES,
+  PG_FOR_OPTIONS,
+  PREFERRED_TENANT_OPTIONS,
+  ROOM_TYPES,
   useListMyPropertiesQuery,
   useUpdatePropertyMutation,
+  type BathroomType,
+  type MealType,
   type OwnerProperty,
+  type PgFor,
+  type PreferredTenantType,
   type PropertyFacility,
   type PropertyType,
+  type RoomType,
   type UpdatePropertyPayload,
 } from "@/store/services/property-api";
+import {
+  useGetOwnerDiscoveryProfileQuery,
+  usePublishOwnerDiscoveryProfileMutation,
+  useUnpublishOwnerDiscoveryProfileMutation,
+} from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -70,13 +86,13 @@ export default function OwnerPropertyScreen() {
           <Card>
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                {selectedProperty.referenceCode} · {humanizeToken(selectedProperty.type)}
+                {selectedProperty.referenceCode} Â· {humanizeToken(selectedProperty.type)}
               </Text>
               <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 29 }]} selectable>
                 {selectedProperty.name}
               </Text>
               <Text style={[type.body, { color: colors.muted }]} selectable>
-                {[selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
+                {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
               </Text>
             </View>
             <View style={{ flexDirection: "row" }}>
@@ -92,7 +108,7 @@ export default function OwnerPropertyScreen() {
             <MetricTile label="Grace" value={`${selectedProperty.rentGraceDays}d`} hint="Rent grace" />
             <MetricTile
               label="Late fee"
-              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "—"}
+              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "â€”"}
               hint="Per day"
             />
           </View>
@@ -114,6 +130,8 @@ export default function OwnerPropertyScreen() {
             </Card>
           ) : null}
 
+          {selectedProperty.discoveryProfileCreated ? <DiscoveryListingCard propertyId={selectedProperty.id} /> : null}
+
           <Section eyebrow="Manage" title="Property workspace">
             <ActionCard
               meta="Rooms"
@@ -124,14 +142,14 @@ export default function OwnerPropertyScreen() {
             />
             <ActionCard
               meta="Staff"
-              title="Managers"
-              description="Add or remove managers who run day-to-day operations for this property."
+              title="Staff management"
+              description="Manage managers, staff categories, employment details and manual salary tracking."
               onPress={() => open(router, "/owner-staff")}
             />
             <ActionCard
               meta="Board"
               title="Property board"
-              description="Always-on info for tenants — rules, timings and contacts, organised by category."
+              description="Always-on info for tenants â€” rules, timings and contacts, organised by category."
               onPress={() => open(router, "/owner-board")}
             />
           </Section>
@@ -143,17 +161,102 @@ export default function OwnerPropertyScreen() {
   );
 }
 
+// List/unlist toggle for discovery visibility. Wraps the existing publish /
+// unpublish endpoints; unlisting only hides the property from discovery search —
+// onboarded tenants and the owner's other workspaces are unaffected.
+function DiscoveryListingCard({ propertyId }: { propertyId: string }) {
+  const { colors, type } = useTheme();
+  const toast = useToast();
+  const profileQuery = useGetOwnerDiscoveryProfileQuery(propertyId);
+  const [publishProfile, publishState] = usePublishOwnerDiscoveryProfileMutation();
+  const [unpublishProfile, unpublishState] = useUnpublishOwnerDiscoveryProfileMutation();
+
+  const profile = profileQuery.data;
+  const listed = profile?.publicVisible ?? false;
+  const loadingProfile = profileQuery.isFetching && !profile;
+  const busy = publishState.isLoading || unpublishState.isLoading;
+
+  async function toggleListing() {
+    try {
+      if (listed) {
+        await unpublishProfile(propertyId).unwrap();
+        toast.success("Property removed from discovery.");
+      } else {
+        await publishProfile(propertyId).unwrap();
+        toast.success("Property is now listed in discovery.");
+      }
+    } catch (error) {
+      const message = (error as { data?: { message?: string } })?.data?.message;
+      toast.error(
+        message ??
+          (listed
+            ? "Could not unlist the property. Please try again."
+            : "Could not list the property. Add a headline and description to its discovery profile first."),
+      );
+    }
+  }
+
+  return (
+    <Section eyebrow="Discovery" title="Listing">
+      <Card>
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: listed ? colors.primarySoft : colors.surfaceSunken,
+              borderRadius: 12,
+              height: 42,
+              justifyContent: "center",
+              width: 42,
+            }}
+          >
+            {listed ? <Globe color={colors.primary} size={20} strokeWidth={2.2} /> : <EyeOff color={colors.muted} size={20} strokeWidth={2.2} />}
+          </View>
+          <View style={{ flex: 1, gap: spacing.xs }}>
+            <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+              {loadingProfile ? "Checking listing…" : listed ? "Listed in discovery" : "Not listed"}
+            </Text>
+            <Text style={[type.caption, { color: colors.muted }]} selectable>
+              {listed
+                ? "Visible to people searching for properties nearby. Onboarded tenants are unaffected."
+                : "Hidden from discovery search. Tenants already onboarded keep full access."}
+            </Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={busy || loadingProfile}
+            icon={listed ? EyeOff : Eye}
+            label={listed ? "Remove from discovery" : "List in discovery"}
+            onPress={toggleListing}
+            variant={listed ? "secondary" : "primary"}
+          />
+        </View>
+      </Card>
+    </Section>
+  );
+}
+
 function EditPropertyModal({ onClose, property }: { onClose: () => void; property: OwnerProperty }) {
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState(property.address);
+  const [area, setArea] = useState(property.area);
   const [city, setCity] = useState(property.city);
   const [state, setState] = useState(property.state ?? "");
   const [pincode, setPincode] = useState(property.pincode);
+  const [latitude, setLatitude] = useState<number | null>(property.latitude);
+  const [longitude, setLongitude] = useState<number | null>(property.longitude);
   const [propertyType, setPropertyType] = useState<PropertyType>(property.type);
+  const [pgFor, setPgFor] = useState<PgFor>(property.pgFor ?? "ANYONE");
+  const [preferredFor, setPreferredFor] = useState<PreferredTenantType>(property.preferredFor ?? "ANYONE");
+  const [includedMeals, setIncludedMeals] = useState<MealType[]>(property.includedMeals ?? []);
+  const [electricityIncluded, setElectricityIncluded] = useState(Boolean(property.electricityIncluded));
+  const [bathroomType, setBathroomType] = useState<BathroomType>(property.bathroomType ?? "COMMON");
+  const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>(property.availableSharingTypes ?? []);
   const [facilities, setFacilities] = useState<PropertyFacility[]>(property.facilities);
-  const [customFacilities, setCustomFacilities] = useState(property.customFacilities.join(", "));
+  const [customFacilities, setCustomFacilities] = useState<string[]>(property.customFacilities);
   const [deposit, setDeposit] = useState(paiseToRupees(property.standardDepositPaise));
   const [noticeDays, setNoticeDays] = useState(String(property.noticePeriodDays));
   const [graceDays, setGraceDays] = useState(String(property.rentGraceDays));
@@ -163,16 +266,20 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
   const [error, setError] = useState<string | null>(null);
   const [updateProperty, { isLoading }] = useUpdatePropertyMutation();
 
-  function toggleFacility(facility: PropertyFacility) {
-    setFacilities((current) => (current.includes(facility) ? current.filter((item) => item !== facility) : [...current, facility]));
+  function toggleMeal(meal: MealType) {
+    setIncludedMeals((current) => (current.includes(meal) ? current.filter((item) => item !== meal) : [...current, meal]));
+  }
+
+  function toggleSharingType(roomType: RoomType) {
+    setAvailableSharingTypes((current) => (current.includes(roomType) ? current.filter((item) => item !== roomType) : [...current, roomType]));
   }
 
   async function submit() {
     if (isLoading) {
       return;
     }
-    if (!name.trim() || !address.trim() || !city.trim() || !pincode.trim()) {
-      setError("Name, address, city and pincode are required.");
+    if (!name.trim() || !address.trim() || !area.trim() || !city.trim() || !state.trim() || !pincode.trim()) {
+      setError("Name, address line 1, area, city, state and pincode are required.");
       return;
     }
     const depositPaise = rupeesToPaise(deposit);
@@ -189,18 +296,28 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
     setError(null);
     const payload: UpdatePropertyPayload = {
       address: address.trim(),
+      area: area.trim(),
       city: city.trim(),
-      customFacilities: customFacilities.split(",").map((item) => item.trim()).filter(Boolean),
+      customFacilities,
       dailyGuestAcRatePaise: rupeesToPaise(acRate),
       dailyGuestNonAcRatePaise: rupeesToPaise(nonAcRate),
+      availableSharingTypes,
+      bathroomType,
+      electricityIncluded,
       facilities,
+      foodIncluded: includedMeals.length > 0,
+      includedMeals,
+      latitude,
+      longitude,
       name: name.trim(),
       noticePeriodDays: notice,
       pincode: pincode.trim(),
+      pgFor,
+      preferredFor,
       rentGraceDays: grace,
       rentLateFeePerDayPaise: rupeesToPaise(lateFee),
       standardDepositPaise: depositPaise,
-      state: state.trim() || null,
+      state: state.trim(),
       type: propertyType,
     };
     try {
@@ -212,95 +329,165 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal
+      animationType="slide"
+      navigationBarTranslucent
+      onRequestClose={onClose}
+      statusBarTranslucent
+      transparent
+      visible
+    >
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              borderWidth: 1,
-              gap: spacing.md,
-              maxHeight: "92%",
-              paddingBottom: Math.max(insets.bottom, spacing.md),
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.lg,
+              backgroundColor: colors.background,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              maxHeight: "94%",
+              overflow: "hidden",
             }}
           >
-            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
-                Edit property
-              </Text>
+            <View
+              style={{
+                alignItems: "center",
+                borderBottomColor: colors.border,
+                borderBottomWidth: 1,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingHorizontal: spacing.lg,
+                paddingVertical: spacing.md,
+              }}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[type.eyebrow, { color: colors.accent }]} selectable>
+                  {property.referenceCode}
+                </Text>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "500", letterSpacing: -0.3 }} selectable>
+                  Edit property
+                </Text>
+              </View>
               <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
             </View>
 
-            <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator style={{ flexShrink: 1 }}>
-              <FormInput label="Name" onChangeText={setName} placeholder="Property name" value={name} />
-              <FormInput label="Address" multiline onChangeText={setAddress} placeholder="Street address" value={address} />
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <FormInput label="City" onChangeText={setCity} placeholder="City" value={city} />
+            <ScrollView
+              contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={{ flexShrink: 1 }}
+            >
+              <ModalSection eyebrow="Basics" title="Name & location">
+                <FormInput autoCapitalize="words" label="Property name" onChangeText={setName} placeholder="Property name" value={name} />
+                <FormInput label="Address line 1" multiline onChangeText={setAddress} placeholder="Building, street, landmark" value={address} />
+                <FormInput autoCapitalize="words" label="Address line 2 / Area" onChangeText={setArea} placeholder="Area or locality" value={area} />
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <FormInput autoCapitalize="words" label="City" onChangeText={setCity} placeholder="City" value={city} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <FormInput autoCapitalize="words" label="State" onChangeText={setState} placeholder="State" value={state} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <FormInput label="State" onChangeText={setState} placeholder="State" value={state} />
-                </View>
-              </View>
-              <FormInput keyboardType="number-pad" label="Pincode" onChangeText={setPincode} placeholder="Pincode" value={pincode} />
+                <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} onChangeText={setPincode} placeholder="Pincode" value={pincode} />
+              </ModalSection>
 
-              <Labeled label="Property type">
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+              <ModalSection eyebrow="Setup" title="Rooms & inclusions">
+                <Labeled label="Property type">
                   {PROPERTY_TYPES.map((option) => (
                     <ChoiceButton active={option === propertyType} key={option} label={humanizeToken(option)} onPress={() => setPropertyType(option)} />
                   ))}
-                </View>
-              </Labeled>
+                </Labeled>
 
-              <Labeled label="Facilities">
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-                  {PROPERTY_FACILITIES.map((facility) => (
-                    <ChoiceButton active={facilities.includes(facility)} key={facility} label={humanizeToken(facility)} onPress={() => toggleFacility(facility)} />
+                <Labeled label="PG for">
+                  {PG_FOR_OPTIONS.map((option) => (
+                    <ChoiceButton active={option === pgFor} key={option} label={humanizeToken(option)} onPress={() => setPgFor(option)} />
                   ))}
-                </View>
-              </Labeled>
+                </Labeled>
 
-              <FormInput label="Custom facilities (comma separated)" onChangeText={setCustomFacilities} placeholder="e.g. Rooftop, Balcony" value={customFacilities} />
+                <Labeled label="Preferred for">
+                  {PREFERRED_TENANT_OPTIONS.map((option) => (
+                    <ChoiceButton active={option === preferredFor} key={option} label={humanizeToken(option)} onPress={() => setPreferredFor(option)} />
+                  ))}
+                </Labeled>
 
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="decimal-pad" label="Std. deposit (₹)" onChangeText={setDeposit} placeholder="Amount" value={deposit} />
+                <Labeled label="Meals included">
+                  {MEAL_TYPES.map((meal) => (
+                    <ChoiceButton active={includedMeals.includes(meal)} key={meal} label={humanizeToken(meal)} onPress={() => toggleMeal(meal)} />
+                  ))}
+                </Labeled>
+
+                <Labeled label="Electricity included">
+                  <ChoiceButton active={electricityIncluded} label="Yes" onPress={() => setElectricityIncluded(true)} />
+                  <ChoiceButton active={!electricityIncluded} label="No" onPress={() => setElectricityIncluded(false)} />
+                </Labeled>
+
+                <Labeled label="Bathroom type">
+                  {BATHROOM_TYPES.map((option) => (
+                    <ChoiceButton active={option === bathroomType} key={option} label={humanizeToken(option)} onPress={() => setBathroomType(option)} />
+                  ))}
+                </Labeled>
+
+                <Labeled label="Available sharing types">
+                  {ROOM_TYPES.map((option) => (
+                    <ChoiceButton active={availableSharingTypes.includes(option)} key={option} label={humanizeToken(option)} onPress={() => toggleSharingType(option)} />
+                  ))}
+                </Labeled>
+
+                <FacilitiesField
+                  customFacilities={customFacilities}
+                  facilities={facilities}
+                  onChangeCustom={setCustomFacilities}
+                  onChangeFacilities={setFacilities}
+                />
+              </ModalSection>
+
+              <ModalSection eyebrow="Money" title="Pricing & policy">
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="decimal-pad" label="Std. deposit (â‚¹)" onChangeText={setDeposit} placeholder="Amount" value={deposit} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="decimal-pad" label="Late fee/day (â‚¹)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="decimal-pad" label="Late fee/day (₹)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="number-pad" label="Notice (days)" onChangeText={setNoticeDays} placeholder="30" value={noticeDays} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="number-pad" label="Grace (days)" onChangeText={setGraceDays} placeholder="5" value={graceDays} />
+                  </View>
                 </View>
-              </View>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="number-pad" label="Notice (days)" onChangeText={setNoticeDays} placeholder="30" value={noticeDays} />
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="decimal-pad" label="Guest AC/day (â‚¹)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (â‚¹)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="number-pad" label="Grace (days)" onChangeText={setGraceDays} placeholder="5" value={graceDays} />
-                </View>
-              </View>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="decimal-pad" label="Guest AC/day (₹)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (₹)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
-                </View>
-              </View>
+              </ModalSection>
 
               {error ? (
-                <Text style={[type.caption, { color: colors.danger }]} selectable>
-                  {error}
-                </Text>
+                <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 14, padding: spacing.md }}>
+                  <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
+                    {error}
+                  </Text>
+                </View>
               ) : null}
             </ScrollView>
 
-            <View style={{ flexDirection: "row" }}>
-              <ActionButton disabled={isLoading} label={isLoading ? "Saving" : "Save property"} onPress={() => void submit()} />
+            <View
+              style={{
+                borderTopColor: colors.border,
+                borderTopWidth: 1,
+                flexDirection: "row",
+                paddingBottom: Math.max(insets.bottom, spacing.md),
+                paddingHorizontal: spacing.lg,
+                paddingTop: spacing.md,
+              }}
+            >
+              <ActionButton disabled={isLoading} label={isLoading ? "Savingâ€¦" : "Save property"} onPress={() => void submit()} />
             </View>
           </View>
         </View>
@@ -309,14 +496,31 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
   );
 }
 
+function ModalSection({ children, eyebrow, title }: { children: ReactNode; eyebrow: string; title: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <Card>
+      <View style={{ gap: 2 }}>
+        <Text style={[type.eyebrow, { color: colors.accent }]} selectable>
+          {eyebrow}
+        </Text>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "500", letterSpacing: -0.3 }} selectable>
+          {title}
+        </Text>
+      </View>
+      <View style={{ gap: spacing.md }}>{children}</View>
+    </Card>
+  );
+}
+
 function Labeled({ children, label }: { children: ReactNode; label: string }) {
   const { colors, type } = useTheme();
   return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+    <View style={{ gap: spacing.sm }}>
+      <Text style={[type.label, { color: colors.inkSoft }]} selectable>
         {label}
       </Text>
-      {children}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>{children}</View>
     </View>
   );
 }

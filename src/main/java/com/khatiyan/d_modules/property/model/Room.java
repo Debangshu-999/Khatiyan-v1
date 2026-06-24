@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.property.model;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -65,6 +66,18 @@ public class Room extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private boolean active;
+
+    @Column(name = "maintenance_reason", length = 280)
+    private String maintenanceReason;
+
+    @Column(name = "maintenance_until")
+    private Instant maintenanceUntil;
+
+    @Column(name = "maintenance_marked_by")
+    private UUID maintenanceMarkedBy;
+
+    @Column(name = "maintenance_marked_at")
+    private Instant maintenanceMarkedAt;
 
     private Room(UUID propertyId, String roomNumber, String floor, int capacity,
                  RoomType roomType, RoomConditioning conditioning, Money baseRent) {
@@ -163,12 +176,37 @@ public class Room extends BaseEntity {
         refreshOccupancyStatus();
     }
 
-    public void markMaintenance() {
+    public void markMaintenance(String reason, Instant maintenanceUntil, UUID markedByUserId, Instant markedAt) {
         if (!isEmpty()) {
             throw new ValidationException("Room has active occupancy");
         }
 
+        if (reason == null || reason.isBlank()) {
+            throw new ValidationException("A maintenance reason is required");
+        }
+
         this.status = RoomStatus.MAINTENANCE;
+        this.maintenanceReason = reason.strip();
+        this.maintenanceUntil = maintenanceUntil;
+        this.maintenanceMarkedBy = markedByUserId;
+        this.maintenanceMarkedAt = markedAt;
+    }
+
+    /**
+     * Edits the reason / until-date of a room that is already under maintenance
+     * without touching who marked it or when — the original audit is preserved.
+     */
+    public void updateMaintenanceDetails(String reason, Instant maintenanceUntil) {
+        if (status != RoomStatus.MAINTENANCE) {
+            throw new ValidationException("Room is not under maintenance");
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw new ValidationException("A maintenance reason is required");
+        }
+
+        this.maintenanceReason = reason.strip();
+        this.maintenanceUntil = maintenanceUntil;
     }
 
     public void markVacant() {
@@ -177,6 +215,7 @@ public class Room extends BaseEntity {
         }
 
         this.status = RoomStatus.VACANT;
+        clearMaintenanceDetails();
     }
 
     public void deactivate() {
@@ -187,6 +226,23 @@ public class Room extends BaseEntity {
         this.active = false;
     }
 
+    /**
+     * Brings a deactivated room back into service as a clean vacant room.
+     */
+    public void reactivate() {
+        if (active) {
+            throw new ValidationException("Room is already active");
+        }
+
+        this.active = true;
+        this.status = RoomStatus.VACANT;
+        clearMaintenanceDetails();
+    }
+
+    public boolean isUnderMaintenance() {
+        return status == RoomStatus.MAINTENANCE;
+    }
+
     public boolean isCurrentlyActive() {
         return active;
     }
@@ -194,10 +250,18 @@ public class Room extends BaseEntity {
     private void refreshOccupancyStatus() {
         if (occupiedCount <= 0) {
             this.status = RoomStatus.VACANT;
+            clearMaintenanceDetails();
         } else if (occupiedCount >= capacity) {
             this.status = RoomStatus.OCCUPIED;
         } else {
             this.status = RoomStatus.PARTIALLY_OCCUPIED;
         }
+    }
+
+    private void clearMaintenanceDetails() {
+        this.maintenanceReason = null;
+        this.maintenanceUntil = null;
+        this.maintenanceMarkedBy = null;
+        this.maintenanceMarkedAt = null;
     }
 }

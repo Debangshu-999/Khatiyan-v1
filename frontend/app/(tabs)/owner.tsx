@@ -1,18 +1,6 @@
 import { useRouter } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
-import {
-  AlertCircle,
-  Banknote,
-  Bell,
-  Building2,
-  ClipboardList,
-  Compass,
-  KeyRound,
-  Megaphone,
-  UsersRound,
-  Wrench,
-  type LucideProps,
-} from "lucide-react-native";
+import { Building2, Pin, PinOff, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -22,27 +10,32 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { useAppSelector } from "@/store/hooks";
+import { OWNER_MODULES, type OwnerModuleRoute } from "@/features/owner/owner-modules";
+import { savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type ServiceRoute =
-  | "/owner-tenancy"
-  | "/owner-billing"
-  | "/owner-property"
-  | {
-      pathname: "/owner-service-placeholder";
-      params: { service: string; title: string };
-    };
-
 export default function OwnerScreen() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
-  const userRole = useAppSelector((state) => state.auth.user?.role);
-  const workspaceRole = userRole === "OWNER" ? "Owner" : "Manager";
+  const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
+  const user = useAppSelector((state) => state.auth.user);
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const workspaceRole = activeAccount === "manager" ? "Manager" : "Owner";
+
+  function togglePin(key: string) {
+    const next = pinnedKeys.includes(key) ? pinnedKeys.filter((pinned) => pinned !== key) : [...pinnedKeys, key];
+    dispatch(setPinnedOwnerModules(next));
+    if (user?.id) {
+      void savePinnedOwnerModulesForUser(user.id, next);
+    }
+  }
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
@@ -52,7 +45,7 @@ export default function OwnerScreen() {
     { skip: !selectedProperty },
   );
 
-  function open(route: ServiceRoute) {
+  function open(route: OwnerModuleRoute) {
     router.push(route as never);
   }
 
@@ -62,9 +55,9 @@ export default function OwnerScreen() {
   const vacantRooms = rooms.filter((room) => room.availableVacancies > 0).length;
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        eyebrow={`${workspaceRole} workspace`}
+        // eyebrow={`${workspaceRole} workspace`}
         title="Portfolio"
         italicTail="overview."
         subtitle="Use Home to choose the active property. Each service opens its own focused workspace."
@@ -125,78 +118,21 @@ export default function OwnerScreen() {
 
           <Section eyebrow="Services" title="Open workspace">
             <View style={{ gap: spacing.sm }}>
-              <ServiceCard
-                icon={UsersRound}
-                title="Tenancy"
-                description="Create tenancies, view active stays, review exits and handle room-change requests."
-                onPress={() => open("/owner-tenancy")}
-              />
-              <ServiceCard
-                icon={Banknote}
-                title="Billing"
-                description="Billing cycles, overdue dues, line items, deposit ledger and payment status."
-                onPress={() => open("/owner-billing")}
-              />
-              <ServiceCard
-                icon={Megaphone}
-                title="Notice"
-                description="Property board, visible notices, recurring notices and archive controls."
-                onPress={() =>
-                  open({
-                    pathname: "/owner-service-placeholder",
-                    params: { service: "notices", title: "Notice" },
-                  })
-                }
-              />
-              <ServiceCard
-                icon={AlertCircle}
-                title="Concern"
-                description="Available, under review, undertaken, escalated and history views."
-                onPress={() =>
-                  open({
-                    pathname: "/owner-service-placeholder",
-                    params: { service: "concerns", title: "Concern" },
-                  })
-                }
-              />
-              <ServiceCard
-                icon={Compass}
-                title="Discovery"
-                description="Listing visibility, description, photos and owner-curated local places."
-                onPress={() =>
-                  open({
-                    pathname: "/owner-service-placeholder",
-                    params: { service: "discovery", title: "Discovery" },
-                  })
-                }
-              />
-              <ServiceCard
-                icon={Wrench}
-                title="Property"
-                description="Property settings, room inventory (single & bulk), facilities, board and manager assignments."
-                onPress={() => open("/owner-property")}
-              />
-              <ServiceCard
-                icon={Bell}
-                title="Notifications"
-                description="Owner-side operational alerts and pending action summaries."
-                onPress={() =>
-                  open({
-                    pathname: "/owner-service-placeholder",
-                    params: { service: "notifications", title: "Notifications" },
-                  })
-                }
-              />
+              {OWNER_MODULES.map((module) => (
+                <ServiceCard
+                  key={module.key}
+                  icon={module.icon}
+                  title={module.title}
+                  description={module.description}
+                  pinned={pinnedKeys.includes(module.key)}
+                  onPress={() => open(module.route)}
+                  onTogglePin={() => togglePin(module.key)}
+                />
+              ))}
             </View>
-          </Section>
-
-          <Section eyebrow="Remaining work" title="Mobile owner modules">
-            <Card tone="sunken">
-              <Text style={[type.body, { color: colors.muted }]} selectable>
-                Tenancy now has its own workspace. Billing, notice, concern, discovery, property and notifications are
-                separated as service entries and can be expanded one by one.
-              </Text>
-            </Card>
+            <Text style={[type.caption, { color: colors.kicker }]} selectable>
+              Tap the pin on a service to add it to "Frequently visited" on Home.
+            </Text>
           </Section>
         </>
       ) : null}
@@ -208,14 +144,18 @@ function ServiceCard({
   description,
   icon: Icon,
   onPress,
+  onTogglePin,
+  pinned,
   title,
 }: {
   description: string;
   icon: ComponentType<LucideProps>;
   onPress: () => void;
+  onTogglePin: () => void;
+  pinned: boolean;
   title: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
 
   return (
     <AnimatedPressable
@@ -224,9 +164,17 @@ function ServiceCard({
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderRadius: 14,
+        borderCurve: "continuous",
+        borderRadius: 20,
         borderWidth: 1,
+        // 3D lift so the service cards stand off the background, especially in
+        // light mode.
+        elevation: 6,
         padding: spacing.lg,
+        shadowColor: isDark ? "#000000" : "#0F172A",
+        shadowOffset: { height: 6, width: 0 },
+        shadowOpacity: isDark ? 0.45 : 0.14,
+        shadowRadius: 14,
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -259,6 +207,28 @@ function ServiceCard({
             {description}
           </Text>
         </View>
+        <AnimatedPressable
+          accessibilityLabel={pinned ? `Unpin ${title}` : `Pin ${title}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onTogglePin}
+          style={{
+            alignItems: "center",
+            backgroundColor: pinned ? colors.primarySoft : colors.surfaceSunken,
+            borderColor: pinned ? colors.primary : colors.border,
+            borderRadius: 10,
+            borderWidth: 1,
+            height: 36,
+            justifyContent: "center",
+            width: 36,
+          }}
+        >
+          {pinned ? (
+            <Pin color={colors.primary} size={16} strokeWidth={2.2} />
+          ) : (
+            <PinOff color={colors.kicker} size={16} strokeWidth={2.2} />
+          )}
+        </AnimatedPressable>
       </View>
     </AnimatedPressable>
   );

@@ -3,8 +3,13 @@ package com.khatiyan.d_modules.property.api.dto;
 import java.math.BigDecimal;
 import java.util.Set;
 
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
 import com.khatiyan.d_modules.property.model.PropertyType;
+import com.khatiyan.d_modules.property.model.SharingType;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -32,6 +37,10 @@ public record CreatePropertyRequest(
     String address,
 
     @NotBlank
+    @Size(max = 120)
+    String area,
+
+    @NotBlank
     @Size(max = 80)
     String city,
 
@@ -55,6 +64,20 @@ public record CreatePropertyRequest(
 
     @NotNull
     PropertyType type,
+
+    PgFor pgFor,
+
+    PreferredTenantType preferredFor,
+
+    Boolean foodIncluded,
+
+    Set<@NotNull MealType> includedMeals,
+
+    Boolean electricityIncluded,
+
+    BathroomType bathroomType,
+
+    Set<@NotNull SharingType> availableSharingTypes,
 
     Set<@NotNull PropertyFacility> facilities,
 

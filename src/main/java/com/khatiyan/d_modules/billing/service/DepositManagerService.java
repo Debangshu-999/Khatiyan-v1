@@ -2,12 +2,18 @@ package com.khatiyan.d_modules.billing.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.a_auth.AuthModule;
+import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
@@ -45,16 +51,19 @@ public class DepositManagerService {
     private final DepositMovementRepository depositMovementRepository;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
+    private final AuthModule authModule;
 
     public DepositManagerService(
             DepositAccountRepository depositAccountRepository,
             DepositMovementRepository depositMovementRepository,
             TenancyModule tenancyModule,
-            PropertyModule propertyModule) {
+            PropertyModule propertyModule,
+            AuthModule authModule) {
         this.depositAccountRepository = depositAccountRepository;
         this.depositMovementRepository = depositMovementRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
+        this.authModule = authModule;
     }
 
     /**
@@ -151,6 +160,56 @@ public class DepositManagerService {
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         return toResponse(account);
+    }
+
+    /**
+     * Lists deposit accounts for a property the actor manages as a page, newest
+     * first. Supports an optional status filter and a free-text query matched
+     * against tenant name, tenancy reference code and tenancy id. Used by the
+     * owner/manager deposit-manager history screen.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<DepositAccountResponse> listForManagedProperty(
+            UUID actorUserId,
+            UUID propertyId,
+            String query,
+            DepositAccountStatus status,
+            int page,
+            int size) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
+
+        List<DepositAccount> accounts = depositAccountRepository.findByPropertyId(propertyId)
+                .stream()
+                .filter(account -> status == null || account.getStatus() == status)
+                .toList();
+        List<DepositAccountResponse> responses = toResponses(accounts)
+                .stream()
+                .filter(response -> matchesQuery(response, normalizedQuery))
+                .toList();
+
+        return PageResponse.of(responses, page, size);
+    }
+
+    /**
+     * Matches a deposit account against a lowercased query across tenant name,
+     * tenancy reference code and tenancy id. A blank query matches everything.
+     */
+    private boolean matchesQuery(DepositAccountResponse response, String normalizedQuery) {
+        if (normalizedQuery.isEmpty()) {
+            return true;
+        }
+
+        String tenantName = response.tenantName() == null ? "" : response.tenantName().toLowerCase();
+        String referenceCode = response.tenancyReferenceCode() == null
+                ? ""
+                : response.tenancyReferenceCode().toLowerCase();
+        String tenancyId = response.tenancyId() == null ? "" : response.tenancyId().toString().toLowerCase();
+
+        return tenantName.contains(normalizedQuery)
+                || referenceCode.contains(normalizedQuery)
+                || tenancyId.contains(normalizedQuery);
     }
 
     /**
@@ -459,7 +518,68 @@ public class DepositManagerService {
                 .map(movement -> DepositMovementResponse.from(movement))
                 .toList();
 
-        return DepositAccountResponse.from(account, currentBalancePaise, movementResponses);
+        String tenancyReferenceCode = tenancyModule.findById(account.getTenancyId())
+                .map(TenancyResponse::referenceCode)
+                .orElse(null);
+        String tenantName = authModule.findById(account.getTenantUserId())
+                .map(this::displayUserName)
+                .orElse(null);
+
+        return DepositAccountResponse.from(
+                account, tenantName, tenancyReferenceCode, currentBalancePaise, movementResponses);
+    }
+
+    private List<DepositAccountResponse> toResponses(List<DepositAccount> accounts) {
+        if (accounts.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> accountIds = accounts.stream()
+                .map(DepositAccount::getId)
+                .toList();
+        Map<UUID, List<DepositMovement>> movementsByAccountId = depositMovementRepository
+                .findByDepositAccountIds(accountIds)
+                .stream()
+                .collect(Collectors.groupingBy(DepositMovement::getDepositAccountId));
+
+        Set<UUID> tenancyIds = accounts.stream()
+                .map(DepositAccount::getTenancyId)
+                .collect(Collectors.toSet());
+        Map<UUID, String> tenancyReferenceCodes = tenancyModule.findByIds(tenancyIds)
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().referenceCode()));
+
+        Set<UUID> tenantUserIds = accounts.stream()
+                .map(DepositAccount::getTenantUserId)
+                .collect(Collectors.toSet());
+        Map<UUID, String> tenantNames = authModule.findByIds(tenantUserIds)
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> displayUserName(entry.getValue())));
+
+        return accounts.stream()
+                .map(account -> {
+                    List<DepositMovement> movements = movementsByAccountId.getOrDefault(account.getId(), List.of());
+                    List<DepositMovementResponse> movementResponses = movements.stream()
+                            .map(DepositMovementResponse::from)
+                            .toList();
+                    long currentBalancePaise = calculateBalance(movements);
+                    return DepositAccountResponse.from(
+                            account,
+                            tenantNames.get(account.getTenantUserId()),
+                            tenancyReferenceCodes.get(account.getTenancyId()),
+                            currentBalancePaise,
+                            movementResponses);
+                })
+                .toList();
+    }
+
+    private String displayUserName(UserSummaryResponse user) {
+        if (user.fullName() != null && !user.fullName().isBlank()) {
+            return user.fullName();
+        }
+        return null;
     }
 
     /**

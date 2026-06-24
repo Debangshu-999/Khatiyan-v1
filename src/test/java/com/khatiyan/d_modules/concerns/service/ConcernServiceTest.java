@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.concerns.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,6 +19,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.khatiyan.a_auth.AuthModule;
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernPhotoRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
@@ -26,11 +29,14 @@ import com.khatiyan.d_modules.concerns.event.ConcernAssignedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernRaisedEvent;
 import com.khatiyan.d_modules.concerns.model.Concern;
 import com.khatiyan.d_modules.concerns.model.ConcernCategory;
-import com.khatiyan.d_modules.concerns.model.ConcernPriority;
 import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.concerns.repository.ConcernRepository;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.property.model.RoomConditioning;
+import com.khatiyan.d_modules.property.model.RoomStatus;
+import com.khatiyan.d_modules.property.model.RoomType;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
@@ -56,6 +62,9 @@ class ConcernServiceTest {
     private PropertyModule propertyModule;
 
     @Mock
+    private AuthModule authModule;
+
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
@@ -69,6 +78,7 @@ class ConcernServiceTest {
                 concernRepository,
                 tenancyModule,
                 propertyModule,
+                authModule,
                 eventPublisher,
                 referenceCodeGenerator);
     }
@@ -77,21 +87,23 @@ class ConcernServiceTest {
     void raiseConcernUsesActiveTenancyAndPublishesRaisedEvent() {
         when(referenceCodeGenerator.nextCode("CON")).thenReturn("CON-2026-000001");
         when(tenancyModule.findActiveByUserId(TENANT_ID)).thenReturn(Optional.of(activeTenancy()));
+        when(tenancyModule.findById(TENANCY_ID)).thenReturn(Optional.of(activeTenancy()));
+        when(propertyModule.findRoomForDisplay(PROPERTY_ID, ROOM_ID)).thenReturn(Optional.of(activeRoom()));
+        when(concernRepository.countRaisedByUserIdSince(any(UUID.class), any())).thenReturn(0L);
         when(concernRepository.save(any(Concern.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ConcernResponse response = concernService.raiseConcern(
                 TENANT_ID,
                 new CreateConcernRequest(
                         ConcernCategory.WIFI,
-                        ConcernPriority.HIGH,
                         " WiFi down ",
                         " Router is not working ",
                         List.of(new ConcernPhotoRequest("https://cdn.example.com/photo.jpg", "concerns/photo"))));
 
         assertThat(response.propertyId()).isEqualTo(PROPERTY_ID);
         assertThat(response.referenceCode()).isEqualTo("CON-2026-000001");
-        assertThat(response.roomId()).isEqualTo(ROOM_ID);
-        assertThat(response.tenancyId()).isEqualTo(TENANCY_ID);
+        assertThat(response.roomNumber()).isEqualTo("101");
+        assertThat(response.tenancyReferenceCode()).isEqualTo("TEN-2026-000001");
         assertThat(response.raisedByUserId()).isEqualTo(TENANT_ID);
         assertThat(response.status()).isEqualTo(ConcernStatus.OPEN);
         assertThat(response.title()).isEqualTo("WiFi down");
@@ -101,6 +113,22 @@ class ConcernServiceTest {
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue()).isInstanceOf(ConcernRaisedEvent.class);
+    }
+
+    @Test
+    void raiseConcernRejectsSixthConcernWithinSevenDays() {
+        when(tenancyModule.findActiveByUserId(TENANT_ID)).thenReturn(Optional.of(activeTenancy()));
+        when(concernRepository.countRaisedByUserIdSince(any(UUID.class), any())).thenReturn(5L);
+
+        assertThatThrownBy(() -> concernService.raiseConcern(
+                TENANT_ID,
+                new CreateConcernRequest(
+                        ConcernCategory.WIFI,
+                        "WiFi down",
+                        "Router is not working",
+                        List.of())))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("You can raise up to 5 concerns in a 7 day period.");
     }
 
     @Test
@@ -128,7 +156,6 @@ class ConcernServiceTest {
                 TENANCY_ID,
                 TENANT_ID,
                 ConcernCategory.CLEANING,
-                ConcernPriority.MEDIUM,
                 "Room cleaning",
                 "Cleaning was missed");
     }
@@ -138,6 +165,10 @@ class ConcernServiceTest {
                 TENANCY_ID,
                 "TEN-2026-000001",
                 TENANT_ID,
+                "Test Tenant",
+                "+911234567890",
+                true,
+                true,
                 PROPERTY_ID,
                 ROOM_ID,
                 ACTOR_ID,
@@ -151,5 +182,27 @@ class ConcernServiceTest {
                 TenancyStatus.ACTIVE,
                 null,
                 true);
+    }
+
+    private static RoomResponse activeRoom() {
+        return new RoomResponse(
+                ROOM_ID,
+                PROPERTY_ID,
+                "101",
+                "1",
+                1,
+                1,
+                0,
+                RoomType.SINGLE,
+                RoomConditioning.NON_AC,
+                12_000_00L,
+                RoomStatus.OCCUPIED,
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 }

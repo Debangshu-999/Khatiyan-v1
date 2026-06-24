@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -51,6 +52,18 @@ public class NotificationModule {
         notificationService.notifyUser(userId, title, body, category, priority, sourceId, deliveryMode);
     }
 
+    public void notifyUser(
+            UUID userId,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        notificationService.notifyUser(userId, title, body, category, priority, sourceId, deliveryMode, audience);
+    }
+
     public void notifyUsers(
             Collection<UUID> userIds,
             String title,
@@ -88,5 +101,36 @@ public class NotificationModule {
             Map<String, String> data,
             NotificationDeliveryMode deliveryMode) {
         notificationService.notifyUsers(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode);
+    }
+
+    // Structured overloads with an explicit audience — for dispatchers that send
+    // the same subtype to both tenants and management (tenancy lifecycle).
+
+    public void notifyUser(
+            UUID userId,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        notificationService.notifyUser(userId, title, body, category, priority, subtype, sourceId, data, deliveryMode, audience);
+    }
+
+    public void notifyUsers(
+            Collection<UUID> userIds,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        notificationService.notifyUsers(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode, audience);
     }
 }

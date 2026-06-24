@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useToast } from "@/components/toast";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { TenantRoomSummary } from "@/store/services/tenancy-api";
 import { useCreateRoomChangeRequestMutation, useGetMyActiveTenancyQuery, useListMyActivePropertyRoomsQuery } from "@/store/services/tenancy-api";
@@ -20,6 +21,7 @@ const UNASSIGNED_FLOOR = "Unassigned floor";
 export default function TenancyRoomChangeRequestScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const roomsQuery = useListMyActivePropertyRoomsQuery();
   const [createRoomChangeRequest, createRoomChangeState] = useCreateRoomChangeRequestMutation();
@@ -29,7 +31,12 @@ export default function TenancyRoomChangeRequestScreen() {
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Validation/submit failures surface as toasts; success navigates to /tenancy.
+  const setError = (value: string | null) => {
+    if (value) {
+      toast.error(value);
+    }
+  };
 
   const rooms = useMemo(() => {
     const roomMap = new Map<string, TenantRoomSummary>();
@@ -163,11 +170,6 @@ export default function TenancyRoomChangeRequestScreen() {
               value={reason}
             />
 
-            {error ? (
-              <Text style={[type.body, { color: colors.danger, fontWeight: "700" }]} selectable>
-                {error}
-              </Text>
-            ) : null}
 
             <AnimatedPressable
               accessibilityRole="button"

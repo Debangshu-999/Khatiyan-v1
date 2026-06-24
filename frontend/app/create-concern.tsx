@@ -8,7 +8,8 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import type { ConcernCategory, ConcernPriority } from "@/store/services/concern-api";
+import { useToast } from "@/components/toast";
+import type { ConcernCategory } from "@/store/services/concern-api";
 import { useCreateConcernMutation } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -27,7 +28,6 @@ const CONCERN_CATEGORIES = [
   "OTHER",
 ] as const satisfies readonly ConcernCategory[];
 
-const CONCERN_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const satisfies readonly ConcernPriority[];
 const MAX_LOCAL_PHOTOS = 4;
 
 type LocalConcernPhoto = {
@@ -39,13 +39,18 @@ type LocalConcernPhoto = {
 export default function CreateConcernScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const [createConcern, createState] = useCreateConcernMutation();
   const [category, setCategory] = useState<ConcernCategory>("MAINTENANCE");
-  const [priority, setPriority] = useState<ConcernPriority>("MEDIUM");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalConcernPhoto[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // This screen only surfaces error feedback; success navigates to /concerns.
+  const setError = (value: string | null) => {
+    if (value) {
+      toast.error(value);
+    }
+  };
 
   const addPhotoAssets = (assets: ImagePicker.ImagePickerAsset[]) => {
     setPhotos((current) => {
@@ -129,7 +134,6 @@ export default function CreateConcernScreen() {
       await createConcern({
         category,
         description: trimmedDescription,
-        priority,
         title: trimmedTitle,
       }).unwrap();
       router.replace({ pathname: "/concerns", params: { createdConcern: "1" } });
@@ -143,7 +147,7 @@ export default function CreateConcernScreen() {
       <ScreenHeader
         eyebrow="CONCERNS"
         italicTail="concern."
-        subtitle="Add category, priority, details and optional photos for the property team."
+        subtitle="Add category, details and optional photos for the property team."
         title="Raise"
         trailing={
           <AnimatedPressable
@@ -172,16 +176,6 @@ export default function CreateConcernScreen() {
             selected={category}
             onSelect={(value) => {
               setCategory(value);
-              setError(null);
-            }}
-          />
-
-          <OptionGroup
-            label="Priority"
-            options={CONCERN_PRIORITIES}
-            selected={priority}
-            onSelect={(value) => {
-              setPriority(value);
               setError(null);
             }}
           />
@@ -216,11 +210,6 @@ export default function CreateConcernScreen() {
             value={description}
           />
 
-          {error ? (
-            <Text style={[type.body, { color: colors.danger, fontWeight: "700" }]} selectable>
-              {error}
-            </Text>
-          ) : null}
 
           <AnimatedPressable
             accessibilityRole="button"

@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.reminder.service.ReminderSchedulerService;
 import com.khatiyan.d_modules.reminder.service.ReminderService;
+import org.springframework.context.annotation.Profile;
 
 @Component
 public class ReminderModule {

@@ -17,8 +17,6 @@ type DiscoveryTabsProps = {
   onChange: (tab: DiscoveryTab) => void;
 };
 
-const indicatorInset = 4;
-
 export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps) {
   const { colors } = useTheme();
   const [width, setWidth] = useState(0);
@@ -54,10 +52,10 @@ export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps)
         <Animated.View
           pointerEvents="none"
           style={{
-            backgroundColor: colors.primary,
+            backgroundColor: colors.ink,
             bottom: -1,
             height: 2,
-            left: spacing.lg,
+            left: 0,
             position: "absolute",
             transform: [{ translateX: Animated.multiply(animatedIndex, segmentWidth) }],
             width: segmentWidth,
@@ -89,7 +87,7 @@ export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps)
           >
             <Text
               style={{
-                color: isActive ? colors.primary : colors.kicker,
+                color: isActive ? colors.ink : colors.kicker,
                 fontSize: 11,
                 fontWeight: "700",
                 letterSpacing: 1.6,

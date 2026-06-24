@@ -31,7 +31,9 @@ public enum NotificationSubtype {
     // Concern (ticket) workflow.
     CONCERN_RAISED,
     CONCERN_ASSIGNED,
+    CONCERN_UNDER_REVIEW,
     CONCERN_IN_PROGRESS,
+    CONCERN_RELEASED,
     CONCERN_RESOLVED,
     CONCERN_REOPENED,
 
@@ -41,6 +43,17 @@ public enum NotificationSubtype {
     // Property management.
     MANAGER_ASSIGNED,
     MANAGER_REMOVED,
+
+    // Room lifecycle (management-facing).
+    ROOM_MAINTENANCE_STARTED,
+    ROOM_MAINTENANCE_ENDED,
+    ROOM_DEACTIVATED,
+    ROOM_REACTIVATED,
+
+    // Staff lifecycle (management-facing) + personal employment updates.
+    STAFF_ADDED,
+    STAFF_REMOVED,
+    MANAGER_EMPLOYMENT_UPDATED,
 
     // Billing cycles + line edits + payment outcomes.
     BILLING_CYCLE_GENERATED,

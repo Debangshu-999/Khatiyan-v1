@@ -5,6 +5,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -39,6 +41,7 @@ public class NoticeSchedulerService {
     @Scheduled(
             cron = "${app.notice.recurring-generation-cron:0 */5 * * * *}",
             zone = "${app.notice.recurring-generation-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "notice-generateDueRecurringNotices", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void generateDueRecurringNotices() {
         int generatedCount = recurringNoticeService.generateDueRecurringNotices();
 
@@ -53,6 +56,7 @@ public class NoticeSchedulerService {
      * Archives expired published notices for management history.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "notice-startupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void archiveExpiredNoticesOnStartup() {
         log.info("Notice archive scheduler startup catch-up started");
         archiveExpiredNotices();
@@ -64,6 +68,7 @@ public class NoticeSchedulerService {
     @Scheduled(
             cron = "${app.notice.archive-expired-cron:0 45 0 * * *}",
             zone = "${app.notice.archive-expired-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "notice-archiveExpiredNotices", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void archiveExpiredNotices() {
         int archivedCount = noticeService.archiveExpiredNotices();
 

@@ -37,6 +37,10 @@ import com.khatiyan.d_modules.billing.repository.BillingManualPaymentRepository;
 import com.khatiyan.d_modules.billing.repository.BillingMonthlyReportRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.property.model.RoomConditioning;
+import com.khatiyan.d_modules.property.model.RoomStatus;
+import com.khatiyan.d_modules.property.model.RoomType;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
@@ -109,6 +113,7 @@ class BillingCycleServiceTest {
         when(billingCycleRepository.existsByTenancyIdAndCycleNumber(TENANCY_ID, 1)).thenReturn(false);
         when(authModule.findById(TENANT_ID)).thenReturn(Optional.of(tenantSummary()));
         when(propertyModule.getBillingPolicy(PROPERTY_ID)).thenReturn(billingPolicy(3, 100_00L));
+        when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(room());
         when(billingCycleRepository.save(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(billingCycleRepository.saveAndFlush(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
@@ -139,7 +144,7 @@ class BillingCycleServiceTest {
 
     @Test
     void recalculateLateFeesCreatesTransparentLateFeeLine() {
-        BillingCycle cycle = monthlyCycleDue(LocalDate.of(2026, 5, 30));
+        BillingCycle cycle = monthlyCycleDue(LocalDate.of(2026, 6, 1));
         BillingCycleLineItem rentLine = BillingCycleLineItem.systemCharge(
                 cycle,
                 BillingCycleLineItemType.RENT,
@@ -164,13 +169,13 @@ class BillingCycleServiceTest {
         int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 2));
 
         assertThat(updatedCount).isEqualTo(1);
-        assertThat(cycle.getLateFeeAmountPaise()).isEqualTo(300_00);
-        assertThat(cycle.getTotalAmountPaise()).isEqualTo(12_300_00);
+        assertThat(cycle.getLateFeeAmountPaise()).isEqualTo(100_00);
+        assertThat(cycle.getTotalAmountPaise()).isEqualTo(12_100_00);
         assertThat(savedLineItems)
                 .filteredOn(lineItem -> lineItem.getType() == BillingCycleLineItemType.LATE_FEE)
                 .singleElement()
                 .satisfies(lineItem -> {
-                    assertThat(lineItem.getAmountPaise()).isEqualTo(300_00);
+                    assertThat(lineItem.getAmountPaise()).isEqualTo(100_00);
                     assertThat(lineItem.isSystemGenerated()).isTrue();
                 });
 
@@ -195,8 +200,8 @@ class BillingCycleServiceTest {
                 ROOM_ID,
                 TenancyBillingType.MONTHLY,
                 1,
-                LocalDate.of(2026, 5, 1),
-                LocalDate.of(2026, 5, 31),
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 30),
                 dueDate,
                 BillingCollectionTiming.CYCLE_START,
                 3);
@@ -207,6 +212,10 @@ class BillingCycleServiceTest {
                 TENANCY_ID,
                 "TEN-2026-000001",
                 TENANT_ID,
+                "Test Tenant",
+                "+911234567890",
+                true,
+                true,
                 PROPERTY_ID,
                 ROOM_ID,
                 ACTOR_ID,
@@ -240,5 +249,27 @@ class BillingCycleServiceTest {
                 BillingCollectionTiming.CYCLE_START,
                 rentGraceDays,
                 lateFeePerDayPaise);
+    }
+
+    private static RoomResponse room() {
+        return new RoomResponse(
+                ROOM_ID,
+                PROPERTY_ID,
+                "101",
+                "1",
+                1,
+                0,
+                1,
+                RoomType.SINGLE,
+                RoomConditioning.NON_AC,
+                12_000_00L,
+                RoomStatus.VACANT,
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 }

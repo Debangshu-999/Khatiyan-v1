@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BlurView } from "expo-blur";
 import {
   ActivityIndicator,
@@ -16,12 +16,12 @@ import { BellRing, Eye, EyeOff, Fingerprint, Moon, ShieldCheck, Smartphone, X } 
 import { saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BloomModalShell } from "@/components/bloom-modal-shell";
+import { useToast } from "@/components/toast";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { saveThemeMode } from "@/config/app-settings-storage";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -36,7 +36,6 @@ import {
   useListMyDevicesQuery,
   useRegisterDeviceMutation,
 } from "@/store/services/notification-api";
-import { toggleThemeMode } from "@/store/slices/app-config-slice";
 import { setRegisteredDeviceTokenId, setSession } from "@/store/slices/auth-slice";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -46,7 +45,7 @@ type PinFlowStep = "details" | "otp" | "pin";
 
 export default function AccountSettingsScreen() {
   const dispatch = useAppDispatch();
-  const { colors, fonts, isDark, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const auth = useAppSelector((state) => state.auth);
   const phone = auth.user?.phone ?? "";
   const devicesQuery = useListMyDevicesQuery(undefined, { skip: !auth.accessToken });
@@ -56,9 +55,8 @@ export default function AccountSettingsScreen() {
   const [verifyOtp, verifyOtpState] = useVerifyOtpMutation();
   const [confirmPinReset, confirmPinResetState] = useConfirmPinResetMutation();
   const [changePin, changePinState] = useChangePinMutation();
-  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const toast = useToast();
   const [pinModalMode, setPinModalMode] = useState<PinModalMode | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const activeDevice = useMemo(() => {
     const devices = devicesQuery.data ?? [];
@@ -71,15 +69,6 @@ export default function AccountSettingsScreen() {
     return devices.find((device) => device.active) ?? null;
   }, [auth.registeredDeviceTokenId, devicesQuery.data]);
 
-  useEffect(() => {
-    if (!toastMessage) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => setToastMessage(null), 3000);
-    return () => clearTimeout(timeoutId);
-  }, [toastMessage]);
-
   async function persistTokenSession(response: TokenResponse) {
     const session = {
       accessToken: response.accessToken,
@@ -90,14 +79,12 @@ export default function AccountSettingsScreen() {
   }
 
   async function handleNotificationToggle(enabled: boolean) {
-    setNotificationMessage(null);
-
     try {
       if (enabled) {
         const registration = await requestNotificationDeviceRegistration();
         const response = await registerDevice(registration).unwrap();
         dispatch(setRegisteredDeviceTokenId(response.id));
-        setNotificationMessage("Notifications enabled on this device.");
+        toast.success("Notifications enabled on this device.");
         return;
       }
 
@@ -105,16 +92,16 @@ export default function AccountSettingsScreen() {
         await deactivateDevice(activeDevice.id).unwrap();
       }
       dispatch(setRegisteredDeviceTokenId(null));
-      setNotificationMessage("Notifications disabled on this device.");
+      toast.success("Notifications disabled on this device.");
     } catch (error) {
-      setNotificationMessage(error instanceof Error ? error.message : "Unable to update notification settings.");
+      toast.error(error instanceof Error ? error.message : "Unable to update notification settings.");
     }
   }
 
+  // Dark mode is paused while we polish the light UI. Keep the toggle visible
+  // but inert, and explain why via a toast instead of flipping the theme.
   function handleThemeToggle() {
-    const nextThemeMode = isDark ? "light" : "dark";
-    dispatch(toggleThemeMode());
-    void saveThemeMode(nextThemeMode);
+    toast.info("Dark mode is paused while we polish the new UI.");
   }
 
   const pinFlowBusy =
@@ -173,11 +160,6 @@ export default function AccountSettingsScreen() {
                     {activeDevice.platform} / {activeDevice.provider} / last seen {formatRelativeTime(activeDevice.lastSeenAt)}
                   </Text>
                 ) : null}
-                {notificationMessage ? (
-                  <Text style={[type.caption, { color: colors.primary }]} selectable>
-                    {notificationMessage}
-                  </Text>
-                ) : null}
               </Card>
             </Section>
 
@@ -186,10 +168,10 @@ export default function AccountSettingsScreen() {
                 <PreferenceRow
                   icon={Moon}
                   title="Dark mode"
-                  description="Saved on this device."
+                  description="Paused while we polish the new UI."
                   right={
                     <Switch
-                      value={isDark}
+                      value={false}
                       onValueChange={handleThemeToggle}
                       trackColor={{ false: colors.neutralSoft, true: colors.primary }}
                       thumbColor={colors.surface}
@@ -241,10 +223,9 @@ export default function AccountSettingsScreen() {
                   : await confirmPinReset({ phone, otp, newPin }).unwrap();
               await persistTokenSession(response);
               setPinModalMode(null);
-              setToastMessage(activeMode === "change" ? "PIN changed successfully." : "PIN reset successfully.");
+              toast.success(activeMode === "change" ? "PIN changed successfully." : "PIN reset successfully.");
             }}
           />
-          {toastMessage ? <ToastMessage message={toastMessage} /> : null}
         </>
       )}
     </BloomModalShell>
@@ -269,12 +250,21 @@ function PinVerificationModal({
   phone: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const [step, setStep] = useState<PinFlowStep>("details");
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [otp, setOtp] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  // Route this modal's status copy through the global toast; null clears no-op.
+  const setMessage = useCallback(
+    (value: string | null) => {
+      if (value) {
+        toast.show(value, /(sent|verified|success)/i.test(value) ? "success" : "error");
+      }
+    },
+    [toast],
+  );
 
   function resetAndClose() {
     setStep("details");
@@ -449,7 +439,6 @@ function PinVerificationModal({
                 </Text>
               </View>
 
-              {message ? <InlineStatusMessage message={message} /> : null}
               </View>
 
               <View style={{ gap: spacing.md, paddingTop: spacing.xs }}>
@@ -594,54 +583,6 @@ function PinCodeInput({
           </AnimatedPressable>
         ) : null}
       </View>
-    </View>
-  );
-}
-
-function InlineStatusMessage({ message }: { message: string }) {
-  const { colors, type } = useTheme();
-  const isPositive = message.includes("sent");
-
-  return (
-    <View
-      style={{
-        backgroundColor: isPositive ? colors.successSoft : colors.dangerSoft,
-        borderColor: isPositive ? colors.successText : colors.danger,
-        borderRadius: 12,
-        borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      <Text style={[type.caption, { color: isPositive ? colors.successText : colors.danger, fontWeight: "700" }]} selectable>
-        {message}
-      </Text>
-    </View>
-  );
-}
-
-function ToastMessage({ message }: { message: string }) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        backgroundColor: colors.successSoft,
-        borderColor: colors.successText,
-        borderWidth: 1,
-        borderRadius: 14,
-        left: spacing.lg,
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md,
-        position: "absolute",
-        right: spacing.lg,
-        top: spacing.xl,
-      }}
-    >
-      <Text style={[type.body, { color: colors.successText, fontWeight: "800", textAlign: "center" }]} selectable>
-        {message}
-      </Text>
     </View>
   );
 }

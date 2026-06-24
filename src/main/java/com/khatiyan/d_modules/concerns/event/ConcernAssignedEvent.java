@@ -9,6 +9,7 @@ public record ConcernAssignedEvent(
     UUID concernId,
     UUID propertyId,
     UUID assignedToUserId,
+    UUID assignedByUserId,
     String title
 ) {
 }

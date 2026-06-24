@@ -108,6 +108,7 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         FROM BillingCycle cycle
         WHERE cycle.status = :status
           AND cycle.rentDueDate < :today
+          AND cycle.periodEndDate >= :today
         ORDER BY cycle.rentDueDate ASC
         """)
     List<BillingCycle> findPastDueCycles(BillingCycleStatus status, LocalDate today);
@@ -120,6 +121,7 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         FROM BillingCycle cycle
         WHERE cycle.status IN :statuses
           AND cycle.rentDueDate < :today
+          AND cycle.periodEndDate >= :today
         ORDER BY cycle.rentDueDate ASC
         """)
     List<BillingCycle> findCyclesEligibleForLateFee(List<BillingCycleStatus> statuses, LocalDate today);

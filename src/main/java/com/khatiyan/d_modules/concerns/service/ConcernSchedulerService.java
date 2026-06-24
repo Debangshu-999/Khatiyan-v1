@@ -5,6 +5,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -28,6 +30,7 @@ public class ConcernSchedulerService {
      * Closes resolved concerns after their tenant reopen window has expired.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "concern-startupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void closeExpiredResolvedConcernsOnStartup() {
         log.info("Concern scheduler startup catch-up started");
         updateConcernEscalationLevels();
@@ -40,6 +43,7 @@ public class ConcernSchedulerService {
     @Scheduled(
             cron = "${app.concern.close-expired-resolved-cron:0 35 0 * * *}",
             zone = "${app.concern.close-expired-resolved-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "concern-closeExpiredResolvedConcerns", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void closeExpiredResolvedConcerns() {
         int closedCount = concernService.closeExpiredResolvedConcerns();
 
@@ -56,6 +60,7 @@ public class ConcernSchedulerService {
     @Scheduled(
             cron = "${app.concern.update-escalations-cron:0 30 0 * * *}",
             zone = "${app.concern.update-escalations-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "concern-updateConcernEscalationLevels", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void updateConcernEscalationLevels() {
         int updatedCount = concernService.updateConcernEscalationLevels();
 

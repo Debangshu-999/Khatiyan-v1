@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
@@ -43,6 +44,10 @@ public class ConcernModule {
         return concernService.listTenantConcernHistory(tenantUserId);
     }
 
+    public PageResponse<ConcernResponse> listTenantConcernHistory(UUID tenantUserId, int page, int size) {
+        return concernService.listTenantConcernHistory(tenantUserId, page, size);
+    }
+
     public List<ConcernResponse> listAvailableConcerns(UUID actorUserId, UUID propertyId) {
         return concernService.listAvailableConcerns(actorUserId, propertyId);
     }
@@ -62,8 +67,20 @@ public class ConcernModule {
         return concernService.listPropertyConcernHistory(actorUserId, propertyId);
     }
 
+    public PageResponse<ConcernResponse> listPropertyConcernHistory(UUID actorUserId, UUID propertyId, int page, int size) {
+        return concernService.listPropertyConcernHistory(actorUserId, propertyId, page, size);
+    }
+
     public List<ConcernResponse> listEscalatedConcerns(UUID actorUserId, UUID propertyId) {
         return concernService.listEscalatedConcerns(actorUserId, propertyId);
+    }
+
+    public List<ConcernResponse> listActiveAssignedConcerns(UUID actorUserId, UUID propertyId) {
+        return concernService.listActiveAssignedConcerns(actorUserId, propertyId);
+    }
+
+    public List<ConcernResponse> listOwnerMonitorConcerns(UUID actorUserId, UUID propertyId) {
+        return concernService.listOwnerMonitorConcerns(actorUserId, propertyId);
     }
 
     public ConcernResponse assignConcern(UUID actorUserId, UUID concernId, AssignConcernRequest request) {
@@ -88,6 +105,10 @@ public class ConcernModule {
 
     public List<ConcernResponse> findOpenUnassignedCreatedBefore(Instant createdBefore) {
         return concernService.findOpenUnassignedCreatedBefore(createdBefore);
+    }
+
+    public UUID findTenancyIdForConcern(UUID concernId) {
+        return concernService.findTenancyIdForConcern(concernId);
     }
 
     public int updateConcernEscalationLevels() {

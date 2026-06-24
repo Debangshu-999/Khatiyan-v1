@@ -32,5 +32,7 @@ export const api = createApi({
     "Notification",
     "Discovery",
     "Payment",
+    "Deposit",
+    "Staff",
   ],
 });

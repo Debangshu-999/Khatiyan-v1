@@ -17,10 +17,12 @@ public record BillingCycleResponse(
     UUID id,
     String referenceCode,
     UUID tenancyId,
+    String tenancyReferenceCode,
     UUID tenantUserId,
     String tenantNameSnapshot,
     UUID propertyId,
     UUID roomId,
+    String roomNumber,
     TenancyBillingType billingType,
     int cycleNumber,
     LocalDate periodStartDate,
@@ -42,14 +44,24 @@ public record BillingCycleResponse(
     public static BillingCycleResponse from(
             BillingCycle cycle,
             List<BillingCycleLineItemResponse> lineItems) {
+        return from(cycle, lineItems, null, null);
+    }
+
+    public static BillingCycleResponse from(
+            BillingCycle cycle,
+            List<BillingCycleLineItemResponse> lineItems,
+            String tenancyReferenceCode,
+            String roomNumber) {
         return new BillingCycleResponse(
             cycle.getId(),
             cycle.getReferenceCode(),
             cycle.getTenancyId(),
+            tenancyReferenceCode,
             cycle.getTenantUserId(),
             cycle.getTenantNameSnapshot(),
             cycle.getPropertyId(),
             cycle.getRoomId(),
+            roomNumber,
             cycle.getBillingType(),
             cycle.getCycleNumber(),
             cycle.getPeriodStartDate(),

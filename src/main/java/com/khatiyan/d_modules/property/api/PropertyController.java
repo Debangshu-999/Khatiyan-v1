@@ -23,11 +23,13 @@ import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomBulkRequest;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomRequest;
 import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
+import com.khatiyan.d_modules.property.api.dto.MarkRoomStatusRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.ShiftManagerRequest;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
+import com.khatiyan.d_modules.property.api.dto.UpdateRoomMaintenanceRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomRequest;
 import com.khatiyan.d_modules.property.model.RoomStatus;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
@@ -109,8 +111,7 @@ public class PropertyController {
         PropertyManagerResponse response = propertyManagerService.addManager(
                 user.userId(),
                 propertyId,
-                request.phone(),
-                request.fullName());
+                request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -176,12 +177,17 @@ public class PropertyController {
     public List<RoomResponse> listRooms(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
-            @RequestParam(required = false) RoomStatus status) {
-        if (status == null) {
-            return roomService.listRooms(user.userId(), propertyId);
+            @RequestParam(required = false) RoomStatus status,
+            @RequestParam(required = false, defaultValue = "false") boolean includeInactive) {
+        if (status != null) {
+            return roomService.listRoomsByStatus(user.userId(), propertyId, status);
         }
 
-        return roomService.listRoomsByStatus(user.userId(), propertyId, status);
+        if (includeInactive) {
+            return roomService.listAllRooms(user.userId(), propertyId);
+        }
+
+        return roomService.listRooms(user.userId(), propertyId);
     }
 
     @PatchMapping("/{propertyId}/rooms/{roomId}/status")
@@ -189,8 +195,27 @@ public class PropertyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @PathVariable UUID roomId,
-            @RequestParam RoomStatus status) {
-        return roomService.markRoomStatus(user.userId(), propertyId, roomId, status);
+            @Valid @RequestBody MarkRoomStatusRequest request) {
+        return roomService.markRoomStatus(
+                user.userId(), propertyId, roomId, request.status(), request.reason(), request.until());
+    }
+
+    @PatchMapping("/{propertyId}/rooms/{roomId}/maintenance")
+    public RoomResponse updateRoomMaintenance(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID roomId,
+            @Valid @RequestBody UpdateRoomMaintenanceRequest request) {
+        return roomService.updateMaintenanceDetails(
+                user.userId(), propertyId, roomId, request.reason(), request.until());
+    }
+
+    @PostMapping("/{propertyId}/rooms/{roomId}/reactivate")
+    public RoomResponse reactivateRoom(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID roomId) {
+        return roomService.reactivateRoom(user.userId(), propertyId, roomId);
     }
 
     @PatchMapping("/{propertyId}/rooms/{roomId}")

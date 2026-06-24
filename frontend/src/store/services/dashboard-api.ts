@@ -14,6 +14,18 @@ export type OccupancySnapshot = {
   occupiedBeds: number;
   vacantBeds: number;
   roomCount: number;
+  unavailableRooms: number;
+};
+
+export type TenancySnapshot = {
+  activeTenants: number;
+  onNotice: number;
+  startedThisMonth: number;
+  endedThisMonth: number;
+  upcomingExits: number;
+  activeTenantsPrevMonth: number;
+  startedPrevMonth: number;
+  endedPrevMonth: number;
 };
 
 export type MoneySnapshot = {
@@ -22,6 +34,15 @@ export type MoneySnapshot = {
   pendingPaise: number;
   overduePaise: number;
   overdueCount: number;
+  billedPrevMonthPaise: number;
+  collectedPrevMonthPaise: number;
+};
+
+export type MonthlyTrendPoint = {
+  label: string;
+  occupancyRate: number;
+  collectionRate: number;
+  collectedPaise: number;
 };
 
 export type TodayDigest = {
@@ -44,8 +65,10 @@ export type AttentionSummary = {
 
 export type ConcernQueueSummary = {
   open: number;
+  underReview: number;
   inProgress: number;
   escalated: number;
+  reopened: number;
   resolvedThisWeek: number;
 };
 
@@ -53,9 +76,19 @@ export type RecentActivityType =
   | "TENANCY_STARTED"
   | "PAYMENT_RECORDED"
   | "CONCERN_RAISED"
+  | "CONCERN_ASSIGNED"
+  | "CONCERN_TAKEN_UP"
   | "CONCERN_ESCALATED"
   | "CONCERN_RESOLVED"
-  | "NOTICE_PUBLISHED";
+  | "NOTICE_PUBLISHED"
+  | "ROOM_MAINTENANCE_STARTED"
+  | "ROOM_MAINTENANCE_ENDED"
+  | "ROOM_DEACTIVATED"
+  | "ROOM_REACTIVATED"
+  | "STAFF_ADDED"
+  | "STAFF_REMOVED"
+  | "MANAGER_ADDED"
+  | "MANAGER_REMOVED";
 
 export type RecentActivityItem = {
   type: RecentActivityType;
@@ -67,11 +100,13 @@ export type RecentActivityItem = {
 export type OwnerDashboard = {
   property: DashboardProperty;
   occupancy: OccupancySnapshot;
+  tenancy: TenancySnapshot;
   money: MoneySnapshot;
   today: TodayDigest;
   attention: AttentionSummary;
   concerns: ConcernQueueSummary;
   recentActivity: RecentActivityItem[];
+  monthlyTrends: MonthlyTrendPoint[];
   generatedAt: string;
 };
 
@@ -79,7 +114,7 @@ export const dashboardApi = api.injectEndpoints({
   endpoints: (builder) => ({
     getOwnerDashboard: builder.query<OwnerDashboard, string>({
       query: (propertyId) => `/api/v1/dashboard/owner/${propertyId}`,
-      providesTags: ["Tenancy", "BillingCycle", "Concern"],
+      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff"],
     }),
   }),
 });

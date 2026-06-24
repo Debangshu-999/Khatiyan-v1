@@ -9,6 +9,7 @@ import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useToast } from "@/components/toast";
 import { useAppSelector } from "@/store/hooks";
 import {
   useLazyLookupTenantQuery,
@@ -25,7 +26,8 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type Step = "phone" | "details" | "review" | "done";
+type Step = "phone" | "type" | "details" | "review" | "done";
+type BillingKind = "MONTHLY" | "DAILY";
 
 function dateToStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -35,6 +37,23 @@ function startOfToday() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function addDays(d: Date, days: number) {
+  const next = new Date(d);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+// Whole nights between two date-only values.
+function nightsBetween(start: Date, end: Date) {
+  return Math.round((startOfDay(end).getTime() - startOfDay(start).getTime()) / 86_400_000);
+}
+
+function startOfDay(d: Date) {
+  const next = new Date(d);
+  next.setHours(0, 0, 0, 0);
+  return next;
 }
 
 function formatDateLong(d: Date) {
@@ -60,9 +79,17 @@ function errorText(e: unknown) {
 export default function OwnerOnboardTenantScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  // Onboarding only surfaces error feedback (success advances the wizard step).
+  const setMessage = (value: string | null) => {
+    if (value) {
+      toast.error(value);
+    }
+  };
 
   const [step, setStep] = useState<Step>("phone");
+  const [billingType, setBillingType] = useState<BillingKind | null>(null);
   const [phone, setPhone] = useState("");
   const [lookup, setLookup] = useState<TenantLookup | null>(null);
   const [tenantName, setTenantName] = useState("");
@@ -70,12 +97,14 @@ export default function OwnerOnboardTenantScreen() {
   const [rent, setRent] = useState("");
   const [deposit, setDeposit] = useState("");
   const [startDate, setStartDate] = useState<Date>(startOfToday());
+  const [plannedEndDate, setPlannedEndDate] = useState<Date>(addDays(startOfToday(), 1));
   const [showPicker, setShowPicker] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [showEndPicker, setShowEndPicker] = useState(false);
   const [result, setResult] = useState<TenancyOnboardingResult | null>(null);
 
+  const isDaily = billingType === "DAILY";
   const [triggerLookup, lookupState] = useLazyLookupTenantQuery();
-  const propertiesQuery = useListMyPropertiesQuery(undefined, { skip: step !== "details" });
+  const propertiesQuery = useListMyPropertiesQuery(undefined, { skip: step === "phone" });
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = useMemo<OwnerProperty | undefined>(
     () => resolveSelectedProperty(properties, selectedPropertyId),
@@ -83,11 +112,27 @@ export default function OwnerOnboardTenantScreen() {
   );
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const rooms = roomsQuery.data ?? [];
+  // Rooms under maintenance cannot take a new tenancy, so keep them out of the
+  // selectable list entirely.
+  const selectableRooms = useMemo(() => rooms.filter((room) => room.status !== "MAINTENANCE"), [rooms]);
   const selectedRoom = useMemo<OwnerRoom | undefined>(
     () => rooms.find((room) => room.id === roomId),
     [roomId, rooms],
   );
   const [onboard, onboardState] = useOnboardTenantMutation();
+
+  // Daily renting is available when the property has at least one nightly rate
+  // configured; the rate that applies depends on the chosen room's AC type.
+  const dailyAvailable = Boolean(
+    selectedProperty && (selectedProperty.dailyGuestAcRatePaise != null || selectedProperty.dailyGuestNonAcRatePaise != null),
+  );
+  const dailyRatePaise =
+    selectedProperty && selectedRoom
+      ? selectedRoom.conditioning === "AC"
+        ? selectedProperty.dailyGuestAcRatePaise
+        : selectedProperty.dailyGuestNonAcRatePaise
+      : null;
+  const nights = nightsBetween(startDate, plannedEndDate);
 
   const phoneValid = /^(\+91)?\d{10}$/.test(phone.trim());
 
@@ -126,11 +171,21 @@ export default function OwnerOnboardTenantScreen() {
     }
   }
 
-  function goToDetails() {
+  function goToTypeSelect() {
     if (!lookup?.canOnboard) {
       return;
     }
     setMessage(null);
+    setStep("type");
+  }
+
+  function chooseBilling(kind: BillingKind) {
+    setMessage(null);
+    setBillingType(kind);
+    // Reset room-derived inputs so a switch between kinds starts clean.
+    setRoomId(null);
+    setRent("");
+    setDeposit("");
     setStep("details");
   }
 
@@ -138,6 +193,10 @@ export default function OwnerOnboardTenantScreen() {
     setMessage(null);
     if (!selectedProperty || !selectedRoom) {
       setMessage("Select a property on Home and choose a room.");
+      return;
+    }
+    if (selectedRoom.status === "MAINTENANCE") {
+      setMessage("This room is under maintenance and cannot take a tenancy.");
       return;
     }
     if (selectedRoom.availableVacancies <= 0) {
@@ -148,7 +207,16 @@ export default function OwnerOnboardTenantScreen() {
       setMessage("Start date must be today or a future date.");
       return;
     }
-    if (!(Number(rent) > 0)) {
+    if (isDaily) {
+      if (dailyRatePaise == null) {
+        setMessage("This room type has no daily rate configured.");
+        return;
+      }
+      if (nights < 1 || nights > 29) {
+        setMessage("Daily stay must be between 1 and 29 nights.");
+        return;
+      }
+    } else if (!(Number(rent) > 0)) {
       setMessage("Rent must be greater than zero.");
       return;
     }
@@ -158,17 +226,23 @@ export default function OwnerOnboardTenantScreen() {
   async function handleConfirm() {
     if (!selectedProperty || !roomId) return;
     setMessage(null);
+    const common = {
+      tenantPhone: phone.trim(),
+      tenantName: tenantName.trim() ? tenantName.trim() : null,
+      propertyId: selectedProperty.id,
+      roomId,
+      startDate: dateToStr(startDate),
+    };
+    const payload = isDaily
+      ? { ...common, billingType: "DAILY" as const, plannedEndDate: dateToStr(plannedEndDate) }
+      : {
+          ...common,
+          billingType: "MONTHLY" as const,
+          rentAmountPaise: Math.round(Number(rent) * 100),
+          depositAmountPaise: Math.round(Number(deposit || "0") * 100),
+        };
     try {
-      const res = await onboard({
-        tenantPhone: phone.trim(),
-        tenantName: tenantName.trim() ? tenantName.trim() : null,
-        propertyId: selectedProperty.id,
-        roomId,
-        billingType: "MONTHLY",
-        rentAmountPaise: Math.round(Number(rent) * 100),
-        depositAmountPaise: Math.round(Number(deposit || "0") * 100),
-        startDate: dateToStr(startDate),
-      }).unwrap();
+      const res = await onboard(payload).unwrap();
       setResult(res);
       setStep("done");
     } catch (e) {
@@ -224,8 +298,49 @@ export default function OwnerOnboardTenantScreen() {
                 </Field>
               ) : null}
 
-              {lookup.canOnboard ? <PrimaryButton label="Continue" onPress={goToDetails} /> : null}
+              {lookup.canOnboard ? <PrimaryButton label="Continue" onPress={goToTypeSelect} /> : null}
             </View>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {step === "type" ? (
+        <Card>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            Tenancy type
+          </Text>
+          {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+          {!propertiesQuery.isLoading && !selectedProperty ? (
+            <EmptyState
+              icon={KeyRound}
+              eyebrow="Property required"
+              title={properties.length > 1 ? "Select a property from Home" : "No property available"}
+              description="Onboarding uses the owner workspace property selected on Home."
+            />
+          ) : null}
+          {selectedProperty ? (
+            <>
+              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]} selectable>
+                Choose the kind of stay to start for this tenant.
+              </Text>
+              <SelectRow
+                title="Monthly tenancy"
+                subtitle="Recurring monthly rent with a security deposit and billing cycles."
+                selected={billingType === "MONTHLY"}
+                onPress={() => chooseBilling("MONTHLY")}
+              />
+              <SelectRow
+                title="Daily tenancy"
+                subtitle={
+                  dailyAvailable
+                    ? "Short stay billed per night (1–29 nights). No deposit."
+                    : "Daily rates are not configured for this property."
+                }
+                selected={billingType === "DAILY"}
+                disabled={!dailyAvailable}
+                onPress={() => chooseBilling("DAILY")}
+              />
+            </>
           ) : null}
         </Card>
       ) : null}
@@ -268,15 +383,24 @@ export default function OwnerOnboardTenantScreen() {
                 Room
               </Text>
               {roomsQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-              {rooms.map((room) => {
+              {selectableRooms.map((room) => {
                 const full = room.availableVacancies <= 0;
+                const roomDailyPaise =
+                  room.conditioning === "AC"
+                    ? selectedProperty.dailyGuestAcRatePaise
+                    : selectedProperty.dailyGuestNonAcRatePaise;
+                const priceLabel = isDaily
+                  ? roomDailyPaise != null
+                    ? `${rupees(roomDailyPaise)} / night`
+                    : "No daily rate"
+                  : `${rupees(room.baseRentPaise)} / month`;
                 return (
                   <SelectRow
                     key={room.id}
                     title={`Room ${room.roomNumber}${room.floor ? ` / ${room.floor}` : ""}`}
-                    subtitle={`${rupees(room.baseRentPaise)} / ${full ? "Full" : `${room.availableVacancies} vacancy`}`}
+                    subtitle={`${priceLabel} · ${full ? "Full" : `${room.availableVacancies} vacancy`}`}
                     selected={room.id === roomId}
-                    disabled={full}
+                    disabled={full || (isDaily && roomDailyPaise == null)}
                     onPress={() => selectRoom(room)}
                   />
                 );
@@ -286,12 +410,32 @@ export default function OwnerOnboardTenantScreen() {
 
           {roomId ? (
             <Card>
-              <Field label="Rent / month">
-                <Input value={rent} onChangeText={setRent} placeholder="From room base rent" keyboardType="number-pad" />
-              </Field>
-              <Field label="Deposit">
-                <Input value={deposit} onChangeText={setDeposit} placeholder="From property policy" keyboardType="number-pad" />
-              </Field>
+              {isDaily ? (
+                <Field label="Daily rate">
+                  <View
+                    style={{
+                      backgroundColor: colors.surfaceRaised,
+                      borderColor: colors.border,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      padding: spacing.md,
+                    }}
+                  >
+                    <Text style={[type.bodyStrong, { color: dailyRatePaise != null ? colors.ink : colors.danger }]} selectable>
+                      {dailyRatePaise != null ? `${rupees(dailyRatePaise)} / night` : "Not configured for this room type"}
+                    </Text>
+                  </View>
+                </Field>
+              ) : (
+                <>
+                  <Field label="Rent / month">
+                    <Input value={rent} onChangeText={setRent} placeholder="From room base rent" keyboardType="number-pad" />
+                  </Field>
+                  <Field label="Deposit">
+                    <Input value={deposit} onChangeText={setDeposit} placeholder="From property policy" keyboardType="number-pad" />
+                  </Field>
+                </>
+              )}
               <Field label="Start date">
                 <AnimatedPressable
                   onPress={() => setShowPicker(true)}
@@ -332,6 +476,58 @@ export default function OwnerOnboardTenantScreen() {
               ) : null}
               {showPicker && Platform.OS === "ios" ? <PrimaryButton label="Done" muted onPress={() => setShowPicker(false)} /> : null}
 
+              {isDaily ? (
+                <>
+                  <Field label="Checkout date">
+                    <AnimatedPressable
+                      onPress={() => setShowEndPicker(true)}
+                      style={{
+                        alignItems: "center",
+                        backgroundColor: colors.surfaceRaised,
+                        borderColor: colors.border,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        flexDirection: "row",
+                        gap: spacing.sm,
+                        minHeight: 48,
+                        paddingHorizontal: spacing.md,
+                      }}
+                    >
+                      <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
+                      <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} selectable>
+                        {formatDateLong(plannedEndDate)}
+                      </Text>
+                    </AnimatedPressable>
+                  </Field>
+
+                  {showEndPicker ? (
+                    <DateTimePicker
+                      value={plannedEndDate}
+                      mode="date"
+                      display={Platform.OS === "ios" ? "inline" : "default"}
+                      minimumDate={addDays(startDate, 1)}
+                      onChange={(event: DateTimePickerEvent, selected?: Date) => {
+                        if (Platform.OS !== "ios") {
+                          setShowEndPicker(false);
+                        }
+                        if (event.type === "set" && selected) {
+                          setPlannedEndDate(selected);
+                        }
+                      }}
+                    />
+                  ) : null}
+                  {showEndPicker && Platform.OS === "ios" ? (
+                    <PrimaryButton label="Done" muted onPress={() => setShowEndPicker(false)} />
+                  ) : null}
+
+                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                    {nights > 0
+                      ? `${nights} night${nights === 1 ? "" : "s"}${dailyRatePaise != null ? ` · ${rupees(dailyRatePaise * nights)} total` : ""}`
+                      : "Choose a checkout date after the start date."}
+                  </Text>
+                </>
+              ) : null}
+
               <PrimaryButton label="Review" onPress={goToReview} />
             </Card>
           ) : null}
@@ -347,11 +543,22 @@ export default function OwnerOnboardTenantScreen() {
             rows={[
               { label: "Tenant", value: tenantName.trim() || lookup?.fullName || phone.trim() },
               { label: "Phone", value: phone.trim(), mono: true },
+              { label: "Type", value: isDaily ? "Daily" : "Monthly" },
               { label: "Property", value: selectedProperty?.name ?? "-" },
               { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
-              { label: "Rent / month", value: rupees(Math.round(Number(rent) * 100)), mono: true },
-              { label: "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
-              { label: "Start date", value: formatDateLong(startDate) },
+              ...(isDaily
+                ? [
+                    { label: "Daily rate", value: dailyRatePaise != null ? rupees(dailyRatePaise) : "-", mono: true },
+                    { label: "Start date", value: formatDateLong(startDate) },
+                    { label: "Checkout date", value: formatDateLong(plannedEndDate) },
+                    { label: "Nights", value: String(nights) },
+                    { label: "Estimated total", value: dailyRatePaise != null ? rupees(dailyRatePaise * nights) : "-", mono: true },
+                  ]
+                : [
+                    { label: "Rent / month", value: rupees(Math.round(Number(rent) * 100)), mono: true },
+                    { label: "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
+                    { label: "Start date", value: formatDateLong(startDate) },
+                  ]),
             ]}
           />
           <PrimaryButton label="Confirm and create tenancy" onPress={handleConfirm} busy={onboardState.isLoading} />
@@ -381,9 +588,18 @@ export default function OwnerOnboardTenantScreen() {
           <OverviewBox
             rows={[
               { label: "Tenancy", value: result.tenancy.referenceCode, mono: true },
-              { label: "Rent / month", value: rupees(result.tenancy.rentAmountPaise ?? 0), mono: true },
-              { label: "Deposit", value: rupees(result.tenancy.depositAmountPaise ?? 0), mono: true },
-              { label: "Start date", value: result.tenancy.startDate },
+              { label: "Type", value: result.tenancy.billingType === "DAILY" ? "Daily" : "Monthly" },
+              ...(result.tenancy.billingType === "DAILY"
+                ? [
+                    { label: "Daily rate", value: rupees(result.tenancy.dailyRatePaise ?? 0), mono: true },
+                    { label: "Start date", value: result.tenancy.startDate },
+                    { label: "Checkout date", value: result.tenancy.plannedEndDate ?? "-" },
+                  ]
+                : [
+                    { label: "Rent / month", value: rupees(result.tenancy.rentAmountPaise ?? 0), mono: true },
+                    { label: "Deposit", value: rupees(result.tenancy.depositAmountPaise ?? 0), mono: true },
+                    { label: "Start date", value: result.tenancy.startDate },
+                  ]),
             ]}
           />
           {result.tenantAccountCreated ? (
@@ -395,11 +611,6 @@ export default function OwnerOnboardTenantScreen() {
         </Card>
       ) : null}
 
-      {message ? (
-        <Text style={[type.body, { color: colors.danger }]} selectable>
-          {message}
-        </Text>
-      ) : null}
     </ScreenScrollView>
   );
 }

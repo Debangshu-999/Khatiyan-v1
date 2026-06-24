@@ -35,6 +35,14 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
     Optional<Concern> findConcernByReferenceCode(String referenceCode);
 
     @Query("""
+        SELECT COUNT(c)
+        FROM Concern c
+        WHERE c.raisedByUserId = :tenantUserId
+          AND c.createdAt >= :windowStart
+    """)
+    long countRaisedByUserIdSince(UUID tenantUserId, Instant windowStart);
+
+    @Query("""
         SELECT c
         FROM Concern c
         WHERE c.propertyId = :propertyId
@@ -163,6 +171,41 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
     """)
     List<Concern> findEscalatedByPropertyId(UUID propertyId);
 
+    @Query("""
+        SELECT c
+        FROM Concern c
+        WHERE c.propertyId = :propertyId
+          AND c.assignedToUserId IS NOT NULL
+          AND c.status IN (
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
+          )
+        ORDER BY COALESCE(c.assignedAt, c.updatedAt) DESC
+    """)
+    List<Concern> findActiveAssignedByPropertyId(UUID propertyId);
+
+    @Query("""
+        SELECT c
+        FROM Concern c
+        WHERE c.propertyId = :propertyId
+          AND (
+              (
+                  c.assignedToUserId IS NOT NULL
+                  AND c.status IN (
+                      com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
+                      com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
+                  )
+              )
+              OR (
+                  c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.RESOLVED
+                  AND c.reopenUntil IS NOT NULL
+                  AND c.reopenUntil > :now
+              )
+          )
+        ORDER BY c.status ASC, COALESCE(c.assignedAt, c.resolvedAt, c.updatedAt) DESC
+    """)
+    List<Concern> findOwnerMonitorByPropertyId(UUID propertyId, Instant now);
+
     // ----- Owner dashboard (action center) counts -----
 
     @Query("""
@@ -174,6 +217,22 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
     long countByPropertyIdAndStatus(
             UUID propertyId,
             com.khatiyan.d_modules.concerns.model.ConcernStatus status);
+
+    /**
+     * Active (not resolved/closed) concerns that have been reopened by a tenant.
+     * Used for the dashboard "reopened" count.
+     */
+    @Query("""
+        SELECT COUNT(c)
+        FROM Concern c
+        WHERE c.propertyId = :propertyId
+          AND c.reopened = true
+          AND c.status NOT IN (
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.RESOLVED,
+              com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
+          )
+    """)
+    long countActiveReopenedByPropertyId(UUID propertyId);
 
     /**
      * Concerns raised (created) for a property on/after an instant. Used for
@@ -229,4 +288,19 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
           )
     """)
     long countEscalatedByPropertyId(UUID propertyId);
+
+    /**
+     * Escalated concerns that still need an owner/manager action from the
+     * property-level action center. Assigned concerns stay escalated for
+     * visibility, but they are no longer pending assignment.
+     */
+    @Query("""
+        SELECT COUNT(c)
+        FROM Concern c
+        WHERE c.propertyId = :propertyId
+          AND c.escalationLevel <> com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel.NONE
+          AND c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN
+          AND c.assignedToUserId IS NULL
+    """)
+    long countActionableEscalatedByPropertyId(UUID propertyId);
 }

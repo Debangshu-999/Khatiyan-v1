@@ -5,5 +5,6 @@ package com.khatiyan.a_auth.model;
  */
 public enum OtpDeliveryProviderType {
     SMS,
-    WHATSAPP
+    WHATSAPP,
+    EMAIL
 }

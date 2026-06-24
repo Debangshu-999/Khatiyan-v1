@@ -63,6 +63,7 @@ public class ConcernNotificationEventListener {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
         data.put("assignedToUserId", event.assignedToUserId().toString());
+        data.put("assignedByUserId", event.assignedByUserId().toString());
 
         notificationModule.notifyUser(
                 event.assignedToUserId(),
@@ -78,13 +79,16 @@ public class ConcernNotificationEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onConcernStatusChanged(ConcernStatusChangedEvent event) {
-        if (event.status() != ConcernStatus.IN_PROGRESS) {
+        if (event.status() != ConcernStatus.UNDER_REVIEW
+                && event.status() != ConcernStatus.IN_PROGRESS
+                && event.status() != ConcernStatus.OPEN) {
             return;
         }
 
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
         data.put("raisedByUserId", event.raisedByUserId().toString());
+        data.put("actorUserId", event.actorUserId().toString());
         if (event.assignedToUserId() != null) {
             data.put("assignedToUserId", event.assignedToUserId().toString());
         }
@@ -92,14 +96,44 @@ public class ConcernNotificationEventListener {
 
         notificationModule.notifyUser(
                 event.raisedByUserId(),
-                "Concern in progress",
-                "Your concern is now in progress: " + event.title(),
+                concernStatusTitle(event.status()),
+                concernStatusBody(event),
                 NotificationCategory.CONCERN,
                 NotificationPriority.NORMAL,
-                NotificationSubtype.CONCERN_IN_PROGRESS,
+                concernStatusSubtype(event.status()),
                 event.concernId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    private NotificationSubtype concernStatusSubtype(ConcernStatus status) {
+        if (status == ConcernStatus.OPEN) {
+            return NotificationSubtype.CONCERN_RELEASED;
+        }
+        if (status == ConcernStatus.UNDER_REVIEW) {
+            return NotificationSubtype.CONCERN_UNDER_REVIEW;
+        }
+        return NotificationSubtype.CONCERN_IN_PROGRESS;
+    }
+
+    private String concernStatusTitle(ConcernStatus status) {
+        if (status == ConcernStatus.OPEN) {
+            return "Concern returned to queue";
+        }
+        if (status == ConcernStatus.UNDER_REVIEW) {
+            return "Concern under review";
+        }
+        return "Concern in progress";
+    }
+
+    private String concernStatusBody(ConcernStatusChangedEvent event) {
+        if (event.status() == ConcernStatus.OPEN) {
+            return "Your concern was released back to the property queue: " + event.title();
+        }
+        if (event.status() == ConcernStatus.UNDER_REVIEW) {
+            return "Your concern is now under review: " + event.title();
+        }
+        return "Your concern is now in progress: " + event.title();
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)

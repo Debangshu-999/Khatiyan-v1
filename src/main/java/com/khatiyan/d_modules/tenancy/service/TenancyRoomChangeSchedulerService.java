@@ -10,6 +10,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,6 +32,7 @@ public class TenancyRoomChangeSchedulerService {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "tenancy-roomChange-startupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void executeDueRoomChangesOnStartup() {
         log.info("Tenancy room change scheduler startup catch-up started");
         executeDueRoomChanges();
@@ -38,6 +41,7 @@ public class TenancyRoomChangeSchedulerService {
     @Scheduled(
             cron = "${app.tenancy.room-change-execution-cron:0 12 0 * * *}",
             zone = "${app.tenancy.room-change-execution-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "tenancy-executeDueRoomChanges", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void executeDueRoomChanges() {
         LocalDate today = LocalDate.now();
         List<UUID> requestIds = roomChangeRequestService.findDueApprovedRequestIds(today, batchSize);

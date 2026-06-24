@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
@@ -54,26 +55,33 @@ public class NotificationController {
      * without an active tenancy.
      */
     @GetMapping("/me/feed/recent")
-    public List<NotificationResponse> listMyRecentFeed(@AuthenticationPrincipal UserPrincipal user) {
-        return notificationService.listMyRecentNotifications(user.userId(), user.role());
+    public List<NotificationResponse> listMyRecentFeed(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String account) {
+        return notificationService.listMyRecentNotifications(user.userId(), account, user.role());
     }
 
     /**
      * Older feed for the bell — older than 7 days, still within the current
-     * tenancy window for USERs.
+     * tenancy window for USERs. Scoped to the active account (tenant vs
+     * management) so multi-role users see a separated feed.
      */
     @GetMapping("/me/feed/older")
-    public List<NotificationResponse> listMyOlderFeed(@AuthenticationPrincipal UserPrincipal user) {
-        return notificationService.listMyOlderNotifications(user.userId(), user.role());
+    public List<NotificationResponse> listMyOlderFeed(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String account) {
+        return notificationService.listMyOlderNotifications(user.userId(), account, user.role());
     }
 
     /**
      * Unread count for the bell badge — counts unread in the current scope
-     * across both recent and older buckets.
+     * across both recent and older buckets, scoped to the active account.
      */
     @GetMapping("/me/feed/unread-count")
-    public long countMyCurrentUnread(@AuthenticationPrincipal UserPrincipal user) {
-        return notificationService.countMyCurrentUnreadNotifications(user.userId(), user.role());
+    public long countMyCurrentUnread(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String account) {
+        return notificationService.countMyCurrentUnreadNotifications(user.userId(), account, user.role());
     }
 
     @PatchMapping("/{recipientId}/read")
@@ -84,8 +92,10 @@ public class NotificationController {
     }
 
     @PatchMapping("/me/read-all")
-    public ResponseEntity<Void> markAllRead(@AuthenticationPrincipal UserPrincipal user) {
-        notificationService.markAllRead(user.userId());
+    public ResponseEntity<Void> markAllRead(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String account) {
+        notificationService.markAllRead(user.userId(), account);
         return ResponseEntity.noContent().build();
     }
 

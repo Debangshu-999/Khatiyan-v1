@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { Compass } from "lucide-react-native";
 
 import { Card } from "@/components/card";
@@ -11,6 +13,12 @@ import { DiscoverySearchCard } from "@/features/discovery/components/discovery-s
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
 import { LocalPlaceCard } from "@/features/discovery/components/local-place-card";
 import { LocalPlaceSearchCard } from "@/features/discovery/components/local-place-search-card";
+import {
+  countActivePropertyFilters,
+  emptyPropertyFilters,
+  PropertyFilterModal,
+  type PropertyFilterState,
+} from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
 import { PropertyProfile } from "@/features/discovery/components/property-profile";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
@@ -23,19 +31,16 @@ import {
   useSearchDiscoveryPropertiesQuery,
   useSuggestLocationsQuery,
   type LocationSuggestion,
+  type PropertyDiscoveryCard,
 } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type SubmittedSearch = {
   text: string;
-  latitude: number | null;
-  longitude: number | null;
 };
 
 const defaultSearch: SubmittedSearch = {
-  latitude: null,
-  longitude: null,
   text: "",
 };
 
@@ -50,13 +55,18 @@ export default function DiscoveryScreen() {
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedArea, setSelectedArea] = useState("");
+  // Whether the active search came from a manual pick (city/area/suggestion or a
+  // typed search) rather than the auto-fetched device location. This decides
+  // which location source drives the query so both paths behave identically.
+  const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
-  const [snackbarMessage, setSnackbarMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
+  const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [page, setPage] = useState(0);
   const debouncedServiceSearch = useDebouncedValue(serviceSearch, 300);
   const debouncedSearchText = useDebouncedValue(searchText, 300);
-  const snackbarOpacity = useRef(new Animated.Value(0)).current;
 
   const tabs = useMemo<DiscoveryTabItem[]>(
     () =>
@@ -80,53 +90,45 @@ export default function DiscoveryScreen() {
     if (location.status === "ready" && location.searchHint && !searchText && !submittedSearch.text) {
       setSearchText(location.searchHint);
       setSubmittedSearch({
-        latitude: location.latitude,
-        longitude: location.longitude,
         text: location.searchHint,
       });
     }
   }, [location, searchText, submittedSearch.text]);
 
-  useEffect(() => {
-    if (!snackbarMessage) {
-      return;
-    }
-
-    snackbarOpacity.setValue(0);
-    Animated.timing(snackbarOpacity, {
-      duration: 160,
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-
-    const timeoutId = setTimeout(() => {
-      Animated.timing(snackbarOpacity, {
-        duration: 160,
-        toValue: 0,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setSnackbarMessage(null);
-        }
-      });
-    }, 2800);
-
-    return () => clearTimeout(timeoutId);
-  }, [snackbarMessage, snackbarOpacity]);
+  // The area (locality) the active search is scoped to. For manual searches it
+  // is the picked area or typed text; for auto searches it is the geocoded
+  // locality. Used both for the query and to split exact vs nearby results.
+  const searchedArea = (
+    manualSelection ? selectedArea || submittedSearch.text : location.locality ?? location.searchHint ?? ""
+  ).trim();
+  // The state the search is scoped to — drives the "nearby" (same-state)
+  // fallback. Manual searches use the picked state; auto searches use the
+  // geocoded region. Always known for both paths so the fallback is identical.
+  const searchedState = (manualSelection ? selectedState : location.state ?? "").trim();
+  const searchedCity = (manualSelection ? selectedCity : location.city ?? "").trim();
 
   const propertyQueryArgs = useMemo(
     () => ({
-      state: selectedState,
-      city: selectedCity,
-      countryCode: selectedCity || selectedState ? null : location.countryCode,
-      latitude: submittedSearch.latitude,
-      locality: selectedArea || submittedSearch.text,
-      longitude: submittedSearch.longitude,
+      state: searchedState,
+      city: searchedCity,
+      // Only auto searches carry a country code; a foreign code tells the
+      // backend the device is outside India so no Indian listings are shown.
+      countryCode: manualSelection ? null : location.countryCode,
+      locality: searchedArea,
       page,
-      radiusKm: selectedCity || selectedState ? null : submittedSearch.latitude && submittedSearch.longitude ? 15 : null,
-      size: 10,
+      radiusKm: null,
+      pgFor: appliedFilters.pgFor,
+      minRentPaise: appliedFilters.minRentPaise,
+      maxRentPaise: appliedFilters.maxRentPaise,
+      preferredFor: appliedFilters.preferredFor,
+      foodIncluded: appliedFilters.foodIncluded,
+      mealTypes: appliedFilters.mealTypes,
+      electricityIncluded: appliedFilters.electricityIncluded,
+      bathroomType: appliedFilters.bathroomType,
+      sharingTypes: appliedFilters.sharingTypes,
+      size: 50,
     }),
-    [location.countryCode, page, selectedArea, selectedCity, selectedState, submittedSearch],
+    [appliedFilters, location.countryCode, manualSelection, page, searchedArea, searchedCity, searchedState],
   );
 
   const citiesQuery = useListLocationCitiesQuery();
@@ -137,8 +139,6 @@ export default function DiscoveryScreen() {
   const propertiesQuery = useSearchDiscoveryPropertiesQuery(propertyQueryArgs, { skip: activeTab !== "properties" });
   const detailQuery = useGetDiscoveryPropertyQuery(
     {
-      latitude: submittedSearch.latitude,
-      longitude: submittedSearch.longitude,
       propertyId: selectedPropertyId ?? "",
     },
     { skip: !selectedPropertyId },
@@ -152,35 +152,50 @@ export default function DiscoveryScreen() {
   );
 
   function handleSearch() {
-    const selectedCityOption = cities.find((city) => city.city === selectedCity);
-    const selectedAreaOption = areas.find((area) => area.area === selectedArea);
-    const effectiveText = selectedArea || selectedCity || searchText.trim();
-    const effectiveLatitude = selectedAreaOption?.latitude ?? selectedCityOption?.latitude ?? location.latitude;
-    const effectiveLongitude = selectedAreaOption?.longitude ?? selectedCityOption?.longitude ?? location.longitude;
-
     setSelectedPropertyId(null);
     setPage(0);
-    setSubmittedSearch({
-      latitude: effectiveLatitude,
-      longitude: effectiveLongitude,
-      text: effectiveText,
-    });
-    if (!selectedCity && !selectedArea && searchText.trim()) {
+
+    const typed = searchText.trim();
+    const autoHint = (location.searchHint ?? "").trim();
+    const hasManualPick = Boolean(selectedCity || selectedArea);
+    // Only a real pick or typed text that differs from the auto-filled hint
+    // counts as a manual search. Otherwise we search the device location so the
+    // same-city "nearby" fallback still applies when the area has no matches.
+    const isManual = hasManualPick || (typed.length > 0 && typed !== autoHint);
+
+    if (isManual) {
+      setManualSelection(true);
+      const effectiveText = selectedArea || selectedCity || typed;
+      setSubmittedSearch({ text: effectiveText });
+      if (!selectedCity && !selectedArea && typed) {
+        setSelectedState("");
+      }
+    } else {
+      // Search (or re-search) the auto-fetched device location.
+      setManualSelection(false);
       setSelectedState("");
+      setSelectedCity("");
+      setSelectedArea("");
+      setSearchText(autoHint);
+      setSubmittedSearch({ text: autoHint });
     }
   }
 
-  function clearFilters() {
-    setSearchText("");
-    setSelectedState("");
-    setSelectedCity("");
-    setSelectedArea("");
-    setSelectedPropertyId(null);
+  function applyPropertyFilters(filters: PropertyFilterState) {
+    setAppliedFilters(filters);
+    setDraftFilters(filters);
+    setFiltersOpen(false);
     setPage(0);
-    setSubmittedSearch(defaultSearch);
+  }
+
+  function resetPropertyFilters() {
+    setDraftFilters(emptyPropertyFilters);
+    setAppliedFilters(emptyPropertyFilters);
+    setPage(0);
   }
 
   function selectSuggestion(suggestion: LocationSuggestion) {
+    setManualSelection(true);
     setSearchText(suggestion.label);
     setSelectedState(suggestion.state);
     setSelectedCity(suggestion.city);
@@ -188,14 +203,22 @@ export default function DiscoveryScreen() {
     setSelectedPropertyId(null);
     setPage(0);
     setSubmittedSearch({
-      latitude: suggestion.latitude ?? location.latitude,
-      longitude: suggestion.longitude ?? location.longitude,
       text: suggestion.area ?? suggestion.city,
     });
   }
 
   const propertyPage = propertiesQuery.data;
   const properties = propertyPage?.items ?? [];
+  // Split the single result list into "exact" (matches the searched area) and
+  // "nearby" (same state, different area). The backend already scopes the list
+  // to the state and gates out foreign locations, so this is purely labelling.
+  const { exactProperties, nearbyProperties } = useMemo(
+    () => splitPropertiesByArea(properties, searchedArea),
+    [properties, searchedArea],
+  );
+  const areaLabel = submittedSearch.text.trim();
+  const nearbyCityLabel = searchedCity || (manualSelection ? selectedState : location.state ?? "").trim();
+  const activeFilterCount = countActivePropertyFilters(appliedFilters);
   const localPlaces = localPlacesQuery.data ?? [];
   const cities = citiesQuery.data ?? [];
   const areas = areasQuery.data ?? [];
@@ -214,31 +237,39 @@ export default function DiscoveryScreen() {
 
   if (selectedPropertyId) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-        {detailQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-              Loading property profile
-            </Text>
-          </Card>
-        ) : null}
+      <LinearGradient colors={[colors.primarySoft, colors.background, colors.background]} style={{ flex: 1 }}>
+        <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={{ gap: spacing.lg, paddingBottom: 96, paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {detailQuery.isFetching ? (
+              <Card>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
+                  Loading property profile
+                </Text>
+              </Card>
+            ) : null}
 
-        {detailQuery.data ? (
-          <PropertyProfile property={detailQuery.data} onBack={() => setSelectedPropertyId(null)} />
-        ) : null}
+            {detailQuery.data ? (
+              <PropertyProfile property={detailQuery.data} onBack={() => setSelectedPropertyId(null)} />
+            ) : null}
 
-        {detailQuery.isError ? (
-          <DiscoveryEmptyState
-            title="Could not load property"
-            description="The property profile could not be loaded. Go back and try again."
-          />
-        ) : null}
+            {detailQuery.isError ? (
+              <DiscoveryEmptyState
+                title="Could not load property"
+                description="The property profile could not be loaded. Go back and try again."
+              />
+            ) : null}
 
-        {!detailQuery.isFetching && !detailQuery.data ? (
-          <DiscoveryButton label="Back to listings" muted onPress={() => setSelectedPropertyId(null)} />
-        ) : null}
-      </ScreenScrollView>
+            {!detailQuery.isFetching && !detailQuery.data ? (
+              <DiscoveryButton label="Back to listings" muted onPress={() => setSelectedPropertyId(null)} />
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
@@ -259,31 +290,33 @@ export default function DiscoveryScreen() {
             areaOptions={areas}
             cityOptions={cities}
             loadingSuggestions={suggestionsQuery.isFetching}
+            activeFilterCount={activeFilterCount}
             onAreaSelect={(area) => {
+              setManualSelection(true);
               setSelectedArea(area?.area ?? "");
               setSelectedCity(area?.city ?? selectedCity);
               setSelectedState(area?.state ?? selectedState);
               setSearchText(area ? `${area.area}, ${area.city}` : selectedCity);
               setPage(0);
               setSubmittedSearch({
-                latitude: area?.latitude ?? location.latitude,
-                longitude: area?.longitude ?? location.longitude,
                 text: area?.area ?? selectedCity,
               });
             }}
             onCitySelect={(city) => {
+              setManualSelection(true);
               setSelectedCity(city?.city ?? "");
               setSelectedState(city?.state ?? "");
               setSelectedArea("");
               setSearchText(city?.city ?? "");
               setPage(0);
               setSubmittedSearch({
-                latitude: city?.latitude ?? location.latitude,
-                longitude: city?.longitude ?? location.longitude,
                 text: city?.city ?? "",
               });
             }}
-            onClearFilters={clearFilters}
+            onOpenFilters={() => {
+              setDraftFilters(appliedFilters);
+              setFiltersOpen(true);
+            }}
             onSearch={handleSearch}
             onSearchTextChange={setSearchText}
             onSuggestionSelect={selectSuggestion}
@@ -291,6 +324,15 @@ export default function DiscoveryScreen() {
             selectedArea={selectedArea}
             selectedCity={selectedCity}
             suggestions={suggestions}
+          />
+
+          <PropertyFilterModal
+            filters={draftFilters}
+            onApply={applyPropertyFilters}
+            onClose={() => setFiltersOpen(false)}
+            onReset={resetPropertyFilters}
+            onUpdate={setDraftFilters}
+            visible={filtersOpen}
           />
 
           <Card>
@@ -313,7 +355,9 @@ export default function DiscoveryScreen() {
                 </Text>
                 <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
                   {propertyPage
-                    ? `${propertyPage.totalElements} listing${propertyPage.totalElements === 1 ? "" : "s"} found${submittedSearch.text ? ` for "${submittedSearch.text}"` : ""}`
+                    ? exactProperties.length === 0
+                      ? `No listings found${areaLabel ? ` for "${areaLabel}"` : ""}`
+                      : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${areaLabel ? ` for "${areaLabel}"` : ""}`
                     : "Loading property listings"}
                 </Text>
               </View>
@@ -328,37 +372,32 @@ export default function DiscoveryScreen() {
             />
           ) : null}
 
-          {!propertiesQuery.isFetching && !propertiesQuery.isError && properties.length === 0 ? (
-            <DiscoveryEmptyState
-              title="No properties found"
-              description="Try a different area or use current location. Listed properties appear here after owners publish discovery profiles."
-            />
-          ) : null}
-
-          {properties.map((property) => (
+          {exactProperties.map((property) => (
             <PropertyListingCard
+              filters={appliedFilters}
               key={property.propertyId}
               onView={() => setSelectedPropertyId(property.propertyId)}
               property={property}
             />
           ))}
 
-          {propertyPage && (propertyPage.hasPrevious || propertyPage.hasNext) ? (
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <DiscoveryButton
-                disabled={!propertyPage.hasPrevious}
-                label="Previous"
-                muted
-                onPress={() => setPage((currentPage) => Math.max(currentPage - 1, 0))}
-                style={{ flex: 1 }}
-              />
-              <DiscoveryButton
-                disabled={!propertyPage.hasNext}
-                label="Next"
-                onPress={() => setPage((currentPage) => currentPage + 1)}
-                style={{ flex: 1 }}
-              />
-            </View>
+          {/* Same-city listings outside the searched area, shown under a light
+              inline label rather than a heavy section header. */}
+          {nearbyProperties.length > 0 ? (
+            <>
+              <Text style={[type.caption, { color: colors.muted, fontWeight: "700", marginTop: spacing.xs }]} selectable>
+                {nearbyProperties.length} listing{nearbyProperties.length === 1 ? "" : "s"}
+                {nearbyCityLabel ? ` elsewhere in ${nearbyCityLabel}` : " nearby"}
+              </Text>
+              {nearbyProperties.map((property) => (
+                <PropertyListingCard
+                  filters={appliedFilters}
+                  key={property.propertyId}
+                  onView={() => setSelectedPropertyId(property.propertyId)}
+                  property={property}
+                />
+              ))}
+            </>
           ) : null}
         </>
       ) : (
@@ -407,9 +446,46 @@ export default function DiscoveryScreen() {
         </>
       )}
 
-      {snackbarMessage ? <DiscoverySnackbar message={snackbarMessage} opacity={snackbarOpacity} /> : null}
     </ScreenScrollView>
   );
+}
+
+// Partitions the backend result list into properties that match the searched
+// area ("exact") and the same-state remainder ("nearby"). Mirrors the backend's
+// token-AND locality match so the two sections line up with the server split.
+function splitPropertiesByArea(properties: PropertyDiscoveryCard[], area: string) {
+  const tokens = area.toLowerCase().split(/[,\s]+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return { exactProperties: properties, nearbyProperties: [] as PropertyDiscoveryCard[] };
+  }
+
+  const exactProperties: PropertyDiscoveryCard[] = [];
+  const nearbyProperties: PropertyDiscoveryCard[] = [];
+  for (const property of properties) {
+    if (matchesAreaTokens(property, tokens)) {
+      exactProperties.push(property);
+    } else {
+      nearbyProperties.push(property);
+    }
+  }
+
+  return { exactProperties, nearbyProperties };
+}
+
+function matchesAreaTokens(property: PropertyDiscoveryCard, tokens: string[]) {
+  const haystacks = [
+    property.area,
+    property.address,
+    property.city,
+    property.state,
+    property.pincode,
+    property.headline,
+    property.description,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+
+  return tokens.every((token) => haystacks.some((value) => value.includes(token)));
 }
 
 function DiscoveryHeaderIcon() {
@@ -433,35 +509,3 @@ function DiscoveryHeaderIcon() {
   );
 }
 
-function DiscoverySnackbar({ message, opacity }: { message: string; opacity: Animated.Value }) {
-  const { colors } = useTheme();
-
-  return (
-    <Animated.View
-      accessibilityLiveRegion="polite"
-      style={{
-        alignSelf: "center",
-        backgroundColor: colors.ink,
-        borderRadius: 999,
-        bottom: spacing.lg,
-        maxWidth: "92%",
-        opacity,
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md,
-        position: "absolute",
-        transform: [
-          {
-            translateY: opacity.interpolate({
-              inputRange: [0, 1],
-              outputRange: [8, 0],
-            }),
-          },
-        ],
-      }}
-    >
-      <Text style={{ color: colors.background, fontSize: 13, fontWeight: "800" }} selectable>
-        {message}
-      </Text>
-    </Animated.View>
-  );
-}

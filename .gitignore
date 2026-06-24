@@ -72,3 +72,12 @@ temp/
 *.bak
 *.swp
 *.swo
+
+#Misc
+docs/
+CLAUDE.md
+issues.txt
+src.zip
+LICENSE
+# Local service secrets
+.secrets/

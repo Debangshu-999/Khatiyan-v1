@@ -6,8 +6,13 @@ import java.util.UUID;
 
 import com.khatiyan.d_modules.discovery.model.PropertyDiscoveryProfile;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
 import com.khatiyan.d_modules.property.model.PropertyType;
+import com.khatiyan.d_modules.property.model.SharingType;
 
 public record PropertyDiscoveryDetailResponse(
         UUID propertyId,
@@ -16,6 +21,7 @@ public record PropertyDiscoveryDetailResponse(
         String headline,
         String description,
         String address,
+        String area,
         String city,
         String state,
         String pincode,
@@ -24,6 +30,13 @@ public record PropertyDiscoveryDetailResponse(
         Double distanceKm,
         String directionsUrl,
         PropertyType type,
+        PgFor pgFor,
+        PreferredTenantType preferredFor,
+        boolean foodIncluded,
+        Set<MealType> includedMeals,
+        boolean electricityIncluded,
+        BathroomType bathroomType,
+        Set<SharingType> availableSharingTypes,
         Set<PropertyFacility> facilities,
         Set<String> customFacilities,
         long standardDepositPaise,
@@ -53,6 +66,7 @@ public record PropertyDiscoveryDetailResponse(
                 profile.getHeadline(),
                 profile.getDescription(),
                 property.address(),
+                property.area(),
                 property.city(),
                 property.state(),
                 property.pincode(),
@@ -61,6 +75,13 @@ public record PropertyDiscoveryDetailResponse(
                 distanceKm,
                 directionsUrl,
                 property.type(),
+                property.pgFor(),
+                property.preferredFor(),
+                property.foodIncluded(),
+                property.includedMeals(),
+                property.electricityIncluded(),
+                property.bathroomType(),
+                property.availableSharingTypes(),
                 property.facilities(),
                 property.customFacilities(),
                 property.standardDepositPaise(),

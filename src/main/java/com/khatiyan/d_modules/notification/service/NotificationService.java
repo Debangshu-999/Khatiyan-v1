@@ -19,6 +19,7 @@ import com.khatiyan.d_modules.notification.api.dto.NotificationDeviceTokenRespon
 import com.khatiyan.d_modules.notification.api.dto.NotificationResponse;
 import com.khatiyan.d_modules.notification.api.dto.RegisterNotificationDeviceRequest;
 import com.khatiyan.d_modules.notification.model.Notification;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationDeviceToken;
@@ -50,6 +51,9 @@ public class NotificationService {
     private static final Duration RECENT_BUCKET = Duration.ofDays(7);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String ROLE_OWNER = "OWNER";
+    private static final String ACCOUNT_TENANT = "tenant";
+    private static final String ACCOUNT_MANAGER = "manager";
+    private static final String ACCOUNT_OWNER = "owner";
 
     private final NotificationRepository notificationRepository;
     private final NotificationRecipientRepository notificationRecipientRepository;
@@ -83,7 +87,24 @@ public class NotificationService {
             NotificationPriority priority,
             UUID sourceId,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(List.of(userId), title, body, category, priority, null, sourceId, Map.of(), deliveryMode);
+        createNotification(List.of(userId), title, body, category, priority, null, sourceId, Map.of(), deliveryMode, null);
+    }
+
+    /**
+     * Legacy signature with an explicit audience — used by the reminder pipeline
+     * so scheduled reminders land in the correct workspace.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyUser(
+            UUID userId,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            UUID sourceId,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        createNotification(List.of(userId), title, body, category, priority, null, sourceId, Map.of(), deliveryMode, audience);
     }
 
     /**
@@ -99,7 +120,7 @@ public class NotificationService {
             NotificationPriority priority,
             UUID sourceId,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(userIds, title, body, category, priority, null, sourceId, Map.of(), deliveryMode);
+        createNotification(userIds, title, body, category, priority, null, sourceId, Map.of(), deliveryMode, null);
     }
 
     /**
@@ -117,7 +138,7 @@ public class NotificationService {
             UUID sourceId,
             Map<String, String> data,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(List.of(userId), title, body, category, priority, subtype, sourceId, data, deliveryMode);
+        createNotification(List.of(userId), title, body, category, priority, subtype, sourceId, data, deliveryMode, null);
     }
 
     /**
@@ -135,7 +156,42 @@ public class NotificationService {
             UUID sourceId,
             Map<String, String> data,
             NotificationDeliveryMode deliveryMode) {
-        createNotification(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode);
+        createNotification(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode, null);
+    }
+
+    /**
+     * Structured fan-out with an explicit audience — used by dispatchers that
+     * send the same subtype to both tenants and management (e.g. tenancy
+     * lifecycle), where the subtype alone can't decide the workspace.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyUser(
+            UUID userId,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        createNotification(List.of(userId), title, body, category, priority, subtype, sourceId, data, deliveryMode, audience);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyUsers(
+            Collection<UUID> userIds,
+            String title,
+            String body,
+            NotificationCategory category,
+            NotificationPriority priority,
+            NotificationSubtype subtype,
+            UUID sourceId,
+            Map<String, String> data,
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
+        createNotification(userIds, title, body, category, priority, subtype, sourceId, data, deliveryMode, audience);
     }
 
     private void createNotification(
@@ -147,13 +203,17 @@ public class NotificationService {
             NotificationSubtype subtype,
             UUID sourceId,
             Map<String, String> data,
-            NotificationDeliveryMode deliveryMode) {
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audienceOverride) {
         if (userIds == null || userIds.isEmpty()) {
             log.debug("Notification skipped because recipient list is empty category={} sourceId={}", category, sourceId);
             return;
         }
         NotificationDeliveryMode resolvedDeliveryMode =
                 deliveryMode == null ? NotificationDeliveryMode.IN_APP_ONLY : deliveryMode;
+        // Explicit audience wins; otherwise infer the workspace from the subtype.
+        NotificationAudience audience =
+                audienceOverride != null ? audienceOverride : NotificationAudience.forSubtype(subtype);
 
         Instant now = Instant.now();
         Notification notification = Notification.create(title, body, category, priority, subtype, sourceId, data);
@@ -161,7 +221,7 @@ public class NotificationService {
 
         List<NotificationRecipient> recipients = userIds.stream()
                 .distinct()
-                .map(userId -> NotificationRecipient.create(savedNotification, userId))
+                .map(userId -> NotificationRecipient.create(savedNotification, userId, audience))
                 .toList();
 
         List<NotificationRecipient> savedRecipients = notificationRecipientRepository.saveAll(recipients);
@@ -213,21 +273,20 @@ public class NotificationService {
      * without an active tenancy, returns an empty list.
      */
     @Transactional(readOnly = true)
-    public List<NotificationResponse> listMyRecentNotifications(UUID userId, String role) {
-        Optional<Instant> floor = resolveCurrentTenancyFloor(userId, role);
+    public List<NotificationResponse> listMyRecentNotifications(UUID userId, String account, String role) {
+        Optional<Instant> floor = resolveScopeFloor(userId, account, role);
         if (floor.isEmpty()) {
             return List.of();
         }
 
-        Instant now = Instant.now();
-        Instant recentBoundary = now.minus(RECENT_BUCKET);
+        Instant recentBoundary = Instant.now().minus(RECENT_BUCKET);
         Instant since = floor.get().isAfter(recentBoundary) ? floor.get() : recentBoundary;
+        NotificationAudience audience = audienceForAccount(account);
 
-        return notificationRecipientRepository
-                .findVisibleByUserIdSince(userId, since)
-                .stream()
-                .map(NotificationResponse::from)
-                .toList();
+        List<NotificationRecipient> rows = audience == null
+                ? notificationRecipientRepository.findVisibleByUserIdSince(userId, since)
+                : notificationRecipientRepository.findVisibleByUserIdSinceAndAudience(userId, since, audience);
+        return rows.stream().map(NotificationResponse::from).toList();
     }
 
     /**
@@ -235,8 +294,8 @@ public class NotificationService {
      * tenancy window for USERs). Used by the "older notifications" screen.
      */
     @Transactional(readOnly = true)
-    public List<NotificationResponse> listMyOlderNotifications(UUID userId, String role) {
-        Optional<Instant> floor = resolveCurrentTenancyFloor(userId, role);
+    public List<NotificationResponse> listMyOlderNotifications(UUID userId, String account, String role) {
+        Optional<Instant> floor = resolveScopeFloor(userId, account, role);
         if (floor.isEmpty()) {
             return List.of();
         }
@@ -247,11 +306,11 @@ public class NotificationService {
             return List.of();
         }
 
-        return notificationRecipientRepository
-                .findVisibleByUserIdBetween(userId, floor.get(), recentBoundary)
-                .stream()
-                .map(NotificationResponse::from)
-                .toList();
+        NotificationAudience audience = audienceForAccount(account);
+        List<NotificationRecipient> rows = audience == null
+                ? notificationRecipientRepository.findVisibleByUserIdBetween(userId, floor.get(), recentBoundary)
+                : notificationRecipientRepository.findVisibleByUserIdBetweenAndAudience(userId, floor.get(), recentBoundary, audience);
+        return rows.stream().map(NotificationResponse::from).toList();
     }
 
     /**
@@ -259,10 +318,15 @@ public class NotificationService {
      * notifications in the current scope across both recent and older buckets.
      */
     @Transactional(readOnly = true)
-    public long countMyCurrentUnreadNotifications(UUID userId, String role) {
-        return resolveCurrentTenancyFloor(userId, role)
-                .map(since -> notificationRecipientRepository.countUnreadByUserIdSince(userId, since))
-                .orElse(0L);
+    public long countMyCurrentUnreadNotifications(UUID userId, String account, String role) {
+        Optional<Instant> floor = resolveScopeFloor(userId, account, role);
+        if (floor.isEmpty()) {
+            return 0L;
+        }
+        NotificationAudience audience = audienceForAccount(account);
+        return audience == null
+                ? notificationRecipientRepository.countUnreadByUserIdSince(userId, floor.get())
+                : notificationRecipientRepository.countUnreadByUserIdSinceAndAudience(userId, floor.get(), audience);
     }
 
     /**
@@ -275,8 +339,21 @@ public class NotificationService {
      *   <li>USER without active tenancy -> empty (caller returns empty feed).</li>
      * </ul>
      */
-    private Optional<Instant> resolveCurrentTenancyFloor(UUID userId, String role) {
-        if (ROLE_OWNER.equalsIgnoreCase(role)) {
+    private NotificationAudience audienceForAccount(String account) {
+        if (account == null || account.isBlank()) {
+            return null;
+        }
+        return ACCOUNT_TENANT.equalsIgnoreCase(account) ? NotificationAudience.TENANT : NotificationAudience.MANAGEMENT;
+    }
+
+    private Optional<Instant> resolveScopeFloor(UUID userId, String account, String role) {
+        // Management workspaces see all-time; the tenant workspace is scoped to
+        // the current tenancy window. When no account is supplied we fall back
+        // to the JWT role for backward compatibility.
+        boolean management = ACCOUNT_MANAGER.equalsIgnoreCase(account)
+                || ACCOUNT_OWNER.equalsIgnoreCase(account)
+                || (account == null && ROLE_OWNER.equalsIgnoreCase(role));
+        if (management) {
             return Optional.of(Instant.EPOCH);
         }
 
@@ -302,13 +379,16 @@ public class NotificationService {
      * Marks all currently visible notifications as read for the authenticated user.
      */
     @Transactional
-    public void markAllRead(UUID userId) {
+    public void markAllRead(UUID userId, String account) {
         Instant now = Instant.now();
 
-        List<NotificationRecipient> recipients = notificationRecipientRepository.findVisibleByUserId(userId);
+        NotificationAudience audience = audienceForAccount(account);
+        List<NotificationRecipient> recipients = audience == null
+                ? notificationRecipientRepository.findVisibleByUserId(userId)
+                : notificationRecipientRepository.findVisibleByUserIdAndAudience(userId, audience);
         recipients.forEach(recipient -> recipient.markRead(now));
 
-        log.info("All visible notifications marked read userId={} count={}", userId, recipients.size());
+        log.info("All visible notifications marked read userId={} account={} count={}", userId, account, recipients.size());
     }
 
     /**

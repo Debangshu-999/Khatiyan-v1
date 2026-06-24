@@ -8,6 +8,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useToast } from "@/components/toast";
 import {
   useCreateNormalExitRequestMutation,
   useCreatePrematureExitRequestMutation,
@@ -21,13 +22,19 @@ type ExitMode = "NORMAL_NOTICE" | "PREMATURE";
 export default function TenancyExitRequestScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const [createNormalExit, normalState] = useCreateNormalExitRequestMutation();
   const [createPrematureExit, prematureState] = useCreatePrematureExitRequestMutation();
   const [mode, setMode] = useState<ExitMode>("NORMAL_NOTICE");
   const [requestedCheckoutDate, setRequestedCheckoutDate] = useState("");
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Validation/submit failures surface as toasts; success navigates to /tenancy.
+  const setError = (value: string | null) => {
+    if (value) {
+      toast.error(value);
+    }
+  };
   const submitting = normalState.isLoading || prematureState.isLoading;
 
   const submit = async () => {
@@ -122,11 +129,6 @@ export default function TenancyExitRequestScreen() {
               value={reason}
             />
 
-            {error ? (
-              <Text style={[type.body, { color: colors.danger, fontWeight: "700" }]} selectable>
-                {error}
-              </Text>
-            ) : null}
 
             <AnimatedPressable
               accessibilityRole="button"

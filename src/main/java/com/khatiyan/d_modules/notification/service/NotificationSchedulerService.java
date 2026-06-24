@@ -5,6 +5,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -26,6 +28,13 @@ public class NotificationSchedulerService {
 
     /**
      * Processes durable push jobs from the database-backed queue.
+     *
+     * <p>Intentionally NOT annotated with {@code @SchedulerLock}: this job is a
+     * parallel queue consumer that coordinates workers via PostgreSQL
+     * {@code FOR UPDATE SKIP LOCKED} plus a per-row lease (see
+     * {@link PushDeliveryService}). A coarse ShedLock would serialise the drain
+     * to a single instance and hold one lock across slow provider calls, so the
+     * row-level claim is the correct mechanism here.
      */
     @Scheduled(
             cron = "${app.notification.push-delivery-cron:0 */1 * * * *}",
@@ -44,6 +53,7 @@ public class NotificationSchedulerService {
      * Archives old in-app notification recipient rows.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "notification-cleanupStartupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void archiveOldNotificationsOnStartup() {
         log.info("Notification cleanup scheduler startup catch-up started");
         archiveOldNotifications();
@@ -55,6 +65,7 @@ public class NotificationSchedulerService {
     @Scheduled(
             cron = "${app.notification.cleanup-cron:0 0 0 * * *}",
             zone = "${app.notification.cleanup-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "notification-archiveOldNotifications", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void archiveOldNotifications() {
         int archivedCount = notificationService.archiveOldNotifications();
 

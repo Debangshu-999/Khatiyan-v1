@@ -1,5 +1,7 @@
 package com.khatiyan.a_auth;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,6 +29,10 @@ public class AuthModule {
 
     public Optional<UserSummaryResponse> findById(UUID userId) {
         return authService.findById(userId);
+    }
+
+    public Map<UUID, UserSummaryResponse> findByIds(Collection<UUID> userIds) {
+        return authService.findByIds(userIds);
     }
 
     public Optional<UserSummaryResponse> findByPhone(String phone) {

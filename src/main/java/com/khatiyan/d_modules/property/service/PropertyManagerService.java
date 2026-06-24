@@ -1,26 +1,36 @@
 package com.khatiyan.d_modules.property.service;
-
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.model.UserRole;
+import com.khatiyan.c_shared.employment.IdentityVerificationStatus;
+import com.khatiyan.c_shared.employment.ManagerEmploymentDetails;
+import com.khatiyan.c_shared.employment.SalaryStructure;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.d_modules.property.api.dto.AddPropertyManagerRequest;
+import com.khatiyan.d_modules.property.api.dto.ManagerEmploymentResponse;
 import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
+import com.khatiyan.d_modules.property.api.dto.ManagerPayrollView;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
 import com.khatiyan.d_modules.property.event.ManagerAssignedEvent;
+import com.khatiyan.d_modules.property.event.ManagerEmploymentUpdatedEvent;
 import com.khatiyan.d_modules.property.event.ManagerRemovedEvent;
 import com.khatiyan.d_modules.property.model.Property;
 import com.khatiyan.d_modules.property.model.PropertyManager;
 import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
+import com.khatiyan.d_modules.tenancy.TenancyModule;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,6 +48,7 @@ public class PropertyManagerService {
     private final PropertyRepository propertyRepository;
     private final PropertyManagerRepository propertyManagerRepository;
     private final AuthModule authModule;
+    private final TenancyModule tenancyModule;
     private final ApplicationEventPublisher eventPublisher;
 
     public PropertyManagerService(
@@ -45,11 +56,15 @@ public class PropertyManagerService {
             PropertyRepository propertyRepository,
             PropertyManagerRepository propertyManagerRepository,
             AuthModule authModule,
+            // @Lazy: tenancy already depends on property, so eager injection here
+            // would form a bean cycle. We only call the facade at request time.
+            @Lazy TenancyModule tenancyModule,
             ApplicationEventPublisher eventPublisher) {
         this.propertyService = propertyService;
         this.propertyRepository = propertyRepository;
         this.propertyManagerRepository = propertyManagerRepository;
         this.authModule = authModule;
+        this.tenancyModule = tenancyModule;
         this.eventPublisher = eventPublisher;
     }
 
@@ -61,43 +76,27 @@ public class PropertyManagerService {
     public PropertyManagerResponse addManager(
             UUID ownerId,
             UUID propertyId,
-            String managerPhone,
-            String managerFullName) {
+            AddPropertyManagerRequest request) {
         Property property = propertyService.getOwnedActiveProperty(ownerId, propertyId);
-
-        UUID managerUserId = authModule.provisionManagerUser(
-                managerPhone,
-                managerFullName,
-                ownerId);
+        ManagerEmploymentDetails employment = employmentDetails(request);
+        UUID managerUserId = authModule.provisionManagerUser(request.phone(), request.fullName(), ownerId);
 
         if (property.getOwnerId().equals(managerUserId)) {
             throw new ValidationException("Owner cannot be assigned as manager");
         }
-
+        if (tenancyModule.isUserTenantOfProperty(managerUserId, property.getId())) {
+            throw new ValidationException("This person is a tenant of this property and cannot also be a manager here.");
+        }
         if (propertyManagerRepository.existsByPropertyIdAndManagerUserIdAndActiveTrue(
-                property.getId(),
-                managerUserId)) {
+                property.getId(), managerUserId)) {
             throw new ValidationException("Manager is already assigned to this property");
         }
 
-        PropertyManager manager = PropertyManager.assign(
-                property.getId(),
-                managerUserId,
-                ownerId);
-
-        PropertyManager saved = propertyManagerRepository.save(manager);
-
-        log.info(
-                "Property manager assigned propertyId={} managerUserId={} ownerId={}",
-                property.getId(),
-                managerUserId,
-                ownerId);
-
-        eventPublisher.publishEvent(new ManagerAssignedEvent(
-                property.getId(),
-                managerUserId,
-                ownerId));
-
+        PropertyManager saved = propertyManagerRepository.save(PropertyManager.assign(
+                property.getId(), managerUserId, ownerId, employment));
+        log.info("Property manager assigned propertyId={} managerUserId={} ownerId={}",
+                property.getId(), managerUserId, ownerId);
+        eventPublisher.publishEvent(new ManagerAssignedEvent(property.getId(), managerUserId, ownerId));
         return toResponse(saved);
     }
 
@@ -119,15 +118,19 @@ public class PropertyManagerService {
                         return new ManagerLookupResponse(true, user.fullName(), false, false,
                                 "This is the property owner.");
                     }
+                    if (tenancyModule.isUserTenantOfProperty(user.id(), property.getId())) {
+                        return new ManagerLookupResponse(true, user.fullName(), false, false,
+                                "This person is a tenant of this property and cannot also be a manager here.");
+                    }
                     if (propertyManagerRepository.existsByPropertyIdAndManagerUserIdAndActiveTrue(property.getId(), user.id())) {
                         return new ManagerLookupResponse(true, user.fullName(), true, false,
                                 "Already a manager of this property.");
                     }
                     return new ManagerLookupResponse(true, user.fullName(), false, true,
-                            "Existing user — will be assigned as a manager.");
+                            "Existing user - will be assigned as a manager.");
                 })
                 .orElseGet(() -> new ManagerLookupResponse(false, null, false, true,
-                        "New user — an account will be created and assigned."));
+                        "New user - an account will be created and assigned."));
     }
 
     /**
@@ -151,9 +154,104 @@ public class PropertyManagerService {
         return propertyManagerRepository.findActiveManagerUserIdsByPropertyId(propertyId);
     }
 
+    // --- Manager employment read/edit, surfaced to the staff workspace. ---
+    // Access checks live in the caller (the owner-only staff service); these
+    // are plain data operations on the property-owned employment snapshot.
+
+    @Transactional(readOnly = true)
+    public List<ManagerEmploymentResponse> listManagerEmployment(UUID propertyId) {
+        return propertyManagerRepository.findByPropertyIdAndActiveTrue(propertyId)
+                .stream()
+                .map(this::toEmploymentResponse)
+                .toList();
+    }
+
+    /** Lightweight payroll terms for all active managers across every property,
+     * built without user-profile lookups. For scheduled payroll jobs. */
+    @Transactional(readOnly = true)
+    public List<ManagerPayrollView> listActiveManagerPayroll() {
+        return propertyManagerRepository.findByActiveTrue()
+                .stream()
+                .map(ManagerPayrollView::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ManagerEmploymentResponse getManagerEmploymentByReference(UUID propertyId, String referenceCode) {
+        return toEmploymentResponse(managerByReference(propertyId, referenceCode));
+    }
+
+    /** A manager's own employment record. Throws if the actor is not an active
+     * manager of the property — doubles as the manager-self access check. */
+    @Transactional(readOnly = true)
+    public ManagerEmploymentResponse getManagerEmploymentByUser(UUID propertyId, UUID managerUserId) {
+        PropertyManager manager = propertyManagerRepository
+                .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
+                .orElseThrow(() -> new ForbiddenException("You are not a manager of this property"));
+        return toEmploymentResponse(manager);
+    }
+
+    @Transactional(readOnly = true)
+    public ManagerEmploymentResponse getManagerEmploymentById(UUID propertyManagerId) {
+        PropertyManager manager = propertyManagerRepository.findById(propertyManagerId)
+                .orElseThrow(() -> new NotFoundException("PropertyManager_", propertyManagerId));
+        return toEmploymentResponse(manager);
+    }
+
+    @Transactional
+    public ManagerEmploymentResponse updateManagerEmployment(
+            UUID actorUserId,
+            UUID propertyId,
+            String referenceCode,
+            ManagerEmploymentDetails employment) {
+        PropertyManager manager = managerByReference(propertyId, referenceCode);
+        manager.updateEmployment(employment);
+        eventPublisher.publishEvent(new ManagerEmploymentUpdatedEvent(propertyId, manager.getManagerUserId(), actorUserId));
+        return toEmploymentResponse(manager);
+    }
+
+    /** Ends a manager assignment with an exit reason + review, recording the end
+     * date for the employee history. Publishes the removal event. */
+    @Transactional
+    public void endManagerEmployment(UUID ownerId, UUID propertyId, UUID managerUserId, String reason, String review) {
+        PropertyManager manager = propertyManagerRepository
+                .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
+                .orElseThrow(() -> new NotFoundException("PropertyManager_", managerUserId));
+        manager.endEmployment(LocalDate.now(), reason, review);
+        log.info("Property manager employment ended propertyId={} managerUserId={} ownerId={}", propertyId, managerUserId, ownerId);
+        eventPublisher.publishEvent(new ManagerRemovedEvent(propertyId, managerUserId, ownerId));
+    }
+
+    /** Removed (inactive) managers for the employee history. */
+    @Transactional(readOnly = true)
+    public List<ManagerEmploymentResponse> listEndedManagerEmployment(UUID propertyId) {
+        return propertyManagerRepository.findByPropertyIdAndActiveFalse(propertyId)
+                .stream()
+                .map(this::toEmploymentResponse)
+                .toList();
+    }
+
+    private PropertyManager managerByReference(UUID propertyId, String referenceCode) {
+        return propertyManagerRepository.findByPropertyIdAndReferenceCodeAndActiveTrue(propertyId, referenceCode)
+                .orElseThrow(() -> new NotFoundException("PropertyManager_", referenceCode));
+    }
+
+    private ManagerEmploymentResponse toEmploymentResponse(PropertyManager manager) {
+        UserSummaryResponse user = authModule.findById(manager.getManagerUserId())
+                .orElseThrow(() -> new NotFoundException("User_", manager.getManagerUserId()));
+        return ManagerEmploymentResponse.from(manager, user.fullName(), user.phone(), age(manager.getDateOfBirth()));
+    }
+
+    private static Integer age(LocalDate dateOfBirth) {
+        if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now())) {
+            return null;
+        }
+        return Period.between(dateOfBirth, LocalDate.now()).getYears();
+    }
+
     /**
      * Moves a manager from one owner-owned property to another in a single
-     * transaction — deactivates the current assignment and creates a new one.
+     * transaction   deactivates the current assignment and creates a new one.
      */
     @Transactional
     public PropertyManagerResponse shiftManager(
@@ -176,13 +274,31 @@ public class PropertyManagerService {
             throw new ValidationException("Owner cannot be assigned as manager");
         }
 
+        // A tenant of the target property cannot also manage it.
+        if (tenancyModule.isUserTenantOfProperty(managerUserId, toProperty.getId())) {
+            throw new ValidationException("This person is a tenant of the target property and cannot also be a manager there.");
+        }
+
         if (propertyManagerRepository.existsByPropertyIdAndManagerUserIdAndActiveTrue(toProperty.getId(), managerUserId)) {
             throw new ValidationException("Manager is already assigned to the target property");
         }
 
         current.deactivate();
 
-        PropertyManager moved = PropertyManager.assign(toProperty.getId(), managerUserId, ownerId);
+        PropertyManager moved = PropertyManager.assign(
+                toProperty.getId(),
+                managerUserId,
+                ownerId,
+                new ManagerEmploymentDetails(
+                        current.getDateOfBirth(),
+                        current.getIdentityVerificationStatus(),
+                        current.getIdentityVerifiedAt(),
+                        current.getSalaryStructure(),
+                        current.getSalaryRatePaise(),
+                        current.getBenefitsSummary(),
+                        current.getEmploymentStartDate(),
+                        current.getEmploymentEndDate(),
+                        current.getEmploymentNotes()));
         PropertyManager saved = propertyManagerRepository.save(moved);
 
         log.info(
@@ -248,6 +364,25 @@ public class PropertyManagerService {
         }
     }
 
+    private static ManagerEmploymentDetails employmentDetails(AddPropertyManagerRequest request) {
+        if (request.employmentEndDate() != null && request.employmentEndDate().isBefore(request.employmentStartDate())) {
+            throw new ValidationException("Employment end date cannot be before the start date");
+        }
+        return new ManagerEmploymentDetails(
+                request.dateOfBirth(),
+                IdentityVerificationStatus.NOT_STARTED,
+                null,
+                request.salaryStructure(),
+                request.salaryRatePaise(),
+                optionalText(request.benefitsSummary()),
+                request.employmentStartDate(),
+                request.employmentEndDate(),
+                optionalText(request.employmentNotes()));
+    }
+
+    private static String optionalText(String value) {
+        return value == null ? "" : value.trim();
+    }
     private PropertyManagerResponse toResponse(PropertyManager manager) {
         UserSummaryResponse managerUser = authModule.findById(manager.getManagerUserId())
                 .orElseThrow(() -> new NotFoundException("User_", manager.getManagerUserId()));

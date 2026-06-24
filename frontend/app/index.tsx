@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Redirect } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
 
+import { loadAppSettings } from "@/config/app-settings-storage";
 import { useAppSelector } from "@/store/hooks";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -8,8 +10,21 @@ import { useTheme } from "@/theme/use-theme";
 export default function IndexRoute() {
   const auth = useAppSelector((state) => state.auth);
   const { colors, fonts, type } = useTheme();
+  const [onboarding, setOnboarding] = useState<"loading" | "seen" | "new">("loading");
 
-  if (!auth.hydrated) {
+  useEffect(() => {
+    let mounted = true;
+    void loadAppSettings().then((settings) => {
+      if (mounted) {
+        setOnboarding(settings.hasSeenGetStarted ? "seen" : "new");
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!auth.hydrated || onboarding === "loading") {
     return (
       <View
         style={{
@@ -55,5 +70,9 @@ export default function IndexRoute() {
     );
   }
 
-  return <Redirect href={auth.accessToken ? "/(tabs)" : "/auth"} />;
+  if (auth.accessToken) {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  return <Redirect href={onboarding === "new" ? "/get-started" : "/auth"} />;
 }

@@ -10,11 +10,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.bind.annotation.RequestParam;
+
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.SettleDepositRequest;
+import com.khatiyan.d_modules.billing.model.DepositAccountStatus;
 
 import jakarta.validation.Valid;
 
@@ -51,6 +55,17 @@ public class DepositManagerController {
     }
 
     // Owner/manager deposit endpoints
+
+    @GetMapping("/properties/{propertyId}/deposits")
+    public PageResponse<DepositAccountResponse> listPropertyDeposits(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) DepositAccountStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return billingModule.listPropertyDepositAccounts(user.userId(), propertyId, query, status, page, size);
+    }
 
     @GetMapping("/tenancies/{tenancyId}/deposit")
     public DepositAccountResponse getManagedDeposit(

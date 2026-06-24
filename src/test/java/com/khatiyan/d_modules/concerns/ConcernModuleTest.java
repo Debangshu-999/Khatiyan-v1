@@ -20,7 +20,6 @@ import com.khatiyan.d_modules.concerns.api.dto.CreateConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.UpdateConcernStatusRequest;
 import com.khatiyan.d_modules.concerns.model.ConcernCategory;
 import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
-import com.khatiyan.d_modules.concerns.model.ConcernPriority;
 import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.concerns.service.ConcernService;
 
@@ -44,7 +43,6 @@ class ConcernModuleTest {
         UUID tenantUserId = UUID.randomUUID();
         CreateConcernRequest request = new CreateConcernRequest(
                 ConcernCategory.WATER,
-                ConcernPriority.URGENT,
                 "No water",
                 "Water supply stopped",
                 List.of());
@@ -67,7 +65,7 @@ class ConcernModuleTest {
         UUID propertyId = UUID.randomUUID();
         UUID concernId = UUID.randomUUID();
         AssignConcernRequest assignRequest = new AssignConcernRequest(UUID.randomUUID());
-        UpdateConcernStatusRequest statusRequest = new UpdateConcernStatusRequest(ConcernStatus.IN_PROGRESS);
+        UpdateConcernStatusRequest statusRequest = new UpdateConcernStatusRequest(ConcernStatus.IN_PROGRESS, "Will be done in 2 days");
         when(concernService.listAvailableConcerns(actorUserId, propertyId)).thenReturn(List.of(concernResponse));
         when(concernService.assignConcern(actorUserId, concernId, assignRequest)).thenReturn(concernResponse);
         when(concernService.updateConcernStatus(actorUserId, concernId, statusRequest)).thenReturn(concernResponse);
@@ -98,17 +96,23 @@ class ConcernModuleTest {
                 UUID.randomUUID(),
                 "CON-2026-000001",
                 UUID.randomUUID(),
+                "101",
+                "TEN-2026-000001",
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 ConcernCategory.WATER,
-                ConcernPriority.HIGH,
                 ConcernEscalationLevel.NONE,
                 ConcernStatus.OPEN,
                 "No water",
                 "Water supply stopped",
+                null,
                 null,
                 null,
                 null,

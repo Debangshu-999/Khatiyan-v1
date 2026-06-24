@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -59,15 +60,16 @@ public class ConcernReminderScannerService {
                         concern.id(),
                         recipientUserId,
                         concern.propertyId(),
-                        concern.tenancyId(),
+                        concernModule.findTenancyIdForConcern(concern.id()),
                         today,
                         "Concern needs attention",
                         "A concern at %s has been open for more than 24 hours: %s".formatted(
                                 property.name(),
-                                concern.title()),
+                        concern.title()),
                         NotificationCategory.CONCERN,
                         NotificationPriority.HIGH,
-                        NotificationDeliveryMode.IN_APP_AND_PUSH);
+                        NotificationDeliveryMode.IN_APP_AND_PUSH,
+                        NotificationAudience.MANAGEMENT);
 
                 if (created.isPresent()) {
                     createdCount = createdCount + 1;

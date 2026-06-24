@@ -25,10 +25,15 @@ import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.property.model.Property;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
 import com.khatiyan.d_modules.property.model.PropertyType;
+import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
 
@@ -102,12 +107,20 @@ class PropertyServiceTest {
                 OWNER_ID,
                 "Sky Prime PG",
                 "Plot 1",
+                "Madhapur",
                 "Hyderabad",
                 "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),
                 PropertyType.PG,
+                PgFor.ANYONE,
+                PreferredTenantType.ANYONE,
+                true,
+                Set.of(MealType.BREAKFAST, MealType.DINNER),
+                true,
+                BathroomType.COMMON,
+                Set.of(SharingType.DOUBLE),
                 Set.of(PropertyFacility.WIFI),
                 Set.of(),
                 2_000_00L,
@@ -122,12 +135,20 @@ class PropertyServiceTest {
         return new CreatePropertyRequest(
                 "Sky Prime PG",
                 "Plot 1",
+                "Madhapur",
                 "Hyderabad",
                 "Telangana",
                 "500046",
                 new BigDecimal("17.4500000"),
                 new BigDecimal("78.3800000"),
                 PropertyType.PG,
+                PgFor.ANYONE,
+                PreferredTenantType.STUDENT,
+                true,
+                Set.of(MealType.BREAKFAST, MealType.DINNER),
+                true,
+                BathroomType.COMMON,
+                Set.of(SharingType.DOUBLE),
                 Set.of(PropertyFacility.WIFI, PropertyFacility.MESS),
                 Set.of("Ironing"),
                 2_000_00L,

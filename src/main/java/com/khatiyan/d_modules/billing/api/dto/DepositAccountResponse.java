@@ -15,6 +15,8 @@ public record DepositAccountResponse(
     UUID tenancyId,
     UUID tenantUserId,
     UUID propertyId,
+    String tenantName,
+    String tenancyReferenceCode,
     long currentBalancePaise,
     DepositAccountStatus status,
     Instant settledAt,
@@ -24,6 +26,8 @@ public record DepositAccountResponse(
 ) {
     public static DepositAccountResponse from(
             DepositAccount account,
+            String tenantName,
+            String tenancyReferenceCode,
             long currentBalancePaise,
             List<DepositMovementResponse> movements) {
         return new DepositAccountResponse(
@@ -31,6 +35,8 @@ public record DepositAccountResponse(
             account.getTenancyId(),
             account.getTenantUserId(),
             account.getPropertyId(),
+            tenantName,
+            tenancyReferenceCode,
             currentBalancePaise,
             account.getStatus(),
             account.getSettledAt(),

@@ -13,7 +13,6 @@ import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
-import com.khatiyan.d_modules.billing.api.dto.BillingPastSummary;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
@@ -66,16 +65,8 @@ public class BillingModule {
         return billingCycleService.getPropertyMonthSummary(actorUserId, propertyId, month);
     }
 
-    public BillingPastSummary getPropertyPastSummary(UUID actorUserId, UUID propertyId, String month) {
-        return billingCycleService.getPropertyPastSummary(actorUserId, propertyId, month);
-    }
-
     public List<BillingCycleResponse> listPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
         return billingCycleService.listPropertyCycles(actorUserId, propertyId, query, month);
-    }
-
-    public List<BillingCycleResponse> listPastPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
-        return billingCycleService.listPastPropertyCycles(actorUserId, propertyId, query, month);
     }
 
     public String exportPropertyCyclesCsv(UUID actorUserId, UUID propertyId, String month) {
@@ -249,6 +240,16 @@ public class BillingModule {
 
     public DepositAccountResponse getManagedDepositAccount(UUID actorUserId, UUID tenancyId) {
         return depositManagerService.getForManagedTenancy(actorUserId, tenancyId);
+    }
+
+    public com.khatiyan.c_shared.api.PageResponse<DepositAccountResponse> listPropertyDepositAccounts(
+            UUID actorUserId,
+            UUID propertyId,
+            String query,
+            com.khatiyan.d_modules.billing.model.DepositAccountStatus status,
+            int page,
+            int size) {
+        return depositManagerService.listForManagedProperty(actorUserId, propertyId, query, status, page, size);
     }
 
     public DepositAccountResponse addDepositCorrection(

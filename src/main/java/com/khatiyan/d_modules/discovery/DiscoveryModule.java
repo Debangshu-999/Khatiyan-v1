@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.discovery;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -12,6 +13,11 @@ import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
 import com.khatiyan.d_modules.discovery.service.PropertyLocalPlaceService;
+import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.PgFor;
+import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.SharingType;
 
 @Component
 public class DiscoveryModule {
@@ -34,6 +40,15 @@ public class DiscoveryModule {
             BigDecimal latitude,
             BigDecimal longitude,
             Double radiusKm,
+            PgFor pgFor,
+            Long minRentPaise,
+            Long maxRentPaise,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            List<MealType> mealTypes,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            List<SharingType> sharingTypes,
             int page,
             int size) {
         return propertyDiscoveryService.searchVisibleProperties(
@@ -44,6 +59,15 @@ public class DiscoveryModule {
                 latitude,
                 longitude,
                 radiusKm,
+                pgFor,
+                minRentPaise,
+                maxRentPaise,
+                preferredFor,
+                foodIncluded,
+                mealTypes == null ? null : Set.copyOf(mealTypes),
+                electricityIncluded,
+                bathroomType,
+                sharingTypes == null ? null : Set.copyOf(sharingTypes),
                 page,
                 size);
     }

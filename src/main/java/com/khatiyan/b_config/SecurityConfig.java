@@ -57,7 +57,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/discovery/me/local-places").hasRole("USER")
 
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties").hasRole("OWNER")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/properties").hasRole("OWNER")
+                        // Owner + manager: listManageableProperties scopes results to
+                        // the caller's own owned/managed properties, so any authenticated
+                        // user (managers are role USER) may list them.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/properties").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/properties/{propertyId}").hasRole("OWNER")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/properties/{propertyId}").hasRole("OWNER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/properties/{propertyId}").hasRole("OWNER")

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { NotificationRow } from "@/features/notifications/notification-row";
+import { useAppSelector } from "@/store/hooks";
 import {
   NOTIFICATION_REFETCH_OPTIONS,
   useGetOlderNotificationsQuery,
@@ -19,7 +20,8 @@ import { useTheme } from "@/theme/use-theme";
 export default function NotificationsOlderScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const olderQuery = useGetOlderNotificationsQuery(undefined, NOTIFICATION_REFETCH_OPTIONS);
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const olderQuery = useGetOlderNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
   const [markRead] = useMarkNotificationReadMutation();
 
   const older = olderQuery.data ?? [];

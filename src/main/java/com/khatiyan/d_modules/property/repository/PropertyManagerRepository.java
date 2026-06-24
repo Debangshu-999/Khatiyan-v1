@@ -20,6 +20,11 @@ public interface PropertyManagerRepository extends JpaRepository<PropertyManager
 
     List<PropertyManager> findByPropertyIdAndActiveTrue(UUID propertyId);
 
+    /** All active manager assignments across every property — for scheduled payroll jobs. */
+    List<PropertyManager> findByActiveTrue();
+
+    List<PropertyManager> findByPropertyIdAndActiveFalse(UUID propertyId);
+
     @Query("""
         SELECT manager.managerUserId
         FROM PropertyManager manager
@@ -32,6 +37,10 @@ public interface PropertyManagerRepository extends JpaRepository<PropertyManager
     Optional<PropertyManager> findByPropertyIdAndManagerUserIdAndActiveTrue(
             UUID propertyId,
             UUID managerUserId);
+
+    Optional<PropertyManager> findByPropertyIdAndReferenceCodeAndActiveTrue(
+            UUID propertyId,
+            String referenceCode);
 
     boolean existsByManagerUserIdAndActiveTrue(UUID managerUserId);
 

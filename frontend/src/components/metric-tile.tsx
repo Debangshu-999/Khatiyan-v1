@@ -12,9 +12,9 @@ type MetricTileProps = {
 
 export function MetricTile({ hint, label, tone = "default", value }: MetricTileProps) {
   const { colors, fonts, type } = useTheme();
-  const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.primary : colors.ink;
-  const backgroundColor = tone === "primary" ? colors.primarySoft : colors.surface;
-  const borderColor = tone === "primary" ? colors.primarySoft : colors.border;
+  const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
+  const backgroundColor = tone === "primary" ? colors.jadeSoft : colors.surface;
+  const borderColor = tone === "primary" ? colors.jadeSoft : colors.border;
 
   return (
     <View

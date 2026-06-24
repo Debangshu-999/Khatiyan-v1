@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -19,6 +19,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
+import { useToast } from "@/components/toast";
 import type { BillingCycle } from "@/store/services/billing-api";
 import { useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import {
@@ -38,6 +39,21 @@ export default function TenancyScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ exitRequestCreated?: string; roomChangeRequested?: string }>();
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
+  const requestToastShownRef = useRef(false);
+
+  useEffect(() => {
+    if (requestToastShownRef.current) {
+      return;
+    }
+    if (params.exitRequestCreated === "1") {
+      requestToastShownRef.current = true;
+      toast.success("Exit request created.");
+    } else if (params.roomChangeRequested === "1") {
+      requestToastShownRef.current = true;
+      toast.success("Room change request recorded.");
+    }
+  }, [params.exitRequestCreated, params.roomChangeRequested, toast]);
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const tenanciesQuery = useListMyTenanciesQuery();
   const exitRequestsQuery = useListMyExitRequestsQuery();
@@ -91,12 +107,6 @@ export default function TenancyScreen() {
         italicTail="ledger."
         subtitle="Current tenancy, billing cycle, deposit manager and stay requests."
       />
-
-      {params.exitRequestCreated === "1" ? (
-        <InlineToast message="Exit request created." />
-      ) : params.roomChangeRequested === "1" ? (
-        <InlineToast message="Room change request recorded." />
-      ) : null}
 
       {activeTenancy ? (
         <>
@@ -398,18 +408,6 @@ function TenancyInfoRow({ label, mono, value }: { label: string; mono?: boolean;
 function ThinDivider() {
   const { colors } = useTheme();
   return <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: spacing.md }} />;
-}
-
-function InlineToast({ message }: { message: string }) {
-  const { colors, type } = useTheme();
-
-  return (
-    <Card tone="sunken">
-      <Text style={[type.body, { color: colors.primary, fontWeight: "800" }]} selectable>
-        {message}
-      </Text>
-    </Card>
-  );
 }
 
 function BillingCycleCard({

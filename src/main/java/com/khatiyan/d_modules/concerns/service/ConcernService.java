@@ -4,13 +4,22 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.a_auth.AuthModule;
+import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -31,6 +40,8 @@ import com.khatiyan.d_modules.concerns.model.Concern;
 import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
 import com.khatiyan.d_modules.concerns.repository.ConcernRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 
@@ -50,18 +61,22 @@ public class ConcernService {
     private final ConcernRepository concernRepository;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
+    private final AuthModule authModule;
     private final ApplicationEventPublisher eventPublisher;
     private final ReferenceCodeGenerator referenceCodeGenerator;
+    private static final int MAX_WEEKLY_CONCERNS_PER_TENANT = 5;
 
     public ConcernService(
             ConcernRepository concernRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
+            AuthModule authModule,
             ApplicationEventPublisher eventPublisher,
             ReferenceCodeGenerator referenceCodeGenerator) {
         this.concernRepository = concernRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
+        this.authModule = authModule;
         this.eventPublisher = eventPublisher;
         this.referenceCodeGenerator = referenceCodeGenerator;
     }
@@ -78,7 +93,103 @@ public class ConcernService {
     }
 
     private ConcernResponse toResponse(Concern concern) {
-        return ConcernResponse.from(concern);
+        return ConcernResponse.from(
+                concern,
+                roomNumberFor(concern),
+                tenancyReferenceCodeFor(concern),
+                userNameFor(concern.getAssignedToUserId()),
+                userNameFor(concern.getAssignedByUserId()));
+    }
+
+    private List<ConcernResponse> toResponses(List<Concern> concerns) {
+        if (concerns.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, String> tenancyReferenceCodes = tenancyModule.findByIds(concerns.stream()
+                        .map(Concern::getTenancyId)
+                        .collect(Collectors.toSet()))
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().referenceCode()));
+
+        Map<UUID, Set<UUID>> roomIdsByProperty = concerns.stream()
+                .collect(Collectors.groupingBy(
+                        Concern::getPropertyId,
+                        Collectors.mapping(Concern::getRoomId, Collectors.toSet())));
+        Map<RoomDisplayKey, String> roomNumbers = new HashMap<>();
+        roomIdsByProperty.forEach((propertyId, roomIds) -> propertyModule.findRoomsForDisplay(propertyId, roomIds)
+                .forEach((roomId, room) -> roomNumbers.put(new RoomDisplayKey(propertyId, roomId), room.roomNumber())));
+
+        Set<UUID> userIds = new HashSet<>();
+        concerns.forEach(concern -> {
+            if (concern.getAssignedToUserId() != null) {
+                userIds.add(concern.getAssignedToUserId());
+            }
+            if (concern.getAssignedByUserId() != null) {
+                userIds.add(concern.getAssignedByUserId());
+            }
+        });
+        Map<UUID, String> userNames = authModule.findByIds(userIds)
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> displayUserName(entry.getValue())));
+
+        return concerns.stream()
+                .map(concern -> ConcernResponse.from(
+                        concern,
+                        roomNumbers.getOrDefault(
+                                new RoomDisplayKey(concern.getPropertyId(), concern.getRoomId()), "Unavailable"),
+                        tenancyReferenceCodes.getOrDefault(concern.getTenancyId(), "Unavailable"),
+                        userNameFor(concern.getAssignedToUserId(), userNames),
+                        userNameFor(concern.getAssignedByUserId(), userNames)))
+                .toList();
+    }
+
+    private String roomNumberFor(Concern concern) {
+        return propertyModule.findRoomForDisplay(concern.getPropertyId(), concern.getRoomId())
+                .map(room -> room.roomNumber())
+                .orElse("Unavailable");
+    }
+
+    private String tenancyReferenceCodeFor(Concern concern) {
+        return tenancyModule.findById(concern.getTenancyId())
+                .map(tenancy -> tenancy.referenceCode())
+                .orElse("Unavailable");
+    }
+
+    private String userNameFor(UUID userId) {
+        if (userId == null) {
+            return null;
+        }
+
+        return authModule.findById(userId)
+                .map(this::displayUserName)
+                .orElse("Unknown");
+    }
+
+    private String userNameFor(UUID userId, Map<UUID, String> userNames) {
+        if (userId == null) {
+            return null;
+        }
+        return userNames.getOrDefault(userId, "Unknown");
+    }
+
+    private String displayUserName(UserSummaryResponse user) {
+        if (user.fullName() != null && !user.fullName().isBlank()) {
+            return user.fullName();
+        }
+        return "Unknown";
+    }
+
+    private record RoomDisplayKey(UUID propertyId, UUID roomId) {
+    }
+
+    private void ensurePropertyOwner(UUID actorUserId, UUID propertyId) {
+        PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        if (!property.ownerId().equals(actorUserId)) {
+            throw new ForbiddenException("Only the property owner can monitor concerns");
+        }
     }
 
     /**
@@ -88,6 +199,7 @@ public class ConcernService {
     public ConcernResponse raiseConcern(UUID tenantUserId, CreateConcernRequest request) {
         TenancyResponse activeTenancy = tenancyModule.findActiveByUserId(tenantUserId)
                 .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
+        enforceWeeklyRaiseLimit(tenantUserId);
 
         Concern concern = Concern.raise(
                 referenceCodeGenerator.nextCode("CON"),
@@ -96,7 +208,6 @@ public class ConcernService {
                 activeTenancy.id(),
                 tenantUserId,
                 request.category(),
-                request.priority(),
                 request.title().trim(),
                 request.description().trim());
 
@@ -109,13 +220,12 @@ public class ConcernService {
         Concern saved = concernRepository.save(concern);
 
         log.info(
-                "Concern raised concernId={} tenantUserId={} propertyId={} roomId={} category={} priority={}",
+                "Concern raised concernId={} tenantUserId={} propertyId={} roomId={} category={}",
                 saved.getId(),
                 tenantUserId,
                 saved.getPropertyId(),
                 saved.getRoomId(),
-                saved.getCategory(),
-                saved.getPriority());
+                saved.getCategory());
 
         eventPublisher.publishEvent(new ConcernRaisedEvent(
                 saved.getId(),
@@ -124,6 +234,14 @@ public class ConcernService {
                 saved.getTitle()));
 
         return toResponse(saved);
+    }
+
+    private void enforceWeeklyRaiseLimit(UUID tenantUserId) {
+        Instant windowStart = Instant.now().minus(7, ChronoUnit.DAYS);
+        long concernCount = concernRepository.countRaisedByUserIdSince(tenantUserId, windowStart);
+        if (concernCount >= MAX_WEEKLY_CONCERNS_PER_TENANT) {
+            throw new ValidationException("You can raise up to 5 concerns in a 7 day period.");
+        }
     }
 
     /**
@@ -137,10 +255,7 @@ public class ConcernService {
                         activeTenancy.propertyId()))
                 .orElseGet(() -> concernRepository.findCurrentByRaisedByUserId(tenantUserId));
 
-        return concerns
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concerns);
     }
 
     /**
@@ -154,10 +269,12 @@ public class ConcernService {
                         activeTenancy.propertyId()))
                 .orElseGet(() -> concernRepository.findHistoryByRaisedByUserId(tenantUserId));
 
-        return concerns
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concerns);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ConcernResponse> listTenantConcernHistory(UUID tenantUserId, int page, int size) {
+        return PageResponse.of(listTenantConcernHistory(tenantUserId), page, size);
     }
 
     /**
@@ -167,10 +284,7 @@ public class ConcernService {
     public List<ConcernResponse> listAvailableConcerns(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return concernRepository.findOpenByPropertyId(propertyId)
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concernRepository.findOpenByPropertyId(propertyId));
     }
 
     private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Kolkata");
@@ -193,17 +307,24 @@ public class ConcernService {
 
         long open = concernRepository.countByPropertyIdAndStatus(
                 propertyId, com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN);
+        long underReview = concernRepository.countByPropertyIdAndStatus(
+                propertyId, com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW);
         long inProgress = concernRepository.countByPropertyIdAndStatus(
                 propertyId, com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS);
         long escalated = concernRepository.countEscalatedByPropertyId(propertyId);
+        long actionableEscalated = concernRepository.countActionableEscalatedByPropertyId(propertyId);
+        long reopened = concernRepository.countActiveReopenedByPropertyId(propertyId);
         long resolvedThisWeek = concernRepository.countResolvedByPropertyIdAfter(propertyId, weekStart);
         long raisedToday = concernRepository.countByPropertyIdAndCreatedAtAfter(propertyId, todayStart);
         long unattended24h = concernRepository.countUnattendedOpenByPropertyId(propertyId, unattendedCutoff);
 
         return new ConcernDashboardSummary(
                 open,
+                underReview,
                 inProgress,
                 escalated,
+                actionableEscalated,
+                reopened,
                 resolvedThisWeek,
                 raisedToday,
                 unattended24h);
@@ -215,10 +336,7 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listUndertakenConcerns(UUID actorUserId) {
-        return concernRepository.findInProgressByAssignedToUserId(actorUserId)
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concernRepository.findInProgressByAssignedToUserId(actorUserId));
     }
 
     /**
@@ -228,10 +346,12 @@ public class ConcernService {
     public List<ConcernResponse> listPropertyConcernHistory(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return concernRepository.findHistoryByPropertyId(propertyId)
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concernRepository.findHistoryByPropertyId(propertyId));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ConcernResponse> listPropertyConcernHistory(UUID actorUserId, UUID propertyId, int page, int size) {
+        return PageResponse.of(listPropertyConcernHistory(actorUserId, propertyId), page, size);
     }
 
     /**
@@ -241,10 +361,21 @@ public class ConcernService {
     public List<ConcernResponse> listEscalatedConcerns(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        return concernRepository.findEscalatedByPropertyId(propertyId)
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concernRepository.findEscalatedByPropertyId(propertyId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConcernResponse> listActiveAssignedConcerns(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        return toResponses(concernRepository.findActiveAssignedByPropertyId(propertyId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConcernResponse> listOwnerMonitorConcerns(UUID actorUserId, UUID propertyId) {
+        ensurePropertyOwner(actorUserId, propertyId);
+
+        return toResponses(concernRepository.findOwnerMonitorByPropertyId(propertyId, Instant.now()));
     }
 
     /**
@@ -257,7 +388,7 @@ public class ConcernService {
         propertyModule.ensureCanManageProperty(request.assignedToUserId(), concern.getPropertyId());
 
         try {
-            concern.assignTo(request.assignedToUserId());
+            concern.assignTo(request.assignedToUserId(), actorUserId, Instant.now());
         } catch (IllegalStateException e) {
             throw new ValidationException(e.getMessage());
         }
@@ -273,6 +404,7 @@ public class ConcernService {
                 concern.getId(),
                 concern.getPropertyId(),
                 concern.getAssignedToUserId(),
+                actorUserId,
                 concern.getTitle()));
 
         return toResponse(concern);
@@ -290,10 +422,11 @@ public class ConcernService {
         try {
             switch (request.status()) {
                 case OPEN -> concern.markOpen();
-                case UNDER_REVIEW -> concern.markUnderReview(actorUserId);
-                case IN_PROGRESS -> concern.markInProgress(actorUserId);
+                case UNDER_REVIEW -> concern.markUnderReview(actorUserId, Instant.now());
+                case IN_PROGRESS -> concern.markInProgress(actorUserId, Instant.now());
                 default -> throw new ValidationException("Use resolve or close-expired flow for this concern status");
             }
+            concern.updateStatusNote(normalizeStatusNote(request.statusNote()));
         } catch (IllegalStateException e) {
             throw new ValidationException(e.getMessage());
         }
@@ -310,10 +443,18 @@ public class ConcernService {
                 concern.getPropertyId(),
                 concern.getRaisedByUserId(),
                 concern.getAssignedToUserId(),
+                actorUserId,
                 concern.getStatus(),
                 concern.getTitle()));
 
         return toResponse(concern);
+    }
+
+    private String normalizeStatusNote(String statusNote) {
+        if (statusNote == null || statusNote.isBlank()) {
+            return null;
+        }
+        return statusNote.trim();
     }
 
     /**
@@ -398,10 +539,12 @@ public class ConcernService {
 
     @Transactional(readOnly = true)
     public List<ConcernResponse> findOpenUnassignedCreatedBefore(Instant createdBefore) {
-        return concernRepository.findOpenUnassignedCreatedBefore(createdBefore)
-                .stream()
-                .map(concern -> toResponse(concern))
-                .toList();
+        return toResponses(concernRepository.findOpenUnassignedCreatedBefore(createdBefore));
+    }
+
+    @Transactional(readOnly = true)
+    public UUID findTenancyIdForConcern(UUID concernId) {
+        return getConcern(concernId).getTenancyId();
     }
 
     /**

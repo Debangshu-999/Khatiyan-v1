@@ -8,5 +8,7 @@ package com.khatiyan.a_auth.model;
  */
 public enum OtpDeliveryChannel {
     SMS,
-    SMS_AND_WHATSAPP
+    SMS_AND_WHATSAPP,
+    EMAIL,
+    SMS_AND_EMAIL
 }

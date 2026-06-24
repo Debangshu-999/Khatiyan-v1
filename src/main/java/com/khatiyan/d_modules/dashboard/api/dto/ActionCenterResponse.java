@@ -10,11 +10,13 @@ import java.util.List;
 public record ActionCenterResponse(
     ActionCenterProperty property,
     OccupancySnapshot occupancy,
+    TenancySnapshot tenancy,
     MoneySnapshot money,
     TodayDigest today,
     AttentionSummary attention,
     ConcernQueueSummary concerns,
     List<RecentActivityItem> recentActivity,
+    List<MonthlyTrendPoint> monthlyTrends,
     Instant generatedAt
 ) {
 }

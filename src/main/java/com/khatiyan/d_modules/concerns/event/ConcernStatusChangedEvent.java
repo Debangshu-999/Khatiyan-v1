@@ -12,6 +12,7 @@ public record ConcernStatusChangedEvent(
     UUID propertyId,
     UUID raisedByUserId,
     UUID assignedToUserId,
+    UUID actorUserId,
     ConcernStatus status,
     String title
 ) {

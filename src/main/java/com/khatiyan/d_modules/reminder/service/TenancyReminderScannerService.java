@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -73,7 +74,8 @@ public class TenancyReminderScannerService {
                         body(property.name(), tenancy.endDate(), daysUntilEnd),
                         NotificationCategory.TENANCY,
                         daysUntilEnd == 0 ? NotificationPriority.URGENT : NotificationPriority.HIGH,
-                        NotificationDeliveryMode.IN_APP_AND_PUSH);
+                        NotificationDeliveryMode.IN_APP_AND_PUSH,
+                        reminderAudience(tenancy.userId(), recipientUserId));
 
                 if (created.isPresent()) {
                     createdCount = createdCount + 1;
@@ -92,6 +94,12 @@ public class TenancyReminderScannerService {
             return "Tenancy ends tomorrow, plan your checkout accordingly";
         }
         return "Tenancy ending soon, plan your checkout accordingly";
+    }
+
+    private NotificationAudience reminderAudience(UUID tenantUserId, UUID recipientUserId) {
+        return tenantUserId.equals(recipientUserId)
+                ? NotificationAudience.TENANT
+                : NotificationAudience.MANAGEMENT;
     }
 
     private String body(String propertyName, LocalDate endDate, long daysUntilEnd) {

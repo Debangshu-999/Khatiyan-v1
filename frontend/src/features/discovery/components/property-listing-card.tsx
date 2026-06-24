@@ -7,16 +7,19 @@ import type { PropertyDiscoveryCard } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-import { formatDistance, formatMoneyPaise, humanizeToken } from "../discovery-format";
+import { computeFilterMatches, type FilterMatch, type MatchStrength } from "../discovery-match";
+import type { PropertyFilterState } from "./property-filter-modal";
+import { formatMoneyPaise, humanizeToken } from "../discovery-format";
 
 type PropertyListingCardProps = {
   property: PropertyDiscoveryCard;
+  filters?: PropertyFilterState;
   onView: () => void;
 };
 
-export function PropertyListingCard({ property, onView }: PropertyListingCardProps) {
+export function PropertyListingCard({ filters, property, onView }: PropertyListingCardProps) {
   const { colors, fonts, type } = useTheme();
-  const visibleFacilities = [...(property.facilities ?? []), ...(property.customFacilities ?? [])].slice(0, 3);
+  const match = filters ? computeFilterMatches(filters, property) : null;
 
   function openDirections() {
     if (property.directionsUrl) {
@@ -24,7 +27,9 @@ export function PropertyListingCard({ property, onView }: PropertyListingCardPro
       return;
     }
 
-    const query = encodeURIComponent(`${property.name}, ${property.address}, ${property.city}, ${property.pincode}`);
+    const query = encodeURIComponent(
+      [property.name, property.address, property.area, property.city, property.state, property.pincode].filter(Boolean).join(", "),
+    );
     void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
   }
 
@@ -78,11 +83,8 @@ export function PropertyListingCard({ property, onView }: PropertyListingCardPro
               {humanizeToken(property.type)}
             </Text>
           </View>
-          <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
-            {formatDistance(property.distanceKm)}
-          </Text>
           <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
-            {property.address}, {property.city}
+            {[property.area, property.city, property.state].filter(Boolean).join(", ")}
           </Text>
         </View>
       </View>
@@ -131,13 +133,7 @@ export function PropertyListingCard({ property, onView }: PropertyListingCardPro
         {property.dailyRentingAvailable ? "✦ Daily renting available" : "Monthly renting only"}
       </Text>
 
-      {visibleFacilities.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-          {visibleFacilities.map((facility) => (
-            <FeatureTag key={facility} label={humanizeToken(facility)} />
-          ))}
-        </View>
-      ) : null}
+      {match && match.activeCount > 0 ? <MatchSummary match={match} /> : null}
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <IconButton icon={Eye} label="View" muted onPress={onView} style={{ flex: 1 }} />
@@ -147,20 +143,69 @@ export function PropertyListingCard({ property, onView }: PropertyListingCardPro
   );
 }
 
-function FeatureTag({ label }: { label: string }) {
+function MatchSummary({ match }: { match: FilterMatch }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {match.strength ? <StrengthBadge matched={match.matchedCount} strength={match.strength} total={match.activeCount} /> : null}
+      </View>
+      {match.matchedTags.length > 0 ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+          {match.matchedTags.map((tag) => (
+            <FeatureTag key={tag} highlighted label={tag} />
+          ))}
+        </View>
+      ) : (
+        <Text style={[type.caption, { color: colors.muted }]} selectable>
+          Outside your preferences, shown nearby.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function StrengthBadge({ matched, strength, total }: { matched: number; strength: MatchStrength; total: number }) {
+  const { colors, type } = useTheme();
+  const color = strength === "strong" ? colors.jade : strength === "moderate" ? colors.primary : colors.muted;
+  const label = strength === "strong" ? "Strong match" : strength === "moderate" ? "Moderate match" : "Weak match";
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: color,
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 4,
+      }}
+    >
+      <View style={{ backgroundColor: color, borderRadius: 999, height: 7, width: 7 }} />
+      <Text style={[type.caption, { color, fontWeight: "800" }]} selectable>
+        {label} · {matched}/{total}
+      </Text>
+    </View>
+  );
+}
+
+function FeatureTag({ highlighted, label }: { highlighted?: boolean; label: string }) {
   const { colors, type } = useTheme();
 
   return (
     <View
       style={{
-        borderColor: colors.border,
+        backgroundColor: highlighted ? colors.primarySoft : "transparent",
+        borderColor: highlighted ? colors.primary : colors.border,
         borderRadius: 8,
         borderWidth: 1,
         paddingHorizontal: spacing.sm,
         paddingVertical: 6,
       }}
     >
-      <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: highlighted ? colors.primary : colors.inkSoft, fontWeight: "700" }]} selectable>
         {label}
       </Text>
     </View>

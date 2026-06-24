@@ -10,5 +10,5 @@ public interface OtpDeliveryProvider {
 
     OtpDeliveryProviderType type();
 
-    void sendOtp(String phone, String otp, OtpPurpose purpose);
+    void sendOtp(String recipient, String otp, OtpPurpose purpose);
 }

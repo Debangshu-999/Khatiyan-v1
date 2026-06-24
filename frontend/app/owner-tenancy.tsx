@@ -1,20 +1,30 @@
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ArrowLeft, DoorOpen, KeyRound, Repeat2, UsersRound } from "lucide-react-native";
+import { ArrowLeft, ArrowLeftRight, Bell, DoorOpen, LogOut, UserMinus, UserPlus, Users, UsersRound } from "lucide-react-native";
 
-import { ActionCard } from "@/components/action-card";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { MetricTile } from "@/components/metric-tile";
+import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
+import { SnapshotTile } from "@/components/snapshot-tile";
+import { ActiveTenancyCard, PastTenancyCard, TenancyListTabs, type OwnerTenancyListTab } from "@/features/owner/tenancy-list";
 import { useAppSelector } from "@/store/hooks";
+import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
-import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import {
+  type TenancySummary,
+  useListActivePropertyTenanciesQuery,
+  useListPastPropertyTenanciesQuery,
+} from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const TENANCY_PAGE_SIZE = 10;
 
 export default function OwnerTenancyWorkspaceScreen() {
   const router = useRouter();
@@ -23,22 +33,74 @@ export default function OwnerTenancyWorkspaceScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
+  const [activeTab, setActiveTab] = useState<OwnerTenancyListTab>("active");
+  const [activePage, setActivePage] = useState(0);
+  const [pastPage, setPastPage] = useState(0);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [committedQuery, setCommittedQuery] = useState("");
+
+  // Debounce the search box so each keystroke doesn't fire a request; reset both
+  // tabs to the first page whenever the committed query changes.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setCommittedQuery(searchDraft.trim());
+      setActivePage(0);
+      setPastPage(0);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchDraft]);
+
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
-  const tenanciesQuery = useListPropertyTenanciesQuery(
-    { includePast: false, propertyId: selectedProperty?.id ?? "" },
+  const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const activeTenanciesQuery = useListActivePropertyTenanciesQuery(
+    // Only filter the active query while the active tab is showing, so the "Active"
+    // metric stays accurate when searching from the past tab.
+    { page: activePage, propertyId: selectedProperty?.id ?? "", query: activeTab === "active" ? committedQuery : "", size: TENANCY_PAGE_SIZE },
     { skip: !selectedProperty },
+  );
+  const pastTenanciesQuery = useListPastPropertyTenanciesQuery(
+    { page: pastPage, propertyId: selectedProperty?.id ?? "", query: committedQuery, size: TENANCY_PAGE_SIZE },
+    { skip: !selectedProperty || activeTab !== "past" },
   );
 
   const rooms = roomsQuery.data ?? [];
-  const tenancies = tenanciesQuery.data ?? [];
-  const vacancyCount = rooms.filter((room) => room.availableVacancies > 0).length;
+  const activeTenancies = activeTenanciesQuery.data;
+  const pastTenancies = pastTenanciesQuery.data;
+  const visiblePage = activeTab === "active" ? activeTenancies : pastTenancies;
+  const isLoading = activeTab === "active" ? activeTenanciesQuery.isFetching : pastTenanciesQuery.isFetching;
+  const isError = activeTab === "active" ? activeTenanciesQuery.isError : pastTenanciesQuery.isError;
+  const tenancySnapshot = dashboardQuery.data?.tenancy;
+
+  function openActiveTenancy(tenancy: TenancySummary) {
+    const roomLabel = rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? "";
+    router.push({
+      pathname: "/owner-active-tenancy-detail",
+      params: {
+        billingStarted: tenancy.billingStarted ? "true" : "false",
+        billingType: tenancy.billingType,
+        dailyRatePaise: tenancy.dailyRatePaise?.toString() ?? "",
+        depositAmountPaise: tenancy.depositAmountPaise?.toString() ?? "",
+        plannedEndDate: tenancy.plannedEndDate ?? "",
+        referenceCode: tenancy.referenceCode,
+        rentAmountPaise: tenancy.rentAmountPaise?.toString() ?? "",
+        roomLabel,
+        startDate: tenancy.startDate,
+        status: tenancy.status,
+        tenantName: tenancy.tenantName?.trim() || "Unnamed tenant",
+        tenantPhone: tenancy.tenantPhone ?? "",
+        tenantPhoneVerified: tenancy.tenantPhoneVerified ? "true" : "false",
+        tenantProfileCompleted: tenancy.tenantProfileCompleted ? "true" : "false",
+        tenancyId: tenancy.id,
+        userId: tenancy.userId,
+      },
+    });
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <BackButton onPress={() => router.back()} />
 
       <ScreenHeader
-        eyebrow="Tenancy"
         title="Tenancy"
         italicTail="workspace."
         subtitle={
@@ -79,87 +141,147 @@ export default function OwnerTenancyWorkspaceScreen() {
             </Text>
           </Card>
 
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Active" value={String(tenancies.length)} hint="Tenancies" tone="primary" />
-            <MetricTile label="Vacancy" value={String(vacancyCount)} hint="Rooms with space" />
-          </View>
+          {tenancySnapshot ? (
+            <Section eyebrow="Tenancy" title="Tenancy snapshot">
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <SnapshotTile
+                  icon={Users}
+                  label="Active tenants"
+                  value={String(tenancySnapshot.activeTenants)}
+                  tone="primary"
+                  delta={{ current: tenancySnapshot.activeTenants, previous: tenancySnapshot.activeTenantsPrevMonth }}
+                />
+                <SnapshotTile icon={Bell} label="On notice" value={String(tenancySnapshot.onNotice)} tone={tenancySnapshot.onNotice > 0 ? "danger" : "default"} />
+              </View>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <SnapshotTile
+                  icon={UserPlus}
+                  label="Started"
+                  value={String(tenancySnapshot.startedThisMonth)}
+                  tone={tenancySnapshot.startedThisMonth > 0 ? "primary" : "default"}
+                  delta={{ current: tenancySnapshot.startedThisMonth, previous: tenancySnapshot.startedPrevMonth }}
+                />
+                <SnapshotTile
+                  icon={UserMinus}
+                  label="Ended"
+                  value={String(tenancySnapshot.endedThisMonth)}
+                  delta={{ current: tenancySnapshot.endedThisMonth, previous: tenancySnapshot.endedPrevMonth }}
+                />
+              </View>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <SnapshotTile icon={DoorOpen} label="Upcoming exits" value={String(tenancySnapshot.upcomingExits)} tone={tenancySnapshot.upcomingExits > 0 ? "danger" : "default"} />
+                <View style={{ flex: 1 }} />
+              </View>
+            </Section>
+          ) : (
+            <Card>
+              <ActivityIndicator color={colors.primary} />
+            </Card>
+          )}
 
           <Section eyebrow="Actions" title="Tenancy tools">
-            <View style={{ gap: spacing.sm }}>
-              <ActionCard
-                meta="Create"
-                title="Create tenancy"
-                description="Provision a tenant, choose a room, snapshot rent/deposit and start billing."
-                onPress={() => router.push("/owner-onboard-tenant")}
-                tone="primary"
-              />
-              <ActionCard
-                meta="View"
-                title="Active tenancies"
-                description="See all currently active stays for the selected property."
-                onPress={() => router.push("/owner-active-tenancies")}
-              />
-              <ActionCard
-                meta="Exit"
-                title="Exit requests"
-                description="Review tenant exit requests, approve with checkout date and deposit settlement, or reject."
-                onPress={() => router.push("/owner-exit-requests")}
-              />
-              <ActionCard
-                meta="Room change"
-                title="Room-change requests"
-                description="Review tenant room movement requests and approve or reject the scheduled transfer."
-                onPress={() => router.push("/owner-room-change-requests")}
-              />
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <TenancyToolBox icon={UserPlus} label="Create tenancy" onPress={() => router.push("/owner-onboard-tenant")} />
+              <TenancyToolBox icon={LogOut} label="Exit requests" onPress={() => router.push("/owner-exit-requests")} />
+              <TenancyToolBox icon={ArrowLeftRight} label="Room change" onPress={() => router.push("/owner-room-change-requests")} />
             </View>
           </Section>
 
-          <Section eyebrow="Current snapshot" title="Tenancy state">
-            <View style={{ gap: spacing.sm }}>
-              {tenanciesQuery.isFetching ? (
+          <Section eyebrow="Tenancies" title="Property stays">
+            <View style={{ gap: spacing.md }}>
+              <TenancyListTabs activeTab={activeTab} onChange={setActiveTab} />
+
+              <SearchField onChangeText={setSearchDraft} placeholder="Search by tenant name, phone or tenancy ID" value={searchDraft} />
+
+              {isLoading && !visiblePage ? (
                 <Card>
                   <ActivityIndicator color={colors.primary} />
                 </Card>
-              ) : tenancies.length > 0 ? (
-                tenancies.slice(0, 3).map((tenancy) => (
-                  <Card key={tenancy.id} tone="sunken">
-                    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-                      <View
-                        style={{
-                          alignItems: "center",
-                          backgroundColor: colors.primarySoft,
-                          borderRadius: 12,
-                          height: 40,
-                          justifyContent: "center",
-                          width: 40,
-                        }}
-                      >
-                        <DoorOpen color={colors.primary} size={19} strokeWidth={2.2} />
-                      </View>
-                      <View style={{ flex: 1, gap: spacing.xs }}>
-                        <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
-                          {tenancy.referenceCode}
-                        </Text>
-                        <Text style={[type.caption, { color: colors.muted }]} selectable>
-                          {humanizeToken(tenancy.billingType)} · started {tenancy.startDate}
-                        </Text>
-                      </View>
-                    </View>
-                  </Card>
-                ))
-              ) : (
+              ) : null}
+
+              {isError ? (
                 <EmptyState
-                  icon={KeyRound}
-                  eyebrow="No active tenancy"
-                  title="No active stays yet"
-                  description="Create a tenancy to start filling this workspace."
+                  icon={UsersRound}
+                  eyebrow="Unavailable"
+                  title="Could not load tenancies"
+                  description="Refresh the screen and try again."
                 />
-              )}
+              ) : null}
+
+              {!isLoading && !isError && visiblePage?.items.length === 0 ? (
+                <EmptyState
+                  icon={UsersRound}
+                  eyebrow={committedQuery ? "No matches" : activeTab === "active" ? "No active stay" : "No history"}
+                  title={committedQuery ? "No tenancies found" : activeTab === "active" ? "No active tenancies" : "No past tenancies"}
+                  description={
+                    committedQuery
+                      ? "No tenancy matched that tenant name, phone or tenancy ID."
+                      : activeTab === "active"
+                        ? "Newly onboarded tenants for this property will appear here."
+                        : "Completed and inactive tenancies appear here after a stay ends."
+                  }
+                />
+              ) : null}
+
+              {visiblePage?.items.map((tenancy) => {
+                const roomLabel = rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? null;
+                return activeTab === "active" ? (
+                  <ActiveTenancyCard key={tenancy.id} onOpen={() => openActiveTenancy(tenancy)} roomLabel={roomLabel} tenancy={tenancy} />
+                ) : (
+                  <PastTenancyCard key={tenancy.id} roomLabel={roomLabel} tenancy={tenancy} />
+                );
+              })}
+
+              {visiblePage && visiblePage.totalElements > 0 ? (
+                <PaginationBar
+                  hasNext={visiblePage.hasNext}
+                  hasPrevious={visiblePage.hasPrevious}
+                  onNext={() => (activeTab === "active" ? setActivePage((page) => page + 1) : setPastPage((page) => page + 1))}
+                  onPrevious={() => (activeTab === "active" ? setActivePage((page) => Math.max(page - 1, 0)) : setPastPage((page) => Math.max(page - 1, 0)))}
+                  page={visiblePage.page}
+                  totalElements={visiblePage.totalElements}
+                  totalPages={visiblePage.totalPages}
+                />
+              ) : null}
             </View>
           </Section>
+
         </>
       ) : null}
     </ScreenScrollView>
+  );
+}
+
+function TenancyToolBox({ icon: Icon, label, onPress }: { icon: typeof UserPlus; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: 16,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.xs,
+        justifyContent: "center",
+        minHeight: 112,
+        paddingHorizontal: spacing.xs,
+        paddingVertical: spacing.md,
+      }}
+    >
+      <Icon color={colors.primary} size={48} strokeWidth={1.8} />
+      <Text
+        style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", lineHeight: 15, textAlign: "center" }}
+        numberOfLines={2}
+        selectable
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
   );
 }
 
@@ -204,12 +326,4 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
   }
 
   return properties.length === 1 ? properties[0] : null;
-}
-
-function humanizeToken(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

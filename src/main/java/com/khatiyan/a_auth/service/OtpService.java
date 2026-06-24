@@ -47,6 +47,11 @@ public class OtpService {
 
     @Transactional
     public void issue(String phone, String requestIpAddress, OtpPurpose purpose, OtpDeliveryChannel channel) {
+        issue(phone, null, requestIpAddress, purpose, channel);
+    }
+
+    @Transactional
+    public void issue(String phone, String email, String requestIpAddress, OtpPurpose purpose, OtpDeliveryChannel channel) {
         Instant now = Instant.now();
         String otp = "%06d".formatted(secureRandom.nextInt(1_000_000));
         String otpHash = passwordEncoder.encode(otp);
@@ -68,12 +73,12 @@ public class OtpService {
                     purpose,
                     e.getMessage());
 
-            issueUsingDatabase(phone, requestIpAddress, purpose, otpHash, otp, now, resolvedChannel);
+            issueUsingDatabase(phone, email, requestIpAddress, purpose, otpHash, otp, now, resolvedChannel);
             return;
         }
 
         saveDatabaseMirror(phone, requestIpAddress, purpose, otpHash, now);
-        otpDeliveryService.deliverOtp(phone, otp, purpose, resolvedChannel);
+        otpDeliveryService.deliverOtp(phone, email, otp, purpose, resolvedChannel);
 
         log.info("OTP issued using Valkey phone={} purpose={} channel={}", phone, purpose, resolvedChannel);
     }
@@ -112,6 +117,7 @@ public class OtpService {
 
     private void issueUsingDatabase(
             String phone,
+            String email,
             String requestIpAddress,
             OtpPurpose purpose,
             String otpHash,
@@ -119,7 +125,7 @@ public class OtpService {
             Instant now,
             OtpDeliveryChannel channel) {
         saveDatabaseOtp(phone, requestIpAddress, purpose, otpHash, now);
-        otpDeliveryService.deliverOtp(phone, otp, purpose, channel);
+        otpDeliveryService.deliverOtp(phone, email, otp, purpose, channel);
 
         log.info("OTP issued using database fallback phone={} purpose={} channel={}", phone, purpose, channel);
     }

@@ -7,6 +7,8 @@ import com.khatiyan.c_shared.audit.BaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -31,7 +33,15 @@ public class NotificationRecipient extends BaseEntity {
     private Notification notification;
 
     @Column(name = "user_id", nullable = false)
-    private UUID userId;    
+    private UUID userId;
+
+    /**
+     * Workspace this recipient row belongs to (tenant vs management). Null means
+     * "show in either workspace" — account-level notifications and legacy rows.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "audience", length = 20)
+    private NotificationAudience audience;
 
     @Column(name = "read_at")
     private Instant readAt;
@@ -39,14 +49,19 @@ public class NotificationRecipient extends BaseEntity {
     @Column(name = "archived_at")
     private Instant archivedAt;
 
-    private NotificationRecipient(Notification notification, UUID userId) {
+    private NotificationRecipient(Notification notification, UUID userId, NotificationAudience audience) {
         this.id = UUID.randomUUID();
         this.notification = notification;
         this.userId = userId;
+        this.audience = audience;
     }
 
     public static NotificationRecipient create(Notification notification, UUID userId) {
-        return new NotificationRecipient(notification, userId);
+        return new NotificationRecipient(notification, userId, null);
+    }
+
+    public static NotificationRecipient create(Notification notification, UUID userId, NotificationAudience audience) {
+        return new NotificationRecipient(notification, userId, audience);
     }
 
     public void markRead(Instant now) {

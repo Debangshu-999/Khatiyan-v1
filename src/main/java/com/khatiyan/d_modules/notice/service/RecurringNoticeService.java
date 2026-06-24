@@ -58,17 +58,36 @@ public class RecurringNoticeService {
             CreateRecurringNoticeRequest request) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
+        String title = request.notice().title().trim();
+        String body = request.notice().body().trim();
+        LocalDate activeFrom = activeFromOrToday(request.activeFrom());
+        Instant now = Instant.now();
+
+        // Create the single managed notice up front; the scheduler republishes
+        // its visible window each applicable day.
+        Notice notice = Notice.publish(
+                propertyId,
+                actorUserId,
+                title,
+                body,
+                request.notice().priority(),
+                windowStart(activeFrom, request.startTime()),
+                windowEnd(activeFrom, request.endTime()),
+                now);
+        noticeRepository.save(notice);
+
         RecurringNotice recurringNotice = RecurringNotice.create(
                 propertyId,
                 actorUserId,
-                request.notice().title().trim(),
-                request.notice().body().trim(),
+                title,
+                body,
                 request.notice().priority(),
                 request.frequency(),
                 request.startTime(),
                 request.endTime(),
-                activeFromOrToday(request.activeFrom()),
-                request.activeUntil());
+                activeFrom,
+                request.activeUntil(),
+                notice.getId());
 
         RecurringNotice savedRecurringNotice = recurringNoticeRepository.save(recurringNotice);
 
@@ -99,15 +118,29 @@ public class RecurringNoticeService {
         RecurringNotice recurringNotice = getRecurringNotice(recurringNoticeId);
         propertyModule.ensureCanManageProperty(actorUserId, recurringNotice.getPropertyId());
 
+        String title = request.notice().title().trim();
+        String body = request.notice().body().trim();
+
         recurringNotice.updateDetails(
-                request.notice().title().trim(),
-                request.notice().body().trim(),
+                title,
+                body,
                 request.notice().priority(),
                 request.frequency(),
                 request.startTime(),
                 request.endTime(),
                 activeFromOrToday(request.activeFrom()),
                 request.activeUntil());
+
+        // Keep the managed notice's content in sync; its window stays scheduler-managed.
+        if (recurringNotice.getNoticeId() != null) {
+            noticeRepository.findNoticeById(recurringNotice.getNoticeId())
+                    .ifPresent(notice -> notice.updateDetails(
+                            title,
+                            body,
+                            request.notice().priority(),
+                            notice.getVisibleFrom(),
+                            notice.getVisibleUntil()));
+        }
 
         log.info(
                 "Recurring notice updated recurringNoticeId={} propertyId={} actorUserId={}",
@@ -124,6 +157,12 @@ public class RecurringNoticeService {
         propertyModule.ensureCanManageProperty(actorUserId, recurringNotice.getPropertyId());
 
         recurringNotice.softDelete();
+
+        // Remove the managed notice from tenant view as well.
+        if (recurringNotice.getNoticeId() != null) {
+            noticeRepository.findNoticeById(recurringNotice.getNoticeId())
+                    .ifPresent(notice -> notice.softDelete());
+        }
 
         log.info(
                 "Recurring notice soft-deleted recurringNoticeId={} propertyId={} actorUserId={}",
@@ -158,17 +197,31 @@ public class RecurringNoticeService {
                     continue;
                 }
 
-                Notice notice = Notice.publish(
-                        recurringNotice.getPropertyId(),
-                        recurringNotice.getCreatedByUserId(),
-                        recurringNotice.getTitle(),
-                        recurringNotice.getBody(),
-                        recurringNotice.getPriority(),
-                        today.atTime(recurringNotice.getStartTime()).atZone(generationZone).toInstant(),
-                        today.atTime(recurringNotice.getEndTime()).atZone(generationZone).toInstant(),
-                        now);
+                Instant visibleFrom = windowStart(today, recurringNotice.getStartTime());
+                Instant visibleUntil = windowEnd(today, recurringNotice.getEndTime());
 
-                noticeRepository.save(notice);
+                Notice notice = recurringNotice.getNoticeId() == null
+                        ? null
+                        : noticeRepository.findNoticeById(recurringNotice.getNoticeId()).orElse(null);
+
+                if (notice == null) {
+                    // First run for a legacy rule (or its notice was removed) —
+                    // create the managed notice and link it.
+                    notice = Notice.publish(
+                            recurringNotice.getPropertyId(),
+                            recurringNotice.getCreatedByUserId(),
+                            recurringNotice.getTitle(),
+                            recurringNotice.getBody(),
+                            recurringNotice.getPriority(),
+                            visibleFrom,
+                            visibleUntil,
+                            now);
+                    noticeRepository.save(notice);
+                    recurringNotice.linkNotice(notice.getId());
+                } else {
+                    notice.republishForWindow(visibleFrom, visibleUntil, now);
+                }
+
                 recurringNotice.markGeneratedFor(today);
                 generatedCount++;
             }
@@ -193,5 +246,13 @@ public class RecurringNoticeService {
         }
 
         return activeFrom;
+    }
+
+    private Instant windowStart(LocalDate date, java.time.LocalTime startTime) {
+        return date.atTime(startTime).atZone(generationZone).toInstant();
+    }
+
+    private Instant windowEnd(LocalDate date, java.time.LocalTime endTime) {
+        return date.atTime(endTime).atZone(generationZone).toInstant();
     }
 }

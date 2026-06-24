@@ -47,6 +47,20 @@ class BillingCycleTest {
     }
 
     @Test
+    void carriesOverdueCycleForwardAsUnpaidWhenNextCycleStarts() {
+        BillingCycle cycle = monthlyCycle(2, LocalDate.of(2026, 6, 1));
+
+        cycle.markOverdue(LocalDate.of(2026, 6, 5));
+        assertThat(cycle.getStatus()).isEqualTo(BillingCycleStatus.OVERDUE);
+
+        cycle.markUnpaidAfterOverdueWindow(LocalDate.of(2026, 7, 1));
+
+        assertThat(cycle.getStatus()).isEqualTo(BillingCycleStatus.UNPAID);
+        cycle.markOverdue(LocalDate.of(2026, 7, 2));
+        assertThat(cycle.getStatus()).isEqualTo(BillingCycleStatus.UNPAID);
+    }
+
+    @Test
     void paidCycleCannotBeRecalculatedOrCancelled() {
         BillingCycle cycle = monthlyCycle(2, LocalDate.of(2026, 6, 1));
         cycle.recalculateTotals(12_000_00, 0, 0, 0, 0);

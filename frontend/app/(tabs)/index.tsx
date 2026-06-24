@@ -1,44 +1,68 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import type { ComponentType, ReactNode } from "react";
+import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { MaterialIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
   AlertCircle,
   AlertTriangle,
   Banknote,
+  BedDouble,
+  BedSingle,
   Bell,
+  Ban,
   Building2,
   Check,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   ClipboardList,
+  Clock,
   Copy,
   Compass,
+  DoorClosed,
   DoorOpen,
   FileText,
   Home,
   KeyRound,
+  Landmark,
   LocateFixed,
+  LogOut,
   MapPin,
   Megaphone,
+  Navigation,
+  Pin,
+  Receipt,
   RefreshCw,
-  Repeat2,
+  RotateCcw,
   Search,
+  Settings,
   ShieldCheck,
+  UserRound,
+  UserMinus,
   UserPlus,
+  Users,
+  Wrench,
+  X,
   type LucideProps,
 } from "lucide-react-native";
 
+import { clearStoredSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { HeaderNote } from "@/components/header-note";
 import { MetricTile } from "@/components/metric-tile";
-import { NotificationBell } from "@/components/notification-bell";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SnapshotTile } from "@/components/snapshot-tile";
+import { TrendBarChart } from "@/components/trend-bar-chart";
+import { api } from "@/store/api";
 import { getGreeting } from "@/features/greeting/get-greeting";
+import { saveActiveAccount, savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
 import type { ConcernSummary } from "@/store/services/concern-api";
@@ -46,15 +70,21 @@ import { useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import { useSearchDiscoveryPropertiesQuery } from "@/store/services/discovery-api";
 import type { NoticeSummary, PropertyBoardItem } from "@/store/services/notice-api";
 import { useListMyPropertyBoardItemsQuery, useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
+import { useGetPropertyMonthSummaryQuery, type BillingMonthSummary } from "@/store/services/billing-api";
 import {
   useGetOwnerDashboardQuery,
-  type AttentionSummary,
   type OwnerDashboard,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
-import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
+import { findOwnerModule } from "@/features/owner/owner-modules";
+import { type OwnerProperty } from "@/store/services/property-api";
+import { useListManagerEmploymentQuery, useListStaffCategoriesQuery, useListStaffMembersQuery } from "@/store/services/staff-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
+import { accountLabel, useAvailableAccounts } from "@/features/account/accounts";
 import { fetchCurrentLocation, type DeviceLocationState } from "@/store/slices/location-slice";
+import { clearActiveAccount } from "@/store/slices/account-slice";
+import { clearSession } from "@/store/slices/auth-slice";
+import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -67,12 +97,9 @@ export default function HomeScreen() {
   const profileQuery = useGetProfileQuery(undefined, { skip: !auth.accessToken });
   const user = profileQuery.data ?? auth.user;
   const location = useAppSelector((state) => state.location);
-  const isOwner = user?.role === "OWNER";
-  const isActiveTenant = Boolean(user?.activeTenant);
-  const manageablePropertiesQuery = useListMyPropertiesQuery(undefined, { skip: !auth.accessToken });
-  const managesAny = (manageablePropertiesQuery.data ?? []).length > 0;
-  const showWorkspace = isOwner || managesAny;
-  const workspaceRole: "Owner" | "Manager" = isOwner ? "Owner" : "Manager";
+
+  const { loading: accountsLoading, managedProperties, ownedProperties } = useAvailableAccounts();
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
 
   useEffect(() => {
     if (location.status === "idle") {
@@ -82,54 +109,98 @@ export default function HomeScreen() {
 
   const greeting = useMemo(() => getGreeting(), []);
   const firstName = getDisplayFirstName(user?.fullName);
-  const workspaceLabel = showWorkspace
-    ? `${workspaceRole} workspace`
-    : isActiveTenant
-      ? "Tenant workspace"
-      : "Welcome to Khatiyan";
-  const subtitle = showWorkspace
-    ? `Manage rooms, tenancies, billing, concerns and the property board for the properties you ${isOwner ? "own" : "manage"}.`
-    : isActiveTenant
+
+  const isManagerAccount = activeAccount === "manager";
+  const isWorkspace = activeAccount === "owner" || isManagerAccount;
+
+  // Recent activity for the header's latest-events button (deduped with the
+  // dashboard query rendered inside the workspace view).
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const workspaceProperties = isManagerAccount ? managedProperties : ownedProperties;
+  const selectedWorkspaceProperty = resolveSelectedProperty(workspaceProperties, selectedPropertyId);
+  const headerDashboardQuery = useGetOwnerDashboardQuery(selectedWorkspaceProperty?.id ?? "", {
+    skip: !isWorkspace || !selectedWorkspaceProperty,
+  });
+  const headerRecentActivity = headerDashboardQuery.data?.recentActivity ?? [];
+
+  const subtitle = isWorkspace
+    ? `Manage rooms, tenancies, billing, concerns and the property board for the properties you ${isManagerAccount ? "manage" : "own"}.`
+    : activeAccount === "tenant"
       ? "Your current property, tenancy status, board updates and notices in one quiet snapshot."
       : "Find listed PG and hostel properties near you, then move into a full tenancy workspace when your stay begins.";
 
+  const markerLabel = activeAccount
+    ? activeAccount === "tenant"
+      ? "Active tenant"
+      : accountLabel(activeAccount)
+    : accountsLoading
+      ? "Checking access"
+      : user
+        ? humanizeToken(user.role)
+        : "";
+  const accountMenuLabel = activeAccount ? `${accountLabel(activeAccount)} account` : markerLabel ? `${markerLabel} account` : "Account";
+
+  async function handleLogout() {
+    dispatch(clearActiveAccount());
+    dispatch(setPinnedOwnerModules([]));
+    void saveActiveAccount(null);
+    dispatch(clearSession());
+    dispatch(api.util.resetApiState());
+    await clearStoredSession();
+    router.replace("/auth");
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-          {workspaceLabel}
-        </Text>
-        <NotificationBell />
-      </View>
-
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 30,
-              fontWeight: "500",
-              letterSpacing: -0.4,
-              lineHeight: 36,
-            }}
-            selectable
-          >
-            {greeting},{" "}
-            <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }} selectable>
-              {firstName}.
+      {/* Left column stacks the location bar and the greeting so the greeting
+          hugs the location; the profile + live-events stay pinned top-right. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <View style={{ flex: 1, gap: spacing.sm }}>
+          <HomeLocationBar location={location} onRefresh={() => void dispatch(fetchCurrentLocation())} />
+          <View style={{ gap: spacing.xs }}>
+            <Text
+              style={{
+                color: colors.ink,
+                fontFamily: fonts.display,
+                fontSize: 30,
+                fontWeight: "500",
+                letterSpacing: -0.4,
+                lineHeight: 36,
+              }}
+              selectable
+            >
+              {greeting},{" "}
+              <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }} selectable>
+                {firstName}.
+              </Text>
             </Text>
-          </Text>
-          <Text style={[type.body, { color: colors.muted, maxWidth: 520 }]} selectable>
-            {subtitle}
-          </Text>
+            <HeaderNote>{subtitle}</HeaderNote>
+          </View>
         </View>
-        {user ? <WorkspaceMarker label={showWorkspace ? workspaceRole : Boolean(user.activeTenant) ? "Active tenant" : humanizeToken(user.role)} /> : null}
+        <View style={{ alignItems: "flex-end", gap: spacing.sm }}>
+          <HomeProfileMenu
+            accountLabel={accountMenuLabel}
+            imageUri={profileQuery.data?.profilePhotoUrl ?? null}
+            name={user?.fullName?.trim() || "Khatiyan user"}
+            onLogout={() => void handleLogout()}
+            onOpenProfile={() => router.push("/account")}
+            onOpenSettings={() => router.push("/account-settings")}
+          />
+          {isWorkspace ? <LatestEventsButton activity={headerRecentActivity} /> : null}
+        </View>
       </View>
 
-      {showWorkspace ? (
-        <OwnerHome onNavigate={router.push} workspaceRole={workspaceRole} />
-      ) : isActiveTenant ? (
+      {accountsLoading ? (
+        <Card>
+          <ActivityIndicator color={colors.primary} />
+        </Card>
+      ) : isWorkspace ? (
+        <OwnerHome
+          account={isManagerAccount ? "manager" : "owner"}
+          onNavigate={router.push}
+          properties={isManagerAccount ? managedProperties : ownedProperties}
+        />
+      ) : activeAccount === "tenant" ? (
         <TenantHome onNavigate={router.push} />
       ) : (
         <NonTenantHome onNavigate={router.push} />
@@ -138,35 +209,418 @@ export default function HomeScreen() {
   );
 }
 
-function WorkspaceMarker({ label }: { label: string }) {
+// Device-location bar pinned to the top-left of every home view: a navigation
+// glyph, a short place label with a chevron affordance, and the full address
+// below. Tapping it re-fetches the current location.
+function HomeLocationBar({ location, onRefresh }: { location: DeviceLocationState; onRefresh: () => void }) {
   const { colors, fonts, type } = useTheme();
+  const busy = location.status === "loading" || location.status === "idle";
 
   return (
-    <View
-      style={{
-        alignItems: "flex-end",
-        borderLeftColor: colors.border,
-        borderLeftWidth: 1,
-        gap: 2,
-        paddingLeft: spacing.md,
-      }}
+    <AnimatedPressable
+      accessibilityHint="Refresh your current location"
+      accessibilityLabel={`Current location: ${locationTitle(location)}`}
+      accessibilityRole="button"
+      onPress={onRefresh}
+      style={{ alignSelf: "stretch", gap: 2 }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]} selectable>
-        Access
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <Navigation color={colors.primary} fill={colors.primary} size={16} strokeWidth={2} />
+        <Text
+          numberOfLines={1}
+          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sans, fontSize: 20, fontWeight: "800", letterSpacing: 0 }}
+          selectable
+        >
+          {locationTitle(location)}
+        </Text>
+        {busy ? <ActivityIndicator color={colors.muted} size="small" /> : <RefreshCw color={colors.muted} size={14} strokeWidth={2.4} />}
+      </View>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+        {locationAddress(location)}
       </Text>
-      <Text
+    </AnimatedPressable>
+  );
+}
+
+function locationTitle(location: DeviceLocationState) {
+  if (location.status === "error") {
+    return "Location unavailable";
+  }
+  const label = location.city ?? location.locality ?? location.district ?? location.state;
+  if (label) {
+    return label;
+  }
+  return location.status === "ready" ? "Current location" : "Locating...";
+}
+
+function locationAddress(location: DeviceLocationState) {
+  if (location.status === "loading" || location.status === "idle") {
+    return "Finding your current location...";
+  }
+  if (location.status === "error") {
+    return location.error ?? "Tap to retry location access";
+  }
+  return location.displayAddress ?? "Tap to refresh your location";
+}
+
+function WorkspaceMarker({ label }: { label: string }) {
+  const { colors, type } = useTheme();
+
+  return (
+    <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]} selectable>
+      {label}
+    </Text>
+  );
+}
+
+function HomeProfileMenu({
+  accountLabel,
+  imageUri,
+  name,
+  onLogout,
+  onOpenProfile,
+  onOpenSettings,
+}: {
+  accountLabel: string;
+  imageUri: string | null;
+  name: string;
+  onLogout: () => void;
+  onOpenProfile: () => void;
+  onOpenSettings: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const [open, setOpen] = useState(false);
+  const initials = initialsFor(name);
+
+  function closeAndRun(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <View style={{ alignItems: "flex-end", position: "relative", zIndex: 40 }}>
+      <AnimatedPressable
+        accessibilityLabel="Open account menu"
+        accessibilityRole="button"
+        onPress={() => setOpen((current) => !current)}
         style={{
-          color: colors.ink,
-          fontFamily: fonts.sans,
-          fontSize: 13,
-          fontWeight: "800",
-          textAlign: "right",
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderCurve: "continuous",
+          borderRadius: 999,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: 6,
+          height: 40,
+          paddingLeft: 4,
+          paddingRight: 10,
         }}
-        selectable
       >
+        <View style={{ alignItems: "center", borderRadius: 16, height: 32, justifyContent: "center", overflow: "hidden", width: 32 }}>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={{ height: 32, width: 32 }} />
+          ) : (
+            <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, height: 32, justifyContent: "center", width: 32 }}>
+              <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900" }} selectable>
+                {initials}
+              </Text>
+            </View>
+          )}
+        </View>
+        {open ? <ChevronUp color={colors.muted} size={16} strokeWidth={2.4} /> : <ChevronDown color={colors.muted} size={14} strokeWidth={2.4} />}
+      </AnimatedPressable>
+
+      {open ? (
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 14,
+            borderWidth: 1,
+            elevation: 14,
+            gap: 2,
+            padding: spacing.xs,
+            position: "absolute",
+            right: 0,
+            shadowColor: "#000",
+            shadowOffset: { height: 8, width: 0 },
+            shadowOpacity: 0.18,
+            shadowRadius: 16,
+            top: 48,
+            width: 182,
+            zIndex: 50,
+          }}
+        >
+          <View style={{ borderBottomColor: colors.border, borderBottomWidth: 1, gap: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
+            <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]} numberOfLines={1} selectable>
+              {accountLabel}
+            </Text>
+            <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]} numberOfLines={1} selectable>
+              {name}
+            </Text>
+          </View>
+          <MenuAction icon={UserRound} label="Profile" onPress={() => closeAndRun(onOpenProfile)} />
+          <MenuAction icon={Settings} label="Settings" onPress={() => closeAndRun(onOpenSettings)} />
+          <MenuAction danger icon={LogOut} label="Logout" onPress={() => closeAndRun(onLogout)} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function MenuAction({
+  danger,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  danger?: boolean;
+  icon: ComponentType<LucideProps>;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  const tone = danger ? colors.danger : colors.ink;
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{ alignItems: "center", borderRadius: 10, flexDirection: "row", gap: spacing.sm, minHeight: 38, paddingHorizontal: spacing.sm }}
+    >
+      <Icon color={tone} size={16} strokeWidth={2.2} />
+      <Text style={{ color: tone, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
         {label}
       </Text>
-    </View>
+    </AnimatedPressable>
+  );
+}
+
+// Subtle mount entrance Ã¢â‚¬â€ a soft fade + upward drift Ã¢â‚¬â€ used to give the home
+// content a little life as it appears.
+function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { duration: 420, easing: Easing.out(Easing.cubic), toValue: 1, useNativeDriver: true }).start();
+  }, [anim]);
+  return (
+    <Animated.View
+      style={[
+        { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] },
+        style,
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+// The primary "open workspace" call-to-action Ã¢â‚¬â€ a gradient hero so it reads as
+// the headline action rather than just another card in the stack.
+// Gradient hero CTA used for the workspace card and each dashboard snapshot's
+// "open this area" link, so navigation affordances share one bold look.
+function GradientCtaCard({
+  description,
+  icon: Icon,
+  kicker,
+  onPress,
+  title,
+}: {
+  description: string;
+  icon: ComponentType<LucideProps>;
+  kicker: string;
+  onPress: () => void;
+  title: string;
+}) {
+  const { colors, fonts, isDark } = useTheme();
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
+      <LinearGradient
+        colors={[colors.primary, colors.primaryDeep] as const}
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={{
+          borderCurve: "continuous",
+          borderRadius: 20,
+          elevation: 8,
+          gap: spacing.sm,
+          overflow: "hidden",
+          padding: spacing.lg,
+          shadowColor: isDark ? "#000000" : colors.primaryDeep,
+          shadowOffset: { height: 8, width: 0 },
+          shadowOpacity: isDark ? 0.5 : 0.32,
+          shadowRadius: 16,
+        }}
+      >
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.18)", borderCurve: "continuous", borderRadius: 14, height: 48, justifyContent: "center", width: 48 }}>
+            <Icon color={colors.onPrimary} size={24} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900", letterSpacing: 1, opacity: 0.82, textTransform: "uppercase" }} selectable>
+              {kicker}
+            </Text>
+            <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 20, fontWeight: "600", letterSpacing: -0.3 }} selectable>
+              {title}
+            </Text>
+          </View>
+          <View style={{ alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.18)", borderRadius: 999, height: 34, justifyContent: "center", width: 34 }}>
+            <ChevronRight color={colors.onPrimary} size={19} strokeWidth={2.6} />
+          </View>
+        </View>
+        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, opacity: 0.85 }} selectable>
+          {description}
+        </Text>
+      </LinearGradient>
+    </AnimatedPressable>
+  );
+}
+
+function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owner" | "Manager" }) {
+  return (
+    <GradientCtaCard
+      description="Onboard tenants, manage tenancies, billing, notices, concerns and discovery."
+      icon={Building2}
+      kicker={`${role} workspace`}
+      onPress={onPress}
+      title="Open workspace"
+    />
+  );
+}
+
+// Header button for the dashboard's latest events. Opens a modal that closes on
+// an outside tap, and shows a blinking dot when a new event arrives.
+function LatestEventsButton({ activity }: { activity: RecentActivityItem[] }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [hasNew, setHasNew] = useState(false);
+  const latestKey = activity.length ? `${activity[0].type}-${activity[0].occurredAt}` : "";
+  const seenKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (seenKeyRef.current === null) {
+      // First load Ã¢â‚¬â€ treat existing events as already seen so it doesn't blink.
+      seenKeyRef.current = latestKey;
+      return;
+    }
+    if (latestKey && latestKey !== seenKeyRef.current) {
+      setHasNew(true);
+    }
+  }, [latestKey]);
+
+  function openModal() {
+    seenKeyRef.current = latestKey;
+    setHasNew(false);
+    setOpen(true);
+  }
+
+  return (
+    <>
+      <AnimatedPressable
+        accessibilityLabel="Latest events"
+        accessibilityRole="button"
+        onPress={openModal}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderCurve: "continuous",
+          borderRadius: 14,
+          borderWidth: 1,
+          height: 40,
+          justifyContent: "center",
+          width: 40,
+        }}
+      >
+        <MaterialIcons name="dynamic-feed" color={colors.muted} size={22} />
+        {hasNew ? <BlinkingDot /> : null}
+      </AnimatedPressable>
+      {open ? <LatestEventsModal activity={activity} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function BlinkingDot() {
+  const { colors } = useTheme();
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.2, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        backgroundColor: colors.danger,
+        borderColor: colors.surface,
+        borderRadius: 999,
+        borderWidth: 1.5,
+        height: 11,
+        opacity: pulse,
+        position: "absolute",
+        right: 5,
+        top: 5,
+        width: 11,
+      }}
+    />
+  );
+}
+
+function LatestEventsModal({ activity, onClose }: { activity: RecentActivityItem[]; onClose: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <Pressable onPress={onClose} style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "82%",
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Recent activity
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>
+                Latest events
+              </Text>
+            </View>
+            <AnimatedPressable
+              accessibilityLabel="Close latest events"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}
+            >
+              <X color={colors.ink} size={18} strokeWidth={2.2} />
+            </AnimatedPressable>
+          </View>
+          {activity.length === 0 ? (
+            <Text style={[type.body, { color: colors.muted }]} selectable>
+              No recent activity yet. New tenancies, payments, resolved concerns and published notices will appear here.
+            </Text>
+          ) : (
+            <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator>
+              {activity.map((item, index) => (
+                <ActivityRow item={item} key={`${item.type}-${item.occurredAt}-${index}`} />
+              ))}
+            </ScrollView>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -242,7 +696,7 @@ function TenantHome({
                 {property.name}
               </Text>
             </View>
-            <InfoLine icon={KeyRound} text={`Room ${room.roomNumber}${room.floor ? ` · ${formatFloor(room.floor)}` : ""}`} />
+            <InfoLine icon={KeyRound} text={`Room ${room.roomNumber}${room.floor ? ` Ã‚Â· ${formatFloor(room.floor)}` : ""}`} />
             <AddressInfoLine address={propertyAddress} />
           </View>
         </View>
@@ -312,7 +766,7 @@ function TenantHome({
         {latestConcern ? (
           <SummaryRow
             icon={AlertCircle}
-            kicker={`${humanizeToken(latestConcern.category)} · ${humanizeToken(latestConcern.priority)}`}
+            kicker={humanizeToken(latestConcern.category)}
             title={latestConcern.title}
             body={latestConcern.description}
           />
@@ -341,31 +795,47 @@ function TenantHome({
 type OwnerRoute =
   | "/owner"
   | "/owner-tenancy"
+  | "/owner-action-center"
   | "/owner-billing"
+  | "/owner-deposit-manager"
   | "/owner-onboard-tenant"
   | "/owner-exit-requests"
   | "/owner-room-change-requests"
   | "/owner-property"
   | "/owner-rooms"
+  | "/owner-notices"
+  | "/owner-concerns"
+  | "/owner-vacancy-finder"
+  | "/owner-staff"
   | { pathname: "/owner-service-placeholder"; params: { service: string; title: string } };
 
-// Owner/manager-side concerns are not built yet — they route to the placeholder
-// screen, not the tenant-facing /concerns screen.
-const OWNER_CONCERNS_ROUTE: OwnerRoute = {
-  params: { service: "concerns", title: "Concern" },
-  pathname: "/owner-service-placeholder",
-};
+const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
 
-function OwnerHome({ onNavigate, workspaceRole }: { onNavigate: (href: OwnerRoute) => void; workspaceRole: "Owner" | "Manager" }) {
+type OwnerTab = "workspace" | "dashboard";
+
+function OwnerHome({
+  account,
+  onNavigate,
+  properties,
+}: {
+  account: "owner" | "manager";
+  onNavigate: (href: OwnerRoute) => void;
+  properties: OwnerProperty[];
+}) {
   const { colors, type } = useTheme();
   const dispatch = useAppDispatch();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
   const [selectorOpen, setSelectorOpen] = useState(false);
-  const propertiesQuery = useListMyPropertiesQuery();
-  const properties = propertiesQuery.data ?? [];
+  const [tab, setTab] = useState<OwnerTab>("workspace");
+  const workspaceRole: "Owner" | "Manager" = account === "manager" ? "Manager" : "Owner";
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
   const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const dashboard = dashboardQuery.data;
+  const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
+    { propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty },
+  );
 
   useEffect(() => {
     if (properties.length === 1 && selectedPropertyId !== properties[0].id) {
@@ -385,42 +855,39 @@ function OwnerHome({ onNavigate, workspaceRole }: { onNavigate: (href: OwnerRout
     }
   }, [dispatch, properties, selectedPropertyId]);
 
-  if (propertiesQuery.isFetching && properties.length === 0) {
-    return (
-      <Card>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-          Loading owner workspace
-        </Text>
-      </Card>
-    );
-  }
-
   if (properties.length === 0) {
     return (
       <EmptyState
         icon={Building2}
-        eyebrow="Owner workspace"
-        title="No property yet"
-        description="Create your first property from the owner workspace to unlock rooms, tenancies, billing, notices and discovery."
+        eyebrow={`${workspaceRole} workspace`}
+        title={account === "manager" ? "No assigned properties" : "No property yet"}
+        description={
+          account === "manager"
+            ? "Properties appear here once an owner assigns you as a manager."
+            : "Create your first property from the owner workspace to unlock rooms, tenancies, billing, notices and discovery."
+        }
       />
     );
   }
 
   return (
-    <>
-      <Section eyebrow="Workspace scope" title="Property selector">
+    <FadeInUp style={{ gap: spacing.lg }}>
+      <View style={{ gap: spacing.sm }}>
+        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          {account === "manager" ? (properties.length > 1 ? "Managed properties" : "Managed property") : "Property selector"}
+        </Text>
         <OwnerPropertyPicker
           open={selectorOpen}
           properties={properties}
           selectedProperty={selectedProperty}
+          workspaceRole={workspaceRole}
           onSelect={(propertyId) => {
             dispatch(setSelectedOwnerPropertyId(propertyId));
             setSelectorOpen(false);
           }}
           onToggle={() => setSelectorOpen((currentValue) => !currentValue)}
         />
-      </Section>
+      </View>
 
       {!selectedProperty ? (
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -438,162 +905,595 @@ function OwnerHome({ onNavigate, workspaceRole }: { onNavigate: (href: OwnerRout
         </Card>
       ) : null}
 
-      {dashboard ? <OwnerDashboardSections dashboard={dashboard} onNavigate={onNavigate} /> : null}
-
-      <Section eyebrow={`${workspaceRole} actions`} title="Workspace">
-        <ActionCard
-          meta="Overview"
-          title={`Open ${workspaceRole.toLowerCase()} workspace`}
-          description="Manage tenant onboarding, active tenancies, billing, notices, concerns and discovery."
-          onPress={() => onNavigate("/owner")}
-          tone="primary"
-        />
-        <ActionCard
-          meta="Tenancy"
-          title="Tenancy"
-          description="Create tenancies, view active stays, exit requests and room-change requests."
-          onPress={() => onNavigate("/owner-tenancy")}
-        />
-      </Section>
-    </>
+      {selectedProperty && dashboard ? (
+        <>
+          <OwnerTabBar onChange={setTab} tab={tab} />
+          {tab === "dashboard" ? (
+            <DashboardTab dashboard={dashboard} monthSummary={monthSummaryQuery.data} onNavigate={onNavigate} />
+          ) : (
+            <WorkspaceTab dashboard={dashboard} onNavigate={onNavigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
+          )}
+        </>
+      ) : null}
+    </FadeInUp>
   );
 }
 
-function OwnerDashboardSections({ dashboard, onNavigate }: { dashboard: OwnerDashboard; onNavigate: (href: OwnerRoute) => void }) {
-  const { colors, type } = useTheme();
-  const { attention, concerns, money, occupancy, today } = dashboard;
-  const attentionItems = buildAttentionItems(attention);
+function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
+  const { colors, fonts, isDark } = useTheme();
+  const tabs: { label: string; value: OwnerTab }[] = [
+    { label: "Workspace", value: "workspace" },
+    { label: "Dashboard", value: "dashboard" },
+  ];
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderCurve: "continuous", borderRadius: 16, flexDirection: "row", padding: 5 }}>
+      {tabs.map((item) => {
+        const selected = tab === item.value;
+        return (
+          <AnimatedPressable
+            accessibilityRole="button"
+            key={item.value}
+            onPress={() => onChange(item.value)}
+            style={{
+              alignItems: "center",
+              backgroundColor: selected ? colors.surface : "transparent",
+              borderColor: selected ? colors.border : "transparent",
+              borderCurve: "continuous",
+              borderRadius: 13,
+              borderWidth: 1,
+              // Raised selected segment on the sunken track Ã¢â‚¬â€ a soft 3D pop.
+              elevation: selected ? 5 : 0,
+              flex: 1,
+              justifyContent: "center",
+              minHeight: 46,
+              shadowColor: isDark ? "#000000" : "#0F172A",
+              shadowOffset: { height: 3, width: 0 },
+              shadowOpacity: selected ? (isDark ? 0.4 : 0.13) : 0,
+              shadowRadius: 8,
+            }}
+          >
+            <Text style={{ color: selected ? colors.ink : colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: selected ? "900" : "700" }} selectable>
+              {item.label}
+            </Text>
+          </AnimatedPressable>
+        );
+      })}
+    </View>
+  );
+}
+
+type SnapshotKey = "collection" | "property" | "tenancy" | "cycle" | "pnl";
+
+const SNAPSHOT_META: Record<SnapshotKey, { eyebrow: string; title: string }> = {
+  collection: { eyebrow: "Money this month", title: "Collection snapshot" },
+  property: { eyebrow: "Portfolio", title: "Property snapshot" },
+  tenancy: { eyebrow: "Tenancy", title: "Tenancy snapshot" },
+  cycle: { eyebrow: "Billing cycles", title: "Cycle snapshot" },
+  pnl: { eyebrow: "Profit & loss", title: "P&L snapshot" },
+};
+
+function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: OwnerDashboard; monthSummary?: BillingMonthSummary; onNavigate: (href: OwnerRoute) => void }) {
+  const { money, occupancy, tenancy } = dashboard;
+  const [openSnapshot, setOpenSnapshot] = useState<SnapshotKey | null>(null);
+  const toggle = (key: SnapshotKey) => setOpenSnapshot((current) => (current === key ? null : key));
 
   return (
     <>
-      <Section eyebrow="Money this month" title="Collection snapshot">
-        <View style={{ gap: spacing.sm }}>
-          <BillingSnapshotCard money={money} />
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} hint="This month" tone="primary" />
-            <MetricTile label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} hint="Received" />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Pending" value={formatMoneyPaise(money.pendingPaise)} hint="Awaiting" />
-            <MetricTile
-              label="Overdue"
-              value={formatMoneyPaise(money.overduePaise)}
-              hint={`${money.overdueCount} cycle${money.overdueCount === 1 ? "" : "s"}`}
-              tone={money.overdueCount > 0 ? "danger" : "default"}
-            />
-          </View>
-          <ActionCard
-            meta="Billing"
-            title="Open billing collection"
-            description="Cycle list, mark paid, discounts, receipts and the monthly report."
-            onPress={() => onNavigate("/owner-billing")}
-          />
-        </View>
-      </Section>
-
-      <Section eyebrow="Portfolio" title="Property snapshot">
-        <PropertySnapshotCard occupancy={occupancy} />
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MetricTile label="Active tenants" value={String(occupancy.activeTenants)} hint="Current stays" tone="primary" />
-          <MetricTile label="Vacant beds" value={String(occupancy.vacantBeds)} hint={`of ${occupancy.totalBeds} beds`} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MetricTile label="Occupied beds" value={String(occupancy.occupiedBeds)} hint="In use" />
-          <MetricTile label="Rooms" value={String(occupancy.roomCount)} hint={`${occupancy.totalBeds} beds total`} />
-        </View>
-        <ActionCard
-          meta="Rooms"
-          title="Room management"
-          description="Floors, rooms, beds, rent and occupancy. Create single or in bulk."
-          onPress={() => onNavigate("/owner-rooms")}
-        />
-      </Section>
-
-      <Section eyebrow="Needs attention" title="Pending actions">
-        {attentionItems.length === 0 ? (
-          <Card tone="sunken">
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Check color={colors.successText} size={18} strokeWidth={2.4} />
-              <Text style={[type.body, { color: colors.muted }]} selectable>
-                All clear. Nothing needs attention right now.
-              </Text>
-            </View>
-          </Card>
-        ) : (
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator style={{ maxHeight: 300 }}>
-            <View style={{ gap: spacing.sm }}>
-              {attentionItems.map((item) => (
-                <AttentionRow
-                  key={item.key}
-                  count={item.count}
-                  icon={item.icon}
-                  label={item.label}
-                  onPress={() => onNavigate(item.route)}
-                  urgent={item.urgent}
-                />
-              ))}
-            </View>
-          </ScrollView>
-        )}
-      </Section>
-
-      <Section eyebrow="Concerns" title="Concern queue">
-        <Card>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Open" value={String(concerns.open)} hint="Unresolved" tone={concerns.open > 0 ? "primary" : "default"} />
-            <MetricTile label="In progress" value={String(concerns.inProgress)} hint="Being handled" />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Escalated" value={String(concerns.escalated)} hint="Needs owner" tone={concerns.escalated > 0 ? "danger" : "default"} />
-            <MetricTile label="Resolved" value={String(concerns.resolvedThisWeek)} hint="This week" />
-          </View>
-        </Card>
-      </Section>
-
-      <Section eyebrow="Today" title="Live digest">
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <DigestTile icon={Banknote} label="Payments" value={String(today.paymentsMadeToday)} hint={formatMoneyPaise(today.paymentsMadeTodayPaise)} highlight={today.paymentsMadeToday > 0} />
-          <DigestTile icon={AlertCircle} label="Concerns" value={String(today.concernsRaisedToday)} hint="Raised today" highlight={today.concernsRaisedToday > 0} />
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <DigestTile icon={UserPlus} label="Move-ins" value={String(today.tenanciesStartedToday)} hint="Started today" highlight={today.tenanciesStartedToday > 0} />
-          <DigestTile icon={DoorOpen} label="Move-outs" value={String(today.tenanciesEndingToday)} hint="Ending today" highlight={today.tenanciesEndingToday > 0} />
-        </View>
-      </Section>
-
-      <Section eyebrow="Recent activity" title="Latest events">
-        {dashboard.recentActivity.length === 0 ? (
-          <Card tone="sunken">
-            <Text style={[type.body, { color: colors.muted }]} selectable>
-              No recent activity yet. New tenancies, payments, resolved concerns and published notices will appear here.
-            </Text>
-          </Card>
-        ) : (
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator style={{ maxHeight: 320 }}>
-            <View style={{ gap: spacing.sm }}>
-              {dashboard.recentActivity.map((item, index) => (
-                <ActivityRow item={item} key={`${item.type}-${item.occurredAt}-${index}`} />
-              ))}
-            </View>
-          </ScrollView>
-        )}
-      </Section>
-
-      <Section eyebrow="Quick actions" title="Do next">
+      <Section eyebrow="Dashboard" title="Snapshots">
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <ModuleChip icon={UserPlus} label="Provision tenant" onPress={() => onNavigate("/owner-onboard-tenant")} />
-          <ModuleChip icon={Banknote} label="Billing" onPress={() => onNavigate("/owner-billing")} />
-          <ModuleChip icon={DoorOpen} label="Exit requests" onPress={() => onNavigate("/owner-exit-requests")} />
-          <ModuleChip icon={Repeat2} label="Room changes" onPress={() => onNavigate("/owner-room-change-requests")} />
-          <ModuleChip icon={AlertCircle} label="Concerns" onPress={() => onNavigate(OWNER_CONCERNS_ROUTE)} />
+          <DashboardSnapshotBox active={openSnapshot === "collection"} icon={Banknote} label="Collection" onPress={() => toggle("collection")} tone="primary" value={compactMoneyPaise(money.collectedThisMonthPaise)} />
+          <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
+          <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
+          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.activeCycleCount) : "Ã¢â‚¬â€"} />
+          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} value="Ã¢â‚¬â€" />
         </View>
       </Section>
+
+      {openSnapshot ? (
+        <SnapshotDetail dashboard={dashboard} key={openSnapshot} monthSummary={monthSummary} onNavigate={onNavigate} snapshot={openSnapshot} />
+      ) : null}
     </>
   );
 }
 
-function ActivityRow({ item }: { item: RecentActivityItem }) {
+function DashboardSnapshotBox({
+  active,
+  icon: Icon,
+  label,
+  onPress,
+  tone = "default",
+  value,
+}: {
+  active?: boolean;
+  icon: ComponentType<LucideProps>;
+  label: string;
+  onPress: () => void;
+  tone?: "default" | "danger" | "primary";
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const accent = tone === "danger" ? colors.danger : colors.primary;
+  const accentSoft = tone === "danger" ? colors.dangerSoft : colors.primarySoft;
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        aspectRatio: 1,
+        backgroundColor: active ? accentSoft : colors.surface,
+        borderColor: active ? accent : colors.border,
+        borderCurve: "continuous",
+        borderRadius: 16,
+        borderWidth: active ? 1.5 : 1,
+        flexBasis: "30%",
+        flexGrow: 1,
+        gap: spacing.xs,
+        justifyContent: "center",
+        maxWidth: "32%",
+        minHeight: 104,
+        padding: spacing.sm,
+      }}
+    >
+      <Icon color={accent} size={24} strokeWidth={2.2} />
+      <Text
+        style={{ color: tone === "danger" ? colors.danger : colors.ink, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], fontWeight: "700", letterSpacing: -0.3 }}
+        numberOfLines={1}
+        selectable
+      >
+        {value}
+      </Text>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "center" }]} numberOfLines={1} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+// The detail for the selected dashboard snapshot, shown inline under the boxes
+// (toggled by its box). Full summary cards, metric tiles and trend graphs.
+function SnapshotDetail({
+  dashboard,
+  monthSummary,
+  onNavigate,
+  snapshot,
+}: {
+  dashboard: OwnerDashboard;
+  monthSummary?: BillingMonthSummary;
+  onNavigate: (href: OwnerRoute) => void;
+  snapshot: SnapshotKey;
+}) {
   const { colors, type } = useTheme();
+  const { money, monthlyTrends, occupancy, tenancy } = dashboard;
+  // Collection chart compares money collected per month against a dynamic
+  // rupee ceiling (see TrendBarChart "money" mode), not a 0..100% rate.
+  const collectionMoneyTrend = monthlyTrends.map((point) => ({ label: point.label, value: Math.round(point.collectedPaise / 100) }));
+  const occupancyTrend = monthlyTrends.map((point) => ({ label: point.label, value: point.occupancyRate }));
+  const meta = SNAPSHOT_META[snapshot];
+
+  return (
+    <FadeInUp>
+      <Section eyebrow={meta.eyebrow} title={meta.title}>
+        <View style={{ gap: spacing.sm }}>
+            {snapshot === "collection" ? (
+              <>
+                <BillingSnapshotCard money={money} />
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
+                  <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={{ current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise }} />
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
+                  <SnapshotTile icon={AlertTriangle} label="Overdue" value={formatMoneyPaise(money.overduePaise)} tone={money.overdueCount > 0 ? "danger" : "default"} />
+                </View>
+                <TrendBarChart data={collectionMoneyTrend} mode="money" title="Collected" />
+                <GradientCtaCard icon={Banknote} kicker="Billing" title="Open billing collection" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
+              </>
+            ) : null}
+
+            {snapshot === "property" ? (
+              <>
+                <PropertySnapshotCard occupancy={occupancy} />
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={DoorOpen} label="Rooms" value={String(occupancy.roomCount)} tone="primary" />
+                  <SnapshotTile icon={DoorClosed} label="Room unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={BedDouble} label="Occupied beds" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
+                  <SnapshotTile icon={BedSingle} label="Vacant beds" count={occupancy.vacantBeds} total={occupancy.totalBeds} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
+                </View>
+                <TrendBarChart data={occupancyTrend} title="Occupancy rate" />
+                <GradientCtaCard icon={DoorOpen} kicker="Rooms" title="Room management" description="Floors, rooms, beds, rent and occupancy. Create single or in bulk." onPress={() => onNavigate("/owner-rooms")} />
+              </>
+            ) : null}
+
+            {snapshot === "tenancy" ? (
+              <>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={Users} label="Active tenants" value={String(tenancy.activeTenants)} tone="primary" delta={{ current: tenancy.activeTenants, previous: tenancy.activeTenantsPrevMonth }} />
+                  <SnapshotTile icon={Bell} label="On notice" value={String(tenancy.onNotice)} tone={tenancy.onNotice > 0 ? "danger" : "default"} />
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={UserPlus} label="Started" value={String(tenancy.startedThisMonth)} tone={tenancy.startedThisMonth > 0 ? "primary" : "default"} delta={{ current: tenancy.startedThisMonth, previous: tenancy.startedPrevMonth }} />
+                  <SnapshotTile icon={UserMinus} label="Ended" value={String(tenancy.endedThisMonth)} delta={{ current: tenancy.endedThisMonth, previous: tenancy.endedPrevMonth }} />
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <SnapshotTile icon={DoorOpen} label="Upcoming exits" value={String(tenancy.upcomingExits)} tone={tenancy.upcomingExits > 0 ? "danger" : "default"} />
+                  <View style={{ flex: 1 }} />
+                </View>
+                <GradientCtaCard icon={Users} kicker="Tenancy" title="Open tenancy workspace" description="Active stays, onboarding, exit and room-change requests." onPress={() => onNavigate("/owner-tenancy")} />
+              </>
+            ) : null}
+
+            {snapshot === "cycle" ? (
+              <>
+                {monthSummary ? (
+                  <>
+                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                      <SnapshotTile icon={ClipboardList} label="Cycles" value={String(monthSummary.activeCycleCount)} tone="primary" />
+                      <SnapshotTile icon={AlertTriangle} label="Overdue" value={String(monthSummary.overdueCount)} tone={monthSummary.overdueCount > 0 ? "danger" : "default"} />
+                    </View>
+                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                      <SnapshotTile icon={Check} label="Paid" count={monthSummary.paidCycleCount} total={monthSummary.activeCycleCount} />
+                      <SnapshotTile icon={Clock} label="Unpaid" count={monthSummary.unpaidCycleCount} total={monthSummary.activeCycleCount} tone={monthSummary.unpaidCycleCount > 0 ? "danger" : "default"} />
+                    </View>
+                  </>
+                ) : (
+                  <Card>
+                    <ActivityIndicator color={colors.primary} />
+                  </Card>
+                )}
+                <GradientCtaCard icon={ClipboardList} kicker="Billing" title="Open billing" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
+              </>
+            ) : null}
+
+            {snapshot === "pnl" ? (
+              <Card tone="sunken">
+                <Text style={[type.body, { color: colors.muted }]} selectable>
+                  Profit &amp; loss tracking will appear here once the Expense &amp; Profit module is ready.
+                </Text>
+              </Card>
+            ) : null}
+        </View>
+      </Section>
+    </FadeInUp>
+  );
+}
+
+function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
+  const { colors, fonts, type } = useTheme();
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+  const user = useAppSelector((state) => state.auth.user);
+  const modules = pinnedKeys.map((key) => findOwnerModule(key)).filter((module): module is NonNullable<typeof module> => Boolean(module));
+
+  function unpin(key: string) {
+    const next = pinnedKeys.filter((pinnedKey) => pinnedKey !== key);
+    dispatch(setPinnedOwnerModules(next));
+    if (user?.id) {
+      void savePinnedOwnerModulesForUser(user.id, next);
+    }
+  }
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        Frequently accessed
+      </Text>
+      {modules.length === 0 ? (
+        <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+          Pin owner services with the pin button on the workspace screen to keep them one tap away here.
+        </Text>
+      ) : (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          {modules.map((module) => {
+            const Icon = module.icon;
+            return (
+              <AnimatedPressable
+                accessibilityRole="button"
+                key={module.key}
+                onPress={() => router.push(module.route as never)}
+                style={{
+                  alignItems: "center",
+                  aspectRatio: 1,
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderCurve: "continuous",
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  flexBasis: "30%",
+                  flexGrow: 1,
+                  gap: spacing.xs,
+                  justifyContent: "center",
+                  maxWidth: "32%",
+                  minHeight: 104,
+                  padding: spacing.sm,
+                }}
+              >
+                <AnimatedPressable
+                  accessibilityLabel={`Unpin ${module.title}`}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    unpin(module.key);
+                  }}
+                  style={{
+                    alignItems: "center",
+                    height: 26,
+                    justifyContent: "center",
+                    position: "absolute",
+                    right: spacing.xs,
+                    top: spacing.xs,
+                    width: 26,
+                  }}
+                >
+                  <Pin color={colors.primary} size={14} strokeWidth={2.6} />
+                </AnimatedPressable>
+                <View
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.primarySoft,
+                    borderColor: colors.border,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    height: 44,
+                    justifyContent: "center",
+                    width: 44,
+                  }}
+                >
+                  <Icon color={colors.primary} size={21} strokeWidth={2.2} />
+                </View>
+                <Text
+                  style={{
+                    color: colors.ink,
+                    fontFamily: fonts.sans,
+                    fontSize: 12,
+                    fontWeight: "900",
+                    lineHeight: 15,
+                    textAlign: "center",
+                  }}
+                  numberOfLines={2}
+                  selectable
+                >
+                  {module.title}
+                </Text>
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function WorkspaceTab({
+  dashboard,
+  onNavigate,
+  pinnedKeys,
+  workspaceRole,
+}: {
+  dashboard: OwnerDashboard;
+  onNavigate: (href: OwnerRoute) => void;
+  pinnedKeys: string[];
+  workspaceRole: "Owner" | "Manager";
+}) {
+  const { attention, today } = dashboard;
+  // Total open items the action center groups Ã¢â‚¬â€ drives its attention badge.
+  const actionCenterCount =
+    attention.paymentsOverdue +
+    attention.concernsUnattended24h +
+    attention.escalatedConcerns +
+    attention.pendingExitRequests +
+    attention.pendingRoomChangeRequests +
+    attention.upcomingExits +
+    attention.tenantsOnNotice;
+  return (
+    <>
+      <Section eyebrow={`${workspaceRole} actions`} title="Workspace">
+        <FrequentlyVisited pinnedKeys={pinnedKeys} />
+        <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
+      </Section>
+
+      <Section eyebrow="Quick access" title="Tools">
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <HomeToolBox icon={Search} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
+          <HomeToolBox icon={Landmark} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
+          <HomeToolBox badge={actionCenterCount} icon={ClipboardList} label="Action center" onPress={() => onNavigate("/owner-action-center")} />
+        </View>
+      </Section>
+
+      <Section eyebrow="Today" title="Live digest">
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <DigestTile
+              hint={formatMoneyPaise(today.paymentsMadeTodayPaise)}
+              highlight={today.paymentsMadeToday > 0}
+              icon={Banknote}
+              label="Payments"
+              onPress={() => onNavigate("/owner-billing")}
+              value={String(today.paymentsMadeToday)}
+            />
+            <DigestTile
+              hint="Raised today"
+              highlight={today.concernsRaisedToday > 0}
+              icon={AlertCircle}
+              label="Concerns"
+              onPress={() => onNavigate(OWNER_CONCERNS_ROUTE)}
+              value={String(today.concernsRaisedToday)}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <DigestTile
+              hint="Started today"
+              highlight={today.tenanciesStartedToday > 0}
+              icon={UserPlus}
+              label="Move-ins"
+              onPress={() => onNavigate("/owner-tenancy")}
+              value={String(today.tenanciesStartedToday)}
+            />
+            <DigestTile
+              hint="Ending today"
+              highlight={today.tenanciesEndingToday > 0}
+              icon={DoorOpen}
+              label="Move-outs"
+              onPress={() => onNavigate("/owner-exit-requests")}
+              value={String(today.tenanciesEndingToday)}
+            />
+          </View>
+        </View>
+        {workspaceRole === "Owner" ? (
+          <StaffManagementCard onOpen={() => onNavigate("/owner-staff")} propertyId={dashboard.property.propertyId} />
+        ) : null}
+      </Section>
+
+    </>
+  );
+}
+
+function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; icon: ComponentType<LucideProps>; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: 16,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.xs,
+        justifyContent: "center",
+        minHeight: 112,
+        paddingHorizontal: spacing.xs,
+        paddingVertical: spacing.md,
+      }}
+    >
+      {badge && badge > 0 ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.danger,
+            borderRadius: 999,
+            justifyContent: "center",
+            minWidth: 20,
+            paddingHorizontal: 5,
+            position: "absolute",
+            right: spacing.sm,
+            top: spacing.sm,
+          }}
+        >
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+            {badge}
+          </Text>
+        </View>
+      ) : null}
+      <Icon color={colors.primary} size={48} strokeWidth={1.8} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", lineHeight: 15, textAlign: "center" }} numberOfLines={2} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+// Owner-only quick view of the staff team, sitting full-width (two tiles wide)
+// under the live digest. Figures are estimated from current staff/manager pay terms.
+function StaffManagementCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
+  const { colors, fonts, type } = useTheme();
+  const members = useListStaffMembersQuery({ propertyId }, { skip: !propertyId }).data ?? [];
+  const managers = useListManagerEmploymentQuery(propertyId, { skip: !propertyId }).data ?? [];
+  const categories = useListStaffCategoriesQuery(propertyId, { skip: !propertyId }).data ?? [];
+
+  const days = daysInCurrentMonth();
+  const payoutPaise = [...members, ...managers].reduce(
+    (sum, person) => sum + (person.salaryStructure === "MONTHLY" ? person.salaryRatePaise : days * person.salaryRatePaise),
+    0,
+  );
+  const totalStaff = members.length + managers.length;
+  const totalCategories = categories.length + 1; // managers form their own category
+
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
+      <Card>
+        <View style={{ gap: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
+              <Users color={colors.primary} size={22} strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Team
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "600" }} selectable>
+                Staff management
+              </Text>
+            </View>
+            <ChevronRight color={colors.muted} size={20} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <StaffMetricBox hint="Incl. managers" label="Team" value={String(totalStaff)} />
+            <StaffMetricBox hint="Est. this month" label="Payout" value={compactMoneyPaise(payoutPaise)} />
+            <StaffMetricBox hint="Incl. managers" label="Categories" value={String(totalCategories)} />
+          </View>
+        </View>
+      </Card>
+    </AnimatedPressable>
+  );
+}
+
+function StaffMetricBox({ hint, label, value }: { hint: string; label: string; value: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1} selectable>
+        {label}
+      </Text>
+      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, fontVariant: ["tabular-nums"], fontWeight: "700" }} numberOfLines={1} selectable>
+        {value}
+      </Text>
+      <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1} selectable>
+        {hint}
+      </Text>
+    </View>
+  );
+}
+
+function daysInCurrentMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+}
+
+// Compact Indian money (Ã¢â€šÂ¹45K / Ã¢â€šÂ¹2.4L / Ã¢â€šÂ¹1.2Cr) so a wide payout fits one line in
+// the small metric box without shrinking the font out of line with the others.
+function compactMoneyPaise(paise: number) {
+  const rupees = paise / 100;
+  if (rupees >= 10000000) {
+    return `Ã¢â€šÂ¹${trimDecimal(rupees / 10000000)}Cr`;
+  }
+  if (rupees >= 100000) {
+    return `Ã¢â€šÂ¹${trimDecimal(rupees / 100000)}L`;
+  }
+  if (rupees >= 1000) {
+    return `Ã¢â€šÂ¹${trimDecimal(rupees / 1000)}K`;
+  }
+  return `Ã¢â€šÂ¹${Math.round(rupees)}`;
+}
+
+function trimDecimal(value: number) {
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
+const COLLAPSED_ACTIVITY_LINES = 2;
+
+function ActivityRow({ item }: { item: RecentActivityItem }) {
+  const { colors, isDark, type } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+
   const Icon =
     item.type === "PAYMENT_RECORDED"
       ? Banknote
@@ -605,45 +1505,109 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
             ? AlertCircle
             : item.type === "NOTICE_PUBLISHED"
               ? Megaphone
-              : KeyRound;
+              : item.type === "ROOM_MAINTENANCE_STARTED"
+                ? Wrench
+                : item.type === "ROOM_MAINTENANCE_ENDED"
+                  ? Check
+                  : item.type === "ROOM_DEACTIVATED"
+                    ? Ban
+                    : item.type === "ROOM_REACTIVATED"
+                      ? RotateCcw
+                      : item.type === "STAFF_ADDED" || item.type === "MANAGER_ADDED"
+                        ? UserPlus
+                        : item.type === "STAFF_REMOVED" || item.type === "MANAGER_REMOVED"
+                          ? UserMinus
+                          : KeyRound;
+
+  // Colour-code the icon chip by the nature of the event.
+  const tone: "primary" | "jade" | "accent" | "danger" =
+    item.type === "CONCERN_ESCALATED" || item.type === "ROOM_DEACTIVATED"
+      ? "danger"
+      : item.type === "ROOM_MAINTENANCE_STARTED"
+        ? "accent"
+        : item.type === "PAYMENT_RECORDED" ||
+            item.type === "CONCERN_RESOLVED" ||
+            item.type === "ROOM_MAINTENANCE_ENDED" ||
+            item.type === "ROOM_REACTIVATED"
+          ? "jade"
+          : "primary";
+  const iconBg =
+    tone === "danger" ? colors.dangerSoft : tone === "accent" ? colors.accentSoft : tone === "jade" ? colors.jadeSoft : colors.primarySoft;
+  const iconColor =
+    tone === "danger" ? colors.danger : tone === "accent" ? colors.accent : tone === "jade" ? colors.jade : colors.primary;
+
+  const subtitleColor = { color: colors.muted, lineHeight: 18 } as const;
 
   return (
-    <View
+    <Pressable
+      onPress={canExpand ? () => setExpanded((value) => !value) : undefined}
       style={{
-        alignItems: "flex-start",
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderRadius: 14,
+        borderCurve: "continuous",
+        borderRadius: 16,
         borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.md,
+        elevation: 3,
         padding: spacing.md,
+        shadowColor: isDark ? "#000000" : "#0F172A",
+        shadowOffset: { height: 4, width: 0 },
+        shadowOpacity: isDark ? 0.4 : 0.1,
+        shadowRadius: 10,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.primarySoft,
-          borderRadius: 12,
-          height: 38,
-          justifyContent: "center",
-          width: 38,
-        }}
-      >
-        <Icon color={colors.primary} size={18} strokeWidth={2.2} />
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: iconBg,
+            borderRadius: 12,
+            height: 38,
+            justifyContent: "center",
+            width: 38,
+          }}
+        >
+          <Icon color={iconColor} size={18} strokeWidth={2.2} />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} numberOfLines={1} selectable>
+              {item.title}
+            </Text>
+            <Text style={[type.caption, { color: colors.kicker }]} selectable>
+              {formatRelativeTime(item.occurredAt)}
+            </Text>
+          </View>
+
+          {/* Invisible full-text measurer: lets us show the toggle only when the
+              subtitle actually overflows the collapsed line count. */}
+          <Text
+            style={[type.caption, subtitleColor, { left: 0, opacity: 0, position: "absolute", right: 0, top: 0 }]}
+            onTextLayout={(event) => {
+              const overflowing = event.nativeEvent.lines.length > COLLAPSED_ACTIVITY_LINES;
+              setCanExpand((previous) => (previous === overflowing ? previous : overflowing));
+            }}
+          >
+            {item.subtitle}
+          </Text>
+          <Text style={[type.caption, subtitleColor]} numberOfLines={expanded ? undefined : COLLAPSED_ACTIVITY_LINES} selectable>
+            {item.subtitle}
+          </Text>
+
+          {canExpand ? (
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginTop: 1 }}>
+              <Text style={[type.caption, { color: colors.primary, fontWeight: "700" }]} selectable>
+                {expanded ? "Show less" : "Show more"}
+              </Text>
+              {expanded ? (
+                <ChevronUp color={colors.primary} size={13} strokeWidth={2.6} />
+              ) : (
+                <ChevronDown color={colors.primary} size={13} strokeWidth={2.6} />
+              )}
+            </View>
+          ) : null}
+        </View>
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
-          {item.title}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
-          {item.subtitle}
-        </Text>
-      </View>
-      <Text style={[type.caption, { color: colors.kicker }]} selectable>
-        {formatRelativeTime(item.occurredAt)}
-      </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -671,44 +1635,23 @@ function formatRelativeTime(value: string) {
   return formatDate(value);
 }
 
-type AttentionItem = {
-  key: string;
-  label: string;
-  count: number;
-  route: OwnerRoute;
-  icon: ComponentType<LucideProps>;
-  urgent: boolean;
-};
-
-function buildAttentionItems(attention: AttentionSummary): AttentionItem[] {
-  const items: AttentionItem[] = [
-    { count: attention.paymentsOverdue, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", urgent: true },
-    { count: attention.escalatedConcerns, icon: AlertTriangle, key: "escalated", label: "Escalated concerns", route: OWNER_CONCERNS_ROUTE, urgent: true },
-    { count: attention.concernsUnattended24h, icon: AlertCircle, key: "unattended", label: "Concerns unattended 24h+", route: OWNER_CONCERNS_ROUTE, urgent: false },
-    { count: attention.pendingExitRequests, icon: DoorOpen, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", urgent: false },
-    { count: attention.pendingRoomChangeRequests, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", urgent: false },
-    { count: attention.upcomingExits, icon: DoorOpen, key: "upcoming", label: "Upcoming exits", route: "/owner-exit-requests", urgent: false },
-    { count: attention.tenantsOnNotice, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", urgent: false },
-  ];
-
-  return items.filter((item) => item.count > 0);
-}
-
-function AttentionRow({
-  count,
+function DigestTile({
+  hint,
+  highlight,
   icon: Icon,
   label,
   onPress,
-  urgent,
+  value,
 }: {
-  count: number;
+  hint: string;
+  highlight: boolean;
   icon: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
-  urgent: boolean;
+  value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const accent = urgent ? colors.danger : colors.primary;
+  const { colors, fonts, isDark, type } = useTheme();
+  const accent = highlight ? colors.primary : colors.muted;
 
   return (
     <AnimatedPressable
@@ -718,82 +1661,74 @@ function AttentionRow({
         alignItems: "center",
         backgroundColor: colors.surface,
         borderColor: colors.border,
+        borderCurve: "continuous",
         borderRadius: 14,
         borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.md,
+        elevation: 5,
+        flex: 1,
+        gap: spacing.xs,
+        minHeight: 132,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.md,
+        shadowColor: isDark ? "#000000" : "#0F172A",
+        shadowOffset: { height: 5, width: 0 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 12,
       }}
     >
       <View
         style={{
           alignItems: "center",
-          backgroundColor: urgent ? "#FCE9E9" : colors.primarySoft,
-          borderRadius: 12,
-          height: 40,
+          backgroundColor: highlight ? colors.primarySoft : colors.surfaceSunken,
+          borderColor: highlight ? colors.primarySoft : colors.border,
+          borderCurve: "continuous",
+          borderRadius: 13,
+          borderWidth: 1,
+          elevation: 3,
+          height: 42,
           justifyContent: "center",
-          width: 40,
+          shadowColor: isDark ? "#000000" : "#0F172A",
+          shadowOffset: { height: 2, width: 0 },
+          shadowOpacity: isDark ? 0.24 : 0.08,
+          shadowRadius: 6,
+          width: 42,
         }}
       >
-        <Icon color={accent} size={19} strokeWidth={2.2} />
+        <Icon color={highlight ? colors.primary : colors.muted} size={20} strokeWidth={2.25} />
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
-          {label}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
-          Tap to open
-        </Text>
-      </View>
-      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
-        {count}
+      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1} selectable>
+        {label}
       </Text>
-      <ChevronRight color={colors.kicker} size={18} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
-
-function DigestTile({
-  hint,
-  highlight,
-  icon: Icon,
-  label,
-  value,
-}: {
-  hint: string;
-  highlight: boolean;
-  icon: ComponentType<LucideProps>;
-  label: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const accent = highlight ? colors.primary : colors.muted;
-
-  return (
-    <View
-      style={{
-        backgroundColor: highlight ? colors.primarySoft : colors.surface,
-        borderColor: highlight ? colors.primarySoft : colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        flex: 1,
-        gap: spacing.xs,
-        padding: spacing.md,
-      }}
-    >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Icon color={accent} size={15} strokeWidth={2.3} />
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-          {label}
-        </Text>
-      </View>
-      <Text style={{ color: highlight ? colors.primary : colors.ink, fontFamily: fonts.display, fontSize: 26, fontWeight: "600", lineHeight: 30 }} selectable>
+      <Text
+        style={{
+          color: highlight ? colors.primary : colors.ink,
+          fontFamily: fonts.display,
+          fontSize: 25,
+          fontVariant: ["tabular-nums"],
+          fontWeight: "600",
+          letterSpacing: -0.5,
+          lineHeight: 30,
+          textAlign: "center",
+        }}
+        numberOfLines={1}
+        selectable
+      >
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
-        {hint}
-      </Text>
-    </View>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+        <View
+          style={{
+            backgroundColor: highlight ? colors.primary : colors.border,
+            borderRadius: 999,
+            height: 6,
+            width: 6,
+          }}
+        />
+        <Text style={[type.caption, { color: accent, textAlign: "center" }]} numberOfLines={1} selectable>
+          {hint}
+        </Text>
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -813,7 +1748,7 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
           <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, fontWeight: "600", letterSpacing: -0.5, lineHeight: 38 }} selectable>
             {rate}%
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
             {occupancy.occupiedBeds} of {occupancy.totalBeds} beds occupied
           </Text>
         </View>
@@ -835,28 +1770,7 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
       <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 10, marginTop: spacing.sm, overflow: "hidden" }}>
         <View style={{ backgroundColor: tone, borderRadius: 999, height: 10, width: `${Math.min(100, Math.max(0, rate))}%` }} />
       </View>
-
-      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm }}>
-        <SnapshotStat label="Occupied" value={String(occupancy.occupiedBeds)} />
-        <SnapshotStat label="Vacant" value={String(occupancy.vacantBeds)} />
-        <SnapshotStat label="Rooms" value={String(occupancy.roomCount)} />
-        <SnapshotStat label="Tenants" value={String(occupancy.activeTenants)} />
-      </View>
     </Card>
-  );
-}
-
-function SnapshotStat({ label, value }: { label: string; value: string }) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <View style={{ alignItems: "center", gap: 2 }}>
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
-        {value}
-      </Text>
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
-        {label}
-      </Text>
-    </View>
   );
 }
 
@@ -877,7 +1791,7 @@ function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
           <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, fontWeight: "600", letterSpacing: -0.5, lineHeight: 38 }} selectable>
             {rate}%
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
             {formatMoneyPaise(money.collectedThisMonthPaise)} of {formatMoneyPaise(money.billedThisMonthPaise)} collected
           </Text>
         </View>
@@ -898,12 +1812,6 @@ function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
 
       <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 10, marginTop: spacing.sm, overflow: "hidden" }}>
         <View style={{ backgroundColor: tone, borderRadius: 999, height: 10, width: `${Math.min(100, Math.max(0, rate))}%` }} />
-      </View>
-
-      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm }}>
-        <SnapshotStat label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
-        <SnapshotStat label="Overdue" value={formatMoneyPaise(money.overduePaise)} />
-        <SnapshotStat label="Overdue cycles" value={String(money.overdueCount)} />
       </View>
     </Card>
   );
@@ -955,7 +1863,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
               icon={Building2}
               kicker={property.city}
               title={property.name}
-              body={`${property.address} · ${property.startingRoomRentPaise ? formatMoneyPaise(property.startingRoomRentPaise) : "Rent on profile"}`}
+              body={`${property.address} Ã‚Â· ${property.startingRoomRentPaise ? formatMoneyPaise(property.startingRoomRentPaise) : "Rent on profile"}`}
             />
           ))
         ) : (
@@ -1002,24 +1910,30 @@ function OwnerPropertyPicker({
   open,
   properties,
   selectedProperty,
+  workspaceRole,
 }: {
   onSelect: (propertyId: string) => void;
   onToggle: () => void;
   open: boolean;
   properties: OwnerProperty[];
   selectedProperty: OwnerProperty | null;
+  workspaceRole: "Owner" | "Manager";
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
+  const isManager = workspaceRole === "Manager";
   const hasMultipleProperties = properties.length > 1;
-  const selectorTitle = selectedProperty?.name ?? "Select property";
+  const eyebrowLabel = isManager ? "Managed property" : "Active property";
+  const selectorTitle = selectedProperty?.name ?? (isManager ? "Select managed property" : "Select property");
   const selectorSubtitle = selectedProperty
     ? [selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")
     : hasMultipleProperties
-      ? "Choose which property this owner workspace should control."
+      ? isManager
+        ? "Choose which assigned property to manage."
+        : "Choose which property this owner workspace should control."
       : "Property will be selected automatically when available.";
 
   return (
-    <Card>
+    <View style={{ gap: spacing.sm }}>
       <AnimatedPressable
         accessibilityRole="button"
         onPress={hasMultipleProperties ? onToggle : undefined}
@@ -1027,12 +1941,17 @@ function OwnerPropertyPicker({
           alignItems: "center",
           backgroundColor: selectedProperty ? colors.surfaceRaised : colors.primarySoft,
           borderColor: selectedProperty ? colors.border : colors.primary,
-          borderRadius: 14,
+          borderCurve: "continuous",
+          borderRadius: 18,
           borderWidth: 1,
           flexDirection: "row",
           gap: spacing.md,
           minHeight: 72,
           padding: spacing.md,
+          shadowColor: isDark ? "#000000" : "#0F172A",
+          shadowOffset: { height: 3, width: 0 },
+          shadowOpacity: isDark ? 0.24 : 0.07,
+          shadowRadius: 8,
         }}
       >
         <View
@@ -1051,7 +1970,7 @@ function OwnerPropertyPicker({
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
           <Text style={[type.eyebrow, { color: selectedProperty ? colors.kicker : colors.primary }]} selectable>
-            Active property
+            {eyebrowLabel}
           </Text>
           <Text
             numberOfLines={1}
@@ -1066,7 +1985,7 @@ function OwnerPropertyPicker({
           >
             {selectorTitle}
           </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted }]} selectable>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
             {selectorSubtitle}
           </Text>
         </View>
@@ -1081,7 +2000,18 @@ function OwnerPropertyPicker({
       </AnimatedPressable>
 
       {open && hasMultipleProperties ? (
-        <View style={{ gap: spacing.sm }}>
+        <View
+          style={{
+            backgroundColor: colors.surfaceRaised,
+            borderColor: colors.border,
+            borderCurve: "continuous",
+            borderRadius: 16,
+            borderWidth: 1,
+            gap: spacing.xs,
+            overflow: "hidden",
+            padding: spacing.xs,
+          }}
+        >
           {properties.map((property) => {
             const selected = property.id === selectedProperty?.id;
 
@@ -1094,6 +2024,7 @@ function OwnerPropertyPicker({
                   alignItems: "center",
                   backgroundColor: selected ? colors.primarySoft : colors.surface,
                   borderColor: selected ? colors.primary : colors.border,
+                  borderCurve: "continuous",
                   borderRadius: 12,
                   borderWidth: 1,
                   flexDirection: "row",
@@ -1105,7 +2036,7 @@ function OwnerPropertyPicker({
                   <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
                     {property.name}
                   </Text>
-                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
                     {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
                   </Text>
                 </View>
@@ -1115,7 +2046,7 @@ function OwnerPropertyPicker({
           })}
         </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
@@ -1170,7 +2101,7 @@ function CurrentLocationCard({
             {locationText}
           </Text>
           {detailParts.length > 0 && locationText !== detailParts.join(", ") ? (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
               {detailParts.join(", ")}
             </Text>
           ) : null}
@@ -1577,11 +2508,11 @@ function tenancyStatusLabel(status: string) {
 
 function noticeHint(tenancy: { plannedEndDate: string | null; status: string }) {
   if (tenancy.status === "ON_NOTICE") {
-    return tenancy.plannedEndDate ? `Normal notice · ends ${formatDate(tenancy.plannedEndDate)}` : "Normal notice";
+    return tenancy.plannedEndDate ? `Normal notice Ã‚Â· ends ${formatDate(tenancy.plannedEndDate)}` : "Normal notice";
   }
   if (tenancy.status === "ON_PREMATURE_NOTICE") {
     return tenancy.plannedEndDate
-      ? `Premature notice · ends ${formatDate(tenancy.plannedEndDate)}`
+      ? `Premature notice Ã‚Â· ends ${formatDate(tenancy.plannedEndDate)}`
       : "Premature notice";
   }
 
@@ -1624,6 +2555,22 @@ function getDisplayFirstName(fullName?: string | null) {
   }
 
   return firstName;
+}
+
+function initialsFor(name: string) {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "KH";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
 }
 
 function formatFloor(value: string) {

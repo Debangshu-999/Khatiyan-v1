@@ -25,8 +25,9 @@ export default function NotificationsFeedScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
   const user = useAppSelector((state) => state.auth.user);
-  const recentQuery = useGetRecentNotificationsQuery(undefined, NOTIFICATION_REFETCH_OPTIONS);
-  const olderQuery = useGetOlderNotificationsQuery(undefined, NOTIFICATION_REFETCH_OPTIONS);
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const recentQuery = useGetRecentNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
+  const olderQuery = useGetOlderNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
   const [markRead] = useMarkNotificationReadMutation();
   const [markAllRead] = useMarkAllNotificationsReadMutation();
 
@@ -61,7 +62,7 @@ export default function NotificationsFeedScreen() {
 
   async function handleMarkAllRead() {
     try {
-      await markAllRead().unwrap();
+      await markAllRead(activeAccount).unwrap();
     } catch {
       // ignore
     }

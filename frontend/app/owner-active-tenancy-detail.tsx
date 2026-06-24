@@ -1,0 +1,356 @@
+import { Linking, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ChevronRight, MessageCircle, Phone, Settings } from "lucide-react-native";
+
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { Card } from "@/components/card";
+import { ScreenHeader } from "@/components/screen-header";
+import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useToast } from "@/components/toast";
+import { useGetManagedTenancyDepositQuery } from "@/store/services/billing-api";
+import { spacing } from "@/theme/spacing";
+import { useTheme } from "@/theme/use-theme";
+
+export default function OwnerActiveTenancyDetailScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{
+    billingStarted?: string;
+    billingType?: string;
+    dailyRatePaise?: string;
+    depositAmountPaise?: string;
+    plannedEndDate?: string;
+    referenceCode?: string;
+    rentAmountPaise?: string;
+    roomLabel?: string;
+    startDate?: string;
+    status?: string;
+    tenantName?: string;
+    tenantPhone?: string;
+    tenantPhoneVerified?: string;
+    tenantProfileCompleted?: string;
+    tenancyId?: string;
+    userId?: string;
+  }>();
+  const { colors, fonts, type } = useTheme();
+  const toast = useToast();
+  const tenantName = stringParam(params.tenantName) || "Unnamed tenant";
+  const tenantPhone = stringParam(params.tenantPhone);
+  const roomLabel = stringParam(params.roomLabel) || "-";
+  const rentAmountPaise = numberParam(params.rentAmountPaise);
+  const dailyRatePaise = numberParam(params.dailyRatePaise);
+  const depositAmountPaise = numberParam(params.depositAmountPaise);
+  const billingType = stringParam(params.billingType) || "-";
+  const billingAmount = billingType === "DAILY" ? dailyRatePaise ?? rentAmountPaise : rentAmountPaise ?? dailyRatePaise;
+  const tenancyId = stringParam(params.tenancyId);
+
+  // A deposit account is only created once the tenant's first cycle is paid, so
+  // its presence is our "first cycle paid" signal. Until then we hold back the
+  // amount and show UNPAID.
+  const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId });
+  const depositAccount = depositQuery.data;
+  const firstCyclePaid = Boolean(depositAccount);
+  const securityValue = depositQuery.isLoading
+    ? "…"
+    : firstCyclePaid
+      ? formatMoney(depositAccount?.currentBalancePaise ?? depositAmountPaise)
+      : "UNPAID";
+
+  function openDepositManager() {
+    if (!tenancyId) {
+      toast.error("This tenancy has no deposit ledger yet.");
+      return;
+    }
+    router.push({ params: { tenancyId }, pathname: "/owner-deposit-manager" });
+  }
+
+  async function handleCall() {
+    if (!tenantPhone) {
+      toast.error("No phone number available for this tenant.");
+      return;
+    }
+    await Linking.openURL(`tel:${tenantPhone}`);
+  }
+
+  function handleChat() {
+    toast.info("Chat will be enabled later.");
+  }
+
+  return (
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+      <ScreenHeader
+        eyebrow="Active tenancy"
+        title="Tenant"
+        italicTail="profile."
+        subtitle="Stay, rent and contact details for this tenant."
+        trailing={
+          <HeaderIconButton label="Settings" onPress={() => toast.info("Tenant settings are not available yet.")} />
+        }
+      />
+
+      <View style={{ alignItems: "center", gap: spacing.md }}>
+        <InitialsAvatar name={tenantName} />
+        <View style={{ alignItems: "center", gap: spacing.xxs }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 20, fontWeight: "900" }} selectable>
+            {tenantName}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
+            {params.referenceCode ?? "-"} {roomLabel !== "-" ? `(${roomLabel})` : ""}
+          </Text>
+        </View>
+        <View style={{ flexDirection: "row", gap: spacing.sm, width: "100%" }}>
+          <ProfileActionButton icon={Phone} label="Call now" onPress={handleCall} primary />
+          <ProfileActionButton icon={MessageCircle} label="Chat" onPress={handleChat} />
+        </View>
+      </View>
+
+      <View style={{ gap: spacing.sm }}>
+        <SectionTitle title="Rent details" />
+        <Card style={{ padding: spacing.md }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ProfileInfoBox label="Start date" value={formatDate(stringParam(params.startDate))} />
+            <ProfileInfoBox label="Room" value={roomLabel} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ProfileInfoBox label={billingType === "DAILY" ? "Daily rent" : "Monthly rent"} value={formatMoney(billingAmount)} />
+            <ProfileInfoBox
+              accent={firstCyclePaid ? "default" : "danger"}
+              label="Security money"
+              onPress={openDepositManager}
+              value={securityValue}
+            />
+          </View>
+        </Card>
+      </View>
+
+      <View style={{ gap: spacing.sm }}>
+        <SectionTitle title="Tenant details" />
+        <Card style={{ gap: spacing.sm, padding: spacing.md }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
+            <ProfileInfoBox label="Document verified" value="Pending" />
+          </View>
+          <ReadonlyField label="Tenant name" value={tenantName} />
+          <ReadonlyField label="Phone" value={tenantPhone || "-"} />
+          <ReadonlyField label="Tenant ID" value={stringParam(params.referenceCode) || shortId(stringParam(params.tenancyId))} mono />
+          <ReadonlyField label="User ID" value={shortId(stringParam(params.userId))} mono />
+          <ReadonlyField label="Profile completion" value={params.tenantProfileCompleted === "true" ? "Complete" : "Basic"} />
+        </Card>
+      </View>
+
+      <View style={{ gap: spacing.sm }}>
+        <SectionTitle title="Tenancy details" />
+        <Card style={{ gap: spacing.sm, padding: spacing.md }}>
+          <ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />
+          <ReadonlyField label="Billing type" value={humanizeToken(billingType)} />
+          <ReadonlyField label="Billing started" value={params.billingStarted === "true" ? "Yes" : "No"} />
+          <ReadonlyField label="Planned checkout" value={formatDate(stringParam(params.plannedEndDate))} />
+          <ReadonlyField label="Internal tenancy ID" value={shortId(stringParam(params.tenancyId))} mono />
+        </Card>
+      </View>
+    </ScreenScrollView>
+  );
+}
+
+function HeaderIconButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 22,
+        borderWidth: 1,
+        height: 44,
+        justifyContent: "center",
+        width: 44,
+      }}
+    >
+      <Settings color={colors.ink} size={20} strokeWidth={2.2} />
+    </AnimatedPressable>
+  );
+}
+
+function InitialsAvatar({ name }: { name: string }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surfaceRaised,
+        borderColor: colors.border,
+        borderRadius: 54,
+        borderWidth: 1,
+        height: 108,
+        justifyContent: "center",
+        width: 108,
+      }}
+    >
+      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 32, fontWeight: "900" }} selectable>
+        {initialsFor(name)}
+      </Text>
+    </View>
+  );
+}
+
+function ProfileActionButton({
+  icon: Icon,
+  label,
+  onPress,
+  primary,
+}: {
+  icon: typeof Phone;
+  label: string;
+  onPress: () => void;
+  primary?: boolean;
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: primary ? colors.primary : colors.ink,
+        borderRadius: 12,
+        flex: 1,
+        flexDirection: "row",
+        gap: spacing.sm,
+        justifyContent: "center",
+        minHeight: 48,
+      }}
+    >
+      <Icon color={primary ? colors.onPrimary : colors.surface} size={16} strokeWidth={2.2} />
+      <Text style={{ color: primary ? colors.onPrimary : colors.surface, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <Text style={{ color: colors.terracotta, fontFamily: fonts.sans, fontSize: 17, fontWeight: "900" }} selectable>
+      {title}
+    </Text>
+  );
+}
+
+function ProfileInfoBox({
+  accent = "default",
+  label,
+  onPress,
+  value,
+}: {
+  accent?: "default" | "danger" | "primary";
+  label: string;
+  onPress?: () => void;
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const valueColor = accent === "danger" ? colors.danger : accent === "primary" ? colors.primary : colors.ink;
+  const style = {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: onPress ? colors.primary : colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  } as const;
+  const body = (
+    <>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, justifyContent: "space-between" }}>
+        <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "700" }]} selectable={!onPress}>
+          {label}
+        </Text>
+        {onPress ? <ChevronRight color={colors.primary} size={15} strokeWidth={2.2} /> : null}
+      </View>
+      <Text style={{ color: valueColor, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} numberOfLines={1} selectable={!onPress}>
+        {value}
+      </Text>
+    </>
+  );
+
+  return onPress ? (
+    <AnimatedPressable accessibilityRole="button" onPress={onPress} style={style}>
+      {body}
+    </AnimatedPressable>
+  ) : (
+    <View style={style}>{body}</View>
+  );
+}
+
+function ReadonlyField({ label, mono, value }: { label: string; mono?: boolean; value: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "900", letterSpacing: 0.2 }]} selectable>
+        {label}
+      </Text>
+      <View style={{ backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 46, paddingHorizontal: spacing.md }}>
+        <Text style={{ color: colors.ink, fontFamily: mono ? fonts.mono : fonts.sans, fontSize: 15, fontWeight: "700" }} selectable>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function initialsFor(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (parts.length ? parts : ["Khatiyan", "User"])
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function stringParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function numberParam(value: string | string[] | undefined) {
+  const raw = stringParam(value);
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function shortId(value: string) {
+  return value ? value.slice(0, 8).toUpperCase() : "-";
+}
+
+function humanizeToken(value: string) {
+  if (!value || value === "-") {
+    return "-";
+  }
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatMoney(value?: number | null) {
+  if (value == null) {
+    return "Not set";
+  }
+  return `₹${Math.round(value / 100).toLocaleString("en-IN")}`;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00`));
+}

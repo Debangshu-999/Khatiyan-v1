@@ -1,4 +1,5 @@
 import { api } from "@/store/api";
+import type { Page } from "@/store/pagination";
 
 export type BillingCycleStatus = "UNPAID" | "OVERDUE" | "PAID" | "CANCELLED";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
@@ -38,10 +39,12 @@ export type BillingCycle = {
   id: string;
   referenceCode: string;
   tenancyId: string;
+  tenancyReferenceCode: string | null;
   tenantUserId: string;
   tenantNameSnapshot: string;
   propertyId: string;
   roomId: string;
+  roomNumber: string | null;
   billingType: "DAILY" | "MONTHLY";
   cycleNumber: number;
   periodStartDate: string;
@@ -132,12 +135,22 @@ export type DepositAccount = {
   tenancyId: string;
   tenantUserId: string;
   propertyId: string;
+  tenantName: string | null;
+  tenancyReferenceCode: string | null;
   currentBalancePaise: number;
   status: DepositAccountStatus;
   settledAt: string | null;
   createdAt: string;
   updatedAt: string;
   movements: DepositMovement[];
+};
+
+export type DepositHistoryParams = {
+  propertyId: string;
+  page?: number;
+  size?: number;
+  query?: string;
+  status?: DepositAccountStatus;
 };
 
 export type BillingMonthSummary = {
@@ -153,14 +166,6 @@ export type BillingMonthSummary = {
   totalDiscountPaise: number;
   manuallyPaidCycleCount: number;
   manuallyPaidPaise: number;
-};
-
-export type BillingPastSummary = {
-  olderCycleCount: number;
-  paidCount: number;
-  paidPaise: number;
-  unpaidCount: number;
-  unpaidPaise: number;
 };
 
 export const billingApi = api.injectEndpoints({
@@ -188,14 +193,6 @@ export const billingApi = api.injectEndpoints({
       providesTags: ["BillingCycle"],
     }),
 
-    getPropertyPastSummary: builder.query<BillingPastSummary, { propertyId: string; month?: string }>({
-      query: ({ month, propertyId }) => ({
-        params: month?.trim() ? { month: month.trim() } : undefined,
-        url: `/api/v1/billing/properties/${propertyId}/past-summary`,
-      }),
-      providesTags: ["BillingCycle"],
-    }),
-
     listPropertyBillingCycles: builder.query<BillingCycle[], { propertyId: string; query?: string; month?: string }>({
       query: ({ month, propertyId, query }) => ({
         params: {
@@ -203,17 +200,6 @@ export const billingApi = api.injectEndpoints({
           ...(month?.trim() ? { month: month.trim() } : {}),
         },
         url: `/api/v1/billing/properties/${propertyId}/cycles`,
-      }),
-      providesTags: ["BillingCycle"],
-    }),
-
-    listPastPropertyBillingCycles: builder.query<BillingCycle[], { propertyId: string; query?: string; month?: string }>({
-      query: ({ month, propertyId, query }) => ({
-        params: {
-          ...(query?.trim() ? { query: query.trim() } : {}),
-          ...(month?.trim() ? { month: month.trim() } : {}),
-        },
-        url: `/api/v1/billing/properties/${propertyId}/past-cycles`,
       }),
       providesTags: ["BillingCycle"],
     }),
@@ -252,20 +238,70 @@ export const billingApi = api.injectEndpoints({
       }),
       invalidatesTags: ["BillingCycle", "Notification", "Payment"],
     }),
+
+    // ----- Owner / manager deposit manager -----
+
+    getManagedTenancyDeposit: builder.query<DepositAccount, string>({
+      query: (tenancyId) => `/api/v1/billing/tenancies/${tenancyId}/deposit`,
+      providesTags: (_result, _error, tenancyId) => [{ type: "Deposit", id: tenancyId }],
+    }),
+
+    listPropertyDeposits: builder.query<Page<DepositAccount>, DepositHistoryParams>({
+      query: ({ page = 0, propertyId, query, size = 10, status }) => ({
+        params: {
+          page,
+          size,
+          ...(query?.trim() ? { query: query.trim() } : {}),
+          ...(status ? { status } : {}),
+        },
+        url: `/api/v1/billing/properties/${propertyId}/deposits`,
+      }),
+      providesTags: [{ type: "Deposit", id: "LIST" }],
+    }),
+
+    addDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number }>({
+      query: ({ amountPaise, reason, tenancyId }) => ({
+        body: { amountPaise, reason },
+        method: "POST",
+        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/corrections/add`,
+      }),
+      invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
+    }),
+
+    deductDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number }>({
+      query: ({ amountPaise, reason, tenancyId }) => ({
+        body: { amountPaise, reason },
+        method: "POST",
+        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/corrections/deduct`,
+      }),
+      invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
+    }),
+
+    settleManagedDeposit: builder.mutation<DepositAccount, { tenancyId: string; reason: string }>({
+      query: ({ reason, tenancyId }) => ({
+        body: { reason },
+        method: "POST",
+        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/settle`,
+      }),
+      invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
+    }),
   }),
 });
 
 export const {
+  useAddDepositCorrectionMutation,
   useAddTenancyDiscountMutation,
   useAddTenancyExtraChargesMutation,
+  useDeductDepositCorrectionMutation,
   useExportPropertyBillingCyclesQuery,
+  useGetManagedTenancyDepositQuery,
   useGetMyTenancyDepositQuery,
   useGetPropertyBillingSummaryQuery,
   useGetPropertyMonthSummaryQuery,
-  useGetPropertyPastSummaryQuery,
   useLazyExportPropertyBillingCyclesQuery,
-  useListPastPropertyBillingCyclesQuery,
   useListMyTenancyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
+  useListPropertyDepositsQuery,
   useRecordManualPaymentMutation,
+  useSettleManagedDepositMutation,
 } = billingApi;

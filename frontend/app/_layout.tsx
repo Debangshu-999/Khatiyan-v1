@@ -6,10 +6,13 @@ import { Provider } from "react-redux";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
-import { loadAppSettings } from "@/config/app-settings-storage";
+import { ToastProvider } from "@/components/toast";
+import { loadAppSettings, pinnedOwnerModulesForUser, themeModeForUser } from "@/config/app-settings-storage";
 import { useAppDispatch } from "@/store/hooks";
+import { setActiveAccount } from "@/store/slices/account-slice";
 import { setThemeMode } from "@/store/slices/app-config-slice";
 import { markSessionHydrated, setSession } from "@/store/slices/auth-slice";
+import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { store } from "@/store/store";
 import { useTheme } from "@/theme/use-theme";
 
@@ -26,8 +29,21 @@ function ThemedRootStack() {
           return;
         }
 
-        if (settings.themeMode) {
-          dispatch(setThemeMode(settings.themeMode));
+        const hydratedThemeMode = themeModeForUser(settings, session?.user?.id);
+        if (hydratedThemeMode) {
+          dispatch(setThemeMode(hydratedThemeMode));
+        } else if (session?.user) {
+          dispatch(setThemeMode("light"));
+        }
+
+        if (session?.user) {
+          dispatch(setPinnedOwnerModules(pinnedOwnerModulesForUser(settings, session.user.id)));
+        } else {
+          dispatch(setPinnedOwnerModules([]));
+        }
+
+        if (settings.activeAccount) {
+          dispatch(setActiveAccount(settings.activeAccount));
         }
 
         if (session?.accessToken && session.user) {
@@ -50,7 +66,10 @@ function ThemedRootStack() {
       <StatusBar style={isDark ? "light" : "dark"} />
       <Stack
         screenOptions={{
-          animation: "simple_push",
+          // Native push/pop. "simple_push" is JS-driven and flashes a blank
+          // frame on the back gesture; the native slide keeps the previous
+          // screen painted through the whole transition.
+          animation: "slide_from_right",
           headerShadowVisible: false,
           headerStyle: { backgroundColor: colors.background },
           headerTitleStyle: { color: colors.ink },
@@ -58,19 +77,31 @@ function ThemedRootStack() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="get-started" options={{ animation: "fade", headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="account-select" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
         <Stack.Screen name="payment-method" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-active-tenancies" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-register-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-vacancy-finder" options={{ headerShown: false }} />
         <Stack.Screen name="owner-staff" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-notices" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-concern-monitor" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-concern-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="concern-detail" options={{ headerShown: false, presentation: "card" }} />
         <Stack.Screen name="owner-service-placeholder" options={{ headerShown: false }} />
         <Stack.Screen
           name="notifications-feed"
@@ -183,7 +214,9 @@ export default function RootLayout() {
   return (
     <Provider store={store}>
       <SafeAreaProvider>
-        <ThemedRootStack />
+        <ToastProvider>
+          <ThemedRootStack />
+        </ToastProvider>
       </SafeAreaProvider>
     </Provider>
   );

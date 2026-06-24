@@ -2,12 +2,16 @@ package com.khatiyan.a_auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +23,8 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.model.LoginFailureReason;
+import com.khatiyan.a_auth.model.OtpDeliveryChannel;
+import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.model.User;
 import com.khatiyan.a_auth.model.UserRole;
 import com.khatiyan.a_auth.repository.UserRepository;
@@ -53,13 +59,17 @@ class AuthServiceLoginTest {
     @Mock
     private LoginAttemptService loginAttemptService;
 
+    @Mock
+    private EmailVerificationLinkSender emailVerificationLinkSender;
+
     private AuthService authService;
     private LoginRateLimitProperties properties;
 
     @BeforeEach
     void setUp() {
         properties = new LoginRateLimitProperties();
-        properties.setPermanentLockFailedAttempts(2);
+        properties.setProgressiveLockFailedAttempts(2);
+        properties.setProgressiveLockDurationsMinutes(java.util.List.of(5, 15));
 
         authService = new AuthService(
                 userRepository,
@@ -70,7 +80,8 @@ class AuthServiceLoginTest {
                 eventPublisher,
                 rateLimitService,
                 properties,
-                loginAttemptService);
+                loginAttemptService,
+                emailVerificationLinkSender);
     }
 
     @Test
@@ -128,7 +139,7 @@ class AuthServiceLoginTest {
     }
 
     @Test
-    void invalidPinRecordsFailureAndLocksAtThreshold() {
+    void invalidPinRecordsFailureAndAppliesTimedLockAtThreshold() {
         User user = userWithPin();
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("111111", "pin-hash")).thenReturn(false);
@@ -143,6 +154,8 @@ class AuthServiceLoginTest {
                 .hasMessageContaining("Invalid phone or PIN");
 
         assertThat(user.isLoginLocked()).isTrue();
+        assertThat(user.getLoginLockedUntil()).isNotNull();
+        assertThat(Duration.between(user.getLoginLockedAt(), user.getLoginLockedUntil())).isEqualTo(Duration.ofMinutes(5));
         assertThat(user.getFailedLoginAttempts()).isEqualTo(2);
         verify(loginAttemptService, times(2)).recordFailure(
                 NORMALIZED_PHONE,
@@ -151,20 +164,126 @@ class AuthServiceLoginTest {
     }
 
     @Test
-    void lockedAccountRecordsAccountLockedFailure() {
+    void temporarilyLockedAccountRecordsAccountLockedFailure() {
         User user = userWithPin();
-        user.recordFailedLoginAttempt(1, java.time.Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Account is locked");
+                .hasMessageContaining("temporarily locked");
 
         verify(loginAttemptService).recordFailure(
                 NORMALIZED_PHONE,
                 IP_ADDRESS,
                 LoginFailureReason.ACCOUNT_LOCKED);
         verify(pinService, never()).matches("123456", "pin-hash");
+    }
+
+
+    @Test
+    void expiredLockAllowsSuccessfulLoginAndClearsFailedAttempts() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.parse("2026-06-01T10:01:00Z"));
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+        when(pinService.matches("123456", "pin-hash")).thenReturn(true);
+        when(jwtService.issue(user)).thenReturn("jwt-token");
+        when(jwtService.accessTokenExpirySeconds()).thenReturn(3600L);
+
+        TokenResponse response = authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS);
+
+        assertThat(response.accessToken()).isEqualTo("jwt-token");
+        assertThat(user.isLoginLocked()).isFalse();
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLoginLockedUntil()).isNull();
+        verify(loginAttemptService).recordSuccess(NORMALIZED_PHONE, IP_ADDRESS);
+    }
+
+    @Test
+    void expiredLockWarnsBeforeNextLockoutBlock() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.parse("2026-06-01T10:01:00Z"));
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+        when(pinService.matches("111111", "pin-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Account risk detected");
+
+        assertThat(user.isLoginLocked()).isFalse();
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(3);
+        assertThat(user.getLoginLockedUntil()).isNull();
+    }
+
+    @Test
+    void nextLockoutAppliesAfterAnotherFullFailedAttemptBlock() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.parse("2026-06-01T10:01:00Z"));
+        user.releaseExpiredLoginLock(Instant.parse("2026-06-01T10:10:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ZERO, Instant.parse("2026-06-01T10:11:00Z"));
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+        when(pinService.matches("111111", "pin-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Account risk detected");
+
+        assertThat(user.isLoginLocked()).isTrue();
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(4);
+        assertThat(Duration.between(user.getLoginLockedAt(), user.getLoginLockedUntil())).isEqualTo(Duration.ofMinutes(15));
+    }
+    @Test
+    void pinResetRequestIsBlockedWhileLoginLocked() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.requestPINResetOTP(
+                RAW_PHONE,
+                OtpDeliveryChannel.SMS,
+                IP_ADDRESS))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("PIN reset is temporarily unavailable");
+
+        verify(otpService, never()).issue(anyString(), anyString(), any(OtpPurpose.class), any(OtpDeliveryChannel.class));
+    }
+
+    @Test
+    void pinResetOtpVerificationIsBlockedWhileLoginLocked() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.verifyOTP(RAW_PHONE, "123456", OtpPurpose.PIN_RESET))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("PIN reset is temporarily unavailable");
+
+        verify(otpService, never()).verifyOTPWithoutConsuming(
+                NORMALIZED_PHONE,
+                OtpPurpose.PIN_RESET,
+                "123456");
+    }
+    @Test
+    void pinResetConfirmIsBlockedWhileLoginLocked() {
+        User user = userWithPin();
+        user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));
+        user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.resetPIN(RAW_PHONE, "123456", "654321"))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("PIN reset is temporarily unavailable");
+
+        verify(otpService, never()).verifyAndConsumeOTP(
+                NORMALIZED_PHONE,
+                OtpPurpose.PIN_RESET,
+                "123456");
     }
 
     @Test

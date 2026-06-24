@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 
+import { HeaderNote } from "@/components/header-note";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -24,10 +25,10 @@ export function ScreenHeader({ eyebrow, italicTail, style, subtitle, title, trai
     <View style={[{ gap: spacing.sm }, style]}>
       {eyebrow ? (
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.accent }]} selectable>
             {eyebrow}
           </Text>
-          <View style={{ backgroundColor: colors.primary, flex: 1, height: 1, opacity: 0.4 }} />
+          <View style={{ backgroundColor: colors.borderStrong, flex: 1, height: 1, opacity: 0.55 }} />
         </View>
       ) : null}
 
@@ -36,17 +37,13 @@ export function ScreenHeader({ eyebrow, italicTail, style, subtitle, title, trai
           <Text style={[type.display, { color: colors.ink, fontSize: 30, lineHeight: 36 }]} selectable>
             {title}
             {italicTail ? (
-              <Text style={[type.displayItalic, { color: colors.primary, fontSize: 30, lineHeight: 36 }]} selectable>
+              <Text style={[type.displayItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]} selectable>
                 {" "}
                 {italicTail}
               </Text>
             ) : null}
           </Text>
-          {subtitle ? (
-            <Text style={[type.body, { color: colors.muted, maxWidth: 520 }]} selectable>
-              {subtitle}
-            </Text>
-          ) : null}
+          {subtitle ? <HeaderNote>{subtitle}</HeaderNote> : null}
         </View>
 
         {trailing ? <View style={{ alignItems: "flex-end" }}>{trailing}</View> : null}

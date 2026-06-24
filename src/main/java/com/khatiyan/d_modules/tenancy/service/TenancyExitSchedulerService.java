@@ -10,6 +10,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -39,6 +41,7 @@ public class TenancyExitSchedulerService {
      * Executes approved tenancy exit requests whose checkout date has arrived.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @SchedulerLock(name = "tenancy-exit-startupCatchUp", lockAtMostFor = "PT15M", lockAtLeastFor = "PT15S")
     public void executeDueExitRequestsOnStartup() {
         log.info("Tenancy exit scheduler startup catch-up started");
         executeDueExitRequests();
@@ -50,6 +53,7 @@ public class TenancyExitSchedulerService {
     @Scheduled(
             cron = "${app.tenancy.exit-execution-cron:0 10 0 * * *}",
             zone = "${app.tenancy.exit-execution-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "tenancy-executeDueExitRequests", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void executeDueExitRequests() {
         LocalDate today = LocalDate.now();
         List<UUID> requestIds = tenancyExitRequestService.findDueApprovedRequestIds(today, batchSize);

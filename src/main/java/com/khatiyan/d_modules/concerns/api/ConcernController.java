@@ -13,8 +13,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
@@ -62,8 +64,11 @@ public class ConcernController {
     }
 
     @GetMapping("/concerns/me/history")
-    public List<ConcernResponse> listMyConcernHistory(@AuthenticationPrincipal UserPrincipal user) {
-        return concernModule.listTenantConcernHistory(user.userId());
+    public PageResponse<ConcernResponse> listMyConcernHistory(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return concernModule.listTenantConcernHistory(user.userId(), page, size);
     }
 
     @PostMapping("/concerns/{concernId}/reopen")
@@ -82,10 +87,12 @@ public class ConcernController {
     }
 
     @GetMapping("/properties/{propertyId}/concerns/history")
-    public List<ConcernResponse> listPropertyConcernHistory(
+    public PageResponse<ConcernResponse> listPropertyConcernHistory(
             @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId) {
-        return concernModule.listPropertyConcernHistory(user.userId(), propertyId);
+            @PathVariable UUID propertyId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return concernModule.listPropertyConcernHistory(user.userId(), propertyId, page, size);
     }
 
     @GetMapping("/properties/{propertyId}/concerns/escalated")
@@ -93,6 +100,13 @@ public class ConcernController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return concernModule.listEscalatedConcerns(user.userId(), propertyId);
+    }
+
+    @GetMapping("/properties/{propertyId}/concerns/monitor")
+    public List<ConcernResponse> listOwnerMonitorConcerns(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return concernModule.listOwnerMonitorConcerns(user.userId(), propertyId);
     }
 
     @GetMapping("/concerns/undertaken")

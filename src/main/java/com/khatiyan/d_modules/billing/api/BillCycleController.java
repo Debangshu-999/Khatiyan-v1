@@ -23,7 +23,6 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.AdjustBillingLineItemRequest;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
-import com.khatiyan.d_modules.billing.api.dto.BillingPastSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
@@ -89,14 +88,6 @@ public class BillCycleController {
         return billingModule.getPropertyMonthSummary(user.userId(), propertyId, month);
     }
 
-    @GetMapping("/properties/{propertyId}/past-summary")
-    public BillingPastSummary getPropertyPastSummary(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId,
-            @RequestParam(required = false) String month) {
-        return billingModule.getPropertyPastSummary(user.userId(), propertyId, month);
-    }
-
     @GetMapping("/properties/{propertyId}/cycles")
     public List<BillingCycleResponse> listPropertyCycles(
             @AuthenticationPrincipal UserPrincipal user,
@@ -104,15 +95,6 @@ public class BillCycleController {
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String month) {
         return billingModule.listPropertyCycles(user.userId(), propertyId, query, month);
-    }
-
-    @GetMapping("/properties/{propertyId}/past-cycles")
-    public List<BillingCycleResponse> listPastPropertyCycles(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId,
-            @RequestParam(required = false) String query,
-            @RequestParam(required = false) String month) {
-        return billingModule.listPastPropertyCycles(user.userId(), propertyId, query, month);
     }
 
     @GetMapping(value = "/properties/{propertyId}/cycles/export", produces = "text/csv")

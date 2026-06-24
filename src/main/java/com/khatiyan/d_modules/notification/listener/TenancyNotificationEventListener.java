@@ -11,6 +11,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -57,7 +58,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_STARTED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.TENANT);
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
@@ -68,7 +70,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_STARTED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -89,7 +92,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_ENDED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.TENANT);
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
@@ -100,7 +104,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_ENDED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -122,7 +127,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_ROOM_TRANSFERRED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.TENANT);
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
@@ -133,7 +139,8 @@ public class TenancyNotificationEventListener {
                 NotificationSubtype.TENANCY_ROOM_TRANSFERRED,
                 event.tenancyId(),
                 data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
     }
 
     private Map<String, String> baseTenancyData(UUID tenancyId, UUID tenantUserId, PropertyResponse property) {

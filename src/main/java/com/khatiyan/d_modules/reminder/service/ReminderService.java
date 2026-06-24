@@ -7,12 +7,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -57,7 +59,8 @@ public class ReminderService {
             String body,
             NotificationCategory notificationCategory,
             NotificationPriority notificationPriority,
-            NotificationDeliveryMode deliveryMode) {
+            NotificationDeliveryMode deliveryMode,
+            NotificationAudience audience) {
         return transactionTemplate.execute(status -> {
             Optional<ReminderRecord> existing = reminderRecordRepository.findByReminderKey(reminderKey);
             if (existing.isPresent()) {
@@ -78,7 +81,8 @@ public class ReminderService {
                     body,
                     notificationCategory,
                     notificationPriority,
-                    deliveryMode);
+                    deliveryMode,
+                    audience);
 
             try {
                 ReminderRecord saved = reminderRecordRepository.save(reminder);
@@ -115,7 +119,8 @@ public class ReminderService {
                             reminder.getNotificationCategory(),
                             reminder.getNotificationPriority(),
                             reminder.getSourceId(),
-                            reminder.getDeliveryMode());
+                            reminder.getDeliveryMode(),
+                            reminder.getAudience());
 
                     reminder.markSent(Instant.now());
                     processedCount = processedCount + 1;
