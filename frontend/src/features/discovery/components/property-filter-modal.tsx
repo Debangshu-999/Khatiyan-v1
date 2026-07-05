@@ -403,14 +403,9 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
             borderColor: colors.primary,
             borderRadius: 999,
             borderWidth: 3,
-            elevation: 3,
             height: 24,
             left: thumbLeft,
             position: "absolute",
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 2, width: 0 },
-            shadowOpacity: 1,
-            shadowRadius: 4,
             width: 24,
           }}
         />

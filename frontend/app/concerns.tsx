@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AlertCircle, CheckCircle2, Clock3, Eye, RotateCcw, ShieldAlert } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
@@ -11,13 +12,14 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import type { ConcernStatus, ConcernSummary } from "@/store/services/concern-api";
 import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function ConcernsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams<{ createdConcern?: string }>();
   const { colors, type } = useTheme();
   const currentQuery = useListMyCurrentConcernsQuery();
@@ -63,12 +65,7 @@ export default function ConcernsScreen() {
 
         <Section eyebrow="Current" title="Open concerns">
           {currentQuery.isFetching ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-                Loading current concerns
-              </Text>
-            </Card>
+            <SkeletonCard />
           ) : currentConcerns.length > 0 ? (
             currentConcerns.map((concern) => (
               <ConcernOverviewCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
@@ -84,9 +81,7 @@ export default function ConcernsScreen() {
 
         <Section eyebrow="History" title="Resolved concerns">
           {historyQuery.isFetching ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonCard />
           ) : concernHistory.length > 0 ? (
             concernHistory
               .slice(0, 8)

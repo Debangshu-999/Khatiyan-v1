@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, CalendarDays, Check, DoorOpen, FileText, Info, IndianRupee, KeyRound, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -10,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -25,7 +27,7 @@ import { useTheme } from "@/theme/use-theme";
 type ReviewMode = "approve" | "reject";
 
 export default function OwnerExitRequestsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -82,9 +84,7 @@ export default function OwnerExitRequestsScreen() {
 
           <Section eyebrow="Active" title={`${activeRequests.length} active request${activeRequests.length === 1 ? "" : "s"}`}>
             {requestsQuery.isFetching && requests.length === 0 ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+              <SkeletonCard />
             ) : activeRequests.length === 0 ? (
               <EmptyState
                 icon={DoorOpen}
@@ -573,7 +573,7 @@ function FormInput({
       <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
         {label}
       </Text>
-      <TextInput
+      <AppTextInput
         autoCapitalize="none"
         keyboardType={keyboardType}
         multiline={multiline}

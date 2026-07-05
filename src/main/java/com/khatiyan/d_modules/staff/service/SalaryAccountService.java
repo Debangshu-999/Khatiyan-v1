@@ -83,6 +83,28 @@ public class SalaryAccountService {
         this.staffCategoryRepository = staffCategoryRepository;
     }
 
+    /**
+     * Net payable of a staff member's opened salary month (incl. adjustments) for
+     * the given payroll month, or {@code fallbackPaise} when no account or month
+     * has been opened. Used by the property-wide "payable this month" total.
+     */
+    @Transactional(readOnly = true)
+    public long openedNetForStaffMonth(UUID staffMemberId, LocalDate payrollMonth, long fallbackPaise) {
+        return salaryAccountRepository.findByStaffMemberId(staffMemberId)
+                .flatMap(account -> salaryMonthRepository.findBySalaryAccountIdAndPayrollMonth(account.getId(), payrollMonth))
+                .map(SalaryMonth::getNetAmountPaise)
+                .orElse(fallbackPaise);
+    }
+
+    /** Manager equivalent of {@link #openedNetForStaffMonth}. */
+    @Transactional(readOnly = true)
+    public long openedNetForManagerMonth(UUID managerId, LocalDate payrollMonth, long fallbackPaise) {
+        return salaryAccountRepository.findByPropertyManagerId(managerId)
+                .flatMap(account -> salaryMonthRepository.findBySalaryAccountIdAndPayrollMonth(account.getId(), payrollMonth))
+                .map(SalaryMonth::getNetAmountPaise)
+                .orElse(fallbackPaise);
+    }
+
     @Transactional(readOnly = true)
     public List<SalaryAccountResponse> listActiveAccounts(UUID actorUserId, UUID propertyId) {
         ensureOwner(actorUserId, propertyId);

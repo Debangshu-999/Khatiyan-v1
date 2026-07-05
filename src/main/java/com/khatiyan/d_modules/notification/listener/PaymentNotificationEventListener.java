@@ -4,8 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -27,7 +26,7 @@ public class PaymentNotificationEventListener {
         this.notificationModule = notificationModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onPaymentSucceeded(PaymentSucceededEvent event) {
         Map<String, String> data = basePaymentData(event.paymentOrderId(), event.billingCycleId(),
                 event.tenancyId(), event.propertyId(), event.tenantUserId(),
@@ -48,7 +47,7 @@ public class PaymentNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onPaymentFailed(PaymentFailedEvent event) {
         Map<String, String> data = basePaymentData(event.paymentOrderId(), event.billingCycleId(),
                 event.tenancyId(), event.propertyId(), event.tenantUserId(),

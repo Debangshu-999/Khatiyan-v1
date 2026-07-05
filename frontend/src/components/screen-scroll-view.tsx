@@ -15,6 +15,12 @@ type ScreenScrollViewProps = ScrollViewProps & {
   centerContent?: boolean;
   background?: ReactNode;
   onRefresh?: () => Promise<void> | void;
+  // False disables pull-to-refresh entirely (e.g. auth screens, where a
+  // refresh spinner makes no sense and the pull gesture feels like scrolling).
+  refreshable?: boolean;
+  // True locks scrolling while the content fits the viewport, re-enabling it
+  // automatically when it overflows (small/zoomed displays, keyboard open).
+  scrollOnlyWhenNeeded?: boolean;
   safeAreaEdges?: Edge[];
 };
 
@@ -24,6 +30,8 @@ export function ScreenScrollView({
   centerContent = false,
   contentContainerStyle,
   onRefresh,
+  refreshable = true,
+  scrollOnlyWhenNeeded = false,
   safeAreaEdges,
   style,
   ...props
@@ -31,6 +39,9 @@ export function ScreenScrollView({
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
   const [refreshing, setRefreshing] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const scrollEnabled = !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1;
   const resolvedSafeAreaEdges: Edge[] = safeAreaEdges ?? (Platform.OS === "web" ? [] : ["top", "bottom"]);
   // Every screen gets the shared ambient gradient unless it supplies its own
   // (e.g. the auth hero). Foreground content scrolls over a transparent layer.
@@ -94,14 +105,19 @@ export function ScreenScrollView({
           contentInsetAdjustmentBehavior="never"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
+          onContentSizeChange={scrollOnlyWhenNeeded ? (_width, height) => setContentHeight(height) : undefined}
+          onLayout={scrollOnlyWhenNeeded ? (event) => setViewportHeight(event.nativeEvent.layout.height) : undefined}
+          scrollEnabled={scrollEnabled}
           refreshControl={
-            <RefreshControl
-              colors={[colors.primary]}
-              onRefresh={handleRefresh}
-              progressBackgroundColor={colors.surface}
-              refreshing={refreshing}
-              tintColor={colors.primary}
-            />
+            refreshable ? (
+              <RefreshControl
+                colors={[colors.primary]}
+                onRefresh={handleRefresh}
+                progressBackgroundColor={colors.surface}
+                refreshing={refreshing}
+                tintColor={colors.primary}
+              />
+            ) : undefined
           }
           style={[{ backgroundColor: "transparent", flex: 1 }, style]}
           contentContainerStyle={[

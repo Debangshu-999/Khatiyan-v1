@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, Landmark } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -11,6 +11,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ChoiceButton, formatMoneyPaise, shortId } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
@@ -28,7 +29,7 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 ];
 
 export default function OwnerDepositHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
@@ -100,9 +101,7 @@ export default function OwnerDepositHistoryScreen() {
           </View>
 
           {depositsQuery.isFetching && items.length === 0 ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonCard />
           ) : items.length === 0 ? (
             <EmptyState
               icon={Landmark}
@@ -172,7 +171,7 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
           {account.tenancyReferenceCode ?? shortId(account.id)} · {formatMoneyPaise(account.currentBalancePaise)}
         </Text>
       </View>
-      <StatusPill dot={false} label={settled ? "Settled" : "Active"} tone={settled ? "neutral" : "success"} />
+      <StatusPill label={settled ? "Settled" : "Active"} tone={settled ? "neutral" : "success"} />
     </AnimatedPressable>
   );
 }

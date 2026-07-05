@@ -34,5 +34,6 @@ export const api = createApi({
     "Payment",
     "Deposit",
     "Staff",
+    "Expense",
   ],
 });

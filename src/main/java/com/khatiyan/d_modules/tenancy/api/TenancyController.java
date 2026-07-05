@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.api.PageResponse;
-import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
@@ -25,7 +24,6 @@ import com.khatiyan.d_modules.tenancy.api.dto.CreateRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateNormalExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.RejectTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ReviewRoomChangeRequest;
@@ -198,9 +196,9 @@ public class TenancyController {
     @PostMapping("/{id}/end")
     public ResponseEntity<Void> endTenancy(
             @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID id,
-            @Valid @RequestBody EndTenancyRequest req) {
-        throw new ValidationException("Tenancy exit must use the exit request workflow");
+            @PathVariable UUID id) {
+        tenancyExitRequestService.endTenancyNow(user.userId(), id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/me/exit-requests/normal")

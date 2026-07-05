@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
+import { MapLocationPickerModal } from "@/features/geo/map-location-picker";
 import { FacilitiesField } from "@/features/owner/facilities-field";
 import {
   ActionButton,
@@ -39,7 +41,8 @@ import { useTheme } from "@/theme/use-theme";
 export default function OwnerRegisterPropertyScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -47,6 +50,8 @@ export default function OwnerRegisterPropertyScreen() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [propertyType, setPropertyType] = useState<PropertyType>("PG");
   const [pgFor, setPgFor] = useState<PgFor>("ANYONE");
   const [preferredFor, setPreferredFor] = useState<PreferredTenantType>("ANYONE");
@@ -110,8 +115,8 @@ export default function OwnerRegisterPropertyScreen() {
         facilities,
         foodIncluded: includedMeals.length > 0,
         includedMeals,
-        latitude: null,
-        longitude: null,
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
         name: name.trim(),
         noticePeriodDays: notice,
         pgFor,
@@ -130,6 +135,31 @@ export default function OwnerRegisterPropertyScreen() {
     }
   }
 
+  // Every address field follows the pinned point; the owner appends flat /
+  // building detail to line 1 afterwards (Swiggy-style flow).
+  function applyPickedLocation(result: { latitude: number; longitude: number; address: { street: string | null; locality: string | null; city: string | null; state: string | null; pincode: string | null } | null }) {
+    setCoords({ latitude: result.latitude, longitude: result.longitude });
+    const picked = result.address;
+    if (!picked) {
+      return;
+    }
+    if (picked.street) {
+      setAddress(picked.street);
+    }
+    if (picked.locality) {
+      setArea(picked.locality);
+    }
+    if (picked.city) {
+      setCity(picked.city);
+    }
+    if (picked.state) {
+      setState(picked.state);
+    }
+    if (picked.pincode) {
+      setPincode(picked.pincode);
+    }
+  }
+
   function toggleMeal(meal: MealType) {
     setIncludedMeals((current) => (current.includes(meal) ? current.filter((item) => item !== meal) : [...current, meal]));
   }
@@ -139,9 +169,9 @@ export default function OwnerRegisterPropertyScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+      <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingTop: 0 }}>
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="New property"
         title="Register a"
         italicTail="property."
@@ -150,6 +180,11 @@ export default function OwnerRegisterPropertyScreen() {
 
       <FormSection eyebrow="Basics" title="Name & location">
         <FormInput autoCapitalize="words" label="Property name" onChangeText={setName} placeholder="e.g. Sunrise Residency" value={name} />
+        <LocationPinCard
+          addressSummary={addressSummaryLine(area, city, pincode)}
+          coords={coords}
+          onPress={() => setPickerOpen(true)}
+        />
         <FormInput label="Address line 1" multiline onChangeText={setAddress} placeholder="Building, street, landmark" value={address} />
         <FormInput autoCapitalize="words" label="Address line 2 / Area" onChangeText={setArea} placeholder="Area or locality" value={area} />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -245,11 +280,33 @@ export default function OwnerRegisterPropertyScreen() {
         <FormInput label="Description" multiline onChangeText={setDescription} placeholder="What should prospects know?" value={description} />
       </FormSection>
 
-      <View style={{ flexDirection: "row" }}>
+      </ScreenScrollView>
+
+      {/* Fixed footer, matching the edit-property modal: the submit button
+          stays reachable no matter how long the form scrolls. */}
+      <View
+        style={{
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          flexDirection: "row",
+          paddingBottom: Math.max(insets.bottom, spacing.md),
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.md,
+        }}
+      >
         <ActionButton disabled={isLoading} label={isLoading ? "Registering…" : "Register property"} onPress={() => void submit()} />
       </View>
-      {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-    </ScreenScrollView>
+
+      {pickerOpen ? (
+        <MapLocationPickerModal
+          initial={coords ?? undefined}
+          onClose={() => setPickerOpen(false)}
+          onPick={applyPickedLocation}
+          title="Property location"
+        />
+      ) : null}
+    </View>
   );
 }
 

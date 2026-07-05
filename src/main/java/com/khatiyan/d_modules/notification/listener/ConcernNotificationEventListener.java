@@ -7,8 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.concerns.event.ConcernAssignedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernRaisedEvent;
@@ -40,7 +39,7 @@ public class ConcernNotificationEventListener {
         this.propertyModule = propertyModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onConcernRaised(ConcernRaisedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
@@ -58,7 +57,7 @@ public class ConcernNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onConcernAssigned(ConcernAssignedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
@@ -77,7 +76,7 @@ public class ConcernNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onConcernStatusChanged(ConcernStatusChangedEvent event) {
         if (event.status() != ConcernStatus.UNDER_REVIEW
                 && event.status() != ConcernStatus.IN_PROGRESS
@@ -136,7 +135,7 @@ public class ConcernNotificationEventListener {
         return "Your concern is now in progress: " + event.title();
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onConcernResolved(ConcernResolvedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());
@@ -155,7 +154,7 @@ public class ConcernNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onConcernReopened(ConcernReopenedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseConcernData(event.concernId(), property, event.title());

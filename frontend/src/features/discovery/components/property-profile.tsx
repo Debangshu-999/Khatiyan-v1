@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Send } from "lucide-react-native";
 
 import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
@@ -60,16 +59,14 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
           onPress={openDirections}
           style={{
             alignItems: "center",
-            backgroundColor: colors.surfaceRaised,
-            borderColor: colors.border,
+            backgroundColor: colors.primary,
             borderRadius: 16,
-            borderWidth: 1,
             height: 46,
             justifyContent: "center",
             width: 46,
           }}
         >
-          <Send color={colors.primary} size={20} strokeWidth={2.3} />
+          <MaterialCommunityIcons color={colors.onPrimary} name="directions" size={25} />
         </Pressable>
       </View>
 
@@ -88,39 +85,33 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
             {property.description || "This property profile has not added a detailed description yet."}
           </Text>
 
-          <View
-            style={{
-              backgroundColor: colors.surfaceRaised,
-              borderColor: colors.border,
-              borderRadius: 16,
-              borderWidth: 1,
-              gap: spacing.sm,
-              padding: spacing.md,
-            }}
-          >
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <InfoBlock label="Property type" value={humanizeToken(property.type)} />
-              <InfoBlock label="Rent starts from" value={formatMoneyPaise(property.startingRoomRentPaise)} />
-            </View>
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <InfoBlock label="Deposit" value={formatMoneyPaise(property.standardDepositPaise)} />
-              <InfoBlock
-                label="Stay type"
-                value={property.dailyRentingAvailable ? "Monthly + daily" : "Monthly only"}
-              />
-            </View>
-            <Text style={{ color: colors.muted, lineHeight: 20 }} selectable>
+          <ProfileSection title="Property details">
+            <DetailGrid
+              rows={[
+                [
+                  { label: "Property type", value: humanizeToken(property.type) },
+                  { label: "Rent starts from", value: formatMoneyPaise(property.startingRoomRentPaise) },
+                ],
+                [
+                  { label: "Deposit", value: formatMoneyPaise(property.standardDepositPaise) },
+                  { label: "Stay type", value: property.dailyRentingAvailable ? "Monthly + daily" : "Monthly only" },
+                ],
+                ...(property.dailyRentingAvailable
+                  ? [
+                      [
+                        { label: "Daily non AC", value: formatMoneyPaise(property.dailyGuestNonAcRatePaise) },
+                        { label: "Daily AC", value: formatMoneyPaise(property.dailyGuestAcRatePaise) },
+                      ],
+                    ]
+                  : []),
+              ]}
+            />
+            <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }} selectable>
               {property.dailyRentingAvailable
                 ? "Daily renting is available for short stays."
                 : "Daily renting is not available for this property."}
             </Text>
-            {property.dailyRentingAvailable ? (
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <InfoBlock label="Daily non AC" value={formatMoneyPaise(property.dailyGuestNonAcRatePaise)} />
-                <InfoBlock label="Daily AC" value={formatMoneyPaise(property.dailyGuestAcRatePaise)} />
-              </View>
-            ) : null}
-          </View>
+          </ProfileSection>
 
           <ProfileSection title="Facilities">
             {facilities.length > 0 ? (
@@ -133,34 +124,37 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
           </ProfileSection>
 
           <ProfileSection title="Stay preferences">
-            <View style={{ gap: spacing.sm }}>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <InfoBlock label="PG for" value={humanizeToken(property.pgFor)} />
-                <InfoBlock label="Preferred for" value={humanizeToken(property.preferredFor)} />
-              </View>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <InfoBlock label="Bathroom" value={humanizeToken(property.bathroomType)} />
-                <InfoBlock label="Electricity" value={property.electricityIncluded ? "Included" : "Extra"} />
-              </View>
-              <InfoBlock
-                label="Food"
-                value={
-                  property.foodIncluded
-                    ? property.includedMeals.length > 0
-                      ? property.includedMeals.map((meal) => humanizeToken(meal)).join(", ")
-                      : "Included"
-                    : "Not included"
-                }
-              />
-              <InfoBlock
-                label="Sharing options"
-                value={
-                  property.availableSharingTypes.length > 0
-                    ? property.availableSharingTypes.map((sharingType) => humanizeToken(sharingType)).join(", ")
-                    : "Not listed"
-                }
-              />
-            </View>
+            <DetailGrid
+              rows={[
+                [
+                  { label: "PG for", value: humanizeToken(property.pgFor) },
+                  { label: "Preferred for", value: humanizeToken(property.preferredFor) },
+                ],
+                [
+                  { label: "Bathroom", value: humanizeToken(property.bathroomType) },
+                  { label: "Electricity", value: property.electricityIncluded ? "Included" : "Extra" },
+                ],
+                [
+                  {
+                    label: "Food",
+                    value: property.foodIncluded
+                      ? property.includedMeals.length > 0
+                        ? property.includedMeals.map((meal) => humanizeToken(meal)).join(", ")
+                        : "Included"
+                      : "Not included",
+                  },
+                ],
+                [
+                  {
+                    label: "Sharing options",
+                    value:
+                      property.availableSharingTypes.length > 0
+                        ? property.availableSharingTypes.map((sharingType) => humanizeToken(sharingType)).join(", ")
+                        : "Not listed",
+                  },
+                ],
+              ]}
+            />
           </ProfileSection>
 
           <ProfileSection title="Contacts">
@@ -439,22 +433,57 @@ function ProfileSection({ children, title }: { children: ReactNode; title: strin
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
+type DetailItem = { label: string; value: string };
+
+function DetailGrid({ rows }: { rows: DetailItem[][] }) {
+  const { colors } = useTheme();
+
+  return (
+    <View style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, overflow: "hidden" }}>
+      {rows.map((row, rowIndex) => (
+        <View
+          key={row.map((item) => item.label).join("-")}
+          style={{
+            borderBottomColor: colors.border,
+            borderBottomWidth: rowIndex === rows.length - 1 ? 0 : 1,
+            flexDirection: "row",
+          }}
+        >
+          {row.map((item, columnIndex) => (
+            <DetailCell item={item} key={item.label} showDivider={columnIndex === 0 && row.length > 1} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function DetailCell({ item, showDivider }: { item: DetailItem; showDivider: boolean }) {
   const { colors } = useTheme();
 
   return (
     <View
       style={{
+        borderRightColor: colors.border,
+        borderRightWidth: showDivider ? 1 : 0,
         flex: 1,
-        gap: spacing.xs,
+        gap: 4,
         minWidth: 0,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm + 2,
       }}
     >
-      <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700" }} selectable>
-        {label}
+      <Text
+        style={{ color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.9, textTransform: "uppercase" }}
+        selectable
+      >
+        {item.label}
       </Text>
-      <Text style={{ color: colors.text, fontSize: 16, fontWeight: "900" }} selectable>
-        {value}
+      <Text
+        style={{ color: colors.text, fontSize: 15, fontVariant: ["tabular-nums"], fontWeight: "800", lineHeight: 20 }}
+        selectable
+      >
+        {item.value}
       </Text>
     </View>
   );

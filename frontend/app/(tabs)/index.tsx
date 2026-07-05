@@ -4,7 +4,7 @@ import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollVie
 import * as Clipboard from "expo-clipboard";
 import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   AlertCircle,
   AlertTriangle,
@@ -44,6 +44,7 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  Wallet,
   Wrench,
   X,
   type LucideProps,
@@ -60,6 +61,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
 import { TrendBarChart } from "@/components/trend-bar-chart";
+import { SkeletonCard, SkeletonScreen } from "@/components/skeleton";
 import { api } from "@/store/api";
 import { getGreeting } from "@/features/greeting/get-greeting";
 import { saveActiveAccount, savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
@@ -71,12 +73,14 @@ import { useSearchDiscoveryPropertiesQuery } from "@/store/services/discovery-ap
 import type { NoticeSummary, PropertyBoardItem } from "@/store/services/notice-api";
 import { useListMyPropertyBoardItemsQuery, useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
 import { useGetPropertyMonthSummaryQuery, type BillingMonthSummary } from "@/store/services/billing-api";
+import { useGetBudgetOverviewQuery } from "@/store/services/expense-api";
 import {
   useGetOwnerDashboardQuery,
   type OwnerDashboard,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
 import { findOwnerModule } from "@/features/owner/owner-modules";
+import { workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { type OwnerProperty } from "@/store/services/property-api";
 import { useListManagerEmploymentQuery, useListStaffCategoriesQuery, useListStaffMembersQuery } from "@/store/services/staff-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
@@ -92,7 +96,7 @@ import { useTheme } from "@/theme/use-theme";
 export default function HomeScreen() {
   const { colors, fonts, type } = useTheme();
   const dispatch = useAppDispatch();
-  const router = useRouter();
+  const router = useGuardedRouter();
   const auth = useAppSelector((state) => state.auth);
   const profileQuery = useGetProfileQuery(undefined, { skip: !auth.accessToken });
   const user = profileQuery.data ?? auth.user;
@@ -191,9 +195,7 @@ export default function HomeScreen() {
       </View>
 
       {accountsLoading ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonScreen />
       ) : isWorkspace ? (
         <OwnerHome
           account={isManagerAccount ? "manager" : "owner"}
@@ -335,18 +337,13 @@ function HomeProfileMenu({
         <View
           style={{
             backgroundColor: colors.surface,
-            borderColor: colors.border,
+            borderColor: colors.borderStrong,
             borderRadius: 14,
             borderWidth: 1,
-            elevation: 14,
             gap: 2,
             padding: spacing.xs,
             position: "absolute",
             right: 0,
-            shadowColor: "#000",
-            shadowOffset: { height: 8, width: 0 },
-            shadowOpacity: 0.18,
-            shadowRadius: 16,
             top: 48,
             width: 182,
             zIndex: 50,
@@ -396,7 +393,7 @@ function MenuAction({
   );
 }
 
-// Subtle mount entrance Ã¢â‚¬â€ a soft fade + upward drift Ã¢â‚¬â€ used to give the home
+// Subtle mount entrance - a soft fade + upward drift - used to give the home
 // content a little life as it appears.
 function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -415,7 +412,7 @@ function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<
   );
 }
 
-// The primary "open workspace" call-to-action Ã¢â‚¬â€ a gradient hero so it reads as
+// The primary "open workspace" call-to-action - a gradient hero so it reads as
 // the headline action rather than just another card in the stack.
 // Gradient hero CTA used for the workspace card and each dashboard snapshot's
 // "open this area" link, so navigation affordances share one bold look.
@@ -442,14 +439,9 @@ function GradientCtaCard({
         style={{
           borderCurve: "continuous",
           borderRadius: 20,
-          elevation: 8,
           gap: spacing.sm,
           overflow: "hidden",
           padding: spacing.lg,
-          shadowColor: isDark ? "#000000" : colors.primaryDeep,
-          shadowOffset: { height: 8, width: 0 },
-          shadowOpacity: isDark ? 0.5 : 0.32,
-          shadowRadius: 16,
         }}
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
@@ -499,7 +491,7 @@ function LatestEventsButton({ activity }: { activity: RecentActivityItem[] }) {
 
   useEffect(() => {
     if (seenKeyRef.current === null) {
-      // First load Ã¢â‚¬â€ treat existing events as already seen so it doesn't blink.
+      // First load - treat existing events as already seen so it doesn't blink.
       seenKeyRef.current = latestKey;
       return;
     }
@@ -646,12 +638,7 @@ function TenantHome({
 
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
-      <Card>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-          Loading your active stay
-        </Text>
-      </Card>
+      <SkeletonScreen />
     );
   }
 
@@ -696,7 +683,7 @@ function TenantHome({
                 {property.name}
               </Text>
             </View>
-            <InfoLine icon={KeyRound} text={`Room ${room.roomNumber}${room.floor ? ` Ã‚Â· ${formatFloor(room.floor)}` : ""}`} />
+            <InfoLine icon={KeyRound} text={`Room ${room.roomNumber}${room.floor ? `  /  ${formatFloor(room.floor)}` : ""}`} />
             <AddressInfoLine address={propertyAddress} />
           </View>
         </View>
@@ -717,9 +704,7 @@ function TenantHome({
 
       <Section eyebrow="Always-on info" title="Property board">
         {boardQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-          </Card>
+          <SkeletonCard />
         ) : boardItems.length > 0 ? (
           <BoardPreviewCard
             itemCount={boardItemCount}
@@ -733,9 +718,7 @@ function TenantHome({
 
       <Section eyebrow="Latest announcements" title="Notice board">
         {noticesQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-          </Card>
+          <SkeletonCard />
         ) : notices.length > 0 ? (
           <NoticePreviewCard
             noticeCount={noticeCount}
@@ -807,6 +790,7 @@ type OwnerRoute =
   | "/owner-concerns"
   | "/owner-vacancy-finder"
   | "/owner-staff"
+  | "/owner-expenses"
   | { pathname: "/owner-service-placeholder"; params: { service: string; title: string } };
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
@@ -897,12 +881,7 @@ function OwnerHome({
       ) : null}
 
       {selectedProperty && dashboardQuery.isFetching && !dashboard ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-            Loading dashboard
-          </Text>
-        </Card>
+        <SkeletonCard />
       ) : null}
 
       {selectedProperty && dashboard ? (
@@ -937,19 +916,13 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
             style={{
               alignItems: "center",
               backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.border : "transparent",
+              borderColor: selected ? colors.borderStrong : "transparent",
               borderCurve: "continuous",
               borderRadius: 13,
               borderWidth: 1,
-              // Raised selected segment on the sunken track Ã¢â‚¬â€ a soft 3D pop.
-              elevation: selected ? 5 : 0,
               flex: 1,
               justifyContent: "center",
               minHeight: 46,
-              shadowColor: isDark ? "#000000" : "#0F172A",
-              shadowOffset: { height: 3, width: 0 },
-              shadowOpacity: selected ? (isDark ? 0.4 : 0.13) : 0,
-              shadowRadius: 8,
             }}
           >
             <Text style={{ color: selected ? colors.ink : colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: selected ? "900" : "700" }} selectable>
@@ -984,8 +957,8 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
           <DashboardSnapshotBox active={openSnapshot === "collection"} icon={Banknote} label="Collection" onPress={() => toggle("collection")} tone="primary" value={compactMoneyPaise(money.collectedThisMonthPaise)} />
           <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
-          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.activeCycleCount) : "Ã¢â‚¬â€"} />
-          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} value="Ã¢â‚¬â€" />
+          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.activeCycleCount) : "-"} />
+          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} value="-" />
         </View>
       </Section>
 
@@ -1081,7 +1054,7 @@ function SnapshotDetail({
                 <BillingSnapshotCard money={money} />
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
-                  <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={{ current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise }} />
+                  <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
                 </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
@@ -1140,9 +1113,7 @@ function SnapshotDetail({
                     </View>
                   </>
                 ) : (
-                  <Card>
-                    <ActivityIndicator color={colors.primary} />
-                  </Card>
+                  <SkeletonCard />
                 )}
                 <GradientCtaCard icon={ClipboardList} kicker="Billing" title="Open billing" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
               </>
@@ -1164,7 +1135,7 @@ function SnapshotDetail({
 function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
   const { colors, fonts, type } = useTheme();
   const dispatch = useAppDispatch();
-  const router = useRouter();
+  const router = useGuardedRouter();
   const user = useAppSelector((state) => state.auth.user);
   const modules = pinnedKeys.map((key) => findOwnerModule(key)).filter((module): module is NonNullable<typeof module> => Boolean(module));
 
@@ -1279,8 +1250,9 @@ function WorkspaceTab({
   pinnedKeys: string[];
   workspaceRole: "Owner" | "Manager";
 }) {
-  const { attention, today } = dashboard;
-  // Total open items the action center groups Ã¢â‚¬â€ drives its attention badge.
+  const { attention, budget, today } = dashboard;
+  // Total open items the action center groups - drives its attention badge. A
+  // budget that is approaching or exceeded counts as one more item.
   const actionCenterCount =
     attention.paymentsOverdue +
     attention.concernsUnattended24h +
@@ -1288,7 +1260,10 @@ function WorkspaceTab({
     attention.pendingExitRequests +
     attention.pendingRoomChangeRequests +
     attention.upcomingExits +
-    attention.tenantsOnNotice;
+    attention.exitsPastDue +
+    attention.tenantsOnNotice +
+    // Optional-chained: a cached / pre-upgrade dashboard response has no budget.
+    (budget?.level === "APPROACHING" || budget?.level === "EXCEEDED" ? 1 : 0);
   return (
     <>
       <Section eyebrow={`${workspaceRole} actions`} title="Workspace">
@@ -1297,10 +1272,15 @@ function WorkspaceTab({
       </Section>
 
       <Section eyebrow="Quick access" title="Tools">
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <HomeToolBox icon={Search} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
-          <HomeToolBox icon={Landmark} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
-          <HomeToolBox badge={actionCenterCount} icon={ClipboardList} label="Action center" onPress={() => onNavigate("/owner-action-center")} />
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox badge={actionCenterCount} icon={ClipboardList} label="Action center" onPress={() => onNavigate("/owner-action-center")} />
+            <HomeToolBox icon={Search} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox icon={Wallet} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
+            <HomeToolBox icon={Landmark} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
+          </View>
         </View>
       </Section>
 
@@ -1346,6 +1326,7 @@ function WorkspaceTab({
         {workspaceRole === "Owner" ? (
           <StaffManagementCard onOpen={() => onNavigate("/owner-staff")} propertyId={dashboard.property.propertyId} />
         ) : null}
+        <ExpenseTrackerCard onOpen={() => onNavigate("/owner-expenses")} propertyId={dashboard.property.propertyId} />
       </Section>
 
     </>
@@ -1409,10 +1390,17 @@ function StaffManagementCard({ onOpen, propertyId }: { onOpen: () => void; prope
   const categories = useListStaffCategoriesQuery(propertyId, { skip: !propertyId }).data ?? [];
 
   const days = daysInCurrentMonth();
-  const payoutPaise = [...members, ...managers].reduce(
-    (sum, person) => sum + (person.salaryStructure === "MONTHLY" ? person.salaryRatePaise : days * person.salaryRatePaise),
+  // Daily staff are paid only for their selected working days; managers have no
+  // weekday pattern yet, so they bill every day of the month.
+  const memberPayoutPaise = members.reduce(
+    (sum, member) => sum + (member.salaryStructure === "MONTHLY" ? member.salaryRatePaise : workingDaysInCurrentMonth(member.workingDaysMask) * member.salaryRatePaise),
     0,
   );
+  const managerPayoutPaise = managers.reduce(
+    (sum, manager) => sum + (manager.salaryStructure === "MONTHLY" ? manager.salaryRatePaise : days * manager.salaryRatePaise),
+    0,
+  );
+  const payoutPaise = memberPayoutPaise + managerPayoutPaise;
   const totalStaff = members.length + managers.length;
   const totalCategories = categories.length + 1; // managers form their own category
 
@@ -1445,14 +1433,90 @@ function StaffManagementCard({ onOpen, propertyId }: { onOpen: () => void; prope
   );
 }
 
-function StaffMetricBox({ hint, label, value }: { hint: string; label: string; value: string }) {
+// Money-out counterpart to the staff card: this month's spend against the
+// budget, opening the expense tracker. Reads the same budget overview the tool
+// itself uses, so figures (incl. projected salary) always agree with it.
+function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
+  const { colors, fonts, type } = useTheme();
+  const budget = useGetBudgetOverviewQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId }).data;
+
+  const spent = budget?.spentPaise ?? 0;
+  const effective = budget?.effectiveBudgetPaise ?? null;
+  const hasBudget = effective != null && effective > 0;
+  const over = hasBudget && spent > effective;
+  const approaching = hasBudget && !over && spent * 100 >= effective * 80;
+  const status = !hasBudget ? "—" : over ? "Crossed" : approaching ? "Approaching" : "On track";
+  const statusColor = !hasBudget ? colors.muted : over ? colors.danger : approaching ? colors.warningText : colors.jade;
+
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
+      <Card>
+        <View style={{ gap: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
+              <Wallet color={colors.accent} size={22} strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Money out
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "600" }} selectable>
+                Expense tracker
+              </Text>
+            </View>
+            <ChevronRight color={colors.muted} size={20} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <StaffMetricBox hint="This month" label="Spent" value={compactMoneyPaise(spent)} />
+            <StaffMetricBox hint={hasBudget ? "Monthly" : "Not set"} label="Budget" value={hasBudget && effective != null ? compactMoneyPaise(effective) : "—"} />
+            <StaffMetricBox hint="Vs budget" label="Status" value={status} valueColor={statusColor} valueSans />
+          </View>
+        </View>
+      </Card>
+    </AnimatedPressable>
+  );
+}
+
+// Current month key in IST so the digest matches the expense tool / backend
+// (device-local time can land on the previous month near a boundary).
+function istMonthStart() {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { month: "2-digit", timeZone: "Asia/Kolkata", year: "numeric" }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    if (year && month) {
+      return `${year}-${month}-01`;
+    }
+  } catch {
+    // Fall through to the device-local month.
+  }
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: string; label: string; value: string; valueColor?: string; valueSans?: boolean }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
       <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1} selectable>
         {label}
       </Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, fontVariant: ["tabular-nums"], fontWeight: "700" }} numberOfLines={1} selectable>
+      {/* Serif numerals (money) keep the ledger look; word statuses use the sans
+          face, which — unlike the serif display font — doesn't clip its top under
+          adjustsFontSizeToFit + display-zoom font scaling on Android. */}
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        numberOfLines={1}
+        selectable
+        style={{
+          color: valueColor ?? colors.ink,
+          fontFamily: valueSans ? fonts.sans : fonts.display,
+          fontSize: valueSans ? 16 : 17,
+          fontVariant: ["tabular-nums"],
+          fontWeight: valueSans ? "800" : "700",
+        }}
+      >
         {value}
       </Text>
       <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1} selectable>
@@ -1467,20 +1531,20 @@ function daysInCurrentMonth() {
   return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 }
 
-// Compact Indian money (Ã¢â€šÂ¹45K / Ã¢â€šÂ¹2.4L / Ã¢â€šÂ¹1.2Cr) so a wide payout fits one line in
+// Compact Indian money (₹45K / ₹2.4L / ₹1.2Cr) so a wide payout fits one line in
 // the small metric box without shrinking the font out of line with the others.
 function compactMoneyPaise(paise: number) {
   const rupees = paise / 100;
   if (rupees >= 10000000) {
-    return `Ã¢â€šÂ¹${trimDecimal(rupees / 10000000)}Cr`;
+    return `₹${trimDecimal(rupees / 10000000)}Cr`;
   }
   if (rupees >= 100000) {
-    return `Ã¢â€šÂ¹${trimDecimal(rupees / 100000)}L`;
+    return `₹${trimDecimal(rupees / 100000)}L`;
   }
   if (rupees >= 1000) {
-    return `Ã¢â€šÂ¹${trimDecimal(rupees / 1000)}K`;
+    return `₹${trimDecimal(rupees / 1000)}K`;
   }
-  return `Ã¢â€šÂ¹${Math.round(rupees)}`;
+  return `₹${Math.round(rupees)}`;
 }
 
 function trimDecimal(value: number) {
@@ -1543,16 +1607,11 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
       onPress={canExpand ? () => setExpanded((value) => !value) : undefined}
       style={{
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: 16,
         borderWidth: 1,
-        elevation: 3,
         padding: spacing.md,
-        shadowColor: isDark ? "#000000" : "#0F172A",
-        shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: isDark ? 0.4 : 0.1,
-        shadowRadius: 10,
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -1660,20 +1719,15 @@ function DigestTile({
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: 14,
         borderWidth: 1,
-        elevation: 5,
         flex: 1,
         gap: spacing.xs,
         minHeight: 132,
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.md,
-        shadowColor: isDark ? "#000000" : "#0F172A",
-        shadowOffset: { height: 5, width: 0 },
-        shadowOpacity: isDark ? 0.35 : 0.1,
-        shadowRadius: 12,
       }}
     >
       <View
@@ -1684,13 +1738,8 @@ function DigestTile({
           borderCurve: "continuous",
           borderRadius: 13,
           borderWidth: 1,
-          elevation: 3,
           height: 42,
           justifyContent: "center",
-          shadowColor: isDark ? "#000000" : "#0F172A",
-          shadowOffset: { height: 2, width: 0 },
-          shadowOpacity: isDark ? 0.24 : 0.08,
-          shadowRadius: 6,
           width: 42,
         }}
       >
@@ -1776,23 +1825,38 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
 
 function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
   const { colors, fonts, type } = useTheme();
-  const rate = money.billedThisMonthPaise > 0 ? Math.round((money.collectedThisMonthPaise / money.billedThisMonthPaise) * 100) : 0;
-  const tone = rate >= 90 ? colors.successText : rate >= 60 ? colors.primary : colors.danger;
+  const collectable = money.billedThisMonthPaise;
+  const collected = money.collectedThisMonthPaise;
+  // Before anything is collected this month the rate is a meaningless 0% — show
+  // the amount still collectable instead of "₹0 of ₹0 collected".
+  const awaiting = collected === 0 && collectable > 0;
+  const rate = collectable > 0 ? Math.round((collected / collectable) * 100) : 0;
+  const tone = awaiting
+    ? colors.primary
+    : collectable === 0
+      ? colors.danger
+      : rate >= 90
+        ? colors.successText
+        : rate >= 60
+          ? colors.primary
+          : colors.danger;
   const label =
-    money.billedThisMonthPaise === 0 ? "Nothing billed" : rate >= 90 ? "On track" : rate >= 60 ? "Collecting" : "Behind";
+    collectable === 0 ? "Nothing billed" : awaiting ? "Awaiting" : rate >= 90 ? "On track" : rate >= 60 ? "Collecting" : "Behind";
 
   return (
     <Card>
       <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
         <View style={{ gap: 2 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-            Collection rate
+            {awaiting ? "Collectable this month" : "Collection rate"}
           </Text>
           <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, fontWeight: "600", letterSpacing: -0.5, lineHeight: 38 }} selectable>
-            {rate}%
+            {awaiting ? formatMoneyPaise(collectable) : `${rate}%`}
           </Text>
           <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
-            {formatMoneyPaise(money.collectedThisMonthPaise)} of {formatMoneyPaise(money.billedThisMonthPaise)} collected
+            {awaiting
+              ? "Yet to be collected"
+              : `${formatMoneyPaise(collected)} of ${formatMoneyPaise(collectable)} collected`}
           </Text>
         </View>
         <View
@@ -1853,9 +1917,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
           tone="primary"
         />
         {propertyQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-          </Card>
+          <SkeletonCard />
         ) : listings.length > 0 ? (
           listings.map((property) => (
             <SummaryRow
@@ -1863,7 +1925,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
               icon={Building2}
               kicker={property.city}
               title={property.name}
-              body={`${property.address} Ã‚Â· ${property.startingRoomRentPaise ? formatMoneyPaise(property.startingRoomRentPaise) : "Rent on profile"}`}
+              body={`${property.address}  /  ${property.startingRoomRentPaise ? formatMoneyPaise(property.startingRoomRentPaise) : "Rent on profile"}`}
             />
           ))
         ) : (
@@ -1948,10 +2010,6 @@ function OwnerPropertyPicker({
           gap: spacing.md,
           minHeight: 72,
           padding: spacing.md,
-          shadowColor: isDark ? "#000000" : "#0F172A",
-          shadowOffset: { height: 3, width: 0 },
-          shadowOpacity: isDark ? 0.24 : 0.07,
-          shadowRadius: 8,
         }}
       >
         <View
@@ -2508,11 +2566,11 @@ function tenancyStatusLabel(status: string) {
 
 function noticeHint(tenancy: { plannedEndDate: string | null; status: string }) {
   if (tenancy.status === "ON_NOTICE") {
-    return tenancy.plannedEndDate ? `Normal notice Ã‚Â· ends ${formatDate(tenancy.plannedEndDate)}` : "Normal notice";
+    return tenancy.plannedEndDate ? `Normal notice  /  ends ${formatDate(tenancy.plannedEndDate)}` : "Normal notice";
   }
   if (tenancy.status === "ON_PREMATURE_NOTICE") {
     return tenancy.plannedEndDate
-      ? `Premature notice Ã‚Â· ends ${formatDate(tenancy.plannedEndDate)}`
+      ? `Premature notice  /  ends ${formatDate(tenancy.plannedEndDate)}`
       : "Premature notice";
   }
 

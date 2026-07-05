@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, ChevronDown, ChevronRight, History, Landmark, Minus, Plus, Wallet } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -10,9 +11,12 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonScreen } from "@/components/skeleton";
+import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
   ActionButton,
+  ConfirmDialog,
   FormInput,
   formatMoneyPaise,
   humanizeToken,
@@ -37,9 +41,10 @@ type CorrectionMode = "add" | "deduct";
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE"];
 
 export default function OwnerDepositManagerScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
   const { colors, type } = useTheme();
+  const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
@@ -57,6 +62,7 @@ export default function OwnerDepositManagerScreen() {
     typeof tenancyIdParam === "string" ? tenancyIdParam : null,
   );
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [settleConfirmOpen, setSettleConfirmOpen] = useState(false);
   const selectedTenancy = selectedTenancyId ? tenancyById.get(selectedTenancyId) ?? null : null;
 
   const depositQuery = useGetManagedTenancyDepositQuery(selectedTenancyId ?? "", { skip: !selectedTenancyId });
@@ -89,7 +95,12 @@ export default function OwnerDepositManagerScreen() {
     if (!selectedTenancyId) {
       return;
     }
-    await settleDeposit({ reason: "Deposit settled by manager", tenancyId: selectedTenancyId }).unwrap();
+    try {
+      await settleDeposit({ reason: "Deposit settled by manager", tenancyId: selectedTenancyId }).unwrap();
+      toast.success("Deposit settled.");
+    } catch (error) {
+      toast.error(settleErrorMessage(error));
+    }
   }
 
   return (
@@ -121,17 +132,23 @@ export default function OwnerDepositManagerScreen() {
           />
 
           {selectedTenancy ? (
-            depositQuery.isFetching && !deposit ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+            selectedTenancy.billingType === "DAILY" ? (
+              <EmptyState
+                icon={Wallet}
+                eyebrow="Not eligible"
+                title="No deposit for daily stays"
+                description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
+              />
+            ) : depositQuery.isFetching && !deposit ? (
+              <SkeletonScreen header={false} tiles={2} rows={2} />
             ) : deposit ? (
               <DepositDetail
                 busy={addState.isLoading || deductState.isLoading || settleState.isLoading}
                 deposit={deposit}
                 onDeduct={() => setCorrectionMode("deduct")}
                 onAdd={() => setCorrectionMode("add")}
-                onSettle={confirmSettle}
+                onSettle={() => setSettleConfirmOpen(true)}
+                tenancyEnded={!ACTIVE_STATUSES.includes(selectedTenancy.status)}
               />
             ) : (
               <EmptyState
@@ -159,6 +176,20 @@ export default function OwnerDepositManagerScreen() {
           mode={correctionMode}
           onCancel={() => setCorrectionMode(null)}
           onSubmit={submitCorrection}
+        />
+      ) : null}
+
+      {settleConfirmOpen && deposit ? (
+        <ConfirmDialog
+          confirmLabel="Settle deposit"
+          destructive
+          message={`Refund ${formatMoneyPaise(deposit.currentBalancePaise)} to ${selectedTenancy?.tenantName?.trim() || "the tenant"} and close this deposit account? This cannot be undone.`}
+          onCancel={() => setSettleConfirmOpen(false)}
+          onConfirm={() => {
+            setSettleConfirmOpen(false);
+            void confirmSettle();
+          }}
+          title="Settle deposit?"
         />
       ) : null}
     </ScreenScrollView>
@@ -265,7 +296,7 @@ function TenancyPicker({
                     {tenancy.referenceCode} · {humanizeToken(tenancy.status)}
                   </Text>
                 </View>
-                <StatusPill dot={false} label={humanizeToken(tenancy.billingType)} tone="neutral" />
+                <StatusPill label={humanizeToken(tenancy.billingType)} tone="neutral" />
               </AnimatedPressable>
             );
           })}
@@ -281,12 +312,14 @@ function DepositDetail({
   onAdd,
   onDeduct,
   onSettle,
+  tenancyEnded,
 }: {
   busy: boolean;
   deposit: DepositAccount;
   onAdd: () => void;
   onDeduct: () => void;
   onSettle: () => void;
+  tenancyEnded: boolean;
 }) {
   const { colors, type } = useTheme();
   const active = deposit.status === "ACTIVE";
@@ -303,7 +336,7 @@ function DepositDetail({
             <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
               Account status
             </Text>
-            <StatusPill dot={false} label={humanizeToken(deposit.status)} tone={active ? "success" : "neutral"} />
+            <StatusPill label={humanizeToken(deposit.status)} tone={active ? "success" : "neutral"} />
           </View>
 
           {active ? (
@@ -313,7 +346,14 @@ function DepositDetail({
                 <ActionButton disabled={busy} icon={Minus} label="Deduct" onPress={onDeduct} variant="secondary" />
               </View>
               {deposit.currentBalancePaise > 0 ? (
-                <ActionButton disabled={busy} label="Settle deposit" onPress={onSettle} variant="danger" />
+                <View style={{ gap: spacing.xs }}>
+                  <ActionButton disabled={busy || !tenancyEnded} label="Settle deposit" onPress={onSettle} variant="danger" />
+                  {!tenancyEnded ? (
+                    <Text style={[type.caption, { color: colors.muted }]} selectable>
+                      Settlement unlocks after the tenancy ends. Exit execution settles the deposit automatically.
+                    </Text>
+                  ) : null}
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -473,7 +513,7 @@ function MovementCard({ movement }: { movement: DepositMovement }) {
           <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
             {humanizeToken(movement.type)}
           </Text>
-          <StatusPill dot={false} label={credit ? "Credit" : "Debit"} tone={credit ? "success" : "warning"} />
+          <StatusPill label={credit ? "Credit" : "Debit"} tone={credit ? "success" : "warning"} />
         </View>
         <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
           <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
@@ -507,4 +547,14 @@ function BackButton({ onPress }: { onPress: () => void }) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", hour: "numeric", minute: "2-digit", month: "short" }).format(new Date(value));
+}
+
+function settleErrorMessage(error: unknown) {
+  if (typeof error === "object" && error && "data" in error) {
+    const data = (error as { data?: { message?: unknown } }).data;
+    if (typeof data?.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+  }
+  return "Could not settle the deposit. Please try again.";
 }

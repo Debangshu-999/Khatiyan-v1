@@ -95,7 +95,7 @@ function ToastViewport({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: 
 }
 
 function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
-  const { colors, fonts, isDark } = useTheme();
+  const { colors, fonts } = useTheme();
   const anim = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
 
@@ -139,20 +139,15 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
         style={{
           alignItems: "center",
           backgroundColor: colors.surface,
-          borderColor: colors.border,
+          borderColor: colors.borderStrong,
           borderCurve: "continuous",
           borderRadius: 16,
           borderWidth: 1,
-          elevation: 10,
           flexDirection: "row",
           gap: spacing.sm + 2,
           paddingHorizontal: spacing.sm + 2,
           paddingRight: spacing.xs,
           paddingVertical: spacing.sm,
-          shadowColor: isDark ? "#000000" : "#0F172A",
-          shadowOffset: { height: 10, width: 0 },
-          shadowOpacity: isDark ? 0.55 : 0.16,
-          shadowRadius: 20,
         }}
       >
         <View

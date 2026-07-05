@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { TextInput, View } from "react-native";
+import { View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { Search, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -37,7 +38,7 @@ export function SearchField({
       }}
     >
       <Search color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
-      <TextInput
+      <AppTextInput
         autoCapitalize="none"
         autoCorrect={false}
         onBlur={() => setFocused(false)}

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Camera, ImagePlus, X } from "lucide-react-native";
@@ -458,7 +459,7 @@ function FormField({
           {value.length}/{maxLength}
         </Text>
       </View>
-      <TextInput
+      <AppTextInput
         maxLength={maxLength}
         multiline={multiline}
         onChangeText={onChangeText}

@@ -1,5 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, ReceiptText } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
@@ -9,12 +10,13 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import { useListMyTenancyBillingCyclesQuery, type BillingCycle } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function TenancyBillingHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { tenancyId } = useLocalSearchParams<{ tenancyId?: string }>();
   const { colors } = useTheme();
   const cyclesQuery = useListMyTenancyBillingCyclesQuery(tenancyId ?? "", { skip: !tenancyId });
@@ -31,9 +33,7 @@ export default function TenancyBillingHistoryScreen() {
       />
 
       {cyclesQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : cycles.length > 0 ? (
         cycles.map((cycle) => (
           <CycleHistoryCard

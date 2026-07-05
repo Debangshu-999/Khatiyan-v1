@@ -17,6 +17,8 @@ import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
+import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
@@ -67,6 +69,19 @@ public class BillingModule {
 
     public List<BillingCycleResponse> listPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
         return billingCycleService.listPropertyCycles(actorUserId, propertyId, query, month);
+    }
+
+    public List<BillingCycleResponse> listAllPropertyCycles(UUID actorUserId, UUID propertyId) {
+        return billingCycleService.listAllPropertyCycles(actorUserId, propertyId);
+    }
+
+    public PageResponse<UpcomingBillingCycleResponse> listUpcomingPropertyCycles(
+            UUID actorUserId,
+            UUID propertyId,
+            String month,
+            int page,
+            int size) {
+        return billingCycleService.listUpcomingPropertyCycles(actorUserId, propertyId, month, page, size);
     }
 
     public String exportPropertyCyclesCsv(UUID actorUserId, UUID propertyId, String month) {

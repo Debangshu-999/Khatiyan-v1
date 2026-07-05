@@ -1,6 +1,7 @@
 import { Linking, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronRight, MessageCircle, Phone, Settings } from "lucide-react-native";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { ChevronRight, Info, MessageCircle, Phone, Settings } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -12,7 +13,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerActiveTenancyDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams<{
     billingStarted?: string;
     billingType?: string;
@@ -46,14 +47,19 @@ export default function OwnerActiveTenancyDetailScreen() {
   // A deposit account is only created once the tenant's first cycle is paid, so
   // its presence is our "first cycle paid" signal. Until then we hold back the
   // amount and show UNPAID.
-  const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId });
+  // Daily stays are billed per night and never carry a security deposit, so the
+  // deposit ledger does not apply to them.
+  const depositEligible = billingType !== "DAILY";
+  const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || !depositEligible });
   const depositAccount = depositQuery.data;
   const firstCyclePaid = Boolean(depositAccount);
-  const securityValue = depositQuery.isLoading
-    ? "…"
-    : firstCyclePaid
-      ? formatMoney(depositAccount?.currentBalancePaise ?? depositAmountPaise)
-      : "UNPAID";
+  const securityValue = !depositEligible
+    ? "Not eligible"
+    : depositQuery.isLoading
+      ? "…"
+      : firstCyclePaid
+        ? formatMoney(depositAccount?.currentBalancePaise ?? depositAmountPaise)
+        : "UNPAID";
 
   function openDepositManager() {
     if (!tenancyId) {
@@ -113,10 +119,15 @@ export default function OwnerActiveTenancyDetailScreen() {
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label={billingType === "DAILY" ? "Daily rent" : "Monthly rent"} value={formatMoney(billingAmount)} />
             <ProfileInfoBox
-              accent={firstCyclePaid ? "default" : "danger"}
+              accent={!depositEligible || firstCyclePaid ? "default" : "danger"}
               label="Security money"
-              onPress={openDepositManager}
               value={securityValue}
+              {...(depositEligible
+                ? { onPress: openDepositManager }
+                : {
+                    onInfoPress: () =>
+                      toast.info("Daily tenancies are billed per night and do not carry a refundable security deposit."),
+                  })}
             />
           </View>
         </Card>
@@ -243,11 +254,13 @@ function SectionTitle({ title }: { title: string }) {
 function ProfileInfoBox({
   accent = "default",
   label,
+  onInfoPress,
   onPress,
   value,
 }: {
   accent?: "default" | "danger" | "primary";
   label: string;
+  onInfoPress?: () => void;
   onPress?: () => void;
   value: string;
 }) {
@@ -270,9 +283,20 @@ function ProfileInfoBox({
         </Text>
         {onPress ? <ChevronRight color={colors.primary} size={15} strokeWidth={2.2} /> : null}
       </View>
-      <Text style={{ color: valueColor, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} numberOfLines={1} selectable={!onPress}>
-        {value}
-      </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <Text
+          style={{ color: valueColor, flexShrink: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }}
+          numberOfLines={1}
+          selectable={!onPress}
+        >
+          {value}
+        </Text>
+        {onInfoPress ? (
+          <AnimatedPressable accessibilityLabel="Why" accessibilityRole="button" hitSlop={10} onPress={onInfoPress}>
+            <Info color={colors.muted} size={15} strokeWidth={2.2} />
+          </AnimatedPressable>
+        ) : null}
+      </View>
     </>
   );
 

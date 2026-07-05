@@ -8,11 +8,12 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { AppTextInput } from "@/components/app-text-input";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRound, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -33,7 +34,7 @@ import { useTheme } from "@/theme/use-theme";
 // Tenant-side concern detail — read-only mirror of the owner concern detail:
 // media, live status, notes from the property team and the reopen action.
 export default function ConcernDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const params = useLocalSearchParams<{ concernId?: string }>();
   const concernId = typeof params.concernId === "string" ? params.concernId : "";
@@ -90,8 +91,7 @@ export default function ConcernDetailScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Concern detail"
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."
@@ -530,7 +530,7 @@ function ReopenConcernModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
                 Reason
               </Text>
-              <TextInput
+              <AppTextInput
                 editable={!loading}
                 multiline
                 onChangeText={onChangeReason}

@@ -116,6 +116,21 @@ public class PropertyLocalPlace extends BaseEntity {
         this.ownerRecommended = ownerRecommended;
     }
 
+    /**
+     * Backfill-only coordinate write: fills absent coordinates from a server-side
+     * geocode and never overwrites a point the admin pinned on the map.
+     */
+    public void backfillCoordinates(BigDecimal latitude, BigDecimal longitude) {
+        if (this.latitude != null || this.longitude != null) {
+            return;
+        }
+        if (latitude == null || longitude == null) {
+            return;
+        }
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
+
     public Set<PropertyLocalPlaceTag> getTags() {
         return Collections.unmodifiableSet(new TreeSet<>(tags));
     }

@@ -24,16 +24,17 @@ export function EmptyState({ action, description, eyebrow, icon: Icon, title }: 
           <View
             style={{
               alignItems: "center",
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: 12,
+              backgroundColor: colors.primarySoft,
+              borderColor: colors.primary,
+              borderCurve: "continuous",
+              borderRadius: 14,
               borderWidth: 1,
-              height: 44,
+              height: 46,
               justifyContent: "center",
-              width: 44,
+              width: 46,
             }}
           >
-            <Icon color={colors.primary} size={20} strokeWidth={2} />
+            <Icon color={colors.primary} size={21} strokeWidth={2} />
           </View>
         ) : null}
 

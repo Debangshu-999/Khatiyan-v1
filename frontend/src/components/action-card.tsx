@@ -19,11 +19,11 @@ type ActionCardProps = {
 // affordance arrow at the corner so it reads as navigable without a noisy
 // "Open" button.
 export function ActionCard({ badge, description, meta, onPress, title, tone = "default" }: ActionCardProps) {
-  const { colors, fonts, isDark, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const badgeLabel = badge != null && badge > 0 ? (badge > 99 ? "99+" : String(badge)) : null;
   const isPrimary = tone === "primary";
   const backgroundColor = isPrimary ? colors.accentSoft : colors.surface;
-  const borderColor = isPrimary ? colors.accent : colors.border;
+  const borderColor = isPrimary ? colors.accent : colors.borderStrong;
   const titleColor = colors.ink;
   const metaColor = isPrimary ? colors.accent : colors.kicker;
   const arrowColor = isPrimary ? colors.accent : colors.kicker;
@@ -37,15 +37,8 @@ export function ActionCard({ badge, description, meta, onPress, title, tone = "d
           borderCurve: "continuous",
           borderRadius: 20,
           borderWidth: 1,
-          // 3D lift: a soft drop shadow (heavier in light mode so the card
-          // floats off the page) plus Android elevation, and rounder corners.
-          elevation: 6,
           gap: spacing.sm,
           padding: spacing.lg,
-          shadowColor: isDark ? "#000000" : "#0F172A",
-          shadowOffset: { height: 6, width: 0 },
-          shadowOpacity: isDark ? 0.45 : 0.14,
-          shadowRadius: 14,
         }}
       >
         {meta ? (

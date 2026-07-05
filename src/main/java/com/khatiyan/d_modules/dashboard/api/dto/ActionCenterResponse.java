@@ -14,6 +14,7 @@ public record ActionCenterResponse(
     MoneySnapshot money,
     TodayDigest today,
     AttentionSummary attention,
+    BudgetAttention budget,
     ConcernQueueSummary concerns,
     List<RecentActivityItem> recentActivity,
     List<MonthlyTrendPoint> monthlyTrends,

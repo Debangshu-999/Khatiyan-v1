@@ -1,19 +1,27 @@
-import { useCallback } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
-import { ArchiveRestore, Bell, BellOff, Building2, ChevronRight, CreditCard, KeyRound, Megaphone, ShieldAlert, UserRound } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { Text, View } from "react-native";
+import { ArchiveRestore, Bell, BellOff, ChevronRight } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
+import {
+  countByTopic,
+  notificationSource,
+  paginateAlerts,
+  TopicBubbleRow,
+  usePropertyAlertScope,
+  type AlertTopic,
+} from "@/features/notifications/alert-filters";
 import { NotificationRow } from "@/features/notifications/notification-row";
 import { useAppSelector } from "@/store/hooks";
 import {
   NOTIFICATION_REFETCH_OPTIONS,
-  type NotificationItem,
   useGetOlderNotificationsQuery,
   useGetRecentNotificationsQuery,
   useMarkAllNotificationsReadMutation,
@@ -22,41 +30,21 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type AlertSource = "billing" | "concern" | "tenancy" | "notice" | "property" | "account" | "other";
-
-const ALERT_SECTIONS: Array<{
-  empty: string;
-  key: AlertSource;
-  title: string;
-}> = [
-  { empty: "No billing alerts right now.", key: "billing", title: "Billing" },
-  { empty: "No concern alerts right now.", key: "concern", title: "Concerns" },
-  { empty: "No tenancy alerts right now.", key: "tenancy", title: "Tenancy" },
-  { empty: "No notice alerts right now.", key: "notice", title: "Notices" },
-  { empty: "No property alerts right now.", key: "property", title: "Property" },
-  { empty: "No account alerts right now.", key: "account", title: "Account" },
-  { empty: "No other alerts right now.", key: "other", title: "Other" },
-];
-
-const ALERT_ICONS = {
-  account: UserRound,
-  billing: CreditCard,
-  concern: ShieldAlert,
-  notice: Megaphone,
-  other: Bell,
-  property: Building2,
-  tenancy: KeyRound,
-} as const;
+const PAGE_SIZE = 6;
 
 export default function NotificationsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const user = useAppSelector((state) => state.auth.user);
-  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const { activeAccount, inPropertyScope, isManagement, selectedProperty } = usePropertyAlertScope();
+
   const recentQuery = useGetRecentNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
   const olderQuery = useGetOlderNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
   const [markRead] = useMarkNotificationReadMutation();
   const [markAllRead] = useMarkAllNotificationsReadMutation();
+
+  const [topic, setTopic] = useState<AlertTopic>("all");
+  const [page, setPage] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -67,10 +55,26 @@ export default function NotificationsScreen() {
     }, []),
   );
 
-  const recent = recentQuery.data ?? [];
-  const olderCount = olderQuery.data?.length ?? 0;
-  const unreadCount = recent.filter((notification) => !notification.readAt).length;
-  const grouped = groupNotificationsBySource(recent);
+  const scopedRecent = (recentQuery.data ?? []).filter(inPropertyScope);
+  const scopedOlder = (olderQuery.data ?? []).filter(inPropertyScope);
+
+  const topicCounts = countByTopic(scopedRecent);
+  const unreadCount = [...scopedRecent, ...scopedOlder].filter((notification) => !notification.readAt).length;
+  const olderCount = scopedOlder.length;
+
+  // Property switches re-scope the queue; start from the first page again.
+  useEffect(() => {
+    setPage(0);
+    setTopic("all");
+  }, [selectedProperty?.id]);
+
+  const queueItems = topic === "all" ? scopedRecent : scopedRecent.filter((notification) => notificationSource(notification) === topic);
+  const pagedQueue = paginateAlerts(queueItems, page, PAGE_SIZE);
+
+  function changeTopic(next: AlertTopic) {
+    setTopic(next);
+    setPage(0);
+  }
 
   async function handleNotificationPress(recipientId: string, alreadyRead: boolean) {
     if (alreadyRead) {
@@ -85,24 +89,32 @@ export default function NotificationsScreen() {
 
   async function handleMarkAllRead() {
     try {
-      await markAllRead(activeAccount).unwrap();
+      if (isManagement && selectedProperty) {
+        // Server read-all clears every property's alerts; per-recipient marks
+        // keep the other properties' unread state intact.
+        const unread = [...scopedRecent, ...scopedOlder].filter((notification) => !notification.readAt);
+        await Promise.all(unread.map((notification) => markRead(notification.recipientId).unwrap()));
+      } else {
+        await markAllRead(activeAccount).unwrap();
+      }
     } catch {
       // Keep this quiet; stale unread state resolves on next successful refresh.
     }
   }
 
+  const loading = recentQuery.isLoading || olderQuery.isLoading;
+
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
       <ScreenHeader
-        eyebrow="Alert center"
-        title="Alerts,"
-        italicTail="by source."
+        title="Notifications,"
+        italicTail="one queue."
         subtitle={
-          user?.activeTenant
-            ? "Tenant notifications grouped by billing, concerns, notices and tenancy updates."
-            : user?.role === "OWNER"
-              ? "Owner notifications grouped by billing, concerns, tenancy, notices and property operations."
-              : "Alerts will appear here once your tenancy or property workspace is active."
+          isManagement && selectedProperty
+            ? `Notifications for ${selectedProperty.name}. Switch property from Home to see its own queue.`
+            : user?.activeTenant
+              ? "Your tenancy notifications in one queue — filter by topic below."
+              : "Notifications will appear here once your tenancy or property workspace is active."
         }
         trailing={
           unreadCount > 0 ? (
@@ -138,11 +150,7 @@ export default function NotificationsScreen() {
         }
       />
 
-      {recentQuery.isLoading ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
-      ) : null}
+      {loading ? <SkeletonCard /> : null}
 
       {recentQuery.isError ? (
         <EmptyState
@@ -153,18 +161,45 @@ export default function NotificationsScreen() {
         />
       ) : null}
 
-      {!recentQuery.isLoading && !recentQuery.isError ? (
+      {!loading && !recentQuery.isError ? (
         <View style={{ gap: spacing.lg }}>
-          {ALERT_SECTIONS.map((section) => (
-            <AlertSourceSection
-              empty={section.empty}
-              key={section.key}
-              notifications={grouped[section.key]}
-              onPressNotification={handleNotificationPress}
-              source={section.key}
-              title={section.title}
+          <TopicBubbleRow active={topic} counts={topicCounts} onChange={changeTopic} />
+
+          {queueItems.length === 0 ? (
+            <EmptyState
+              icon={Bell}
+              eyebrow="All clear"
+              title="Nothing in the queue"
+              description={
+                topic === "all"
+                  ? "No notifications in the last seven days for this scope."
+                  : "No recent notifications under this topic. Check older ones below."
+              }
             />
-          ))}
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              <View style={{ gap: spacing.sm }}>
+                {pagedQueue.pageItems.map((notification) => (
+                  <NotificationRow
+                    key={notification.recipientId}
+                    notification={notification}
+                    onPress={() => void handleNotificationPress(notification.recipientId, Boolean(notification.readAt))}
+                  />
+                ))}
+              </View>
+              {pagedQueue.totalPages > 1 ? (
+                <PaginationBar
+                  hasNext={pagedQueue.hasNext}
+                  hasPrevious={pagedQueue.hasPrevious}
+                  onNext={() => setPage(pagedQueue.page + 1)}
+                  onPrevious={() => setPage(Math.max(0, pagedQueue.page - 1))}
+                  page={pagedQueue.page}
+                  totalElements={pagedQueue.totalElements}
+                  totalPages={pagedQueue.totalPages}
+                />
+              ) : null}
+            </View>
+          )}
 
           {olderCount > 0 ? (
             <AnimatedPressable
@@ -197,7 +232,7 @@ export default function NotificationsScreen() {
                   }}
                   selectable
                 >
-                  Older alerts
+                  Older notifications
                 </Text>
                 <Text style={[type.caption, { color: colors.muted }]} selectable>
                   {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
@@ -210,100 +245,4 @@ export default function NotificationsScreen() {
       ) : null}
     </ScreenScrollView>
   );
-}
-
-function AlertSourceSection({
-  empty,
-  notifications,
-  onPressNotification,
-  source,
-  title,
-}: {
-  empty: string;
-  notifications: NotificationItem[];
-  onPressNotification: (recipientId: string, alreadyRead: boolean) => Promise<void>;
-  source: AlertSource;
-  title: string;
-}) {
-  const { colors, type } = useTheme();
-  const Icon = ALERT_ICONS[source];
-
-  return (
-    <Section eyebrow={`${notifications.length} alert${notifications.length === 1 ? "" : "s"}`} title={title}>
-      <View
-        style={{
-          backgroundColor: colors.surfaceSunken,
-          borderColor: colors.border,
-          borderRadius: 16,
-          borderWidth: 1,
-          maxHeight: 340,
-          overflow: "hidden",
-        }}
-      >
-        <ScrollView contentContainerStyle={{ gap: spacing.sm, padding: spacing.md }} nestedScrollEnabled showsVerticalScrollIndicator>
-          {notifications.length === 0 ? (
-            <Card tone="sunken">
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Icon color={colors.kicker} size={18} strokeWidth={2.2} />
-                <Text style={[type.body, { color: colors.muted }]} selectable>
-                  {empty}
-                </Text>
-              </View>
-            </Card>
-          ) : (
-            notifications.map((notification) => (
-              <NotificationRow
-                key={notification.recipientId}
-                notification={notification}
-                onPress={() => void onPressNotification(notification.recipientId, Boolean(notification.readAt))}
-              />
-            ))
-          )}
-        </ScrollView>
-      </View>
-    </Section>
-  );
-}
-
-function groupNotificationsBySource(notifications: NotificationItem[]) {
-  const grouped: Record<AlertSource, NotificationItem[]> = {
-    account: [],
-    billing: [],
-    concern: [],
-    notice: [],
-    other: [],
-    property: [],
-    tenancy: [],
-  };
-
-  notifications.forEach((notification) => {
-    grouped[notificationSource(notification)].push(notification);
-  });
-
-  return grouped;
-}
-
-function notificationSource(notification: NotificationItem): AlertSource {
-  const category = notification.category.toUpperCase();
-  const subtype = notification.subtype?.toUpperCase() ?? "";
-
-  if (category === "BILLING" || category === "PAYMENT" || subtype.startsWith("BILLING_") || subtype.startsWith("PAYMENT_")) {
-    return "billing";
-  }
-  if (category === "CONCERN" || subtype.startsWith("CONCERN_")) {
-    return "concern";
-  }
-  if (category === "TENANCY" || subtype.startsWith("TENANCY_")) {
-    return "tenancy";
-  }
-  if (category === "NOTICE" || subtype.startsWith("NOTICE_")) {
-    return "notice";
-  }
-  if (category === "PROPERTY" || category === "MANAGER" || subtype.startsWith("MANAGER_")) {
-    return "property";
-  }
-  if (category === "AUTH" || category === "ACCOUNT") {
-    return "account";
-  }
-  return "other";
 }

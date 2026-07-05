@@ -193,10 +193,10 @@ public class TenancyService {
                                 "This user already has an active tenancy.");
                     }
                     return new TenantLookupResponse(true, user.fullName(), false, true,
-                            "Existing user Ã¢â‚¬â€ a new tenancy will be added.");
+                            "Existing user - a new tenancy will be added.");
                 })
                 .orElseGet(() -> new TenantLookupResponse(false, null, false, true,
-                        "New user Ã¢â‚¬â€ an account will be created."));
+                        "New user - an account will be created."));
     }
 
     /**

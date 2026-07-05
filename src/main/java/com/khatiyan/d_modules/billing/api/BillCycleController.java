@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.AdjustBillingLineItemRequest;
@@ -30,6 +31,7 @@ import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordPaymentSuccessRequest;
+import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 
 import jakarta.validation.Valid;
 
@@ -95,6 +97,16 @@ public class BillCycleController {
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String month) {
         return billingModule.listPropertyCycles(user.userId(), propertyId, query, month);
+    }
+
+    @GetMapping("/properties/{propertyId}/upcoming-cycles")
+    public PageResponse<UpcomingBillingCycleResponse> listUpcomingPropertyCycles(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) String month,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return billingModule.listUpcomingPropertyCycles(user.userId(), propertyId, month, page, size);
     }
 
     @GetMapping(value = "/properties/{propertyId}/cycles/export", produces = "text/csv")

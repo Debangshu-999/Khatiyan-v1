@@ -4,8 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationAction;
 import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationEvent;
@@ -30,7 +29,7 @@ public class BillingNotificationEventListener {
         this.notificationModule = notificationModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onBillingLineItemChanged(BillingLineItemNotificationEvent event) {
         if (!shouldNotifyTenant(event)) {
             return;

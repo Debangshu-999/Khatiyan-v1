@@ -60,7 +60,18 @@ export type AttentionSummary = {
   pendingExitRequests: number;
   pendingRoomChangeRequests: number;
   upcomingExits: number;
+  exitsPastDue: number;
   tenantsOnNotice: number;
+};
+
+export type BudgetAttentionLevel = "NONE" | "APPROACHING" | "EXCEEDED";
+
+export type BudgetAttention = {
+  level: BudgetAttentionLevel;
+  effectiveBudgetPaise: number;
+  spentPaise: number;
+  overPaise: number;
+  remainingPaise: number;
 };
 
 export type ConcernQueueSummary = {
@@ -104,6 +115,7 @@ export type OwnerDashboard = {
   money: MoneySnapshot;
   today: TodayDigest;
   attention: AttentionSummary;
+  budget: BudgetAttention;
   concerns: ConcernQueueSummary;
   recentActivity: RecentActivityItem[];
   monthlyTrends: MonthlyTrendPoint[];
@@ -114,7 +126,7 @@ export const dashboardApi = api.injectEndpoints({
   endpoints: (builder) => ({
     getOwnerDashboard: builder.query<OwnerDashboard, string>({
       query: (propertyId) => `/api/v1/dashboard/owner/${propertyId}`,
-      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff"],
+      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff", "Expense"],
     }),
   }),
 });

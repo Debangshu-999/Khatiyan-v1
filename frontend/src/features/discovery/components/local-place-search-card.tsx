@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActivityIndicator, TextInput, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { Search, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -42,7 +43,7 @@ export function LocalPlaceSearchCard({
         }}
       >
         <Search color={colors.muted} size={19} strokeWidth={2.3} />
-        <TextInput
+        <AppTextInput
           accessibilityLabel="Search services"
           autoCapitalize="none"
           autoCorrect={false}

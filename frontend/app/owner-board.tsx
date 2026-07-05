@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -26,7 +27,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerBoardScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -130,9 +131,7 @@ export default function OwnerBoardScreen() {
           )}
 
           {(categoriesQuery.isFetching || itemsQuery.isFetching) && categories.length === 0 ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonCard />
           ) : null}
         </>
       ) : null}

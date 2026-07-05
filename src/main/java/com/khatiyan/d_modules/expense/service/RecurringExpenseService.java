@@ -2,6 +2,8 @@ package com.khatiyan.d_modules.expense.service;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,35 +23,54 @@ import com.khatiyan.d_modules.expense.model.RecurringExpense;
 import com.khatiyan.d_modules.expense.repository.ExpenseCategoryRepository;
 import com.khatiyan.d_modules.expense.repository.ExpenseRepository;
 import com.khatiyan.d_modules.expense.repository.RecurringExpenseRepository;
+import com.khatiyan.d_modules.staff.StaffModule;
 
 /** Monthly recurring expense templates (materialised by the scheduler). */
 @Service
 public class RecurringExpenseService {
 
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
     private final RecurringExpenseRepository recurringRepository;
     private final ExpenseCategoryRepository categoryRepository;
     private final ExpenseRepository expenseRepository;
     private final FinanceAccessPolicy financeAccessPolicy;
+    private final StaffModule staffModule;
 
     public RecurringExpenseService(
             RecurringExpenseRepository recurringRepository,
             ExpenseCategoryRepository categoryRepository,
             ExpenseRepository expenseRepository,
-            FinanceAccessPolicy financeAccessPolicy) {
+            FinanceAccessPolicy financeAccessPolicy,
+            StaffModule staffModule) {
         this.recurringRepository = recurringRepository;
         this.categoryRepository = categoryRepository;
         this.expenseRepository = expenseRepository;
         this.financeAccessPolicy = financeAccessPolicy;
+        this.staffModule = staffModule;
     }
 
     @Transactional(readOnly = true)
     public List<RecurringExpenseResponse> list(UUID actorUserId, UUID propertyId) {
         financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
         Map<UUID, String> names = categoryNames(propertyId);
-        return recurringRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId).stream()
+        List<RecurringExpenseResponse> items = new ArrayList<>();
+        // Projected staff salary IS a recurring expense — it's just derived from
+        // current staff instead of stored as a template, so it surfaces here as a
+        // read-only system row (no edit / deactivate; not materialised by the
+        // scheduler — the expense totals already include it directly).
+        long projectedSalary = staffModule.estimatedMonthlySalaryPaise(
+                propertyId, YearMonth.now(IST).atDay(1));
+        if (projectedSalary > 0) {
+            items.add(new RecurringExpenseResponse(
+                    propertyId, null, "Salary", "Staff payroll", projectedSalary,
+                    "Projected from current staff salaries", 1, true, null, true));
+        }
+        recurringRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId).stream()
                 .map(recurring -> RecurringExpenseResponse.from(
                         recurring, names.getOrDefault(recurring.getCategoryId(), "Unknown")))
-                .toList();
+                .forEach(items::add);
+        return items;
     }
 
     @Transactional

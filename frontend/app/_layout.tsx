@@ -68,8 +68,9 @@ function ThemedRootStack() {
         screenOptions={{
           // Native push/pop. "simple_push" is JS-driven and flashes a blank
           // frame on the back gesture; the native slide keeps the previous
-          // screen painted through the whole transition.
-          animation: "slide_from_right",
+          // screen painted through the whole transition. slide_from_left makes a
+          // pushed screen enter from the left; the native pop mirrors it.
+          animation: "slide_from_left",
           headerShadowVisible: false,
           headerStyle: { backgroundColor: colors.background },
           headerTitleStyle: { color: colors.ink },
@@ -87,6 +88,7 @@ function ThemedRootStack() {
         <Stack.Screen name="payment-method" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-upcoming-cycles" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
@@ -95,6 +97,8 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-register-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
         <Stack.Screen name="owner-vacancy-finder" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-expenses" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-local-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-staff" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notices" options={{ headerShown: false }} />

@@ -1,31 +1,39 @@
 import { useState, type ComponentType } from "react";
-import { Modal, Text, TextInput, View } from "react-native";
+import { Modal, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { ArrowLeft, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { tapHaptic } from "@/lib/haptics";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+// Compact pill that hugs the top of the screen. The negative bottom margin
+// cancels most of ScreenScrollView's child gap so the header sits close under
+// it instead of leaving a band of dead space.
 export function BackButton({ onPress }: { onPress: () => void }) {
   const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
       accessibilityLabel="Back"
+      hitSlop={8}
       onPress={onPress}
       style={{
         alignItems: "center",
         alignSelf: "flex-start",
-        borderColor: colors.border,
-        borderRadius: 10,
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.xs,
-        height: 36,
+        height: 30,
+        marginBottom: -spacing.sm,
         paddingHorizontal: spacing.sm,
       }}
     >
-      <ArrowLeft color={colors.ink} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
+      <ArrowLeft color={colors.ink} size={15} strokeWidth={2.2} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable={false}>
         Back
       </Text>
     </AnimatedPressable>
@@ -96,11 +104,19 @@ export function ActionButton({
     <AnimatedPressable
       accessibilityRole="button"
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        // A little physical confirmation when committing an action; quiet
+        // secondary buttons stay silent.
+        if (primary || danger) {
+          tapHaptic();
+        }
+        onPress();
+      }}
       style={{
         alignItems: "center",
         backgroundColor,
-        borderColor: danger || neutral ? colors.border : "transparent",
+        borderColor: danger ? colors.danger : neutral ? colors.borderStrong : "transparent",
+        borderCurve: "continuous",
         borderRadius: 14,
         borderWidth: 1,
         flex: 1,
@@ -123,6 +139,7 @@ export function ActionButton({
 
 export function FormInput({
   autoCapitalize = "sentences",
+  error,
   keyboardType,
   label,
   maxLength,
@@ -132,6 +149,8 @@ export function FormInput({
   value,
 }: {
   autoCapitalize?: "characters" | "none" | "sentences" | "words";
+  // Inline validation message; tints the field and label red while present.
+  error?: string;
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
   label: string;
   maxLength?: number;
@@ -142,12 +161,16 @@ export function FormInput({
 }) {
   const { colors, fonts, type } = useTheme();
   const [focused, setFocused] = useState(false);
+  // Constant border width so focusing never nudges the layout; the colour does
+  // the talking — danger wins over focus, focus wins over rest.
+  const borderColor = error ? colors.danger : focused ? colors.primary : colors.borderStrong;
+  const labelColor = error ? colors.danger : focused ? colors.primary : colors.inkSoft;
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.inkSoft }]} selectable>
+      <Text style={[type.label, { color: labelColor }]} selectable>
         {label}
       </Text>
-      <TextInput
+      <AppTextInput
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
         maxLength={maxLength}
@@ -160,9 +183,10 @@ export function FormInput({
         placeholderTextColor={colors.kicker}
         style={{
           backgroundColor: colors.surface,
-          borderColor: focused ? colors.primary : colors.border,
+          borderColor,
+          borderCurve: "continuous",
           borderRadius: 14,
-          borderWidth: focused ? 1.5 : 1,
+          borderWidth: 1.5,
           color: colors.ink,
           fontFamily: fonts.sans,
           fontSize: 15,
@@ -174,6 +198,11 @@ export function FormInput({
         }}
         value={value}
       />
+      {error ? (
+        <Text style={[type.caption, { color: colors.danger }]} selectable>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -187,18 +216,13 @@ export function ChoiceButton({ active, label, onPress }: { active: boolean; labe
       onPress={onPress}
       style={{
         backgroundColor: active ? colors.primary : colors.surface,
-        borderColor: active ? colors.primary : colors.border,
+        borderColor: active ? colors.primary : colors.borderStrong,
         borderRadius: 999,
         borderWidth: 1,
-        elevation: active ? 2 : 0,
         justifyContent: "center",
         minHeight: 40,
         paddingHorizontal: spacing.md,
         paddingVertical: 9,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 3, width: 0 },
-        shadowOpacity: active ? 1 : 0,
-        shadowRadius: 6,
       }}
     >
       <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "700" }} selectable>

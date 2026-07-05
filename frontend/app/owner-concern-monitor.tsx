@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Activity, AlertCircle, CheckCircle2, Clock3, Eye, RotateCcw } from "lucide-react-native";
 
 import { Card } from "@/components/card";
@@ -9,13 +10,14 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { ActionButton, BackButton, humanizeToken } from "@/features/owner/owner-ui";
 import { type ConcernSummary, useListPropertyConcernMonitorQuery } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerConcernMonitorScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const params = useLocalSearchParams<{ propertyId?: string }>();
   const propertyId = typeof params.propertyId === "string" ? params.propertyId : "";
@@ -42,8 +44,7 @@ export default function OwnerConcernMonitorScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Owner monitor"
         title="Concern"
         italicTail="monitor."
@@ -71,9 +72,7 @@ export default function OwnerConcernMonitorScreen() {
 
           <Section title="Monitored concerns">
             {monitorQuery.isFetching ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+              <SkeletonCard />
             ) : sortedConcerns.length > 0 ? (
               <View style={{ gap: spacing.md }}>
                 {sortedConcerns.map((concern) => (

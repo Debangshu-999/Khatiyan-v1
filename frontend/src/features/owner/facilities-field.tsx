@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
-import { Modal, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Modal, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AirVent,
@@ -278,7 +279,7 @@ function FacilitiesPickerModal({
                   }}
                 >
                   <Wrench color={colors.accent} size={16} strokeWidth={2.3} />
-                  <TextInput
+                  <AppTextInput
                     accessibilityLabel="Custom facility"
                     autoCapitalize="words"
                     onChangeText={setDraft}

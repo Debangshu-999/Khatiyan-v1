@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.billing.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.DepositMovementResponse;
+import com.khatiyan.d_modules.billing.event.DepositPayoutEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.DepositAccount;
 import com.khatiyan.d_modules.billing.model.DepositAccountStatus;
@@ -30,6 +33,7 @@ import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,18 +56,21 @@ public class DepositManagerService {
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
     private final AuthModule authModule;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DepositManagerService(
             DepositAccountRepository depositAccountRepository,
             DepositMovementRepository depositMovementRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
-            AuthModule authModule) {
+            AuthModule authModule,
+            ApplicationEventPublisher eventPublisher) {
         this.depositAccountRepository = depositAccountRepository;
         this.depositMovementRepository = depositMovementRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
         this.authModule = authModule;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -420,6 +427,13 @@ public class DepositManagerService {
         TenancyResponse tenancy = getTenancy(tenancyId);
         propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
 
+        // The deposit secures the stay; refunding it while the tenant still lives
+        // there would leave the tenancy unsecured. Exit execution settles it via
+        // settleForExecutedExit — manual settlement is only for ended tenancies.
+        if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
+            throw new ValidationException("Deposit can be settled only after the tenancy has ended");
+        }
+
         DepositAccount account = getAccountByTenancyId(tenancyId);
         List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
         long settlementAmountPaise = calculateBalance(movements);
@@ -437,6 +451,7 @@ public class DepositManagerService {
                 actorUserId);
 
         depositMovementRepository.save(movement);
+        publishPayout(movement, account, tenancy, settlementAmountPaise, reason);
 
         log.info(
                 "Deposit settled depositAccountId={} tenancyId={} actorUserId={} settlementAmount={}",
@@ -491,11 +506,13 @@ public class DepositManagerService {
         account.settle(Instant.now());
 
         if (settlementAmountPaise > 0) {
-            depositMovementRepository.save(DepositMovement.settlement(
+            DepositMovement movement = DepositMovement.settlement(
                     account.getId(),
                     "Tenancy exit executed",
                     settlementAmountPaise,
-                    actorUserId));
+                    actorUserId);
+            depositMovementRepository.save(movement);
+            publishPayout(movement, account, tenancy, settlementAmountPaise, "Tenancy exit executed");
         }
 
         log.info(
@@ -504,6 +521,25 @@ public class DepositManagerService {
                 tenancyId,
                 actorUserId,
                 settlementAmountPaise);
+    }
+
+    // The refund is the property's actual cash outflow; the expense module
+    // records it as an AUTO ledger row keyed on the settlement movement id.
+    private void publishPayout(
+            DepositMovement movement,
+            DepositAccount account,
+            TenancyResponse tenancy,
+            long amountPaise,
+            String reason) {
+        eventPublisher.publishEvent(new DepositPayoutEvent(
+                movement.getId(),
+                account.getId(),
+                tenancy.id(),
+                account.getTenantUserId(),
+                tenancy.propertyId(),
+                amountPaise,
+                LocalDate.now(),
+                reason));
     }
 
     /**

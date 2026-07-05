@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { BedDouble, Building2, CalendarClock, Check, IndianRupee, Layers, Search } from "lucide-react-native";
 
 import { Card } from "@/components/card";
@@ -9,6 +9,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { BackButton, ChoiceButton, FormInput, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -27,9 +28,29 @@ import { useTheme } from "@/theme/use-theme";
 
 type ConditioningFilter = "ANY" | RoomConditioning;
 type RoomTypeFilter = "ANY" | RoomType;
+type UpcomingRoom = { beds: number; date: string; room: OwnerRoom };
+
+// Exact match = enough free beds AND the selected AC + room type (or "Any").
+// Rooms that have a vacancy but differ in AC / type are surfaced as "similar".
+function roomMatchesType(room: OwnerRoom, conditioning: ConditioningFilter, roomType: RoomTypeFilter) {
+  return (conditioning === "ANY" || room.conditioning === conditioning)
+    && (roomType === "ANY" || room.roomType === roomType);
+}
+
+// Floor is a soft preference: requested-floor rooms sort first, then by floor.
+function compareByFloor(left: OwnerRoom, right: OwnerRoom, floorQuery: string) {
+  if (floorQuery) {
+    const leftOnFloor = (left.floor ?? "") === floorQuery ? 0 : 1;
+    const rightOnFloor = (right.floor ?? "") === floorQuery ? 0 : 1;
+    if (leftOnFloor !== rightOnFloor) {
+      return leftOnFloor - rightOnFloor;
+    }
+  }
+  return (left.floor ?? "").localeCompare(right.floor ?? "") || left.roomNumber.localeCompare(right.roomNumber);
+}
 
 export default function OwnerVacancyFinderScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -57,37 +78,21 @@ export default function OwnerVacancyFinderScreen() {
   const requiredBeds = Math.max(1, Number.isInteger(Number(minBeds)) ? Number(minBeds) : 1);
   const floorQuery = floor.trim();
 
-  const matches = useMemo(() => {
-    // Hard filters: a room must have enough free beds, not be under maintenance,
-    // and match the AC / room-type filters when those are set.
-    const filtered = rooms.filter((room) => {
-      if (room.status === "MAINTENANCE") {
-        return false;
+  // Available-now rooms, split into exact matches and "similar" vacancies.
+  // Min free beds + maintenance stay hard filters; AC / room type only decides
+  // which bucket a room lands in, so non-matching rooms are no longer hidden.
+  const { nowMatches, nowSimilar } = useMemo(() => {
+    const matched: OwnerRoom[] = [];
+    const similar: OwnerRoom[] = [];
+    for (const room of rooms) {
+      if (room.status === "MAINTENANCE" || room.availableVacancies < requiredBeds) {
+        continue;
       }
-      if (room.availableVacancies < requiredBeds) {
-        return false;
-      }
-      if (conditioning !== "ANY" && room.conditioning !== conditioning) {
-        return false;
-      }
-      if (roomType !== "ANY" && room.roomType !== roomType) {
-        return false;
-      }
-      return true;
-    });
-
-    // Floor is a soft preference: never exclude on floor. When a floor is
-    // requested, surface rooms on that floor first; otherwise order by floor.
-    return [...filtered].sort((left, right) => {
-      if (floorQuery) {
-        const leftOnFloor = (left.floor ?? "") === floorQuery ? 0 : 1;
-        const rightOnFloor = (right.floor ?? "") === floorQuery ? 0 : 1;
-        if (leftOnFloor !== rightOnFloor) {
-          return leftOnFloor - rightOnFloor;
-        }
-      }
-      return (left.floor ?? "").localeCompare(right.floor ?? "") || left.roomNumber.localeCompare(right.roomNumber);
-    });
+      (roomMatchesType(room, conditioning, roomType) ? matched : similar).push(room);
+    }
+    matched.sort((left, right) => compareByFloor(left, right, floorQuery));
+    similar.sort((left, right) => compareByFloor(left, right, floorQuery));
+    return { nowMatches: matched, nowSimilar: similar };
   }, [conditioning, floorQuery, requiredBeds, roomType, rooms]);
 
   // roomId -> nearest future vacancy date (+ how many beds free up). A room
@@ -114,43 +119,40 @@ export default function OwnerVacancyFinderScreen() {
     return map;
   }, [showUpcoming, tenanciesQuery.data]);
 
-  // Rooms that lack enough free beds now but free up in the future and still
-  // match the AC / room-type filters. Sorted by soonest vacancy.
-  const upcomingMatches = useMemo(() => {
+  // Full rooms that free up in the future, split the same way (matches vs
+  // similar). Sorted by soonest vacancy.
+  const { upcomingMatches, upcomingSimilar } = useMemo(() => {
     if (!showUpcoming) {
-      return [] as { beds: number; date: string; room: OwnerRoom }[];
+      return { upcomingMatches: [] as UpcomingRoom[], upcomingSimilar: [] as UpcomingRoom[] };
     }
-    return rooms
-      .filter((room) => {
-        if (room.status === "MAINTENANCE") {
-          return false;
-        }
-        if (room.availableVacancies >= requiredBeds) {
-          return false; // already an "available now" match
-        }
-        if (conditioning !== "ANY" && room.conditioning !== conditioning) {
-          return false;
-        }
-        if (roomType !== "ANY" && room.roomType !== roomType) {
-          return false;
-        }
-        return roomUpcoming.has(room.id);
-      })
-      .map((room) => {
-        const upcoming = roomUpcoming.get(room.id)!;
-        return { beds: upcoming.beds, date: upcoming.date, room };
-      })
-      .sort((left, right) => left.date.localeCompare(right.date) || left.room.roomNumber.localeCompare(right.room.roomNumber));
+    const matched: UpcomingRoom[] = [];
+    const similar: UpcomingRoom[] = [];
+    for (const room of rooms) {
+      if (room.status === "MAINTENANCE" || room.availableVacancies >= requiredBeds) {
+        continue; // maintenance, or already an "available now" room
+      }
+      const upcoming = roomUpcoming.get(room.id);
+      if (!upcoming) {
+        continue;
+      }
+      const entry: UpcomingRoom = { beds: upcoming.beds, date: upcoming.date, room };
+      (roomMatchesType(room, conditioning, roomType) ? matched : similar).push(entry);
+    }
+    const bySoonest = (left: UpcomingRoom, right: UpcomingRoom) =>
+      left.date.localeCompare(right.date) || left.room.roomNumber.localeCompare(right.room.roomNumber);
+    matched.sort(bySoonest);
+    similar.sort(bySoonest);
+    return { upcomingMatches: matched, upcomingSimilar: similar };
   }, [conditioning, requiredBeds, roomType, rooms, roomUpcoming, showUpcoming]);
 
-  const floorMatchCount = floorQuery ? matches.filter((room) => (room.floor ?? "") === floorQuery).length : 0;
-  const totalBeds = matches.reduce((sum, room) => sum + room.availableVacancies, 0);
+  const matchCount = nowMatches.length + upcomingMatches.length;
+  const similarCount = nowSimilar.length + upcomingSimilar.length;
+  const matchBeds = nowMatches.reduce((sum, room) => sum + room.availableVacancies, 0);
+  const loadingUpcoming = showUpcoming && tenanciesQuery.isFetching && (tenanciesQuery.data ?? []).length === 0;
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Property"
         title="Vacancy"
         italicTail="finder."
@@ -185,65 +187,48 @@ export default function OwnerVacancyFinderScreen() {
           </Card>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Rooms found" value={String(matches.length)} hint={`${totalBeds} free bed${totalBeds === 1 ? "" : "s"}`} tone={matches.length > 0 ? "primary" : "default"} />
-            <MetricTile label="On floor" value={floorQuery ? String(floorMatchCount) : "—"} hint={floorQuery ? `Floor ${floorQuery}` : "No floor set"} />
+            <MetricTile label="Matches" value={String(matchCount)} hint={matchCount > 0 ? `${matchBeds} free now` : "Exact fit"} tone={matchCount > 0 ? "primary" : "default"} />
+            <MetricTile label="Similar" value={String(similarCount)} hint={conditioning === "ANY" && roomType === "ANY" ? "Set AC or type" : "Other vacancies"} />
           </View>
 
-          {floorQuery && matches.length > 0 && floorMatchCount === 0 ? (
-            <Card tone="sunken">
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
-                No matching rooms on floor {floorQuery}. Showing other available rooms that fit your criteria.
-              </Text>
-            </Card>
-          ) : null}
-
           {roomsQuery.isFetching && rooms.length === 0 ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
-          ) : showUpcoming ? (
-            tenanciesQuery.isFetching && (tenanciesQuery.data ?? []).length === 0 && matches.length === 0 ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
-            ) : matches.length === 0 && upcomingMatches.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                eyebrow="No matches"
-                title="No active or upcoming vacancies"
-                description="No active or upcoming vacancies match your search. Try fewer beds, a different type, or clear the conditioning filter."
-              />
-            ) : (
-              <>
-                {matches.length > 0 ? (
-                  <Section eyebrow="Available now" title={`${matches.length} available room${matches.length === 1 ? "" : "s"}`}>
-                    {matches.map((room) => (
-                      <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
-                    ))}
-                  </Section>
-                ) : null}
-                {upcomingMatches.length > 0 ? (
-                  <Section eyebrow="Freeing up soon" title={`${upcomingMatches.length} upcoming vacanc${upcomingMatches.length === 1 ? "y" : "ies"}`}>
-                    {upcomingMatches.map(({ beds, date, room }) => (
-                      <RoomResultCard availableFrom={date} key={room.id} room={room} upcomingBeds={beds} />
-                    ))}
-                  </Section>
-                ) : null}
-              </>
-            )
-          ) : matches.length === 0 ? (
+            <SkeletonCard />
+          ) : loadingUpcoming && matchCount === 0 && similarCount === 0 ? (
+            <SkeletonCard />
+          ) : matchCount === 0 && similarCount === 0 ? (
             <EmptyState
               icon={Search}
               eyebrow="No matches"
-              title="No available rooms"
-              description="No active room fits these filters. Try fewer beds, a different type, or clear the conditioning filter."
+              title={showUpcoming ? "No active or upcoming vacancies" : "No available rooms"}
+              description={
+                showUpcoming
+                  ? "Nothing matches your search now or soon. Try fewer beds, a different type, or clear the conditioning filter."
+                  : "No room fits these filters. Try fewer beds, a different type, or turn on upcoming vacancies."
+              }
             />
           ) : (
-            <Section eyebrow="Results" title={`${matches.length} available room${matches.length === 1 ? "" : "s"}`}>
-              {matches.map((room) => (
-                <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
-              ))}
-            </Section>
+            <>
+              {matchCount > 0 ? (
+                <Section eyebrow="Matches your search" title={`${matchCount} room${matchCount === 1 ? "" : "s"}`}>
+                  {nowMatches.map((room) => (
+                    <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
+                  ))}
+                  {upcomingMatches.map(({ beds, date, room }) => (
+                    <RoomResultCard availableFrom={date} key={room.id} room={room} upcomingBeds={beds} />
+                  ))}
+                </Section>
+              ) : null}
+              {similarCount > 0 ? (
+                <Section eyebrow="Similar vacancies" title={`${similarCount} other room${similarCount === 1 ? "" : "s"}`}>
+                  {nowSimilar.map((room) => (
+                    <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
+                  ))}
+                  {upcomingSimilar.map(({ beds, date, room }) => (
+                    <RoomResultCard availableFrom={date} key={room.id} room={room} upcomingBeds={beds} />
+                  ))}
+                </Section>
+              ) : null}
+            </>
           )}
         </>
       ) : null}
@@ -393,18 +378,17 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
   return properties.length === 1 ? properties[0] : null;
 }
 
-// A tenancy contributes an upcoming vacancy when a monthly stay is on notice
-// with an end date, or a daily stay has an end date, and that date is today or
-// later. Returns the vacancy date (ISO yyyy-MM-dd) or null.
+// A tenancy contributes an upcoming vacancy when a monthly stay is on notice or a
+// daily stay has its checkout set, and that date is today or later. Active daily
+// stays keep the checkout in plannedEndDate (endDate is null until they actually
+// end); monthly stays on notice carry it in endDate. Returns the vacancy date
+// (ISO yyyy-MM-dd) or null.
 function upcomingVacancyDate(tenancy: TenancySummary, today: string): string | null {
-  if (!tenancy.endDate || tenancy.endDate < today) {
-    return null;
-  }
   if (tenancy.billingType === "DAILY") {
-    return tenancy.endDate;
+    return tenancy.plannedEndDate && tenancy.plannedEndDate >= today ? tenancy.plannedEndDate : null;
   }
   if (tenancy.billingType === "MONTHLY" && (tenancy.status === "ON_NOTICE" || tenancy.status === "ON_PREMATURE_NOTICE")) {
-    return tenancy.endDate;
+    return tenancy.endDate && tenancy.endDate >= today ? tenancy.endDate : null;
   }
   return null;
 }

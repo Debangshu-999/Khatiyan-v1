@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Archive, CalendarClock, Check, Edit3, Info, Megaphone, Plus, Repeat2, Trash2, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
@@ -10,6 +10,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import {
   ActionButton,
   BackButton,
@@ -60,7 +61,7 @@ type NoticeDateField = "visibleFrom" | "visibleUntil";
 type NoticeDatePickerState = { field: NoticeDateField; mode: "date" | "time" } | null;
 
 export default function OwnerNoticesScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -118,8 +119,7 @@ export default function OwnerNoticesScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Owner notice"
         italicTail="desk."
         subtitle={selectedProperty ? `Publish and review notices for ${selectedProperty.name}.` : "Select a property from Home first."}
@@ -154,9 +154,7 @@ export default function OwnerNoticesScreen() {
             title={view === "recurring" ? `${recurringQuery.data?.length ?? 0} schedules` : `${notices.length} notices`}
           >
             {loading ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+              <SkeletonCard />
             ) : view === "recurring" ? (
               (recurringQuery.data ?? []).length > 0 ? (
                 (recurringQuery.data ?? []).map((recurringNotice) => (

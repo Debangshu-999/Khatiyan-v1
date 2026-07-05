@@ -118,6 +118,22 @@ export type LocalPlaceSearch = {
   longitude?: number | null;
 };
 
+// Create/update body for admin-curated nearby places. PATCH is a full replace
+// on the backend, so edits must carry existing values for fields the form
+// doesn't surface (directionsUrl, photoUrl) or they get wiped.
+export type LocalPlacePayload = {
+  name: string;
+  tags: string[];
+  description?: string | null;
+  phone?: string | null;
+  addressText?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  directionsUrl?: string | null;
+  photoUrl?: string | null;
+  ownerRecommended: boolean;
+};
+
 function cleanParams(values: Record<string, unknown>) {
   return Object.fromEntries(
     Object.entries(values).filter(([, value]) => value !== undefined && value !== null && value !== ""),
@@ -135,6 +151,17 @@ export type OwnerDiscoveryProfile = {
   showManagerContact: boolean;
   publishedAt: string | null;
   active: boolean;
+};
+
+// PATCH is a full replace for headline/description/profileImageUrl on the
+// backend — edits must carry the stored profileImageUrl or it gets wiped.
+// The contact flags are null-safe (only applied when present).
+export type UpdateOwnerDiscoveryProfilePayload = {
+  headline: string;
+  description: string;
+  profileImageUrl?: string | null;
+  showOwnerContact?: boolean | null;
+  showManagerContact?: boolean | null;
 };
 
 export const discoveryApi = api.injectEndpoints({
@@ -222,18 +249,63 @@ export const discoveryApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Discovery"],
     }),
+    updateOwnerDiscoveryProfile: builder.mutation<
+      OwnerDiscoveryProfile,
+      { propertyId: string; payload: UpdateOwnerDiscoveryProfilePayload }
+    >({
+      query: ({ propertyId, payload }) => ({
+        body: payload,
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/discovery-profile`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+
+    // Admin-side nearby places (owner/manager curation for one property).
+    listManagedLocalPlaces: builder.query<PropertyLocalPlace[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/local-places`,
+      providesTags: ["Discovery"],
+    }),
+    createLocalPlace: builder.mutation<PropertyLocalPlace, { propertyId: string; payload: LocalPlacePayload }>({
+      query: ({ propertyId, payload }) => ({
+        body: payload,
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/local-places`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    updateLocalPlace: builder.mutation<PropertyLocalPlace, { propertyId: string; placeId: string; payload: LocalPlacePayload }>({
+      query: ({ propertyId, placeId, payload }) => ({
+        body: payload,
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/local-places/${placeId}`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    deleteLocalPlace: builder.mutation<void, { propertyId: string; placeId: string }>({
+      query: ({ propertyId, placeId }) => ({
+        method: "DELETE",
+        url: `/api/v1/properties/${propertyId}/local-places/${placeId}`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
   }),
 });
 
 export const {
+  useCreateLocalPlaceMutation,
+  useDeleteLocalPlaceMutation,
   useGetDiscoveryPropertyQuery,
   useGetOwnerDiscoveryProfileQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
   useListLocalPlaceTagsQuery,
+  useListManagedLocalPlacesQuery,
   useListMyLocalPlacesQuery,
   usePublishOwnerDiscoveryProfileMutation,
   useSearchDiscoveryPropertiesQuery,
   useSuggestLocationsQuery,
   useUnpublishOwnerDiscoveryProfileMutation,
+  useUpdateLocalPlaceMutation,
+  useUpdateOwnerDiscoveryProfileMutation,
 } = discoveryApi;

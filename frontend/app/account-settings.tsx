@@ -8,9 +8,9 @@ import {
   Platform,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { BellRing, Eye, EyeOff, Fingerprint, Moon, ShieldCheck, Smartphone, X } from "lucide-react-native";
 
 import { saveSession } from "@/auth/session-storage";
@@ -540,7 +540,7 @@ function PinCodeInput({
             </Text>
           ))}
         </View>
-        <TextInput
+        <AppTextInput
           autoCapitalize="none"
           autoCorrect={false}
           caretHidden

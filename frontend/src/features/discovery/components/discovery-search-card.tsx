@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { ChevronDown, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import type { LocationArea, LocationCity, LocationSuggestion } from "@/store/services/discovery-api";
+import type { LocationArea, LocationCity } from "@/store/services/discovery-api";
+import type { GeoSuggestion } from "@/store/services/geo-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -17,14 +19,15 @@ type DiscoverySearchCardProps = {
   activeFilterCount: number;
   onAreaSelect: (area: LocationArea | null) => void;
   onCitySelect: (city: LocationCity | null) => void;
+  onClearSearch: () => void;
   onOpenFilters: () => void;
   onSearch: () => void;
   onSearchTextChange: (value: string) => void;
-  onSuggestionSelect: (suggestion: LocationSuggestion) => void;
+  onSuggestionSelect: (suggestion: GeoSuggestion) => void;
   searchText: string;
   selectedArea: string;
   selectedCity: string;
-  suggestions: LocationSuggestion[];
+  suggestions: GeoSuggestion[];
 };
 
 export function DiscoverySearchCard({
@@ -34,6 +37,7 @@ export function DiscoverySearchCard({
   activeFilterCount,
   onAreaSelect,
   onCitySelect,
+  onClearSearch,
   onOpenFilters,
   onSearch,
   onSearchTextChange,
@@ -69,7 +73,7 @@ export function DiscoverySearchCard({
         }}
       >
         <Search color={focused ? colors.primary : colors.muted} size={18} strokeWidth={2.2} />
-        <TextInput
+        <AppTextInput
           accessibilityLabel="Search by area or city"
           autoCapitalize="words"
           autoCorrect={false}
@@ -95,7 +99,7 @@ export function DiscoverySearchCard({
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
         {searchText.length > 0 && !loadingSuggestions ? (
-          <AnimatedPressable accessibilityLabel="Clear search" onPress={() => onSearchTextChange("")}>
+          <AnimatedPressable accessibilityLabel="Clear search" onPress={onClearSearch}>
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
         ) : null}
@@ -147,10 +151,10 @@ export function DiscoverySearchCard({
           }}
         >
           <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled showsVerticalScrollIndicator>
-            {suggestions.map((suggestion) => (
+            {suggestions.map((suggestion, index) => (
               <AnimatedPressable
-                accessibilityLabel={`Search ${suggestion.label}`}
-                key={`${suggestion.label}-${suggestion.city}-${suggestion.area ?? "city"}`}
+                accessibilityLabel={`Search ${suggestion.name ?? suggestion.address ?? "location"}`}
+                key={`${suggestion.providerPlaceId ?? suggestion.name ?? "geo"}-${index}`}
                 onPress={() => onSuggestionSelect(suggestion)}
                 style={{
                   alignItems: "center",
@@ -164,12 +168,14 @@ export function DiscoverySearchCard({
               >
                 <MapPin color={colors.primary} size={16} strokeWidth={2.3} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
-                    {suggestion.label}
+                  <Text numberOfLines={1} style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+                    {suggestion.name ?? suggestion.address ?? "Location"}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>
-                    {suggestion.state}
-                  </Text>
+                  {suggestion.address && suggestion.address !== suggestion.name ? (
+                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+                      {suggestion.address}
+                    </Text>
+                  ) : null}
                 </View>
               </AnimatedPressable>
             ))}
@@ -381,7 +387,7 @@ function LocationFilterModal<T>({
             }}
           >
             <Search color={colors.muted} size={17} strokeWidth={2.2} />
-            <TextInput
+            <AppTextInput
               accessibilityLabel={title}
               autoCapitalize="words"
               autoCorrect={false}

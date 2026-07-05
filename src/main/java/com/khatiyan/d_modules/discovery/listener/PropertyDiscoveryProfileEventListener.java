@@ -1,8 +1,7 @@
 package com.khatiyan.d_modules.discovery.listener;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
 import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
@@ -19,7 +18,7 @@ public class PropertyDiscoveryProfileEventListener {
         this.propertyDiscoveryService = propertyDiscoveryService;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void createDraftDiscoveryProfile(PropertyCreatedEvent event) {
         try {
             propertyDiscoveryService.createDraftProfileAfterPropertyCreation(

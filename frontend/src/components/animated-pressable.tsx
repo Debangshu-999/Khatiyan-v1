@@ -1,9 +1,14 @@
 import { PropsWithChildren, useRef } from "react";
-import { Animated, Pressable, PressableProps, StyleProp, ViewStyle } from "react-native";
+import { Animated, GestureResponderEvent, Pressable, PressableProps, StyleProp, ViewStyle } from "react-native";
 
 type AnimatedPressableProps = PropsWithChildren<
   Omit<PressableProps, "style"> & {
     style?: StyleProp<ViewStyle>;
+    // Minimum gap (ms) before this pressable fires onPress again. Guards against
+    // a fast double-tap triggering the action twice — most visibly a card that
+    // navigates, which used to push the same screen multiple times and leave a
+    // pile of identical back-stack entries. Pass 0 to opt out (rapid steppers).
+    tapLockMs?: number;
   }
 >;
 
@@ -14,12 +19,25 @@ type AnimatedPressableProps = PropsWithChildren<
 // surface the tap target.
 const AnimatedPressableImpl = Animated.createAnimatedComponent(Pressable);
 
-export function AnimatedPressable({ children, onPressIn, onPressOut, style, ...props }: AnimatedPressableProps) {
+export function AnimatedPressable({ children, onPress, onPressIn, onPressOut, style, tapLockMs = 500, ...props }: AnimatedPressableProps) {
   const scale = useRef(new Animated.Value(1)).current;
+  const lastPressAt = useRef(0);
+
+  const handlePress = (event: GestureResponderEvent) => {
+    if (tapLockMs > 0) {
+      const now = Date.now();
+      if (now - lastPressAt.current < tapLockMs) {
+        return;
+      }
+      lastPressAt.current = now;
+    }
+    onPress?.(event);
+  };
 
   return (
     <AnimatedPressableImpl
       {...props}
+      onPress={handlePress}
       onPressIn={(event) => {
         Animated.spring(scale, {
           friction: 7,

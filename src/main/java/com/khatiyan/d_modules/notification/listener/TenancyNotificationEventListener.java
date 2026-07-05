@@ -7,8 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationAudience;
@@ -40,7 +39,7 @@ public class TenancyNotificationEventListener {
         this.propertyModule = propertyModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyStarted(TenancyStartedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         RoomResponse room = propertyModule.getActiveRoom(event.propertyId(), event.roomId());
@@ -74,7 +73,7 @@ public class TenancyNotificationEventListener {
                 NotificationAudience.MANAGEMENT);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyEnded(TenancyEndedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         RoomResponse room = propertyModule.getActiveRoom(event.propertyId(), event.roomId());
@@ -108,7 +107,7 @@ public class TenancyNotificationEventListener {
                 NotificationAudience.MANAGEMENT);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyRoomTransferred(TenancyRoomTransferredEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         RoomResponse newRoom = propertyModule.getActiveRoom(event.propertyId(), event.newRoomId());

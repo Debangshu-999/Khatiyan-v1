@@ -8,13 +8,17 @@ type MetricTileProps = {
   value: string;
   hint?: string;
   tone?: "default" | "primary" | "danger";
+  // Money values shown three-across can be long; dense uses a smaller base size
+  // so the amount fits on one line without shrinking as aggressively.
+  dense?: boolean;
 };
 
-export function MetricTile({ hint, label, tone = "default", value }: MetricTileProps) {
+export function MetricTile({ dense = false, hint, label, tone = "default", value }: MetricTileProps) {
   const { colors, fonts, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
   const backgroundColor = tone === "primary" ? colors.jadeSoft : colors.surface;
-  const borderColor = tone === "primary" ? colors.jadeSoft : colors.border;
+  const borderColor = tone === "primary" ? colors.jadeSoft : colors.borderStrong;
+  const fontSize = dense ? 19 : 28;
 
   return (
     <View
@@ -29,18 +33,21 @@ export function MetricTile({ hint, label, tone = "default", value }: MetricTileP
         padding: spacing.md,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1} selectable>
         {label}
       </Text>
       <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        numberOfLines={1}
         style={{
           color: accentColor,
           fontFamily: fonts.display,
-          fontSize: 28,
+          fontSize,
           fontVariant: ["tabular-nums"],
           fontWeight: "500",
           letterSpacing: -0.5,
-          lineHeight: 32,
+          lineHeight: fontSize + 4,
         }}
         selectable
       >

@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { Building2, ClipboardList, Eye, EyeOff, Globe, Pencil, ShieldCheck, BedDouble, X } from "lucide-react-native";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { Building2, EyeOff, Globe, Pencil, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -10,7 +10,11 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
+import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
+import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
 import { FacilitiesField } from "@/features/owner/facilities-field";
 import {
   ActionButton,
@@ -47,14 +51,16 @@ import {
   useGetOwnerDiscoveryProfileQuery,
   usePublishOwnerDiscoveryProfileMutation,
   useUnpublishOwnerDiscoveryProfileMutation,
+  useUpdateOwnerDiscoveryProfileMutation,
+  type OwnerDiscoveryProfile,
 } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type PropertyRoute = "/owner-rooms" | "/owner-staff" | "/owner-board";
+type PropertyRoute = "/owner-rooms" | "/owner-staff" | "/owner-board" | "/owner-local-places";
 
 export default function OwnerPropertyScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -67,9 +73,7 @@ export default function OwnerPropertyScreen() {
       <BackButton onPress={() => router.back()} />
 
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : null}
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -86,7 +90,7 @@ export default function OwnerPropertyScreen() {
           <Card>
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                {selectedProperty.referenceCode} Â· {humanizeToken(selectedProperty.type)}
+                {selectedProperty.referenceCode}  /  {humanizeToken(selectedProperty.type)}
               </Text>
               <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 29 }]} selectable>
                 {selectedProperty.name}
@@ -108,7 +112,7 @@ export default function OwnerPropertyScreen() {
             <MetricTile label="Grace" value={`${selectedProperty.rentGraceDays}d`} hint="Rent grace" />
             <MetricTile
               label="Late fee"
-              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "â€”"}
+              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "-"}
               hint="Per day"
             />
           </View>
@@ -149,8 +153,14 @@ export default function OwnerPropertyScreen() {
             <ActionCard
               meta="Board"
               title="Property board"
-              description="Always-on info for tenants â€” rules, timings and contacts, organised by category."
+              description="Always-on info for tenants - rules, timings and contacts, organised by category."
               onPress={() => open(router, "/owner-board")}
+            />
+            <ActionCard
+              meta="Discovery"
+              title="Nearby places"
+              description="Curate landmarks and services around the property, pinned on the map with real distances."
+              onPress={() => open(router, "/owner-local-places")}
             />
           </Section>
         </>
@@ -170,28 +180,45 @@ function DiscoveryListingCard({ propertyId }: { propertyId: string }) {
   const profileQuery = useGetOwnerDiscoveryProfileQuery(propertyId);
   const [publishProfile, publishState] = usePublishOwnerDiscoveryProfileMutation();
   const [unpublishProfile, unpublishState] = useUnpublishOwnerDiscoveryProfileMutation();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // Shows the target state the moment the switch is flipped; cleared once the
+  // refetched profile confirms it (or immediately on failure, snapping back).
+  const [optimisticListed, setOptimisticListed] = useState<boolean | null>(null);
 
   const profile = profileQuery.data;
   const listed = profile?.publicVisible ?? false;
   const loadingProfile = profileQuery.isFetching && !profile;
   const busy = publishState.isLoading || unpublishState.isLoading;
+  const displayedListed = optimisticListed ?? listed;
+
+  useEffect(() => {
+    if (optimisticListed != null && listed === optimisticListed) {
+      setOptimisticListed(null);
+    }
+  }, [listed, optimisticListed]);
 
   async function toggleListing() {
+    if (busy || loadingProfile) {
+      return;
+    }
+    const next = !listed;
+    setOptimisticListed(next);
     try {
-      if (listed) {
-        await unpublishProfile(propertyId).unwrap();
-        toast.success("Property removed from discovery.");
-      } else {
+      if (next) {
         await publishProfile(propertyId).unwrap();
         toast.success("Property is now listed in discovery.");
+      } else {
+        await unpublishProfile(propertyId).unwrap();
+        toast.success("Property removed from discovery.");
       }
     } catch (error) {
+      setOptimisticListed(null);
       const message = (error as { data?: { message?: string } })?.data?.message;
       toast.error(
         message ??
-          (listed
-            ? "Could not unlist the property. Please try again."
-            : "Could not list the property. Add a headline and description to its discovery profile first."),
+          (next
+            ? "Could not list the property. Add a headline and description to its listing details first."
+            : "Could not unlist the property. Please try again."),
       );
     }
   }
@@ -199,41 +226,144 @@ function DiscoveryListingCard({ propertyId }: { propertyId: string }) {
   return (
     <Section eyebrow="Discovery" title="Listing">
       <Card>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
           <View
             style={{
               alignItems: "center",
-              backgroundColor: listed ? colors.primarySoft : colors.surfaceSunken,
+              backgroundColor: displayedListed ? colors.primarySoft : colors.surfaceSunken,
               borderRadius: 12,
               height: 42,
               justifyContent: "center",
               width: 42,
             }}
           >
-            {listed ? <Globe color={colors.primary} size={20} strokeWidth={2.2} /> : <EyeOff color={colors.muted} size={20} strokeWidth={2.2} />}
+            {displayedListed ? <Globe color={colors.primary} size={20} strokeWidth={2.2} /> : <EyeOff color={colors.muted} size={20} strokeWidth={2.2} />}
           </View>
-          <View style={{ flex: 1, gap: spacing.xs }}>
+          <View style={{ flex: 1, gap: 2 }}>
             <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
-              {loadingProfile ? "Checking listing…" : listed ? "Listed in discovery" : "Not listed"}
+              {loadingProfile ? "Checking listing…" : displayedListed ? "Listed in discovery" : "Not listed"}
             </Text>
             <Text style={[type.caption, { color: colors.muted }]} selectable>
-              {listed
-                ? "Visible to people searching for properties nearby. Onboarded tenants are unaffected."
-                : "Hidden from discovery search. Tenants already onboarded keep full access."}
+              {displayedListed
+                ? "Visible to people searching nearby."
+                : "Hidden from discovery search."}
             </Text>
           </View>
+          <Switch
+            accessibilityLabel={displayedListed ? "Remove from discovery" : "List in discovery"}
+            disabled={busy || loadingProfile}
+            onValueChange={() => void toggleListing()}
+            thumbColor={colors.surface}
+            trackColor={{ false: colors.borderStrong, true: colors.primary }}
+            value={displayedListed}
+          />
         </View>
+
+        <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            Listing details
+          </Text>
+          <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+            {profile?.headline?.trim() || "No headline yet"}
+          </Text>
+          <Text numberOfLines={3} style={[type.caption, { color: colors.muted }]} selectable>
+            {profile?.description?.trim() || "Add a short description so prospects know what makes this property worth a look."}
+          </Text>
+        </View>
+
         <View style={{ flexDirection: "row" }}>
           <ActionButton
-            disabled={busy || loadingProfile}
-            icon={listed ? EyeOff : Eye}
-            label={listed ? "Remove from discovery" : "List in discovery"}
-            onPress={toggleListing}
-            variant={listed ? "secondary" : "primary"}
+            disabled={loadingProfile || !profile}
+            icon={Pencil}
+            label="Edit listing details"
+            onPress={() => setDetailsOpen(true)}
+            variant="secondary"
           />
         </View>
       </Card>
+
+      {detailsOpen && profile ? (
+        <EditListingDetailsSheet onClose={() => setDetailsOpen(false)} profile={profile} propertyId={propertyId} />
+      ) : null}
     </Section>
+  );
+}
+
+function EditListingDetailsSheet({
+  onClose,
+  profile,
+  propertyId,
+}: {
+  onClose: () => void;
+  profile: OwnerDiscoveryProfile;
+  propertyId: string;
+}) {
+  const toast = useToast();
+  const [headline, setHeadline] = useState(profile.headline ?? "");
+  const [description, setDescription] = useState(profile.description ?? "");
+  const [headlineError, setHeadlineError] = useState<string | undefined>();
+  const [descriptionError, setDescriptionError] = useState<string | undefined>();
+  const [updateProfile, { isLoading }] = useUpdateOwnerDiscoveryProfileMutation();
+
+  async function submit() {
+    if (isLoading) {
+      return;
+    }
+    const trimmedHeadline = headline.trim();
+    const trimmedDescription = description.trim();
+    const headlineProblem = !trimmedHeadline ? "Headline is required." : undefined;
+    const descriptionProblem = !trimmedDescription ? "Description is required." : undefined;
+    setHeadlineError(headlineProblem);
+    setDescriptionError(descriptionProblem);
+    if (headlineProblem || descriptionProblem) {
+      return;
+    }
+    try {
+      await updateProfile({
+        propertyId,
+        payload: {
+          headline: trimmedHeadline,
+          description: trimmedDescription,
+          // PATCH is a full replace — carry the stored image and contact flags
+          // through or they get reset.
+          profileImageUrl: profile.profileImageUrl,
+          showOwnerContact: profile.showOwnerContact,
+          showManagerContact: profile.showManagerContact,
+        },
+      }).unwrap();
+      toast.success("Listing details updated.");
+      onClose();
+    } catch (error) {
+      const message = (error as { data?: { message?: string } })?.data?.message;
+      toast.error(message ?? "Could not update the listing details. Please try again.");
+    }
+  }
+
+  return (
+    <SheetShell onClose={onClose} title="Edit listing details">
+      <FormInput
+        error={headlineError}
+        label="Headline"
+        maxLength={160}
+        onChangeText={setHeadline}
+        placeholder="Short listing headline"
+        value={headline}
+      />
+      <FormInput
+        error={descriptionError}
+        label="Description"
+        maxLength={1000}
+        multiline
+        onChangeText={setDescription}
+        placeholder="What should prospects know?"
+        value={description}
+      />
+      <View style={{ flexDirection: "row" }}>
+        <ActionButton disabled={isLoading} label={isLoading ? "Saving…" : "Save details"} onPress={() => void submit()} />
+      </View>
+    </SheetShell>
   );
 }
 
@@ -264,7 +394,34 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
   const [acRate, setAcRate] = useState(paiseToRupees(property.dailyGuestAcRatePaise));
   const [nonAcRate, setNonAcRate] = useState(paiseToRupees(property.dailyGuestNonAcRatePaise));
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [updateProperty, { isLoading }] = useUpdatePropertyMutation();
+
+  // Every address field follows the pinned point; the owner appends flat /
+  // building detail to line 1 afterwards (Swiggy-style flow).
+  function applyPickedLocation(result: PickedLocation) {
+    setLatitude(result.latitude);
+    setLongitude(result.longitude);
+    const picked = result.address;
+    if (!picked) {
+      return;
+    }
+    if (picked.street) {
+      setAddress(picked.street);
+    }
+    if (picked.locality) {
+      setArea(picked.locality);
+    }
+    if (picked.city) {
+      setCity(picked.city);
+    }
+    if (picked.state) {
+      setState(picked.state);
+    }
+    if (picked.pincode) {
+      setPincode(picked.pincode);
+    }
+  }
 
   function toggleMeal(meal: MealType) {
     setIncludedMeals((current) => (current.includes(meal) ? current.filter((item) => item !== meal) : [...current, meal]));
@@ -378,6 +535,11 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
             >
               <ModalSection eyebrow="Basics" title="Name & location">
                 <FormInput autoCapitalize="words" label="Property name" onChangeText={setName} placeholder="Property name" value={name} />
+                <LocationPinCard
+                  addressSummary={addressSummaryLine(area, city, pincode)}
+                  coords={latitude != null && longitude != null ? { latitude, longitude } : null}
+                  onPress={() => setPickerOpen(true)}
+                />
                 <FormInput label="Address line 1" multiline onChangeText={setAddress} placeholder="Building, street, landmark" value={address} />
                 <FormInput autoCapitalize="words" label="Address line 2 / Area" onChangeText={setArea} placeholder="Area or locality" value={area} />
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -444,10 +606,10 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
               <ModalSection eyebrow="Money" title="Pricing & policy">
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Std. deposit (â‚¹)" onChangeText={setDeposit} placeholder="Amount" value={deposit} />
+                    <FormInput keyboardType="decimal-pad" label="Std. deposit (Rs.)" onChangeText={setDeposit} placeholder="Amount" value={deposit} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Late fee/day (â‚¹)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
+                    <FormInput keyboardType="decimal-pad" label="Late fee/day (Rs.)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
                   </View>
                 </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -460,10 +622,10 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
                 </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest AC/day (â‚¹)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
+                    <FormInput keyboardType="decimal-pad" label="Guest AC/day (Rs.)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (â‚¹)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
+                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (Rs.)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
                   </View>
                 </View>
               </ModalSection>
@@ -487,11 +649,20 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
                 paddingTop: spacing.md,
               }}
             >
-              <ActionButton disabled={isLoading} label={isLoading ? "Savingâ€¦" : "Save property"} onPress={() => void submit()} />
+              <ActionButton disabled={isLoading} label={isLoading ? "Saving..." : "Save property"} onPress={() => void submit()} />
             </View>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {pickerOpen ? (
+        <MapLocationPickerModal
+          initial={latitude != null && longitude != null ? { latitude, longitude } : undefined}
+          onClose={() => setPickerOpen(false)}
+          onPick={applyPickedLocation}
+          title="Property location"
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -525,7 +696,7 @@ function Labeled({ children, label }: { children: ReactNode; label: string }) {
   );
 }
 
-function open(router: ReturnType<typeof useRouter>, route: PropertyRoute) {
+function open(router: ReturnType<typeof useGuardedRouter>, route: PropertyRoute) {
   router.push(route);
 }
 

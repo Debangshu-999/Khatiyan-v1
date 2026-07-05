@@ -287,12 +287,20 @@ export const tenancyApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
+    endTenancy: builder.mutation<void, string>({
+      query: (tenancyId) => ({
+        method: "POST",
+        url: `/api/v1/tenancies/${tenancyId}/end`,
+      }),
+      invalidatesTags: ["Tenancy", "Notification", "BillingCycle", "Deposit"],
+    }),
   }),
 });
 
 export const {
   useApproveExitRequestMutation,
   useApproveRoomChangeRequestMutation,
+  useEndTenancyMutation,
   useCreateNormalExitRequestMutation,
   useCreatePrematureExitRequestMutation,
   useCreateRoomChangeRequestMutation,

@@ -8,6 +8,7 @@ import { clearStoredSession } from "@/auth/session-storage";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
+import { selectHaptic } from "@/lib/haptics";
 import { api } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
@@ -41,9 +42,12 @@ type TabBarProps = {
     emit: (event: { canPreventDefault: true; target: string; type: "tabPress" }) => { defaultPrevented: boolean };
     navigate: (name: string) => void;
   };
+  // Route names rendered greyed-out and inert (press does nothing). Used to
+  // gate property-scoped tabs until a management workspace has a property.
+  blockedRoutes?: string[];
 };
 
-function BottomTabBar({ descriptors, navigation, state }: TabBarProps) {
+function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: TabBarProps) {
   const { colors, fonts, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const focusedKey = state.routes[state.index]?.key;
@@ -52,19 +56,14 @@ function BottomTabBar({ descriptors, navigation, state }: TabBarProps) {
     <View
       style={{
         backgroundColor: colors.surface,
-        borderTopColor: colors.border,
+        borderTopColor: colors.borderStrong,
         borderTopWidth: 1,
         bottom: 0,
-        elevation: 22,
         left: 0,
         // Pad past the home indicator while the surface still reaches the edge.
         paddingBottom: insets.bottom,
         position: "absolute",
         right: 0,
-        shadowColor: isDark ? "#000000" : "#1E3A78",
-        shadowOffset: { height: -6, width: 0 },
-        shadowOpacity: isDark ? 0.5 : 0.12,
-        shadowRadius: 18,
       }}
     >
       <View style={{ flexDirection: "row", height: 60 }}>
@@ -74,12 +73,17 @@ function BottomTabBar({ descriptors, navigation, state }: TabBarProps) {
             return null;
           }
           const focused = route.key === focusedKey;
+          const blocked = blockedRoutes.includes(route.name) && !focused;
           const color = focused ? colors.primary : colors.kicker;
           const label = typeof options.tabBarLabel === "string" ? options.tabBarLabel : options.title ?? route.name;
 
           function onPress() {
+            if (blocked) {
+              return;
+            }
             const event = navigation.emit({ canPreventDefault: true, target: route.key, type: "tabPress" });
             if (!focused && !event.defaultPrevented) {
+              selectHaptic();
               navigation.navigate(route.name);
             }
           }
@@ -87,7 +91,7 @@ function BottomTabBar({ descriptors, navigation, state }: TabBarProps) {
           return (
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
+              accessibilityState={{ disabled: blocked, selected: focused }}
               key={route.key}
               onPress={onPress}
               style={{
@@ -98,6 +102,7 @@ function BottomTabBar({ descriptors, navigation, state }: TabBarProps) {
                 gap: 3,
                 height: "100%",
                 justifyContent: "center",
+                opacity: blocked ? 0.35 : 1,
               }}
             >
               {/* Accent rail across the top edge marks the active tab. */}
@@ -154,6 +159,19 @@ export default function TabLayout() {
   const showOwnerTab = activeAccount ? activeAccount === "owner" || isManagerAccount : hasManagementAccess;
   const showTenancyTab = activeAccount ? activeAccount === "tenant" : hasTenantAccess;
   const accountKey = accounts.join("|");
+
+  // Management workspaces are property-scoped. Until a property is resolved —
+  // an explicit pick on Home, or the only property an owner/manager has — the
+  // property-dependent tabs stay greyed out and inert (mirrors Home's
+  // resolveSelectedProperty fallback). Tenant accounts are never gated.
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const manageableProperties = manageablePropertiesQuery.data ?? [];
+  const resolvedManagedProperty = selectedPropertyId
+    ? manageableProperties.find((property) => property.id === selectedPropertyId) ?? null
+    : manageableProperties.length === 1
+      ? manageableProperties[0]
+      : null;
+  const blockedRoutes = showOwnerTab && !resolvedManagedProperty ? ["discovery", "owner", "notifications"] : [];
 
   // Drives the red dot on the Alerts tab. Account-scoped like the feed itself.
   const { data: unreadAlertCount = 0 } = useGetUnreadNotificationCountQuery(activeAccount, {
@@ -226,7 +244,7 @@ export default function TabLayout() {
     <>
       <NotificationOptInPrompt />
       <Tabs
-      tabBar={(props) => <BottomTabBar {...props} />}
+      tabBar={(props) => <BottomTabBar {...props} blockedRoutes={blockedRoutes} />}
       screenOptions={{
         // Opacity-only cross-fade. The previous "shift" animation translated
         // scenes sideways, briefly exposing the outgoing screen's edge shadow
@@ -300,8 +318,8 @@ export default function TabLayout() {
         name="notifications"
         options={{
           headerShown: false,
-          title: "Alerts",
-          tabBarLabel: "ALERTS",
+          title: "Notifications",
+          tabBarLabel: "NOTIFICATIONS",
           tabBarIcon: ({ color }) => (
             <View>
               <Bell color={color} size={20} strokeWidth={2} />

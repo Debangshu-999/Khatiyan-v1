@@ -1,5 +1,6 @@
-import { Linking, Text, View } from "react-native";
-import { Eye, Send } from "lucide-react-native";
+import { Image, Linking, Text, View } from "react-native";
+import { Eye, ImageOff, MapPin, Navigation, type LucideProps } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { Card } from "@/components/card";
 import { IconButton } from "@/components/icon-button";
@@ -20,6 +21,8 @@ type PropertyListingCardProps = {
 export function PropertyListingCard({ filters, property, onView }: PropertyListingCardProps) {
   const { colors, fonts, type } = useTheme();
   const match = filters ? computeFilterMatches(filters, property) : null;
+  const imageUri = property.imageUrls?.find(Boolean) ?? property.profileImageUrl ?? null;
+  const addressLine = [property.area, property.city, property.state].filter(Boolean).join(", ");
 
   function openDirections() {
     if (property.directionsUrl) {
@@ -36,57 +39,92 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
   return (
     <Card>
       <View style={{ flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surface,
-            borderColor: colors.primary,
-            borderRadius: 12,
-            borderWidth: 1,
-            height: 56,
-            justifyContent: "center",
-            width: 56,
-          }}
-        >
+        {imageUri ? (
+          <Image
+            resizeMode="cover"
+            source={{ uri: imageUri }}
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderColor: colors.border,
+              borderRadius: 14,
+              borderWidth: 1,
+              height: 72,
+              width: 72,
+            }}
+          />
+        ) : (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.surfaceSunken,
+              borderColor: colors.border,
+              borderRadius: 14,
+              borderWidth: 1,
+              gap: 3,
+              height: 72,
+              justifyContent: "center",
+              width: 72,
+            }}
+          >
+            <ImageOff color={colors.kicker} size={22} strokeWidth={1.9} />
+            <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 9, fontWeight: "700", letterSpacing: 0.4 }}>
+              No image
+            </Text>
+          </View>
+        )}
+
+        <View style={{ flex: 1, gap: spacing.xxs, justifyContent: "center", minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+            {humanizeToken(property.type)}
+          </Text>
           <Text
             style={{
-              color: colors.primary,
+              color: colors.ink,
               fontFamily: fonts.display,
-              fontSize: 26,
-              fontStyle: "italic",
+              fontSize: 20,
               fontWeight: "500",
-              letterSpacing: -0.5,
+              letterSpacing: -0.3,
+              lineHeight: 24,
             }}
             selectable
           >
-            {property.name.charAt(0).toUpperCase()}
+            {property.name}
           </Text>
         </View>
+      </View>
 
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text
-              style={{
-                color: colors.ink,
-                flex: 1,
-                fontFamily: fonts.display,
-                fontSize: 20,
-                fontWeight: "500",
-                letterSpacing: -0.3,
-                lineHeight: 24,
-              }}
-              selectable
-            >
-              {property.name}
-            </Text>
-            <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
-              {humanizeToken(property.type)}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            Address
+          </Text>
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
+            <MapPin color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
+            <Text style={[type.body, { color: colors.inkSoft, flex: 1, fontSize: 13, lineHeight: 18 }]} selectable>
+              {addressLine}
             </Text>
           </View>
-          <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
-            {[property.area, property.city, property.state].filter(Boolean).join(", ")}
-          </Text>
         </View>
+        {property.distanceKm != null ? (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.jadeSoft,
+              borderRadius: 999,
+              flexDirection: "row",
+              gap: 4,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 4,
+            }}
+          >
+            <Navigation color={colors.jade} fill={colors.jade} size={10} strokeWidth={2} />
+            <Text style={{ color: colors.jade, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+              {property.distanceKm < 1
+                ? `${Math.round(property.distanceKm * 1000)} m away`
+                : `${property.distanceKm.toFixed(1)} km away`}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={{ backgroundColor: colors.border, height: 1 }} />
@@ -137,9 +175,21 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <IconButton icon={Eye} label="View" muted onPress={onView} style={{ flex: 1 }} />
-        <IconButton icon={Send} label="Directions" onPress={openDirections} style={{ flex: 1 }} />
+        <IconButton icon={DirectionsIcon} label="Directions" onPress={openDirections} style={{ flex: 1 }} />
       </View>
     </Card>
+  );
+}
+
+// Google-Maps-style directions glyph (diamond with a turn arrow); wrapped so it
+// satisfies IconButton's lucide icon contract.
+function DirectionsIcon({ color, size }: LucideProps) {
+  return (
+    <MaterialCommunityIcons
+      color={color as string}
+      name="directions"
+      size={typeof size === "number" ? size + 3 : 20}
+    />
   );
 }
 

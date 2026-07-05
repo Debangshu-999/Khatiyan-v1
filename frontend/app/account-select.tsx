@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Building2, Home, ShieldCheck, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
@@ -17,7 +17,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function AccountSelectScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const dispatch = useAppDispatch();
   const { colors, type } = useTheme();
   const auth = useAppSelector((state) => state.auth);

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
+import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetTrendResponse;
 import com.khatiyan.d_modules.expense.api.dto.RaiseBudgetRequest;
 import com.khatiyan.d_modules.expense.api.dto.SetDefaultBudgetRequest;
 import com.khatiyan.d_modules.expense.service.ExpenseBudgetService;
@@ -38,6 +39,16 @@ public class ExpenseBudgetController {
             @PathVariable UUID propertyId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
         return budgetService.getOverview(user.userId(), propertyId, month);
+    }
+
+    /** Trailing-window budget trend (spent / budget / signed savings per month). */
+    @GetMapping("/trend")
+    public ExpenseBudgetTrendResponse trend(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month,
+            @RequestParam(defaultValue = "6") int months) {
+        return budgetService.getTrend(user.userId(), propertyId, month, months);
     }
 
     /** Set / edit the recurring default monthly budget. */

@@ -25,18 +25,13 @@ export function StatCard({ icon: Icon, label, tone = "default", value, valueSuff
     <View
       style={{
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: 20,
         borderWidth: 1,
-        elevation: 1,
         flex: 1,
         gap: spacing.sm,
         padding: spacing.lg,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 12,
       }}
     >
       <View

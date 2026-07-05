@@ -3,8 +3,7 @@ package com.khatiyan.d_modules.notification.listener;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.a_auth.event.PinChangedEvent;
 import com.khatiyan.a_auth.event.UserRegisteredEvent;
@@ -27,7 +26,7 @@ public class AuthNotificationEventListener {
         this.notificationModule = notificationModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onUserRegistered(UserRegisteredEvent event) {
         notificationModule.notifyUser(
                 event.userId(),
@@ -44,7 +43,7 @@ public class AuthNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_ONLY);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onPinChanged(PinChangedEvent event) {
         notificationModule.notifyUser(
                 event.userId(),

@@ -12,8 +12,11 @@ export function AppBackground() {
   const { colors, isDark } = useTheme();
   const { height, width } = useWindowDimensions();
 
-  const top = isDark ? "#0A0C12" : "#EFF3FC";
-  const mid = isDark ? "#070708" : "#F7F9FD";
+  // Light mode is neutral paper — no blue cast. The only colour is a whisper
+  // of warm ochre in the lower corner, matching the ledger accent. Dark mode
+  // keeps its original wash and glows.
+  const top = isDark ? "#0A0C12" : "#FFFFFF";
+  const mid = isDark ? "#070708" : "#FCFCFD";
   const bottom = colors.background;
 
   const primaryGlow = colors.primary;
@@ -33,12 +36,12 @@ export function AppBackground() {
             <Stop offset="1" stopColor={primaryGlow} stopOpacity="0" />
           </RadialGradient>
           <RadialGradient id="app-orb-warm" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={warmGlow} stopOpacity={isDark ? 0.1 : 0.12} />
+            <Stop offset="0" stopColor={warmGlow} stopOpacity={isDark ? 0.1 : 0.08} />
             <Stop offset="1" stopColor={warmGlow} stopOpacity="0" />
           </RadialGradient>
         </Defs>
         <Rect fill="url(#app-base)" height={height} width={width} x="0" y="0" />
-        <Circle cx={width * 0.12} cy={height * 0.06} fill="url(#app-orb-primary)" r={width * 0.65} />
+        {isDark ? <Circle cx={width * 0.12} cy={height * 0.06} fill="url(#app-orb-primary)" r={width * 0.65} /> : null}
         <Circle cx={width * 0.96} cy={height * 0.82} fill="url(#app-orb-warm)" r={width * 0.55} />
       </Svg>
     </View>

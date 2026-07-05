@@ -22,8 +22,10 @@ import com.khatiyan.d_modules.tenancy.event.TenancyExitExecutedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitRejectedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitRequestedEvent;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
+import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 
@@ -273,6 +275,52 @@ public class TenancyExitRequestService {
         }
 
         return executeApprovedRequest(actorUserId, request);
+    }
+
+    /**
+     * Manual "End tenancy" action for owners/managers, used for stays the exit
+     * scheduler does not cover — notably daily tenancies, which never raise an
+     * exit request. A monthly tenancy that already holds an approved exit request
+     * is executed through that request (so it is marked executed and the usual
+     * exit events fire); anything else with a due end date is ended directly. The
+     * end date must already have arrived — this never ends a tenancy early.
+     */
+    @Transactional
+    public void endTenancyNow(UUID actorUserId, UUID tenancyId) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        propertyModule.ensureCanManageProperty(actorUserId, tenancy.getPropertyId());
+
+        if (tenancy.getStatus() == TenancyStatus.EXITED || tenancy.getStatus() == TenancyStatus.EVICTED) {
+            throw new ValidationException("Tenancy has already ended");
+        }
+
+        TenancyExitRequest approved = exitRequestRepository.findByTenancyId(tenancyId).stream()
+                .filter(request -> request.getStatus() == TenancyExitRequestStatus.APPROVED)
+                .findFirst()
+                .orElse(null);
+        if (approved != null) {
+            executeApprovedRequest(actorUserId, approved);
+            return;
+        }
+
+        // Active daily stays keep their checkout in plannedEndDate (endDate is only
+        // stamped once a tenancy actually ends); monthly stays on notice carry it in
+        // endDate. A plain active monthly stay has neither and must use the exit flow.
+        LocalDate endDate = tenancy.getBillingType() == TenancyBillingType.DAILY
+                ? tenancy.getPlannedEndDate()
+                : tenancy.getEndDate();
+        if (endDate == null) {
+            throw new ValidationException("This tenancy must exit through the exit request workflow");
+        }
+        if (endDate.isAfter(LocalDate.now())) {
+            throw new ValidationException("This tenancy cannot be ended before its end date");
+        }
+
+        tenancyService.end(actorUserId, tenancyId, endDate, "MANUAL_END");
+        billingModule.settleDepositForExecutedExit(actorUserId, tenancyId);
+
+        log.info("Tenancy ended manually tenancyId={} actorUserId={} endDate={}", tenancyId, actorUserId, endDate);
     }
 
     @Transactional(readOnly = true)

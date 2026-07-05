@@ -1,14 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { Animated, Easing, Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Banknote,
+  CalendarClock,
   CalendarDays,
   Camera,
   CheckCircle2,
@@ -33,6 +36,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
+import { StatusPill as Pill } from "@/components/status-pill";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
 import { Section } from "@/components/section";
@@ -47,6 +51,7 @@ import {
   useGetPropertyMonthSummaryQuery,
   useLazyExportPropertyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
+  useListUpcomingPropertyCyclesQuery,
   useRecordManualPaymentMutation,
 } from "@/store/services/billing-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
@@ -125,7 +130,7 @@ function summaryFilterTitle(filter: SummaryFilter): string {
 const manualPaymentMethods: ManualPaymentMethod[] = ["CASH", "UPI", "CARD", "CHEQUE", "OTHER"];
 
 export default function OwnerBillingScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -170,6 +175,19 @@ export default function OwnerBillingScreen() {
 
   const visibleCycles = cyclesQuery.data ?? [];
   const visibleQuery = cycleSearchQuery;
+  // For the current month, cycles are generated lazily on each tenancy's due
+  // date, so the summary can project more cycles than have actually been created.
+  // The gap is how many are still pending generation, used to explain an empty or
+  // short cycle list instead of a misleading "no cycles" message.
+  const monthSummary = monthSummaryQuery.data;
+  const notGeneratedCount =
+    monthSummary && summaryMonth === currentMonth()
+      ? Math.max(
+          0,
+          monthSummary.activeCycleCount
+            - (monthSummary.paidCycleCount + monthSummary.unpaidCycleCount + monthSummary.overdueCount),
+        )
+      : 0;
 
   function openAction(cycle: BillingCycle, mode: ActionMode) {
     setSelectedCycle(cycle);
@@ -242,9 +260,7 @@ export default function OwnerBillingScreen() {
   }
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Owner billing"
         title="Billing"
         italicTail="control."
@@ -295,16 +311,24 @@ export default function OwnerBillingScreen() {
           ) : null}
 
           {cycleView === "cycles" ? (
-            <BillingCyclesSection
-              cycles={visibleCycles}
-              month={summaryMonth}
-              onAction={(cycle) => openAction(cycle, "menu")}
-              onDownloadReceipt={downloadCycleReceipt}
-              onPageChange={setPage}
-              onViewReceipt={setReceiptCycle}
-              page={page}
-              query={visibleQuery}
-            />
+            <>
+              <BillingCyclesSection
+                cycles={visibleCycles}
+                month={summaryMonth}
+                notGeneratedCount={notGeneratedCount}
+                onAction={(cycle) => openAction(cycle, "menu")}
+                onDownloadReceipt={downloadCycleReceipt}
+                onPageChange={setPage}
+                onViewReceipt={setReceiptCycle}
+                page={page}
+                query={visibleQuery}
+              />
+              <UpcomingCyclesLink
+                month={summaryMonth}
+                onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-upcoming-cycles" })}
+                propertyId={selectedProperty.id}
+              />
+            </>
           ) : (
             <PaymentHistorySection cycles={visibleCycles} month={summaryMonth} onPageChange={setPage} page={page} query={visibleQuery} />
           )}
@@ -338,6 +362,7 @@ export default function OwnerBillingScreen() {
       {summaryFilter ? (
         <SummaryCyclesModal
           cycles={filterSummaryCycles(visibleCycles, summaryFilter)}
+          notGeneratedCount={notGeneratedCount}
           onClose={() => setSummaryFilter(null)}
           title={summaryFilterTitle(summaryFilter)}
         />
@@ -545,9 +570,20 @@ function PaymentHistorySection({
   );
 }
 
+function PendingGenerationNote({ count }: { count: number }) {
+  const { colors, type } = useTheme();
+  return (
+    <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
+      {count} more cycle{count === 1 ? "" : "s"} will be generated on {count === 1 ? "its" : "their"} due date
+      {count === 1 ? "" : "s"} this month.
+    </Text>
+  );
+}
+
 function BillingCyclesSection({
   cycles,
   month,
+  notGeneratedCount,
   onAction,
   onDownloadReceipt,
   onPageChange,
@@ -557,6 +593,7 @@ function BillingCyclesSection({
 }: {
   cycles: BillingCycle[];
   month: string;
+  notGeneratedCount: number;
   onAction: (cycle: BillingCycle) => void;
   onDownloadReceipt: (cycle: BillingCycle) => void;
   onPageChange: (page: number) => void;
@@ -571,12 +608,14 @@ function BillingCyclesSection({
       {cycles.length === 0 ? (
         <EmptyState
           icon={ReceiptText}
-          eyebrow="No cycles"
-          title="No billing cycles found"
+          eyebrow={!query && notGeneratedCount > 0 ? "Pending generation" : "No cycles"}
+          title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
           description={
             query
               ? "No cycle matched that tenant name or tenancy ID for this billing month."
-              : "No billing cycles started in this month."
+              : notGeneratedCount > 0
+                ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each is created automatically on its tenancy's due date this month.`
+                : "No billing cycles started in this month."
           }
         />
       ) : (
@@ -584,6 +623,7 @@ function BillingCyclesSection({
           <CycleListFrame>
             <CycleCardList cycles={paged.pageItems} onAction={onAction} onDownloadReceipt={onDownloadReceipt} onViewReceipt={onViewReceipt} />
           </CycleListFrame>
+          {notGeneratedCount > 0 ? <PendingGenerationNote count={notGeneratedCount} /> : null}
           {paged.totalElements > 0 ? (
             <PaginationBar
               hasNext={paged.hasNext}
@@ -822,6 +862,68 @@ function ReportDownloadCard({
   );
 }
 
+// Lightweight highlighted CTA that replaces the old upcoming-cycles card: a
+// pill of bold accent text with a gently nudging arrow to pull the eye, sitting
+// directly under the billing cycles list. Once every tenancy is billed for the
+// month there is nothing upcoming — the arrow animation stops and it turns into
+// a quiet "No upcoming cycles this month" status.
+function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onPress: () => void; propertyId: string }) {
+  const { colors, fonts } = useTheme();
+  const { data } = useListUpcomingPropertyCyclesQuery({ month, page: 0, propertyId, size: 1 }, { skip: !propertyId });
+  const hasUpcoming = (data?.totalElements ?? 0) > 0;
+  const nudge = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!hasUpcoming) {
+      nudge.stopAnimation();
+      nudge.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(nudge, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(nudge, { toValue: 0, duration: 750, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasUpcoming, nudge]);
+
+  const translateX = nudge.interpolate({ inputRange: [0, 1], outputRange: [0, 6] });
+  const tint = hasUpcoming ? colors.primary : colors.muted;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={hasUpcoming ? "View upcoming cycles" : "All cycles generated"}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        alignSelf: "center",
+        backgroundColor: hasUpcoming ? colors.primarySoft : colors.surfaceSunken,
+        borderColor: hasUpcoming ? colors.primary : colors.border,
+        borderCurve: "continuous",
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <CalendarClock color={tint} size={16} strokeWidth={2.4} />
+      <Text style={{ color: tint, fontFamily: fonts.sans, fontSize: 14, fontWeight: hasUpcoming ? "900" : "700", letterSpacing: 0.3 }} selectable>
+        {hasUpcoming ? "View upcoming cycles" : "All cycles generated"}
+      </Text>
+      {hasUpcoming ? (
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          <ArrowRight color={tint} size={16} strokeWidth={2.6} />
+        </Animated.View>
+      ) : null}
+    </AnimatedPressable>
+  );
+}
+
 function MonthlyReportModal({
   busy,
   mode,
@@ -947,7 +1049,7 @@ function CycleSearchCard({
           }}
         >
           <Search color={colors.kicker} size={18} strokeWidth={2.2} />
-          <TextInput
+          <AppTextInput
             autoCapitalize="none"
             onChangeText={onChange}
             onSubmitEditing={onSearch}
@@ -1195,35 +1297,28 @@ function BillingCycleCard({
 }
 
 function StatusPill({ cycle }: { cycle: BillingCycle }) {
-  const { colors, type } = useTheme();
   const statusDisplay = billingCycleStatusDisplay(cycle);
-  const tone =
+  const tone: "success" | "danger" | "warning" | "neutral" | "primary" =
     statusDisplay.tone === "success"
-      ? colors.successText
+      ? "success"
       : statusDisplay.tone === "danger"
-        ? colors.danger
+        ? "danger"
         : statusDisplay.tone === "warning"
-          ? colors.warningText
+          ? "warning"
           : statusDisplay.tone === "muted"
-          ? colors.muted
-          : colors.primary;
-  const backgroundColor = statusDisplay.tone === "warning" ? colors.warningSoft : colors.surfaceSunken;
-
-  return (
-    <View style={{ backgroundColor, borderColor: tone, borderRadius: 999, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]} selectable>
-        {statusDisplay.label}
-      </Text>
-    </View>
-  );
+            ? "neutral"
+            : "primary";
+  return <Pill label={statusDisplay.label} tone={tone} />;
 }
 
 function SummaryCyclesModal({
   cycles,
+  notGeneratedCount,
   onClose,
   title,
 }: {
   cycles: BillingCycle[];
+  notGeneratedCount: number;
   onClose: () => void;
   title: string;
 }) {
@@ -1259,9 +1354,13 @@ function SummaryCyclesModal({
           {cycles.length === 0 ? (
             <EmptyState
               icon={ReceiptText}
-              eyebrow="No cycles"
-              title="No matching cycles"
-              description="There are no billing cycles in this category for the selected period."
+              eyebrow={notGeneratedCount > 0 ? "Pending generation" : "No cycles"}
+              title={notGeneratedCount > 0 ? "Cycles not generated yet" : "No matching cycles"}
+              description={
+                notGeneratedCount > 0
+                  ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each is created automatically on its tenancy's due date this month.`
+                  : "There are no billing cycles in this category for the selected period."
+              }
             />
           ) : (
             <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
@@ -1892,7 +1991,7 @@ function FormInput({
       <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
         {label}
       </Text>
-      <TextInput
+      <AppTextInput
         keyboardType={keyboardType}
         onChangeText={onChangeText}
         placeholder={placeholder}

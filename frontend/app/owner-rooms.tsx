@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import {
   Bed,
@@ -29,6 +29,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import { RoomCarousel } from "@/features/owner/room-carousel";
 import {
   ActionButton,
@@ -94,7 +95,7 @@ function roomTypePatch(value: RoomType): Partial<RoomFormState> {
 }
 
 export default function OwnerRoomsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -208,9 +209,7 @@ export default function OwnerRoomsScreen() {
           </View>
 
           {roomsQuery.isFetching && allRooms.length === 0 ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonCard />
           ) : allRooms.length === 0 ? (
             <EmptyState
               icon={BedDouble}

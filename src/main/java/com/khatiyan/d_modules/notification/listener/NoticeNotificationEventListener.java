@@ -6,8 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.notice.event.NoticePublishedEvent;
 import com.khatiyan.d_modules.notification.NotificationModule;
@@ -39,7 +38,7 @@ public class NoticeNotificationEventListener {
         this.propertyModule = propertyModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onNoticePublished(NoticePublishedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         List<UUID> tenantUserIds = tenancyModule.findActiveByPropertyId(event.propertyId())

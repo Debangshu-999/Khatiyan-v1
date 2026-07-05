@@ -39,7 +39,7 @@ export function NotificationRow({ notification, onPress }: Props) {
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-          {humanizeCategory(notification.category)}
+          {categoryLabel(notification)}
         </Text>
         {urgency ? <UrgencyMarker signal={urgency} /> : null}
       </View>
@@ -183,6 +183,21 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Billing cycle ID", shortId(data.billingCycleId));
       add(details, "Reason", data.failureReason);
       break;
+    case "BUDGET_RAISED":
+      add(details, "Property", data.propertyName);
+      add(details, "Raise", formatPaise(data.raiseAmountPaise));
+      add(details, "New budget", formatPaise(data.effectiveBudgetPaise));
+      add(details, "Reason", data.reason);
+      break;
+    case "BUDGET_UPDATED":
+      add(details, "Property", data.propertyName);
+      add(details, "Previous", formatPaise(data.previousDefaultPaise));
+      add(details, "New budget", formatPaise(data.newDefaultPaise));
+      break;
+    case "BUDGET_APPROACHING":
+    case "BUDGET_EXCEEDED":
+      add(details, "Property", data.propertyName);
+      break;
     case "NOTICE_PUBLISHED":
       add(details, "Property", data.propertyName);
       add(details, "Notice", data.noticeTitle);
@@ -295,6 +310,16 @@ function formatDate(value?: string | null) {
     return value;
   }
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function categoryLabel(notification: NotificationItem) {
+  const subtype = notification.subtype?.toUpperCase() ?? "";
+  // The EXPENSE category surfaces to the user as "Budget" — matching the
+  // Budget filter bubble rather than the raw category name.
+  if (notification.category.toUpperCase() === "EXPENSE" || subtype.startsWith("BUDGET_")) {
+    return "Budget";
+  }
+  return humanizeCategory(notification.category);
 }
 
 function humanizeCategory(value: string) {

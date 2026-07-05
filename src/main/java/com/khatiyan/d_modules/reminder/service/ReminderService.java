@@ -2,7 +2,9 @@ package com.khatiyan.d_modules.reminder.service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +20,7 @@ import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.reminder.model.ReminderRecord;
 import com.khatiyan.d_modules.reminder.model.ReminderSourceType;
 import com.khatiyan.d_modules.reminder.model.ReminderStatus;
@@ -112,13 +115,27 @@ public class ReminderService {
             int processedCount = 0;
             for (ReminderRecord reminder : dueReminders) {
                 try {
+                    // Carry the reminder's property/tenancy references into the
+                    // notification data payload so the alert feeds can scope by
+                    // property, and map budget reminder types to their subtype so
+                    // the UI can classify and render them.
+                    Map<String, String> data = new LinkedHashMap<>();
+                    if (reminder.getPropertyId() != null) {
+                        data.put("propertyId", reminder.getPropertyId().toString());
+                    }
+                    if (reminder.getTenancyId() != null) {
+                        data.put("tenancyId", reminder.getTenancyId().toString());
+                    }
+
                     notificationModule.notifyUser(
                             reminder.getRecipientUserId(),
                             reminder.getTitle(),
                             reminder.getBody(),
                             reminder.getNotificationCategory(),
                             reminder.getNotificationPriority(),
+                            subtypeFor(reminder.getReminderType()),
                             reminder.getSourceId(),
+                            data,
                             reminder.getDeliveryMode(),
                             reminder.getAudience());
 
@@ -143,5 +160,18 @@ public class ReminderService {
 
             return processedCount;
         });
+    }
+
+    /**
+     * Maps a reminder type to a notification subtype where one exists. Only the
+     * budget reminders currently have a matching subtype; the rest fall through
+     * to null (the notification carries no subtype, same as before).
+     */
+    private static NotificationSubtype subtypeFor(ReminderType reminderType) {
+        return switch (reminderType) {
+            case BUDGET_APPROACHING -> NotificationSubtype.BUDGET_APPROACHING;
+            case BUDGET_EXCEEDED -> NotificationSubtype.BUDGET_EXCEEDED;
+            default -> null;
+        };
     }
 }

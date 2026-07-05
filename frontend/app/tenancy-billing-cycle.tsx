@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import type { BillingCycle, BillingCycleLineItem } from "@/store/services/billing-api";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
@@ -31,9 +32,7 @@ export default function TenancyBillingCycleScreen() {
       />
 
       {cyclesQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : cycle ? (
         <>
           <BillingSummary cycle={cycle} />

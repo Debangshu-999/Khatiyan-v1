@@ -7,20 +7,19 @@ type StatusPillProps = {
   label: string;
   tone?: "success" | "warning" | "neutral" | "primary" | "accent" | "danger";
   style?: ViewStyle;
-  dot?: boolean;
 };
 
-// Editorial status chip — tracked-out caps with a tiny color dot, like a
-// printed legend in a property document.
-export function StatusPill({ dot = true, label, style, tone = "neutral" }: StatusPillProps) {
+// Editorial status chip — tracked-out caps on a soft tint. Deliberately plain:
+// no dots or icons inside pills, the colour and the word carry the status.
+export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) {
   const { colors, type } = useTheme();
   const toneColors = {
-    success: { background: colors.successSoft, text: colors.successText, dotColor: colors.jade },
-    warning: { background: colors.warningSoft, text: colors.warningText, dotColor: colors.accent },
-    neutral: { background: colors.neutralSoft, text: colors.neutralText, dotColor: colors.kicker },
-    primary: { background: colors.primarySoft, text: colors.primaryDeep, dotColor: colors.primary },
-    accent: { background: colors.accentSoft, text: colors.warningText, dotColor: colors.accent },
-    danger: { background: colors.dangerSoft, text: colors.danger, dotColor: colors.danger },
+    success: { background: colors.successSoft, text: colors.successText },
+    warning: { background: colors.warningSoft, text: colors.warningText },
+    neutral: { background: colors.neutralSoft, text: colors.neutralText },
+    primary: { background: colors.primarySoft, text: colors.primaryDeep },
+    accent: { background: colors.accentSoft, text: colors.warningText },
+    danger: { background: colors.dangerSoft, text: colors.danger },
   };
   const selected = toneColors[tone];
 
@@ -28,28 +27,15 @@ export function StatusPill({ dot = true, label, style, tone = "neutral" }: Statu
     <View
       style={[
         {
-          alignItems: "center",
           alignSelf: "flex-start",
           backgroundColor: selected.background,
           borderRadius: 999,
-          flexDirection: "row",
-          gap: spacing.xs,
           paddingHorizontal: spacing.sm,
           paddingVertical: 5,
         },
         style,
       ]}
     >
-      {dot ? (
-        <View
-          style={{
-            backgroundColor: selected.dotColor,
-            borderRadius: 999,
-            height: 6,
-            width: 6,
-          }}
-        />
-      ) : null}
       <Text
         style={[
           type.eyebrow,

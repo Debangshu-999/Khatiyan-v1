@@ -9,6 +9,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import type { DepositMovement } from "@/store/services/billing-api";
 import { useGetMyTenancyDepositQuery } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
@@ -32,9 +33,7 @@ export default function TenancyDepositScreen() {
       />
 
       {depositQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : deposit ? (
         <>
           <Card>

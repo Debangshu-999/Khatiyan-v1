@@ -61,4 +61,11 @@ public enum NotificationSubtype {
     BILLING_LINE_ITEM_CHANGED,
     PAYMENT_SUCCEEDED,
     PAYMENT_FAILED,
+
+    // Expense budget (management-facing): the recurring default was edited, a
+    // monthly raise was added, or month-to-date spend crossed a threshold.
+    BUDGET_UPDATED,
+    BUDGET_RAISED,
+    BUDGET_APPROACHING,
+    BUDGET_EXCEEDED,
 }

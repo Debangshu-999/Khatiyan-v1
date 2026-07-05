@@ -49,6 +49,7 @@ import com.khatiyan.d_modules.staff.event.StaffMemberEndedEvent;
 import com.khatiyan.d_modules.staff.model.StaffCategory;
 import com.khatiyan.d_modules.staff.model.StaffCategoryType;
 import com.khatiyan.d_modules.staff.model.StaffMember;
+import com.khatiyan.d_modules.staff.model.WorkingDays;
 import com.khatiyan.d_modules.staff.repository.StaffCategoryRepository;
 import com.khatiyan.d_modules.staff.repository.StaffMemberRepository;
 
@@ -58,6 +59,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class StaffService {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final PropertyModule propertyModule;
     private final SalaryAccountService salaryAccountService;
@@ -89,10 +92,11 @@ public class StaffService {
      */
     @Transactional(readOnly = true)
     public long estimatedMonthlySalaryPaise(UUID propertyId, LocalDate month) {
-        int daysInMonth = YearMonth.from(month).lengthOfMonth();
+        YearMonth yearMonth = YearMonth.from(month);
+        int daysInMonth = yearMonth.lengthOfMonth();
         long total = 0;
         for (StaffMember member : staffMemberRepository.findByPropertyIdAndActiveTrueOrderByFullNameAsc(propertyId)) {
-            total += projectedSalaryPaise(member.getSalaryStructure(), member.getSalaryRatePaise(), daysInMonth);
+            total += member.projectedMonthlyPayablePaise(yearMonth);
         }
         for (ManagerPayrollView manager : propertyModule.listActiveManagerPayroll()) {
             if (manager.propertyId().equals(propertyId)) {
@@ -102,8 +106,45 @@ public class StaffService {
         return total;
     }
 
+    /**
+     * Total salary payable for the property this (IST) month — the opened salary
+     * month's net (including adjustments) where a month has been opened, otherwise
+     * the projected payout. Daily staff never get a salary account, so they always
+     * contribute their projected payout (rate x working days in the month).
+     */
+    @Transactional(readOnly = true)
+    public long totalPayableThisMonthPaise(UUID actorUserId, UUID propertyId) {
+        ensureOwner(actorUserId, propertyId);
+        YearMonth yearMonth = YearMonth.now(IST);
+        LocalDate payrollMonth = yearMonth.atDay(1);
+        int daysInMonth = yearMonth.lengthOfMonth();
+        long total = 0;
+        for (StaffMember member : staffMemberRepository.findByPropertyIdAndActiveTrueOrderByFullNameAsc(propertyId)) {
+            long projected = member.projectedMonthlyPayablePaise(yearMonth);
+            total += member.getSalaryStructure() == SalaryStructure.MONTHLY
+                    ? salaryAccountService.openedNetForStaffMonth(member.getId(), payrollMonth, projected)
+                    : projected;
+        }
+        for (ManagerPayrollView manager : propertyModule.listActiveManagerPayroll()) {
+            if (!manager.propertyId().equals(propertyId)) {
+                continue;
+            }
+            long projected = projectedSalaryPaise(manager.salaryStructure(), manager.salaryRatePaise(), daysInMonth);
+            total += salaryAccountService.openedNetForManagerMonth(manager.id(), payrollMonth, projected);
+        }
+        return total;
+    }
+
     private static long projectedSalaryPaise(SalaryStructure structure, long ratePaise, int daysInMonth) {
         return structure == SalaryStructure.MONTHLY ? ratePaise : Math.multiplyExact(ratePaise, daysInMonth);
+    }
+
+    // Daily staff carry a weekday working pattern; monthly staff always all-days.
+    private static int resolveWorkingDaysMask(SalaryStructure structure, Integer requestedMask) {
+        if (structure != SalaryStructure.DAILY) {
+            return WorkingDays.ALL_DAYS;
+        }
+        return requestedMask == null ? WorkingDays.ALL_DAYS : WorkingDays.normalize(requestedMask);
     }
 
     @Transactional
@@ -190,6 +231,7 @@ public class StaffService {
                 request.dateOfBirth(),
                 request.salaryStructure(),
                 request.salaryRatePaise(),
+                resolveWorkingDaysMask(request.salaryStructure(), request.workingDaysMask()),
                 optionalText(request.benefitsSummary()),
                 request.employmentStartDate(),
                 request.employmentEndDate(),
@@ -218,6 +260,7 @@ public class StaffService {
                 request.dateOfBirth(),
                 request.salaryStructure(),
                 request.salaryRatePaise(),
+                resolveWorkingDaysMask(request.salaryStructure(), request.workingDaysMask()),
                 optionalText(request.benefitsSummary()),
                 request.employmentStartDate(),
                 request.employmentEndDate(),

@@ -337,6 +337,21 @@ public class Property extends BaseEntity {
         }
     }
 
+    /**
+     * Backfill-only coordinate write: fills absent coordinates from a server-side
+     * geocode and never overwrites a point the owner pinned on the map.
+     */
+    public void backfillCoordinates(BigDecimal latitude, BigDecimal longitude) {
+        if (this.latitude != null || this.longitude != null) {
+            return;
+        }
+        if (latitude == null || longitude == null) {
+            return;
+        }
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
+
     private void updateCoordinates(BigDecimal latitude, BigDecimal longitude, boolean creating) {
         if (latitude == null && longitude == null) {
             if (creating) {

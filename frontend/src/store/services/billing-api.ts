@@ -153,6 +153,25 @@ export type DepositHistoryParams = {
   status?: DepositAccountStatus;
 };
 
+// One row of the forward-looking generation schedule: the next cycle is not a
+// stored row yet — it always starts one month after the latest cycle's period
+// start, mirroring the backend's monthly generation scheduler.
+export type UpcomingBillingCycle = {
+  tenancyId: string;
+  tenancyReferenceCode: string | null;
+  tenantUserId: string;
+  tenantName: string | null;
+  roomId: string;
+  roomNumber: string | null;
+  currentCycleNumber: number;
+  currentPeriodStartDate: string;
+  currentPeriodEndDate: string;
+  currentCycleStatus: BillingCycleStatus;
+  baseAmountPaise: number;
+  nextCycleStartDate: string;
+  tenancyEndDate: string | null;
+};
+
 export type BillingMonthSummary = {
   month: string;
   hasData: boolean;
@@ -200,6 +219,18 @@ export const billingApi = api.injectEndpoints({
           ...(month?.trim() ? { month: month.trim() } : {}),
         },
         url: `/api/v1/billing/properties/${propertyId}/cycles`,
+      }),
+      providesTags: ["BillingCycle"],
+    }),
+
+    listUpcomingPropertyCycles: builder.query<Page<UpcomingBillingCycle>, { propertyId: string; month?: string; page?: number; size?: number }>({
+      query: ({ month, page = 0, propertyId, size = 10 }) => ({
+        params: {
+          page,
+          size,
+          ...(month?.trim() ? { month: month.trim() } : {}),
+        },
+        url: `/api/v1/billing/properties/${propertyId}/upcoming-cycles`,
       }),
       providesTags: ["BillingCycle"],
     }),
@@ -302,6 +333,7 @@ export const {
   useListMyTenancyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
   useListPropertyDepositsQuery,
+  useListUpcomingPropertyCyclesQuery,
   useRecordManualPaymentMutation,
   useSettleManagedDepositMutation,
 } = billingApi;

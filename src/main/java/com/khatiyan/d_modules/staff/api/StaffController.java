@@ -25,6 +25,7 @@ import com.khatiyan.d_modules.staff.api.dto.CreateStaffCategoryRequest;
 import com.khatiyan.d_modules.staff.api.dto.CreateStaffMemberRequest;
 import com.khatiyan.d_modules.staff.api.dto.EmployeeHistoryResponse;
 import com.khatiyan.d_modules.staff.api.dto.EndEmploymentRequest;
+import com.khatiyan.d_modules.staff.api.dto.SalaryPayableTotalResponse;
 import com.khatiyan.d_modules.staff.api.dto.StaffCategoryResponse;
 import com.khatiyan.d_modules.staff.api.dto.StaffMemberResponse;
 import com.khatiyan.d_modules.staff.api.dto.TerminationPreviewResponse;
@@ -53,6 +54,13 @@ public class StaffController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return staffService.listCategories(user.userId(), propertyId);
+    }
+
+    @GetMapping("/salary-total")
+    public SalaryPayableTotalResponse salaryTotal(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return new SalaryPayableTotalResponse(staffService.totalPayableThisMonthPaise(user.userId(), propertyId));
     }
 
     @PostMapping("/categories")

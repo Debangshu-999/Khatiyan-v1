@@ -68,6 +68,19 @@ public class ExpenseCategoryService {
         category(propertyId, categoryId).deactivate();
     }
 
+    /**
+     * Resolves a system category id for internal writers (event listeners), seeding
+     * the property's categories first if it has never used expenses. No actor
+     * check — callers are trusted module-internal flows, not user requests.
+     */
+    @Transactional
+    public UUID systemCategoryId(UUID propertyId, ExpenseCategoryType type) {
+        ensureSeeded(propertyId);
+        return categoryRepository.findByPropertyIdAndSystemKey(propertyId, type.name())
+                .orElseThrow(() -> new NotFoundException("ExpenseCategory", type.name()))
+                .getId();
+    }
+
     /** Seeds the system categories the first time a property uses expenses. */
     private void ensureSeeded(UUID propertyId) {
         if (categoryRepository.existsByPropertyId(propertyId)) {

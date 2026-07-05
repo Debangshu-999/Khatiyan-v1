@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRound, UserRoundPlus, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -30,7 +31,7 @@ import { useTheme } from "@/theme/use-theme";
 type DetailMode = "property" | "taken" | "history";
 
 export default function OwnerConcernDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const toast = useToast();
   const currentUserRole = useAppSelector((state) => state.auth.user?.role);
@@ -153,8 +154,7 @@ export default function OwnerConcernDetailScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Concern detail"
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."

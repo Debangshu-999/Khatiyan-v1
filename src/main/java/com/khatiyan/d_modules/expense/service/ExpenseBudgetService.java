@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,8 +14,12 @@ import com.khatiyan.d_modules.expense.api.dto.BudgetAlertCandidate;
 import com.khatiyan.d_modules.expense.api.dto.BudgetAlertThreshold;
 import com.khatiyan.d_modules.expense.api.dto.BudgetRaiseItem;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
+import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetTrendPoint;
+import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetTrendResponse;
 import com.khatiyan.d_modules.expense.api.dto.RaiseBudgetRequest;
 import com.khatiyan.d_modules.expense.api.dto.SetDefaultBudgetRequest;
+import com.khatiyan.d_modules.expense.event.BudgetDefaultUpdatedEvent;
+import com.khatiyan.d_modules.expense.event.BudgetRaisedEvent;
 import com.khatiyan.d_modules.expense.model.ExpenseBudgetRaise;
 import com.khatiyan.d_modules.expense.model.ExpenseBudgetSettings;
 import com.khatiyan.d_modules.expense.repository.ExpenseBudgetRaiseRepository;
@@ -36,16 +41,19 @@ public class ExpenseBudgetService {
     private final ExpenseBudgetRaiseRepository raiseRepository;
     private final ExpenseService expenseService;
     private final FinanceAccessPolicy financeAccessPolicy;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ExpenseBudgetService(
             ExpenseBudgetSettingsRepository settingsRepository,
             ExpenseBudgetRaiseRepository raiseRepository,
             ExpenseService expenseService,
-            FinanceAccessPolicy financeAccessPolicy) {
+            FinanceAccessPolicy financeAccessPolicy,
+            ApplicationEventPublisher eventPublisher) {
         this.settingsRepository = settingsRepository;
         this.raiseRepository = raiseRepository;
         this.expenseService = expenseService;
         this.financeAccessPolicy = financeAccessPolicy;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -54,11 +62,23 @@ public class ExpenseBudgetService {
         return buildOverview(propertyId, monthStart(month));
     }
 
+    /**
+     * Un-authorized budget snapshot for internal callers (the dashboard facade),
+     * which have already checked property access. Never expose this over the API.
+     */
+    @Transactional(readOnly = true)
+    public ExpenseBudgetOverviewResponse getInternalOverview(UUID propertyId, LocalDate month) {
+        return buildOverview(propertyId, monthStart(month));
+    }
+
     /** Sets / edits the recurring default monthly budget (applies to every month). */
     @Transactional
     public ExpenseBudgetOverviewResponse setDefaultBudget(
             UUID actorUserId, UUID propertyId, LocalDate month, SetDefaultBudgetRequest request) {
         financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        Long previousDefault = settingsRepository.findByPropertyId(propertyId)
+                .map(ExpenseBudgetSettings::getDefaultMonthlyBudgetPaise)
+                .orElse(null);
         settingsRepository.findByPropertyId(propertyId)
                 .map(existing -> {
                     existing.updateDefault(request.amountPaise(), actorUserId);
@@ -66,6 +86,8 @@ public class ExpenseBudgetService {
                 })
                 .orElseGet(() -> settingsRepository.save(
                         ExpenseBudgetSettings.create(propertyId, request.amountPaise(), actorUserId)));
+        eventPublisher.publishEvent(new BudgetDefaultUpdatedEvent(
+                propertyId, previousDefault, request.amountPaise(), actorUserId));
         return buildOverview(propertyId, monthStart(month));
     }
 
@@ -76,7 +98,43 @@ public class ExpenseBudgetService {
         LocalDate month = monthStart(request.month());
         raiseRepository.save(ExpenseBudgetRaise.create(
                 propertyId, month, request.amountPaise(), request.reason(), actorUserId));
-        return buildOverview(propertyId, month);
+        ExpenseBudgetOverviewResponse overview = buildOverview(propertyId, month);
+        eventPublisher.publishEvent(new BudgetRaisedEvent(
+                propertyId,
+                month,
+                request.amountPaise(),
+                overview.effectiveBudgetPaise() == null ? request.amountPaise() : overview.effectiveBudgetPaise(),
+                request.reason(),
+                actorUserId));
+        return overview;
+    }
+
+    /**
+     * Trailing-window budget trend ending at {@code month} (default 6 months,
+     * capped at 12). Savings is signed so the chart can dip below zero when a
+     * month overspends; months with no budget report null effective + 0 savings.
+     */
+    @Transactional(readOnly = true)
+    public ExpenseBudgetTrendResponse getTrend(UUID actorUserId, UUID propertyId, LocalDate month, int months) {
+        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        int window = months < 1 ? 6 : Math.min(months, 12);
+        YearMonth end = YearMonth.from(month);
+        Long defaultBudget = settingsRepository.findByPropertyId(propertyId)
+                .map(ExpenseBudgetSettings::getDefaultMonthlyBudgetPaise)
+                .orElse(null);
+        List<ExpenseBudgetTrendPoint> points = new ArrayList<>();
+        for (int offset = window - 1; offset >= 0; offset--) {
+            YearMonth yearMonth = end.minusMonths(offset);
+            LocalDate start = yearMonth.atDay(1);
+            long raised = raiseRepository.sumForMonth(propertyId, start);
+            Long effective = (defaultBudget == null && raised == 0)
+                    ? null
+                    : (defaultBudget == null ? 0L : defaultBudget) + raised;
+            long spent = expenseService.monthlyTotalPaise(propertyId, yearMonth);
+            long savings = effective == null ? 0L : effective - spent;
+            points.add(new ExpenseBudgetTrendPoint(start, spent, effective, savings, raised));
+        }
+        return new ExpenseBudgetTrendResponse(points);
     }
 
     /** Properties whose month-to-date spend has crossed a budget alert threshold. */

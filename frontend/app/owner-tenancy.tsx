@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View } from "react-native";
 import { ArrowLeft, ArrowLeftRight, Bell, DoorOpen, LogOut, UserMinus, UserPlus, Users, UsersRound } from "lucide-react-native";
 
@@ -12,12 +12,16 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
+import { useToast } from "@/components/toast";
+import { SkeletonList, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
+import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { ActiveTenancyCard, PastTenancyCard, TenancyListTabs, type OwnerTenancyListTab } from "@/features/owner/tenancy-list";
 import { useAppSelector } from "@/store/hooks";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import {
   type TenancySummary,
+  useEndTenancyMutation,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
 } from "@/store/services/tenancy-api";
@@ -27,7 +31,7 @@ import { useTheme } from "@/theme/use-theme";
 const TENANCY_PAGE_SIZE = 10;
 
 export default function OwnerTenancyWorkspaceScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -38,6 +42,27 @@ export default function OwnerTenancyWorkspaceScreen() {
   const [pastPage, setPastPage] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
+  const [pendingEnd, setPendingEnd] = useState<TenancySummary | null>(null);
+  const [endingId, setEndingId] = useState<string | null>(null);
+  const toast = useToast();
+  const [endTenancy] = useEndTenancyMutation();
+
+  async function confirmEndTenancy() {
+    const target = pendingEnd;
+    setPendingEnd(null);
+    if (!target) {
+      return;
+    }
+    setEndingId(target.id);
+    try {
+      await endTenancy(target.id).unwrap();
+      toast.success(`${target.tenantName?.trim() || "Tenant"}'s tenancy was ended.`);
+    } catch (error) {
+      toast.error(endErrorMessage(error));
+    } finally {
+      setEndingId(null);
+    }
+  }
 
   // Debounce the search box so each keystroke doesn't fire a request; reset both
   // tabs to the first page whenever the committed query changes.
@@ -97,10 +122,9 @@ export default function OwnerTenancyWorkspaceScreen() {
   }
 
   return (
+    <>
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         title="Tenancy"
         italicTail="workspace."
         subtitle={
@@ -111,9 +135,7 @@ export default function OwnerTenancyWorkspaceScreen() {
       />
 
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonScreen />
       ) : null}
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -174,9 +196,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               </View>
             </Section>
           ) : (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonTiles count={2} />
           )}
 
           <Section eyebrow="Actions" title="Tenancy tools">
@@ -194,9 +214,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               <SearchField onChangeText={setSearchDraft} placeholder="Search by tenant name, phone or tenancy ID" value={searchDraft} />
 
               {isLoading && !visiblePage ? (
-                <Card>
-                  <ActivityIndicator color={colors.primary} />
-                </Card>
+                <SkeletonList />
               ) : null}
 
               {isError ? (
@@ -226,7 +244,14 @@ export default function OwnerTenancyWorkspaceScreen() {
               {visiblePage?.items.map((tenancy) => {
                 const roomLabel = rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? null;
                 return activeTab === "active" ? (
-                  <ActiveTenancyCard key={tenancy.id} onOpen={() => openActiveTenancy(tenancy)} roomLabel={roomLabel} tenancy={tenancy} />
+                  <ActiveTenancyCard
+                    key={tenancy.id}
+                    ending={endingId === tenancy.id}
+                    onEndTenancy={() => setPendingEnd(tenancy)}
+                    onOpen={() => openActiveTenancy(tenancy)}
+                    roomLabel={roomLabel}
+                    tenancy={tenancy}
+                  />
                 ) : (
                   <PastTenancyCard key={tenancy.id} roomLabel={roomLabel} tenancy={tenancy} />
                 );
@@ -249,6 +274,17 @@ export default function OwnerTenancyWorkspaceScreen() {
         </>
       ) : null}
     </ScreenScrollView>
+    {pendingEnd ? (
+      <ConfirmDialog
+        confirmLabel="End tenancy"
+        destructive
+        message={`End ${pendingEnd.tenantName?.trim() || "this tenant"}'s tenancy now? This checks them out, frees the room and settles any deposit.`}
+        onCancel={() => setPendingEnd(null)}
+        onConfirm={() => void confirmEndTenancy()}
+        title="End tenancy"
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -318,6 +354,16 @@ function BackButton({ onPress }: { onPress: () => void }) {
       </Text>
     </AnimatedPressable>
   );
+}
+
+function endErrorMessage(error: unknown) {
+  if (typeof error === "object" && error && "data" in error) {
+    const data = (error as { data?: { message?: unknown } }).data;
+    if (typeof data?.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+  }
+  return "Could not end the tenancy. Please try again.";
 }
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {

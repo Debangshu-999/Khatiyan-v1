@@ -1,5 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, FileClock } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -8,13 +9,14 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import type { TenancyExitRequest, TenancyRoomChangeRequest } from "@/store/services/tenancy-api";
 import { useListMyExitRequestsQuery, useListMyRoomChangeRequestsQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function TenancyRequestHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors } = useTheme();
   const params = useLocalSearchParams<{ excludeTenancyId?: string; scope?: string; tenancyId?: string }>();
   const exitRequestsQuery = useListMyExitRequestsQuery();
@@ -43,9 +45,7 @@ export default function TenancyRequestHistoryScreen() {
       />
 
       {requestsFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : requests.length > 0 ? (
         requests.map((request) => (
           <RequestCard key={`${request.requestKind}-${request.id}`} request={request} />

@@ -24,6 +24,8 @@ export type StaffMember = {
   identityVerificationStatus: IdentityVerificationStatus;
   salaryStructure: SalaryStructure;
   salaryRatePaise: number;
+  // 7-bit weekday mask for daily staff (Mon=bit0..Sun=bit6); 127 = every day.
+  workingDaysMask: number;
   benefitsSummary: string;
   employmentStartDate: string;
   employmentEndDate: string | null;
@@ -70,6 +72,7 @@ export type SalaryPayment = {
   id: string;
   amountPaise: number;
   paidOn: string;
+  recordedAt: string;
   paymentMethod: SalaryPaymentMethod;
   referenceText: string | null;
   notes: string;
@@ -119,6 +122,8 @@ export type CreateStaffMemberPayload = {
   dateOfBirth?: string | null;
   salaryStructure: SalaryStructure;
   salaryRatePaise: number;
+  // Weekday mask for daily staff (Mon=bit0..Sun=bit6); omitted for monthly.
+  workingDaysMask?: number | null;
   benefitsSummary?: string;
   employmentStartDate: string;
   employmentEndDate?: string | null;
@@ -226,6 +231,10 @@ export const staffApi = api.injectEndpoints({
       query: (propertyId) => `/api/v1/properties/${propertyId}/staff/salary-accounts`,
       providesTags: ["Staff"],
     }),
+    getSalaryTotal: builder.query<{ totalPayableThisMonthPaise: number }, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/staff/salary-total`,
+      providesTags: ["Staff"],
+    }),
     openStaffSalaryAccount: builder.mutation<SalaryAccountDetail, { propertyId: string; staffReferenceCode: string }>({
       query: ({ propertyId, staffReferenceCode }) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/salary-account` }),
       invalidatesTags: ["Staff"],
@@ -285,6 +294,7 @@ export const {
   useGetMyManagerEmploymentQuery,
   useGetMySalaryAccountQuery,
   useGetSalaryAccountQuery,
+  useGetSalaryTotalQuery,
   useLazyGetSalaryAccountQuery,
   useListEmployeeHistoryQuery,
   useListManagerEmploymentQuery,

@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.expense.service;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -131,7 +132,7 @@ public class ExpenseService {
 
         // Salary is a derived (projected) expense — the same "Est payout" figure —
         // not a stored ledger row, so add it to the total and as its own line.
-        long projectedSalary = staffModule.estimatedMonthlySalaryPaise(propertyId, start);
+        long projectedSalary = projectedSalaryPaise(propertyId, start);
         if (projectedSalary > 0) {
             byCategory.add(new ExpenseCategoryTotal(null, "Salary (estimated)", projectedSalary));
         }
@@ -152,7 +153,17 @@ public class ExpenseService {
     @Transactional(readOnly = true)
     public long monthlyTotalPaise(UUID propertyId, YearMonth month) {
         long ledger = expenseRepository.sumNetForPeriod(propertyId, month.atDay(1), month.plusMonths(1).atDay(1));
-        return ledger + staffModule.estimatedMonthlySalaryPaise(propertyId, month.atDay(1));
+        return ledger + projectedSalaryPaise(propertyId, month.atDay(1));
+    }
+
+    // Projected salary is a forward estimate from current staff, so it only counts
+    // for the current and future months. Back-projecting it onto past months would
+    // make every month's total look identical (it doesn't vary by month).
+    private long projectedSalaryPaise(UUID propertyId, LocalDate monthStart) {
+        if (YearMonth.from(monthStart).isBefore(YearMonth.now(ZoneId.of("Asia/Kolkata")))) {
+            return 0L;
+        }
+        return staffModule.estimatedMonthlySalaryPaise(propertyId, monthStart);
     }
 
     private ExpenseCategory activeCategory(UUID propertyId, UUID categoryId) {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, Platform, Text, TextInput, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ArrowLeft, CalendarDays, Check, ChevronRight, KeyRound, X } from "lucide-react-native";
 
@@ -630,7 +631,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Input(props: React.ComponentProps<typeof TextInput>) {
   const { colors, fonts } = useTheme();
   return (
-    <TextInput
+    <AppTextInput
       {...props}
       autoCapitalize="none"
       autoCorrect={false}

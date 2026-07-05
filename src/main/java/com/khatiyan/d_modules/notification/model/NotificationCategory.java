@@ -13,5 +13,6 @@ public enum NotificationCategory {
     NOTICE,
     PROPERTY,
     PAYMENT,
+    EXPENSE,
     SYSTEM
 }

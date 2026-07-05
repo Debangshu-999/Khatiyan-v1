@@ -1,5 +1,5 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, ClipboardList } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -8,13 +8,14 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { useListMyPropertyBoardItemsQuery } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function PropertyBoardScreen() {
   const { colors, type } = useTheme();
-  const router = useRouter();
+  const router = useGuardedRouter();
   const boardQuery = useListMyPropertyBoardItemsQuery();
   const boardItems = boardQuery.data ?? [];
   const groupedItems = groupByCategory(boardItems);
@@ -30,12 +31,7 @@ export default function PropertyBoardScreen() {
       />
 
       {boardQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-            Loading property board
-          </Text>
-        </Card>
+        <SkeletonCard />
       ) : boardItems.length > 0 ? (
         groupedItems.map(([categoryName, items]) => (
           <Section eyebrow="Board category" key={categoryName} title={categoryName}>

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { useRouter } from "expo-router";
 import { ArrowLeft, CalendarClock } from "lucide-react-native";
 
@@ -9,6 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import {
   useCreateNormalExitRequestMutation,
   useCreatePrematureExitRequestMutation,
@@ -71,9 +73,7 @@ export default function TenancyExitRequestScreen() {
       />
 
       {activeTenancyQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : !activeTenancyQuery.data ? (
         <EmptyState
           icon={CalendarClock}
@@ -246,7 +246,7 @@ function FormField({
           </Text>
         ) : null}
       </View>
-      <TextInput
+      <AppTextInput
         maxLength={maxLength}
         multiline={multiline}
         onChangeText={onChangeText}

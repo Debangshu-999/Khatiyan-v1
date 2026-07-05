@@ -1,5 +1,5 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, Bell, Megaphone } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -9,6 +9,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
+import { SkeletonCard } from "@/components/skeleton";
 import type { NoticeSummary } from "@/store/services/notice-api";
 import { useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
@@ -16,7 +17,7 @@ import { useTheme } from "@/theme/use-theme";
 
 export default function PropertyNoticesScreen() {
   const { colors, type } = useTheme();
-  const router = useRouter();
+  const router = useGuardedRouter();
   const noticesQuery = useListMyVisibleNoticesQuery();
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority);
 
@@ -32,12 +33,7 @@ export default function PropertyNoticesScreen() {
 
       <Section eyebrow="Visible now" title="Published notices">
         {noticesQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-              Loading notices
-            </Text>
-          </Card>
+          <SkeletonCard />
         ) : notices.length > 0 ? (
           notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)
         ) : (

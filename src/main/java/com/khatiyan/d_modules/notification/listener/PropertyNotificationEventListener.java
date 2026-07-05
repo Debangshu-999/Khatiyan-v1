@@ -7,8 +7,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.d_modules.notification.NotificationModule;
@@ -43,7 +42,7 @@ public class PropertyNotificationEventListener {
         this.authModule = authModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onManagerAssigned(ManagerAssignedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseManagerData(property, event.managerUserId());
@@ -76,7 +75,7 @@ public class PropertyNotificationEventListener {
         }
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onManagerRemoved(ManagerRemovedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseManagerData(property, event.managerUserId());
@@ -109,7 +108,7 @@ public class PropertyNotificationEventListener {
         }
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onManagerEmploymentUpdated(ManagerEmploymentUpdatedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseManagerData(property, event.managerUserId());
@@ -127,7 +126,7 @@ public class PropertyNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onRoomLifecycle(RoomLifecycleEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
 

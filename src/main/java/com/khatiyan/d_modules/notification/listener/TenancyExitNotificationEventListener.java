@@ -7,8 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -39,7 +38,7 @@ public class TenancyExitNotificationEventListener {
         this.propertyModule = propertyModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyExitRequested(TenancyExitRequestedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseExitData(event.requestId(), event.tenancyId(), event.tenantUserId(), property);
@@ -58,7 +57,7 @@ public class TenancyExitNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyExitApproved(TenancyExitApprovedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseExitData(event.requestId(), event.tenancyId(), event.tenantUserId(), property);
@@ -76,7 +75,7 @@ public class TenancyExitNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyExitRejected(TenancyExitRejectedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseExitData(event.requestId(), event.tenancyId(), event.tenantUserId(), property);
@@ -93,7 +92,7 @@ public class TenancyExitNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyExitCancelled(TenancyExitCancelledEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseExitData(event.requestId(), event.tenancyId(), event.tenantUserId(), property);
@@ -111,7 +110,7 @@ public class TenancyExitNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onTenancyExitExecuted(TenancyExitExecutedEvent event) {
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
         Map<String, String> data = baseExitData(event.requestId(), event.tenancyId(), event.tenantUserId(), property);

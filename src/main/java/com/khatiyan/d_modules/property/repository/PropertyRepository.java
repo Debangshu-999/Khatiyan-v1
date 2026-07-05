@@ -31,4 +31,7 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
     List<Property> findByIdInAndActiveTrue(Collection<UUID> ids);
 
     boolean existsByIdAndOwnerIdAndActiveTrue(UUID id, UUID ownerId);
+
+    /** Active properties still missing coordinates — the geo backfill queue. */
+    List<Property> findByActiveTrueAndLatitudeIsNull();
 }

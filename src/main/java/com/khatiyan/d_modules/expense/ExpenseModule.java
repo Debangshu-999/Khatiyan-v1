@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.expense.api.dto.BudgetAlertCandidate;
+import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
 import com.khatiyan.d_modules.expense.service.ExpenseBudgetService;
 import com.khatiyan.d_modules.expense.service.ExpenseService;
 
@@ -30,6 +31,14 @@ public class ExpenseModule {
     /** Net expense total (charges minus reversals) for a property in a month. */
     public long monthlyExpenseTotalPaise(UUID propertyId, YearMonth month) {
         return expenseService.monthlyTotalPaise(propertyId, month);
+    }
+
+    /**
+     * Current-month budget snapshot for a property (effective budget + spend), for
+     * internal callers that have already checked property access (the dashboard).
+     */
+    public ExpenseBudgetOverviewResponse budgetSnapshot(UUID propertyId, LocalDate month) {
+        return budgetService.getInternalOverview(propertyId, month);
     }
 
     /** Properties whose month-to-date spend has crossed a budget alert threshold. */

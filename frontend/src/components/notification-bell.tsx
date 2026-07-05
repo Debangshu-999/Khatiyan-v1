@@ -1,5 +1,6 @@
-import { useRouter } from "expo-router";
 import { Text, View } from "react-native";
+
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Bell } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -15,7 +16,7 @@ import { useTheme } from "@/theme/use-theme";
 // Notifications stack screen. Skips the count query when no session is
 // hydrated so we don't get a transient 401 on the splash.
 export function NotificationBell() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, fonts } = useTheme();
   const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
   const activeAccount = useAppSelector((state) => state.account.activeAccount);

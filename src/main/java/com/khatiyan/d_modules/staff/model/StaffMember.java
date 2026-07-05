@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.staff.model;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -58,6 +59,11 @@ public class StaffMember extends BaseEntity {
     @Column(name = "salary_rate_paise", nullable = false)
     private long salaryRatePaise;
 
+    // 7-bit weekday mask for daily staff (Mon=bit0 .. Sun=bit6); 127 = every day.
+    // Ignored for monthly staff. See WorkingDays.
+    @Column(name = "working_days_mask", nullable = false)
+    private int workingDaysMask;
+
     @Column(name = "benefits_summary", nullable = false)
     private String benefitsSummary;
 
@@ -81,7 +87,7 @@ public class StaffMember extends BaseEntity {
 
     private StaffMember(
             String referenceCode, UUID propertyId, UUID categoryId, String fullName, LocalDate dateOfBirth, SalaryStructure salaryStructure, long salaryRatePaise,
-            String benefitsSummary, LocalDate employmentStartDate, LocalDate employmentEndDate, String employmentNotes) {
+            int workingDaysMask, String benefitsSummary, LocalDate employmentStartDate, LocalDate employmentEndDate, String employmentNotes) {
         this.id = UUID.randomUUID();
         this.referenceCode = referenceCode;
         this.propertyId = propertyId;
@@ -91,6 +97,7 @@ public class StaffMember extends BaseEntity {
         this.identityVerificationStatus = IdentityVerificationStatus.NOT_STARTED;
         this.salaryStructure = salaryStructure;
         this.salaryRatePaise = salaryRatePaise;
+        this.workingDaysMask = WorkingDays.normalize(workingDaysMask);
         this.benefitsSummary = benefitsSummary;
         this.employmentStartDate = employmentStartDate;
         this.employmentEndDate = clampEndToToday(employmentEndDate);
@@ -100,9 +107,20 @@ public class StaffMember extends BaseEntity {
 
     public static StaffMember create(
             String referenceCode, UUID propertyId, UUID categoryId, String fullName, LocalDate dateOfBirth, SalaryStructure salaryStructure, long salaryRatePaise,
-            String benefitsSummary, LocalDate employmentStartDate, LocalDate employmentEndDate, String employmentNotes) {
-        return new StaffMember(referenceCode, propertyId, categoryId, fullName, dateOfBirth, salaryStructure, salaryRatePaise, benefitsSummary, employmentStartDate,
-                employmentEndDate, employmentNotes);
+            int workingDaysMask, String benefitsSummary, LocalDate employmentStartDate, LocalDate employmentEndDate, String employmentNotes) {
+        return new StaffMember(referenceCode, propertyId, categoryId, fullName, dateOfBirth, salaryStructure, salaryRatePaise, workingDaysMask, benefitsSummary,
+                employmentStartDate, employmentEndDate, employmentNotes);
+    }
+
+    /**
+     * Projected payout for a calendar month: monthly staff earn their flat rate;
+     * daily staff earn rate x working days that fall in the month.
+     */
+    public long projectedMonthlyPayablePaise(YearMonth month) {
+        if (salaryStructure == SalaryStructure.MONTHLY) {
+            return salaryRatePaise;
+        }
+        return Math.multiplyExact(salaryRatePaise, WorkingDays.countInMonth(workingDaysMask, month));
     }
 
     public void deactivate(LocalDate endDate, String employmentEndReason, String employmentReview) {
@@ -127,6 +145,7 @@ public class StaffMember extends BaseEntity {
             LocalDate dateOfBirth,
             SalaryStructure salaryStructure,
             long salaryRatePaise,
+            int workingDaysMask,
             String benefitsSummary,
             LocalDate employmentStartDate,
             LocalDate employmentEndDate,
@@ -136,6 +155,7 @@ public class StaffMember extends BaseEntity {
         this.dateOfBirth = dateOfBirth;
         this.salaryStructure = salaryStructure;
         this.salaryRatePaise = salaryRatePaise;
+        this.workingDaysMask = WorkingDays.normalize(workingDaysMask);
         this.benefitsSummary = benefitsSummary;
         this.employmentStartDate = employmentStartDate;
         this.employmentEndDate = clampEndToToday(employmentEndDate);

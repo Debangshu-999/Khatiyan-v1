@@ -14,6 +14,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ALL_DAYS_MASK, WEEKDAYS, hasDay, toggleDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { useAppSelector } from "@/store/hooks";
 import {
   useAddPropertyManagerMutation,
@@ -34,6 +35,7 @@ import {
   useEndStaffMemberMutation,
   useGetMyManagerEmploymentQuery,
   useGetMySalaryAccountQuery,
+  useGetSalaryTotalQuery,
   useListEmployeeHistoryQuery,
   useListManagerEmploymentQuery,
   useListSalaryAccountsQuery,
@@ -56,6 +58,8 @@ import {
   type SalaryAccountDetail,
   type SalaryAdjustment,
   type SalaryAdjustmentType,
+  type SalaryMonth,
+  type SalaryPayment,
   type SalaryPaymentMethod,
   type SalaryStructure,
   type StaffCategory,
@@ -109,8 +113,7 @@ export function StaffWorkspace() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
+      <ScreenHeader onBack={() => router.back()} title="Staff" italicTail="management." subtitle={property.name} />
 
       <SegmentBar
         options={[
@@ -138,8 +141,7 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <BackButton onPress={onBack} />
-      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
+      <ScreenHeader onBack={onBack} title="Staff" italicTail="management." subtitle={property.name} />
 
       <Section eyebrow="Your record" title="My employment">
         {employmentQuery.isLoading ? (
@@ -366,11 +368,12 @@ type SalaryFilter = "ALL" | "MANAGER" | "STAFF";
 type AdjustmentTarget = "NEW" | { payrollMonth: string; adjustment: SalaryAdjustment };
 
 function SalaryTracker({ property }: { property: OwnerProperty }) {
-  const { colors } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const managers = useListManagerEmploymentQuery(property.id).data ?? [];
   const members = useListStaffMembersQuery({ propertyId: property.id }).data ?? [];
   const accounts = useListSalaryAccountsQuery(property.id).data ?? [];
+  const salaryTotal = useGetSalaryTotalQuery(property.id).data;
   const [openStaffAccount, staffAccountState] = useOpenStaffSalaryAccountMutation();
   const [openManagerAccount, managerAccountState] = useOpenManagerSalaryAccountMutation();
   const [removeAdjustment] = useRemoveSalaryAdjustmentMutation();
@@ -413,23 +416,31 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
   const visiblePeople = people.filter(
     (entry) => filter === "ALL" || (filter === "MANAGER" ? entry.kind === "MANAGER" : entry.kind === "STAFF_MEMBER"),
   );
+  // When a salary account is open we focus on just that person's card (the month
+  // detail renders directly under it) and hide the rest of the directory.
+  const shownPeople = selected
+    ? people.filter((entry) => entry.person.referenceCode === selected.account.holderReferenceCode)
+    : visiblePeople;
 
   return (
     <View style={{ gap: spacing.lg }}>
       <Section eyebrow="Choose member" title="Salary accounts">
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <ChoiceButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
-          <ChoiceButton active={filter === "MANAGER"} label="Managers" onPress={() => setFilter("MANAGER")} />
-          <ChoiceButton active={filter === "STAFF"} label="Other staff" onPress={() => setFilter("STAFF")} />
-        </View>
+        {!selected ? (
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ChoiceButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
+            <ChoiceButton active={filter === "MANAGER"} label="Managers" onPress={() => setFilter("MANAGER")} />
+            <ChoiceButton active={filter === "STAFF"} label="Other staff" onPress={() => setFilter("STAFF")} />
+          </View>
+        ) : null}
         {loading ? <ActivityIndicator color={colors.primary} /> : null}
-        {visiblePeople.map((target) => {
+        {shownPeople.map((target) => {
           // Daily-wage employees never get a salary account — we just show their
-          // computed payable for the current month (days in month × daily rate).
+          // computed payable for the current month (working days × daily rate).
           if (target.person.salaryStructure === "DAILY") {
             return <DailyPayableCard key={`${target.kind}-${target.person.referenceCode}`} kind={target.kind} person={target.person} />;
           }
           const account = accountByHolder.get(target.person.referenceCode);
+          const isSelected = selected?.account.holderReferenceCode === target.person.referenceCode;
           return (
             <PersonCard
               key={`${target.kind}-${target.person.referenceCode}`}
@@ -437,11 +448,11 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
               meta={target.kind === "MANAGER" ? "Manager" : target.person.categoryName}
               title={target.person.fullName}
               subtitle={`${salaryRateLabel(target.person.salaryStructure, target.person.salaryRatePaise)}${account ? "  ·  Account open" : ""}`}
-              onPress={() => void selectPerson(target)}
+              onPress={() => (isSelected ? setSelected(null) : void selectPerson(target))}
             />
           );
         })}
-        {!visiblePeople.length ? (
+        {!selected && !visiblePeople.length ? (
           <EmptyState
             description="Salary accounts become available after a manager or staff member has been added."
             icon={WalletCards}
@@ -460,6 +471,32 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
           onOpenMonth={() => setMonthOpen(true)}
           onRecordPay={() => setPaymentOpen(true)}
         />
+      ) : null}
+
+      {salaryTotal ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surfaceSunken,
+            borderColor: colors.border,
+            borderCurve: "continuous",
+            borderRadius: 16,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.md,
+            justifyContent: "space-between",
+            paddingHorizontal: spacing.lg,
+            paddingVertical: spacing.md,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>Total payable this month</Text>
+            <Text style={[type.caption, { color: colors.muted }]} selectable>Opened months plus projected pay</Text>
+          </View>
+          <Text style={{ color: colors.primary, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+            {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
+          </Text>
+        </View>
       ) : null}
 
       {selected && monthOpen ? <OpenMonthModal account={selected} onClose={() => setMonthOpen(false)} onSaved={setSelected} propertyId={property.id} /> : null}
@@ -510,7 +547,11 @@ function SalaryAccountDetailCard({
 }) {
   const { colors, type } = useTheme();
   const { account, months } = detail;
-  const currentMonthOpened = months.some((month) => month.payrollMonth === firstOfMonth());
+  const currentMonth = months.find((month) => month.payrollMonth === firstOfMonth());
+  const currentMonthOpened = Boolean(currentMonth);
+  // Once the current month is fully paid there is nothing left to adjust or pay,
+  // so those actions are blocked until the next month is opened.
+  const currentMonthPaid = currentMonth?.paymentStatus === "PAID";
 
   return (
     <Card>
@@ -530,8 +571,8 @@ function SalaryAccountDetailCard({
         {!readOnly ? (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ActionButton disabled={currentMonthOpened} icon={currentMonthOpened ? CalendarCheck : CirclePlus} label={currentMonthOpened ? "Month opened" : "Open month"} onPress={() => onOpenMonth?.()} variant="secondary" />
-            <ActionButton icon={Plus} label="Adjustment" onPress={() => onAddAdjustment?.()} variant="secondary" />
-            <ActionButton icon={ReceiptText} label="Record pay" onPress={() => onRecordPay?.()} />
+            <ActionButton disabled={currentMonthPaid} icon={Plus} label="Adjustment" onPress={() => onAddAdjustment?.()} variant="secondary" />
+            <ActionButton disabled={currentMonthPaid} icon={ReceiptText} label="Record pay" onPress={() => onRecordPay?.()} />
           </View>
         ) : null}
       </View>
@@ -540,14 +581,20 @@ function SalaryAccountDetailCard({
         <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Pay history</Text>
         {months.map((month) => {
           const editable = !readOnly && month.paidAmountPaise === 0;
+          const lastPayment = month.paymentStatus === "PAID" ? latestPayment(month) : null;
           return (
             <View key={month.payrollMonth} style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 14, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ gap: 2 }}>
                   <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>{formatMonth(month.payrollMonth)}</Text>
                   <Text style={[type.caption, { color: colors.muted }]} selectable>Opened {formatDayMonth(month.openedOn)}</Text>
                 </View>
-                <Text style={[type.caption, { color: month.paymentStatus === "PAID" ? colors.successText : colors.warningText, fontWeight: "800" }]} selectable>{month.paymentStatus.replaceAll("_", " ")}</Text>
+                <View style={{ alignItems: "flex-end", gap: 2 }}>
+                  <Text style={[type.caption, { color: month.paymentStatus === "PAID" ? colors.successText : colors.warningText, fontWeight: "800" }]} selectable>{month.paymentStatus.replaceAll("_", " ")}</Text>
+                  {lastPayment ? (
+                    <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "right" }]} selectable>{formatPaidDateTime(lastPayment)}</Text>
+                  ) : null}
+                </View>
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <AmountMetric label="Gross" value={formatMoneyPaise(month.grossAmountPaise)} />
@@ -584,7 +631,9 @@ function SalaryAccountDetailCard({
 // account exists, so we show the running payable for the current month.
 function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; person: ManagerEmployment | StaffMember }) {
   const { colors, type } = useTheme();
-  const days = daysInCurrentMonth();
+  // Managers have no weekday pattern yet, so they bill every day of the month.
+  const mask = kind === "STAFF_MEMBER" ? (person as StaffMember).workingDaysMask : ALL_DAYS_MASK;
+  const days = workingDaysInCurrentMonth(mask);
   const payablePaise = days * person.salaryRatePaise;
   const Icon = kind === "MANAGER" ? BriefcaseBusiness : UsersRound;
   const meta = kind === "MANAGER" ? "Manager · Daily" : `${(person as StaffMember).categoryName} · Daily`;
@@ -597,6 +646,7 @@ function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; 
         <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1} selectable>{meta}</Text>
         <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>{person.fullName}</Text>
         <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>{formatMoneyPaise(person.salaryRatePaise)} / day × {days} days</Text>
+        {kind === "STAFF_MEMBER" ? <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1} selectable>{weekdaysLabel(mask)}</Text> : null}
       </View>
       <View style={{ alignItems: "flex-end", gap: 2 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Payable</Text>
@@ -706,14 +756,9 @@ function Segment({ active, label, onPress }: { active: boolean; label: string; o
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,
-        elevation: active ? 2 : 0,
         flex: 1,
         justifyContent: "center",
         minHeight: 44,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: active ? 1 : 0,
-        shadowRadius: 6,
       }}
     >
       <Text style={{ color: active ? colors.primary : colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: active ? "800" : "600", letterSpacing: 0.2 }} selectable>{label}</Text>
@@ -835,22 +880,17 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 // Shared lift so the staff row cards float off the background like the rest of
 // the app's clickable cards.
-function rowCardStyle(colors: { surface: string; border: string; shadow: string }) {
+function rowCardStyle(colors: { surface: string; borderStrong: string }) {
   return {
     alignItems: "center" as const,
     backgroundColor: colors.surface,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderCurve: "continuous" as const,
     borderRadius: 18,
     borderWidth: 1,
-    elevation: 2,
     flexDirection: "row" as const,
     gap: spacing.sm,
     padding: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 10,
   };
 }
 
@@ -991,11 +1031,13 @@ function AddManagerModal({ onClose, propertyId }: { onClose: () => void; propert
 
 function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { categories: StaffCategory[]; member: StaffMember | null; onClose: () => void; onEnd?: () => void; propertyId: string }) {
   const toast = useToast();
+  const { colors, type } = useTheme();
   const [categoryId, setCategoryId] = useState(categories.find((category) => category.name === member?.categoryName)?.id ?? categories[0]?.id ?? "");
   const [fullName, setFullName] = useState(member?.fullName ?? "");
   const [birthDate, setBirthDate] = useState(member?.dateOfBirth ?? "");
   const [salaryStructure, setSalaryStructure] = useState<SalaryStructure>(member?.salaryStructure ?? "MONTHLY");
   const [salary, setSalary] = useState(member ? paiseToRupees(member.salaryRatePaise) : "");
+  const [workingDaysMask, setWorkingDaysMask] = useState<number>(member?.workingDaysMask ?? ALL_DAYS_MASK);
   const [benefits, setBenefits] = useState(member?.benefitsSummary ?? "");
   const [startDate, setStartDate] = useState(member?.employmentStartDate ?? today());
   const [notes, setNotes] = useState(member?.employmentNotes ?? "");
@@ -1003,13 +1045,18 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
   const [updateMember, updateState] = useUpdateStaffMemberMutation();
   const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
   const saving = createState.isLoading || updateState.isLoading;
+  const dailyEstPaise = workingDaysInCurrentMonth(workingDaysMask) * (rupeesToPaise(salary) ?? 0);
   async function submit() {
     const salaryRatePaise = rupeesToPaise(salary);
     if (!categoryId || !fullName.trim() || !salaryRatePaise || !startDate) {
       setFeedback({ message: "Category, name, salary and start date are required.", tone: "error" });
       return;
     }
-    const payload = { benefitsSummary: benefits, categoryId, dateOfBirth: birthDate || null, employmentEndDate: null, employmentNotes: notes, employmentStartDate: startDate, fullName: fullName.trim(), identityVerificationStatus: member?.identityVerificationStatus ?? "NOT_STARTED" as const, salaryRatePaise, salaryStructure };
+    if (salaryStructure === "DAILY" && workingDaysMask <= 0) {
+      setFeedback({ message: "Select at least one working day for daily staff.", tone: "error" });
+      return;
+    }
+    const payload = { benefitsSummary: benefits, categoryId, dateOfBirth: birthDate || null, employmentEndDate: null, employmentNotes: notes, employmentStartDate: startDate, fullName: fullName.trim(), identityVerificationStatus: member?.identityVerificationStatus ?? "NOT_STARTED" as const, salaryRatePaise, salaryStructure, workingDaysMask: salaryStructure === "DAILY" ? workingDaysMask : ALL_DAYS_MASK };
     try {
       if (member) await updateMember({ payload, propertyId, staffReferenceCode: member.referenceCode }).unwrap();
       else await createMember({ payload, propertyId }).unwrap();
@@ -1027,6 +1074,14 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
       <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
       <View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} /><ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} /></View>
       <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="Rs." value={salary} />
+      {salaryStructure === "DAILY" ? (
+        <>
+          <WeekdayPicker mask={workingDaysMask} onChange={setWorkingDaysMask} />
+          <Text style={[type.caption, { color: colors.muted }]} selectable>
+            {workingDaysInCurrentMonth(workingDaysMask)} working days this month{dailyEstPaise ? ` · est. ${formatMoneyFull(dailyEstPaise)}` : ""}
+          </Text>
+        </>
+      ) : null}
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
       <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
       <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
@@ -1107,6 +1162,22 @@ function OpenMonthModal({ account, onClose, onSaved, propertyId }: { account: Sa
 }
 
 function formatDayMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00`)); }
+
+// The completing payment for a paid month — used to show when it was settled.
+function latestPayment(month: SalaryMonth): SalaryPayment | null {
+  if (!month.payments.length) {
+    return null;
+  }
+  return month.payments.reduce((latest, payment) => (payment.recordedAt > latest.recordedAt ? payment : latest));
+}
+
+// Payment date (the chosen pay date) plus the time it was recorded, e.g.
+// "Paid 12 Jun 2026 · 3:45 PM".
+function formatPaidDateTime(payment: SalaryPayment) {
+  const date = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${payment.paidOn}T00:00:00`));
+  const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true, minute: "2-digit" }).format(new Date(payment.recordedAt));
+  return `Paid ${date} · ${time}`;
+}
 
 function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { account: SalaryAccountDetail; editing?: { payrollMonth: string; adjustment: SalaryAdjustment } | null; onClose: () => void; onSaved: (value: SalaryAccountDetail) => void; propertyId: string }) {
   const toast = useToast();
@@ -1361,6 +1432,24 @@ function toLocalIso(date: Date) {
 function today() { return toLocalIso(new Date()); }
 function firstOfMonth() { return `${today().slice(0, 7)}-01`; }
 function daysInCurrentMonth() { const now = new Date(); return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); }
+
+// Full rupee amount with two decimals and no K/L abbreviation.
+function formatMoneyFull(paise: number) {
+  return new Intl.NumberFormat("en-IN", { currency: "INR", maximumFractionDigits: 2, minimumFractionDigits: 2, style: "currency" }).format(paise / 100);
+}
+
+function WeekdayPicker({ mask, onChange }: { mask: number; onChange: (mask: number) => void }) {
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <FieldLabel>Working days</FieldLabel>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        {WEEKDAYS.map((weekday) => (
+          <ChoiceButton active={hasDay(mask, weekday.bit)} key={weekday.bit} label={weekday.label} onPress={() => onChange(toggleDay(mask, weekday.bit))} />
+        ))}
+      </View>
+    </View>
+  );
+}
 // Human-friendly tenure between a start date and an end date (or today if open).
 function serviceDuration(start: string, end: string | null) {
   if (!start) return "—";

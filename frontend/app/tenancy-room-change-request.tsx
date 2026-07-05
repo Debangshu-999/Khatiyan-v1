@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import { useRouter } from "expo-router";
 import { ArrowLeft, BedDouble } from "lucide-react-native";
 
@@ -10,6 +11,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { TenantRoomSummary } from "@/store/services/tenancy-api";
 import { useCreateRoomChangeRequestMutation, useGetMyActiveTenancyQuery, useListMyActivePropertyRoomsQuery } from "@/store/services/tenancy-api";
@@ -109,9 +111,7 @@ export default function TenancyRoomChangeRequestScreen() {
       />
 
       {activeTenancyQuery.isFetching || roomsQuery.isFetching ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : roomsQuery.error ? (
         <EmptyState
           icon={BedDouble}
@@ -402,7 +402,7 @@ function FormField({
           </Text>
         ) : null}
       </View>
-      <TextInput
+      <AppTextInput
         maxLength={maxLength}
         multiline={multiline}
         onChangeText={onChangeText}

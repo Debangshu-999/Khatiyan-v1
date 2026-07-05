@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -31,6 +32,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
+import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
@@ -246,9 +248,36 @@ public class BillingCycleService {
         long manuallyPaidCount = manualPaymentRepository
                 .countDistinctCyclesByPropertyAndCollectedBetween(propertyId, fromInstant, toInstant);
 
+        // Monthly cycles are generated lazily on each tenancy's anniversary day, so
+        // early in the current month few or none exist yet. Project the month
+        // proactively from active monthly tenancies that are NOT scheduled to exit
+        // this month: the cycle count becomes the number of such tenancies and the
+        // billed ("total") figure adds the rent still to be generated. Past months
+        // stay purely actual.
+        if (monthStart.equals(LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1))) {
+            Set<UUID> billedTenancyIds = cycles.stream()
+                    .filter(c -> !c.isCancelled())
+                    .map(BillingCycle::getTenancyId)
+                    .collect(Collectors.toSet());
+            List<TenancyResponse> expectedTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
+                    .filter(t -> t.billingType() == TenancyBillingType.MONTHLY)
+                    .filter(t -> t.endDate() == null
+                            || t.endDate().isBefore(monthStart)
+                            || !t.endDate().isBefore(nextMonth))
+                    .toList();
+            long projectedExtraPaise = expectedTenancies.stream()
+                    .filter(t -> !billedTenancyIds.contains(t.id()))
+                    .mapToLong(t -> t.rentAmountPaise() == null ? 0L : t.rentAmountPaise())
+                    .sum();
+            activeCount = expectedTenancies.size();
+            billedPaise = billedPaise + projectedExtraPaise;
+        }
+
+        boolean hasData = !cycles.isEmpty() || activeCount > 0;
+
         return new BillingMonthSummary(
                 monthStart.toString().substring(0, 7),
-                !cycles.isEmpty(),
+                hasData,
                 activeCount,
                 overdueCount,
                 overduePaise,
@@ -298,6 +327,100 @@ public class BillingCycleService {
                 .toList();
 
         return toResponses(filteredCycles, tenancyReferenceCodes);
+    }
+
+    /**
+     * All billing cycles for a property across every month, newest period first.
+     * Used by the owner dashboard, whose six-month trend, prior-month money delta
+     * and recent activity need the full history rather than a single month's slice
+     * (a {@code null} month would otherwise default to the current month only).
+     */
+    @Transactional(readOnly = true)
+    public List<BillingCycleResponse> listAllPropertyCycles(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        List<BillingCycle> cycles = billingCycleRepository.findByPropertyId(propertyId)
+                .stream()
+                .sorted(Comparator.comparing(BillingCycle::getPeriodStartDate).reversed())
+                .toList();
+        Map<UUID, String> tenancyReferenceCodes = tenancyReferenceCodes(cycles);
+
+        return toResponses(cycles, tenancyReferenceCodes);
+    }
+
+    /**
+     * Upcoming cycle dates for a property's active monthly tenancies, soonest
+     * first. The next cycle always starts one month after the latest cycle's
+     * period start (mirrors {@link #generateDueMonthlyCycles}), so this is a
+     * forward-looking schedule derived from existing cycles, not stored rows.
+     * Daily tenancies are excluded — their single cycle covers the whole stay.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<UpcomingBillingCycleResponse> listUpcomingPropertyCycles(
+            UUID actorUserId,
+            UUID propertyId,
+            String month,
+            int page,
+            int size) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+
+        LocalDate currentMonthStart = LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1);
+        LocalDate parsedMonth = parseMonthStart(month);
+        LocalDate selectedMonthStart = parsedMonth != null ? parsedMonth : currentMonthStart;
+
+        // Pending-generation cycles only exist for the current month. A past
+        // month is closed (everything is already generated) and future months
+        // aren't selectable, so any non-current month has nothing upcoming.
+        if (!selectedMonthStart.equals(currentMonthStart)) {
+            return PageResponse.of(List.of(), page, size);
+        }
+
+        Map<UUID, BillingCycle> latestCycleByTenancyId = billingCycleRepository.findByPropertyId(propertyId)
+                .stream()
+                .collect(Collectors.toMap(
+                        BillingCycle::getTenancyId,
+                        cycle -> cycle,
+                        (left, right) -> left.getPeriodStartDate().isAfter(right.getPeriodStartDate()) ? left : right));
+
+        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId)
+                .stream()
+                .filter(tenancy -> tenancy.billingType() == TenancyBillingType.MONTHLY)
+                .filter(tenancy -> latestCycleByTenancyId.containsKey(tenancy.id()))
+                // Once this month's cycle exists, the latest cycle sits in the
+                // current month and its "next" cycle is next month — that is not
+                // upcoming for this view. Only surface tenancies whose latest
+                // cycle is from a prior month, i.e. whose next cycle is still due
+                // (this month or overdue for generation).
+                .filter(tenancy -> latestCycleByTenancyId.get(tenancy.id())
+                        .getPeriodStartDate().isBefore(currentMonthStart))
+                .toList();
+
+        Map<RoomDisplayKey, String> roomNumbers = roomNumbers(
+                tenancies.stream().map(tenancy -> latestCycleByTenancyId.get(tenancy.id())).toList());
+
+        List<UpcomingBillingCycleResponse> upcoming = tenancies.stream()
+                .map(tenancy -> {
+                    BillingCycle latest = latestCycleByTenancyId.get(tenancy.id());
+                    return new UpcomingBillingCycleResponse(
+                            tenancy.id(),
+                            tenancy.referenceCode(),
+                            latest.getTenantUserId(),
+                            latest.getTenantNameSnapshot(),
+                            latest.getRoomId(),
+                            roomNumbers.get(new RoomDisplayKey(latest.getPropertyId(), latest.getRoomId())),
+                            latest.getCycleNumber(),
+                            latest.getPeriodStartDate(),
+                            latest.getPeriodEndDate(),
+                            latest.getStatus(),
+                            latest.getBaseAmountPaise(),
+                            latest.getPeriodStartDate().plusMonths(1),
+                            tenancy.endDate());
+                })
+                .sorted(Comparator.comparing(UpcomingBillingCycleResponse::nextCycleStartDate)
+                        .thenComparing(item -> item.tenantName() == null ? "" : item.tenantName()))
+                .toList();
+
+        return PageResponse.of(upcoming, page, size);
     }
 
     /**

@@ -6,8 +6,10 @@ import java.time.ZoneId;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -27,6 +29,8 @@ import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterProperty;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterResponse;
 import com.khatiyan.d_modules.dashboard.api.dto.AttentionSummary;
+import com.khatiyan.d_modules.dashboard.api.dto.BudgetAttention;
+import com.khatiyan.d_modules.dashboard.api.dto.BudgetAttentionLevel;
 import com.khatiyan.d_modules.dashboard.api.dto.ConcernQueueSummary;
 import com.khatiyan.d_modules.dashboard.api.dto.MoneySnapshot;
 import com.khatiyan.d_modules.dashboard.api.dto.MonthlyTrendPoint;
@@ -35,6 +39,8 @@ import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityItem;
 import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityType;
 import com.khatiyan.d_modules.dashboard.api.dto.TenancySnapshot;
 import com.khatiyan.d_modules.dashboard.api.dto.TodayDigest;
+import com.khatiyan.d_modules.expense.ExpenseModule;
+import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
 import com.khatiyan.d_modules.notice.NoticeModule;
 import com.khatiyan.d_modules.notice.api.dto.NoticeResponse;
 import com.khatiyan.d_modules.property.PropertyModule;
@@ -49,6 +55,7 @@ import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
+import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
@@ -68,6 +75,9 @@ public class OwnerDashboardService {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    /** Fire the "approaching" budget flag once spend reaches this percent of budget. */
+    private static final long BUDGET_APPROACHING_PERCENT = 80L;
+
     private final PropertyModule propertyModule;
     private final TenancyModule tenancyModule;
     private final BillingModule billingModule;
@@ -75,6 +85,7 @@ public class OwnerDashboardService {
     private final NoticeModule noticeModule;
     private final AuthModule authModule;
     private final StaffModule staffModule;
+    private final ExpenseModule expenseModule;
 
     private final int upcomingExitDays;
     private final int recentActivityLimit;
@@ -87,6 +98,7 @@ public class OwnerDashboardService {
             NoticeModule noticeModule,
             AuthModule authModule,
             StaffModule staffModule,
+            ExpenseModule expenseModule,
             @Value("${app.dashboard.upcoming-exit-days:7}") int upcomingExitDays,
             @Value("${app.dashboard.recent-activity-limit:10}") int recentActivityLimit) {
         this.propertyModule = propertyModule;
@@ -96,6 +108,7 @@ public class OwnerDashboardService {
         this.noticeModule = noticeModule;
         this.authModule = authModule;
         this.staffModule = staffModule;
+        this.expenseModule = expenseModule;
         this.upcomingExitDays = upcomingExitDays;
         this.recentActivityLimit = recentActivityLimit;
     }
@@ -120,7 +133,9 @@ public class OwnerDashboardService {
                 tenancyModule.listPropertyRoomChangeRequests(actorUserId, propertyId);
         BillingDashboardSummary billing = billingModule.getPropertyBillingSummary(actorUserId, propertyId);
         ConcernDashboardSummary concern = concernModule.getPropertyConcernSummary(actorUserId, propertyId);
-        List<BillingCycleResponse> cycles = billingModule.listPropertyCycles(actorUserId, propertyId, null, null);
+        // Full cycle history (not a single month) so the six-month trend, the
+        // prior-month money delta and recent activity all see every month's data.
+        List<BillingCycleResponse> cycles = billingModule.listAllPropertyCycles(actorUserId, propertyId);
 
         List<TenancyResponse> allTenancies = new ArrayList<>(activeTenancies);
         allTenancies.addAll(inactiveTenancies);
@@ -130,9 +145,10 @@ public class OwnerDashboardService {
 
         OccupancySnapshot occupancy = buildOccupancy(rooms, activeTenancies);
         TenancySnapshot tenancy = buildTenancy(activeTenancies, inactiveTenancies, allTenancies, exitRequests, today);
-        MoneySnapshot money = buildMoney(billing, cycles, prevMonthStart, monthStart);
+        MoneySnapshot money = buildMoney(billing, cycles, activeTenancies, prevMonthStart, monthStart);
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
         AttentionSummary attention = buildAttention(billing, concern, activeTenancies, exitRequests, roomChangeRequests, today);
+        BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
         List<MonthlyTrendPoint> monthlyTrends = buildMonthlyTrends(allTenancies, cycles, occupancy.totalBeds(), today);
         List<RecentActivityItem> recentActivity = buildRecentActivity(actorUserId, propertyId, activeTenancies, cycles);
@@ -151,10 +167,33 @@ public class OwnerDashboardService {
                 money,
                 todayDigest,
                 attention,
+                budget,
                 concernQueue,
                 recentActivity,
                 monthlyTrends,
                 Instant.now());
+    }
+
+    /**
+     * Maps the current month's budget overview to an action-center flag. NONE when
+     * there is no budget or spend is comfortably under it; APPROACHING once spend
+     * reaches {@link #BUDGET_APPROACHING_PERCENT}; EXCEEDED once spend passes the
+     * effective budget (which already includes projected salary).
+     */
+    private BudgetAttention buildBudget(ExpenseBudgetOverviewResponse budget) {
+        Long effective = budget.effectiveBudgetPaise();
+        long spent = budget.spentPaise();
+        if (effective == null || effective <= 0) {
+            return new BudgetAttention(BudgetAttentionLevel.NONE, 0, spent, 0, 0);
+        }
+        if (spent > effective) {
+            return new BudgetAttention(BudgetAttentionLevel.EXCEEDED, effective, spent, spent - effective, 0);
+        }
+        long remaining = effective - spent;
+        if (spent * 100 >= effective * BUDGET_APPROACHING_PERCENT) {
+            return new BudgetAttention(BudgetAttentionLevel.APPROACHING, effective, spent, 0, remaining);
+        }
+        return new BudgetAttention(BudgetAttentionLevel.NONE, effective, spent, 0, remaining);
     }
 
     /**
@@ -194,14 +233,7 @@ public class OwnerDashboardService {
 
         long activeTenantsPrevMonth = activeTenantsDuring(allTenancies, prevMonthStart, monthStart);
 
-        LocalDate upcomingHorizon = today.plusDays(upcomingExitDays);
-        long upcomingExits = exitRequests.stream()
-                .filter(request -> request.status() == TenancyExitRequestStatus.APPROVED)
-                .filter(request -> {
-                    LocalDate checkout = request.approvedCheckoutDate();
-                    return checkout != null && checkout.isAfter(today) && !checkout.isAfter(upcomingHorizon);
-                })
-                .count();
+        long upcomingExits = countUpcomingExits(activeTenancies, exitRequests, today);
 
         return new TenancySnapshot(
                 activeTenancies.size(),
@@ -212,6 +244,74 @@ public class OwnerDashboardService {
                 activeTenantsPrevMonth,
                 startedPrevMonth,
                 endedPrevMonth);
+    }
+
+    /**
+     * Upcoming exits within the horizon: approved monthly exit requests plus
+     * active daily tenancies whose end date is due soon (daily stays end on their
+     * end date without an exit request). De-duplicated by tenancy id.
+     */
+    private long countUpcomingExits(
+            List<TenancyResponse> activeTenancies,
+            List<TenancyExitRequestResponse> exitRequests,
+            LocalDate today) {
+        LocalDate horizon = today.plusDays(upcomingExitDays);
+        Set<UUID> counted = new HashSet<>();
+        long count = 0;
+        for (TenancyExitRequestResponse request : exitRequests) {
+            if (request.status() != TenancyExitRequestStatus.APPROVED) {
+                continue;
+            }
+            LocalDate checkout = request.approvedCheckoutDate();
+            if (checkout != null && checkout.isAfter(today) && !checkout.isAfter(horizon)) {
+                count = count + 1;
+                counted.add(request.tenancyId());
+            }
+        }
+        for (TenancyResponse tenancy : activeTenancies) {
+            if (tenancy.billingType() != TenancyBillingType.DAILY) {
+                continue;
+            }
+            LocalDate end = tenancy.plannedEndDate();
+            if (end != null && end.isAfter(today) && !end.isAfter(horizon) && !counted.contains(tenancy.id())) {
+                count = count + 1;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Exits that are past due but not yet executed: approved monthly exit requests
+     * whose checkout date has already passed (the exit scheduler has not run / there
+     * is none) plus active daily tenancies whose end date has passed (daily stays end
+     * on their end date without an exit request). De-duplicated by tenancy id.
+     */
+    private long countPastDueExits(
+            List<TenancyResponse> activeTenancies,
+            List<TenancyExitRequestResponse> exitRequests,
+            LocalDate today) {
+        Set<UUID> counted = new HashSet<>();
+        long count = 0;
+        for (TenancyExitRequestResponse request : exitRequests) {
+            if (request.status() != TenancyExitRequestStatus.APPROVED) {
+                continue;
+            }
+            LocalDate checkout = request.approvedCheckoutDate();
+            if (checkout != null && checkout.isBefore(today)) {
+                count = count + 1;
+                counted.add(request.tenancyId());
+            }
+        }
+        for (TenancyResponse tenancy : activeTenancies) {
+            if (tenancy.billingType() != TenancyBillingType.DAILY) {
+                continue;
+            }
+            LocalDate end = tenancy.plannedEndDate();
+            if (end != null && end.isBefore(today) && !counted.contains(tenancy.id())) {
+                count = count + 1;
+            }
+        }
+        return count;
     }
 
     /**
@@ -439,12 +539,45 @@ public class OwnerDashboardService {
     private MoneySnapshot buildMoney(
             BillingDashboardSummary billing,
             List<BillingCycleResponse> cycles,
+            List<TenancyResponse> activeTenancies,
             LocalDate prevMonthStart,
             LocalDate monthStart) {
+        LocalDate nextMonthStart = monthStart.plusMonths(1);
+
+        // Monthly cycles generate lazily on each tenancy's anniversary day, so early
+        // in the month "billed" is near zero even though rent is collectable. Project
+        // the month from active monthly tenancies that are not exiting this month and
+        // whose cycle has not generated yet, so billed and pending reflect what is
+        // collectable rather than only what has already been billed. (Same rule as the
+        // billing screen's month summary.)
+        Set<UUID> billedTenancyIds = new HashSet<>();
+        for (BillingCycleResponse cycle : cycles) {
+            if (cycle.status() != BillingCycleStatus.CANCELLED
+                    && isWithinMonth(cycle.periodStartDate(), monthStart, nextMonthStart)) {
+                billedTenancyIds.add(cycle.tenancyId());
+            }
+        }
+        long projectedExtraPaise = 0;
+        for (TenancyResponse tenancy : activeTenancies) {
+            if (tenancy.billingType() != TenancyBillingType.MONTHLY || tenancy.rentAmountPaise() == null) {
+                continue;
+            }
+            LocalDate end = tenancy.endDate();
+            boolean endingThisMonth = end != null && !end.isBefore(monthStart) && end.isBefore(nextMonthStart);
+            if (endingThisMonth || billedTenancyIds.contains(tenancy.id())) {
+                continue;
+            }
+            projectedExtraPaise = projectedExtraPaise + tenancy.rentAmountPaise();
+        }
+
+        long billedThisMonth = billing.billedThisMonthPaise() + projectedExtraPaise;
+        long collectedThisMonth = billing.collectedThisMonthPaise();
+        long pending = Math.max(0, billedThisMonth - collectedThisMonth);
+
         return new MoneySnapshot(
-                billing.billedThisMonthPaise(),
-                billing.collectedThisMonthPaise(),
-                billing.pendingPaise(),
+                billedThisMonth,
+                collectedThisMonth,
+                pending,
                 billing.overduePaise(),
                 billing.overdueCount(),
                 billedInMonth(cycles, prevMonthStart, monthStart),
@@ -552,16 +685,9 @@ public class OwnerDashboardService {
                 .filter(request -> request.status() == TenancyRoomChangeRequestStatus.REQUESTED)
                 .count();
 
-        LocalDate upcomingHorizon = today.plusDays(upcomingExitDays);
-        long upcomingExits = exitRequests.stream()
-                .filter(request -> request.status() == TenancyExitRequestStatus.APPROVED)
-                .filter(request -> {
-                    LocalDate checkout = request.approvedCheckoutDate();
-                    return checkout != null
-                            && checkout.isAfter(today)
-                            && !checkout.isAfter(upcomingHorizon);
-                })
-                .count();
+        long upcomingExits = countUpcomingExits(activeTenancies, exitRequests, today);
+
+        long exitsPastDue = countPastDueExits(activeTenancies, exitRequests, today);
 
         return new AttentionSummary(
                 billing.overdueCount(),
@@ -570,6 +696,7 @@ public class OwnerDashboardService {
                 pendingExitRequests,
                 pendingRoomChangeRequests,
                 upcomingExits,
+                exitsPastDue,
                 tenantsOnNotice);
     }
 

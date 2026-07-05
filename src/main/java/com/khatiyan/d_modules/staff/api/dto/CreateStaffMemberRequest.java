@@ -16,6 +16,9 @@ public record CreateStaffMemberRequest(
         LocalDate dateOfBirth,
         @NotNull SalaryStructure salaryStructure,
         @Positive long salaryRatePaise,
+        // Weekday mask for daily staff (Mon=bit0..Sun=bit6). Null/ignored for
+        // monthly staff; null for daily defaults to all seven days.
+        Integer workingDaysMask,
         @Size(max = 2_000) String benefitsSummary,
         @NotNull LocalDate employmentStartDate,
         LocalDate employmentEndDate,

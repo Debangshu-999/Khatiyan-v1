@@ -30,4 +30,7 @@ public interface PropertyLocalPlaceRepository extends JpaRepository<PropertyLoca
             order by place.ownerRecommended desc, place.name asc
             """)
     List<PropertyLocalPlace> findActiveByPropertyId(@Param("propertyId") UUID propertyId);
+
+    /** Active places still missing coordinates — the geo backfill queue. */
+    List<PropertyLocalPlace> findByActiveTrueAndLatitudeIsNull();
 }

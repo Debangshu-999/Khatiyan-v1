@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Image, Text, TextInput, View } from "react-native";
+import { Image, Text, View } from "react-native";
+import { AppTextInput } from "@/components/app-text-input";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   Building2,
   Camera,
@@ -34,7 +35,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function AccountScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const dispatch = useAppDispatch();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
@@ -173,7 +174,7 @@ export default function AccountScreen() {
           ) : (
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.caption, { color: colors.ink, fontWeight: "900" }]}>Recovery email</Text>
-              <TextInput
+              <AppTextInput
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"

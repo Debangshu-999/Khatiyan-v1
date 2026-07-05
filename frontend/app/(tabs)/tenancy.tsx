@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   Banknote,
   CalendarDays,
@@ -20,6 +21,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
+import { SkeletonCard } from "@/components/skeleton";
 import type { BillingCycle } from "@/store/services/billing-api";
 import { useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import {
@@ -36,7 +38,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function TenancyScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams<{ exitRequestCreated?: string; roomChangeRequested?: string }>();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
@@ -93,9 +95,7 @@ export default function TenancyScreen() {
           italicTail="ledger."
           subtitle="Tenancy profile, billing, deposit and requests."
         />
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       </ScreenScrollView>
     );
   }
@@ -146,9 +146,7 @@ export default function TenancyScreen() {
 
           <Section eyebrow="This cycle" title="Billing cycle">
             {cyclesQuery.isFetching ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+              <SkeletonCard />
             ) : currentCycle ? (
               <BillingCycleCard
                 cycle={currentCycle}
@@ -168,9 +166,7 @@ export default function TenancyScreen() {
 
           <Section eyebrow="Deposit manager" title="Deposit snapshot">
             {depositQuery.isFetching ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-              </Card>
+              <SkeletonCard />
             ) : depositQuery.data ? (
               <Card>
                 <View style={{ gap: spacing.md }}>
@@ -232,9 +228,7 @@ export default function TenancyScreen() {
 
       <Section eyebrow="Requests" title="Tenancy requests">
         {exitRequestsQuery.isFetching ? (
-          <Card>
-            <ActivityIndicator color={colors.primary} />
-          </Card>
+          <SkeletonCard />
         ) : (
           <>
             {latestCurrentTenancyRequest ? <RequestHistoryCard request={latestCurrentTenancyRequest} /> : null}

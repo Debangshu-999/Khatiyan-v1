@@ -14,22 +14,22 @@ export function Card({ children, style, tone = "default" }: CardProps) {
   const backgroundColor =
     tone === "sunken" ? colors.surfaceSunken : tone === "raised" ? colors.surfaceRaised : colors.surface;
 
+  // Flat, borderless-of-shadow surfaces: a clear 1px border defines the card
+  // against the near-white page instead of a drop shadow. Sunken/raised tones
+  // sit inside other surfaces so they keep the softer hairline border.
+  const borderColor = tone === "default" ? colors.borderStrong : colors.border;
+
   return (
     <View
       style={[
         {
           backgroundColor,
-          borderColor: colors.border,
+          borderColor,
           borderCurve: "continuous",
           borderRadius: 20,
           borderWidth: 1,
-          elevation: tone === "default" ? 1 : 0,
           gap: spacing.md,
           padding: spacing.lg,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 6, width: 0 },
-          shadowOpacity: tone === "default" ? 1 : 0,
-          shadowRadius: 16,
         },
         style,
       ]}

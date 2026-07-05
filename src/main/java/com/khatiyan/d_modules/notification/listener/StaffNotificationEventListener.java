@@ -7,8 +7,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -32,7 +31,7 @@ public class StaffNotificationEventListener {
         this.propertyModule = propertyModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onStaffMemberAdded(StaffMemberAddedEvent event) {
         notifyManagement(
                 event.propertyId(),
@@ -43,7 +42,7 @@ public class StaffNotificationEventListener {
                 NotificationSubtype.STAFF_ADDED);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onStaffMemberEnded(StaffMemberEndedEvent event) {
         notifyManagement(
                 event.propertyId(),

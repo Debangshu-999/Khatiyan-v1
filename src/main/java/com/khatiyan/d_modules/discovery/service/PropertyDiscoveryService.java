@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -79,12 +81,24 @@ public class PropertyDiscoveryService {
             return PageResponse.of(List.of(), page, size);
         }
 
+        // Geo layer: when the client supplies a search point, distances come
+        // from the database (bounding-box prefilter on the partial btree index,
+        // exact haversine refine). A radius additionally restricts candidates
+        // to coordinated properties inside it.
+        boolean hasSearchPoint = latitude != null && longitude != null;
+        boolean hasRadius = hasSearchPoint && radiusKm != null && radiusKm > 0;
+        Map<UUID, Double> distanceByPropertyId = hasSearchPoint
+                ? visibleDistancesAround(latitude, longitude, radiusKm)
+                : Map.of();
+
         // Candidate pool: every visible property whose owner-set discovery
         // filters match. Region/area matching is layered on top of this.
         List<PropertyDiscoveryCardResponse> candidates = discoveryProfileRepository.findAllVisible()
                 .stream()
-                .map(this::toCardResponseIfPropertyVisible)
+                .map(profile -> toCardResponseIfPropertyVisible(
+                        profile, distanceByPropertyId.get(profile.getPropertyId())))
                 .filter(response -> response != null)
+                .filter(response -> !hasRadius || distanceByPropertyId.containsKey(response.propertyId()))
                 .filter(response -> matchesDiscoveryFilters(
                         response,
                         pgFor,
@@ -99,11 +113,30 @@ public class PropertyDiscoveryService {
                 .toList();
 
         // Region scope = the same state (preferred) or city. This is what the
-        // "nearby" fallback bucket is drawn from. Without a region we can only
-        // honour the free-text/area match (no nearby bucket).
-        boolean hasRegionScope = hasText(state) || hasText(city);
+        // "nearby" fallback bucket is drawn from. When the client sent free text
+        // with no resolved region (area unknown to the location catalog), try to
+        // recognise a city or state inside the typed text itself so the nearby
+        // bucket still works — e.g. "purba putiyari kolkata" scopes to Kolkata
+        // even though the area matches nothing.
+        String resolvedState = state;
+        String resolvedCity = city;
+        String resolvedLocality = locality;
+        if (!hasText(state) && !hasText(city) && hasText(locality)) {
+            RegionInference inference = inferRegionFromText(candidates, locality);
+            if (inference != null) {
+                resolvedCity = inference.city();
+                resolvedState = inference.state();
+                resolvedLocality = inference.remainingLocality();
+                log.info("Discovery search inferred region city={} state={} remainingLocality='{}' from text='{}'",
+                        resolvedCity, resolvedState, resolvedLocality, locality);
+            }
+        }
+
+        boolean hasRegionScope = hasText(resolvedState) || hasText(resolvedCity);
+        String scopeState = resolvedState;
+        String scopeCity = resolvedCity;
         List<PropertyDiscoveryCardResponse> scoped = hasRegionScope
-                ? candidates.stream().filter(response -> matchesRegionScope(response, state, city)).toList()
+                ? candidates.stream().filter(response -> matchesRegionScope(response, scopeState, scopeCity)).toList()
                 : candidates;
 
         // Exact bucket = properties in the searched area. Nearby bucket = the
@@ -115,17 +148,25 @@ public class PropertyDiscoveryService {
                         response, pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes))
                 .reversed();
 
-        boolean hasArea = hasText(locality);
+        // With a search point, closer properties rank first among equal
+        // attribute matches; without one this comparator is neutral.
+        Comparator<PropertyDiscoveryCardResponse> byDistance = hasSearchPoint
+                ? Comparator.<PropertyDiscoveryCardResponse>comparingDouble(
+                        response -> response.distanceKm() == null ? Double.MAX_VALUE : response.distanceKm())
+                : (first, second) -> 0;
+
+        boolean hasArea = hasText(resolvedLocality);
+        String areaText = resolvedLocality;
         List<PropertyDiscoveryCardResponse> exact = (hasArea
-                ? scoped.stream().filter(response -> matchesLocality(response, locality))
+                ? scoped.stream().filter(response -> matchesLocality(response, areaText))
                 : scoped.stream())
-                .sorted(byMatchCount.thenComparing(locationRelevanceComparator(locality, city, state)))
+                .sorted(byMatchCount.thenComparing(byDistance).thenComparing(locationRelevanceComparator(areaText, resolvedCity, resolvedState)))
                 .toList();
 
         List<PropertyDiscoveryCardResponse> nearby = (hasArea && hasRegionScope)
                 ? scoped.stream()
-                        .filter(response -> !matchesLocality(response, locality))
-                        .sorted(byMatchCount.thenComparing(locationRelevanceComparator(null, city, state)))
+                        .filter(response -> !matchesLocality(response, areaText))
+                        .sorted(byMatchCount.thenComparing(byDistance).thenComparing(locationRelevanceComparator(null, resolvedCity, resolvedState)))
                         .toList()
                 : List.of();
 
@@ -171,7 +212,7 @@ public class PropertyDiscoveryService {
         return PropertyDiscoveryDetailResponse.from(
                 property,
                 profile,
-                null,
+                DiscoveryGeoSupport.distanceKm(latitude, longitude, property.latitude(), property.longitude()),
                 directionsUrl,
                 startingRoomRentPaise,
                 owner == null ? null : owner.fullName(),
@@ -325,7 +366,8 @@ public class PropertyDiscoveryService {
         return "Located at " + property.address() + ", " + property.city() + " " + property.pincode() + ".";
     }
 
-    private PropertyDiscoveryCardResponse toCardResponseIfPropertyVisible(PropertyDiscoveryProfile profile) {
+    private PropertyDiscoveryCardResponse toCardResponseIfPropertyVisible(
+            PropertyDiscoveryProfile profile, Double distanceKm) {
         try {
             PropertyResponse property = propertyModule.getActiveProperty(profile.getPropertyId());
             String directionsUrl = DiscoveryGeoSupport.propertyDirectionsUrl(
@@ -342,7 +384,7 @@ public class PropertyDiscoveryService {
             return PropertyDiscoveryCardResponse.from(
                     property,
                     profile,
-                    null,
+                    distanceKm,
                     directionsUrl,
                     startingRoomRentPaise);
         } catch (NotFoundException exception) {
@@ -368,6 +410,33 @@ public class PropertyDiscoveryService {
     // Region scope for the "nearby" fallback: prefer the city so nearby means
     // "elsewhere in the same city", and fall back to the state only when no
     // city is known.
+    /**
+     * Distances from a search point to every visible coordinated property,
+     * bounding-box limited when a radius is given (rides the partial index) and
+     * post-filtered to the exact radius. Insertion order = nearest first.
+     */
+    private Map<UUID, Double> visibleDistancesAround(BigDecimal latitude, BigDecimal longitude, Double radiusKm) {
+        double lat = latitude.doubleValue();
+        double lng = longitude.doubleValue();
+        double minLat = -90, maxLat = 90, minLng = -180, maxLng = 180;
+        if (radiusKm != null && radiusKm > 0) {
+            double latDelta = radiusKm / 111.045d;
+            double lngDelta = radiusKm / (111.320d * Math.max(0.09d, Math.cos(Math.toRadians(lat))));
+            minLat = Math.max(-90, lat - latDelta);
+            maxLat = Math.min(90, lat + latDelta);
+            minLng = Math.max(-180, lng - lngDelta);
+            maxLng = Math.min(180, lng + lngDelta);
+        }
+        Map<UUID, Double> distances = new LinkedHashMap<>();
+        for (PropertyDiscoveryProfileRepository.VisiblePropertyDistance row
+                : discoveryProfileRepository.findVisiblePropertyDistances(lat, lng, minLat, maxLat, minLng, maxLng)) {
+            if (radiusKm == null || radiusKm <= 0 || (row.getDistanceKm() != null && row.getDistanceKm() <= radiusKm)) {
+                distances.put(row.getPropertyId(), row.getDistanceKm());
+            }
+        }
+        return distances;
+    }
+
     private boolean matchesRegionScope(PropertyDiscoveryCardResponse response, String state, String city) {
         if (hasText(city)) {
             return matchesCityText(response, city);
@@ -399,16 +468,19 @@ public class PropertyDiscoveryService {
         // Token-AND match so single-line searches like "Madhapur, Hyderabad"
         // work: each non-empty token must appear in at least one of the
         // searchable fields. Tokens are split on commas and whitespace.
+        // Location fields (area/city/state) match fuzzily — nobody knows the
+        // canonical spelling of every locality ("Putiyari" must find "Putiary");
+        // prose fields and pincode stay exact to avoid false positives.
         String[] rawTokens = locality.trim().toLowerCase().split("[,\\s]+");
         for (String token : rawTokens) {
             if (token.isBlank()) {
                 continue;
             }
 
-            boolean tokenMatched = containsIgnoreCase(response.area(), token)
+            boolean tokenMatched = fuzzyFieldMatch(response.area(), token)
+                    || fuzzyFieldMatch(response.city(), token)
+                    || fuzzyFieldMatch(response.state(), token)
                     || containsIgnoreCase(response.address(), token)
-                    || containsIgnoreCase(response.city(), token)
-                    || containsIgnoreCase(response.state(), token)
                     || containsIgnoreCase(response.pincode(), token)
                     || containsIgnoreCase(response.headline(), token)
                     || containsIgnoreCase(response.description(), token);
@@ -419,6 +491,116 @@ public class PropertyDiscoveryService {
         }
 
         return true;
+    }
+
+    /**
+     * Recognises a known city (preferred) or state inside free search text by
+     * scanning the candidate pool's own location values, so the typed text can
+     * establish a region scope without the location catalog knowing the area.
+     * Tokens are checked right to left — "purba putiyari kolkata" names the
+     * city last. Returns null when nothing in the text looks like a region.
+     */
+    private RegionInference inferRegionFromText(List<PropertyDiscoveryCardResponse> candidates, String text) {
+        List<String> tokens = new ArrayList<>(List.of(text.trim().toLowerCase().split("[,\\s]+")));
+        tokens.removeIf(String::isBlank);
+
+        for (int index = tokens.size() - 1; index >= 0; index--) {
+            String token = tokens.get(index);
+            if (token.length() < 3) {
+                continue;
+            }
+            for (PropertyDiscoveryCardResponse candidate : candidates) {
+                if (fuzzyFieldMatch(candidate.city(), token)) {
+                    return new RegionInference(candidate.city(), null, remainingTokens(tokens, index));
+                }
+            }
+            for (PropertyDiscoveryCardResponse candidate : candidates) {
+                if (fuzzyFieldMatch(candidate.state(), token)) {
+                    return new RegionInference(null, candidate.state(), remainingTokens(tokens, index));
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String remainingTokens(List<String> tokens, int excludedIndex) {
+        StringBuilder remaining = new StringBuilder();
+        for (int index = 0; index < tokens.size(); index++) {
+            if (index == excludedIndex) {
+                continue;
+            }
+            if (remaining.length() > 0) {
+                remaining.append(' ');
+            }
+            remaining.append(tokens.get(index));
+        }
+        return remaining.toString();
+    }
+
+    private record RegionInference(String city, String state, String remainingLocality) {
+    }
+
+    /**
+     * True when the field contains the token, or any single word of the field
+     * is within a small edit distance of it — typo tolerance scaled to token
+     * length so short tokens stay exact.
+     */
+    private static boolean fuzzyFieldMatch(String fieldValue, String token) {
+        if (fieldValue == null || fieldValue.isBlank() || token.isBlank()) {
+            return false;
+        }
+        String normalizedField = fieldValue.toLowerCase();
+        if (normalizedField.contains(token)) {
+            return true;
+        }
+        int allowed = allowedEditDistance(token);
+        if (allowed == 0) {
+            return false;
+        }
+        for (String word : normalizedField.split("[,\\s]+")) {
+            if (!word.isBlank() && editDistanceAtMost(word, token, allowed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int allowedEditDistance(String token) {
+        if (token.length() >= 6) {
+            return 2;
+        }
+        if (token.length() >= 4) {
+            return 1;
+        }
+        return 0;
+    }
+
+    /** Banded Levenshtein: true when distance(a, b) <= max, with early exit. */
+    private static boolean editDistanceAtMost(String a, String b, int max) {
+        if (Math.abs(a.length() - b.length()) > max) {
+            return false;
+        }
+        int[] previous = new int[b.length() + 1];
+        int[] current = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            previous[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            current[0] = i;
+            int rowMin = current[0];
+            for (int j = 1; j <= b.length(); j++) {
+                int substitution = previous[j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1);
+                current[j] = Math.min(substitution, Math.min(previous[j] + 1, current[j - 1] + 1));
+                rowMin = Math.min(rowMin, current[j]);
+            }
+            if (rowMin > max) {
+                return false;
+            }
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+        return previous[b.length()] <= max;
     }
 
     private boolean containsIgnoreCase(String value, String normalizedSearchText) {

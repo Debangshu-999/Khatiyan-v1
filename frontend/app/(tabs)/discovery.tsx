@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Compass } from "lucide-react-native";
+import { Compass, Search } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
@@ -29,10 +30,9 @@ import {
   useListLocationCitiesQuery,
   useListMyLocalPlacesQuery,
   useSearchDiscoveryPropertiesQuery,
-  useSuggestLocationsQuery,
-  type LocationSuggestion,
   type PropertyDiscoveryCard,
 } from "@/store/services/discovery-api";
+import { useLazyReverseGeocodeQuery, useSearchLocationsQuery, type GeoSuggestion } from "@/store/services/geo-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -55,6 +55,14 @@ export default function DiscoveryScreen() {
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedArea, setSelectedArea] = useState("");
+  // Coordinates of the manually picked location (city/area/suggestion). These
+  // drive geo-ranking for manual searches; without them a pick would only be
+  // text-matched and ranked by the device's position (or not at all when the
+  // device location is unknown). City-granular per the location catalog.
+  const [selectedCoords, setSelectedCoords] = useState<{ latitude: number | null; longitude: number | null }>({
+    latitude: null,
+    longitude: null,
+  });
   // Whether the active search came from a manual pick (city/area/suggestion or a
   // typed search) rather than the auto-fetched device location. This decides
   // which location source drives the query so both paths behave identically.
@@ -86,8 +94,14 @@ export default function DiscoveryScreen() {
     setActiveTab(isActiveTenant ? "locations" : "properties");
   }, [isActiveTenant]);
 
+  // Prefill the search with the device-location hint ONCE, when it first becomes
+  // available. Guarding with a ref means clearing the search (which empties both
+  // searchText and submittedSearch) doesn't instantly re-fill the box — the X
+  // stays cleared.
+  const didAutofillHintRef = useRef(false);
   useEffect(() => {
-    if (location.status === "ready" && location.searchHint && !searchText && !submittedSearch.text) {
+    if (!didAutofillHintRef.current && location.status === "ready" && location.searchHint && !searchText && !submittedSearch.text) {
+      didAutofillHintRef.current = true;
       setSearchText(location.searchHint);
       setSubmittedSearch({
         text: location.searchHint,
@@ -116,6 +130,11 @@ export default function DiscoveryScreen() {
       countryCode: manualSelection ? null : location.countryCode,
       locality: searchedArea,
       page,
+      // Coordinates rank results by proximity and light up the distance chips.
+      // A manual pick ranks around the searched location; an auto search around
+      // the device.
+      latitude: manualSelection ? selectedCoords.latitude : location.latitude ?? null,
+      longitude: manualSelection ? selectedCoords.longitude : location.longitude ?? null,
       radiusKm: null,
       pgFor: appliedFilters.pgFor,
       minRentPaise: appliedFilters.minRentPaise,
@@ -128,15 +147,29 @@ export default function DiscoveryScreen() {
       sharingTypes: appliedFilters.sharingTypes,
       size: 50,
     }),
-    [appliedFilters, location.countryCode, manualSelection, page, searchedArea, searchedCity, searchedState],
+    [appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState, selectedCoords.latitude, selectedCoords.longitude],
   );
 
   const citiesQuery = useListLocationCitiesQuery();
   const areasQuery = useListLocationAreasQuery(selectedCity, { skip: !selectedCity });
-  const suggestionsQuery = useSuggestLocationsQuery(debouncedSearchText, {
-    skip: debouncedSearchText.trim().length < 2,
+  // Live geocoder autocomplete — any place, not just the catalog. Biased toward
+  // the device location when it is known so nearby matches rank first.
+  const suggestionsQuery = useSearchLocationsQuery(
+    {
+      q: debouncedSearchText.trim(),
+      nearLat: location.latitude ?? undefined,
+      nearLng: location.longitude ?? undefined,
+    },
+    { skip: debouncedSearchText.trim().length < 2 },
+  );
+  const [reverseGeocode] = useLazyReverseGeocodeQuery();
+  // Nothing is searched until the user picks/types a location or the device
+  // location auto-fills once on load. A cleared search box has no active search,
+  // so we skip the query and show a prompt rather than an unscoped listing.
+  const hasActiveSearch = manualSelection || submittedSearch.text.trim().length > 0;
+  const propertiesQuery = useSearchDiscoveryPropertiesQuery(propertyQueryArgs, {
+    skip: activeTab !== "properties" || !hasActiveSearch,
   });
-  const propertiesQuery = useSearchDiscoveryPropertiesQuery(propertyQueryArgs, { skip: activeTab !== "properties" });
   const detailQuery = useGetDiscoveryPropertyQuery(
     {
       propertyId: selectedPropertyId ?? "",
@@ -168,7 +201,10 @@ export default function DiscoveryScreen() {
       const effectiveText = selectedArea || selectedCity || typed;
       setSubmittedSearch({ text: effectiveText });
       if (!selectedCity && !selectedArea && typed) {
+        // Free-typed text with no picked option — no known coordinates, so the
+        // search falls back to pure text matching.
         setSelectedState("");
+        setSelectedCoords({ latitude: null, longitude: null });
       }
     } else {
       // Search (or re-search) the auto-fetched device location.
@@ -176,9 +212,25 @@ export default function DiscoveryScreen() {
       setSelectedState("");
       setSelectedCity("");
       setSelectedArea("");
+      setSelectedCoords({ latitude: null, longitude: null });
       setSearchText(autoHint);
       setSubmittedSearch({ text: autoHint });
     }
+  }
+
+  // Clearing the search box clears the whole location scope in one action —
+  // text, picked city/area/state and coordinates — so the pills don't linger
+  // after the address is emptied. Falls back to the auto device-location search.
+  function clearSearch() {
+    setManualSelection(false);
+    setSearchText("");
+    setSelectedState("");
+    setSelectedCity("");
+    setSelectedArea("");
+    setSelectedCoords({ latitude: null, longitude: null });
+    setSubmittedSearch(defaultSearch);
+    setSelectedPropertyId(null);
+    setPage(0);
   }
 
   function applyPropertyFilters(filters: PropertyFilterState) {
@@ -194,17 +246,39 @@ export default function DiscoveryScreen() {
     setPage(0);
   }
 
-  function selectSuggestion(suggestion: LocationSuggestion) {
+  async function selectSuggestion(suggestion: GeoSuggestion) {
+    const label = suggestion.name ?? suggestion.address ?? "";
     setManualSelection(true);
-    setSearchText(suggestion.label);
-    setSelectedState(suggestion.state);
-    setSelectedCity(suggestion.city);
-    setSelectedArea(suggestion.area ?? "");
+    setSearchText(label);
     setSelectedPropertyId(null);
     setPage(0);
-    setSubmittedSearch({
-      text: suggestion.area ?? suggestion.city,
-    });
+    setSubmittedSearch({ text: label });
+
+    if (suggestion.latitude == null || suggestion.longitude == null) {
+      // No coordinates — plain text search of the label.
+      setSelectedState("");
+      setSelectedCity("");
+      setSelectedArea(label);
+      setSelectedCoords({ latitude: null, longitude: null });
+      return;
+    }
+
+    // Coordinates rank by distance immediately; resolve the address details
+    // (locality/city/state) so the search is region-scoped — otherwise every
+    // listing in the country would rank in, just farther down.
+    setSelectedCoords({ latitude: suggestion.latitude, longitude: suggestion.longitude });
+    try {
+      const address = await reverseGeocode({ lat: suggestion.latitude, lng: suggestion.longitude }, true).unwrap();
+      setSelectedState(address.state ?? "");
+      setSelectedCity(address.city ?? "");
+      setSelectedArea(address.locality ?? "");
+    } catch {
+      // Reverse lookup failed — fall back to the formatted address text so the
+      // backend can still infer the region from it; coordinates still rank.
+      setSelectedState("");
+      setSelectedCity("");
+      setSelectedArea(suggestion.address ?? label);
+    }
   }
 
   const propertyPage = propertiesQuery.data;
@@ -222,7 +296,21 @@ export default function DiscoveryScreen() {
   const localPlaces = localPlacesQuery.data ?? [];
   const cities = citiesQuery.data ?? [];
   const areas = areasQuery.data ?? [];
-  const suggestions = suggestionsQuery.data ?? [];
+  // The geocoder can return the same place more than once; dedupe so it renders
+  // once and React never sees colliding keys.
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const unique: GeoSuggestion[] = [];
+    for (const item of suggestionsQuery.data ?? []) {
+      const key = item.providerPlaceId ?? `${item.name}|${item.address}|${item.latitude}|${item.longitude}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique;
+  }, [suggestionsQuery.data]);
   const normalizedServiceSearch = debouncedServiceSearch.trim().toLowerCase();
   const filteredLocalPlaces = useMemo(() => {
     if (!normalizedServiceSearch) {
@@ -245,12 +333,7 @@ export default function DiscoveryScreen() {
             showsVerticalScrollIndicator={false}
           >
             {detailQuery.isFetching ? (
-              <Card>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-                  Loading property profile
-                </Text>
-              </Card>
+              <SkeletonScreen tiles={0} rows={2} />
             ) : null}
 
             {detailQuery.data ? (
@@ -296,6 +379,7 @@ export default function DiscoveryScreen() {
               setSelectedArea(area?.area ?? "");
               setSelectedCity(area?.city ?? selectedCity);
               setSelectedState(area?.state ?? selectedState);
+              setSelectedCoords({ latitude: area?.latitude ?? null, longitude: area?.longitude ?? null });
               setSearchText(area ? `${area.area}, ${area.city}` : selectedCity);
               setPage(0);
               setSubmittedSearch({
@@ -307,6 +391,7 @@ export default function DiscoveryScreen() {
               setSelectedCity(city?.city ?? "");
               setSelectedState(city?.state ?? "");
               setSelectedArea("");
+              setSelectedCoords({ latitude: city?.latitude ?? null, longitude: city?.longitude ?? null });
               setSearchText(city?.city ?? "");
               setPage(0);
               setSubmittedSearch({
@@ -317,6 +402,7 @@ export default function DiscoveryScreen() {
               setDraftFilters(appliedFilters);
               setFiltersOpen(true);
             }}
+            onClearSearch={clearSearch}
             onSearch={handleSearch}
             onSearchTextChange={setSearchText}
             onSuggestionSelect={selectSuggestion}
@@ -335,6 +421,8 @@ export default function DiscoveryScreen() {
             visible={filtersOpen}
           />
 
+          {hasActiveSearch ? (
+            <>
           <Card>
             <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
@@ -399,6 +487,10 @@ export default function DiscoveryScreen() {
               ))}
             </>
           ) : null}
+            </>
+          ) : (
+            <EmptySearchPrompt />
+          )}
         </>
       ) : (
         <>
@@ -418,9 +510,7 @@ export default function DiscoveryScreen() {
           ) : null}
 
           {isActiveTenant && localPlacesQuery.isFetching ? (
-            <Card>
-              <ActivityIndicator color={colors.primary} />
-            </Card>
+            <SkeletonList />
           ) : null}
 
           {isActiveTenant && localPlacesQuery.isError ? (
@@ -473,19 +563,137 @@ function splitPropertiesByArea(properties: PropertyDiscoveryCard[], area: string
 }
 
 function matchesAreaTokens(property: PropertyDiscoveryCard, tokens: string[]) {
-  const haystacks = [
-    property.area,
-    property.address,
-    property.city,
-    property.state,
-    property.pincode,
-    property.headline,
-    property.description,
-  ]
+  // Location fields match fuzzily (mirrors the backend's typo tolerance so the
+  // exact/nearby sections split the same way); prose and pincode stay exact.
+  const fuzzyHaystacks = [property.area, property.city, property.state]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+  const exactHaystacks = [property.address, property.pincode, property.headline, property.description]
     .filter((value): value is string => Boolean(value))
     .map((value) => value.toLowerCase());
 
-  return tokens.every((token) => haystacks.some((value) => value.includes(token)));
+  return tokens.every(
+    (token) =>
+      fuzzyHaystacks.some((value) => fuzzyFieldMatch(value, token)) ||
+      exactHaystacks.some((value) => value.includes(token)),
+  );
+}
+
+// True when the field contains the token, or any single word of the field is
+// within a small edit distance of it — thresholds identical to the backend.
+function fuzzyFieldMatch(normalizedField: string, token: string) {
+  if (normalizedField.includes(token)) {
+    return true;
+  }
+  const allowed = token.length >= 6 ? 2 : token.length >= 4 ? 1 : 0;
+  if (allowed === 0) {
+    return false;
+  }
+  return normalizedField.split(/[,\s]+/).some((word) => word.length > 0 && editDistanceAtMost(word, token, allowed));
+}
+
+function editDistanceAtMost(a: string, b: string, max: number) {
+  if (Math.abs(a.length - b.length) > max) {
+    return false;
+  }
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(substitution, previous[j] + 1, current[j - 1] + 1);
+      rowMin = Math.min(rowMin, current[j]);
+    }
+    if (rowMin > max) {
+      return false;
+    }
+    previous = current;
+  }
+  return previous[b.length] <= max;
+}
+
+// Shown on the properties tab when nothing is searched (initial no-location
+// state, or after the search box is cleared). A magnifying glass sits inside a
+// soft badge with a looping "sonar ping" ring, over a large centred prompt.
+function EmptySearchPrompt() {
+  const { colors, fonts, type } = useTheme();
+  const pulse = useRef(new Animated.Value(0)).current;
+  const bob = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1900, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    );
+    const bobLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(bob, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    pulseLoop.start();
+    bobLoop.start();
+    return () => {
+      pulseLoop.stop();
+      bobLoop.stop();
+    };
+  }, [pulse, bob]);
+
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.9] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.12, 1], outputRange: [0, 0.4, 0] });
+  const iconTranslateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
+
+  return (
+    <View style={{ alignItems: "center", gap: spacing.lg, justifyContent: "center", paddingVertical: spacing.xxl }}>
+      <View style={{ alignItems: "center", height: 150, justifyContent: "center", width: 150 }}>
+        <Animated.View
+          style={{
+            borderColor: colors.primary,
+            borderRadius: 999,
+            borderWidth: 2,
+            height: 128,
+            opacity: ringOpacity,
+            position: "absolute",
+            transform: [{ scale: ringScale }],
+            width: 128,
+          }}
+        />
+        <Animated.View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.primarySoft,
+            borderColor: colors.primary,
+            borderRadius: 999,
+            borderWidth: 1,
+            height: 104,
+            justifyContent: "center",
+            transform: [{ translateY: iconTranslateY }],
+            width: 104,
+          }}
+        >
+          <Search color={colors.primary} size={44} strokeWidth={2.4} />
+        </Animated.View>
+      </View>
+      <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg }}>
+        <Text
+          style={{
+            color: colors.ink,
+            fontFamily: fonts.display,
+            fontSize: 23,
+            fontWeight: "600",
+            letterSpacing: -0.3,
+            textAlign: "center",
+          }}
+          selectable
+        >
+          Search a place to see listings
+        </Text>
+        <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]} selectable>
+          Enter a city, area or place above to find properties nearby.
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function DiscoveryHeaderIcon() {

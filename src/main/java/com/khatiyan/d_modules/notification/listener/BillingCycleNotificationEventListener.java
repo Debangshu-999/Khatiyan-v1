@@ -4,8 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
@@ -27,7 +26,7 @@ public class BillingCycleNotificationEventListener {
         this.notificationModule = notificationModule;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onBillingCycleGenerated(BillingCycleGeneratedEvent event) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
@@ -50,7 +49,7 @@ public class BillingCycleNotificationEventListener {
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @ApplicationModuleListener
     public void onBillingLateFeeApplied(BillingLateFeeAppliedEvent event) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());

@@ -1,8 +1,9 @@
 import { Text, View } from "react-native";
-import { BedDouble, CalendarDays } from "lucide-react-native";
+import { BedDouble, CalendarDays, LogOut } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { ActionButton } from "@/features/owner/owner-ui";
 import type { TenancySummary } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -35,19 +36,13 @@ export function TenancyListTabs({
             style={{
               alignItems: "center",
               backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.border : "transparent",
+              borderColor: selected ? colors.borderStrong : "transparent",
               borderCurve: "continuous",
               borderRadius: 13,
               borderWidth: 1,
-              // Raised selected segment on the sunken track — a soft 3D pop.
-              elevation: selected ? 5 : 0,
               flex: 1,
               justifyContent: "center",
               minHeight: 46,
-              shadowColor: isDark ? "#000000" : "#0F172A",
-              shadowOffset: { height: 3, width: 0 },
-              shadowOpacity: selected ? (isDark ? 0.4 : 0.13) : 0,
-              shadowRadius: 8,
             }}
           >
             <Text style={{ color: selected ? colors.ink : colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: selected ? "900" : "700" }} selectable>
@@ -61,10 +56,14 @@ export function TenancyListTabs({
 }
 
 export function ActiveTenancyCard({
+  ending = false,
+  onEndTenancy,
   onOpen,
   roomLabel,
   tenancy,
 }: {
+  ending?: boolean;
+  onEndTenancy: () => void;
   onOpen: () => void;
   roomLabel: string | null;
   tenancy: TenancySummary;
@@ -75,6 +74,14 @@ export function ActiveTenancyCard({
     ? tenancy.dailyRatePaise ?? tenancy.rentAmountPaise ?? 0
     : tenancy.rentAmountPaise ?? tenancy.dailyRatePaise ?? 0;
   const rentSuffix = tenancy.billingType === "DAILY" ? "/ day" : "/ month";
+  // The exit scheduler only executes monthly approved exits; daily stays (and any
+  // stay whose end date has slipped) need a manual close. Active daily stays keep
+  // their checkout in plannedEndDate; monthly stays on notice carry it in endDate.
+  // Enable the button on or after that date, and flag "Past due" once it has passed.
+  const today = todayLocalISO();
+  const endDate = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
+  const canEnd = endDate != null && endDate <= today;
+  const pastDue = endDate != null && endDate < today;
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
@@ -94,14 +101,39 @@ export function ActiveTenancyCard({
                   {tenancy.tenantPhone || "Phone unavailable"}
                 </Text>
               </View>
-              <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]} selectable>
-                {humanizeToken(tenancy.status)}
-              </Text>
+              <View style={{ alignItems: "flex-end", gap: 4 }}>
+                <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]} selectable>
+                  {humanizeToken(tenancy.status)}
+                </Text>
+                {pastDue ? (
+                  <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+                    <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+                      Past due
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
             <TenancyDetail label="Room" value={roomLabel ?? "Unavailable"} />
             <TenancyDetail label="Rent" value={`${formatMoneyPaise(rentAmount)} ${rentSuffix}`} />
             <TenancyDetail label="Started" value={formatDate(tenancy.startDate)} />
           </View>
+        </View>
+        <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton
+              disabled={!canEnd || ending}
+              icon={LogOut}
+              label={ending ? "Ending…" : "End tenancy"}
+              onPress={onEndTenancy}
+              variant="danger"
+            />
+          </View>
+          {!canEnd ? (
+            <Text style={[type.caption, { color: colors.muted }]} selectable>
+              {endDate ? `Can be ended on ${formatDate(endDate)}.` : "Available once an end date is set."}
+            </Text>
+          ) : null}
         </View>
       </Card>
     </AnimatedPressable>
@@ -180,6 +212,15 @@ function TenancyDetail({ compact = false, label, value }: { compact?: boolean; l
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+}
+
+// Local calendar date as YYYY-MM-DD so it compares directly against the backend's
+// ISO LocalDate strings (lexicographic order matches chronological order).
+function todayLocalISO() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 function formatMoneyPaise(value: number) {

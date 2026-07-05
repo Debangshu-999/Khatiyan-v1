@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View } from "react-native";
 import { Building2, Pin, PinOff, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -10,6 +10,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { OWNER_MODULES, type OwnerModuleRoute } from "@/features/owner/owner-modules";
 import { savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -20,7 +21,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const dispatch = useAppDispatch();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -64,9 +65,7 @@ export default function OwnerScreen() {
       />
 
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : null}
 
       {!propertiesQuery.isFetching && properties.length === 0 ? (
@@ -163,18 +162,11 @@ function ServiceCard({
       onPress={onPress}
       style={{
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: 20,
         borderWidth: 1,
-        // 3D lift so the service cards stand off the background, especially in
-        // light mode.
-        elevation: 6,
         padding: spacing.lg,
-        shadowColor: isDark ? "#000000" : "#0F172A",
-        shadowOffset: { height: 6, width: 0 },
-        shadowOpacity: isDark ? 0.45 : 0.14,
-        shadowRadius: 14,
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>

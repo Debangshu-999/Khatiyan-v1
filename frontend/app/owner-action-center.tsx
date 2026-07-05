@@ -1,60 +1,78 @@
-import { useEffect, useRef, type ComponentType, type ReactNode } from "react";
-import { useRouter } from "expo-router";
-import { ActivityIndicator, Animated, Easing, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { Animated, Easing, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Repeat2, type LucideProps } from "lucide-react-native";
+import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { LedgerRow } from "@/components/ledger-row";
+import { Skeleton, SkeletonRow } from "@/components/skeleton";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
-import { BackButton } from "@/features/owner/owner-ui";
+import { BackButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
-import { type AttentionSummary, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
+import { type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
+import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type ActionRoute = "/owner-billing" | "/owner-concerns" | "/owner-exit-requests" | "/owner-room-change-requests" | "/owner-tenancy";
-type ActionSource = "billing" | "concern" | "tenancy";
+type ActionRoute =
+  | "/owner-billing"
+  | "/owner-concerns"
+  | "/owner-exit-requests"
+  | "/owner-expenses"
+  | "/owner-room-change-requests"
+  | "/owner-tenancy";
+type ActionSource = "billing" | "concern" | "tenancy" | "budget";
+type ActionFilter = ActionSource | "all";
+type ActionTone = "primary" | "warning" | "danger";
 
 type ActionItem = {
-  count: number;
+  badge: string;
+  detail: string;
+  emphasize: boolean;
   icon: ComponentType<LucideProps>;
   key: string;
   label: string;
   route: ActionRoute;
   source: ActionSource;
-  urgent: boolean;
+  tone: ActionTone;
 };
 
-const ACTION_CENTER_SECTIONS: Array<{
-  empty: string;
-  key: ActionSource;
-  title: string;
-}> = [
-  { empty: "No billing actions pending.", key: "billing", title: "Billing" },
-  { empty: "No concern actions pending.", key: "concern", title: "Concerns" },
-  { empty: "No tenancy actions pending.", key: "tenancy", title: "Tenancy" },
+const FILTERS: Array<{ key: ActionFilter; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "budget", label: "Budget" },
+  { key: "billing", label: "Billing" },
+  { key: "concern", label: "Concerns" },
+  { key: "tenancy", label: "Tenancy" },
 ];
 
+const TONE_RANK: Record<ActionTone, number> = { danger: 0, warning: 1, primary: 2 };
+
 export default function OwnerActionCenterScreen() {
-  const router = useRouter();
-  const { colors, type } = useTheme();
+  const router = useGuardedRouter();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const dashboardQuery = useGetOwnerDashboardQuery(selectedPropertyId ?? "", { skip: !selectedPropertyId });
   const dashboard = dashboardQuery.data;
-  const actionItems = dashboard ? buildActionItems(dashboard.attention) : [];
+
+  const actionItems = useMemo(() => (dashboard ? buildActionItems(dashboard) : []), [dashboard]);
+  const [filter, setFilter] = useState<ActionFilter>("all");
+
+  const filters = FILTERS.map((entry) => ({
+    ...entry,
+    count: entry.key === "all" ? actionItems.length : actionItems.filter((item) => item.source === entry.key).length,
+  }));
+  const visibleItems = filter === "all" ? actionItems : actionItems.filter((item) => item.source === filter);
+  const activeLabel = FILTERS.find((entry) => entry.key === filter)?.label ?? "All";
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Owner tool"
         title="Action"
         italicTail="center."
-        subtitle="Pending operational work grouped by source. Each row opens the screen where the action is handled."
+        subtitle="Everything that needs your attention in one continuous list. Filter by topic or scan them all."
       />
 
       {!selectedPropertyId ? (
@@ -67,137 +85,143 @@ export default function OwnerActionCenterScreen() {
       ) : null}
 
       {selectedPropertyId && dashboardQuery.isFetching && !dashboard ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-            Loading actions
-          </Text>
-        </Card>
+        <View style={{ gap: spacing.lg }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <Skeleton height={32} radius={999} width={64} />
+            <Skeleton height={32} radius={999} width={88} />
+            <Skeleton height={32} radius={999} width={82} />
+          </View>
+          <View style={{ gap: spacing.sm }}>
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </View>
+        </View>
       ) : null}
 
       {selectedPropertyId && dashboard ? (
         <View style={{ gap: spacing.lg }}>
-          {ACTION_CENTER_SECTIONS.map((section) => (
-            <ActionCenterSourceSection
-              empty={section.empty}
-              items={actionItemsForSource(actionItems, section.key)}
-              key={section.key}
-              onNavigate={(route) => router.push(route)}
-              title={section.title}
-              total={actionCountForSource(actionItems, section.key)}
+          <FilterBar activeKey={filter} filters={filters} onSelect={setFilter} />
+
+          {visibleItems.length === 0 ? (
+            <EmptyState
+              icon={Check}
+              eyebrow="All clear"
+              title={filter === "all" ? "You're all caught up" : `No ${activeLabel.toLowerCase()} actions`}
+              description={
+                filter === "all"
+                  ? "Nothing pending across billing, concerns, tenancy or budget right now."
+                  : `Nothing in ${activeLabel} needs attention at the moment.`
+              }
             />
-          ))}
+          ) : (
+            <View style={{ gap: spacing.sm }}>
+              {visibleItems.map((item) => (
+                <MovingBorder active={item.emphasize} fill={false} key={item.key}>
+                  <ActionRow item={item} onPress={() => router.push(item.route)} />
+                </MovingBorder>
+              ))}
+            </View>
+          )}
         </View>
       ) : null}
     </ScreenScrollView>
   );
 }
 
-function buildActionItems(attention: AttentionSummary): ActionItem[] {
-  return [
-    { count: attention.paymentsOverdue, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", urgent: true },
-    { count: attention.escalatedConcerns, icon: AlertTriangle, key: "escalated", label: "Escalated concerns", route: "/owner-concerns", source: "concern", urgent: true },
-    { count: attention.concernsUnattended24h, icon: AlertCircle, key: "unattended", label: "Concerns unattended 24h+", route: "/owner-concerns", source: "concern", urgent: false },
-    { count: attention.pendingExitRequests, icon: DoorOpen, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", source: "tenancy", urgent: false },
-    { count: attention.pendingRoomChangeRequests, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", urgent: false },
-    { count: attention.upcomingExits, icon: DoorOpen, key: "upcoming", label: "Upcoming exits", route: "/owner-exit-requests", source: "tenancy", urgent: false },
-    { count: attention.tenantsOnNotice, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", urgent: false },
-  ];
+function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
+  const attention = dashboard.attention;
+  const items: ActionItem[] = [];
+
+  if (attention.paymentsOverdue > 0) {
+    items.push({ badge: String(attention.paymentsOverdue), detail: "Awaiting collection", emphasize: true, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", tone: "danger" });
+  }
+
+  if (attention.escalatedConcerns > 0) {
+    items.push({ badge: String(attention.escalatedConcerns), detail: "Needs owner attention", emphasize: true, icon: AlertTriangle, key: "escalated", label: "Escalated concerns", route: "/owner-concerns", source: "concern", tone: "danger" });
+  }
+  if (attention.concernsUnattended24h > 0) {
+    items.push({ badge: String(attention.concernsUnattended24h), detail: "No action in over a day", emphasize: false, icon: AlertCircle, key: "unattended", label: "Concerns unattended 24h+", route: "/owner-concerns", source: "concern", tone: "warning" });
+  }
+
+  if (attention.exitsPastDue > 0) {
+    items.push({ badge: String(attention.exitsPastDue), detail: "Checkout date has passed", emphasize: true, icon: DoorOpen, key: "past-due-exits", label: "Exits past due", route: "/owner-tenancy", source: "tenancy", tone: "danger" });
+  }
+  if (attention.pendingExitRequests > 0) {
+    items.push({ badge: String(attention.pendingExitRequests), detail: "Awaiting your review", emphasize: false, icon: DoorOpen, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", source: "tenancy", tone: "primary" });
+  }
+  if (attention.pendingRoomChangeRequests > 0) {
+    items.push({ badge: String(attention.pendingRoomChangeRequests), detail: "Awaiting your review", emphasize: false, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", tone: "primary" });
+  }
+  if (attention.upcomingExits > 0) {
+    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: DoorOpen, key: "upcoming", label: "Upcoming exits", route: "/owner-exit-requests", source: "tenancy", tone: "primary" });
+  }
+  if (attention.tenantsOnNotice > 0) {
+    items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });
+  }
+
+  // Optional-chained: a cached / pre-upgrade dashboard response has no budget.
+  const budget = dashboard.budget;
+  if (budget?.level === "EXCEEDED") {
+    items.push({
+      badge: `+${formatMoneyPaise(budget.overPaise)}`,
+      detail: `${formatMoneyPaise(budget.spentPaise)} of ${formatMoneyPaise(budget.effectiveBudgetPaise)}`,
+      emphasize: true,
+      icon: AlertTriangle,
+      key: "budget-exceeded",
+      label: "Budget exceeded",
+      route: "/owner-expenses",
+      source: "budget",
+      tone: "danger",
+    });
+  } else if (budget?.level === "APPROACHING") {
+    items.push({
+      badge: `${formatMoneyPaise(budget.remainingPaise)} left`,
+      detail: `${formatMoneyPaise(budget.spentPaise)} of ${formatMoneyPaise(budget.effectiveBudgetPaise)}`,
+      emphasize: false,
+      icon: Wallet,
+      key: "budget-approaching",
+      label: "Budget nearing limit",
+      route: "/owner-expenses",
+      source: "budget",
+      tone: "warning",
+    });
+  }
+
+  return items.sort((first, second) => TONE_RANK[first.tone] - TONE_RANK[second.tone]);
 }
 
-function actionItemsForSource(items: ActionItem[], source: ActionSource) {
-  return items.filter((item) => item.source === source && item.count > 0);
+function toneColors(colors: ThemeColors, tone: ActionTone) {
+  if (tone === "danger") return { accent: colors.danger, soft: colors.dangerSoft };
+  if (tone === "warning") return { accent: colors.warningText, soft: colors.warningSoft };
+  return { accent: colors.primary, soft: colors.primarySoft };
 }
 
-function actionCountForSource(items: ActionItem[], source: ActionSource) {
-  return actionItemsForSource(items, source).reduce((total, item) => total + item.count, 0);
-}
-
-function ActionCenterSourceSection({
-  empty,
-  items,
-  onNavigate,
-  title,
-  total,
+function FilterBar({
+  activeKey,
+  filters,
+  onSelect,
 }: {
-  empty: string;
-  items: ActionItem[];
-  onNavigate: (route: ActionRoute) => void;
-  title: string;
-  total: number;
+  activeKey: ActionFilter;
+  filters: Array<{ count: number; key: ActionFilter; label: string }>;
+  onSelect: (key: ActionFilter) => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-
   return (
-    <Section eyebrow={`${total} pending`} title={title}>
-      <View
-        style={{
-          backgroundColor: colors.surfaceSunken,
-          borderColor: colors.border,
-          borderRadius: 16,
-          borderWidth: 1,
-          gap: spacing.sm,
-          padding: spacing.md,
-        }}
-      >
-        {items.length === 0 ? (
-          <Card tone="sunken">
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Check color={colors.successText} size={18} strokeWidth={2.4} />
-              <Text style={[type.body, { color: colors.muted }]} selectable>
-                {empty}
-              </Text>
-            </View>
-          </Card>
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {items.map((item) => (
-              <MovingBorder key={item.key} active={item.key === "escalated" && item.count > 0} fill={false}>
-                <ActionRow
-                  count={item.count}
-                  icon={item.icon}
-                  label={item.label}
-                  onPress={() => onNavigate(item.route)}
-                  urgent={item.urgent}
-                />
-              </MovingBorder>
-            ))}
-          </View>
-        )}
-
-        <Text
-          style={{
-            color: total > 0 ? colors.primary : colors.muted,
-            fontFamily: fonts.sans,
-            fontSize: 12,
-            fontVariant: ["tabular-nums"],
-            fontWeight: "900",
-            textAlign: "right",
-          }}
-          selectable
-        >
-          {total} total
-        </Text>
-      </View>
-    </Section>
+    <ScrollView
+      contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.md }}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+    >
+      {filters.map((entry) => (
+        <FilterPill active={entry.key === activeKey} count={entry.count} key={entry.key} label={entry.label} onPress={() => onSelect(entry.key)} />
+      ))}
+    </ScrollView>
   );
 }
 
-function ActionRow({
-  count,
-  icon: Icon,
-  label,
-  onPress,
-  urgent,
-}: {
-  count: number;
-  icon: ComponentType<LucideProps>;
-  label: string;
-  onPress: () => void;
-  urgent: boolean;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const accent = urgent ? colors.danger : colors.primary;
+function FilterPill({ active, count, label, onPress }: { active: boolean; count: number; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
 
   return (
     <AnimatedPressable
@@ -205,40 +229,58 @@ function ActionRow({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 14,
+        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        borderColor: active ? colors.primary : colors.border,
+        borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.md,
+        gap: 6,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm - 2,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: urgent ? colors.dangerSoft : colors.primarySoft,
-          borderRadius: 12,
-          height: 40,
-          justifyContent: "center",
-          width: 40,
-        }}
-      >
-        <Icon color={accent} size={19} strokeWidth={2.2} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
-          {label}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
-          Tap to open action screen
-        </Text>
-      </View>
-      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
-        {count}
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+        {label}
       </Text>
-      <ChevronRight color={colors.kicker} size={18} strokeWidth={2.2} />
+      {count > 0 ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: active ? colors.onPrimary : colors.primary,
+            borderRadius: 999,
+            height: 18,
+            justifyContent: "center",
+            minWidth: 18,
+            paddingHorizontal: 5,
+          }}
+        >
+          <Text style={{ color: active ? colors.primary : colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "900" }} selectable>
+            {count}
+          </Text>
+        </View>
+      ) : null}
     </AnimatedPressable>
+  );
+}
+
+function ActionRow({ item, onPress }: { item: ActionItem; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const palette = toneColors(colors, item.tone);
+
+  return (
+    <LedgerRow
+      caption={item.detail}
+      icon={item.icon}
+      iconBackground={palette.soft}
+      iconColor={palette.accent}
+      onPress={onPress}
+      title={item.label}
+      trailing={
+        <Text numberOfLines={1} style={{ color: palette.accent, fontFamily: fonts.display, fontSize: 16, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+          {item.badge}
+        </Text>
+      }
+    />
   );
 }
 

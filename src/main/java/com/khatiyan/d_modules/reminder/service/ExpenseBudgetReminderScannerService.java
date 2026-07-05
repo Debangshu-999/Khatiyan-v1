@@ -71,7 +71,7 @@ public class ExpenseBudgetReminderScannerService {
                     today,
                     exceeded ? "Monthly budget exceeded" : "Monthly budget almost reached",
                     body(property.name(), candidate, exceeded),
-                    NotificationCategory.PROPERTY,
+                    NotificationCategory.EXPENSE,
                     NotificationPriority.HIGH,
                     NotificationDeliveryMode.IN_APP_AND_PUSH,
                     NotificationAudience.MANAGEMENT);

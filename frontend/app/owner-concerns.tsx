@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AlertCircle, Activity, Clock3, Eye, Image as ImageIcon, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -11,6 +11,7 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SkeletonCard } from "@/components/skeleton";
 import { ActionButton, BackButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -36,7 +37,7 @@ function myTabHeadingText(tab: MyTab) {
 }
 
 export default function OwnerConcernsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
@@ -100,8 +101,7 @@ export default function OwnerConcernsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader
+      <ScreenHeader onBack={() => router.back()}
         eyebrow="Owner concern"
         title="Concern"
         italicTail="queue."
@@ -257,18 +257,13 @@ function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void
             style={{
               alignItems: "center",
               backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.border : "transparent",
+              borderColor: selected ? colors.borderStrong : "transparent",
               borderCurve: "continuous",
               borderRadius: 13,
               borderWidth: 1,
-              elevation: selected ? 5 : 0,
               flex: 1,
               justifyContent: "center",
               minHeight: 46,
-              shadowColor: isDark ? "#000000" : "#0F172A",
-              shadowOffset: { height: 3, width: 0 },
-              shadowOpacity: selected ? (isDark ? 0.4 : 0.13) : 0,
-              shadowRadius: 8,
             }}
           >
             <Text
@@ -389,7 +384,7 @@ function QueueWindow({ children, loading }: { children: React.ReactNode; loading
   return (
     <View style={{ borderColor: colors.border, borderRadius: 18, borderWidth: 1, maxHeight: 520, overflow: "hidden" }}>
       {loading ? (
-        <Card><ActivityIndicator color={colors.primary} /></Card>
+        <SkeletonCard />
       ) : (
         <ScrollView contentContainerStyle={{ gap: spacing.md, padding: spacing.md }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
           {children}
@@ -462,7 +457,7 @@ function HistoryModal({
             <IconButton accessibilityLabel="Close property history" icon={X} onPress={onClose} />
           </View>
           {query.isFetching && !pageData ? (
-            <Card><ActivityIndicator color={colors.primary} /></Card>
+            <SkeletonCard />
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
               {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => onOpen(concern)} />) : null}

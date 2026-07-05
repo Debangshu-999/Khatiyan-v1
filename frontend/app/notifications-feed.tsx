@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View } from "react-native";
 import { ArchiveRestore, BellOff, ChevronRight, X } from "lucide-react-native";
 
@@ -9,6 +10,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SkeletonCard } from "@/components/skeleton";
 import { NotificationRow } from "@/features/notifications/notification-row";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -22,7 +24,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function NotificationsFeedScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const user = useAppSelector((state) => state.auth.user);
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
@@ -124,9 +126,7 @@ export default function NotificationsFeedScreen() {
       />
 
       {isLoading ? (
-        <Card>
-          <ActivityIndicator color={colors.primary} />
-        </Card>
+        <SkeletonCard />
       ) : null}
 
       {isError ? (
