@@ -1,5 +1,6 @@
-import { Text, View, type ViewStyle } from "react-native";
+import { View, type ViewStyle } from "react-native";
 
+import { MarqueeText } from "@/components/marquee-text";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -30,13 +31,18 @@ export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) 
           alignSelf: "flex-start",
           backgroundColor: selected.background,
           borderRadius: 999,
+          // Never squeeze the sibling title out of a card header: the pill
+          // yields instead, and a squeezed label scrolls (marquee) so the full
+          // status stays readable.
+          flexShrink: 1,
+          maxWidth: "100%",
           paddingHorizontal: spacing.sm,
           paddingVertical: 5,
         },
         style,
       ]}
     >
-      <Text
+      <MarqueeText
         style={[
           type.eyebrow,
           {
@@ -45,10 +51,9 @@ export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) 
             letterSpacing: 1.2,
           },
         ]}
-        selectable
       >
         {label}
-      </Text>
+      </MarqueeText>
     </View>
   );
 }

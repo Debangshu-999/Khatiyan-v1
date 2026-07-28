@@ -17,6 +17,7 @@ import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
+import com.khatiyan.d_modules.billing.api.dto.SettleDepositWithDamagesRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
@@ -257,6 +258,12 @@ public class BillingModule {
         return depositManagerService.getForManagedTenancy(actorUserId, tenancyId);
     }
 
+    /** Count of deposit accounts awaiting settlement on a property (action center). */
+    public long countPropertyDepositsPendingSettlement(UUID actorUserId, UUID propertyId) {
+        return depositManagerService.countByPropertyAndStatus(
+                actorUserId, propertyId, com.khatiyan.d_modules.billing.model.DepositAccountStatus.PENDING_SETTLEMENT);
+    }
+
     public com.khatiyan.c_shared.api.PageResponse<DepositAccountResponse> listPropertyDepositAccounts(
             UUID actorUserId,
             UUID propertyId,
@@ -285,8 +292,18 @@ public class BillingModule {
         return depositManagerService.settleDeposit(actorUserId, tenancyId, reason);
     }
 
-    public void settleDepositForExecutedExit(UUID actorUserId, UUID tenancyId) {
-        depositManagerService.settleForExecutedExit(actorUserId, tenancyId);
+    /**
+     * Settles a deposit with selected property damage charges + custom charges,
+     * then closes the account. Used by the on-spot settlement screen.
+     */
+    public DepositAccountResponse settleDepositWithDamages(
+            UUID actorUserId, UUID tenancyId, SettleDepositWithDamagesRequest request) {
+        return depositManagerService.settleWithDamages(actorUserId, tenancyId, request);
+    }
+
+    /** Parks the deposit in PENDING_SETTLEMENT when a tenancy exit is executed. */
+    public void markDepositPendingSettlementForExit(UUID actorUserId, UUID tenancyId) {
+        depositManagerService.markPendingSettlementForExit(actorUserId, tenancyId);
     }
 
     public BillingCycleResponse recordPaymentSuccess(UUID actorUserId, UUID billingCycleId, long paidAmountPaise) {
@@ -308,6 +325,14 @@ public class BillingModule {
             UUID tenancyId,
             Long approvedTotalAmountPaise) {
         return billingCycleService.applyExitApprovalTotal(actorUserId, tenancyId, approvedTotalAmountPaise);
+    }
+
+    /**
+     * Charges an approved early-exit penalty onto the current bill, or as a new
+     * one-off bill if the current cycle is already paid.
+     */
+    public BillingCycleResponse applyEarlyExitPenalty(UUID actorUserId, UUID tenancyId, long penaltyPaise) {
+        return billingCycleService.applyEarlyExitPenalty(actorUserId, tenancyId, penaltyPaise);
     }
 
     public DepositAccountResponse deductDepositForExitApproval(

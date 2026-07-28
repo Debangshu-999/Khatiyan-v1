@@ -23,10 +23,12 @@ import lombok.extern.slf4j.Slf4j;
 public class OtpDeliveryService {
 
     private final Map<OtpDeliveryProviderType, OtpDeliveryProvider> providers;
+    private final AsyncOtpDelivery asyncOtpDelivery;
 
-    public OtpDeliveryService(List<OtpDeliveryProvider> providers) {
+    public OtpDeliveryService(List<OtpDeliveryProvider> providers, AsyncOtpDelivery asyncOtpDelivery) {
         this.providers = new EnumMap<>(OtpDeliveryProviderType.class);
         providers.forEach(provider -> this.providers.put(provider.type(), provider));
+        this.asyncOtpDelivery = asyncOtpDelivery;
     }
 
     /**
@@ -46,12 +48,14 @@ public class OtpDeliveryService {
             case SMS -> deliverSms(phone, otp, purpose);
             case SMS_AND_WHATSAPP -> {
                 deliverSms(phone, otp, purpose);
-                deliverWhatsappBestEffort(phone, otp, purpose);
+                // Fire-and-forget on a background thread so a slow secondary
+                // channel never delays the response after SMS is delivered.
+                asyncOtpDelivery.deliverWhatsappBestEffort(phone, otp, purpose);
             }
             case EMAIL -> deliverEmail(email, otp, purpose);
             case SMS_AND_EMAIL -> {
                 deliverSms(phone, otp, purpose);
-                deliverEmailBestEffort(email, otp, purpose);
+                asyncOtpDelivery.deliverEmailBestEffort(email, otp, purpose);
             }
         }
     }
@@ -74,47 +78,6 @@ public class OtpDeliveryService {
             // still surfaces as a generic 500 so SMTP details never reach the user.
             log.error("Email OTP delivery failed email={} purpose={} reason={}", email, purpose, e.getMessage());
             throw e;
-        }
-    }
-
-    private void deliverWhatsappBestEffort(String phone, String otp, OtpPurpose purpose) {
-        OtpDeliveryProvider whatsappProvider = providers.get(OtpDeliveryProviderType.WHATSAPP);
-        if (whatsappProvider == null) {
-            log.warn("WhatsApp OTP provider is not configured phone={} purpose={}", phone, purpose);
-            return;
-        }
-
-        try {
-            whatsappProvider.sendOtp(phone, otp, purpose);
-        } catch (RuntimeException e) {
-            log.warn(
-                    "WhatsApp OTP delivery failed after SMS delivery phone={} purpose={} reason={}",
-                    phone,
-                    purpose,
-                    e.getMessage());
-        }
-    }
-
-    private void deliverEmailBestEffort(String email, String otp, OtpPurpose purpose) {
-        if (email == null || email.isBlank()) {
-            log.warn("Email OTP delivery skipped because recipient is missing purpose={}", purpose);
-            return;
-        }
-
-        OtpDeliveryProvider emailProvider = providers.get(OtpDeliveryProviderType.EMAIL);
-        if (emailProvider == null) {
-            log.warn("Email OTP provider is not configured email={} purpose={}", email, purpose);
-            return;
-        }
-
-        try {
-            emailProvider.sendOtp(email, otp, purpose);
-        } catch (RuntimeException e) {
-            log.warn(
-                    "Email OTP delivery failed after SMS delivery email={} purpose={} reason={}",
-                    email,
-                    purpose,
-                    e.getMessage());
         }
     }
 

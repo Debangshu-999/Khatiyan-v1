@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Size;
 
 public record RegisterUserRequest(
     @NotBlank @Size(max = 15) String phone,
-    @NotBlank @Email @Size(max = 254) String email,
+    // Recovery email is optional for tenants — they can add it later in profile.
+    // Still validated as an email when a value is provided (@Email allows blank).
+    @Email @Size(max = 254) String email,
     @NotBlank @Size(max = 120) String fullName
 ) {}

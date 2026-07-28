@@ -5,6 +5,11 @@ type AuthUser = {
   referenceCode?: string;
   phone: string;
   fullName: string;
+  // Optional because the backend omits null fields entirely, so an absent photo
+  // arrives as undefined rather than null.
+  profilePhotoUrl?: string | null;
+  email?: string | null;
+  emailVerified?: boolean;
   role: "USER" | "OWNER" | "TENANT";
   activeTenant: boolean;
   active?: boolean;

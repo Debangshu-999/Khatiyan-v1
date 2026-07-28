@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Building2, EyeOff, Globe, Pencil, X } from "lucide-react-native";
+import { BedDouble, Building2, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, Pencil, UsersRound, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -57,7 +57,13 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type PropertyRoute = "/owner-rooms" | "/owner-staff" | "/owner-board" | "/owner-local-places";
+type PropertyRoute =
+  | "/owner-rooms"
+  | "/owner-staff"
+  | "/owner-board"
+  | "/owner-nearby-places"
+  | "/owner-tenancy-agreement"
+  | "/owner-exit-policies";
 
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
@@ -138,29 +144,46 @@ export default function OwnerPropertyScreen() {
 
           <Section eyebrow="Manage" title="Property workspace">
             <ActionCard
+              icon={BedDouble}
               meta="Rooms"
               title="Rooms & beds"
               description="Create rooms single or in bulk, edit, set status and manage occupancy."
               onPress={() => open(router, "/owner-rooms")}
-              tone="primary"
             />
             <ActionCard
+              icon={UsersRound}
               meta="Staff"
               title="Staff management"
               description="Manage managers, staff categories, employment details and manual salary tracking."
               onPress={() => open(router, "/owner-staff")}
             />
             <ActionCard
+              icon={ClipboardList}
               meta="Board"
               title="Property board"
               description="Always-on info for tenants - rules, timings and contacts, organised by category."
               onPress={() => open(router, "/owner-board")}
             />
             <ActionCard
+              icon={MapPin}
               meta="Discovery"
               title="Nearby places"
-              description="Curate landmarks and services around the property, pinned on the map with real distances."
-              onPress={() => open(router, "/owner-local-places")}
+              description="See what tenants find around the property, then curate the landmarks and services."
+              onPress={() => open(router, "/owner-nearby-places")}
+            />
+            <ActionCard
+              icon={FileSignature}
+              meta="Compliance"
+              title="Tenancy agreement"
+              description="Choose whether monthly tenancies need an accepted agreement, and author its default terms."
+              onPress={() => open(router, "/owner-tenancy-agreement")}
+            />
+            <ActionCard
+              icon={DoorOpen}
+              meta="Exit"
+              title="Exit policies"
+              description="Set the damage-charge schedule and move-out checklist used when a tenancy ends and its deposit is settled."
+              onPress={() => open(router, "/owner-exit-policies")}
             />
           </Section>
         </>
@@ -494,7 +517,7 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
       transparent
       visible
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -606,10 +629,10 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
               <ModalSection eyebrow="Money" title="Pricing & policy">
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Std. deposit (Rs.)" onChangeText={setDeposit} placeholder="Amount" value={deposit} />
+                    <FormInput keyboardType="decimal-pad" label="Std. deposit" onChangeText={setDeposit} placeholder="Amount" prefix="₹" value={deposit} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Late fee/day (Rs.)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
+                    <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
                   </View>
                 </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -622,10 +645,10 @@ function EditPropertyModal({ onClose, property }: { onClose: () => void; propert
                 </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest AC/day (Rs.)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
+                    <FormInput keyboardType="decimal-pad" label="Guest AC/day" onChangeText={setAcRate} placeholder="Optional" prefix="₹" value={acRate} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (Rs.)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
+                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" onChangeText={setNonAcRate} placeholder="Optional" prefix="₹" value={nonAcRate} />
                   </View>
                 </View>
               </ModalSection>

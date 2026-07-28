@@ -59,8 +59,14 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "billing_type", nullable = false, length = 20)
     private TenancyBillingType billingType;
 
-    @Column(name = "cycle_number", nullable = false)
-    private int cycleNumber;
+    // Internal: RENT_CYCLE bills are the numbered rent sequence; ONE_OFF bills
+    // (e.g. an early-exit penalty) sit outside it and carry no cycle number.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private BillingCycleCategory category;
+
+    @Column(name = "cycle_number")
+    private Integer cycleNumber;
 
     @Column(name = "period_start_date", nullable = false)
     private LocalDate periodStartDate;
@@ -100,6 +106,15 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "paid_at")
     private Instant paidAt;
 
+    /**
+     * Late-fee rate in force when this cycle's payment window opened. Null while
+     * the cycle is UPCOMING — until then the property's current rate applies, so
+     * an owner's change still reaches it. Stamped on activation so a later rate
+     * change cannot reprice a cycle a tenant may already be paying.
+     */
+    @Column(name = "late_fee_per_day_paise")
+    private Long lateFeePerDayPaise;
+
     @Builder
     private BillingCycle(
             UUID tenancyId,
@@ -109,14 +124,16 @@ public class BillingCycle extends BaseEntity {
             UUID propertyId,
             UUID roomId,
             TenancyBillingType billingType,
-            int cycleNumber,
+            BillingCycleCategory category,
+            Integer cycleNumber,
             LocalDate periodStartDate,
             LocalDate periodEndDate,
             LocalDate rentDueDate,
             BillingCollectionTiming billingCollectionTiming,
-            int rentGraceDays) {
+            int rentGraceDays,
+            BillingCycleStatus status) {
         validateCycleDates(periodStartDate, periodEndDate, rentDueDate);
-        if (cycleNumber <= 0) {
+        if (cycleNumber != null && cycleNumber <= 0) {
             throw new ValidationException("Billing cycle number must be positive");
         }
         if (billingCollectionTiming == null) {
@@ -134,13 +151,14 @@ public class BillingCycle extends BaseEntity {
         this.propertyId = propertyId;
         this.roomId = roomId;
         this.billingType = billingType;
+        this.category = category != null ? category : BillingCycleCategory.RENT_CYCLE;
         this.cycleNumber = cycleNumber;
         this.periodStartDate = periodStartDate;
         this.periodEndDate = periodEndDate;
         this.rentDueDate = rentDueDate;
         this.billingCollectionTiming = billingCollectionTiming;
         this.rentGraceDays = rentGraceDays;
-        this.status = BillingCycleStatus.UNPAID;
+        this.status = status != null ? status : BillingCycleStatus.UNPAID;
         this.baseAmountPaise = 0;
         this.extraChargePaise = 0;
         this.lateFeeAmountPaise = 0;
@@ -208,6 +226,116 @@ public class BillingCycle extends BaseEntity {
                 .build();
     }
 
+    /**
+     * Creates the next rent cycle ahead of its payment window, in the only state
+     * where it can still be changed. Owners attach charges here; the cycle
+     * freezes when {@link #activate(long)} opens its window.
+     */
+    public static BillingCycle createUpcoming(
+            UUID tenancyId,
+            String referenceCode,
+            UUID tenantUserId,
+            String tenantNameSnapshot,
+            UUID propertyId,
+            UUID roomId,
+            TenancyBillingType billingType,
+            int cycleNumber,
+            LocalDate periodStartDate,
+            LocalDate periodEndDate,
+            LocalDate rentDueDate,
+            BillingCollectionTiming billingCollectionTiming,
+            int rentGraceDays) {
+        return BillingCycle.builder()
+                .tenancyId(tenancyId)
+                .referenceCode(referenceCode)
+                .tenantUserId(tenantUserId)
+                .tenantNameSnapshot(tenantNameSnapshot)
+                .propertyId(propertyId)
+                .roomId(roomId)
+                .billingType(billingType)
+                .cycleNumber(cycleNumber)
+                .periodStartDate(periodStartDate)
+                .periodEndDate(periodEndDate)
+                .rentDueDate(rentDueDate)
+                .billingCollectionTiming(billingCollectionTiming)
+                .rentGraceDays(rentGraceDays)
+                .status(BillingCycleStatus.UPCOMING)
+                .build();
+    }
+
+    /**
+     * Opens this cycle's payment window. The property's late-fee rate is stamped
+     * here and never re-read, so a later policy change lands on the next cycle
+     * rather than repricing this one mid-payment.
+     */
+    public void activate(long lateFeePerDayPaise) {
+        if (status != BillingCycleStatus.UPCOMING) {
+            throw new ValidationException("Only an upcoming billing cycle can be activated");
+        }
+        if (lateFeePerDayPaise < 0) {
+            throw new ValidationException("Late fee per day cannot be negative");
+        }
+
+        this.lateFeePerDayPaise = lateFeePerDayPaise;
+        this.status = BillingCycleStatus.UNPAID;
+    }
+
+    public boolean isUpcoming() {
+        return status == BillingCycleStatus.UPCOMING;
+    }
+
+    /**
+     * Whether this cycle counts as money billed.
+     *
+     * <p>An UPCOMING cycle has not been charged to anyone yet — it is a draft the
+     * owner may still change — and a CANCELLED one never will be. Counting either
+     * as revenue overstates income, so every aggregate goes through this instead
+     * of testing statuses ad hoc.
+     */
+    public boolean countsAsBilled() {
+        return status != BillingCycleStatus.UPCOMING && status != BillingCycleStatus.CANCELLED;
+    }
+
+    /**
+     * True once the payment window has opened and the cycle is frozen. Charges
+     * and rate changes after this point belong to the next cycle.
+     */
+    public boolean isLocked() {
+        return status != BillingCycleStatus.UPCOMING;
+    }
+
+    /**
+     * Creates a one-off bill (e.g. an early-exit penalty raised after the current
+     * rent bill was already paid). It sits outside the rent-cycle sequence: no
+     * cycle number, {@code ONE_OFF} category, single-day period, due immediately.
+     */
+    public static BillingCycle createOneOff(
+            UUID tenancyId,
+            String referenceCode,
+            UUID tenantUserId,
+            String tenantNameSnapshot,
+            UUID propertyId,
+            UUID roomId,
+            TenancyBillingType billingType,
+            LocalDate date) {
+        return BillingCycle.builder()
+                .tenancyId(tenancyId)
+                .referenceCode(referenceCode)
+                .tenantUserId(tenantUserId)
+                .tenantNameSnapshot(tenantNameSnapshot)
+                .propertyId(propertyId)
+                .roomId(roomId)
+                .billingType(billingType)
+                .category(BillingCycleCategory.ONE_OFF)
+                .cycleNumber(null)
+                .periodStartDate(date)
+                .periodEndDate(date)
+                .rentDueDate(date)
+                .billingCollectionTiming(BillingCollectionTiming.CYCLE_START)
+                .rentGraceDays(0)
+                .build();
+    }
+
     public void recalculateTotals(
             long baseAmountPaise,
             long depositAmountPaise,
@@ -227,7 +355,7 @@ public class BillingCycle extends BaseEntity {
             throw new ValidationException("Discount cannot be greater than payable amount");
         }
         if (billingType == TenancyBillingType.MONTHLY
-                && cycleNumber == 1
+                && Integer.valueOf(1).equals(cycleNumber)
                 && depositAmountPaise > 0
                 && totalAmount < depositAmountPaise) {
             throw new ValidationException("First billing cycle payable amount cannot be less than deposit amount");

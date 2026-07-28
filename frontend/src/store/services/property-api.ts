@@ -206,6 +206,16 @@ export type ManagerLookup = {
   message: string;
 };
 
+// Property exit policies: the damage-charge schedule and the move-out checklist.
+// Property-owned so every monthly tenancy (agreement or not) reads the same
+// rates and checklist at deposit settlement.
+export type PropertyDamageCharge = { name: string; chargePaise: number };
+
+export type PropertyExitPolicy = {
+  damageCharges: PropertyDamageCharge[];
+  exitChecklist: string[];
+};
+
 export const propertyApi = api.injectEndpoints({
   endpoints: (builder) => ({
     listMyProperties: builder.query<OwnerProperty[], void>({
@@ -330,6 +340,20 @@ export const propertyApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Property", "Notification", "Staff"],
     }),
+
+    getPropertyExitPolicies: builder.query<PropertyExitPolicy, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/exit-policies`,
+      providesTags: ["Property"],
+    }),
+
+    updatePropertyExitPolicies: builder.mutation<PropertyExitPolicy, { propertyId: string; payload: PropertyExitPolicy }>({
+      query: ({ payload, propertyId }) => ({
+        body: payload,
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/exit-policies`,
+      }),
+      invalidatesTags: ["Property", "Compliance"],
+    }),
   }),
 });
 
@@ -339,8 +363,10 @@ export const {
   useCreateRoomMutation,
   useCreateRoomsBulkMutation,
   useDeactivateRoomMutation,
+  useGetPropertyExitPoliciesQuery,
   useGetPropertyQuery,
   useListMyPropertiesQuery,
+  useUpdatePropertyExitPoliciesMutation,
   useLazyLookupManagerQuery,
   useListAllPropertyRoomsQuery,
   useListPropertyManagersQuery,

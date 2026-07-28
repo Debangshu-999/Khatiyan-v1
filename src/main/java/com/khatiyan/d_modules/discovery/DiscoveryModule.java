@@ -8,9 +8,13 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.d_modules.discovery.api.dto.LocalPlaceCategoryResponse;
+import com.khatiyan.d_modules.discovery.api.dto.NearbyPlacesResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
+import com.khatiyan.d_modules.discovery.service.LocalPlaceTaxonomyService;
+import com.khatiyan.d_modules.discovery.service.NearbyPlacesSearchService;
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
 import com.khatiyan.d_modules.discovery.service.PropertyLocalPlaceService;
 import com.khatiyan.d_modules.property.model.BathroomType;
@@ -24,12 +28,18 @@ public class DiscoveryModule {
 
     private final PropertyDiscoveryService propertyDiscoveryService;
     private final PropertyLocalPlaceService propertyLocalPlaceService;
+    private final NearbyPlacesSearchService nearbyPlacesSearchService;
+    private final LocalPlaceTaxonomyService taxonomyService;
 
     public DiscoveryModule(
             PropertyDiscoveryService propertyDiscoveryService,
-            PropertyLocalPlaceService propertyLocalPlaceService) {
+            PropertyLocalPlaceService propertyLocalPlaceService,
+            NearbyPlacesSearchService nearbyPlacesSearchService,
+            LocalPlaceTaxonomyService taxonomyService) {
         this.propertyDiscoveryService = propertyDiscoveryService;
         this.propertyLocalPlaceService = propertyLocalPlaceService;
+        this.nearbyPlacesSearchService = nearbyPlacesSearchService;
+        this.taxonomyService = taxonomyService;
     }
 
     public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
@@ -88,5 +98,17 @@ public class DiscoveryModule {
             BigDecimal latitude,
             BigDecimal longitude) {
         return propertyLocalPlaceService.listMyLocalPlaces(tenantUserId, latitude, longitude);
+    }
+
+    public NearbyPlacesResponse searchMyLocalPlaces(
+            UUID tenantUserId,
+            String query,
+            BigDecimal latitude,
+            BigDecimal longitude) {
+        return nearbyPlacesSearchService.searchMine(tenantUserId, query, latitude, longitude);
+    }
+
+    public List<LocalPlaceCategoryResponse> listMyLocalPlaceTaxonomy(UUID tenantUserId) {
+        return taxonomyService.listMyTaxonomy(tenantUserId);
     }
 }

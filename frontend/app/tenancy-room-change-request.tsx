@@ -62,7 +62,7 @@ export default function TenancyRoomChangeRequestScreen() {
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null;
   const selectedRoomState = selectedRoom ? roomActionState(selectedRoom, currentRoomId) : null;
   const currentCycle = useMemo(() => {
-    const cycles = [...(cyclesQuery.data ?? [])].sort((left, right) => right.cycleNumber - left.cycleNumber);
+    const cycles = [...(cyclesQuery.data ?? [])].sort((left, right) => (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0));
     return cycles.find((cycle) => cycle.status !== "PAID" && cycle.status !== "CANCELLED") ?? cycles[0] ?? null;
   }, [cyclesQuery.data]);
 

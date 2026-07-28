@@ -22,7 +22,9 @@ public record ProviderWebhookVerification(
         PaymentMethod method,
         Instant paidAt,
         String failureCode,
-        String failureReason
+        String failureReason,
+        /** Populated for Route transfer/settlement events; null for payment events. */
+        ProviderWebhookTransfer transfer
 ) {
     public static ProviderWebhookVerification invalid(String failureReason) {
         return new ProviderWebhookVerification(
@@ -37,6 +39,7 @@ public record ProviderWebhookVerification(
                 null,
                 null,
                 null,
-                failureReason);
+                failureReason,
+                null);
     }
 }

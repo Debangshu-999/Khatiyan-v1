@@ -13,6 +13,7 @@ import com.khatiyan.d_modules.property.api.dto.ManagerEmploymentResponse;
 import com.khatiyan.d_modules.property.api.dto.ManagerPayrollView;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
+import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomActivityResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
@@ -50,8 +51,20 @@ public class PropertyModule {
         return propertyService.listActiveProperties();
     }
 
+    public List<PropertyResponse> listOwnerProperties(UUID ownerId) {
+        return propertyService.listOwnerProperties(ownerId);
+    }
+
     public PropertyBillingPolicyResponse getBillingPolicy(UUID propertyId) {
         return propertyService.getBillingPolicy(propertyId);
+    }
+
+    /**
+     * A property's exit policies (damage-charge schedule + move-out checklist),
+     * read by the compliance agreement assembler and by deposit settlement.
+     */
+    public PropertyExitPolicyResponse getExitPolicy(UUID propertyId) {
+        return propertyService.getExitPolicy(propertyId);
     }
 
     public RoomResponse getActiveRoom(UUID propertyId, UUID roomId) {

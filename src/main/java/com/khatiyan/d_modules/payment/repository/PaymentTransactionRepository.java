@@ -20,6 +20,9 @@ import com.khatiyan.d_modules.payment.model.PaymentTransaction;
 @Repository
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, UUID> {
 
+    /** The gateway payment id a deferred payout has to be retried against. */
+    Optional<PaymentTransaction> findFirstByPaymentOrderIdOrderByCreatedAtDesc(UUID paymentOrderId);
+
     @Query("""
             SELECT transaction
             FROM PaymentTransaction transaction

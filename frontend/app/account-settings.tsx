@@ -3,15 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BlurView } from "expo-blur";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Switch,
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { AppTextInput } from "@/components/app-text-input";
-import { BellRing, Eye, EyeOff, Fingerprint, Moon, ShieldCheck, Smartphone, X } from "lucide-react-native";
+import { CodeField } from "@/features/auth/auth-ui";
+import { BellRing, Fingerprint, Mail, Moon, Pencil, ShieldCheck, Smartphone, X } from "lucide-react-native";
 
 import { saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -22,12 +24,16 @@ import { Divider } from "@/components/divider";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { StatusPill } from "@/components/status-pill";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   useChangePinMutation,
   useConfirmPinResetMutation,
+  useGetEmailRecoveryStatusQuery,
   useRequestPinResetMutation,
+  useUpdateProfileMutation,
+  useUpdateRecoveryEmailMutation,
   useVerifyOtpMutation,
   type TokenResponse,
 } from "@/store/services/auth-api";
@@ -41,6 +47,8 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PinModalMode = "change" | "forgot";
+type ProfileEditField = "name" | "email";
+
 type PinFlowStep = "details" | "otp" | "pin";
 
 export default function AccountSettingsScreen() {
@@ -57,6 +65,11 @@ export default function AccountSettingsScreen() {
   const [changePin, changePinState] = useChangePinMutation();
   const toast = useToast();
   const [pinModalMode, setPinModalMode] = useState<PinModalMode | null>(null);
+  const [profileEdit, setProfileEdit] = useState<ProfileEditField | null>(null);
+  const emailQuery = useGetEmailRecoveryStatusQuery(undefined, { skip: !auth.accessToken });
+  const emailStatus = emailQuery.data;
+  const [updateProfile, updateProfileState] = useUpdateProfileMutation();
+  const [updateRecoveryEmail, updateRecoveryEmailState] = useUpdateRecoveryEmailMutation();
 
   const activeDevice = useMemo(() => {
     const devices = devicesQuery.data ?? [];
@@ -123,6 +136,16 @@ export default function AccountSettingsScreen() {
             </View>
 
             <ScreenHeader title="Settings" italicTail="menu." subtitle="Device preferences and account security." />
+
+            <ProfileCard
+              email={emailStatus?.email ?? null}
+              emailVerified={Boolean(emailStatus?.verified)}
+              fullName={auth.user?.fullName ?? ""}
+              onEditEmail={() => setProfileEdit("email")}
+              onEditName={() => setProfileEdit("name")}
+              phone={phone}
+              photoUrl={auth.user?.profilePhotoUrl ?? null}
+            />
 
             <Section eyebrow="Security" title="PIN">
               <SettingsRow
@@ -204,6 +227,32 @@ export default function AccountSettingsScreen() {
 
           </ScreenScrollView>
 
+          <ProfileEditModal
+            busy={updateProfileState.isLoading || updateRecoveryEmailState.isLoading}
+            field={profileEdit}
+            initialValue={profileEdit === "email" ? (emailStatus?.email ?? "") : (auth.user?.fullName ?? "")}
+            onClose={() => setProfileEdit(null)}
+            onSave={async (nextValue) => {
+              if (profileEdit === "email") {
+                await updateRecoveryEmail({ email: nextValue }).unwrap();
+                setProfileEdit(null);
+                toast.success("Email updated. Verify it from the link we sent.");
+                return;
+              }
+
+              const updated = await updateProfile({ fullName: nextValue }).unwrap();
+              // Keep the cached session in step so the name changes everywhere
+              // immediately rather than only after the next sign-in.
+              if (auth.accessToken) {
+                const session = { accessToken: auth.accessToken, user: updated };
+                dispatch(setSession(session));
+                await saveSession(session);
+              }
+              setProfileEdit(null);
+              toast.success("Name updated.");
+            }}
+          />
+
           <PinVerificationModal
             busy={pinFlowBusy}
             mode={pinModalMode}
@@ -229,6 +278,247 @@ export default function AccountSettingsScreen() {
         </>
       )}
     </BloomModalShell>
+  );
+}
+
+/**
+ * Identity at the top of settings: who you are, and the two things you can
+ * change about it. Phone is deliberately read-only — changing it needs its own
+ * OTP re-verification flow, which the backend does not expose.
+ */
+function ProfileCard({
+  email,
+  emailVerified,
+  fullName,
+  onEditEmail,
+  onEditName,
+  phone,
+  photoUrl,
+}: {
+  email: string | null;
+  emailVerified: boolean;
+  fullName: string;
+  onEditEmail: () => void;
+  onEditName: () => void;
+  phone: string;
+  photoUrl: string | null;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const initials = fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+
+  return (
+    <Card>
+      <View style={{ alignItems: "center", gap: spacing.sm }}>
+        {photoUrl ? (
+          <Image
+            source={{ uri: photoUrl }}
+            style={{ borderRadius: 999, height: 84, width: 84 }}
+          />
+        ) : (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.primarySoft,
+              borderColor: colors.primary,
+              borderRadius: 999,
+              borderWidth: 1,
+              height: 84,
+              justifyContent: "center",
+              width: 84,
+            }}
+          >
+            <Text style={{ color: colors.primary, fontFamily: fonts.display, fontSize: 30, fontWeight: "600" }}>
+              {initials || "?"}
+            </Text>
+          </View>
+        )}
+
+        {/* Name sits directly under the photo with the pencil beside it, so the
+            edit affordance is where the eye already is. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }}
+            selectable
+          >
+            {fullName || "Add your name"}
+          </Text>
+          <AnimatedPressable
+            accessibilityLabel="Edit name"
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onEditName}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.surfaceSunken,
+              borderColor: colors.border,
+              borderRadius: 999,
+              borderWidth: 1,
+              height: 28,
+              justifyContent: "center",
+              width: 28,
+            }}
+          >
+            <Pencil color={colors.kicker} size={14} strokeWidth={2.2} />
+          </AnimatedPressable>
+        </View>
+
+        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]} selectable>
+          {phone}
+        </Text>
+      </View>
+
+      <Divider />
+
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <Mail color={colors.kicker} size={16} strokeWidth={2.2} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            Email
+          </Text>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+            {email ?? "Not added"}
+          </Text>
+        </View>
+        {email ? (
+          // StatusPill defaults to alignSelf "flex-start", which overrides the
+          // row's centring and floats the chip above the pencil beside it.
+          <StatusPill
+            label={emailVerified ? "Verified" : "Unverified"}
+            style={{ alignSelf: "center" }}
+            tone={emailVerified ? "success" : "warning"}
+          />
+        ) : null}
+        <AnimatedPressable
+          accessibilityLabel={email ? "Edit email" : "Add email"}
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onEditEmail}
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surfaceSunken,
+            borderColor: colors.border,
+            borderRadius: 999,
+            borderWidth: 1,
+            height: 28,
+            justifyContent: "center",
+            width: 28,
+          }}
+        >
+          <Pencil color={colors.kicker} size={14} strokeWidth={2.2} />
+        </AnimatedPressable>
+      </View>
+    </Card>
+  );
+}
+
+function ProfileEditModal({
+  busy,
+  field,
+  initialValue,
+  onClose,
+  onSave,
+}: {
+  busy: boolean;
+  field: ProfileEditField | null;
+  initialValue: string;
+  onClose: () => void;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const [value, setValue] = useState(initialValue);
+  const [error, setError] = useState<string | null>(null);
+  const isEmail = field === "email";
+
+  // Re-seed whenever a different field is opened; the modal is mounted once and
+  // reused, so state would otherwise carry over from the previous edit.
+  useEffect(() => {
+    setValue(initialValue);
+    setError(null);
+  }, [field, initialValue]);
+
+  async function submit() {
+    const trimmed = value.trim();
+    if (isEmail) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
+        return setError("Enter a valid email address.");
+      }
+    } else if (trimmed.length < 2) {
+      return setError("Enter your full name.");
+    }
+
+    try {
+      await onSave(trimmed);
+    } catch (submitError) {
+      setError(errorMessage(submitError));
+    }
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={field !== null}>
+      <BlurView
+        intensity={36}
+        tint="dark"
+        style={{ alignItems: "center", flex: 1, justifyContent: "center", padding: spacing.lg }}
+      >
+        <KeyboardAvoidingView behavior="padding" style={{ maxWidth: 520, width: "100%" }}>
+          <Card style={{ borderRadius: 18, gap: spacing.md }}>
+            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+              <Text
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "500" }}
+                selectable
+              >
+                {isEmail ? "Edit email" : "Edit name"}
+              </Text>
+              <CloseButton onPress={onClose} />
+            </View>
+
+            <AppTextInput
+              autoCapitalize={isEmail ? "none" : "words"}
+              autoCorrect={false}
+              keyboardType={isEmail ? "email-address" : "default"}
+              onChangeText={(next) => {
+                setValue(next);
+                setError(null);
+              }}
+              placeholder={isEmail ? "you@example.com" : "Your full name"}
+              style={{
+                backgroundColor: colors.surfaceRaised,
+                borderColor: error ? colors.danger : colors.borderStrong,
+                borderRadius: 12,
+                borderWidth: 1,
+                color: colors.ink,
+                fontFamily: fonts.sans,
+                fontSize: 16,
+                minHeight: 52,
+                paddingHorizontal: spacing.md,
+              }}
+              value={value}
+            />
+
+            {isEmail ? (
+              <Text style={[type.caption, { color: colors.muted }]} selectable>
+                Changing this sends a fresh verification link. Payout setup needs a verified address.
+              </Text>
+            ) : null}
+
+            {error ? (
+              <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
+                {error}
+              </Text>
+            ) : null}
+
+            <PrimaryButton busy={busy} label="Save" onPress={() => void submit()} />
+            <SafeAreaView edges={["bottom"]} />
+          </Card>
+        </KeyboardAvoidingView>
+      </BlurView>
+    </Modal>
   );
 }
 
@@ -365,13 +655,16 @@ function PinVerificationModal({
 
   const visible = mode !== null;
   const title = mode === "change" ? "Change PIN" : "Forgot PIN";
-  const subtitle = mode === "change"
-    ? "Verify your current PIN and phone before changing it."
-    : step === "otp"
-      ? "Enter the OTP sent to your registered phone."
-      : step === "pin"
-        ? "OTP verified. Choose and confirm a fresh PIN."
-        : "Verify your phone before choosing a fresh PIN.";
+  // The number is named inline rather than given its own labelled block: it is
+  // one fact, and the block cost enough height to push the tallest step off a
+  // static (non-scrolling) card once the keypad was up.
+  const subtitle = step === "otp"
+    ? `Enter the OTP sent to ${phone}.`
+    : step === "pin"
+      ? "OTP verified. Choose and confirm a fresh PIN."
+      : mode === "change"
+        ? `Enter your current PIN and a new one. We'll send an OTP to ${phone}.`
+        : `We'll send an OTP to ${phone} before you choose a fresh PIN.`;
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={resetAndClose}>
@@ -385,29 +678,36 @@ function PinVerificationModal({
           padding: spacing.lg,
         }}
       >
+        {/* "padding" on both platforms: Expo 56 Android is edge-to-edge, where
+            adjustResize no longer resizes the modal window, so leaving Android
+            undefined let the keyboard sit over the buttons. */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={{
             maxWidth: 520,
             width: "100%",
           }}
         >
+          {/* Deliberately not scrollable. The whole flow is short enough to sit
+              on one static page, and a scroll view here made a five-field form
+              feel like a document — the tallest step is three PIN fields and a
+              button, which fits with room to spare. */}
           <Card
             style={{
               borderRadius: 18,
-              maxHeight: "98%",
+              gap: spacing.lg,
               overflow: "hidden",
-              padding: 0,
+              paddingBottom: spacing.xl,
+              paddingHorizontal: spacing.lg,
+              paddingTop: spacing.lg,
             }}
           >
-            <View
-              style={{
-                gap: spacing.md,
-                padding: spacing.lg,
-              }}
-            >
+            <View style={{ gap: spacing.lg }}>
               <View style={{ gap: spacing.md }}>
-              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+              {/* flex-start, not center: the left column is three lines tall, so
+                  centring floated the close button down to its middle instead of
+                  pinning it to the card's top corner. */}
+              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ flex: 1, gap: spacing.xs }}>
                   <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
                     PIN verification
@@ -430,15 +730,6 @@ function PinVerificationModal({
                 <CloseButton onPress={resetAndClose} />
               </View>
 
-              <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                  Phone
-                </Text>
-                <Text style={[type.body, { color: colors.ink, fontFamily: fonts.mono, fontWeight: "800" }]} selectable>
-                  {phone}
-                </Text>
-              </View>
-
               </View>
 
               <View style={{ gap: spacing.md, paddingTop: spacing.xs }}>
@@ -446,16 +737,16 @@ function PinVerificationModal({
                   <>
                     {mode === "change" ? (
                       <>
-                        <PinCodeInput label="Current PIN" secureTextEntry value={currentPin} onChangeText={setCurrentPin} />
-                        <PinCodeInput label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
-                        <PinCodeInput label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
+                        <CodeField label="Current PIN" secureTextEntry value={currentPin} onChangeText={setCurrentPin} />
+                        <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
+                        <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
                       </>
                     ) : null}
                     <PrimaryButton busy={busy} label="Send OTP" onPress={() => void handleRequestOtp()} />
                   </>
                 ) : step === "otp" ? (
                   <>
-                    <PinCodeInput label="OTP" value={otp} onChangeText={setOtp} />
+                    <CodeField label="OTP" value={otp} onChangeText={setOtp} />
                     <PrimaryButton
                       busy={busy}
                       label={mode === "change" ? "Change PIN" : "Verify OTP"}
@@ -465,125 +756,21 @@ function PinVerificationModal({
                   </>
                 ) : (
                   <>
-                    <PinCodeInput label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
-                    <PinCodeInput label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
+                    <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
+                    <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
                     <PrimaryButton busy={busy} label="Reset PIN" onPress={() => void handleConfirm()} />
                   </>
                 )}
               </View>
             </View>
 
+            {/* Measured inside the modal window so the card clears the gesture
+                bar; without it the last button ends up under the nav area. */}
+            <SafeAreaView edges={["bottom"]} />
           </Card>
         </KeyboardAvoidingView>
       </BlurView>
     </Modal>
-  );
-}
-
-function PinCodeInput({
-  label,
-  onChangeText,
-  secureTextEntry,
-  value,
-}: {
-  label: string;
-  onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const digits = value.padEnd(6, " ").slice(0, 6).split("");
-  const [showValue, setShowValue] = useState(false);
-  const hideValue = Boolean(secureTextEntry && !showValue);
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-        {label}
-      </Text>
-      <View
-        style={{
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderRadius: 12,
-          borderWidth: 1,
-          justifyContent: "center",
-          minHeight: 54,
-          overflow: "hidden",
-          paddingLeft: spacing.md,
-          paddingRight: secureTextEntry ? 54 : spacing.md,
-        }}
-      >
-        <View
-          pointerEvents="none"
-          style={{
-            alignItems: "center",
-            flexDirection: "row",
-            gap: spacing.md,
-            justifyContent: "center",
-          }}
-        >
-          {digits.map((digit, index) => (
-            <Text
-              key={`${label}-${index}`}
-              style={{
-                color: digit.trim() ? colors.ink : colors.kicker,
-                fontFamily: fonts.mono,
-                fontSize: 24,
-                fontWeight: "800",
-                lineHeight: 28,
-                textAlign: "center",
-                width: 14,
-              }}
-            >
-              {digit.trim() && !hideValue ? digit : "•"}
-            </Text>
-          ))}
-        </View>
-        <AppTextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          caretHidden
-          keyboardType="number-pad"
-          maxLength={6}
-          onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, "").slice(0, 6))}
-          secureTextEntry={secureTextEntry}
-          style={{
-            bottom: 0,
-            color: "transparent",
-            left: 0,
-            opacity: 0.01,
-            position: "absolute",
-            right: secureTextEntry ? 54 : 0,
-            top: 0,
-          }}
-          textContentType={label === "OTP" ? "oneTimeCode" : "password"}
-          value={value}
-        />
-        {secureTextEntry ? (
-          <AnimatedPressable
-            accessibilityLabel={showValue ? `Hide ${label}` : `Show ${label}`}
-            accessibilityRole="button"
-            onPress={() => setShowValue((currentValue) => !currentValue)}
-            style={{
-              alignItems: "center",
-              bottom: 0,
-              justifyContent: "center",
-              position: "absolute",
-              right: 0,
-              top: 0,
-              width: 54,
-            }}
-          >
-            {showValue ? (
-              <EyeOff color={colors.kicker} size={20} strokeWidth={2.1} />
-            ) : (
-              <Eye color={colors.kicker} size={20} strokeWidth={2.1} />
-            )}
-          </AnimatedPressable>
-        ) : null}
-      </View>
-    </View>
   );
 }
 

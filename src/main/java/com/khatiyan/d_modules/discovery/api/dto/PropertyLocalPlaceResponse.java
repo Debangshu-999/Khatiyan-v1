@@ -1,17 +1,17 @@
 package com.khatiyan.d_modules.discovery.api.dto;
 
 import java.math.BigDecimal;
-import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.discovery.model.PropertyLocalPlace;
-import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
 
 public record PropertyLocalPlaceResponse(
         UUID id,
         UUID propertyId,
         String name,
-        Set<PropertyLocalPlaceTag> tags,
+        List<UUID> subcategoryIds,
+        List<String> subcategoryNames,
         String description,
         String phone,
         String addressText,
@@ -23,12 +23,18 @@ public record PropertyLocalPlaceResponse(
         boolean ownerRecommended
 ) {
 
-    public static PropertyLocalPlaceResponse from(PropertyLocalPlace place, Double distanceKm, String directionsUrl) {
+    public static PropertyLocalPlaceResponse from(
+            PropertyLocalPlace place,
+            List<UUID> subcategoryIds,
+            List<String> subcategoryNames,
+            Double distanceKm,
+            String directionsUrl) {
         return new PropertyLocalPlaceResponse(
                 place.getId(),
                 place.getPropertyId(),
                 place.getName(),
-                place.getTags(),
+                subcategoryIds,
+                subcategoryNames,
                 place.getDescription(),
                 place.getPhone(),
                 place.getAddressText(),

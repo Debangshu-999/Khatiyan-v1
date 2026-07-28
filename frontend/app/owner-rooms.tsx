@@ -824,7 +824,7 @@ function RoomFieldset({
       <ChoiceRow label="Room type" onChange={(value: RoomType) => setForm(roomTypePatch(value))} options={ROOM_TYPES} value={form.roomType} />
       <FormInput keyboardType="number-pad" label="Capacity (beds)" onChangeText={(value) => setForm({ capacity: value })} placeholder="2" value={form.capacity} />
       <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
-      <FormInput keyboardType="decimal-pad" label="Base rent (Rs)" onChangeText={(value) => setForm({ rent: value })} placeholder="Amount in rupees" value={form.rent} />
+      <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
     </>
   );
 }
@@ -878,7 +878,7 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -1178,7 +1178,7 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
             <ChoiceRow label="Room type" onChange={(value: RoomType) => setForm(roomTypePatch(value))} options={ROOM_TYPES} value={form.roomType} />
             <FormInput keyboardType="number-pad" label="Capacity (beds)" onChangeText={(value) => setForm({ capacity: value })} placeholder="2" value={form.capacity} />
             <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
-            <FormInput keyboardType="decimal-pad" label="Base rent (Rs)" onChangeText={(value) => setForm({ rent: value })} placeholder="Amount in rupees" value={form.rent} />
+            <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
             {rangeCount > 0 ? (
               <Text style={[type.caption, { color: colors.primary }]} selectable>
                 Will create {rangeCount} room{rangeCount === 1 ? "" : "s"}{prefix.trim() ? ` (${prefix.trim()}${startNumber}...${prefix.trim()}${endNumber})` : ""}.

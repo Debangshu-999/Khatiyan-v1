@@ -61,6 +61,11 @@ public class TenancyReminderScannerService {
                         daysUntilEnd,
                         today);
 
+                // The tenant reads a personal checkout reminder; the owner and
+                // managers read an operational one that names the tenancy by its
+                // TEN- reference code so they know which stay is ending.
+                boolean forManagement = !tenancy.userId().equals(recipientUserId);
+
                 var created = reminderService.createPendingIfAbsent(
                         reminderKey,
                         ReminderType.TENANCY_ENDING_SOON,
@@ -70,8 +75,8 @@ public class TenancyReminderScannerService {
                         tenancy.propertyId(),
                         tenancy.id(),
                         today,
-                        title(daysUntilEnd),
-                        body(property.name(), tenancy.endDate(), daysUntilEnd),
+                        title(daysUntilEnd, forManagement),
+                        body(property.name(), tenancy.referenceCode(), tenancy.endDate(), daysUntilEnd, forManagement),
                         NotificationCategory.TENANCY,
                         daysUntilEnd == 0 ? NotificationPriority.URGENT : NotificationPriority.HIGH,
                         NotificationDeliveryMode.IN_APP_AND_PUSH,
@@ -86,7 +91,16 @@ public class TenancyReminderScannerService {
         return createdCount;
     }
 
-    private String title(long daysUntilEnd) {
+    private String title(long daysUntilEnd, boolean forManagement) {
+        if (forManagement) {
+            if (daysUntilEnd == 0) {
+                return "Tenant checkout due today — inspect the room and collect keys";
+            }
+            if (daysUntilEnd == 1) {
+                return "Tenant checkout due tomorrow — prepare for move-out";
+            }
+            return "Upcoming tenant checkout — prepare for move-out";
+        }
         if (daysUntilEnd == 0) {
             return "Tenancy ends today, vacate your room and submit keys at front desk";
         }
@@ -102,7 +116,24 @@ public class TenancyReminderScannerService {
                 : NotificationAudience.MANAGEMENT;
     }
 
-    private String body(String propertyName, LocalDate endDate, long daysUntilEnd) {
+    private String body(
+            String propertyName,
+            String referenceCode,
+            LocalDate endDate,
+            long daysUntilEnd,
+            boolean forManagement) {
+        if (forManagement) {
+            if (daysUntilEnd == 0) {
+                return "Tenancy %s at %s ends today. Inspect the room, collect keys and settle the deposit.".formatted(
+                        referenceCode, propertyName);
+            }
+            if (daysUntilEnd == 1) {
+                return "Tenancy %s at %s ends tomorrow, %s. Prepare for move-out.".formatted(
+                        referenceCode, propertyName, endDate);
+            }
+            return "Tenancy %s at %s ends in %d days, on %s. Prepare for move-out.".formatted(
+                    referenceCode, propertyName, daysUntilEnd, endDate);
+        }
         if (daysUntilEnd == 0) {
             return "Your tenancy at %s is scheduled to end today.".formatted(propertyName);
         }

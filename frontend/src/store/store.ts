@@ -22,7 +22,16 @@ export const store = configureStore({
     paymentCheckout: paymentCheckoutReducer,
     [api.reducerPath]: api.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
+  // The dev-only immutable/serializable checks deep-scan store state on every
+  // dispatch. Scanning RTK Query's cache slice — large and machine-managed —
+  // visibly delayed navigation on any screen that fetches, while adding no
+  // safety: Immer already freezes all state in dev, so direct mutations throw
+  // regardless. The checks stay on for the small hand-written slices only.
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      immutableCheck: { ignoredPaths: [api.reducerPath] },
+      serializableCheck: { ignoredPaths: [api.reducerPath] },
+    }).concat(api.middleware),
 });
 
 // Wire RTK Query's refetchOnFocus/refetchOnReconnect to React Native's

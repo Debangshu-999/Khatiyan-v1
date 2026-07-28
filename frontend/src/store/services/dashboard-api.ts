@@ -62,6 +62,7 @@ export type AttentionSummary = {
   upcomingExits: number;
   exitsPastDue: number;
   tenantsOnNotice: number;
+  pendingDepositSettlements: number;
 };
 
 export type BudgetAttentionLevel = "NONE" | "APPROACHING" | "EXCEEDED";

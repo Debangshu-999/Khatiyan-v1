@@ -187,15 +187,15 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
 
 function DueChip({ days, suppressed }: { days: number; suppressed: boolean }) {
   const { colors, fonts } = useTheme();
+  // Numeric "In N day(s)" for every positive gap — the "Starts tomorrow" word
+  // label rendered with a blank tail on device, while the numeric form is fine.
   const label = suppressed
     ? "Will not generate"
     : days < 0
       ? "Due for generation"
       : days === 0
         ? "Starts today"
-        : days === 1
-          ? "Starts tomorrow"
-          : `In ${days} days`;
+        : `In ${days} day${days === 1 ? "" : "s"}`;
   const color = suppressed ? colors.muted : days <= 3 ? colors.jade : colors.primary;
   const backgroundColor = suppressed ? colors.surfaceSunken : days <= 3 ? colors.jadeSoft : colors.primarySoft;
 

@@ -1,4 +1,5 @@
-import { ActivityIndicator, Text, View } from "react-native";
+import { useState } from "react";
+import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, ReceiptText } from "lucide-react-native";
@@ -11,26 +12,41 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonCard } from "@/components/skeleton";
-import { useListMyTenancyBillingCyclesQuery, type BillingCycle } from "@/store/services/billing-api";
+import { MarqueeText } from "@/components/marquee-text";
+import { billTitle, useListMyTenancyBillingCyclesQuery, type BillingCycle } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+type BillFilter = "ALL" | "RENT_CYCLE" | "ONE_OFF";
+const FILTERS: { label: string; value: BillFilter }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Rent cycles", value: "RENT_CYCLE" },
+  { label: "Other bills", value: "ONE_OFF" },
+];
 
 export default function TenancyBillingHistoryScreen() {
   const router = useGuardedRouter();
   const { tenancyId } = useLocalSearchParams<{ tenancyId?: string }>();
-  const { colors } = useTheme();
+  const [filter, setFilter] = useState<BillFilter>("ALL");
   const cyclesQuery = useListMyTenancyBillingCyclesQuery(tenancyId ?? "", { skip: !tenancyId });
-  const cycles = [...(cyclesQuery.data ?? [])].sort((left, right) => right.cycleNumber - left.cycleNumber);
+
+  // Settled bills only — payable ones live in "My bills". Newest first.
+  const settled = [...(cyclesQuery.data ?? [])]
+    .filter((cycle) => cycle.status === "PAID" || cycle.status === "CANCELLED")
+    .sort((left, right) => new Date(right.periodStartDate).getTime() - new Date(left.periodStartDate).getTime());
+  const cycles = filter === "ALL" ? settled : settled.filter((cycle) => cycle.category === filter);
 
   return (
     <ScreenScrollView>
       <ScreenHeader
         eyebrow="BILLING"
         title="Past"
-        italicTail="cycles."
-        subtitle="Previous billing cycles, each with the same line-item drilldown as the current cycle."
+        italicTail="bills."
+        subtitle="Rent cycles and other bills you've settled — filter by type and open any for its line items."
         trailing={<BackButton onPress={() => router.back()} />}
       />
+
+      <FilterBar active={filter} onSelect={setFilter} />
 
       {cyclesQuery.isFetching ? (
         <SkeletonCard />
@@ -43,9 +59,39 @@ export default function TenancyBillingHistoryScreen() {
           />
         ))
       ) : (
-        <EmptyState icon={ReceiptText} eyebrow="No cycles" title="No billing history yet" description="Past cycles will appear here after billing starts." />
+        <EmptyState icon={ReceiptText} eyebrow="Nothing here" title="No past bills" description="Settled bills appear here once they're paid." />
       )}
     </ScreenScrollView>
+  );
+}
+
+function FilterBar({ active, onSelect }: { active: BillFilter; onSelect: (value: BillFilter) => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      {FILTERS.map((entry) => {
+        const on = entry.value === active;
+        return (
+          <AnimatedPressable
+            accessibilityRole="button"
+            key={entry.value}
+            onPress={() => onSelect(entry.value)}
+            style={{
+              backgroundColor: on ? colors.primary : colors.surfaceSunken,
+              borderColor: on ? colors.primary : colors.border,
+              borderRadius: 999,
+              borderWidth: 1,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm - 2,
+            }}
+          >
+            <Text style={{ color: on ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+              {entry.label}
+            </Text>
+          </AnimatedPressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -55,18 +101,20 @@ function CycleHistoryCard({ cycle, onPress }: { cycle: BillingCycle; onPress: ()
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-            Cycle {cycle.cycleNumber}
-          </Text>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+          {/* Bounded so a long one-off bill title scrolls instead of pushing
+              the status pill out of the card. */}
+          <View style={{ flexShrink: 1 }}>
+            <MarqueeText style={[type.eyebrow, { color: colors.kicker }]}>{billTitle(cycle)}</MarqueeText>
+          </View>
           <StatusPill label={humanizeToken(cycle.status)} tone={cycle.status === "PAID" ? "success" : cycle.status === "OVERDUE" ? "warning" : "neutral"} />
         </View>
         <DetailLine label="Period" value={`${formatShortDate(cycle.periodStartDate)} to ${formatShortDate(cycle.periodEndDate)}`} />
         <DetailLine label="Total" value={formatMoney(cycle.totalAmountPaise)} />
         <ActionCard
           meta={`${cycle.lineItems.length} item${cycle.lineItems.length === 1 ? "" : "s"}`}
-          title="Open cycle"
-          description="View the cycle totals, due date and line item breakdown."
+          title="Open bill"
+          description="View the bill total, due date and line-item breakdown."
           onPress={onPress}
         />
       </View>

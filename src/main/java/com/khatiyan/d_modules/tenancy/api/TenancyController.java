@@ -1,9 +1,11 @@
 package com.khatiyan.d_modules.tenancy.api;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,6 +27,7 @@ import com.khatiyan.d_modules.tenancy.api.dto.CreateTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateNormalExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.EarlyExitPenaltyPreview;
 import com.khatiyan.d_modules.tenancy.api.dto.RejectTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ReviewRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
@@ -74,7 +77,7 @@ public class TenancyController {
         TenancyOnboardingResponse body = tenancyService.onboard(
                 user.userId(), req.tenantPhone(), req.tenantName(), req.propertyId(), req.roomId(),
                 req.resolvedBillingType(), req.rentAmountPaise(), req.depositAmountPaise(),
-                req.startDate(), req.plannedEndDate());
+                req.startDate(), req.plannedEndDate(), req.idCheckConfirmed());
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -220,6 +223,28 @@ public class TenancyController {
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody CreatePrematureExitRequest req) {
         TenancyExitRequestResponse response = tenancyExitRequestService.requestPremature(
+                user.userId(),
+                req.requestedCheckoutDate(),
+                req.reason());
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .location(URI.create("/api/v1/tenancies/exit-requests/" + response.id()))
+                .body(response);
+    }
+
+    @GetMapping("/me/exit-requests/early-exit-preview")
+    public EarlyExitPenaltyPreview previewEarlyExitPenalty(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkoutDate) {
+        return tenancyService.previewEarlyExitPenalty(user.userId(), checkoutDate);
+    }
+
+    @PostMapping("/me/exit-requests/early-exit")
+    public ResponseEntity<TenancyExitRequestResponse> requestAgreementEarlyExit(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody CreatePrematureExitRequest req) {
+        TenancyExitRequestResponse response = tenancyExitRequestService.requestAgreementExit(
                 user.userId(),
                 req.requestedCheckoutDate(),
                 req.reason());

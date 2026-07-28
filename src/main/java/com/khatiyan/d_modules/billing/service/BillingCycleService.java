@@ -36,6 +36,7 @@ import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
@@ -81,6 +82,13 @@ public class BillingCycleService {
     private final ApplicationEventPublisher eventPublisher;
     private final ReferenceCodeGenerator referenceCodeGenerator;
 
+    /**
+     * How far ahead the next cycle is created. This is the owner's window to add
+     * charges: once the cycle's payment window opens it is frozen, so anything
+     * later belongs to the cycle after it.
+     */
+    private final int upcomingCycleLeadDays;
+
     public BillingCycleService(
             BillingCycleRepository billingCycleRepository,
             BillingCycleLineItemRepository lineItemRepository,
@@ -91,7 +99,10 @@ public class BillingCycleService {
             AuthModule authModule,
             DepositManagerService depositManagerService,
             ApplicationEventPublisher eventPublisher,
-            ReferenceCodeGenerator referenceCodeGenerator) {
+            ReferenceCodeGenerator referenceCodeGenerator,
+            @org.springframework.beans.factory.annotation.Value(
+                    "${app.billing.upcoming-cycle-lead-days:10}") int upcomingCycleLeadDays) {
+        this.upcomingCycleLeadDays = upcomingCycleLeadDays;
         this.billingCycleRepository = billingCycleRepository;
         this.lineItemRepository = lineItemRepository;
         this.manualPaymentRepository = manualPaymentRepository;
@@ -230,18 +241,31 @@ public class BillingCycleService {
 
         List<BillingCycle> cycles = cyclesForReportMonth(propertyId, monthStart);
 
-        long activeCount = cycles.size();
+        long activeCount = cycles.stream().filter(BillingCycle::countsAsBilled).count();
         long overdueCount = cycles.stream().filter(c -> c.getStatus() == BillingCycleStatus.OVERDUE).count();
         long overduePaise = cycles.stream()
                 .filter(c -> c.getStatus() == BillingCycleStatus.OVERDUE)
                 .mapToLong(BillingCycle::getTotalAmountPaise).sum();
         long paidCount = cycles.stream().filter(BillingCycle::isPaid).count();
         long unpaidCount = cycles.stream().filter(c -> c.getStatus() == BillingCycleStatus.UNPAID).count();
-        long billedPaise = cycles.stream().filter(c -> !c.isCancelled())
+        long billedPaise = cycles.stream().filter(BillingCycle::countsAsBilled)
                 .mapToLong(BillingCycle::getTotalAmountPaise).sum();
         long collectedPaise = cycles.stream().filter(BillingCycle::isPaid)
                 .mapToLong(BillingCycle::getTotalAmountPaise).sum();
-        long discountPaise = cycles.stream().mapToLong(BillingCycle::getDiscountAmountPaise).sum();
+        long discountPaise = cycles.stream().filter(BillingCycle::countsAsBilled)
+                .mapToLong(BillingCycle::getDiscountAmountPaise).sum();
+
+        // Actual split by category (no projection) for the P&L income summary.
+        int rentCycleCount = (int) cycles.stream()
+                .filter(c -> c.countsAsBilled() && c.getCategory() == BillingCycleCategory.RENT_CYCLE).count();
+        long rentBilledPaise = cycles.stream()
+                .filter(c -> c.countsAsBilled() && c.getCategory() == BillingCycleCategory.RENT_CYCLE)
+                .mapToLong(BillingCycle::getTotalAmountPaise).sum();
+        int oneOffCount = (int) cycles.stream()
+                .filter(c -> c.countsAsBilled() && c.getCategory() == BillingCycleCategory.ONE_OFF).count();
+        long oneOffBilledPaise = cycles.stream()
+                .filter(c -> c.countsAsBilled() && c.getCategory() == BillingCycleCategory.ONE_OFF)
+                .mapToLong(BillingCycle::getTotalAmountPaise).sum();
 
         long manuallyPaidPaise = manualPaymentRepository
                 .sumAmountByPropertyAndCollectedBetween(propertyId, fromInstant, toInstant);
@@ -256,7 +280,7 @@ public class BillingCycleService {
         // stay purely actual.
         if (monthStart.equals(LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1))) {
             Set<UUID> billedTenancyIds = cycles.stream()
-                    .filter(c -> !c.isCancelled())
+                    .filter(BillingCycle::countsAsBilled)
                     .map(BillingCycle::getTenancyId)
                     .collect(Collectors.toSet());
             List<TenancyResponse> expectedTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
@@ -287,7 +311,11 @@ public class BillingCycleService {
                 collectedPaise,
                 discountPaise,
                 manuallyPaidCount,
-                manuallyPaidPaise);
+                manuallyPaidPaise,
+                rentCycleCount,
+                rentBilledPaise,
+                oneOffCount,
+                oneOffBilledPaise);
     }
 
     /**
@@ -717,7 +745,14 @@ public class BillingCycleService {
     private BillingMonthlyReport buildMonthlyReport(
             UUID propertyId,
             LocalDate reportMonth,
-            List<BillingCycle> cycles) {
+            List<BillingCycle> allCycles) {
+        // Filtered once, at the source: the report's totals, its cycle count and
+        // its per-cycle rows must all describe the same set of bills. A draft or
+        // a cancelled bill is not money anyone was asked for.
+        List<BillingCycle> cycles = allCycles.stream()
+                .filter(BillingCycle::countsAsBilled)
+                .toList();
+
         long totalCollectablePaise = cycles.stream()
                 .mapToLong(BillingCycle::getTotalAmountPaise)
                 .sum();
@@ -853,7 +888,7 @@ public class BillingCycleService {
     }
 
     private void ensureFirstCycleDepositCanBeOpened(BillingCycle cycle) {
-        if (cycle.getBillingType() != TenancyBillingType.MONTHLY || cycle.getCycleNumber() != 1) {
+        if (cycle.getBillingType() != TenancyBillingType.MONTHLY || !Integer.valueOf(1).equals(cycle.getCycleNumber())) {
             return;
         }
 
@@ -868,7 +903,7 @@ public class BillingCycleService {
     }
 
     private void openDepositAccountAfterFirstCyclePayment(BillingCycle cycle) {
-        if (cycle.getBillingType() != TenancyBillingType.MONTHLY || cycle.getCycleNumber() != 1) {
+        if (cycle.getBillingType() != TenancyBillingType.MONTHLY || !Integer.valueOf(1).equals(cycle.getCycleNumber())) {
             return;
         }
 
@@ -894,12 +929,13 @@ public class BillingCycleService {
         TenancyResponse tenancy = getTenancy(tenancyId);
         propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
 
-        BillingCycle cycle = getLatestCycle(tenancyId);
-        if (!cycle.isPaid()) {
-            throw new ValidationException("Latest billing cycle must be paid before tenancy exit");
+        // Every bill — rent cycles and one-off penalty bills alike — must be paid.
+        if (billingCycleRepository.existsByTenancyIdAndStatusIn(
+                tenancyId, List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE))) {
+            throw new ValidationException("All bills must be paid before tenancy exit");
         }
 
-        return toResponse(cycle);
+        return toResponse(getLatestCycle(tenancyId));
     }
 
     /**
@@ -958,7 +994,10 @@ public class BillingCycleService {
         BillingCycle latest = latestCycle.get();
         LocalDate nextPeriodStart = latest.getPeriodStartDate().plusMonths(1);
         int nextCycleNumber = latest.getCycleNumber() + 1;
-        if (nextPeriodStart.isAfter(today)) {
+        // Generated ahead of its start date so the owner has a real bill to
+        // attach charges to. It is created UPCOMING and stays unpayable until
+        // the activation job opens its window.
+        if (nextPeriodStart.isAfter(today.plusDays(upcomingCycleLeadDays))) {
             return false;
         }
 
@@ -989,6 +1028,33 @@ public class BillingCycleService {
                 savedCycle.getPeriodStartDate());
 
         return true;
+    }
+
+    /**
+     * Opens the payment window for cycles whose start date has arrived.
+     *
+     * <p>This is the moment a cycle stops being editable. The property's
+     * late-fee rate is stamped onto the row here and never re-read, so a rate
+     * change afterwards applies to the next cycle instead of repricing a bill
+     * the tenant may already be paying.
+     */
+    @Transactional
+    public int activateDueCycles(LocalDate today) {
+        List<BillingCycle> due = billingCycleRepository.findByStatusAndPeriodStartDateLessThanEqual(
+                BillingCycleStatus.UPCOMING,
+                today);
+
+        int activatedCount = 0;
+        for (BillingCycle cycle : due) {
+            cycle.activate(lateFeePerDayPaise(cycle.getPropertyId()));
+            activatedCount = activatedCount + 1;
+        }
+
+        if (activatedCount > 0) {
+            log.info("Billing cycles activated count={} today={}", activatedCount, today);
+        }
+
+        return activatedCount;
     }
 
     /**
@@ -1077,15 +1143,31 @@ public class BillingCycleService {
             return false;
         }
 
-        long lateFeePerDayPaise = lateFeePerDayPaise(cycle.getPropertyId());
+        // The rate stamped when this cycle's window opened, not the property's
+        // current one: raising the rate today must not reprice a bill a tenant
+        // is already looking at.
+        Long stampedRate = cycle.getLateFeePerDayPaise();
+        long lateFeePerDayPaise = stampedRate != null ? stampedRate : lateFeePerDayPaise(cycle.getPropertyId());
         long lateDays = ChronoUnit.DAYS.between(cycle.getRentDueDate(), today);
         if (lateDays <= 0) {
             return false;
         }
 
         long lateFeeAmountPaise = lateDays * lateFeePerDayPaise;
+
+        // The fee is charged on the next cycle, never on this one. A frozen bill
+        // stays frozen: the tenant always owes exactly what they were shown, and
+        // being late shows up on the following bill the way a utility does.
+        BillingCycle target = findUpcomingCycle(cycle.getTenancyId()).orElse(null);
+        if (target == null) {
+            // No next cycle — the tenancy is ending. This falls to exit
+            // settlement, which nets it against the deposit.
+            log.debug("Late fee not carried forward: no upcoming cycle for tenancyId={}", cycle.getTenancyId());
+            return false;
+        }
+
         List<BillingCycleLineItem> existingLateFeeLines = lineItemRepository.findByBillingCycleIdAndType(
-                cycle.getId(),
+                target.getId(),
                 BillingCycleLineItemType.LATE_FEE);
 
         if (existingLateFeeLines.isEmpty()) {
@@ -1094,21 +1176,21 @@ public class BillingCycleService {
             }
 
             BillingCycleLineItem lateFeeLine = BillingCycleLineItem.lateFee(
-                    cycle,
+                    target,
                     "Late fee",
-                    "Automatic late fee for overdue rent",
+                    "Late fee for overdue rent on cycle " + cycle.getCycleNumber(),
                     lateFeeAmountPaise,
-                    nextDisplayOrder(cycle.getId()));
+                    nextDisplayOrder(target.getId()));
             lineItemRepository.save(lateFeeLine);
-            calculateCycle(cycle);
-            publishLateFeeApplied(cycle, lateFeeLine);
+            calculateCycle(target);
+            publishLateFeeApplied(target, lateFeeLine);
             return true;
         }
 
         BillingCycleLineItem lateFeeLine = existingLateFeeLines.get(0);
         if (lateFeeLine.getLastAdjustedByUserId() != null || !lateFeeLine.isSystemGenerated()) {
             log.debug("Late fee skipped because it was manually adjusted billingCycleId={} lineItemId={}",
-                    cycle.getId(),
+                    target.getId(),
                     lateFeeLine.getId());
             return false;
         }
@@ -1118,9 +1200,19 @@ public class BillingCycleService {
         }
 
         lateFeeLine.replaceSystemLateFee(lateFeeAmountPaise);
-        calculateCycle(cycle);
-        publishLateFeeApplied(cycle, lateFeeLine);
+        calculateCycle(target);
+        publishLateFeeApplied(target, lateFeeLine);
         return true;
+    }
+
+    /**
+     * The tenancy's cycle that is still editable, if one exists. Late fees and
+     * any charge arising after a window opens are carried here.
+     */
+    private Optional<BillingCycle> findUpcomingCycle(UUID tenancyId) {
+        return billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
+                tenancyId,
+                BillingCycleStatus.UPCOMING);
     }
 
     private long lateFeePerDayPaise(UUID propertyId) {
@@ -1224,6 +1316,81 @@ public class BillingCycleService {
     }
 
     /**
+     * Charges an approved early-exit penalty. If the tenant's current cycle is
+     * still open the penalty is rolled into it; if that cycle is already paid a
+     * new one-off penalty bill is raised, due immediately. Called from exit
+     * approval for agreement-backed premature exits.
+     */
+    @Transactional
+    public BillingCycleResponse applyEarlyExitPenalty(UUID actorUserId, UUID tenancyId, long penaltyPaise) {
+        BillingCycle latest = getLatestCycle(tenancyId);
+        if (penaltyPaise <= 0) {
+            return toResponse(latest);
+        }
+
+        TenancyResponse tenancy = getTenancy(tenancyId);
+        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+
+        // The penalty is a SYSTEM charge (not an owner-added extra charge).
+        if (!latest.isPaid() && !latest.isCancelled()) {
+            lineItemRepository.save(BillingCycleLineItem.systemCharge(
+                    latest,
+                    BillingCycleLineItemType.EXTRA_CHARGE,
+                    "Early exit penalty",
+                    "Early-exit penalty for ending the tenancy inside the agreement lock-in",
+                    penaltyPaise,
+                    nextDisplayOrder(latest.getId())));
+            calculateCycle(latest);
+
+            log.info(
+                    "Early exit penalty added to current cycle billingCycleId={} tenancyId={} actorUserId={} penalty={}",
+                    latest.getId(),
+                    tenancyId,
+                    actorUserId,
+                    penaltyPaise);
+
+            return toResponse(latest);
+        }
+
+        // Current bill already paid — raise a new ONE_OFF penalty bill, due today.
+        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
+                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
+        LocalDate today = LocalDate.now();
+
+        BillingCycle penaltyBill = BillingCycle.createOneOff(
+                tenancy.id(),
+                referenceCodeGenerator.nextCode("BIL"),
+                tenancy.userId(),
+                tenant.fullName(),
+                tenancy.propertyId(),
+                tenancy.roomId(),
+                tenancy.billingType(),
+                today);
+        BillingCycle savedBill = billingCycleRepository.save(penaltyBill);
+
+        lineItemRepository.save(BillingCycleLineItem.systemCharge(
+                savedBill,
+                BillingCycleLineItemType.EXTRA_CHARGE,
+                "Early exit penalty",
+                "Early-exit penalty for ending the tenancy inside the agreement lock-in",
+                penaltyPaise,
+                1));
+        calculateCycle(savedBill);
+        lineItemRepository.flush();
+        billingCycleRepository.saveAndFlush(savedBill);
+        publishBillingCycleGenerated(savedBill);
+
+        log.info(
+                "Early exit penalty raised as new one-off bill billingCycleId={} tenancyId={} actorUserId={} penalty={}",
+                savedBill.getId(),
+                tenancyId,
+                actorUserId,
+                penaltyPaise);
+
+        return toResponse(savedBill);
+    }
+
+    /**
      * Builds a billing cycle shell for the supplied cycle number and period start.
      */
     private BillingCycle createCycleEntity(
@@ -1236,7 +1403,9 @@ public class BillingCycleService {
             LocalDate periodEnd = periodStart.plusMonths(1).minusDays(1);
             LocalDate dueDate = calculateMonthlyDueDate(periodStart, billingPolicy.rentGraceDays());
 
-            return BillingCycle.create(
+            // Generated ahead of its window, so it starts mutable: this is the
+            // owner's chance to attach charges. It freezes on activation.
+            return BillingCycle.createUpcoming(
                     tenancy.id(),
                     referenceCodeGenerator.nextCode("BIL"),
                     tenancy.userId(),
@@ -1290,7 +1459,7 @@ public class BillingCycleService {
                     tenancy.rentAmountPaise(),
                     1));
 
-            if (cycle.getCycleNumber() == 1
+            if (Integer.valueOf(1).equals(cycle.getCycleNumber())
                     && tenancy.depositAmountPaise() != null
                     && tenancy.depositAmountPaise() > 0) {
                 lineItemRepository.save(BillingCycleLineItem.systemDepositCharge(

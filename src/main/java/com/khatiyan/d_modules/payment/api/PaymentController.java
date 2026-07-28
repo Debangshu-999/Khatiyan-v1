@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.payment.api;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -19,11 +20,15 @@ import org.springframework.web.bind.annotation.RestController;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.payment.PaymentModule;
 import com.khatiyan.d_modules.payment.api.dto.CreatePaymentOrderRequest;
+import com.khatiyan.d_modules.payment.api.dto.IfscLookupResponse;
 import com.khatiyan.d_modules.payment.api.dto.PaymentOrderResponse;
 import com.khatiyan.d_modules.payment.api.dto.PaymentWebhookEventResponse;
+import com.khatiyan.d_modules.payment.api.dto.PayoutAccountResponse;
 import com.khatiyan.d_modules.payment.api.dto.RecordClientPaymentFailureRequest;
+import com.khatiyan.d_modules.payment.api.dto.SetupPayoutAccountRequest;
 import com.khatiyan.d_modules.payment.api.dto.VerifyProviderPaymentRequest;
 import com.khatiyan.d_modules.payment.provider.razorpay.RazorpayPaymentProperties;
+import com.khatiyan.d_modules.payment.service.PaymentProperties;
 
 import jakarta.validation.Valid;
 
@@ -42,12 +47,15 @@ public class PaymentController {
 
     private final PaymentModule paymentModule;
     private final RazorpayPaymentProperties razorpayPaymentProperties;
+    private final PaymentProperties paymentProperties;
 
     public PaymentController(
             PaymentModule paymentModule,
-            RazorpayPaymentProperties razorpayPaymentProperties) {
+            RazorpayPaymentProperties razorpayPaymentProperties,
+            PaymentProperties paymentProperties) {
         this.paymentModule = paymentModule;
         this.razorpayPaymentProperties = razorpayPaymentProperties;
+        this.paymentProperties = paymentProperties;
     }
 
     @PostMapping("/billing-cycles/{billingCycleId}/orders")
@@ -110,6 +118,49 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
+    @org.springframework.web.bind.annotation.GetMapping("/ifsc/{ifsc}")
+    public ResponseEntity<IfscLookupResponse> lookupIfsc(@PathVariable String ifsc) {
+        return ResponseEntity.ok(paymentModule.lookupIfsc(ifsc));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/payout-accounts")
+    public ResponseEntity<List<PayoutAccountResponse>> listPayoutAccounts(
+            @AuthenticationPrincipal UserPrincipal user) {
+        return ResponseEntity.ok(paymentModule.listPayoutAccounts(user.userId()));
+    }
+
+    @PostMapping("/payout-accounts")
+    public ResponseEntity<PayoutAccountResponse> addPayoutAccount(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody SetupPayoutAccountRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(paymentModule.addPayoutAccount(user.userId(), request));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/payout-accounts/{payoutAccountId}")
+    public ResponseEntity<PayoutAccountResponse> updatePayoutAccount(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID payoutAccountId,
+            @Valid @RequestBody SetupPayoutAccountRequest request) {
+        return ResponseEntity.ok(paymentModule.updatePayoutAccount(user.userId(), payoutAccountId, request));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/payout-accounts/{payoutAccountId}")
+    public ResponseEntity<Void> deletePayoutAccount(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID payoutAccountId) {
+        paymentModule.deletePayoutAccount(user.userId(), payoutAccountId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/payout-accounts/{payoutAccountId}/primary")
+    public ResponseEntity<List<PayoutAccountResponse>> setPrimaryPayoutAccount(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID payoutAccountId) {
+        return ResponseEntity.ok(paymentModule.setPrimaryPayoutAccount(user.userId(), payoutAccountId));
+    }
+
     @PostMapping("/webhooks/razorpay")
     public ResponseEntity<PaymentWebhookEventResponse> handleRazorpayWebhook(
             @RequestHeader(name = "X-Razorpay-Signature", required = false) String signature,
@@ -168,6 +219,8 @@ public class PaymentController {
                       p{color:#64748b;line-height:1.5}
                       .amount{color:#1f8a76;font-size:34px;font-weight:900;margin:18px 0}
                       button{width:100%%;min-height:52px;border:0;border-radius:14px;background:#1f8a76;color:#fff;font-weight:900;font-size:16px}
+                      button:disabled{background:#e2e8f0;color:#94a3b8}
+                      #timer{margin:0 0 12px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums}
                       #status{margin-top:16px;font-weight:700;color:#64748b}
                     </style>
                   </head>
@@ -177,6 +230,7 @@ public class PaymentController {
                         <h1>Khatiyan payment</h1>
                         <p>Order %s</p>
                         <div class="amount">Rs. %s</div>
+                        <p id="timer"></p>
                         <button id="payButton">Pay securely</button>
                         <p id="status"></p>
                       </section>
@@ -218,9 +272,35 @@ public class PaymentController {
                       checkout.on("payment.failed", function (response) {
                         statusNode.textContent = response?.error?.description || "Payment failed. Return to Khatiyan to retry.";
                       });
-                      document.getElementById("payButton").addEventListener("click", function () {
+                      var payButton = document.getElementById("payButton");
+                      payButton.addEventListener("click", function () {
+                        if (Date.now() > deadline) {
+                          return;
+                        }
                         checkout.open();
                       });
+
+                      // Bounds this checkout attempt, not the order. The order stays
+                      // reusable so Razorpay can reject a duplicate payment on it;
+                      // this timer stops a page left open for hours from being paid
+                      // after the bill was already settled some other way. Reopening
+                      // checkout renders a fresh deadline.
+                      var deadline = Date.now() + %d * 1000;
+                      var timerNode = document.getElementById("timer");
+                      var ticker = setInterval(function () {
+                        var left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+                        if (left === 0) {
+                          clearInterval(ticker);
+                          timerNode.textContent = "";
+                          payButton.disabled = true;
+                          payButton.textContent = "Checkout expired";
+                          statusNode.textContent = "This checkout expired. Reopen the bill in Khatiyan to pay.";
+                          return;
+                        }
+                        var seconds = left %% 60;
+                        timerNode.textContent =
+                          "Complete payment within " + Math.floor(left / 60) + ":" + (seconds < 10 ? "0" : "") + seconds;
+                      }, 1000);
                     </script>
                   </body>
                 </html>
@@ -231,7 +311,9 @@ public class PaymentController {
                 order.amountPaise(),
                 escapeJavaScript(order.currency()),
                 escapeJavaScript(providerOrderId),
-                prefillSnippet(requestedMethod));
+                prefillSnippet(requestedMethod),
+                // Computed per render, so reopening checkout always starts fresh.
+                paymentProperties.orderExpiryMinutes() * 60);
     }
 
     /**

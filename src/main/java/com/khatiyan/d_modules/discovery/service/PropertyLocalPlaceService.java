@@ -1,9 +1,12 @@
 package com.khatiyan.d_modules.discovery.service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,7 +15,9 @@ import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.d_modules.discovery.api.dto.CreatePropertyLocalPlaceRequest;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
 import com.khatiyan.d_modules.discovery.api.dto.UpdatePropertyLocalPlaceRequest;
+import com.khatiyan.d_modules.discovery.model.LocalPlaceSubcategory;
 import com.khatiyan.d_modules.discovery.model.PropertyLocalPlace;
+import com.khatiyan.d_modules.discovery.repository.LocalPlaceSubcategoryRepository;
 import com.khatiyan.d_modules.discovery.repository.PropertyLocalPlaceRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
@@ -25,14 +30,17 @@ import lombok.extern.slf4j.Slf4j;
 public class PropertyLocalPlaceService {
 
     private final PropertyLocalPlaceRepository localPlaceRepository;
+    private final LocalPlaceSubcategoryRepository subcategoryRepository;
     private final PropertyModule propertyModule;
     private final TenancyModule tenancyModule;
 
     public PropertyLocalPlaceService(
             PropertyLocalPlaceRepository localPlaceRepository,
+            LocalPlaceSubcategoryRepository subcategoryRepository,
             PropertyModule propertyModule,
             TenancyModule tenancyModule) {
         this.localPlaceRepository = localPlaceRepository;
+        this.subcategoryRepository = subcategoryRepository;
         this.propertyModule = propertyModule;
         this.tenancyModule = tenancyModule;
     }
@@ -72,7 +80,7 @@ public class PropertyLocalPlaceService {
         PropertyLocalPlace place = PropertyLocalPlace.create(
                 propertyId,
                 request.name(),
-                request.tags(),
+                request.subcategoryIds(),
                 request.description(),
                 request.phone(),
                 request.addressText(),
@@ -103,7 +111,7 @@ public class PropertyLocalPlaceService {
         ensurePlaceBelongsToProperty(place, propertyId);
         place.update(
                 request.name(),
-                request.tags(),
+                request.subcategoryIds(),
                 request.description(),
                 request.phone(),
                 request.addressText(),
@@ -133,6 +141,16 @@ public class PropertyLocalPlaceService {
                 placeId,
                 propertyId,
                 actorUserId);
+    }
+
+    /**
+     * Active places for a property as responses (distance-sorted), with no access
+     * check — callers (search service) resolve and authorise the property first.
+     */
+    @Transactional(readOnly = true)
+    public List<PropertyLocalPlaceResponse> listActiveForProperty(
+            UUID propertyId, BigDecimal latitude, BigDecimal longitude) {
+        return listActiveLocalPlaces(propertyId, latitude, longitude);
     }
 
     private PropertyLocalPlace getActiveLocalPlace(UUID placeId) {
@@ -165,7 +183,15 @@ public class PropertyLocalPlaceService {
                 place.getLongitude(),
                 place.getDirectionsUrl());
 
-        return PropertyLocalPlaceResponse.from(place, distanceKm, directionsUrl);
+        List<UUID> subcategoryIds = new ArrayList<>(place.getSubcategoryIds());
+        Map<UUID, String> names = subcategoryRepository.findByIdIn(subcategoryIds).stream()
+                .collect(Collectors.toMap(LocalPlaceSubcategory::getId, LocalPlaceSubcategory::getName));
+        List<String> subcategoryNames = subcategoryIds.stream()
+                .map(id -> names.getOrDefault(id, ""))
+                .filter(name -> !name.isBlank())
+                .toList();
+
+        return PropertyLocalPlaceResponse.from(place, subcategoryIds, subcategoryNames, distanceKm, directionsUrl);
     }
 
     private Comparator<PropertyLocalPlaceResponse> localPlaceDistanceComparator() {

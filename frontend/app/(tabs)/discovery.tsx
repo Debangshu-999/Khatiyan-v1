@@ -7,13 +7,12 @@ import { Compass, Search } from "lucide-react-native";
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
+import { SkeletonScreen } from "@/components/skeleton";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
-import { LocalPlaceCard } from "@/features/discovery/components/local-place-card";
-import { LocalPlaceSearchCard } from "@/features/discovery/components/local-place-search-card";
+import { NearbyPlacesView } from "@/features/discovery/components/nearby-places-view";
 import {
   countActivePropertyFilters,
   emptyPropertyFilters,
@@ -28,7 +27,6 @@ import {
   useGetDiscoveryPropertyQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
-  useListMyLocalPlacesQuery,
   useSearchDiscoveryPropertiesQuery,
   type PropertyDiscoveryCard,
 } from "@/store/services/discovery-api";
@@ -50,19 +48,10 @@ export default function DiscoveryScreen() {
   const location = useAppSelector((state) => state.location);
   const isActiveTenant = Boolean(user?.activeTenant);
   const [activeTab, setActiveTab] = useState<DiscoveryTab>(isActiveTenant ? "locations" : "properties");
-  const [serviceSearch, setServiceSearch] = useState("");
   const [searchText, setSearchText] = useState("");
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedArea, setSelectedArea] = useState("");
-  // Coordinates of the manually picked location (city/area/suggestion). These
-  // drive geo-ranking for manual searches; without them a pick would only be
-  // text-matched and ranked by the device's position (or not at all when the
-  // device location is unknown). City-granular per the location catalog.
-  const [selectedCoords, setSelectedCoords] = useState<{ latitude: number | null; longitude: number | null }>({
-    latitude: null,
-    longitude: null,
-  });
   // Whether the active search came from a manual pick (city/area/suggestion or a
   // typed search) rather than the auto-fetched device location. This decides
   // which location source drives the query so both paths behave identically.
@@ -73,7 +62,6 @@ export default function DiscoveryScreen() {
   const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [page, setPage] = useState(0);
-  const debouncedServiceSearch = useDebouncedValue(serviceSearch, 300);
   const debouncedSearchText = useDebouncedValue(searchText, 300);
 
   const tabs = useMemo<DiscoveryTabItem[]>(
@@ -130,11 +118,11 @@ export default function DiscoveryScreen() {
       countryCode: manualSelection ? null : location.countryCode,
       locality: searchedArea,
       page,
-      // Coordinates rank results by proximity and light up the distance chips.
-      // A manual pick ranks around the searched location; an auto search around
-      // the device.
-      latitude: manualSelection ? selectedCoords.latitude : location.latitude ?? null,
-      longitude: manualSelection ? selectedCoords.longitude : location.longitude ?? null,
+      // Always the user's actual current location, so "X km away" is accurate
+      // no matter which region they browse. Manual city/area/place selection only
+      // scopes which results appear — it never moves the distance reference point.
+      latitude: location.latitude ?? null,
+      longitude: location.longitude ?? null,
       radiusKm: null,
       pgFor: appliedFilters.pgFor,
       minRentPaise: appliedFilters.minRentPaise,
@@ -147,7 +135,7 @@ export default function DiscoveryScreen() {
       sharingTypes: appliedFilters.sharingTypes,
       size: 50,
     }),
-    [appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState, selectedCoords.latitude, selectedCoords.longitude],
+    [appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState],
   );
 
   const citiesQuery = useListLocationCitiesQuery();
@@ -176,14 +164,6 @@ export default function DiscoveryScreen() {
     },
     { skip: !selectedPropertyId },
   );
-  const localPlacesQuery = useListMyLocalPlacesQuery(
-    {
-      latitude: location.latitude,
-      longitude: location.longitude,
-    },
-    { skip: activeTab !== "locations" || !isActiveTenant },
-  );
-
   function handleSearch() {
     setSelectedPropertyId(null);
     setPage(0);
@@ -201,10 +181,8 @@ export default function DiscoveryScreen() {
       const effectiveText = selectedArea || selectedCity || typed;
       setSubmittedSearch({ text: effectiveText });
       if (!selectedCity && !selectedArea && typed) {
-        // Free-typed text with no picked option — no known coordinates, so the
-        // search falls back to pure text matching.
+        // Free-typed text with no picked option — pure text matching.
         setSelectedState("");
-        setSelectedCoords({ latitude: null, longitude: null });
       }
     } else {
       // Search (or re-search) the auto-fetched device location.
@@ -212,22 +190,20 @@ export default function DiscoveryScreen() {
       setSelectedState("");
       setSelectedCity("");
       setSelectedArea("");
-      setSelectedCoords({ latitude: null, longitude: null });
       setSearchText(autoHint);
       setSubmittedSearch({ text: autoHint });
     }
   }
 
-  // Clearing the search box clears the whole location scope in one action —
-  // text, picked city/area/state and coordinates — so the pills don't linger
-  // after the address is emptied. Falls back to the auto device-location search.
+  // Clearing the search box clears the whole location scope in one action — text
+  // and picked city/area/state — so the pills don't linger after the address is
+  // emptied. Falls back to the auto device-location search.
   function clearSearch() {
     setManualSelection(false);
     setSearchText("");
     setSelectedState("");
     setSelectedCity("");
     setSelectedArea("");
-    setSelectedCoords({ latitude: null, longitude: null });
     setSubmittedSearch(defaultSearch);
     setSelectedPropertyId(null);
     setPage(0);
@@ -259,14 +235,12 @@ export default function DiscoveryScreen() {
       setSelectedState("");
       setSelectedCity("");
       setSelectedArea(label);
-      setSelectedCoords({ latitude: null, longitude: null });
       return;
     }
 
-    // Coordinates rank by distance immediately; resolve the address details
-    // (locality/city/state) so the search is region-scoped — otherwise every
-    // listing in the country would rank in, just farther down.
-    setSelectedCoords({ latitude: suggestion.latitude, longitude: suggestion.longitude });
+    // Resolve the picked place's address details (locality/city/state) so the
+    // search is region-scoped. The distance reference stays the device location,
+    // so the picked coordinates are only used here to look up the region.
     try {
       const address = await reverseGeocode({ lat: suggestion.latitude, lng: suggestion.longitude }, true).unwrap();
       setSelectedState(address.state ?? "");
@@ -293,7 +267,6 @@ export default function DiscoveryScreen() {
   const areaLabel = submittedSearch.text.trim();
   const nearbyCityLabel = searchedCity || (manualSelection ? selectedState : location.state ?? "").trim();
   const activeFilterCount = countActivePropertyFilters(appliedFilters);
-  const localPlaces = localPlacesQuery.data ?? [];
   const cities = citiesQuery.data ?? [];
   const areas = areasQuery.data ?? [];
   // The geocoder can return the same place more than once; dedupe so it renders
@@ -311,17 +284,6 @@ export default function DiscoveryScreen() {
     }
     return unique;
   }, [suggestionsQuery.data]);
-  const normalizedServiceSearch = debouncedServiceSearch.trim().toLowerCase();
-  const filteredLocalPlaces = useMemo(() => {
-    if (!normalizedServiceSearch) {
-      return localPlaces;
-    }
-
-    return localPlaces.filter((place) =>
-      (place.tags ?? []).some((tag) => tag.toLowerCase().includes(normalizedServiceSearch)),
-    );
-  }, [localPlaces, normalizedServiceSearch]);
-  const serviceSearchFiltering = serviceSearch !== debouncedServiceSearch;
 
   if (selectedPropertyId) {
     return (
@@ -379,7 +341,6 @@ export default function DiscoveryScreen() {
               setSelectedArea(area?.area ?? "");
               setSelectedCity(area?.city ?? selectedCity);
               setSelectedState(area?.state ?? selectedState);
-              setSelectedCoords({ latitude: area?.latitude ?? null, longitude: area?.longitude ?? null });
               setSearchText(area ? `${area.area}, ${area.city}` : selectedCity);
               setPage(0);
               setSubmittedSearch({
@@ -391,7 +352,6 @@ export default function DiscoveryScreen() {
               setSelectedCity(city?.city ?? "");
               setSelectedState(city?.state ?? "");
               setSelectedArea("");
-              setSelectedCoords({ latitude: city?.latitude ?? null, longitude: city?.longitude ?? null });
               setSearchText(city?.city ?? "");
               setPage(0);
               setSubmittedSearch({
@@ -494,45 +454,14 @@ export default function DiscoveryScreen() {
         </>
       ) : (
         <>
-          <LocalPlaceSearchCard
-            disabled={!isActiveTenant}
-            filtering={serviceSearchFiltering}
-            onClearSearch={() => setServiceSearch("")}
-            onSearchChange={setServiceSearch}
-            searchValue={serviceSearch}
-          />
-
-          {!isActiveTenant ? (
+          {isActiveTenant ? (
+            <NearbyPlacesView mode="tenant" />
+          ) : (
             <DiscoveryEmptyState
               title="No nearby locations yet"
               description="Important locations appear here after you become an active tenant of a property."
             />
-          ) : null}
-
-          {isActiveTenant && localPlacesQuery.isFetching ? (
-            <SkeletonList />
-          ) : null}
-
-          {isActiveTenant && localPlacesQuery.isError ? (
-            <DiscoveryEmptyState
-              title="Could not load local places"
-              description="Your active tenancy is required for local discovery. Refresh after your profile syncs."
-            />
-          ) : null}
-
-          {isActiveTenant && !localPlacesQuery.isFetching && !localPlacesQuery.isError && localPlaces.length === 0 ? (
-            <DiscoveryEmptyState title="No local places yet" description="No data available." />
-          ) : null}
-
-          {isActiveTenant &&
-          !localPlacesQuery.isFetching &&
-          !localPlacesQuery.isError &&
-          localPlaces.length > 0 &&
-          filteredLocalPlaces.length === 0 ? (
-            <DiscoveryEmptyState title="No services available" description="Try a different search term." />
-          ) : null}
-
-          {isActiveTenant ? filteredLocalPlaces.map((place) => <LocalPlaceCard key={place.id} place={place} />) : null}
+          )}
         </>
       )}
 

@@ -60,7 +60,7 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         SELECT cycle
         FROM BillingCycle cycle
         WHERE cycle.tenancyId = :tenancyId
-        ORDER BY cycle.cycleNumber DESC
+        ORDER BY cycle.periodStartDate DESC, cycle.cycleNumber DESC NULLS LAST
         """)
     List<BillingCycle> findByTenancyId(UUID tenancyId);
 
@@ -76,7 +76,8 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     List<BillingCycle> findByPropertyId(UUID propertyId);
 
     /**
-     * Finds the latest cycle for one tenancy.
+     * Finds the latest RENT cycle for one tenancy — one-off bills (e.g. penalties)
+     * are excluded so they never disrupt "current bill" / scheduler logic.
      *
      * <p>
      * Call with PageRequest.of(0, 1).
@@ -85,9 +86,16 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         SELECT cycle
         FROM BillingCycle cycle
         WHERE cycle.tenancyId = :tenancyId
+          AND cycle.category = com.khatiyan.d_modules.billing.model.BillingCycleCategory.RENT_CYCLE
         ORDER BY cycle.cycleNumber DESC
         """)
     List<BillingCycle> findLatestByTenancyId(UUID tenancyId, Pageable pageable);
+
+    /**
+     * True if the tenancy has any bill (rent cycle or one-off) still owed. Used to
+     * gate tenancy exit — the penalty one-off bill must be paid too.
+     */
+    boolean existsByTenancyIdAndStatusIn(UUID tenancyId, java.util.Collection<BillingCycleStatus> statuses);
 
     /**
      * Prevents duplicate cycle generation for the same tenancy cycle number.
@@ -112,6 +120,14 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         ORDER BY cycle.rentDueDate ASC
         """)
     List<BillingCycle> findPastDueCycles(BillingCycleStatus status, LocalDate today);
+
+    /** Cycles whose payment window has arrived and which must now freeze. */
+    List<BillingCycle> findByStatusAndPeriodStartDateLessThanEqual(BillingCycleStatus status, LocalDate periodStartDate);
+
+    /** The tenancy's still-editable cycle, which carries forward late charges. */
+    Optional<BillingCycle> findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
+            UUID tenancyId,
+            BillingCycleStatus status);
 
     /**
      * Finds unpaid/overdue cycles for which late fee recalculation may be needed.
@@ -182,6 +198,11 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     /**
      * Sum of cycle totals for a property whose period starts within a
      * half-open date range. Used for "billed this month".
+     *
+     * <p>UPCOMING is excluded because such a cycle has not been charged to
+     * anyone yet — the owner can still change it — and CANCELLED because it
+     * never will be. Counting either would report money as billed that nobody
+     * owes.
      */
     @Query("""
         SELECT COALESCE(SUM(cycle.totalAmountPaise), 0)
@@ -189,6 +210,9 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         WHERE cycle.propertyId = :propertyId
           AND cycle.periodStartDate >= :fromDate
           AND cycle.periodStartDate < :toDate
+          AND cycle.status NOT IN (
+              com.khatiyan.d_modules.billing.model.BillingCycleStatus.UPCOMING,
+              com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED)
         """)
     long sumTotalForPropertyByPeriodStartBetween(UUID propertyId, LocalDate fromDate, LocalDate toDate);
 
@@ -273,10 +297,14 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         """)
     long countForPropertyByStatusIn(UUID propertyId, List<BillingCycleStatus> statuses);
 
+    /** Discounts actually given, so drafts and cancelled bills do not count. */
     @Query("""
         SELECT COALESCE(SUM(cycle.discountAmountPaise), 0)
         FROM BillingCycle cycle
         WHERE cycle.propertyId = :propertyId
+          AND cycle.status NOT IN (
+              com.khatiyan.d_modules.billing.model.BillingCycleStatus.UPCOMING,
+              com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED)
         """)
     long sumDiscountForProperty(UUID propertyId);
 }

@@ -26,6 +26,8 @@ import com.khatiyan.d_modules.reminder.model.ReminderSourceType;
 import com.khatiyan.d_modules.reminder.model.ReminderStatus;
 import com.khatiyan.d_modules.reminder.model.ReminderType;
 import com.khatiyan.d_modules.reminder.repository.ReminderRecordRepository;
+import com.khatiyan.d_modules.tenancy.TenancyModule;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,16 +37,19 @@ public class ReminderService {
 
     private final ReminderRecordRepository reminderRecordRepository;
     private final NotificationModule notificationModule;
+    private final TenancyModule tenancyModule;
     private final TransactionTemplate transactionTemplate;
     private final int batchSize;
 
     public ReminderService(
             ReminderRecordRepository reminderRecordRepository,
             NotificationModule notificationModule,
+            TenancyModule tenancyModule,
             TransactionTemplate transactionTemplate,
             @Value("${app.reminder.processing-batch-size:100}") int batchSize) {
         this.reminderRecordRepository = reminderRecordRepository;
         this.notificationModule = notificationModule;
+        this.tenancyModule = tenancyModule;
         this.transactionTemplate = transactionTemplate;
         this.batchSize = batchSize;
     }
@@ -125,6 +130,11 @@ public class ReminderService {
                     }
                     if (reminder.getTenancyId() != null) {
                         data.put("tenancyId", reminder.getTenancyId().toString());
+                        // Resolve the human-readable TEN- code so the alert feed
+                        // shows it instead of a truncated raw UUID.
+                        tenancyModule.findById(reminder.getTenancyId())
+                                .map(TenancyResponse::referenceCode)
+                                .ifPresent(code -> data.put("tenancyReferenceCode", code));
                     }
 
                     notificationModule.notifyUser(

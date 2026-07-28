@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -329,7 +329,7 @@ function RoomChangeReviewModal({
   return (
     <>
     <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{

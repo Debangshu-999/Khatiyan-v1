@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNod
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Animated, Easing, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
+import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Landmark, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -13,6 +13,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { BackButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
+import { useListPayoutAccountsQuery } from "@/store/services/payout-api";
 import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -20,8 +21,10 @@ import { useTheme } from "@/theme/use-theme";
 type ActionRoute =
   | "/owner-billing"
   | "/owner-concerns"
+  | "/owner-deposit-history"
   | "/owner-exit-requests"
   | "/owner-expenses"
+  | "/owner-payout-setup"
   | "/owner-room-change-requests"
   | "/owner-tenancy";
 type ActionSource = "billing" | "concern" | "tenancy" | "budget";
@@ -56,7 +59,21 @@ export default function OwnerActionCenterScreen() {
   const dashboardQuery = useGetOwnerDashboardQuery(selectedPropertyId ?? "", { skip: !selectedPropertyId });
   const dashboard = dashboardQuery.data;
 
-  const actionItems = useMemo(() => (dashboard ? buildActionItems(dashboard) : []), [dashboard]);
+  // Payout banks belong to the owner, not the property — a manager has none to
+  // set up, so the nudge is owner-only.
+  // Gated on the token too: before the session hydrates the call 403s, and a
+  // cached failure would nag the owner to set up a bank they already have.
+  const isOwnerAccount = useAppSelector((state) => state.account.activeAccount) === "owner";
+  const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
+  const payoutQuery = useListPayoutAccountsQuery(undefined, { skip: !isOwnerAccount || !hasSession });
+  // Optional-chained rather than trusting isSuccess to imply data: a body that
+  // parses to null would otherwise crash the whole screen for a nudge.
+  const payoutMissing = isOwnerAccount && payoutQuery.isSuccess && (payoutQuery.data?.length ?? 0) === 0;
+
+  const actionItems = useMemo(
+    () => (dashboard ? buildActionItems(dashboard, payoutMissing) : []),
+    [dashboard, payoutMissing],
+  );
   const [filter, setFilter] = useState<ActionFilter>("all");
 
   const filters = FILTERS.map((entry) => ({
@@ -130,9 +147,23 @@ export default function OwnerActionCenterScreen() {
   );
 }
 
-function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
+function buildActionItems(dashboard: OwnerDashboard, payoutMissing: boolean): ActionItem[] {
   const attention = dashboard.attention;
   const items: ActionItem[] = [];
+
+  if (payoutMissing) {
+    items.push({
+      badge: "Set up",
+      detail: "Rent can't be collected online until a bank is added",
+      emphasize: false,
+      icon: Landmark,
+      key: "payout-account",
+      label: "No bank account added",
+      route: "/owner-payout-setup",
+      source: "billing",
+      tone: "warning",
+    });
+  }
 
   if (attention.paymentsOverdue > 0) {
     items.push({ badge: String(attention.paymentsOverdue), detail: "Awaiting collection", emphasize: true, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", tone: "danger" });
@@ -159,6 +190,9 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
   }
   if (attention.tenantsOnNotice > 0) {
     items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });
+  }
+  if (attention.pendingDepositSettlements > 0) {
+    items.push({ badge: String(attention.pendingDepositSettlements), detail: "Deposit awaiting settlement", emphasize: false, icon: Wallet, key: "deposit-settlements", label: "Deposits to settle", route: "/owner-deposit-history", source: "tenancy", tone: "primary" });
   }
 
   // Optional-chained: a cached / pre-upgrade dashboard response has no budget.

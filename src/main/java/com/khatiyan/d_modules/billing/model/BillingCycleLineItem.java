@@ -405,9 +405,12 @@ public class BillingCycleLineItem extends BaseEntity {
     }
 
     public boolean contributesToExtraAmount() {
+        // SYSTEM_CHARGE covers system-imposed extra charges (e.g. an early-exit
+        // penalty), mirroring how late fees count both actions.
         return status == BillingCycleLineItemStatus.ADDED
                 && type == BillingCycleLineItemType.EXTRA_CHARGE
-                && settlementAction == BillingLineSettlementAction.ADDED_TO_BILL;
+                && (settlementAction == BillingLineSettlementAction.ADDED_TO_BILL
+                        || settlementAction == BillingLineSettlementAction.SYSTEM_CHARGE);
     }
 
     public boolean contributesToLateFeeAmount() {

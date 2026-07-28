@@ -2,7 +2,15 @@ import { api } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type TenancyBillingType = "DAILY" | "MONTHLY";
-export type TenancyStatus = "ACTIVE" | "ON_NOTICE" | "ON_PREMATURE_NOTICE" | "EXITED" | "EVICTED";
+export type TenancyStatus =
+  | "PENDING_ACCEPTANCE"
+  | "ACTIVE"
+  | "ON_NOTICE"
+  | "ON_PREMATURE_NOTICE"
+  | "EXITED"
+  | "EVICTED"
+  | "CANCELLED";
+export type EarlyExitPenaltyType = "REMAINING_TERM" | "FIXED";
 
 export type TenancySummary = {
   id: string;
@@ -25,6 +33,15 @@ export type TenancySummary = {
   status: TenancyStatus;
   createdAt: string;
   billingStarted: boolean;
+  tosAccepted: boolean;
+  // Agreement-backed tenancies carry stamped lock-in terms and exit premature-only.
+  agreementBacked: boolean;
+  lockInEndDate: string | null;
+  earlyExitPenaltyType: EarlyExitPenaltyType | null;
+  earlyExitPenaltyFixedPaise: number | null;
+  // Null on tenancies onboarded before the declaration was required.
+  idCheckConfirmed?: boolean | null;
+  idCheckedAt?: string | null;
 };
 
 export type TenantPropertySummary = {
@@ -121,6 +138,15 @@ export type CreatePrematureExitRequestPayload = {
   requestedCheckoutDate: string;
 };
 
+export type EarlyExitPenaltyPreview = {
+  tenancyId: string;
+  checkoutDate: string;
+  lockInEndDate: string | null;
+  withinLockIn: boolean;
+  penaltyType: EarlyExitPenaltyType | null;
+  penaltyPaise: number;
+};
+
 export type ApproveExitRequestPayload = {
   approvedCheckoutDate?: string | null;
   finalBillingAmountPaise?: number | null;
@@ -147,6 +173,9 @@ export type OnboardTenantPayload = {
   depositAmountPaise?: number | null;
   startDate: string;
   plannedEndDate?: string | null;
+  // The owner declaring they checked the tenant's ID proof and photograph.
+  // The server rejects onboarding without it.
+  idCheckConfirmed: boolean;
 };
 
 export type TenancyOnboardingResult = {
@@ -240,6 +269,25 @@ export const tenancyApi = api.injectEndpoints({
       invalidatesTags: ["Tenancy", "Notification"],
     }),
 
+    // Agreement tenants: preview the lock-in penalty for a chosen checkout date.
+    previewEarlyExitPenalty: builder.query<EarlyExitPenaltyPreview, string>({
+      query: (checkoutDate) => ({
+        params: { checkoutDate },
+        url: "/api/v1/tenancies/me/exit-requests/early-exit-preview",
+      }),
+      providesTags: ["Tenancy"],
+    }),
+
+    // Agreement tenants: raise the early-exit request (penalty applied at approval).
+    requestAgreementEarlyExit: builder.mutation<TenancyExitRequest, CreatePrematureExitRequestPayload>({
+      query: (body) => ({
+        body,
+        method: "POST",
+        url: "/api/v1/tenancies/me/exit-requests/early-exit",
+      }),
+      invalidatesTags: ["Tenancy", "Notification"],
+    }),
+
     // ----- Owner / manager request review -----
 
     listPropertyExitRequests: builder.query<TenancyExitRequest[], string>({
@@ -316,6 +364,9 @@ export const {
   useListPastPropertyTenanciesQuery,
   useListPropertyTenanciesQuery,
   useOnboardTenantMutation,
+  usePreviewEarlyExitPenaltyQuery,
+  useLazyPreviewEarlyExitPenaltyQuery,
   useRejectExitRequestMutation,
   useRejectRoomChangeRequestMutation,
+  useRequestAgreementEarlyExitMutation,
 } = tenancyApi;

@@ -25,6 +25,7 @@ type StatusFilter = "ALL" | DepositAccountStatus;
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "ALL" },
   { label: "Active", value: "ACTIVE" },
+  { label: "To settle", value: "PENDING_SETTLEMENT" },
   { label: "Settled", value: "SETTLED" },
 ];
 

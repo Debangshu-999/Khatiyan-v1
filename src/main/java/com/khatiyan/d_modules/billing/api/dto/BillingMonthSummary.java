@@ -19,6 +19,13 @@ public record BillingMonthSummary(
     long collectedPaise,
     long totalDiscountPaise,
     long manuallyPaidCycleCount,
-    long manuallyPaidPaise
+    long manuallyPaidPaise,
+    // Actual (non-projected) split by bill category, used by the P&L income
+    // summary so it can show "N rent bills" vs "N other bills" and stay
+    // internally consistent (breakdown lines sum to the billed total).
+    int rentCycleCount,
+    long rentBilledPaise,
+    int oneOffCount,
+    long oneOffBilledPaise
 ) {
 }

@@ -21,6 +21,7 @@ import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationAction;
 import com.khatiyan.d_modules.billing.event.BillingLineItemNotificationEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
@@ -615,7 +616,12 @@ public class BillingCycleLineItemService {
     }
 
     /**
-     * Blocks all billing-cycle amount edits after payment or cancellation.
+     * Blocks every amount edit once a cycle's payment window has opened.
+     *
+     * <p>A tenant must always owe exactly the amount they were shown. Once a
+     * rent cycle goes live its total is fixed, so charges arising afterwards
+     * belong to the next cycle — or to a one-off bill when they can't wait.
+     * One-off bills have no upcoming phase, so they stay editable until paid.
      */
     private void ensureCycleStillEditable(BillingCycle cycle) {
         if (cycle.isPaid()) {
@@ -624,6 +630,12 @@ public class BillingCycleLineItemService {
 
         if (cycle.isCancelled()) {
             throw new ValidationException("Cancelled billing cycle cannot be edited");
+        }
+
+        if (cycle.getCategory() == BillingCycleCategory.RENT_CYCLE && cycle.isLocked()) {
+            throw new ValidationException(
+                    "This bill is already live and can no longer be changed. Add the charge to the upcoming cycle,"
+                            + " or raise a one-off bill if it can't wait.");
         }
     }
 

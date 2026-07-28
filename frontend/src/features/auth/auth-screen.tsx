@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Server } from "lucide-react-native";
 
 import { saveSession } from "@/auth/session-storage";
@@ -8,7 +9,7 @@ import { FadeInView } from "@/components/fade-in-view";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
 import { loadThemeModeForUser, saveActiveAccount } from "@/config/app-settings-storage";
-import { AuthHero, authHeroCopy, type AuthMode, type AuthStep } from "@/features/auth/auth-hero";
+import { AUTH_SHEET_OVERLAP, AuthHero, authHeroCopy, type AuthMode, type AuthStep } from "@/features/auth/auth-hero";
 import {
   AuthBackground,
   AuthCard,
@@ -25,8 +26,9 @@ import { LoginStep } from "@/features/auth/steps/login-step";
 import { ResetOtpStep } from "@/features/auth/steps/reset-otp-step";
 import { ResetPinStep } from "@/features/auth/steps/reset-pin-step";
 import { ResetRequestStep } from "@/features/auth/steps/reset-request-step";
+import { SetupOtpStep } from "@/features/auth/steps/setup-otp-step";
 import { SetupPinStep } from "@/features/auth/steps/setup-pin-step";
-import { SignupStep, type SignupAccountType } from "@/features/auth/steps/signup-step";
+import { SignupStep } from "@/features/auth/steps/signup-step";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   useConfirmEmailLoginMutation,
@@ -50,7 +52,12 @@ import { useTheme } from "@/theme/use-theme";
 
 function successMessage(value: string) {
   const loweredValue = value.toLowerCase();
-  return loweredValue.includes("created") || loweredValue.includes("requested");
+  return (
+    loweredValue.includes("created") ||
+    loweredValue.includes("requested") ||
+    loweredValue.includes("verified") ||
+    loweredValue.includes("sent")
+  );
 }
 
 /**
@@ -63,6 +70,7 @@ export function AuthScreen() {
   const dispatch = useAppDispatch();
   const toast = useToast();
   const { colors, fonts, type } = useTheme();
+  const insets = useSafeAreaInsets();
   const apiBaseUrl = useAppSelector((state) => state.appConfig.apiBaseUrl);
   const auth = useAppSelector((state) => state.auth);
 
@@ -79,8 +87,6 @@ export function AuthScreen() {
   const [otp, setOtp] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [setupOtpVerified, setSetupOtpVerified] = useState(false);
-  const [accountType, setAccountType] = useState<SignupAccountType>("USER");
   const [otpRequestedAt, setOtpRequestedAt] = useState<number | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
   const [showDev, setShowDev] = useState(false);
@@ -222,8 +228,11 @@ export function AuthScreen() {
     if (!validatePhone(signupPhone)) {
       return;
     }
-    if (!isValidEmail(signupEmail)) {
-      setMessage("Enter a valid recovery email address.");
+    // Recovery email is optional now that every account starts role-less (the
+    // owner/tenant choice moves to the post-login landing); a typed value must
+    // still be a valid email.
+    if (signupEmail.trim() && !isValidEmail(signupEmail)) {
+      setMessage("Enter a valid recovery email, or leave it blank.");
       return;
     }
     if (!fullName.trim()) {
@@ -232,16 +241,11 @@ export function AuthScreen() {
     }
 
     try {
-      if (accountType === "OWNER") {
-        await registerOwner({ phone: signupPhone, email: signupEmail.trim(), fullName: fullName.trim() }).unwrap();
-      } else {
-        await registerUser({ phone: signupPhone, email: signupEmail.trim(), fullName: fullName.trim() }).unwrap();
-      }
+      await registerUser({ phone: signupPhone, email: signupEmail.trim(), fullName: fullName.trim() }).unwrap();
 
       setOtp("");
       setNewPin("");
       setConfirmPin("");
-      setSetupOtpVerified(false);
       startOtpCooldown();
       setStep("setupOtp");
       setMessage("Account created. Setup OTP requested.");
@@ -258,7 +262,6 @@ export function AuthScreen() {
 
     try {
       await requestOtp({ phone: signupPhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
-      setSetupOtpVerified(false);
       startOtpCooldown();
       setMessage("PIN setup OTP requested.");
     } catch (error) {
@@ -275,7 +278,9 @@ export function AuthScreen() {
 
     try {
       await verifyOtp({ phone: signupPhone, otp, purpose: "LOGIN" }).unwrap();
-      setSetupOtpVerified(true);
+      setNewPin("");
+      setConfirmPin("");
+      setStep("setupPin");
       setMessage("OTP verified. Choose your PIN.");
     } catch (error) {
       setMessage(errorMessage(error));
@@ -386,7 +391,6 @@ export function AuthScreen() {
     setOtp("");
     setNewPin("");
     setConfirmPin("");
-    setSetupOtpVerified(false);
     setOtpRequestedAt(null);
   }
 
@@ -402,25 +406,54 @@ export function AuthScreen() {
     resetTransientState();
   }
 
-  const heroCopy = authHeroCopy(step, mode, { resetPhone });
+  const heroCopy = authHeroCopy(step, mode, { resetPhone, signupPhone });
 
   return (
     <ScreenScrollView
-      centerContent
       background={<AuthBackground />}
       bounces={false}
-      contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xxl, paddingTop: spacing.sm }}
+      // No padding / safe-area here: the hero band goes full-bleed to the top
+      // edge (self-managing the status-bar inset) and the sheet below owns its
+      // own padding. flexGrow makes the sheet fill the viewport so short screens
+      // show no dead space (tall content still scrolls via scrollOnlyWhenNeeded).
+      contentContainerStyle={{ flexGrow: 1, gap: 0, paddingBottom: 0, paddingHorizontal: 0, paddingTop: 0 }}
       overScrollMode="never"
       refreshable={false}
+      safeAreaEdges={[]}
       scrollOnlyWhenNeeded
     >
+      {/* Full-bleed brand band running edge-to-edge under the status bar. */}
+      <AuthHero copy={heroCopy} />
 
-      <FadeInView index={0}>
-        <AuthHero copy={heroCopy} />
-      </FadeInView>
+      {/* Content sheet: overlaps the band with rounded corners and fills the
+          rest of the screen. Fields flow from the top; each step pins its
+          actions to the bottom via marginTop:"auto" inside this stretched column. */}
+      <View
+        style={{
+          backgroundColor: colors.background,
+          borderTopLeftRadius: 26,
+          borderTopRightRadius: 26,
+          flexGrow: 1,
+          marginTop: -AUTH_SHEET_OVERLAP,
+          paddingBottom: insets.bottom + spacing.xs,
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.xl,
+        }}
+      >
+      <FadeInView index={1} style={{ flexGrow: 1 }}>
+        <View style={{ flexGrow: 1, gap: spacing.md }}>
+          {/* Step heading inside the sheet (Swiggy-style "Enter your number"). */}
+          <View style={{ gap: 4 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, fontWeight: "800", letterSpacing: -0.5 }} selectable>
+              {heroCopy.title}
+            </Text>
+            {heroCopy.subtitle ? (
+              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: "500", lineHeight: 20 }} selectable>
+                {heroCopy.subtitle}
+              </Text>
+            ) : null}
+          </View>
 
-      <FadeInView index={1}>
-        <AuthCard>
           {step === "entry" && mode === "login" ? (
             <LoginStep
               phone={loginPhone}
@@ -445,6 +478,20 @@ export function AuthScreen() {
             />
           ) : null}
 
+          {step === "entry" && mode === "signup" ? (
+            <SignupStep
+              phone={signupPhone}
+              onPhoneChange={setSignupPhone}
+              email={signupEmail}
+              onEmailChange={setSignupEmail}
+              fullName={fullName}
+              onFullNameChange={setFullName}
+              busy={busy}
+              onRegister={() => void handleRegister()}
+              onGoToLogin={goToLogin}
+            />
+          ) : null}
+
           {step === "emailLogin" ? (
             <EmailLoginStep
               email={loginEmail}
@@ -459,37 +506,28 @@ export function AuthScreen() {
             />
           ) : null}
 
-          {step === "entry" && mode === "signup" ? (
-            <SignupStep
+          {step === "setupOtp" ? (
+            <SetupOtpStep
               phone={signupPhone}
-              onPhoneChange={setSignupPhone}
-              email={signupEmail}
-              onEmailChange={setSignupEmail}
-              fullName={fullName}
-              onFullNameChange={setFullName}
-              accountType={accountType}
-              onAccountTypeChange={setAccountType}
-              busy={busy}
-              onRegister={() => void handleRegister()}
-              onGoToLogin={goToLogin}
+              otp={otp}
+              onOtpChange={setOtp}
+              cooldownSeconds={otpCooldownSeconds}
+              resendBusy={requestOtpState.isLoading}
+              verifyBusy={verifyOtpState.isLoading}
+              onResendOtp={() => void handleRequestSetupOtp()}
+              onVerifyOtp={() => void handleVerifySetupOtp()}
+              onEditPhone={goToSignup}
             />
           ) : null}
 
-          {step === "setupOtp" ? (
+          {step === "setupPin" ? (
             <SetupPinStep
-              otp={otp}
-              onOtpChange={setOtp}
               newPin={newPin}
               onNewPinChange={setNewPin}
               confirmPin={confirmPin}
               onConfirmPinChange={setConfirmPin}
-              otpVerified={setupOtpVerified}
-              cooldownSeconds={otpCooldownSeconds}
-              busy={busy}
-              onResendOtp={() => void handleRequestSetupOtp()}
-              onVerifyOtp={() => void handleVerifySetupOtp()}
+              busy={setPinState.isLoading}
               onSetPin={() => void handleSetPin()}
-              onBackToSignup={goToSignup}
             />
           ) : null}
 
@@ -505,12 +543,17 @@ export function AuthScreen() {
 
           {step === "resetOtp" ? (
             <ResetOtpStep
+              phone={resetPhone}
               otp={otp}
               onOtpChange={setOtp}
               cooldownSeconds={otpCooldownSeconds}
               busy={busy}
               onResendOtp={() => void handleRequestResetOtp()}
               onVerifyOtp={() => void handleVerifyResetOtp()}
+              onEditPhone={() => {
+                setStep("resetRequest");
+                resetTransientState();
+              }}
               onBackToLogin={goToLogin}
             />
           ) : null}
@@ -526,10 +569,10 @@ export function AuthScreen() {
               onBackToLogin={goToLogin}
             />
           ) : null}
-        </AuthCard>
+        </View>
       </FadeInView>
 
-      <View style={{ alignItems: "center" }}>
+      <View style={{ alignItems: "center", marginTop: spacing.sm }}>
         <LinkButton label={showDev ? "Hide developer options" : "Developer options"} onPress={() => setShowDev((value) => !value)} center muted />
       </View>
 
@@ -554,6 +597,7 @@ export function AuthScreen() {
           <PrimaryButton label="Use detected URL" onPress={() => dispatch(resetApiBaseUrl())} muted />
         </AuthCard>
       ) : null}
+      </View>
     </ScreenScrollView>
   );
 }

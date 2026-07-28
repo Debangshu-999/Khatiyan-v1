@@ -1,13 +1,14 @@
 import { useEffect, useRef, type ComponentType } from "react";
 import { Animated, Easing, Text, View, useWindowDimensions } from "react-native";
-import Svg, { Circle, Defs, Path, RadialGradient, Stop } from "react-native-svg";
-import { KeyRound, Lock, Mail, ShieldCheck, UserPlus, type LucideProps } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Rect } from "react-native-svg";
+import { KeyRound, Lock, Mail, ShieldCheck, ShieldPlus, UserPlus, type LucideProps } from "lucide-react-native";
 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type AuthMode = "login" | "signup";
-export type AuthStep = "entry" | "setupOtp" | "resetRequest" | "resetOtp" | "resetPin" | "emailLogin";
+export type AuthStep = "entry" | "setupOtp" | "setupPin" | "resetRequest" | "resetOtp" | "resetPin" | "emailLogin";
 
 type HeroTint = "primary" | "jade" | "accent";
 
@@ -19,8 +20,11 @@ export type AuthHeroCopy = {
   subtitle: string;
 };
 
+/** How far the content sheet overlaps up onto the band (rounded-corner reveal). */
+export const AUTH_SHEET_OVERLAP = 26;
+
 /** All step/mode-dependent hero content in one place, so copy edits are one-stop. */
-export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPhone: string }): AuthHeroCopy {
+export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPhone: string; signupPhone: string }): AuthHeroCopy {
   switch (step) {
     case "emailLogin":
       return {
@@ -35,8 +39,17 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         icon: ShieldCheck,
         tint: "jade",
         eyebrow: "Secure your account",
+        title: "Verify your code",
+        // Empty: the "Sent to +91 … ✎" row inside the step is the sub-line.
+        subtitle: "",
+      };
+    case "setupPin":
+      return {
+        icon: ShieldPlus,
+        tint: "jade",
+        eyebrow: "Secure your account",
         title: "Set your PIN",
-        subtitle: "Verify the code we sent, then choose a 6-digit PIN.",
+        subtitle: "Choose a 6-digit PIN to secure your account.",
       };
     case "resetRequest":
       return {
@@ -52,7 +65,8 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         tint: "accent",
         eyebrow: "PIN recovery",
         title: "Verify reset OTP",
-        subtitle: `Enter the code sent to +91 ${context.resetPhone}.`,
+        // Empty: the "Sent to +91 … ✎" row inside the step is the sub-line.
+        subtitle: "",
       };
     case "resetPin":
       return {
@@ -81,203 +95,126 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
   }
 }
 
-const EMBLEM_SIZE = 172;
+const ART_W = 400;
+const ART_H = 110;
+
+export function heroTintColor(copy: AuthHeroCopy, colors: { primary: string; jade: string; accent: string }) {
+  return copy.tint === "jade" ? colors.jade : copy.tint === "accent" ? colors.accent : colors.primary;
+}
 
 /**
- * Hero block above the auth card: a generative emblem — tinted glow, slowly
- * rotating dashed orbit with satellite dots, a floating icon disc and two
- * decorative sparks — followed by the editorial eyebrow / title / subtitle.
- * Pure vector + animation, no image assets.
+ * Full-bleed brand band at the very top of the auth screens (Swiggy-style):
+ * solid step-tinted background running edge-to-edge under the status bar, a
+ * floating white icon badge, the brand tagline in white, and the skyline
+ * illustration as a subtle white texture along the band floor. The content
+ * sheet below overlaps it by {@link AUTH_SHEET_OVERLAP} with rounded corners.
  */
 export function AuthHero({ copy }: { copy: AuthHeroCopy }) {
-  const { colors, fonts, isDark } = useTheme();
+  const { colors, fonts } = useTheme();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const Icon = copy.icon;
-  const tint = copy.tint === "jade" ? colors.jade : copy.tint === "accent" ? colors.accent : colors.primary;
-  const tintSoft = copy.tint === "jade" ? colors.jadeSoft : copy.tint === "accent" ? colors.accentSoft : colors.primarySoft;
+  const tint = heroTintColor(copy, colors);
 
-  // Zoomed / small displays report a short effective viewport; shrink the
-  // emblem and type so the whole auth screen fits without scrolling.
   const compact = windowHeight < 760;
-  const scale = compact ? 0.72 : 1;
-  const emblemSize = Math.round(EMBLEM_SIZE * scale);
-  const titleSize = compact ? 27 : 34;
+  const badgeSize = compact ? 56 : 64;
 
-  // One slow continuous orbit + a gentle vertical float, both on the native
-  // driver — ambient motion, never demanding attention.
-  const orbit = useRef(new Animated.Value(0)).current;
+  // A single gentle float on the icon badge — quiet ambient motion.
   const float = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
-    const spin = Animated.loop(
-      Animated.timing(orbit, { duration: 26000, easing: Easing.linear, toValue: 1, useNativeDriver: true }),
-    );
     const bob = Animated.loop(
       Animated.sequence([
         Animated.timing(float, { duration: 2600, easing: Easing.inOut(Easing.quad), toValue: 1, useNativeDriver: true }),
         Animated.timing(float, { duration: 2600, easing: Easing.inOut(Easing.quad), toValue: 0, useNativeDriver: true }),
       ]),
     );
-    spin.start();
     bob.start();
-    return () => {
-      spin.stop();
-      bob.stop();
-    };
-  }, [orbit, float]);
-
-  const rotate = orbit.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-  const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [3, -5] });
-
-  const half = emblemSize / 2;
-  const orbitInset = Math.round(14 * scale);
+    return () => bob.stop();
+  }, [float]);
+  const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [2, -3] });
 
   return (
-    <View style={{ alignItems: "center", gap: compact ? spacing.sm : spacing.md }}>
-      <View style={{ alignItems: "center", height: emblemSize, justifyContent: "center", width: emblemSize }}>
-        {/* Soft tinted glow washing out from the centre. */}
-        <Svg height={emblemSize} width={emblemSize} style={{ position: "absolute" }}>
-          <Defs>
-            <RadialGradient id="hero-glow" cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor={tint} stopOpacity={isDark ? 0.32 : 0.22} />
-              <Stop offset="0.7" stopColor={tint} stopOpacity={isDark ? 0.1 : 0.07} />
-              <Stop offset="1" stopColor={tint} stopOpacity="0" />
-            </RadialGradient>
-          </Defs>
-          <Circle cx={half} cy={half} fill="url(#hero-glow)" r={half} />
-        </Svg>
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: tint,
+        gap: compact ? spacing.sm : spacing.md,
+        overflow: "hidden",
+        paddingBottom: (compact ? spacing.lg : spacing.xl) + AUTH_SHEET_OVERLAP,
+        paddingHorizontal: spacing.xl,
+        paddingTop: insets.top + (compact ? spacing.md : spacing.lg),
+      }}
+    >
+      {/* Skyline texture in translucent white, pinned to the band floor. */}
+      <Svg
+        height="100%"
+        width="100%"
+        preserveAspectRatio="xMaxYMax slice"
+        style={{ position: "absolute" }}
+        viewBox={`0 0 ${ART_W} ${ART_H}`}
+      >
+        <Circle cx={40} cy={26} fill="#FFFFFF" opacity={0.16} r={11} />
+        <Circle cx={90} cy={14} fill="#FFFFFF" opacity={0.12} r={2.6} />
+        <Circle cx={352} cy={18} fill="#FFFFFF" opacity={0.12} r={3} />
 
-        {/* Rotating dashed orbit with two satellite dots. */}
-        <Animated.View style={{ height: emblemSize, position: "absolute", transform: [{ rotate }], width: emblemSize }}>
-          <Svg height={emblemSize} width={emblemSize}>
-            <Circle
-              cx={half}
-              cy={half}
-              fill="none"
-              r={half - orbitInset}
-              stroke={tint}
-              strokeDasharray="3 10"
-              strokeLinecap="round"
-              strokeOpacity={0.55}
-              strokeWidth={2}
-            />
-            <Circle cx={half} cy={orbitInset} fill={tint} r={4.5 * scale} />
-            <Circle cx={half + (half - orbitInset) * 0.7071} cy={half + (half - orbitInset) * 0.7071} fill={colors.accent} r={3 * scale} />
-          </Svg>
-        </Animated.View>
+        <Rect fill="#FFFFFF" height={44} opacity={0.08} rx={4} width={30} x={10} y={ART_H - 44} />
+        <Rect fill="#FFFFFF" height={62} opacity={0.08} rx={4} width={36} x={58} y={ART_H - 62} />
+        <Rect fill="#FFFFFF" height={38} opacity={0.08} rx={4} width={28} x={128} y={ART_H - 38} />
+        <Rect fill="#FFFFFF" height={52} opacity={0.12} rx={5} width={36} x={30} y={ART_H - 52} />
+        <Rect fill="#FFFFFF" height={72} opacity={0.12} rx={5} width={42} x={92} y={ART_H - 72} />
 
-        {/* Floating icon disc. */}
-        <Animated.View
-          style={{
-            alignItems: "center",
-            backgroundColor: isDark ? colors.surfaceRaised : "#FFFFFF",
-            borderColor: tintSoft,
-            borderCurve: "continuous",
-            borderRadius: 999,
-            borderWidth: 2,
-            elevation: 10,
-            height: Math.round(96 * scale),
-            justifyContent: "center",
-            shadowColor: tint,
-            shadowOffset: { height: 10, width: 0 },
-            shadowOpacity: isDark ? 0.45 : 0.25,
-            shadowRadius: 18,
-            transform: [{ translateY }],
-            width: Math.round(96 * scale),
-          }}
-        >
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: tintSoft,
-              borderRadius: 999,
-              height: Math.round(72 * scale),
-              justifyContent: "center",
-              width: Math.round(72 * scale),
-            }}
-          >
-            <Icon color={tint} size={Math.round(34 * scale)} strokeWidth={2.1} />
-          </View>
-        </Animated.View>
+        <Rect fill="#FFFFFF" height={54} opacity={0.08} rx={4} width={34} x={250} y={ART_H - 54} />
+        <Rect fill="#FFFFFF" height={70} opacity={0.08} rx={4} width={40} x={306} y={ART_H - 70} />
+        <Rect fill="#FFFFFF" height={46} opacity={0.08} rx={4} width={30} x={368} y={ART_H - 46} />
+        <Rect fill="#FFFFFF" height={60} opacity={0.12} rx={5} width={38} x={276} y={ART_H - 60} />
+        <Rect fill="#FFFFFF" height={80} opacity={0.12} rx={5} width={44} x={332} y={ART_H - 80} />
 
-        {/* Editorial sparks — small four-point stars off the orbit. */}
-        <Svg height={emblemSize} width={emblemSize} style={{ position: "absolute" }}>
-          <Path
-            d={sparkPath(emblemSize - 30 * scale, 34 * scale, 7 * scale)}
-            fill={colors.accent}
-            opacity={0.85}
-          />
-          <Path
-            d={sparkPath(26 * scale, emblemSize - 40 * scale, 5 * scale)}
-            fill={tint}
-            opacity={0.7}
-          />
-        </Svg>
-      </View>
+        {[0, 1].map((col) =>
+          [0, 1, 2].map((row) => (
+            <Rect fill="#FFFFFF" height={5} key={`wl-${col}-${row}`} opacity={0.22} rx={1.2} width={6} x={100 + col * 14} y={ART_H - 62 + row * 15} />
+          )),
+        )}
+        {[0, 1].map((col) =>
+          [0, 1, 2].map((row) => (
+            <Rect fill="#FFFFFF" height={5} key={`wr-${col}-${row}`} opacity={0.22} rx={1.2} width={6} x={340 + col * 15} y={ART_H - 70 + row * 16} />
+          )),
+        )}
+      </Svg>
 
-      <View style={{ alignItems: "center", gap: spacing.xs }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ backgroundColor: colors.accent, height: 1, opacity: 0.5, width: 26 }} />
-          <Text
-            style={{
-              color: colors.primary,
-              fontFamily: fonts.sans,
-              fontSize: 11,
-              fontWeight: "900",
-              letterSpacing: 1.8,
-              textTransform: "uppercase",
-            }}
-            selectable
-          >
-            {copy.eyebrow}
-          </Text>
-          <View style={{ backgroundColor: colors.accent, height: 1, opacity: 0.5, width: 26 }} />
-        </View>
-        <Text
-          adjustsFontSizeToFit
-          minimumFontScale={0.7}
-          numberOfLines={1}
-          style={{
-            color: colors.ink,
-            fontFamily: fonts.display,
-            fontSize: titleSize,
-            fontWeight: "800",
-            letterSpacing: -0.8,
-            lineHeight: titleSize + 5,
-            textAlign: "center",
-          }}
-          selectable
-        >
-          {copy.title}
-        </Text>
-        <Text
-          style={{
-            color: colors.muted,
-            fontFamily: fonts.sans,
-            fontSize: compact ? 13 : 14,
-            fontWeight: "500",
-            lineHeight: compact ? 19 : 21,
-            maxWidth: 310,
-            textAlign: "center",
-          }}
-          selectable
-        >
-          {copy.subtitle}
-        </Text>
-      </View>
+      <Animated.View
+        style={{
+          alignItems: "center",
+          backgroundColor: "#FFFFFF",
+          borderCurve: "continuous",
+          borderRadius: Math.round(badgeSize * 0.32),
+          elevation: 6,
+          height: badgeSize,
+          justifyContent: "center",
+          shadowColor: "#000000",
+          shadowOffset: { height: 6, width: 0 },
+          shadowOpacity: 0.18,
+          shadowRadius: 12,
+          transform: [{ translateY }],
+          width: badgeSize,
+        }}
+      >
+        <Icon color={tint} size={Math.round(badgeSize * 0.5)} strokeWidth={2.1} />
+      </Animated.View>
+
+      <Text
+        style={{
+          color: "#FFFFFF",
+          fontFamily: fonts.sans,
+          fontSize: compact ? 15 : 16.5,
+          fontWeight: "800",
+          lineHeight: compact ? 21 : 23,
+          maxWidth: 320,
+          textAlign: "center",
+        }}
+        selectable
+      >
+        One place for your stays, rent{"\n"}and properties.
+      </Text>
     </View>
   );
-}
-
-// A four-point star (concave diamond) centred at (cx, cy).
-function sparkPath(cx: number, cy: number, radius: number) {
-  const inner = radius * 0.38;
-  return [
-    `M ${cx} ${cy - radius}`,
-    `Q ${cx + inner} ${cy - inner} ${cx + radius} ${cy}`,
-    `Q ${cx + inner} ${cy + inner} ${cx} ${cy + radius}`,
-    `Q ${cx - inner} ${cy + inner} ${cx - radius} ${cy}`,
-    `Q ${cx - inner} ${cy - inner} ${cx} ${cy - radius}`,
-    "Z",
-  ].join(" ");
 }

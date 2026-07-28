@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -15,11 +15,14 @@ import { SkeletonCard } from "@/components/skeleton";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
+import { useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import {
   useApproveExitRequestMutation,
   useListPropertyExitRequestsQuery,
+  useListPropertyTenanciesQuery,
   useRejectExitRequestMutation,
   type TenancyExitRequest,
+  type TenancySummary,
 } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -36,6 +39,17 @@ export default function OwnerExitRequestsScreen() {
 
   const requestsQuery = useListPropertyExitRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const tenanciesQuery = useListPropertyTenanciesQuery(
+    { includePast: true, propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty },
+  );
+  const tenancyById = useMemo(() => {
+    const map: Record<string, TenancySummary> = {};
+    for (const tenancy of tenanciesQuery.data ?? []) {
+      map[tenancy.id] = tenancy;
+    }
+    return map;
+  }, [tenanciesQuery.data]);
   const roomLabels = useMemo(() => {
     const map: Record<string, string> = {};
     for (const room of roomsQuery.data ?? []) {
@@ -118,7 +132,9 @@ export default function OwnerExitRequestsScreen() {
         </>
       ) : null}
 
-      {selected && mode ? <ExitReviewModal mode={mode} onClose={closeReview} request={selected} /> : null}
+      {selected && mode ? (
+        <ExitReviewModal mode={mode} onClose={closeReview} request={selected} tenancy={tenancyById[selected.tenancyId]} />
+      ) : null}
       {pastOpen ? <PastExitRequestsModal onClose={() => setPastOpen(false)} requests={pastRequests} roomLabels={roomLabels} /> : null}
     </ScreenScrollView>
   );
@@ -235,11 +251,8 @@ function ExitRequestCard({
                 <InfoLine icon={CalendarDays} label="Approved" value={formatDate(request.approvedCheckoutDate)} />
               ) : null}
               <InfoLine icon={KeyRound} label="Tenancy" value={shortId(request.tenancyId)} />
-              {request.finalBillingAmountPaise != null ? (
-                <InfoLine icon={IndianRupee} label="Final bill" value={formatMoney(request.finalBillingAmountPaise)} />
-              ) : null}
-              {request.depositSettlementAmountPaise != null ? (
-                <InfoLine icon={IndianRupee} label="Deposit" value={formatMoney(request.depositSettlementAmountPaise)} />
+              {request.finalBillingAmountPaise != null && request.finalBillingAmountPaise > 0 ? (
+                <InfoLine icon={IndianRupee} label="Bill impact" value={formatMoney(request.finalBillingAmountPaise)} />
               ) : null}
               {request.tenantReason ? (
                 <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
@@ -263,13 +276,20 @@ function ExitRequestCard({
   );
 }
 
-function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose: () => void; request: TenancyExitRequest }) {
+function ExitReviewModal({
+  mode,
+  onClose,
+  request,
+  tenancy,
+}: {
+  mode: ReviewMode;
+  onClose: () => void;
+  request: TenancyExitRequest;
+  tenancy?: TenancySummary;
+}) {
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const [approvedCheckoutDate, setApprovedCheckoutDate] = useState(request.requestedCheckoutDate);
-  const [finalBilling, setFinalBilling] = useState("");
-  const [depositPayable, setDepositPayable] = useState(true);
-  const [depositSettlement, setDepositSettlement] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ confirmLabel: string; destructive?: boolean; message: string; title: string } | null>(null);
@@ -277,6 +297,19 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
   const [approveExit, approveState] = useApproveExitRequestMutation();
   const [rejectExit, rejectState] = useRejectExitRequestMutation();
   const busy = approveState.isLoading || rejectState.isLoading;
+  const reject = mode === "reject";
+
+  // Current bill status drives the messaging: a paid bill means the early-exit
+  // penalty becomes a NEW bill; an unpaid bill is where it (or dues) settle.
+  const cyclesQuery = useListManagedTenancyBillingCyclesQuery(request.tenancyId, { skip: reject });
+  const latestCycle = useMemo(() => {
+    const cycles = cyclesQuery.data ?? [];
+    return cycles.length > 0 ? [...cycles].sort((a, b) => (b.cycleNumber ?? 0) - (a.cycleNumber ?? 0))[0] : null;
+  }, [cyclesQuery.data]);
+  const billPaid = !latestCycle || latestCycle.status === "PAID" || latestCycle.status === "CANCELLED";
+
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(approvedCheckoutDate.trim());
+  const penaltyPaise = tenancy?.agreementBacked && validDate ? earlyExitPenaltyPaise(tenancy, approvedCheckoutDate.trim()) : 0;
 
   const title = mode === "approve" ? "Approve exit" : "Reject exit";
 
@@ -286,7 +319,7 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
     }
     setError(null);
 
-    if (mode === "reject") {
+    if (reject) {
       setConfirm({
         confirmLabel: "Reject",
         destructive: true,
@@ -296,14 +329,20 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
       return;
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(approvedCheckoutDate.trim())) {
+    if (!validDate) {
       setError("Enter the approved checkout date as YYYY-MM-DD.");
       return;
     }
 
+    const penaltyLine =
+      penaltyPaise > 0
+        ? billPaid
+          ? ` A new penalty bill of ${formatMoney(penaltyPaise)} will be raised.`
+          : ` A penalty of ${formatMoney(penaltyPaise)} will be added to the current bill.`
+        : "";
     setConfirm({
       confirmLabel: "Approve",
-      message: `Approve checkout on ${formatDate(approvedCheckoutDate)}${depositPayable ? " with deposit settlement" : ""}?`,
+      message: `Approve checkout on ${formatDate(approvedCheckoutDate)}.${penaltyLine}`,
       title: "Approve exit request?",
     });
   }
@@ -312,13 +351,12 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
     setError(null);
     try {
       if (mode === "approve") {
+        // Deposit settlement + final billing are handled at end-of-tenancy now,
+        // so approval only sets the checkout date (the penalty is auto-applied).
         await approveExit({
           payload: {
             adminNotes: notes.trim() || null,
             approvedCheckoutDate: approvedCheckoutDate.trim(),
-            depositPayable,
-            depositSettlementAmountPaise: depositPayable ? rupeesToPaise(depositSettlement) : null,
-            finalBillingAmountPaise: rupeesToPaise(finalBilling),
           },
           requestId: request.id,
         }).unwrap();
@@ -331,12 +369,10 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
     }
   }
 
-  const reject = mode === "reject";
-
   return (
     <>
     <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -372,25 +408,39 @@ function ExitReviewModal({ mode, onClose, request }: { mode: ReviewMode; onClose
               ) : (
                 <>
                   <FormInput label="Approved checkout date" onChangeText={setApprovedCheckoutDate} placeholder="YYYY-MM-DD" value={approvedCheckoutDate} />
-                  <FormInput keyboardType="decimal-pad" label="Final bill (₹, optional)" onChangeText={setFinalBilling} placeholder="Amount in rupees" value={finalBilling} />
-                  <View style={{ gap: spacing.xs }}>
-                    <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
-                      Deposit payable
-                    </Text>
-                    <View style={{ flexDirection: "row", gap: spacing.xs }}>
-                      <ChoiceButton active={depositPayable} label="Yes" onPress={() => setDepositPayable(true)} />
-                      <ChoiceButton active={!depositPayable} label="No" onPress={() => setDepositPayable(false)} />
-                    </View>
-                  </View>
-                  {depositPayable ? (
-                    <FormInput
-                      keyboardType="decimal-pad"
-                      label="Deposit settlement (₹, optional)"
-                      onChangeText={setDepositSettlement}
-                      placeholder="Amount in rupees"
-                      value={depositSettlement}
+
+                  {cyclesQuery.isFetching && !latestCycle ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <StatusNote
+                      tone={billPaid ? "muted" : "warning"}
+                      title="Current bill"
+                      message={
+                        billPaid
+                          ? "The current bill is fully paid — there is nothing to settle here."
+                          : `Outstanding: ${formatMoney(latestCycle?.totalAmountPaise ?? 0)}${latestCycle ? ` (bill ${latestCycle.referenceCode})` : ""}. The tenant clears this before checkout.`
+                      }
+                    />
+                  )}
+
+                  {penaltyPaise > 0 ? (
+                    <StatusNote
+                      tone="primary"
+                      title="Early-exit penalty"
+                      message={
+                        billPaid
+                          ? `Approving raises a new penalty bill of ${formatMoney(penaltyPaise)}, since the current bill is already paid.`
+                          : `Approving adds a penalty of ${formatMoney(penaltyPaise)} to the current bill.`
+                      }
                     />
                   ) : null}
+
+                  <StatusNote
+                    tone="muted"
+                    title="Deposit"
+                    message="The deposit is settled when the tenancy ends, not at approval."
+                  />
+
                   <FormInput multiline label="Note (optional)" onChangeText={setNotes} placeholder="Optional note for the tenant" value={notes} />
                 </>
               )}
@@ -597,24 +647,19 @@ function FormInput({
   );
 }
 
-function ChoiceButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  const { colors, fonts } = useTheme();
+function StatusNote({ message, title, tone }: { message: string; title: string; tone: "muted" | "warning" | "primary" }) {
+  const { colors, type } = useTheme();
+  const accent = tone === "warning" ? colors.warningText : tone === "primary" ? colors.primary : colors.muted;
+  const soft = tone === "warning" ? colors.warningSoft : tone === "primary" ? colors.primarySoft : colors.surfaceSunken;
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      style={{
-        backgroundColor: active ? colors.primary : colors.surfaceSunken,
-        borderColor: active ? colors.primary : colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontWeight: "800" }} selectable>
-        {label}
+    <View style={{ backgroundColor: soft, borderRadius: 12, gap: 2, padding: spacing.md }}>
+      <Text style={[type.caption, { color: accent, fontWeight: "800" }]} selectable>
+        {title}
       </Text>
-    </AnimatedPressable>
+      <Text style={[type.caption, { color: colors.ink, lineHeight: 18 }]} selectable>
+        {message}
+      </Text>
+    </View>
   );
 }
 
@@ -712,13 +757,22 @@ function byPendingFirst(left: TenancyExitRequest, right: TenancyExitRequest) {
   return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
 }
 
-function rupeesToPaise(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
+// Mirrors the backend Tenancy.earlyExitPenaltyPaise: prorated remaining lock-in
+// days over 30 × rent, or a fixed amount; zero once the lock-in has been served.
+function earlyExitPenaltyPaise(tenancy: TenancySummary, checkoutISO: string): number {
+  if (!tenancy.lockInEndDate) {
+    return 0;
   }
-  const amount = Math.round(Number(trimmed) * 100);
-  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+  const checkout = new Date(`${checkoutISO}T00:00:00`);
+  const lockInEnd = new Date(`${tenancy.lockInEndDate}T00:00:00`);
+  const daysRemaining = Math.round((lockInEnd.getTime() - checkout.getTime()) / 86_400_000);
+  if (daysRemaining <= 0) {
+    return 0;
+  }
+  if (tenancy.earlyExitPenaltyType === "FIXED") {
+    return tenancy.earlyExitPenaltyFixedPaise ?? 0;
+  }
+  return Math.round(((tenancy.rentAmountPaise ?? 0) * daysRemaining) / 30);
 }
 
 function humanizeToken(value: string) {

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
@@ -16,7 +16,7 @@ export function SheetShell({ children, onClose, title }: { children: ReactNode; 
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{

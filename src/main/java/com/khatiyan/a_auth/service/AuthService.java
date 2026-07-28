@@ -134,15 +134,19 @@ public class AuthService {
                 // tenant. The user-submitted signup name becomes the final
                 // profile name before PIN setup completes.
                 user.updateProfile(fullName.trim());
-                user.updateRecoveryEmail(email);
-                otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
+                if (email != null && !email.isBlank()) {
+                    user.updateRecoveryEmail(email);
+                }
+                // Tenant creation is SMS-only: no email OTP (email is optional and
+                // set later in profile).
+                otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
                 return;
             }
             throw new ValidationException("A user with this phone number already exists");
         }
 
         User user = registerNewAccount(phone, email, fullName, UserRole.USER);
-        otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
+        otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
     }
 
     /**

@@ -33,14 +33,22 @@ public class BillingCycleNotificationEventListener {
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());
         data.put("tenantUserId", event.tenantUserId().toString());
-        data.put("cycleNumber", Integer.toString(event.cycleNumber()));
+        if (event.cycleNumber() != null) {
+            data.put("cycleNumber", Integer.toString(event.cycleNumber()));
+        }
         data.put("rentDueDate", event.rentDueDate().toString());
         data.put("totalAmountPaise", Long.toString(event.totalAmountPaise()));
 
+        // One-off bills (null cycle number) get a generic "new bill" message.
+        String title = event.cycleNumber() != null ? "Rent bill generated" : "New bill generated";
+        String body = event.cycleNumber() != null
+                ? "Your billing cycle " + event.cycleNumber() + " is ready. Due date: " + event.rentDueDate() + "."
+                : "A new bill is ready. Due date: " + event.rentDueDate() + ".";
+
         notificationModule.notifyUser(
                 event.tenantUserId(),
-                "Rent bill generated",
-                "Your billing cycle " + event.cycleNumber() + " is ready. Due date: " + event.rentDueDate() + ".",
+                title,
+                body,
                 NotificationCategory.PAYMENT,
                 NotificationPriority.NORMAL,
                 NotificationSubtype.BILLING_CYCLE_GENERATED,

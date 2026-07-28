@@ -11,7 +11,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -91,6 +93,47 @@ public class Tenancy extends BaseEntity {
     @Column(name = "billing_started", nullable = false)
     private boolean billingStarted;
 
+    // False only while a monthly tenancy created with an agreement waits for the
+    // tenant to accept. True for every other tenancy (no-agreement paths and
+    // grandfathered existing rows).
+    @Column(name = "tos_accepted", nullable = false)
+    private boolean tosAccepted;
+
+    // Lock-in / early-exit terms, stamped from the accepted agreement at
+    // acceptance (agreement-backed tenancies only). lockInEndDate is a
+    // minimum-stay MARKER — it never auto-terminates the tenancy. Its presence is
+    // also what marks a tenancy agreement-backed (premature-only exit).
+    @Column(name = "lock_in_end_date")
+    private LocalDate lockInEndDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "early_exit_penalty_type", length = 20)
+    private EarlyExitPenaltyType earlyExitPenaltyType;
+
+    @Column(name = "early_exit_penalty_fixed_paise")
+    private Long earlyExitPenaltyFixedPaise;
+
+    // The owner's declaration that they collected and checked this tenant's ID
+    // proof and photograph before onboarding. Khatiyan verifies nothing and stores
+    // no document or image — tenant ID verification and police notification are the
+    // landlord's legal duty, so this is a record of *their* statement, attributable
+    // and timestamped. Null on tenancies created before the declaration existed.
+    @Column(name = "id_check_confirmed")
+    private Boolean idCheckConfirmed;
+
+    @Column(name = "id_checked_by_user_id")
+    private UUID idCheckedByUserId;
+
+    @Column(name = "id_checked_at")
+    private Instant idCheckedAt;
+
+    /** Records the owner's declaration at onboarding. Never set on the tenant's behalf. */
+    public void confirmIdCheck(UUID actorUserId, Instant at) {
+        this.idCheckConfirmed = true;
+        this.idCheckedByUserId = actorUserId;
+        this.idCheckedAt = at;
+    }
+
     @Builder
     private Tenancy(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
             TenancyBillingType billingType, Long rentAmountPaise, Long depositAmountPaise,
@@ -111,6 +154,7 @@ public class Tenancy extends BaseEntity {
         this.status = TenancyStatus.ACTIVE;
         this.active = true;
         this.billingStarted = false;
+        this.tosAccepted = true;
     }
 
     /**
@@ -144,6 +188,21 @@ public class Tenancy extends BaseEntity {
                 .depositAmountPaise(depositAmountPaise)
                 .startDate(startDate)
                 .build();
+    }
+
+    /**
+     * Holds a freshly built monthly tenancy as {@code PENDING_ACCEPTANCE} before
+     * it is saved: the bed is still reserved (the caller publishes
+     * {@code TenancyStartedEvent}), but the tenant must accept the agreement
+     * before it activates — until then the user is not an active tenant and
+     * billing has not started.
+     */
+    public void markPendingAcceptance() {
+        if (this.status != TenancyStatus.ACTIVE || !isMonthly()) {
+            throw new IllegalStateException("Only a new monthly tenancy can be held for acceptance");
+        }
+        this.status = TenancyStatus.PENDING_ACCEPTANCE;
+        this.tosAccepted = false;
     }
 
     /**
@@ -275,6 +334,79 @@ public class Tenancy extends BaseEntity {
     public void markBillingStarted() {
         ensureActive();
         this.billingStarted = true;
+    }
+
+    /**
+     * Accepts the agreement: moves a pending tenancy to active. The caller then
+     * marks the user an active tenant and starts billing.
+     */
+    public void acceptTos() {
+        if (this.status != TenancyStatus.PENDING_ACCEPTANCE) {
+            throw new IllegalStateException("Tenancy is not pending acceptance");
+        }
+        this.status = TenancyStatus.ACTIVE;
+        this.tosAccepted = true;
+    }
+
+    /**
+     * Cancels a pending tenancy (tenant declined, or the acceptance window
+     * expired). The bed is freed by the caller.
+     */
+    public void cancelPending(String reason) {
+        if (this.status != TenancyStatus.PENDING_ACCEPTANCE) {
+            throw new IllegalStateException("Only a pending tenancy can be cancelled");
+        }
+        this.status = TenancyStatus.CANCELLED;
+        this.active = false;
+        this.exitReason = reason;
+    }
+
+    public boolean isPendingAcceptance() {
+        return this.status == TenancyStatus.PENDING_ACCEPTANCE;
+    }
+
+    /**
+     * Stamps the resolved lock-in / early-exit terms from the accepted agreement.
+     * Called once at acceptance so the tenancy module can compute early-exit
+     * penalties itself, without ever reading the compliance agreement.
+     */
+    public void stampAgreementExitTerms(
+            LocalDate lockInEndDate, EarlyExitPenaltyType penaltyType, Long penaltyFixedPaise) {
+        this.lockInEndDate = lockInEndDate;
+        this.earlyExitPenaltyType = penaltyType;
+        this.earlyExitPenaltyFixedPaise = penaltyFixedPaise;
+    }
+
+    /** Agreement-backed tenancies carry stamped lock-in terms and exit premature-only. */
+    public boolean isAgreementBacked() {
+        return lockInEndDate != null;
+    }
+
+    /** True while the given checkout date still falls inside the lock-in period. */
+    public boolean isWithinLockIn(LocalDate checkoutDate) {
+        return lockInEndDate != null && checkoutDate != null && checkoutDate.isBefore(lockInEndDate);
+    }
+
+    /**
+     * The early-exit penalty for leaving on {@code checkoutDate}. Zero for
+     * non-agreement tenancies and for checkouts on/after the lock-in end (the
+     * minimum stay has been served). REMAINING_TERM prorates the remaining
+     * lock-in days over a 30-day month against the monthly rent; FIXED returns
+     * the flat amount.
+     */
+    public long earlyExitPenaltyPaise(LocalDate checkoutDate) {
+        if (lockInEndDate == null || checkoutDate == null) {
+            return 0L;
+        }
+        long daysRemaining = ChronoUnit.DAYS.between(checkoutDate, lockInEndDate);
+        if (daysRemaining <= 0) {
+            return 0L;
+        }
+        if (earlyExitPenaltyType == EarlyExitPenaltyType.FIXED) {
+            return earlyExitPenaltyFixedPaise != null ? earlyExitPenaltyFixedPaise : 0L;
+        }
+        long rent = rentAmountPaise != null ? rentAmountPaise : 0L;
+        return Math.round((double) rent * daysRemaining / 30.0);
     }
 
     public boolean isMonthly() {

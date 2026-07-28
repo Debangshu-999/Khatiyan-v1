@@ -1,7 +1,7 @@
 import { useState, type ComponentType, type ReactNode } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Eye, EyeOff, KeyRound, Lock, Phone, ShieldCheck, type LucideProps } from "lucide-react-native";
+import { Eye, EyeOff, KeyRound, Lock, Pencil, Phone, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -112,21 +112,55 @@ export function StepBadge({ text }: { text: string }) {
   return (
     <View
       style={{
-        alignItems: "center",
         alignSelf: "flex-start",
         backgroundColor: colors.primarySoft,
         borderCurve: "continuous",
         borderRadius: 999,
-        flexDirection: "row",
-        gap: 6,
         paddingHorizontal: spacing.md,
         paddingVertical: 6,
       }}
     >
-      <ShieldCheck color={colors.primary} size={13} strokeWidth={2.4} />
       <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase" }} selectable>
         {text}
       </Text>
+    </View>
+  );
+}
+
+/** Countdown label for the resend button while it is on cooldown, e.g. "23s". */
+export function otpTimerLabel(seconds: number) {
+  return `${seconds}s`;
+}
+
+/** "9876543210" -> "98765 43210" for display. */
+export function formatIndianPhone(value: string) {
+  const digits = digitsOnly(value);
+  return digits.length === 10 ? `${digits.slice(0, 5)} ${digits.slice(5)}` : digits;
+}
+
+/**
+ * Plain "Sent to +91 98765 43210 ✎" line — where the OTP went, with an inline
+ * edit action that returns to the previous step (the indirect linkback).
+ */
+export function PhoneSummaryRow({ phone, onEdit }: { phone: string; onEdit: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, marginTop: -spacing.xs }}>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15 }} selectable>
+        Sent to
+      </Text>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800", letterSpacing: 0.3 }} selectable>
+        +91 {formatIndianPhone(phone)}
+      </Text>
+      <AnimatedPressable
+        accessibilityLabel="Edit phone number"
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={onEdit}
+        style={{ paddingHorizontal: spacing.xs, paddingVertical: spacing.xs }}
+      >
+        <Pencil color={colors.primary} size={16} strokeWidth={2.4} />
+      </AnimatedPressable>
     </View>
   );
 }
@@ -264,7 +298,7 @@ export function PhoneField({
             maxLength={10}
             onBlur={() => setFocused(false)}
             onFocus={() => setFocused(true)}
-            placeholder="10-digit number"
+            placeholder="Enter your 10-digit mobile number"
             placeholderTextColor={colors.muted}
             textContentType="telephoneNumber"
             underlineColorAndroid="transparent"
@@ -324,7 +358,8 @@ export function CodeField({
       >
         <Icon color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
-          {!value ? (
+          {/* Placeholder yields as soon as the field is focused, not on typing. */}
+          {!value && !focused ? (
             <Text
               numberOfLines={1}
               pointerEvents="none"

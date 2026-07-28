@@ -51,6 +51,9 @@ public class PaymentOrder extends BaseEntity {
     @Column(name = "amount_paise", nullable = false)
     private long amountPaise;
 
+    // Route payout split (owner-borne fee). Zero unless Route is enabled and the
+    // order was created with a payout. amount_paise stays = rent; the owner
+    // receives owner_net_paise and the platform retains the two fees.
     @Column(nullable = false, length = 3)
     private String currency;
 

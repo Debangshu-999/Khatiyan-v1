@@ -15,6 +15,7 @@ public record AttentionSummary(
     long pendingRoomChangeRequests,
     long upcomingExits,
     long exitsPastDue,
-    long tenantsOnNotice
+    long tenantsOnNotice,
+    long pendingDepositSettlements
 ) {
 }

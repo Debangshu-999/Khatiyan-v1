@@ -6,6 +6,7 @@ import {
   Banknote,
   CalendarDays,
   DoorOpen,
+  FileSignature,
   Home,
   KeyRound,
   ReceiptText,
@@ -22,8 +23,9 @@ import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
+import { AgreementAcceptanceView } from "@/features/compliance/agreement-acceptance-view";
 import type { BillingCycle } from "@/store/services/billing-api";
-import { useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
+import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import {
   useGetMyActiveTenancyQuery,
   useListMyExitRequestsQuery,
@@ -65,8 +67,12 @@ export default function TenancyScreen() {
   const cyclesQuery = useListMyTenancyBillingCyclesQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
   const depositQuery = useGetMyTenancyDepositQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
   const cycles = useMemo(() => [...(cyclesQuery.data ?? [])].sort(compareCycles), [cyclesQuery.data]);
-  const currentCycle = cycles.find((cycle) => cycle.status !== "PAID" && cycle.status !== "CANCELLED") ?? cycles[0];
-  const pastCycles = cycles.filter((cycle) => cycle.id !== currentCycle?.id);
+  // My Bills = everything still owed, grouped: numbered rent cycles vs one-off
+  // bills (e.g. an early-exit penalty). Settled bills move to Past Bills.
+  const payableBills = useMemo(() => cycles.filter((cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE"), [cycles]);
+  const rentBills = useMemo(() => payableBills.filter((cycle) => cycle.category === "RENT_CYCLE"), [payableBills]);
+  const otherBills = useMemo(() => payableBills.filter((cycle) => cycle.category === "ONE_OFF"), [payableBills]);
+  const pastBills = useMemo(() => cycles.filter((cycle) => cycle.status === "PAID" || cycle.status === "CANCELLED"), [cycles]);
   const currentTenancyRequests = useMemo(
     () => (activeTenancy ? mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data, activeTenancy.tenancy.id).sort(compareRequests) : []),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
@@ -100,6 +106,21 @@ export default function TenancyScreen() {
     );
   }
 
+  // Agreement gate: a pending tenancy exists but the tenant has not accepted
+  // its terms yet — the acceptance screen replaces the whole tab until they do.
+  if (activeTenancy && activeTenancy.tenancy.status === "PENDING_ACCEPTANCE") {
+    return (
+      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+        <ScreenHeader
+          title="Tenancy"
+          italicTail="agreement."
+          subtitle={`Review and accept the terms to begin your stay at ${activeTenancy.property.name}.`}
+        />
+        <AgreementAcceptanceView propertyName={activeTenancy.property.name} />
+      </ScreenScrollView>
+    );
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
@@ -110,7 +131,10 @@ export default function TenancyScreen() {
 
       {activeTenancy ? (
         <>
-          <TenancyOverviewCard activeTenancy={activeTenancy} />
+          <TenancyOverviewCard
+            activeTenancy={activeTenancy}
+            onViewAgreement={() => router.push("/tenancy-agreement-view")}
+          />
 
           <Card style={{ display: "none" }}>
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -144,23 +168,47 @@ export default function TenancyScreen() {
             </View>
           </Card>
 
-          <Section eyebrow="This cycle" title="Billing cycle">
-            {cyclesQuery.isFetching ? (
+          <Section eyebrow="Payable" title="My bills">
+            {cyclesQuery.isFetching && cycles.length === 0 ? (
               <SkeletonCard />
-            ) : currentCycle ? (
-              <BillingCycleCard
-                cycle={currentCycle}
-                onPress={() => router.push({ pathname: "/tenancy-billing-cycle", params: { cycleId: currentCycle.id, tenancyId: activeTenancy.tenancy.id } })}
-                onPay={() => handlePayCycle(currentCycle)}
-                payBusy={false}
-              />
-            ) : (
+            ) : payableBills.length === 0 ? (
               <EmptyState
                 icon={ReceiptText}
-                eyebrow="No cycle"
-                title="No billing cycle yet"
-                description="Your current payable cycle will appear here once billing is generated."
+                eyebrow="All clear"
+                title="No bills due"
+                description="Bills to pay appear here. Rent cycles and any one-off charges are listed separately."
               />
+            ) : (
+              <>
+                {rentBills.length > 0 ? (
+                  <>
+                    <BillGroupLabel text="Rent cycles" />
+                    {rentBills.map((cycle) => (
+                      <BillingCycleCard
+                        key={cycle.id}
+                        cycle={cycle}
+                        onPress={() => router.push({ pathname: "/tenancy-billing-cycle", params: { cycleId: cycle.id, tenancyId: activeTenancy.tenancy.id } })}
+                        onPay={() => handlePayCycle(cycle)}
+                        payBusy={false}
+                      />
+                    ))}
+                  </>
+                ) : null}
+                {otherBills.length > 0 ? (
+                  <>
+                    <BillGroupLabel text="Other bills" />
+                    {otherBills.map((cycle) => (
+                      <BillingCycleCard
+                        key={cycle.id}
+                        cycle={cycle}
+                        onPress={() => router.push({ pathname: "/tenancy-billing-cycle", params: { cycleId: cycle.id, tenancyId: activeTenancy.tenancy.id } })}
+                        onPay={() => handlePayCycle(cycle)}
+                        payBusy={false}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </>
             )}
           </Section>
 
@@ -192,11 +240,11 @@ export default function TenancyScreen() {
             )}
           </Section>
 
-          <Section eyebrow="Past billing" title="Cycle history">
+          <Section eyebrow="History" title="Past bills">
             <ActionCard
-              meta={`${pastCycles.length} cycle${pastCycles.length === 1 ? "" : "s"}`}
-              title="Past billing cycles"
-              description="Open previous cycles in the same format as the current billing cycle, including line items."
+              meta={`${pastBills.length} bill${pastBills.length === 1 ? "" : "s"}`}
+              title="Past bills"
+              description="Rent cycles and other bills you've settled, filterable by type — open any for its line items."
               onPress={() => router.push({ pathname: "/tenancy-billing-history", params: { tenancyId: activeTenancy.tenancy.id } })}
             />
           </Section>
@@ -212,7 +260,11 @@ export default function TenancyScreen() {
             <ActionCard
               meta="Exit"
               title="Exit tenancy"
-              description="Request normal notice or premature exit. The property team reviews billing and deposit impact."
+              description={
+                activeTenancy.tenancy.agreementBacked
+                  ? "Request an early exit. You'll see the lock-in penalty before you confirm."
+                  : "Request normal notice or premature exit. The property team reviews billing and deposit impact."
+              }
               onPress={() => router.push("/tenancy-exit-request")}
             />
           </Section>
@@ -234,6 +286,7 @@ export default function TenancyScreen() {
             {latestCurrentTenancyRequest ? <RequestHistoryCard request={latestCurrentTenancyRequest} /> : null}
             {activeTenancy ? (
               <ActionCard
+                badge={currentTenancyRequests.filter((request) => request.status === "REQUESTED" || request.status === "APPROVED").length}
                 meta={`${currentTenancyRequests.length} request${currentTenancyRequests.length === 1 ? "" : "s"}`}
                 title="Current tenancy requests"
                 description="Open request history tied to this active tenancy. The preview above shows the latest one."
@@ -273,7 +326,13 @@ export default function TenancyScreen() {
   );
 }
 
-function TenancyOverviewCard({ activeTenancy }: { activeTenancy: TenantActiveTenancy }) {
+function TenancyOverviewCard({
+  activeTenancy,
+  onViewAgreement,
+}: {
+  activeTenancy: TenantActiveTenancy;
+  onViewAgreement: () => void;
+}) {
   const { colors, fonts, type } = useTheme();
   const rentAmount = activeTenancy.tenancy.rentAmountPaise ?? activeTenancy.tenancy.dailyRatePaise;
 
@@ -283,9 +342,17 @@ function TenancyOverviewCard({ activeTenancy }: { activeTenancy: TenantActiveTen
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
           <IconBox icon={Home} />
           <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-              Current tenancy
-            </Text>
+            {/* Pill lives on the eyebrow row (plenty of width there) so long
+                statuses like ON PREMATURE NOTICE never squash the title. */}
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                Current tenancy
+              </Text>
+              <StatusPill
+                label={humanizeToken(activeTenancy.tenancy.status)}
+                tone={tenancyStatusTone(activeTenancy.tenancy.status)}
+              />
+            </View>
             <Text
               style={{
                 color: colors.ink,
@@ -304,10 +371,6 @@ function TenancyOverviewCard({ activeTenancy }: { activeTenancy: TenantActiveTen
               {activeTenancy.room.floor ? ` · ${formatFloor(activeTenancy.room.floor)}` : ""}
             </Text>
           </View>
-          <StatusPill
-            label={humanizeToken(activeTenancy.tenancy.status)}
-            tone={tenancyStatusTone(activeTenancy.tenancy.status)}
-          />
         </View>
 
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -333,6 +396,30 @@ function TenancyOverviewCard({ activeTenancy }: { activeTenancy: TenantActiveTen
             value={`${activeTenancy.property.city}${activeTenancy.property.state ? `, ${activeTenancy.property.state}` : ""}`}
           />
         </View>
+
+        {activeTenancy.tenancy.agreementBacked ? (
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={onViewAgreement}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.primarySoft,
+              borderRadius: 12,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm + 2,
+            }}
+          >
+            <FileSignature color={colors.primary} size={16} strokeWidth={2.2} />
+            <Text style={{ color: colors.primary, flex: 1, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable={false}>
+              Under agreement
+            </Text>
+            <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" }} selectable={false}>
+              View agreement
+            </Text>
+          </AnimatedPressable>
+        ) : null}
       </View>
     </Card>
   );
@@ -404,6 +491,15 @@ function ThinDivider() {
   return <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: spacing.md }} />;
 }
 
+function BillGroupLabel({ text }: { text: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      {text}
+    </Text>
+  );
+}
+
 function BillingCycleCard({
   cycle,
   onPay,
@@ -422,19 +518,19 @@ function BillingCycleCard({
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MetricTile label={`Cycle ${cycle.cycleNumber}`} value={formatMoney(cycle.totalAmountPaise)} hint={humanizeToken(cycle.status)} tone="primary" />
+          <MetricTile label={billTitle(cycle)} value={formatMoney(cycle.totalAmountPaise)} hint={humanizeToken(cycle.status)} tone="primary" />
           <MetricTile label="Due" value={formatShortDate(cycle.rentDueDate)} hint={`${formatShortDate(cycle.periodStartDate)} to ${formatShortDate(cycle.periodEndDate)}`} />
         </View>
         <ActionCard
           meta={`${cycle.lineItems.length} item${cycle.lineItems.length === 1 ? "" : "s"}`}
           title="Open line items"
-          description="View rent, deposit, discounts, extra charges and settlement actions for this cycle."
+          description="View rent, deposit, discounts, extra charges and settlement actions for this bill."
           onPress={onPress}
         />
         {payable ? (
           <AnimatedPressable
             accessibilityRole="button"
-            accessibilityLabel="Pay current billing cycle"
+            accessibilityLabel="Pay this bill"
             onPress={onPay}
             style={{
               alignItems: "center",
@@ -461,7 +557,7 @@ function BillingCycleCard({
           </AnimatedPressable>
         ) : (
           <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-            {cycle.status === "PAID" ? "This cycle is already paid." : "This cycle is not payable right now."}
+            {cycle.status === "PAID" ? "This bill is already paid." : "This bill is not payable right now."}
           </Text>
         )}
       </View>
@@ -561,7 +657,7 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 function compareCycles(left: BillingCycle, right: BillingCycle) {
-  return right.cycleNumber - left.cycleNumber;
+  return (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0);
 }
 
 function compareRequests(left: { updatedAt: string; createdAt: string }, right: { updatedAt: string; createdAt: string }) {

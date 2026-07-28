@@ -35,6 +35,10 @@ export const authApi = api.injectEndpoints({
       query: () => "/api/v1/auth/me",
       providesTags: ["Profile"],
     }),
+    updateProfile: builder.mutation<AuthUser, { fullName: string }>({
+      query: (body) => ({ url: "/api/v1/auth/me", method: "PATCH", body }),
+      invalidatesTags: ["Profile"],
+    }),
     getEmailRecoveryStatus: builder.query<EmailRecoveryStatus, void>({
       query: () => "/api/v1/auth/me/email",
       providesTags: ["Profile"],
@@ -115,6 +119,7 @@ export const {
   useRequestOtpMutation,
   useRequestPinResetMutation,
   useSetPinMutation,
+  useUpdateProfileMutation,
   useUpdateRecoveryEmailMutation,
   useVerifyEmailPinResetMutation,
   useVerifyOtpMutation,

@@ -5,7 +5,7 @@ import type { PropertyLocalPlace } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-import { formatDistance, humanizeToken } from "../discovery-format";
+import { formatDistance } from "../discovery-format";
 import { DiscoveryButton } from "./discovery-button";
 
 type LocalPlaceCardProps = {
@@ -42,10 +42,10 @@ export function LocalPlaceCard({ place }: LocalPlaceCardProps) {
         </Text>
       </View>
 
-      {(place.tags?.length ?? 0) > 0 ? (
+      {place.subcategoryNames.length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-          {(place.tags ?? []).map((tag) => (
-            <InlineTag key={tag} label={humanizeToken(tag)} />
+          {place.subcategoryNames.map((subcategory) => (
+            <InlineTag key={subcategory} label={subcategory} />
           ))}
         </View>
       ) : null}

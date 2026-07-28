@@ -742,7 +742,7 @@ function AddExpenseSheet({ categories, month, onClose, propertyId }: { categorie
         <ActionButton disabled={!newCategory.trim() || categoryState.isLoading} icon={Plus} label="Add" onPress={() => void addCategory()} variant="secondary" />
       </View>
       <FormInput label="Paid to" onChangeText={setPaidTo} placeholder="Payee or vendor" value={paidTo} />
-      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="Rs." value={amount} />
+      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
       <ExpenseDateField label="Incurred date" onChange={setIncurredDate} value={incurredDate} />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
       <InlineError message={error} />
@@ -772,7 +772,7 @@ function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defa
   return (
     <Sheet onClose={onClose} title="Monthly budget">
       <BodyNote>This is the recurring monthly budget. Set it once — it carries forward every month and can be edited anytime.</BodyNote>
-      <FormInput keyboardType="decimal-pad" label="Monthly budget" onChangeText={setAmount} placeholder="Rs." value={amount} />
+      <FormInput keyboardType="decimal-pad" label="Monthly budget" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
       <InlineError message={error} />
       <ActionButton disabled={state.isLoading} label={state.isLoading ? "Saving" : "Save budget"} onPress={() => void submit()} />
     </Sheet>
@@ -801,7 +801,7 @@ function RaiseBudgetSheet({ month, onClose, propertyId }: { month: string; onClo
   return (
     <Sheet onClose={onClose} title="Raise budget">
       <BodyNote>A raise adds to this month&apos;s budget only and is tracked separately from the recurring default.</BodyNote>
-      <FormInput keyboardType="decimal-pad" label="Raise amount" onChangeText={setAmount} placeholder="Rs." value={amount} />
+      <FormInput keyboardType="decimal-pad" label="Raise amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
       <FormInput label="Reason" onChangeText={setReason} placeholder="Optional reason" value={reason} />
       <InlineError message={error} />
       <ActionButton disabled={state.isLoading} icon={Plus} label={state.isLoading ? "Saving" : "Raise budget"} onPress={() => void submit()} />
@@ -963,7 +963,7 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
         ))}
       </View>
       <FormInput label="Paid to" onChangeText={setPaidTo} placeholder="Payee or vendor" value={paidTo} />
-      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="Rs." value={amount} />
+      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
       <FormInput keyboardType="number-pad" label="Day of month (1-28)" onChangeText={setDayOfMonth} placeholder="1" value={dayOfMonth} />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
       <InlineError message={error} />

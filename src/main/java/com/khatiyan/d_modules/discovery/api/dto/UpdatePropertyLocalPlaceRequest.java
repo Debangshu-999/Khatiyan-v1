@@ -2,10 +2,9 @@ package com.khatiyan.d_modules.discovery.api.dto;
 
 import java.math.BigDecimal;
 import java.util.Set;
+import java.util.UUID;
 
 import org.hibernate.validator.constraints.URL;
-
-import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -18,7 +17,7 @@ public record UpdatePropertyLocalPlaceRequest(
         String name,
 
         @Size(max = 12)
-        Set<PropertyLocalPlaceTag> tags,
+        Set<UUID> subcategoryIds,
 
         @Size(max = 800)
         String description,

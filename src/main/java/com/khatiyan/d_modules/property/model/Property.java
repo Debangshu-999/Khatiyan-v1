@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.property.model;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -17,6 +19,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -37,6 +40,16 @@ public class Property extends BaseEntity {
 
     private static final int MAX_CUSTOM_FACILITIES = 30;
     private static final int MAX_CUSTOM_FACILITY_LENGTH = 80;
+    private static final int MAX_DAMAGE_CHARGES = 50;
+    private static final int MAX_EXIT_CHECKLIST_ITEMS = 30;
+    private static final int MAX_EXIT_CHECKLIST_ITEM_LENGTH = 120;
+
+    // Seeded onto every new property and backfilled onto existing ones so the
+    // move-out checklist is never empty. Owners can override it under exit policies.
+    public static final List<String> DEFAULT_EXIT_CHECKLIST = List.of(
+            "Keys returned",
+            "Dues cleared",
+            "Final inspection completed");
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -157,6 +170,26 @@ public class Property extends BaseEntity {
     @Column(name = "sharing_type", nullable = false, length = 30)
     private Set<SharingType> availableSharingTypes = new HashSet<>();
 
+    // Exit policies — the damage-charge schedule and the move-out checklist. Both
+    // are property-owned (uniform across the property's tenancies) and read at
+    // deposit settlement and by the compliance agreement assembler. Ordered lists.
+    @ElementCollection
+    @CollectionTable(
+            name = "property_damage_charges",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "property_id"))
+    @OrderColumn(name = "display_order")
+    private List<PropertyDamageCharge> damageCharges = new ArrayList<>();
+
+    @ElementCollection
+    @CollectionTable(
+            name = "property_exit_checklist_items",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "property_id"))
+    @OrderColumn(name = "display_order")
+    @Column(name = "label", nullable = false, length = MAX_EXIT_CHECKLIST_ITEM_LENGTH)
+    private List<String> exitChecklist = new ArrayList<>();
+
     private Property(String referenceCode, UUID ownerId, String name, String address, String area, String city,
                      String state,
                      String pincode, BigDecimal latitude, BigDecimal longitude,
@@ -195,6 +228,7 @@ public class Property extends BaseEntity {
         updateDepositPolicy(standardDepositPaise);
         updateExitPolicy(noticePeriodDays);
         replaceFacilities(facilities, customFacilities);
+        this.exitChecklist.addAll(DEFAULT_EXIT_CHECKLIST);
     }
 
     public static Property create(UUID ownerId, String name, String address, String area, String city,
@@ -473,6 +507,38 @@ public class Property extends BaseEntity {
         }
 
         this.noticePeriodDays = noticePeriodDays;
+    }
+
+    /**
+     * Replaces the property's exit policies — the damage-charge schedule and the
+     * move-out checklist. A null list clears that policy; damage charges are
+     * pre-validated as {@link PropertyDamageCharge} instances by the caller.
+     */
+    public void updateExitPolicies(List<PropertyDamageCharge> damageCharges, List<String> exitChecklist) {
+        this.damageCharges.clear();
+        if (damageCharges != null) {
+            if (damageCharges.size() > MAX_DAMAGE_CHARGES) {
+                throw new ValidationException("A property can have at most 50 damage charges");
+            }
+            this.damageCharges.addAll(damageCharges);
+        }
+
+        this.exitChecklist.clear();
+        if (exitChecklist != null) {
+            if (exitChecklist.size() > MAX_EXIT_CHECKLIST_ITEMS) {
+                throw new ValidationException("A property can have at most 30 exit checklist items");
+            }
+            for (String item : exitChecklist) {
+                String normalized = item == null ? "" : item.trim();
+                if (normalized.isBlank()) {
+                    continue;
+                }
+                if (normalized.length() > MAX_EXIT_CHECKLIST_ITEM_LENGTH) {
+                    throw new ValidationException("Exit checklist item must be at most 120 characters");
+                }
+                this.exitChecklist.add(normalized);
+            }
+        }
     }
 
     private String normalizeCustomFacility(String customFacility) {

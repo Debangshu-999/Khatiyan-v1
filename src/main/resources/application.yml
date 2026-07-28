@@ -68,6 +68,7 @@ spring:
       - classpath:db/migration/billing
       - classpath:db/migration/reminder
       - classpath:db/migration/expense
+      - classpath:db/migration/compliance
 
   modulith:
     events:
@@ -212,7 +213,7 @@ app:
   email:
     verification-url: ${EMAIL_VERIFICATION_URL:http://localhost:8080/api/v1/auth/email/verify}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081,http://localhost:8082}
   geo:
     # log = keyless dev fallback (empty results); mappls = live geocoding.
     provider: ${GEO_PROVIDER:log}
@@ -271,7 +272,25 @@ app:
   payment:
     default-provider: ${PAYMENT_DEFAULT_PROVIDER:RAZORPAY}
     currency: ${PAYMENT_CURRENCY:INR}
+    # Bounds a single checkout attempt, not the order. The order stays reusable
+    # so Razorpay can reject a duplicate payment on it; reopening checkout
+    # renders a fresh countdown.
     order-expiry-minutes: ${PAYMENT_ORDER_EXPIRY_MINUTES:30}
+    # Razorpay Route payout split. OFF until Route is activated on the Razorpay
+    # account: with it off, the bill is a plain charge to the single configured
+    # account and no owner transfer is attempted.
+    route-enabled: ${PAYMENT_ROUTE_ENABLED:false}
+    # Owner-borne fee, netted from the payout so the tenant always pays exactly
+    # the bill. 1%, floored at Rs 5 and capped at Rs 100.
+    platform-fee-bps: ${PAYMENT_PLATFORM_FEE_BPS:100}
+    platform-fee-min-paise: ${PAYMENT_PLATFORM_FEE_MIN_PAISE:500}
+    platform-f  e-max-paise: ${PAYMENT_PLATFORM_FEE_MAX_PAISE:10000}
+    # Fallback only: the real gateway fee is read from the captured payment.
+    gateway-fee-fallback-bps: ${PAYMENT_GATEWAY_FEE_FALLBACK_BPS:236}
+    ifsc:
+      base-url: ${PAYMENT_IFSC_BASE_URL:https://ifsc.razorpay.com}
+      enabled: ${PAYMENT_IFSC_ENABLED:true}
+      timeout-ms: ${PAYMENT_IFSC_TIMEOUT_MS:3000}
     razorpay:
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}

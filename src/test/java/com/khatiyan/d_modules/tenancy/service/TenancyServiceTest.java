@@ -108,7 +108,8 @@ class TenancyServiceTest {
                 null,
                 null,
                 LocalDate.of(2026, 6, 1),
-                null);
+                null,
+                true);
 
         assertThat(tenancy.getUserId()).isEqualTo(TENANT_ID);
         assertThat(tenancy.getReferenceCode()).isEqualTo("TEN-2026-000001");
@@ -146,7 +147,8 @@ class TenancyServiceTest {
                 15_000_00L,
                 5_000_00L,
                 LocalDate.of(2026, 6, 1),
-                null);
+                null,
+                true);
 
         assertThat(tenancy.getRentAmountPaise()).isEqualTo(15_000_00);
         assertThat(tenancy.getDepositAmountPaise()).isEqualTo(5_000_00);
@@ -167,7 +169,8 @@ class TenancyServiceTest {
                 null,
                 null,
                 LocalDate.of(2026, 6, 1),
-                null))
+                null,
+                true))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("User already has an active tenancy");
 
@@ -237,10 +240,12 @@ class TenancyServiceTest {
         return new UserSummaryResponse(
                 TENANT_ID,
                 "+919007433360",
+                "tenant@example.com",
                 "Test Tenant",
                 null,
                 UserRole.USER,
                 activeTenant,
+                true,
                 true,
                 true,
                 true);

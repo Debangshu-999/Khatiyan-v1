@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
@@ -115,5 +116,53 @@ public class TenancyModule {
 
     public void markBillingStarted(UUID tenancyId) {
         tenancyService.markBillingStarted(tenancyId);
+    }
+
+    // ---- Agreement (compliance) lifecycle -------------------------------
+    // Compliance orchestrates agreement-gated onboarding through these; the
+    // tenancy module stays ignorant of agreements themselves.
+
+    /**
+     * Onboards a monthly tenancy held as {@code PENDING_ACCEPTANCE}: bed
+     * reserved, user not yet an active tenant, billing deferred to acceptance.
+     */
+    public TenancyOnboardingResponse onboardPendingMonthly(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate,
+            boolean idCheckConfirmed) {
+        return tenancyService.onboardPending(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                rentAmountPaise, depositAmountPaise, startDate, idCheckConfirmed);
+    }
+
+    /** Activates a pending tenancy after the tenant accepted the agreement. */
+    public TenancyResponse acceptTermsAndActivate(UUID tenancyId, UUID tenantUserId) {
+        return TenancyResponse.from(tenancyService.acceptTermsAndActivate(tenancyId, tenantUserId));
+    }
+
+    /**
+     * Stamps the accepted agreement's lock-in / early-exit terms onto the
+     * tenancy. Penalty type is a String so compliance stays clear of the tenancy
+     * model enum.
+     */
+    public void stampAgreementExitTerms(
+            UUID tenancyId, LocalDate lockInEndDate, String penaltyType, Long penaltyFixedPaise) {
+        tenancyService.stampAgreementExitTerms(tenancyId, lockInEndDate, penaltyType, penaltyFixedPaise);
+    }
+
+    /** Cancels a pending tenancy because the tenant declined the agreement. */
+    public void declinePendingTenancy(UUID tenancyId, UUID tenantUserId, String reason) {
+        tenancyService.cancelPendingAsTenant(tenancyId, tenantUserId, reason);
+    }
+
+    /** Cancels a pending tenancy whose acceptance window expired. */
+    public void cancelPendingTenancyBySystem(UUID tenancyId, String reason) {
+        tenancyService.cancelPendingAsSystem(tenancyId, reason);
     }
 }

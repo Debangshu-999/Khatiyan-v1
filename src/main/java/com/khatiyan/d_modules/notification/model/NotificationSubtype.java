@@ -61,6 +61,8 @@ public enum NotificationSubtype {
     BILLING_LINE_ITEM_CHANGED,
     PAYMENT_SUCCEEDED,
     PAYMENT_FAILED,
+    // Owner-facing: rent was collected but could not be deposited to their bank.
+    PAYOUT_FAILED,
 
     // Expense budget (management-facing): the recurring default was edited, a
     // monthly raise was added, or month-to-date spend crossed a threshold.

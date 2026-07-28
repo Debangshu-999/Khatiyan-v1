@@ -3,7 +3,10 @@ import { View } from "react-native";
 import { AuthModeFooter, CodeField, LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
-/** Phone + PIN sign-in — the default screen. */
+/**
+ * Phone + PIN sign-in — the default screen.
+ * Sheet layout: fields flow under the hero; actions pin to the screen bottom.
+ */
 export function LoginStep({
   phone,
   onPhoneChange,
@@ -32,9 +35,11 @@ export function LoginStep({
       <View style={{ alignItems: "flex-end", marginTop: -spacing.xs }}>
         <LinkButton label="Forgot or reset PIN?" onPress={onForgotPin} />
       </View>
-      <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
-      <LinkButton label="Sign in with verified email" onPress={onEmailLogin} center />
-      <AuthModeFooter actionLabel="Create account" label="Don't have an account?" onPress={onGoToSignup} />
+      <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+        <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
+        <LinkButton label="Sign in with verified email" onPress={onEmailLogin} center />
+        <AuthModeFooter actionLabel="Create account" label="Don't have an account?" onPress={onGoToSignup} />
+      </View>
     </>
   );
 }

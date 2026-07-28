@@ -1,5 +1,6 @@
 import { Text, View } from "react-native";
 
+import { MarqueeText } from "@/components/marquee-text";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -33,9 +34,9 @@ export function MetricTile({ dense = false, hint, label, tone = "default", value
         padding: spacing.md,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1} selectable>
-        {label}
-      </Text>
+      {/* A long tile label (e.g. a one-off bill's name) scrolls instead of
+          ellipsising, per the app-wide overflow-label rule. */}
+      <MarqueeText style={[type.eyebrow, { color: colors.kicker }]}>{label}</MarqueeText>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.6}

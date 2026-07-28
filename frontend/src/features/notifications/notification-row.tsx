@@ -233,7 +233,16 @@ function notificationDetails(notification: NotificationItem) {
 }
 
 function addFallbackSourceDetail(details: Array<{ label: string; value: string }>, notification: NotificationItem) {
+  // Prefer the human-readable TEN- reference the backend attaches; only fall
+  // back to the (truncated) raw source UUID when it is absent.
+  const tenancyRef = notification.data?.tenancyReferenceCode ?? null;
   const sourceId = shortId(notification.sourceId);
+
+  if (notification.category === "TENANCY" && tenancyRef) {
+    add(details, "Tenancy ID", tenancyRef);
+    return;
+  }
+
   if (!sourceId) {
     return;
   }
@@ -269,11 +278,16 @@ function add(details: Array<{ label: string; value: string }>, label: string, va
   details.push({ label, value });
 }
 
+// Raw UUIDs (36 chars, hyphen-segmented hex) are unreadable, so shorten those to
+// their leading segment. Human reference codes (e.g. TEN-2026-000108) are already
+// short and meaningful — never slice them.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function shortId(value?: string | null) {
   if (!value) {
     return null;
   }
-  return value.length > 12 ? value.slice(0, 8) : value;
+  return UUID_PATTERN.test(value) ? value.slice(0, 8) : value;
 }
 
 function titleCase(value?: string | null) {

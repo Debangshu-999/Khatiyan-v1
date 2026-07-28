@@ -42,6 +42,7 @@ public class BillingCycleSchedulerService {
     public void runBillingCatchUpOnStartup() {
         log.info("Billing scheduler startup catch-up started");
         generateDueMonthlyCycles();
+        activateDueCycles();
         markPastDueCycles();
         recalculateLateFees();
         generateClosedMonthlyReports();
@@ -64,6 +65,27 @@ public class BillingCycleSchedulerService {
         }
 
         log.info("Monthly billing scheduler generated cycles count={} today={}", generatedCount, today);
+    }
+
+    /**
+     * Opens the payment window for cycles whose start date has arrived, freezing
+     * them. Runs before the overdue marker so a cycle activating today can be
+     * assessed in the same pass.
+     */
+    @Scheduled(
+            cron = "${app.billing.cycle-activation-cron:0 18 0 * * *}",
+            zone = "${app.billing.cycle-activation-zone:Asia/Kolkata}")
+    @SchedulerLock(name = "billing-activateDueCycles", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
+    public void activateDueCycles() {
+        LocalDate today = LocalDate.now();
+        int activatedCount = billingCycleService.activateDueCycles(today);
+
+        if (activatedCount == 0) {
+            log.info("Billing activation scheduler found no cycles to activate today={}", today);
+            return;
+        }
+
+        log.info("Billing activation scheduler activated cycles count={} today={}", activatedCount, today);
     }
 
     /**

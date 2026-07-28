@@ -9,8 +9,9 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonCard } from "@/components/skeleton";
+import { MarqueeText } from "@/components/marquee-text";
 import type { BillingCycle, BillingCycleLineItem } from "@/store/services/billing-api";
-import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
+import { billTitle, lineItemKindLabel, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -27,7 +28,7 @@ export default function TenancyBillingCycleScreen() {
         eyebrow="BILLING"
         title="Line"
         italicTail="items."
-        subtitle="Cycle breakdown for rent, deposit, charges, discounts and settlement actions."
+        subtitle="Bill breakdown for rent, deposit, charges, discounts and settlement actions."
         trailing={<BackButton onPress={() => router.back()} />}
       />
 
@@ -46,12 +47,12 @@ export default function TenancyBillingCycleScreen() {
               icon={ReceiptText}
               eyebrow="No items"
               title="No line items yet"
-              description="Line items appear here once the cycle is generated or adjusted."
+              description="Line items appear here once the bill is generated or adjusted."
             />
           )}
         </>
       ) : (
-        <EmptyState icon={ReceiptText} eyebrow="Missing cycle" title="Cycle not found" description="Refresh billing and try again." />
+        <EmptyState icon={ReceiptText} eyebrow="Missing bill" title="Bill not found" description="Refresh billing and try again." />
       )}
     </ScreenScrollView>
   );
@@ -62,7 +63,7 @@ function BillingSummary({ cycle }: { cycle: BillingCycle }) {
     <Card>
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <DetailKicker text={`Cycle ${cycle.cycleNumber}`} />
+          <DetailKicker text={billTitle(cycle)} />
           <StatusPill label={humanizeToken(cycle.status)} tone={cycle.status === "PAID" ? "success" : cycle.status === "OVERDUE" ? "warning" : "neutral"} />
         </View>
         <DetailLine label="Period" value={`${formatShortDate(cycle.periodStartDate)} to ${formatShortDate(cycle.periodEndDate)}`} />
@@ -78,7 +79,7 @@ function LineItemCard({ item }: { item: BillingCycleLineItem }) {
     <Card tone="sunken">
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <DetailKicker text={humanizeToken(item.type)} />
+          <DetailKicker text={lineItemKindLabel(item)} />
           <StatusPill label={lineItemStatusLabel(item)} tone={item.amountPaise === 0 ? "success" : "neutral"} />
         </View>
         <DetailLine label={item.label} value={formatMoney(item.amountPaise)} strong />
@@ -113,7 +114,12 @@ function BackButton({ onPress }: { onPress: () => void }) {
 
 function DetailKicker({ text }: { text: string }) {
   const { colors, type } = useTheme();
-  return <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>{text}</Text>;
+  // Bounded + marquee so a long bill title never pushes the status pill out.
+  return (
+    <View style={{ flexShrink: 1 }}>
+      <MarqueeText style={[type.eyebrow, { color: colors.kicker }]}>{text}</MarqueeText>
+    </View>
+  );
 }
 
 function DetailText({ text }: { text: string }) {

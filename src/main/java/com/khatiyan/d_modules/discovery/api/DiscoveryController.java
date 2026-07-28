@@ -14,13 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
+import com.khatiyan.d_modules.discovery.api.dto.LocalPlaceCategoryResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationAreaResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationCityResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationSuggestionResponse;
+import com.khatiyan.d_modules.discovery.api.dto.NearbyPlacesResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
-import com.khatiyan.d_modules.discovery.model.PropertyLocalPlaceTag;
 import com.khatiyan.d_modules.discovery.service.LocationCatalogService;
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
@@ -105,16 +106,26 @@ public class DiscoveryController {
         return locationCatalogService.listAreas(city);
     }
 
-    @GetMapping("/local-place-tags")
-    public List<PropertyLocalPlaceTag> listLocalPlaceTags() {
-        return List.of(PropertyLocalPlaceTag.values());
-    }
-
     @GetMapping("/me/local-places")
     public List<PropertyLocalPlaceResponse> listMyLocalPlaces(
             @AuthenticationPrincipal UserPrincipal user,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude) {
         return discoveryModule.listMyLocalPlaces(user.userId(), latitude, longitude);
+    }
+
+    @GetMapping("/me/local-places/search")
+    public NearbyPlacesResponse searchMyLocalPlaces(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude) {
+        return discoveryModule.searchMyLocalPlaces(user.userId(), q, latitude, longitude);
+    }
+
+    @GetMapping("/me/local-places/taxonomy")
+    public List<LocalPlaceCategoryResponse> listMyLocalPlaceTaxonomy(
+            @AuthenticationPrincipal UserPrincipal user) {
+        return discoveryModule.listMyLocalPlaceTaxonomy(user.userId());
     }
 }

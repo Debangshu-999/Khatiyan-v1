@@ -24,9 +24,11 @@ import com.khatiyan.d_modules.property.api.dto.CreateRoomBulkRequest;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomRequest;
 import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
 import com.khatiyan.d_modules.property.api.dto.MarkRoomStatusRequest;
+import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.ShiftManagerRequest;
+import com.khatiyan.d_modules.property.api.dto.UpdatePropertyExitPolicyRequest;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomMaintenanceRequest;
@@ -101,6 +103,22 @@ public class PropertyController {
             @PathVariable UUID propertyId) {
         propertyService.deactivateProperty(user.userId(), propertyId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{propertyId}/exit-policies")
+    public PropertyExitPolicyResponse getExitPolicies(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        propertyManagerService.ensureCanManageProperty(user.userId(), propertyId);
+        return propertyService.getExitPolicy(propertyId);
+    }
+
+    @PatchMapping("/{propertyId}/exit-policies")
+    public PropertyExitPolicyResponse updateExitPolicies(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody UpdatePropertyExitPolicyRequest request) {
+        return propertyService.updateExitPolicies(user.userId(), propertyId, request);
     }
 
     @PostMapping("/{propertyId}/managers")

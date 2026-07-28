@@ -1,4 +1,5 @@
-import { ActivityIndicator, Text, View } from "react-native";
+import { useState } from "react";
+import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ArrowLeft, FileClock } from "lucide-react-native";
@@ -8,6 +9,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonCard } from "@/components/skeleton";
 import type { TenancyExitRequest, TenancyRoomChangeRequest } from "@/store/services/tenancy-api";
@@ -15,15 +17,25 @@ import { useListMyExitRequestsQuery, useListMyRoomChangeRequestsQuery } from "@/
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+type KindFilter = "ALL" | "EXIT" | "ROOM_CHANGE";
+const KIND_FILTERS: { label: string; value: KindFilter }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Exit", value: "EXIT" },
+  { label: "Room change", value: "ROOM_CHANGE" },
+];
+
+// Open requests: raised or approved but not yet executed/closed.
+const ACTIVE_STATUSES = ["REQUESTED", "APPROVED"];
+
 export default function TenancyRequestHistoryScreen() {
   const router = useGuardedRouter();
-  const { colors } = useTheme();
   const params = useLocalSearchParams<{ excludeTenancyId?: string; scope?: string; tenancyId?: string }>();
+  const [kindFilter, setKindFilter] = useState<KindFilter>("ALL");
   const exitRequestsQuery = useListMyExitRequestsQuery();
   const roomChangeRequestsQuery = useListMyRoomChangeRequestsQuery();
   const requestsFetching = exitRequestsQuery.isFetching || roomChangeRequestsQuery.isFetching;
   const allRequests = mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data).sort(compareRequests);
-  const requests = allRequests.filter((request) => {
+  const scoped = allRequests.filter((request) => {
     if (params.scope === "current" && params.tenancyId) {
       return request.tenancyId === params.tenancyId;
     }
@@ -32,6 +44,9 @@ export default function TenancyRequestHistoryScreen() {
     }
     return true;
   });
+  const requests = kindFilter === "ALL" ? scoped : scoped.filter((request) => request.requestKind === kindFilter);
+  const activeRequests = requests.filter((request) => ACTIVE_STATUSES.includes(request.status));
+  const reviewedRequests = requests.filter((request) => !ACTIVE_STATUSES.includes(request.status));
   const headerCopy = getHeaderCopy(params.scope);
 
   return (
@@ -44,21 +59,99 @@ export default function TenancyRequestHistoryScreen() {
         trailing={<BackButton onPress={() => router.back()} />}
       />
 
-      {requestsFetching ? (
+      {requestsFetching && scoped.length === 0 ? (
         <SkeletonCard />
-      ) : requests.length > 0 ? (
-        requests.map((request) => (
-          <RequestCard key={`${request.requestKind}-${request.id}`} request={request} />
-        ))
-      ) : (
+      ) : scoped.length === 0 ? (
         <EmptyState
           icon={FileClock}
           eyebrow="No requests"
           title={headerCopy.emptyTitle}
           description={headerCopy.emptyDescription}
         />
+      ) : (
+        <>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile hint="Awaiting outcome" label="Active" tone={activeRequests.length > 0 ? "primary" : "default"} value={String(activeRequests.length)} />
+            <SummaryTile hint="All requests" label="Total" value={String(requests.length)} />
+          </View>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {KIND_FILTERS.map((entry) => (
+              <FilterPill active={kindFilter === entry.value} key={entry.value} label={entry.label} onPress={() => setKindFilter(entry.value)} />
+            ))}
+          </View>
+
+          {activeRequests.length > 0 ? (
+            <Section eyebrow="Open" title={`${activeRequests.length} active request${activeRequests.length === 1 ? "" : "s"}`}>
+              <View style={{ gap: spacing.sm }}>
+                {activeRequests.map((request) => (
+                  <RequestCard key={`${request.requestKind}-${request.id}`} request={request} />
+                ))}
+              </View>
+            </Section>
+          ) : null}
+
+          {reviewedRequests.length > 0 ? (
+            <Section eyebrow="Closed" title="Reviewed requests">
+              <View style={{ gap: spacing.sm }}>
+                {reviewedRequests.map((request) => (
+                  <RequestCard key={`${request.requestKind}-${request.id}`} request={request} />
+                ))}
+              </View>
+            </Section>
+          ) : null}
+
+          {activeRequests.length === 0 && reviewedRequests.length === 0 ? (
+            <EmptyState
+              icon={FileClock}
+              eyebrow="No matches"
+              title="Nothing in this filter"
+              description="Switch the filter above to see your other requests."
+            />
+          ) : null}
+        </>
       )}
     </ScreenScrollView>
+  );
+}
+
+function SummaryTile({ hint, label, tone = "default", value }: { hint: string; label: string; tone?: "default" | "primary"; value: string }) {
+  const { colors, fonts, type } = useTheme();
+  const accent = tone === "primary" ? colors.primary : colors.ink;
+  return (
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
+      <Text style={[type.caption, { color: colors.muted }]} selectable>
+        {label}
+      </Text>
+      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
+        {value}
+      </Text>
+      <Text style={[type.caption, { color: colors.kicker }]} selectable>
+        {hint}
+      </Text>
+    </View>
+  );
+}
+
+function FilterPill({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        borderColor: active ? colors.primary : colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm - 2,
+      }}
+    >
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+        {label}
+      </Text>
+    </AnimatedPressable>
   );
 }
 
@@ -116,12 +209,8 @@ function RequestCard({ request }: { request: TenantRequestHistoryItem }) {
           <>
             <DetailLine label="Requested checkout" value={formatDate(request.requestedCheckoutDate)} />
             {request.approvedCheckoutDate ? <DetailLine label="Approved checkout" value={formatDate(request.approvedCheckoutDate)} /> : null}
-            {typeof request.finalBillingAmountPaise === "number" ? <DetailLine label="Final billing" value={formatMoney(request.finalBillingAmountPaise)} /> : null}
-            {typeof request.depositSettlementAmountPaise === "number" ? (
-              <DetailLine
-                label={request.depositPayable ? "Deposit payable" : "Deposit deduction"}
-                value={formatMoney(request.depositSettlementAmountPaise)}
-              />
+            {request.type === "PREMATURE" && typeof request.finalBillingAmountPaise === "number" && request.finalBillingAmountPaise > 0 ? (
+              <DetailLine label="Early-exit penalty" value={formatMoney(request.finalBillingAmountPaise)} />
             ) : null}
           </>
         )}

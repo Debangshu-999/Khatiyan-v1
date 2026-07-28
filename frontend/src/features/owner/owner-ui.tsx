@@ -146,6 +146,7 @@ export function FormInput({
   multiline,
   onChangeText,
   placeholder,
+  prefix,
   value,
 }: {
   autoCapitalize?: "characters" | "none" | "sentences" | "words";
@@ -157,6 +158,9 @@ export function FormInput({
   multiline?: boolean;
   onChangeText: (value: string) => void;
   placeholder: string;
+  // Fixed adornment rendered INSIDE the field before the text (e.g. "₹" for
+  // rupee amounts). Single-line fields only.
+  prefix?: string;
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -165,6 +169,65 @@ export function FormInput({
   // the talking — danger wins over focus, focus wins over rest.
   const borderColor = error ? colors.danger : focused ? colors.primary : colors.borderStrong;
   const labelColor = error ? colors.danger : focused ? colors.primary : colors.inkSoft;
+
+  const errorText = error ? (
+    <Text style={[type.caption, { color: colors.danger }]} selectable>
+      {error}
+    </Text>
+  ) : null;
+
+  if (prefix && !multiline) {
+    // The container owns the border; the prefix sits inside it and the input
+    // goes borderless, so the ₹ reads as part of the field.
+    return (
+      <View style={{ gap: 6 }}>
+        <Text style={[type.label, { color: labelColor }]} selectable>
+          {label}
+        </Text>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderColor,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            borderWidth: 1.5,
+            flexDirection: "row",
+            minHeight: 50,
+            paddingLeft: spacing.md,
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable={false}>
+            {prefix}
+          </Text>
+          <AppTextInput
+            autoCapitalize={autoCapitalize}
+            keyboardType={keyboardType}
+            maxLength={maxLength}
+            onBlur={() => setFocused(false)}
+            onChangeText={onChangeText}
+            onFocus={() => setFocused(true)}
+            placeholder={placeholder}
+            placeholderTextColor={colors.kicker}
+            style={{
+              color: colors.ink,
+              flex: 1,
+              fontFamily: fonts.sans,
+              fontSize: 15,
+              fontWeight: "500",
+              minHeight: 47,
+              paddingHorizontal: spacing.xs,
+              paddingVertical: 0,
+              textAlignVertical: "center",
+            }}
+            value={value}
+          />
+        </View>
+        {errorText}
+      </View>
+    );
+  }
+
   return (
     <View style={{ gap: 6 }}>
       <Text style={[type.label, { color: labelColor }]} selectable>
@@ -198,11 +261,7 @@ export function FormInput({
         }}
         value={value}
       />
-      {error ? (
-        <Text style={[type.caption, { color: colors.danger }]} selectable>
-          {error}
-        </Text>
-      ) : null}
+      {errorText}
     </View>
   );
 }

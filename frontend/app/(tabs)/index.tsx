@@ -41,6 +41,7 @@ import {
   Settings,
   ShieldCheck,
   UserRound,
+  TrendingUp,
   UserMinus,
   UserPlus,
   Users,
@@ -56,6 +57,7 @@ import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { HeaderNote } from "@/components/header-note";
+import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
@@ -79,6 +81,9 @@ import {
   type OwnerDashboard,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
+import { useListPayoutAccountsQuery } from "@/store/services/payout-api";
+import { PnlTrendChart } from "@/features/owner/pnl-trend-chart";
+import { useGetPnlStatementQuery, useGetPnlTrendQuery, type PnlStatement } from "@/store/services/pnl-api";
 import { findOwnerModule } from "@/features/owner/owner-modules";
 import { workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { type OwnerProperty } from "@/store/services/property-api";
@@ -791,6 +796,7 @@ type OwnerRoute =
   | "/owner-vacancy-finder"
   | "/owner-staff"
   | "/owner-expenses"
+  | "/owner-pnl"
   | { pathname: "/owner-service-placeholder"; params: { service: string; title: string } };
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
@@ -941,7 +947,7 @@ const SNAPSHOT_META: Record<SnapshotKey, { eyebrow: string; title: string }> = {
   collection: { eyebrow: "Money this month", title: "Collection snapshot" },
   property: { eyebrow: "Portfolio", title: "Property snapshot" },
   tenancy: { eyebrow: "Tenancy", title: "Tenancy snapshot" },
-  cycle: { eyebrow: "Billing cycles", title: "Cycle snapshot" },
+  cycle: { eyebrow: "Billing cycles", title: "Billing snapshot" },
   pnl: { eyebrow: "Profit & loss", title: "P&L snapshot" },
 };
 
@@ -950,6 +956,12 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
   const [openSnapshot, setOpenSnapshot] = useState<SnapshotKey | null>(null);
   const toggle = (key: SnapshotKey) => setOpenSnapshot((current) => (current === key ? null : key));
 
+  const pnlPropertyId = dashboard.property.propertyId;
+  const pnlStatement = useGetPnlStatementQuery(
+    { month: istMonthStart(), propertyId: pnlPropertyId },
+    { skip: !pnlPropertyId },
+  ).data;
+
   return (
     <>
       <Section eyebrow="Dashboard" title="Snapshots">
@@ -957,13 +969,13 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
           <DashboardSnapshotBox active={openSnapshot === "collection"} icon={Banknote} label="Collection" onPress={() => toggle("collection")} tone="primary" value={compactMoneyPaise(money.collectedThisMonthPaise)} />
           <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
-          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.activeCycleCount) : "-"} />
-          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} value="-" />
+          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.rentCycleCount) : "-"} />
+          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} tone={pnlStatement && pnlStatement.netPaise < 0 ? "danger" : "primary"} value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"} />
         </View>
       </Section>
 
       {openSnapshot ? (
-        <SnapshotDetail dashboard={dashboard} key={openSnapshot} monthSummary={monthSummary} onNavigate={onNavigate} snapshot={openSnapshot} />
+        <SnapshotDetail dashboard={dashboard} key={openSnapshot} monthSummary={monthSummary} onNavigate={onNavigate} pnlStatement={pnlStatement} snapshot={openSnapshot} />
       ) : null}
     </>
   );
@@ -1030,11 +1042,13 @@ function SnapshotDetail({
   dashboard,
   monthSummary,
   onNavigate,
+  pnlStatement,
   snapshot,
 }: {
   dashboard: OwnerDashboard;
   monthSummary?: BillingMonthSummary;
   onNavigate: (href: OwnerRoute) => void;
+  pnlStatement?: PnlStatement;
   snapshot: SnapshotKey;
 }) {
   const { colors, type } = useTheme();
@@ -1104,12 +1118,12 @@ function SnapshotDetail({
                 {monthSummary ? (
                   <>
                     <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                      <SnapshotTile icon={ClipboardList} label="Cycles" value={String(monthSummary.activeCycleCount)} tone="primary" />
-                      <SnapshotTile icon={AlertTriangle} label="Overdue" value={String(monthSummary.overdueCount)} tone={monthSummary.overdueCount > 0 ? "danger" : "default"} />
+                      <SnapshotTile icon={ClipboardList} label="Billing cycles" value={String(monthSummary.rentCycleCount)} tone="primary" />
+                      <SnapshotTile icon={Receipt} label="Other bills" value={String(monthSummary.oneOffCount)} tone={monthSummary.oneOffCount > 0 ? "primary" : "default"} />
                     </View>
                     <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                      <SnapshotTile icon={Check} label="Paid" count={monthSummary.paidCycleCount} total={monthSummary.activeCycleCount} />
-                      <SnapshotTile icon={Clock} label="Unpaid" count={monthSummary.unpaidCycleCount} total={monthSummary.activeCycleCount} tone={monthSummary.unpaidCycleCount > 0 ? "danger" : "default"} />
+                      <SnapshotTile icon={AlertTriangle} label="Overdue" value={String(monthSummary.overdueCount)} tone={monthSummary.overdueCount > 0 ? "danger" : "default"} />
+                      <SnapshotTile icon={Check} label="Paid" count={monthSummary.paidCycleCount} total={monthSummary.rentCycleCount + monthSummary.oneOffCount} />
                     </View>
                   </>
                 ) : (
@@ -1120,16 +1134,60 @@ function SnapshotDetail({
             ) : null}
 
             {snapshot === "pnl" ? (
-              <Card tone="sunken">
-                <Text style={[type.body, { color: colors.muted }]} selectable>
-                  Profit &amp; loss tracking will appear here once the Expense &amp; Profit module is ready.
-                </Text>
-              </Card>
+              <PnlSnapshotDetail onNavigate={onNavigate} propertyId={dashboard.property.propertyId} statement={pnlStatement} />
             ) : null}
         </View>
       </Section>
     </FadeInUp>
   );
+}
+
+function PnlSnapshotDetail({ onNavigate, propertyId, statement }: { onNavigate: (href: OwnerRoute) => void; propertyId: string; statement?: PnlStatement }) {
+  const { colors, type } = useTheme();
+  // Trend only loads when this snapshot is expanded (the component mounts then).
+  const trend = useGetPnlTrendQuery({ month: istMonthStart(), months: 6, propertyId }, { skip: !propertyId }).data;
+
+  if (!statement) {
+    return <SkeletonCard />;
+  }
+
+  const profit = statement.netPaise >= 0;
+  return (
+    <>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SnapshotTile icon={TrendingUp} label="Income" tone="primary" value={formatMoneyPaise(statement.totalIncomePaise)} />
+        <SnapshotTile icon={Wallet} label="Expense" value={formatMoneyPaise(statement.expensePaise)} />
+      </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SnapshotTile icon={Receipt} label={profit ? "Net profit" : "Net loss"} tone={profit ? "primary" : "danger"} value={signedMoneyPaise(statement.netPaise)} />
+        <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(statement.billCollectedPaise + statement.manualIncomePaise)} />
+      </View>
+      <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+        <View style={{ backgroundColor: statement.billUncollectedPaise > 0 ? colors.warningText : colors.jade, borderRadius: 999, height: 8, width: 8 }} />
+        <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]} selectable>
+          {statement.billUncollectedPaise > 0
+            ? `Collection pending · ${formatMoneyPaise(statement.billUncollectedPaise)} yet to be collected`
+            : "All bills collected"}
+        </Text>
+      </View>
+      {trend && trend.points.length > 0 ? <PnlTrendChart points={trend.points} /> : null}
+      <GradientCtaCard
+        description="Income, expenses, net, the 6-month trend and a downloadable report."
+        icon={Receipt}
+        kicker="Finance"
+        onPress={() => onNavigate("/owner-pnl")}
+        title="Open profit & loss"
+      />
+    </>
+  );
+}
+
+function signedMoneyPaise(paise: number) {
+  return `${paise < 0 ? "−" : ""}${formatMoneyPaise(Math.abs(paise))}`;
+}
+
+function signedCompactPaise(paise: number) {
+  return `${paise < 0 ? "−" : ""}${compactMoneyPaise(Math.abs(paise))}`;
 }
 
 function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
@@ -1251,9 +1309,15 @@ function WorkspaceTab({
   workspaceRole: "Owner" | "Manager";
 }) {
   const { attention, budget, today } = dashboard;
+  // Payout banks belong to the owner, not the property — a manager has none to
+  // set up, so the missing-bank item never counts for them.
+  const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
+  const payoutQuery = useListPayoutAccountsQuery(undefined, { skip: workspaceRole !== "Owner" || !hasSession });
+  const payoutMissing = workspaceRole === "Owner" && payoutQuery.isSuccess && (payoutQuery.data?.length ?? 0) === 0;
   // Total open items the action center groups - drives its attention badge. A
   // budget that is approaching or exceeded counts as one more item.
   const actionCenterCount =
+    (payoutMissing ? 1 : 0) +
     attention.paymentsOverdue +
     attention.concernsUnattended24h +
     attention.escalatedConcerns +
@@ -1262,7 +1326,8 @@ function WorkspaceTab({
     attention.upcomingExits +
     attention.exitsPastDue +
     attention.tenantsOnNotice +
-    // Optional-chained: a cached / pre-upgrade dashboard response has no budget.
+    // Nullish-guarded: a cached / pre-upgrade dashboard response lacks these.
+    (attention.pendingDepositSettlements ?? 0) +
     (budget?.level === "APPROACHING" || budget?.level === "EXCEEDED" ? 1 : 0);
   return (
     <>
@@ -1279,7 +1344,16 @@ function WorkspaceTab({
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <HomeToolBox icon={Wallet} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
-            <HomeToolBox icon={Landmark} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
+            <HomeToolBox
+              badge={attention.pendingDepositSettlements ?? 0}
+              icon={Landmark}
+              label="Deposit manager"
+              onPress={() => onNavigate("/owner-deposit-manager")}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox icon={TrendingUp} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
+            <View style={{ flex: 1 }} />
           </View>
         </View>
       </Section>
@@ -1374,9 +1448,9 @@ function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; ic
         </View>
       ) : null}
       <Icon color={colors.primary} size={48} strokeWidth={1.8} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", lineHeight: 15, textAlign: "center" }} numberOfLines={2} selectable>
+      <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", lineHeight: 15, textAlign: "center" }}>
         {label}
-      </Text>
+      </MarqueeText>
     </AnimatedPressable>
   );
 }
@@ -1502,8 +1576,11 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
         {label}
       </Text>
       {/* Serif numerals (money) keep the ledger look; word statuses use the sans
-          face, which — unlike the serif display font — doesn't clip its top under
-          adjustsFontSizeToFit + display-zoom font scaling on Android. */}
+          face. adjustsFontSizeToFit shrinks a long word ("Approaching") to fit
+          the narrow box, but on Android the shrunk glyph box is centred against
+          the ORIGINAL font metrics and its top ascender gets clipped — so pin an
+          explicit lineHeight (with font padding + centred vertical align) that
+          reserves the ascender room regardless of the shrink. */}
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.7}
@@ -1515,6 +1592,9 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
           fontSize: valueSans ? 16 : 17,
           fontVariant: ["tabular-nums"],
           fontWeight: valueSans ? "800" : "700",
+          includeFontPadding: true,
+          lineHeight: valueSans ? 22 : 23,
+          textAlignVertical: "center",
         }}
       >
         {value}

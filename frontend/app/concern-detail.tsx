@@ -4,7 +4,6 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -466,7 +465,7 @@ function ReopenConcernModal({
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View
           style={{
             alignItems: "center",

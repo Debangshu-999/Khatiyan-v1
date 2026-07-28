@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, Platform, Text, TextInput, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ArrowLeft, CalendarDays, Check, ChevronRight, KeyRound, X } from "lucide-react-native";
+import { ArrowLeft, CalendarDays, Check, ChevronRight, KeyRound, Trash2, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,7 +11,14 @@ import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
 import { useAppSelector } from "@/store/hooks";
+import {
+  useGetPropertyAgreementSettingsQuery,
+  useOnboardTenantWithAgreementMutation,
+  usePreviewTenancyAgreementQuery,
+  type CustomClauseInput,
+} from "@/store/services/compliance-api";
 import {
   useLazyLookupTenantQuery,
   useOnboardTenantMutation,
@@ -27,7 +34,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type Step = "phone" | "type" | "details" | "review" | "done";
+type Step = "phone" | "type" | "details" | "review" | "agreement" | "done";
 type BillingKind = "MONTHLY" | "DAILY";
 
 function dateToStr(d: Date) {
@@ -102,6 +109,13 @@ export default function OwnerOnboardTenantScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [result, setResult] = useState<TenancyOnboardingResult | null>(null);
+  // Agreement path: SELECTIVE properties opt in per tenancy; ALL_MONTHLY always
+  // goes through the agreement step. Custom clauses are editable on that step.
+  const [withAgreementChoice, setWithAgreementChoice] = useState(false);
+  // The owner's declaration. Khatiyan verifies nothing — this records that they
+  // did, which is where the legal duty actually sits.
+  const [idCheckConfirmed, setIdCheckConfirmed] = useState(false);
+  const [customDrafts, setCustomDrafts] = useState<CustomClauseInput[] | null>(null);
 
   const isDaily = billingType === "DAILY";
   const [triggerLookup, lookupState] = useLazyLookupTenantQuery();
@@ -121,6 +135,37 @@ export default function OwnerOnboardTenantScreen() {
     [roomId, rooms],
   );
   const [onboard, onboardState] = useOnboardTenantMutation();
+  const [onboardWithAgreement, onboardWithAgreementState] = useOnboardTenantWithAgreementMutation();
+
+  // Property agreement mode decides whether monthly onboarding routes through
+  // the agreement step: ALL_MONTHLY always, SELECTIVE by the owner's toggle.
+  const agreementSettingsQuery = useGetPropertyAgreementSettingsQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty || step === "phone",
+  });
+  const agreementMode = agreementSettingsQuery.data?.mode ?? "OFF";
+  const withAgreement =
+    billingType === "MONTHLY" && (agreementMode === "ALL_MONTHLY" || (agreementMode === "SELECTIVE" && withAgreementChoice));
+
+  const previewQuery = usePreviewTenancyAgreementQuery(
+    {
+      depositAmountPaise: Math.round(Number(deposit || "0") * 100),
+      propertyId: selectedProperty?.id ?? "",
+      rentAmountPaise: Math.round(Number(rent || "0") * 100),
+    },
+    { skip: step !== "agreement" || !selectedProperty || !withAgreement },
+  );
+
+  // Seed the editable custom clauses from the property defaults once the
+  // preview arrives; the owner tweaks them per tenancy on the agreement step.
+  useEffect(() => {
+    if (step === "agreement" && previewQuery.data && customDrafts === null) {
+      setCustomDrafts(
+        previewQuery.data
+          .filter((clause) => clause.kind === "CUSTOM")
+          .map((clause) => ({ body: clause.body, heading: clause.heading })),
+      );
+    }
+  }, [customDrafts, previewQuery.data, step]);
 
   // Daily renting is available when the property has at least one nightly rate
   // configured; the rate that applies depends on the chosen room's AC type.
@@ -224,8 +269,18 @@ export default function OwnerOnboardTenantScreen() {
     setStep("review");
   }
 
+  /** Blocks every route out of review until the owner has declared the ID check. */
+  function idCheckMissing() {
+    if (idCheckConfirmed) {
+      return false;
+    }
+    setMessage("Confirm you have checked the tenant's ID proof and photograph before onboarding.");
+    return true;
+  }
+
   async function handleConfirm() {
     if (!selectedProperty || !roomId) return;
+    if (idCheckMissing()) return;
     setMessage(null);
     const common = {
       tenantPhone: phone.trim(),
@@ -233,6 +288,7 @@ export default function OwnerOnboardTenantScreen() {
       propertyId: selectedProperty.id,
       roomId,
       startDate: dateToStr(startDate),
+      idCheckConfirmed,
     };
     const payload = isDaily
       ? { ...common, billingType: "DAILY" as const, plannedEndDate: dateToStr(plannedEndDate) }
@@ -245,6 +301,34 @@ export default function OwnerOnboardTenantScreen() {
     try {
       const res = await onboard(payload).unwrap();
       setResult(res);
+      setStep("done");
+    } catch (e) {
+      setMessage(errorText(e));
+    }
+  }
+
+  async function handleConfirmWithAgreement() {
+    if (!selectedProperty || !roomId) return;
+    if (idCheckMissing()) return;
+    setMessage(null);
+    const drafts = (customDrafts ?? []).filter((clause) => clause.heading.trim() || clause.body.trim());
+    if (drafts.some((clause) => !clause.heading.trim() || !clause.body.trim())) {
+      setMessage("Every custom clause needs both a heading and its text.");
+      return;
+    }
+    try {
+      const res = await onboardWithAgreement({
+        customClauses: drafts.map((clause) => ({ body: clause.body.trim(), heading: clause.heading.trim() })),
+        depositAmountPaise: Math.round(Number(deposit || "0") * 100),
+        propertyId: selectedProperty.id,
+        rentAmountPaise: Math.round(Number(rent) * 100),
+        roomId,
+        startDate: dateToStr(startDate),
+        idCheckConfirmed,
+        tenantName: tenantName.trim() ? tenantName.trim() : null,
+        tenantPhone: phone.trim(),
+      }).unwrap();
+      setResult({ tenancy: res.tenancy, tenantAccountCreated: res.tenantAccountCreated });
       setStep("done");
     } catch (e) {
       setMessage(errorText(e));
@@ -430,10 +514,10 @@ export default function OwnerOnboardTenantScreen() {
               ) : (
                 <>
                   <Field label="Rent / month">
-                    <Input value={rent} onChangeText={setRent} placeholder="From room base rent" keyboardType="number-pad" />
+                    <Input value={rent} onChangeText={setRent} placeholder="From room base rent" keyboardType="number-pad" prefix="₹" />
                   </Field>
                   <Field label="Deposit">
-                    <Input value={deposit} onChangeText={setDeposit} placeholder="From property policy" keyboardType="number-pad" />
+                    <Input value={deposit} onChangeText={setDeposit} placeholder="From property policy" keyboardType="number-pad" prefix="₹" />
                   </Field>
                 </>
               )}
@@ -562,9 +646,119 @@ export default function OwnerOnboardTenantScreen() {
                   ]),
             ]}
           />
-          <PrimaryButton label="Confirm and create tenancy" onPress={handleConfirm} busy={onboardState.isLoading} />
+          {!isDaily && agreementMode === "ALL_MONTHLY" ? (
+            <Text style={[type.caption, { color: colors.muted }]} selectable>
+              This property requires an accepted agreement for every monthly tenancy. The tenancy stays pending until
+              the tenant accepts.
+            </Text>
+          ) : null}
+          <IdCheckDeclaration checked={idCheckConfirmed} onToggle={() => setIdCheckConfirmed((value) => !value)} />
+
+          {!isDaily && agreementMode === "SELECTIVE" ? (
+            <>
+              {/* Per-tenancy choice: the two buttons ARE the choice. */}
+              <PrimaryButton
+                label="Continue to agreement"
+                onPress={() => {
+                  if (idCheckMissing()) return;
+                  setWithAgreementChoice(true);
+                  setStep("agreement");
+                }}
+              />
+              <PrimaryButton
+                label="Continue without agreement"
+                muted
+                onPress={handleConfirm}
+                busy={onboardState.isLoading}
+              />
+            </>
+          ) : withAgreement ? (
+            <PrimaryButton
+              label="Continue to agreement"
+              onPress={() => {
+                if (idCheckMissing()) return;
+                setStep("agreement");
+              }}
+            />
+          ) : (
+            <PrimaryButton label="Confirm and create tenancy" onPress={handleConfirm} busy={onboardState.isLoading} />
+          )}
           <PrimaryButton label="Back" muted onPress={() => setStep("details")} />
         </Card>
+      ) : null}
+
+      {step === "agreement" ? (
+        <>
+          <Card>
+            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              Tenancy agreement
+            </Text>
+            <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]} selectable>
+              These are the exact terms the tenant will accept. System rules are locked for uniformity — only the
+              custom clauses below can be tailored for this tenancy.
+            </Text>
+            {previewQuery.isFetching && !previewQuery.data ? <ActivityIndicator color={colors.primary} /> : null}
+            {previewQuery.data ? (
+              <AgreementClauseList clauses={previewQuery.data.filter((clause) => clause.kind === "SYSTEM")} />
+            ) : null}
+          </Card>
+
+          <Card>
+            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              House rules & other terms (editable)
+            </Text>
+            {(customDrafts ?? []).map((clause, index) => (
+              <View key={`draft-${index}`} style={{ gap: spacing.sm }}>
+                {index > 0 ? <Divider /> : null}
+                <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                    Clause {index + 1}
+                  </Text>
+                  <AnimatedPressable
+                    accessibilityLabel={`Remove clause ${index + 1}`}
+                    onPress={() => setCustomDrafts((current) => (current ?? []).filter((_, i) => i !== index))}
+                    style={{ padding: 4 }}
+                  >
+                    <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+                  </AnimatedPressable>
+                </View>
+                <Field label="Clause Heading">
+                  <Input
+                    value={clause.heading}
+                    onChangeText={(text) =>
+                      setCustomDrafts((current) => (current ?? []).map((item, i) => (i === index ? { ...item, heading: text } : item)))
+                    }
+                    placeholder="e.g. Liability, Guests, Parking"
+                  />
+                </Field>
+                <Field label="Clause Body">
+                  <Input
+                    multiline
+                    value={clause.body}
+                    onChangeText={(text) =>
+                      setCustomDrafts((current) => (current ?? []).map((item, i) => (i === index ? { ...item, body: text } : item)))
+                    }
+                    placeholder="Write the rule exactly as the tenant should read it"
+                  />
+                </Field>
+              </View>
+            ))}
+            <PrimaryButton
+              label="Add clause"
+              muted
+              onPress={() => setCustomDrafts((current) => [...(current ?? []), { body: "", heading: "" }])}
+            />
+          </Card>
+
+          <Card>
+            <PrimaryButton
+              label="Create tenancy — send for acceptance"
+              onPress={handleConfirmWithAgreement}
+              busy={onboardWithAgreementState.isLoading}
+            />
+            <PrimaryButton label="Back" muted onPress={() => setStep("review")} />
+          </Card>
+        </>
       ) : null}
 
       {step === "done" && result ? (
@@ -583,8 +777,18 @@ export default function OwnerOnboardTenantScreen() {
               <Check color={colors.successText} size={28} strokeWidth={2.4} />
             </View>
             <Text style={[type.bodyStrong, { color: colors.ink, textAlign: "center" }]} selectable>
-              {result.tenantAccountCreated ? "Tenant account and tenancy created" : "Tenancy created"}
+              {result.tenancy.status === "PENDING_ACCEPTANCE"
+                ? "Tenancy created — awaiting acceptance"
+                : result.tenantAccountCreated
+                  ? "Tenant account and tenancy created"
+                  : "Tenancy created"}
             </Text>
+            {result.tenancy.status === "PENDING_ACCEPTANCE" ? (
+              <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
+                The bed is reserved. The tenancy and billing start once the tenant accepts the agreement in their app
+                — pending tenancies auto-cancel after 3 days.
+              </Text>
+            ) : null}
           </View>
           <OverviewBox
             rows={[
@@ -628,8 +832,43 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Input(props: React.ComponentProps<typeof TextInput>) {
+function Input({ prefix, ...props }: React.ComponentProps<typeof TextInput> & { prefix?: string }) {
   const { colors, fonts } = useTheme();
+  if (prefix) {
+    // Adornment (e.g. ₹) rendered inside the field: the container owns the
+    // border and the input goes borderless beside the prefix.
+    return (
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceRaised,
+          borderColor: colors.border,
+          borderRadius: 10,
+          borderWidth: 1,
+          flexDirection: "row",
+          paddingLeft: spacing.md,
+        }}
+      >
+        <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable={false}>
+          {prefix}
+        </Text>
+        <AppTextInput
+          {...props}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholderTextColor={colors.muted}
+          style={{
+            color: colors.ink,
+            flex: 1,
+            fontFamily: fonts.sans,
+            fontSize: 15,
+            padding: spacing.md,
+            paddingLeft: spacing.xs,
+          }}
+        />
+      </View>
+    );
+  }
   return (
     <AppTextInput
       {...props}
@@ -734,6 +973,62 @@ function OverviewRow({ label, value, mono }: OverviewRowData) {
         {value}
       </Text>
     </View>
+  );
+}
+
+/**
+ * The owner declaring they checked the tenant's ID. Deliberately worded as their
+ * statement, not ours — Khatiyan verifies nothing and keeps no document. Tenant
+ * ID verification and police notification are the landlord's legal duty in most
+ * states, and many small owners simply don't know that, so the note below says so
+ * at the moment it matters.
+ */
+function IdCheckDeclaration({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={onToggle}
+      style={{
+        alignItems: "flex-start",
+        backgroundColor: checked ? colors.primarySoft : colors.surfaceSunken,
+        borderColor: checked ? colors.primary : colors.border,
+        borderCurve: "continuous",
+        borderRadius: 14,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: 12,
+        padding: 14,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: checked ? colors.primary : "transparent",
+          borderColor: checked ? colors.primary : colors.borderStrong,
+          borderRadius: 6,
+          borderWidth: 2,
+          height: 22,
+          justifyContent: "center",
+          marginTop: 1,
+          width: 22,
+        }}
+      >
+        {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
+      </View>
+
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+          I have collected and checked this tenant&apos;s ID proof and photograph
+        </Text>
+        <Text style={[type.caption, { color: colors.muted }]} selectable>
+          Most states require landlords to verify tenant ID and notify the local police. Keep a copy for your own
+          records — Khatiyan does not store ID documents.
+        </Text>
+      </View>
+    </AnimatedPressable>
   );
 }
 

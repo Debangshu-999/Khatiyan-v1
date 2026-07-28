@@ -1,11 +1,14 @@
 import { useGetProfileQuery } from "@/store/services/auth-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
+import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { useAppSelector } from "@/store/hooks";
 
 // A single phone/user can act in several "accounts". Roles are derived:
 // - owner: the user owns properties (role OWNER, or has owned properties)
 // - manager: the user is an active manager on a property they do not own
-// - tenant: the user has an active tenancy
+// - tenant: the user has an active tenancy — or a PENDING_ACCEPTANCE one
+//   (the auth activeTenant flag is only set at acceptance, but the tenant must
+//   reach the tenancy tab to accept, so a pending tenancy also unlocks it)
 export type AccountType = "tenant" | "manager" | "owner";
 
 export type AccountAvailability = {
@@ -46,9 +49,14 @@ export function useAvailableAccounts(): AccountAvailability {
   const profileQuery = useGetProfileQuery(undefined, { skip: !auth.accessToken });
   const user = profileQuery.data ?? auth.user;
   const propertiesQuery = useListMyPropertiesQuery(undefined, { skip: !auth.accessToken });
+  // Pending-acceptance probe: only fires while the auth flag is off, so a
+  // freshly onboarded tenant can open the tenancy tab to accept the agreement.
+  const myTenancyQuery = useGetMyActiveTenancyQuery(undefined, {
+    skip: !auth.accessToken || Boolean(user?.activeTenant),
+  });
 
   const { accounts, managedProperties, ownedProperties } = deriveAccounts({
-    activeTenant: Boolean(user?.activeTenant),
+    activeTenant: Boolean(user?.activeTenant) || Boolean(myTenancyQuery.data),
     properties: propertiesQuery.data ?? [],
     role: user?.role,
     userId: user?.id,

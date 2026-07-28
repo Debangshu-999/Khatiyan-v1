@@ -16,10 +16,13 @@ import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
+import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.UpdatePropertyExitPolicyRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
 import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.property.model.Property;
+import com.khatiyan.d_modules.property.model.PropertyDamageCharge;
 import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
 
@@ -194,6 +197,45 @@ public class PropertyService {
                 .orElseThrow(() -> new NotFoundException("Property_", propertyId));
 
         return PropertyBillingPolicyResponse.from(property);
+    }
+
+    /**
+     * Returns a property's exit policies (damage schedule + move-out checklist)
+     * for internal module reads — the compliance assembler and deposit settlement.
+     */
+    @Transactional(readOnly = true)
+    public PropertyExitPolicyResponse getExitPolicy(UUID propertyId) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+
+        return PropertyExitPolicyResponse.from(property);
+    }
+
+    /**
+     * Replaces a property's exit policies. Owner-scoped, mirroring the rest of
+     * property configuration.
+     */
+    @Transactional
+    public PropertyExitPolicyResponse updateExitPolicies(
+            UUID ownerId, UUID propertyId, UpdatePropertyExitPolicyRequest request) {
+        Property property = getOwnedActiveProperty(ownerId, propertyId);
+
+        List<PropertyDamageCharge> damageCharges = request.damageCharges() == null
+                ? List.of()
+                : request.damageCharges().stream()
+                        .map(input -> PropertyDamageCharge.of(input.name(), input.chargePaise()))
+                        .toList();
+
+        property.updateExitPolicies(damageCharges, request.exitChecklist());
+
+        log.info(
+                "Property exit policies updated propertyId={} ownerId={} damageCharges={} checklistItems={}",
+                propertyId,
+                ownerId,
+                damageCharges.size(),
+                property.getExitChecklist().size());
+
+        return PropertyExitPolicyResponse.from(property);
     }
 
     /**

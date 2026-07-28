@@ -181,7 +181,14 @@ class ConcernServiceTest {
                 null,
                 TenancyStatus.ACTIVE,
                 null,
-                true);
+                true,
+                true,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     private static RoomResponse activeRoom() {

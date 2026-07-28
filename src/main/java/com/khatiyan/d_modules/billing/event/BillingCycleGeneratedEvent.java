@@ -11,7 +11,9 @@ public record BillingCycleGeneratedEvent(
         UUID tenancyId,
         UUID tenantUserId,
         UUID propertyId,
-        int cycleNumber,
+        // Null for one-off bills (e.g. an early-exit penalty) that sit outside the
+        // numbered rent-cycle sequence.
+        Integer cycleNumber,
         LocalDate rentDueDate,
         long totalAmountPaise) {
 }

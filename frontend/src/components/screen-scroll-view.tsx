@@ -98,8 +98,12 @@ export function ScreenScrollView({
       </View>
       {/* iOS keyboard avoidance is handled by automaticallyAdjustKeyboardInsets
           on the ScrollView; Android needs an explicit KeyboardAvoidingView so
-          low inputs (e.g. concern notes) aren't covered by the keyboard. */}
-      <KeyboardAvoidingView behavior={Platform.OS === "android" ? "height" : undefined} style={{ flex: 1 }}>
+          low inputs (e.g. concern notes) aren't covered by the keyboard.
+          "padding", not "height": with edge-to-edge (mandatory since SDK 53),
+          "height" caches a stale frame measurement and fails to restore after
+          the keyboard closes — including a keyboard opened by a Modal above
+          this screen — leaving the scroll viewport permanently shortened. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "android" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView
           automaticallyAdjustKeyboardInsets
           contentInsetAdjustmentBehavior="never"

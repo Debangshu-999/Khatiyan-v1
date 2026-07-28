@@ -21,7 +21,8 @@ class OtpDeliveryServiceTest {
     void emailChannelSendsOtpToEmailRecipientOnly() {
         OtpDeliveryProvider smsProvider = provider(OtpDeliveryProviderType.SMS);
         OtpDeliveryProvider emailProvider = provider(OtpDeliveryProviderType.EMAIL);
-        OtpDeliveryService service = new OtpDeliveryService(List.of(smsProvider, emailProvider));
+        OtpDeliveryService service = new OtpDeliveryService(
+                List.of(smsProvider, emailProvider), new AsyncOtpDelivery(List.of(smsProvider, emailProvider)));
 
         service.deliverOtp("+919007433360", "tenant@example.com", "123456", OtpPurpose.PIN_RESET, OtpDeliveryChannel.EMAIL);
 
@@ -33,7 +34,8 @@ class OtpDeliveryServiceTest {
     void smsAndEmailSendsSmsAndBestEffortEmail() {
         OtpDeliveryProvider smsProvider = provider(OtpDeliveryProviderType.SMS);
         OtpDeliveryProvider emailProvider = provider(OtpDeliveryProviderType.EMAIL);
-        OtpDeliveryService service = new OtpDeliveryService(List.of(smsProvider, emailProvider));
+        OtpDeliveryService service = new OtpDeliveryService(
+                List.of(smsProvider, emailProvider), new AsyncOtpDelivery(List.of(smsProvider, emailProvider)));
 
         service.deliverOtp("+919007433360", "tenant@example.com", "123456", OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
 
@@ -46,7 +48,8 @@ class OtpDeliveryServiceTest {
         OtpDeliveryProvider smsProvider = provider(OtpDeliveryProviderType.SMS);
         OtpDeliveryProvider emailProvider = provider(OtpDeliveryProviderType.EMAIL);
         doThrow(new RuntimeException("smtp down")).when(emailProvider).sendOtp("tenant@example.com", "123456", OtpPurpose.LOGIN);
-        OtpDeliveryService service = new OtpDeliveryService(List.of(smsProvider, emailProvider));
+        OtpDeliveryService service = new OtpDeliveryService(
+                List.of(smsProvider, emailProvider), new AsyncOtpDelivery(List.of(smsProvider, emailProvider)));
 
         service.deliverOtp("+919007433360", "tenant@example.com", "123456", OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
 
@@ -57,7 +60,8 @@ class OtpDeliveryServiceTest {
     @Test
     void emailOnlyRequiresEmailRecipient() {
         OtpDeliveryProvider emailProvider = provider(OtpDeliveryProviderType.EMAIL);
-        OtpDeliveryService service = new OtpDeliveryService(List.of(emailProvider));
+        OtpDeliveryService service = new OtpDeliveryService(
+                List.of(emailProvider), new AsyncOtpDelivery(List.of(emailProvider)));
 
         assertThatThrownBy(() -> service.deliverOtp("+919007433360", null, "123456", OtpPurpose.LOGIN, OtpDeliveryChannel.EMAIL))
                 .isInstanceOf(IllegalArgumentException.class)

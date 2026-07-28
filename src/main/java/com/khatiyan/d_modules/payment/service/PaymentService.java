@@ -28,6 +28,7 @@ import com.khatiyan.d_modules.payment.api.dto.RecordClientPaymentFailureRequest;
 import com.khatiyan.d_modules.payment.api.dto.VerifyProviderPaymentRequest;
 import com.khatiyan.d_modules.payment.event.PaymentFailedEvent;
 import com.khatiyan.d_modules.payment.event.PaymentSucceededEvent;
+import com.khatiyan.d_modules.payment.model.OwnerLinkedAccount;
 import com.khatiyan.d_modules.payment.model.PaymentIdempotencyKey;
 import com.khatiyan.d_modules.payment.model.PaymentIdempotencyStatus;
 import com.khatiyan.d_modules.payment.model.PaymentMethod;
@@ -42,12 +43,18 @@ import com.khatiyan.d_modules.payment.provider.PaymentProviderRegistry;
 import com.khatiyan.d_modules.payment.provider.PaymentProviderUnavailableException;
 import com.khatiyan.d_modules.payment.provider.ProviderPaymentOrder;
 import com.khatiyan.d_modules.payment.provider.ProviderPaymentVerification;
+import com.khatiyan.d_modules.payment.provider.ProviderWebhookTransfer;
 import com.khatiyan.d_modules.payment.provider.ProviderWebhookVerification;
 import com.khatiyan.d_modules.payment.provider.VerifyProviderPaymentCommand;
+import com.khatiyan.d_modules.payment.model.UnappliedPayment;
+import com.khatiyan.d_modules.payment.model.UnappliedPaymentReason;
+import com.khatiyan.d_modules.payment.repository.OwnerLinkedAccountRepository;
+import com.khatiyan.d_modules.payment.repository.UnappliedPaymentRepository;
 import com.khatiyan.d_modules.payment.repository.PaymentIdempotencyKeyRepository;
 import com.khatiyan.d_modules.payment.repository.PaymentOrderRepository;
 import com.khatiyan.d_modules.payment.repository.PaymentTransactionRepository;
 import com.khatiyan.d_modules.payment.repository.PaymentWebhookEventRepository;
+import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
 import lombok.extern.slf4j.Slf4j;
@@ -73,6 +80,10 @@ public class PaymentService {
     private final PaymentProviderRegistry paymentProviderRegistry;
     private final PaymentProperties paymentProperties;
     private final BillingModule billingModule;
+    private final PropertyModule propertyModule;
+    private final OwnerLinkedAccountRepository ownerLinkedAccountRepository;
+    private final UnappliedPaymentRepository unappliedPaymentRepository;
+    private final PaymentTransferService paymentTransferService;
     private final ApplicationEventPublisher eventPublisher;
     private final ReferenceCodeGenerator referenceCodeGenerator;
 
@@ -84,6 +95,10 @@ public class PaymentService {
             PaymentProviderRegistry paymentProviderRegistry,
             PaymentProperties paymentProperties,
             BillingModule billingModule,
+            PropertyModule propertyModule,
+            OwnerLinkedAccountRepository ownerLinkedAccountRepository,
+            UnappliedPaymentRepository unappliedPaymentRepository,
+            PaymentTransferService paymentTransferService,
             ApplicationEventPublisher eventPublisher,
             ReferenceCodeGenerator referenceCodeGenerator) {
         this.paymentOrderRepository = paymentOrderRepository;
@@ -93,6 +108,10 @@ public class PaymentService {
         this.paymentProviderRegistry = paymentProviderRegistry;
         this.paymentProperties = paymentProperties;
         this.billingModule = billingModule;
+        this.propertyModule = propertyModule;
+        this.ownerLinkedAccountRepository = ownerLinkedAccountRepository;
+        this.unappliedPaymentRepository = unappliedPaymentRepository;
+        this.paymentTransferService = paymentTransferService;
         this.eventPublisher = eventPublisher;
         this.referenceCodeGenerator = referenceCodeGenerator;
     }
@@ -163,6 +182,13 @@ public class PaymentService {
 
         PaymentOrder savedOrder = paymentOrderRepository.save(order);
 
+        // Route payout (owner-borne fee): when enabled, split the owner's net to
+        // their linked account and retain the platform + gateway fee. The tenant
+        // charge (amountPaise) is unchanged. Route off ⇒ plain charge, no fees.
+        // Refuse online collection the owner cannot be paid out of. The split
+        // itself is computed after capture, once the real gateway fee is known.
+        requireOwnerCanReceivePayouts(cycle);
+
         try {
             ProviderPaymentOrder providerOrder = provider.createOrder(toProviderCommand(savedOrder, cycle));
             savedOrder.attachProviderOrder(
@@ -218,9 +244,28 @@ public class PaymentService {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Loads an order for the hosted checkout page.
+     *
+     * <p>Refuses anything that is no longer payable. The page is a public URL, so
+     * without this a tenant returning to an old tab could reach a live Razorpay
+     * checkout for an order we have already closed — and pay it. This closes the
+     * in-app path to a duplicate payment; a genuinely stale browser tab is caught
+     * by Razorpay, which rejects a second payment on the same order.
+     */
     public PaymentOrderResponse getCheckoutOrder(UUID paymentOrderId) {
         PaymentOrder order = paymentOrderRepository.findById(paymentOrderId)
                 .orElseThrow(() -> new NotFoundException("PaymentOrder", paymentOrderId));
+
+        if (order.getStatus() != PaymentOrderStatus.CREATED
+                && order.getStatus() != PaymentOrderStatus.ATTEMPTED) {
+            log.info(
+                    "Checkout page refused for a non-payable order paymentOrderId={} status={}",
+                    paymentOrderId,
+                    order.getStatus());
+            throw new ValidationException("This payment link is no longer valid. Open the bill in Khatiyan to pay.");
+        }
+
         return PaymentOrderResponse.from(order);
     }
 
@@ -296,6 +341,13 @@ public class PaymentService {
 
         if (!verification.signatureValid()) {
             event.markFailed("Invalid Razorpay webhook signature", Instant.now());
+            return PaymentWebhookEventResponse.from(event);
+        }
+
+        // Route events describe money leaving for an owner, not arriving from a
+        // tenant, so they never touch a payment order.
+        if (isRouteWebhookEvent(verification)) {
+            handleRouteWebhookEvent(event, verification);
             return PaymentWebhookEventResponse.from(event);
         }
 
@@ -491,12 +543,35 @@ public class PaymentService {
         }
 
         if (order.getStatus() != PaymentOrderStatus.PAID) {
+            // Past this point the gateway already holds the tenant's money, so no
+            // branch may throw or return quietly: every outcome must leave a row.
+            UnappliedPaymentReason blockedReason = unappliedReason(order);
+
+            if (blockedReason != null) {
+                holdUnappliedPayment(order, providerPaymentId, blockedReason, paidAt);
+                return PaymentOrderResponse.from(order);
+            }
+
             order.markPaid(paidAt);
-            billingModule.recordMyPaymentSuccess(
-                    order.getTenantUserId(),
-                    order.getBillingCycleId(),
-                    order.getAmountPaise());
-            publishPaymentSucceededEvent(order, providerPaymentId);
+            try {
+                billingModule.recordMyPaymentSuccess(
+                        order.getTenantUserId(),
+                        order.getBillingCycleId(),
+                        order.getAmountPaise());
+                publishPaymentSucceededEvent(order, providerPaymentId);
+                // Only after the bill is settled: paying the owner for a bill we
+                // failed to mark paid would be the worst of both worlds.
+                paymentTransferService.transferOwnerShare(order, providerPaymentId, paidAt);
+            } catch (RuntimeException exception) {
+                // Billing refused for a reason we did not foresee. The money is
+                // real regardless, so record it rather than let the webhook fail.
+                log.error(
+                        "Captured payment could not be applied to its billing cycle paymentOrderId={} billingCycleId={}",
+                        order.getId(),
+                        order.getBillingCycleId(),
+                        exception);
+                holdUnappliedPayment(order, providerPaymentId, UnappliedPaymentReason.APPLY_FAILED, paidAt);
+            }
         }
 
         log.info(
@@ -508,6 +583,117 @@ public class PaymentService {
                 order.getAmountPaise());
 
         return PaymentOrderResponse.from(order);
+    }
+
+    private boolean isRouteWebhookEvent(ProviderWebhookVerification verification) {
+        String eventType = verification.eventType();
+        if (eventType == null) {
+            return false;
+        }
+        return eventType.startsWith("transfer.")
+                || eventType.startsWith("settlement.")
+                || eventType.startsWith("product.route.");
+    }
+
+    /**
+     * Applies a Route event to the transfer ledger.
+     *
+     * <p>{@code product.route.*} concerns Khatiyan's own Route onboarding rather
+     * than any single payout, so it is recorded and logged rather than applied.
+     */
+    private void handleRouteWebhookEvent(PaymentWebhookEvent event, ProviderWebhookVerification verification) {
+        String eventType = verification.eventType();
+        Instant now = Instant.now();
+
+        if (eventType.startsWith("product.route.")) {
+            log.info("Route product status event received event={}", eventType);
+            event.markProcessed(now);
+            return;
+        }
+
+        ProviderWebhookTransfer transfer = verification.transfer();
+        if (transfer == null) {
+            event.markIgnored("Route event carried no transfer entity", now);
+            return;
+        }
+
+        boolean applied = paymentTransferService.applyTransferOutcome(
+                PaymentProviderType.RAZORPAY,
+                transfer.providerTransferId(),
+                eventType,
+                transfer.failureReason(),
+                now);
+
+        if (applied) {
+            event.markProcessed(now);
+        } else {
+            event.markIgnored("Route event did not match a tracked transfer", now);
+        }
+    }
+
+    /**
+     * Why this captured payment cannot be applied, or null when it can.
+     *
+     * <p>Checked before {@code markPaid} because that method throws for a dead
+     * order — and an exception here would abandon money the gateway has already
+     * taken.
+     */
+    private UnappliedPaymentReason unappliedReason(PaymentOrder order) {
+        if (order.getStatus() == PaymentOrderStatus.EXPIRED
+                || order.getStatus() == PaymentOrderStatus.CANCELLED) {
+            return UnappliedPaymentReason.ORDER_NOT_PAYABLE;
+        }
+
+        BillingCycleResponse cycle;
+        try {
+            cycle = billingModule.getMyCycle(order.getTenantUserId(), order.getBillingCycleId());
+        } catch (RuntimeException exception) {
+            log.error("Could not load billing cycle for a captured payment paymentOrderId={} billingCycleId={}",
+                    order.getId(), order.getBillingCycleId(), exception);
+            return UnappliedPaymentReason.APPLY_FAILED;
+        }
+
+        if (cycle.status() == BillingCycleStatus.CANCELLED) {
+            return UnappliedPaymentReason.CYCLE_CANCELLED;
+        }
+        if (cycle.status() == BillingCycleStatus.PAID) {
+            // Settled some other way while checkout was open — usually the owner
+            // recording an offline payment. Billing would return quietly here,
+            // which is exactly how the money would go unnoticed.
+            return UnappliedPaymentReason.CYCLE_ALREADY_PAID;
+        }
+
+        return null;
+    }
+
+    /**
+     * Records captured money that belongs to no bill, so it can be refunded.
+     * Idempotent on the provider payment id: a redelivered webhook must not
+     * create a second refund obligation.
+     */
+    private void holdUnappliedPayment(
+            PaymentOrder order,
+            String providerPaymentId,
+            UnappliedPaymentReason reason,
+            Instant capturedAt) {
+        if (providerPaymentId != null && !providerPaymentId.isBlank()) {
+            Optional<UnappliedPayment> existing = unappliedPaymentRepository
+                    .findByProviderAndProviderPaymentId(order.getProvider(), providerPaymentId);
+            if (existing.isPresent()) {
+                return;
+            }
+        }
+
+        unappliedPaymentRepository.save(
+                UnappliedPayment.held(order, providerPaymentId, reason, capturedAt));
+
+        log.error(
+                "UNAPPLIED PAYMENT held for refund paymentOrderId={} billingCycleId={} tenantUserId={} amount={} reason={}",
+                order.getId(),
+                order.getBillingCycleId(),
+                order.getTenantUserId(),
+                order.getAmountPaise(),
+                reason);
     }
 
     private Optional<PaymentWebhookEvent> findExistingWebhookEvent(
@@ -615,7 +801,7 @@ public class PaymentService {
     }
 
     private void ensureFirstCycleDepositCanBeOpened(BillingCycleResponse cycle) {
-        if (cycle.billingType() != TenancyBillingType.MONTHLY || cycle.cycleNumber() != 1) {
+        if (cycle.billingType() != TenancyBillingType.MONTHLY || !Integer.valueOf(1).equals(cycle.cycleNumber())) {
             return;
         }
 
@@ -635,31 +821,86 @@ public class PaymentService {
         }
     }
 
+    /**
+     * Reuses the cycle's existing open order rather than minting a second one.
+     *
+     * <p>Expiring our row does not close the order at Razorpay — that order stays
+     * payable. So creating a replacement leaves two payable orders and a tenant
+     * with a stale checkout tab can pay both. Reusing one order per cycle makes
+     * that impossible: Razorpay refuses a second payment on an order that is
+     * already paid (or attempted-and-authorised), so the duplicate is rejected
+     * before any money moves.
+     *
+     * <p>The clock is deliberately not consulted here. A cycle's amount is frozen
+     * once its payment window opens, so an order cannot go stale in a way that
+     * matters, and expiry has no correctness job left to do.
+     */
     private Optional<PaymentOrder> findOpenOrder(UUID billingCycleId, long currentAmountPaise, Instant now) {
         return paymentOrderRepository.findByBillingCycleIdAndStatuses(
                 billingCycleId,
                 List.of(PaymentOrderStatus.CREATED, PaymentOrderStatus.ATTEMPTED))
                 .stream()
-                .filter(order -> order.getExpiresAt() == null || order.getExpiresAt().isAfter(now))
                 .filter(order -> order.getAmountPaise() == currentAmountPaise)
                 .findFirst();
     }
 
+    /**
+     * Last-resort gates. Post-immutability neither of these can fire in normal
+     * operation, so each one logs loudly: if we ever see them, something is
+     * genuinely wrong rather than merely stale.
+     *
+     * <p>Expiry alone is not grounds to replace an order — that would create the
+     * second payable Razorpay order this design exists to avoid. Only a genuine
+     * amount mismatch does, because charging the wrong amount is worse than the
+     * remote chance of a duplicate from a pre-existing browser tab.
+     */
     private void expireOldOpenOrders(UUID billingCycleId, long currentAmountPaise, Instant now) {
         List<PaymentOrder> openOrders = paymentOrderRepository.findByBillingCycleIdAndStatuses(
                 billingCycleId,
                 List.of(PaymentOrderStatus.CREATED, PaymentOrderStatus.ATTEMPTED));
 
         for (PaymentOrder order : openOrders) {
-            if (order.getExpiresAt() != null && !order.getExpiresAt().isAfter(now)) {
+            if (order.getAmountPaise() != currentAmountPaise) {
+                log.warn(
+                        "Open payment order amount no longer matches its billing cycle - expiring and replacing"
+                                + " paymentOrderId={} billingCycleId={} orderAmount={} cycleAmount={}",
+                        order.getId(),
+                        billingCycleId,
+                        order.getAmountPaise(),
+                        currentAmountPaise);
                 order.expire(now);
                 continue;
             }
 
-            if (order.getAmountPaise() != currentAmountPaise) {
-                order.expire(now);
+            if (order.getExpiresAt() != null && !order.getExpiresAt().isAfter(now)) {
+                // Reused anyway: see findOpenOrder. Logged because a cycle should
+                // normally be paid or abandoned long before this point.
+                log.warn(
+                        "Open payment order is past its expiry but still the only payable order for its cycle"
+                                + " paymentOrderId={} billingCycleId={} expiresAt={}",
+                        order.getId(),
+                        billingCycleId,
+                        order.getExpiresAt());
             }
         }
+    }
+
+    /**
+     * When Route is enabled, resolves the property owner + their ACTIVE payout
+     * account, computes the owner-borne fee split, and records it on the order.
+     * Returns the owner's linked-account reference (for the transfer), or null
+     * when Route is off. Throws if the owner has not finished payout setup.
+     */
+    private void requireOwnerCanReceivePayouts(BillingCycleResponse cycle) {
+        if (!paymentProperties.routeEnabled()) {
+            return;
+        }
+
+        UUID ownerUserId = propertyModule.getActiveProperty(cycle.propertyId()).ownerId();
+        ownerLinkedAccountRepository.findByOwnerUserIdAndPrimaryTrue(ownerUserId)
+                .filter(OwnerLinkedAccount::isActive)
+                .orElseThrow(() -> new ValidationException(
+                        "The property owner hasn't finished payout setup yet. Payment can't be collected online for this bill."));
     }
 
     private CreateProviderPaymentOrderCommand toProviderCommand(
@@ -682,7 +923,9 @@ public class PaymentService {
     }
 
     private String description(BillingCycleResponse cycle) {
-        return "Khatiyan billing cycle " + cycle.cycleNumber();
+        return cycle.cycleNumber() != null
+                ? "Khatiyan billing cycle " + cycle.cycleNumber()
+                : "Khatiyan bill " + cycle.referenceCode();
     }
 
     private String createOrderRequestHash(

@@ -101,7 +101,8 @@ export type PropertyLocalPlace = {
   id: string;
   propertyId: string;
   name: string;
-  tags: string[];
+  subcategoryIds: string[];
+  subcategoryNames: string[];
   description: string | null;
   phone: string | null;
   addressText: string;
@@ -111,6 +112,37 @@ export type PropertyLocalPlace = {
   directionsUrl: string | null;
   photoUrl: string | null;
   ownerRecommended: boolean;
+};
+
+// Category -> subcategory taxonomy for nearby places. Curated subcategories are
+// global; custom ones belong to a property. Categories carry their subcategories.
+export type LocalPlaceSubcategory = {
+  id: string;
+  categoryId: string;
+  name: string;
+  custom: boolean;
+  displayOrder: number;
+};
+
+export type LocalPlaceCategory = {
+  id: string;
+  slug: string;
+  name: string;
+  displayOrder: number;
+  subcategories: LocalPlaceSubcategory[];
+};
+
+// Smart-search result: direct = places in a matched subcategory; related =
+// places in the same category as a match but a different subcategory.
+export type NearbyPlacesResult = {
+  direct: PropertyLocalPlace[];
+  related: PropertyLocalPlace[];
+};
+
+export type NearbyPlacesSearchArgs = {
+  q?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type LocalPlaceSearch = {
@@ -123,7 +155,7 @@ export type LocalPlaceSearch = {
 // doesn't surface (directionsUrl, photoUrl) or they get wiped.
 export type LocalPlacePayload = {
   name: string;
-  tags: string[];
+  subcategoryIds: string[];
   description?: string | null;
   phone?: string | null;
   addressText?: string | null;
@@ -209,9 +241,46 @@ export const discoveryApi = api.injectEndpoints({
       }),
       providesTags: ["Discovery"],
     }),
-    listLocalPlaceTags: builder.query<string[], void>({
-      query: () => "/api/v1/discovery/local-place-tags",
+    searchMyLocalPlaces: builder.query<NearbyPlacesResult, NearbyPlacesSearchArgs>({
+      query: ({ q, latitude, longitude }) => ({
+        url: "/api/v1/discovery/me/local-places/search",
+        params: cleanParams({ q: q?.trim(), latitude, longitude }),
+      }),
       providesTags: ["Discovery"],
+    }),
+    listMyLocalPlaceTaxonomy: builder.query<LocalPlaceCategory[], void>({
+      query: () => "/api/v1/discovery/me/local-places/taxonomy",
+      providesTags: ["Discovery"],
+    }),
+    searchManagedLocalPlaces: builder.query<NearbyPlacesResult, NearbyPlacesSearchArgs & { propertyId: string }>({
+      query: ({ propertyId, q, latitude, longitude }) => ({
+        url: `/api/v1/properties/${propertyId}/local-places/search`,
+        params: cleanParams({ q: q?.trim(), latitude, longitude }),
+      }),
+      providesTags: ["Discovery"],
+    }),
+    listLocalPlaceTaxonomy: builder.query<LocalPlaceCategory[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/local-places/taxonomy`,
+      providesTags: ["Discovery"],
+    }),
+    createLocalPlaceSubcategory: builder.mutation<
+      LocalPlaceSubcategory,
+      { propertyId: string; categoryId: string; name: string }
+    >({
+      query: ({ propertyId, categoryId, name }) => ({
+        body: { categoryId, name },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/local-places/subcategories`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    createLocalPlaceCategory: builder.mutation<LocalPlaceCategory, { propertyId: string; name: string }>({
+      query: ({ propertyId, name }) => ({
+        body: { name },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/local-places/categories`,
+      }),
+      invalidatesTags: ["Discovery"],
     }),
     suggestLocations: builder.query<LocationSuggestion[], string>({
       query: (queryText) => ({
@@ -293,16 +362,21 @@ export const discoveryApi = api.injectEndpoints({
 });
 
 export const {
+  useCreateLocalPlaceCategoryMutation,
   useCreateLocalPlaceMutation,
+  useCreateLocalPlaceSubcategoryMutation,
   useDeleteLocalPlaceMutation,
   useGetDiscoveryPropertyQuery,
   useGetOwnerDiscoveryProfileQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
-  useListLocalPlaceTagsQuery,
+  useListLocalPlaceTaxonomyQuery,
   useListManagedLocalPlacesQuery,
   useListMyLocalPlacesQuery,
+  useListMyLocalPlaceTaxonomyQuery,
   usePublishOwnerDiscoveryProfileMutation,
+  useSearchManagedLocalPlacesQuery,
+  useSearchMyLocalPlacesQuery,
   useSearchDiscoveryPropertiesQuery,
   useSuggestLocationsQuery,
   useUnpublishOwnerDiscoveryProfileMutation,

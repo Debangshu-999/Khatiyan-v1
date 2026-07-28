@@ -31,6 +31,7 @@ import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
+import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
 import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
 import com.khatiyan.d_modules.billing.repository.BillingManualPaymentRepository;
@@ -100,7 +101,10 @@ class BillingCycleServiceTest {
                 authModule,
                 depositManagerService,
                 eventPublisher,
-                referenceCodeGenerator);
+                referenceCodeGenerator,
+                // Matches the app.billing.upcoming-cycle-lead-days default: the
+                // next cycle appears 10 days before its window opens.
+                10);
 
         savedLineItems = new ArrayList<>();
     }
@@ -143,38 +147,50 @@ class BillingCycleServiceTest {
     }
 
     @Test
-    void recalculateLateFeesCreatesTransparentLateFeeLine() {
-        BillingCycle cycle = monthlyCycleDue(LocalDate.of(2026, 6, 1));
+    void recalculateLateFeesChargesTheUpcomingCycleAndLeavesTheOverdueOneUntouched() {
+        BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
         BillingCycleLineItem rentLine = BillingCycleLineItem.systemCharge(
-                cycle,
+                overdue,
                 BillingCycleLineItemType.RENT,
                 "Rent",
                 "Monthly rent",
                 12_000_00,
                 1);
         savedLineItems.add(rentLine);
+
+        BillingCycle upcoming = monthlyUpcomingCycle();
+
         when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 2))))
-                .thenReturn(List.of(cycle));
-        when(propertyModule.getBillingPolicy(PROPERTY_ID)).thenReturn(billingPolicy(3, 100_00L));
-        when(lineItemRepository.findByBillingCycleIdAndType(cycle.getId(), BillingCycleLineItemType.LATE_FEE))
+                .thenReturn(List.of(overdue));
+        when(billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
+                TENANCY_ID, BillingCycleStatus.UPCOMING))
+                .thenReturn(Optional.of(upcoming));
+        when(lineItemRepository.findByBillingCycleIdAndType(upcoming.getId(), BillingCycleLineItemType.LATE_FEE))
                 .thenReturn(List.of());
-        when(lineItemRepository.findMaxDisplayOrder(cycle.getId())).thenReturn(1);
+        when(lineItemRepository.findMaxDisplayOrder(upcoming.getId())).thenReturn(1);
         when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
             BillingCycleLineItem lineItem = invocation.getArgument(0);
             savedLineItems.add(lineItem);
             return lineItem;
         });
-        when(lineItemRepository.findByBillingCycleId(cycle.getId())).thenAnswer(invocation -> lineItemsFor(cycle.getId()));
+        when(lineItemRepository.findByBillingCycleId(upcoming.getId()))
+                .thenAnswer(invocation -> lineItemsFor(upcoming.getId()));
 
         int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 2));
 
         assertThat(updatedCount).isEqualTo(1);
-        assertThat(cycle.getLateFeeAmountPaise()).isEqualTo(100_00);
-        assertThat(cycle.getTotalAmountPaise()).isEqualTo(12_100_00);
+
+        // The bill the tenant is looking at must not move under them.
+        assertThat(overdue.getLateFeeAmountPaise()).isZero();
+        assertThat(overdue.getTotalAmountPaise()).isZero();
+
+        // The charge lands on the next cycle, which is still editable.
+        assertThat(upcoming.getLateFeeAmountPaise()).isEqualTo(100_00);
         assertThat(savedLineItems)
                 .filteredOn(lineItem -> lineItem.getType() == BillingCycleLineItemType.LATE_FEE)
                 .singleElement()
                 .satisfies(lineItem -> {
+                    assertThat(lineItem.getBillingCycleId()).isEqualTo(upcoming.getId());
                     assertThat(lineItem.getAmountPaise()).isEqualTo(100_00);
                     assertThat(lineItem.isSystemGenerated()).isTrue();
                 });
@@ -182,6 +198,39 @@ class BillingCycleServiceTest {
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue()).isInstanceOf(BillingLateFeeAppliedEvent.class);
+    }
+
+    @Test
+    void recalculateLateFeesSkipsWhenThereIsNoUpcomingCycleToCarryTheCharge() {
+        BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
+
+        when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 2))))
+                .thenReturn(List.of(overdue));
+        when(billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
+                TENANCY_ID, BillingCycleStatus.UPCOMING))
+                .thenReturn(Optional.empty());
+
+        int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 2));
+
+        // The tenancy is ending, so the charge belongs to exit settlement rather
+        // than to a bill that no longer exists.
+        assertThat(updatedCount).isZero();
+        assertThat(overdue.getLateFeeAmountPaise()).isZero();
+        assertThat(savedLineItems)
+                .filteredOn(lineItem -> lineItem.getType() == BillingCycleLineItemType.LATE_FEE)
+                .isEmpty();
+    }
+
+    @Test
+    void activateStampsTheLateFeeRateSoLaterPolicyChangesCannotRepriceTheCycle() {
+        BillingCycle cycle = monthlyUpcomingCycle();
+        assertThat(cycle.getLateFeePerDayPaise()).isNull();
+
+        cycle.activate(150_00L);
+
+        assertThat(cycle.getStatus()).isEqualTo(BillingCycleStatus.UNPAID);
+        assertThat(cycle.getLateFeePerDayPaise()).isEqualTo(150_00L);
+        assertThat(cycle.isLocked()).isTrue();
     }
 
     private List<BillingCycleLineItem> lineItemsFor(UUID billingCycleId) {
@@ -207,6 +256,47 @@ class BillingCycleServiceTest {
                 3);
     }
 
+    /**
+     * A cycle whose window has opened, reached the way production does: created
+     * upcoming, then activated with the rate in force at that moment.
+     */
+    private static BillingCycle monthlyLiveCycleDue(LocalDate dueDate, long lateFeePerDayPaise) {
+        BillingCycle cycle = BillingCycle.createUpcoming(
+                TENANCY_ID,
+                "BIL-2026-000001",
+                TENANT_ID,
+                "Test Tenant",
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.MONTHLY,
+                1,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 30),
+                dueDate,
+                BillingCollectionTiming.CYCLE_START,
+                3);
+        cycle.activate(lateFeePerDayPaise);
+        return cycle;
+    }
+
+    /** The next cycle, generated ahead of its window and still editable. */
+    private static BillingCycle monthlyUpcomingCycle() {
+        return BillingCycle.createUpcoming(
+                TENANCY_ID,
+                "BIL-2026-000002",
+                TENANT_ID,
+                "Test Tenant",
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.MONTHLY,
+                2,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                LocalDate.of(2026, 7, 4),
+                BillingCollectionTiming.CYCLE_START,
+                3);
+    }
+
     private static TenancyResponse monthlyTenancy() {
         return new TenancyResponse(
                 TENANCY_ID,
@@ -228,16 +318,25 @@ class BillingCycleServiceTest {
                 null,
                 TenancyStatus.ACTIVE,
                 null,
-                false);
+                false,
+                true,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     private static UserSummaryResponse tenantSummary() {
         return new UserSummaryResponse(
                 TENANT_ID,
                 "+919007433360",
+                "tenant@example.com",
                 "Test Tenant",
                 null,
                 UserRole.USER,
+                true,
                 true,
                 true,
                 true,

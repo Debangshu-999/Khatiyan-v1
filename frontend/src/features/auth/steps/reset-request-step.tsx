@@ -1,6 +1,12 @@
-import { LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { View } from "react-native";
 
-/** PIN recovery, step 1: request the reset OTP by phone. */
+import { LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { spacing } from "@/theme/spacing";
+
+/**
+ * PIN recovery, step 1: request the reset OTP by phone.
+ * Sheet layout: the field flows under the hero; actions pin to the bottom.
+ */
 export function ResetRequestStep({
   phone,
   onPhoneChange,
@@ -17,8 +23,10 @@ export function ResetRequestStep({
   return (
     <>
       <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
-      <PrimaryButton label="Request reset OTP" onPress={onRequestOtp} busy={busy} />
-      <LinkButton label="Back to login" onPress={onBackToLogin} center />
+      <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+        <PrimaryButton label="Request reset OTP" onPress={onRequestOtp} busy={busy} />
+        <LinkButton label="Back to login" onPress={onBackToLogin} center />
+      </View>
     </>
   );
 }

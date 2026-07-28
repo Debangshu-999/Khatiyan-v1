@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
@@ -113,7 +113,8 @@ export function StaffWorkspace() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <ScreenHeader onBack={() => router.back()} title="Staff" italicTail="management." subtitle={property.name} />
+      <BackButton onPress={() => router.back()} />
+      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
 
       <SegmentBar
         options={[
@@ -141,7 +142,8 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <ScreenHeader onBack={onBack} title="Staff" italicTail="management." subtitle={property.name} />
+      <BackButton onPress={onBack} />
+      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
 
       <Section eyebrow="Your record" title="My employment">
         {employmentQuery.isLoading ? (
@@ -1016,7 +1018,7 @@ function AddManagerModal({ onClose, propertyId }: { onClose: () => void; propert
             <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
             <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
           </View>
-          <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="Rs." value={salary} />
+          <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
           <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
           <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
           <DatePickerField clearable label="Working end date" onChange={setEndDate} value={endDate} />
@@ -1073,7 +1075,7 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
       <FormInput label="Full name" onChangeText={setFullName} placeholder="Staff member name" value={fullName} />
       <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
       <View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} /><ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} /></View>
-      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="Rs." value={salary} />
+      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
       {salaryStructure === "DAILY" ? (
         <>
           <WeekdayPicker mask={workingDaysMask} onChange={setWorkingDaysMask} />
@@ -1141,7 +1143,7 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
         <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
         <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
       </View>
-      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="Rs." value={salary} />
+      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
       <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
       <DatePickerField clearable label="Working end date" onChange={setEndDate} value={endDate} />
@@ -1201,7 +1203,7 @@ function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { a
       onClose();
     } catch (error) { toast.show(errorMessage(error, "Could not save the salary adjustment.")); }
   }
-  return <Sheet onClose={onClose} title={editing ? "Edit adjustment" : "Salary adjustment"}><View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={type === "ADDITION"} label="Addition" onPress={() => setType("ADDITION")} /><ChoiceButton active={type === "DEDUCTION"} label="Deduction" onPress={() => setType("DEDUCTION")} /></View><FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder=" " value={amount} /><FormInput label="Reason" multiline onChangeText={setReason} placeholder="e.g. Performance incentive" value={reason} /><ActionButton disabled={saving} label={saving ? "Saving" : "Save adjustment"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title={editing ? "Edit adjustment" : "Salary adjustment"}><View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={type === "ADDITION"} label="Addition" onPress={() => setType("ADDITION")} /><ChoiceButton active={type === "DEDUCTION"} label="Deduction" onPress={() => setType("DEDUCTION")} /></View><FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} /><FormInput label="Reason" multiline onChangeText={setReason} placeholder="e.g. Performance incentive" value={reason} /><ActionButton disabled={saving} label={saving ? "Saving" : "Save adjustment"} onPress={() => void submit()} /></Sheet>;
 }
 
 function SalaryPaymentModal({ account, onClose, onSaved, propertyId }: { account: SalaryAccountDetail; onClose: () => void; onSaved: (value: SalaryAccountDetail) => void; propertyId: string }) {
@@ -1218,7 +1220,7 @@ function SalaryPaymentModal({ account, onClose, onSaved, propertyId }: { account
     if (!amountPaise) { toast.show("Enter a valid payment amount."); return; }
     try { onSaved(await recordPayment({ accountReferenceCode: account.account.referenceCode, payrollMonth: latest.payrollMonth, payload: { amountPaise, notes, paidOn: today(), paymentMethod: method, referenceText }, propertyId }).unwrap()); onClose(); } catch (error) { toast.show(errorMessage(error, "Could not record salary payment.")); }
   }
-  return <Sheet onClose={onClose} title="Record manual payment"><FormInput keyboardType="decimal-pad" label="Amount paid" onChangeText={setAmount} placeholder=" " value={amount} /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{(["CASH", "UPI", "BANK_TRANSFER", "OTHER"] as SalaryPaymentMethod[]).map((item) => <ChoiceButton active={method === item} key={item} label={item.replaceAll("_", " ")} onPress={() => setMethod(item)} />)}</View><FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} /><FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} /><ActionButton disabled={state.isLoading} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title="Record manual payment"><FormInput keyboardType="decimal-pad" label="Amount paid" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{(["CASH", "UPI", "BANK_TRANSFER", "OTHER"] as SalaryPaymentMethod[]).map((item) => <ChoiceButton active={method === item} key={item} label={item.replaceAll("_", " ")} onPress={() => setMethod(item)} />)}</View><FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} /><FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} /><ActionButton disabled={state.isLoading} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} /></Sheet>;
 }
 
 // Ends a manager or staff employment. For monthly employees this also runs the
@@ -1306,7 +1308,7 @@ function EndEmploymentSheet({ onClose, propertyId, target }: { onClose: () => vo
               ) : (
                 <Text style={[type.caption, { color: colors.muted }]} selectable>No open salary account — record any final payout below.</Text>
               )}
-              <FormInput keyboardType="decimal-pad" label="Additional final amount" onChangeText={setAdditional} placeholder="Rs. (optional)" value={additional} />
+              <FormInput keyboardType="decimal-pad" label="Additional final amount" onChangeText={setAdditional} placeholder="Optional" prefix="₹" value={additional} />
               {totalSettlementPaise > 0 ? (
                 <>
                   <FieldLabel>Payment method</FieldLabel>
@@ -1390,7 +1392,7 @@ function Sheet({ children, onClose, title }: { children: React.ReactNode; onClos
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{

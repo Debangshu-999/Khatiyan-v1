@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -21,7 +22,15 @@ public record CreateTenancyRequest(
     @PositiveOrZero Long rentAmountPaise,
     @PositiveOrZero Long depositAmountPaise,
     @NotNull LocalDate startDate,
-    LocalDate plannedEndDate
+    LocalDate plannedEndDate,
+
+    /**
+     * The owner confirming they collected and checked the tenant's ID proof and
+     * photograph. {@code @AssertTrue} rather than {@code @NotNull}: an
+     * unchecked box must fail, not merely be absent.
+     */
+    @AssertTrue(message = "Confirm you have checked the tenant's ID proof and photograph before onboarding")
+    boolean idCheckConfirmed
 ) {
     public TenancyBillingType resolvedBillingType() {
         if (billingType == null) {

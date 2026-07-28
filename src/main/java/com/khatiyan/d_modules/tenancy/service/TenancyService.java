@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.tenancy.service;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
@@ -27,13 +28,16 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.EarlyExitPenaltyPreview;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
+import com.khatiyan.d_modules.tenancy.model.EarlyExitPenaltyType;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
@@ -97,7 +101,32 @@ public class TenancyService {
             TenancyBillingType billingType,
             Long rentAmountPaise,
             Long depositAmountPaise,
-            LocalDate startDate, LocalDate plannedEndDate) {
+            LocalDate startDate, LocalDate plannedEndDate,
+            boolean idCheckConfirmed) {
+        return createInternal(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate, false,
+                idCheckConfirmed);
+    }
+
+    /**
+     * Shared creation body. With {@code holdForAcceptance} the tenancy is saved
+     * as {@code PENDING_ACCEPTANCE}: the bed is still reserved (the started
+     * event fires as usual), but the user is NOT marked an active tenant and
+     * billing does NOT initialize — both happen at acceptance.
+     */
+    private Tenancy createInternal(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            TenancyBillingType billingType,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate, LocalDate plannedEndDate,
+            boolean holdForAcceptance,
+            boolean idCheckConfirmed) {
 
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
         TenancyBillingType resolvedBillingType = billingType != null ? billingType : TenancyBillingType.MONTHLY;
@@ -151,9 +180,24 @@ public class TenancyService {
                     plannedEndDate);
         }
 
+        if (holdForAcceptance) {
+            if (resolvedBillingType != TenancyBillingType.MONTHLY) {
+                throw new ValidationException("Only monthly tenancies can be held for agreement acceptance");
+            }
+            tenancy.markPendingAcceptance();
+        }
+
+        // Stamped before the save and the started event: the declaration is part of
+        // the onboarding record, not an afterthought applied to it.
+        if (idCheckConfirmed) {
+            tenancy.confirmIdCheck(actorUserId, Instant.now());
+        }
+
         tenancy = tenancyRepository.save(tenancy);
-        authModule.markActiveTenant(tenancy.getUserId());
-        billingModule.initializeStartedTenancy(actorUserId, TenancyResponse.from(tenancy));
+        if (!holdForAcceptance) {
+            authModule.markActiveTenant(tenancy.getUserId());
+            billingModule.initializeStartedTenancy(actorUserId, TenancyResponse.from(tenancy));
+        }
 
         eventPublisher.publishEvent(new TenancyStartedEvent(
                 tenancy.getId(),
@@ -215,14 +259,156 @@ public class TenancyService {
             Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate,
-            LocalDate plannedEndDate) {
+            LocalDate plannedEndDate,
+            boolean idCheckConfirmed) {
         boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
 
         Tenancy tenancy = create(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
-                billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate);
+                billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate,
+                idCheckConfirmed);
 
         return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+    }
+
+    /**
+     * Agreement-path onboarding: creates a monthly tenancy held as
+     * {@code PENDING_ACCEPTANCE}. The bed is reserved, but the user only becomes
+     * an active tenant — and billing only starts — when they accept the
+     * agreement via {@link #acceptTermsAndActivate}.
+     */
+    @Transactional
+    public TenancyOnboardingResponse onboardPending(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate,
+            boolean idCheckConfirmed) {
+        boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
+
+        Tenancy tenancy = createInternal(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                TenancyBillingType.MONTHLY, rentAmountPaise, depositAmountPaise, startDate, null, true,
+                idCheckConfirmed);
+
+        return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+    }
+
+    /**
+     * Tenant accepted the agreement: activates the pending tenancy, marks the
+     * user an active tenant, and starts billing. Billing initialization runs as
+     * the onboarding owner/manager (billing verifies the actor manages the
+     * property, which the tenant does not).
+     */
+    @Transactional
+    public Tenancy acceptTermsAndActivate(UUID tenancyId, UUID tenantUserId) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        if (!tenancy.getUserId().equals(tenantUserId)) {
+            throw new ValidationException("Tenancy does not belong to current user");
+        }
+
+        tenancy.acceptTos();
+        authModule.markActiveTenant(tenancy.getUserId());
+        billingModule.initializeStartedTenancy(tenancy.getCreatedByUserId(), TenancyResponse.from(tenancy));
+
+        log.info(
+                "Pending tenancy activated after agreement acceptance tenancyId={} userId={}",
+                tenancy.getId(),
+                tenancy.getUserId());
+
+        return tenancy;
+    }
+
+    /**
+     * Stamps lock-in / early-exit terms from the accepted agreement onto the
+     * tenancy (called by compliance right after acceptance). The penalty type is
+     * passed as a String so compliance never imports the tenancy model enum.
+     */
+    @Transactional
+    public void stampAgreementExitTerms(
+            UUID tenancyId, LocalDate lockInEndDate, String penaltyType, Long penaltyFixedPaise) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+
+        EarlyExitPenaltyType resolvedType = "FIXED".equalsIgnoreCase(penaltyType)
+                ? EarlyExitPenaltyType.FIXED
+                : EarlyExitPenaltyType.REMAINING_TERM;
+        tenancy.stampAgreementExitTerms(lockInEndDate, resolvedType, penaltyFixedPaise);
+
+        log.info(
+                "Agreement exit terms stamped tenancyId={} lockInEndDate={} penaltyType={} fixedPaise={}",
+                tenancyId,
+                lockInEndDate,
+                resolvedType,
+                penaltyFixedPaise);
+    }
+
+    /**
+     * Previews the early-exit penalty an agreement tenant would owe for a chosen
+     * checkout date, for the tenant's own active tenancy.
+     */
+    @Transactional(readOnly = true)
+    public EarlyExitPenaltyPreview previewEarlyExitPenalty(UUID tenantUserId, LocalDate checkoutDate) {
+        Tenancy tenancy = tenancyRepository.findByUserIdAndActiveTrue(tenantUserId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
+        if (checkoutDate == null) {
+            throw new ValidationException("Checkout date is required");
+        }
+
+        return new EarlyExitPenaltyPreview(
+                tenancy.getId(),
+                checkoutDate,
+                tenancy.getLockInEndDate(),
+                tenancy.isWithinLockIn(checkoutDate),
+                tenancy.getEarlyExitPenaltyType(),
+                tenancy.earlyExitPenaltyPaise(checkoutDate));
+    }
+
+    /**
+     * Tenant declined the agreement: cancels the pending tenancy immediately.
+     */
+    @Transactional
+    public void cancelPendingAsTenant(UUID tenancyId, UUID tenantUserId, String reason) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        if (!tenancy.getUserId().equals(tenantUserId)) {
+            throw new ValidationException("Tenancy does not belong to current user");
+        }
+        cancelPendingInternal(tenancy, reason);
+    }
+
+    /**
+     * System cancellation of a pending tenancy (acceptance window expired).
+     */
+    @Transactional
+    public void cancelPendingAsSystem(UUID tenancyId, String reason) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        cancelPendingInternal(tenancy, reason);
+    }
+
+    // Cancels the pending tenancy and frees the reserved bed (the cancelled
+    // event's BEFORE_COMMIT listener vacates the room). The user was never
+    // marked an active tenant and billing never started, so nothing else needs
+    // unwinding.
+    private void cancelPendingInternal(Tenancy tenancy, String reason) {
+        tenancy.cancelPending(reason);
+        eventPublisher.publishEvent(new TenancyCancelledEvent(
+                tenancy.getId(),
+                tenancy.getUserId(),
+                tenancy.getPropertyId(),
+                tenancy.getRoomId()));
+
+        log.info(
+                "Pending tenancy cancelled tenancyId={} userId={} reason={}",
+                tenancy.getId(),
+                tenancy.getUserId(),
+                reason);
     }
 
     private Tenancy createMonthlyTenancy(

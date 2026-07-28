@@ -6,6 +6,7 @@ import { Provider } from "react-redux";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
+import { ScreenErrorFallback } from "@/components/screen-error-fallback";
 import { ToastProvider } from "@/components/toast";
 import { loadAppSettings, pinnedOwnerModulesForUser, themeModeForUser } from "@/config/app-settings-storage";
 import { useAppDispatch } from "@/store/hooks";
@@ -88,6 +89,9 @@ function ThemedRootStack() {
         <Stack.Screen name="payment-method" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-payment-history" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-tenant-bills" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-payout-setup" options={{ headerShown: false }} />
         <Stack.Screen name="owner-upcoming-cycles" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
@@ -98,8 +102,13 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
         <Stack.Screen name="owner-vacancy-finder" options={{ headerShown: false }} />
         <Stack.Screen name="owner-expenses" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-pnl" options={{ headerShown: false }} />
         <Stack.Screen name="owner-local-places" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-nearby-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-staff" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-tenancy-agreement" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-exit-policies" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-end-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notices" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />
@@ -180,6 +189,13 @@ function ThemedRootStack() {
           }}
         />
         <Stack.Screen
+          name="tenancy-agreement-view"
+          options={{
+            headerShown: false,
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
           name="tenancy-room-change-request"
           options={{
             headerShown: false,
@@ -213,6 +229,13 @@ function ThemedRootStack() {
     </View>
   );
 }
+
+/**
+ * Expo Router renders this instead of unwinding to a crash when any route below
+ * throws while rendering. Without it a single bad field takes down the whole app
+ * and the user's only recourse is force-quitting.
+ */
+export { ScreenErrorFallback as ErrorBoundary };
 
 export default function RootLayout() {
   return (

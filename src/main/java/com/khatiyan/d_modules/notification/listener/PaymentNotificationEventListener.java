@@ -11,6 +11,7 @@ import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
 import com.khatiyan.d_modules.notification.model.NotificationSubtype;
+import com.khatiyan.d_modules.payment.event.OwnerTransferFailedEvent;
 import com.khatiyan.d_modules.payment.event.PaymentFailedEvent;
 import com.khatiyan.d_modules.payment.event.PaymentSucceededEvent;
 
@@ -64,6 +65,38 @@ public class PaymentNotificationEventListener {
                 NotificationPriority.HIGH,
                 NotificationSubtype.PAYMENT_FAILED,
                 event.paymentOrderId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    /**
+     * Tells the owner their rent was collected but could not reach their bank.
+     * Worth a high-priority push: the money is safe, but the usual cause is
+     * wrong bank details, which only they can fix.
+     */
+    @ApplicationModuleListener
+    public void onOwnerTransferFailed(OwnerTransferFailedEvent event) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("ownerTransferId", event.ownerTransferId().toString());
+        data.put("billingCycleId", event.billingCycleId().toString());
+        data.put("propertyId", event.propertyId().toString());
+        data.put("amountPaise", Long.toString(event.ownerNetPaise()));
+        if (event.currency() != null) {
+            data.put("currency", event.currency());
+        }
+        if (event.failureReason() != null) {
+            data.put("failureReason", event.failureReason());
+        }
+
+        notificationModule.notifyUser(
+                event.ownerUserId(),
+                "Payout could not be deposited",
+                "We collected " + formatAmount(event.ownerNetPaise())
+                        + " but could not deposit it into your bank. Your money is safe — please check your bank details.",
+                NotificationCategory.PAYMENT,
+                NotificationPriority.HIGH,
+                NotificationSubtype.PAYOUT_FAILED,
+                event.ownerTransferId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }

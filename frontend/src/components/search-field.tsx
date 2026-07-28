@@ -12,10 +12,13 @@ import { useTheme } from "@/theme/use-theme";
  * button, themed focus border.
  */
 export function SearchField({
+  animatePlaceholder = true,
   onChangeText,
   placeholder,
   value,
 }: {
+  // Marquee a long placeholder that overflows the box; off for the map picker.
+  animatePlaceholder?: boolean;
   onChangeText: (value: string) => void;
   placeholder: string;
   value: string;
@@ -41,6 +44,7 @@ export function SearchField({
       <AppTextInput
         autoCapitalize="none"
         autoCorrect={false}
+        marqueePlaceholder={animatePlaceholder}
         onBlur={() => setFocused(false)}
         onChangeText={onChangeText}
         onFocus={() => setFocused(true)}

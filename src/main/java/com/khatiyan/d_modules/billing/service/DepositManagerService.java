@@ -21,6 +21,7 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.DepositMovementResponse;
+import com.khatiyan.d_modules.billing.api.dto.SettleDepositWithDamagesRequest;
 import com.khatiyan.d_modules.billing.event.DepositPayoutEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.DepositAccount;
@@ -30,6 +31,7 @@ import com.khatiyan.d_modules.billing.model.DepositMovementType;
 import com.khatiyan.d_modules.billing.repository.DepositAccountRepository;
 import com.khatiyan.d_modules.billing.repository.DepositMovementRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
@@ -89,7 +91,7 @@ public class DepositManagerService {
         if (tenancy.billingType() != TenancyBillingType.MONTHLY) {
             return Optional.empty();
         }
-        if (cycle.getCycleNumber() != 1) {
+        if (!Integer.valueOf(1).equals(cycle.getCycleNumber())) {
             return Optional.empty();
         }
         if (!cycle.isPaid()) {
@@ -197,6 +199,18 @@ public class DepositManagerService {
                 .toList();
 
         return PageResponse.of(responses, page, size);
+    }
+
+    /**
+     * Counts a property's deposit accounts in a given status. Used by the owner
+     * action center to surface deposits awaiting settlement.
+     */
+    @Transactional(readOnly = true)
+    public long countByPropertyAndStatus(UUID actorUserId, UUID propertyId, DepositAccountStatus status) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        return depositAccountRepository.findByPropertyId(propertyId).stream()
+                .filter(account -> account.getStatus() == status)
+                .count();
     }
 
     /**
@@ -428,8 +442,8 @@ public class DepositManagerService {
         propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
 
         // The deposit secures the stay; refunding it while the tenant still lives
-        // there would leave the tenancy unsecured. Exit execution settles it via
-        // settleForExecutedExit — manual settlement is only for ended tenancies.
+        // there would leave the tenancy unsecured. Exit execution parks it in
+        // PENDING_SETTLEMENT — settlement is only for ended tenancies.
         if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
             throw new ValidationException("Deposit can be settled only after the tenancy has ended");
         }
@@ -464,15 +478,13 @@ public class DepositManagerService {
     }
 
     /**
-     * Marks the deposit account settled when an exit request is executed.
-     *
-     * <p>
-     * Unlike the manual settlement endpoint, this is a lifecycle close. A
-     * zero-balance account should still become SETTLED so old tenancy deposits do
-     * not remain active after checkout.
+     * Marks the deposit account as awaiting settlement when a tenancy exit is
+     * executed. Settlement is now an explicit owner step (settle now or later via
+     * the settlement screen / action center), so exit execution no longer
+     * auto-refunds the deposit — it just parks the account in PENDING_SETTLEMENT.
      */
     @Transactional
-    public void settleForExecutedExit(UUID actorUserId, UUID tenancyId) {
+    public void markPendingSettlementForExit(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
         propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
 
@@ -483,7 +495,7 @@ public class DepositManagerService {
         Optional<DepositAccount> optionalAccount = depositAccountRepository.findByTenancyId(tenancyId);
         if (optionalAccount.isEmpty()) {
             log.info(
-                    "Deposit settlement skipped because no deposit account exists tenancyId={} actorUserId={}",
+                    "Deposit pending-settlement skipped because no deposit account exists tenancyId={} actorUserId={}",
                     tenancyId,
                     actorUserId);
             return;
@@ -492,35 +504,113 @@ public class DepositManagerService {
         DepositAccount account = optionalAccount.get();
         if (account.getStatus() != DepositAccountStatus.ACTIVE) {
             log.info(
-                    "Deposit account already settled for exit execution depositAccountId={} tenancyId={} actorUserId={} status={}",
+                    "Deposit account already past active for exit execution depositAccountId={} tenancyId={} status={}",
                     account.getId(),
                     tenancyId,
-                    actorUserId,
                     account.getStatus());
             return;
         }
 
+        account.markPendingSettlement();
+
+        log.info(
+                "Deposit account marked pending settlement after exit execution depositAccountId={} tenancyId={} actorUserId={}",
+                account.getId(),
+                tenancyId,
+                actorUserId);
+    }
+
+    /**
+     * Settles a deposit at exit: the selected property damage-charge items are
+     * totalled (priced from the property's authoritative schedule) into a single
+     * deduction, any custom charges are deducted, then the remaining balance is
+     * refunded and the account closed. Works from ACTIVE or PENDING_SETTLEMENT.
+     */
+    @Transactional
+    public DepositAccountResponse settleWithDamages(
+            UUID actorUserId, UUID tenancyId, SettleDepositWithDamagesRequest request) {
+        TenancyResponse tenancy = getTenancy(tenancyId);
+        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+
+        if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
+            throw new ValidationException("Deposit can be settled only after the tenancy has ended");
+        }
+
+        DepositAccount account = getAccountByTenancyId(tenancyId);
+        if (account.isSettled()) {
+            throw new ValidationException("Deposit account is already settled");
+        }
+
         List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
-        long settlementAmountPaise = calculateBalance(movements);
+
+        // Damage deduction — one totalled movement, priced from the property.
+        long damageTotalPaise = resolveDamageTotal(tenancy.propertyId(), request.damageItemNames());
+        if (damageTotalPaise > 0) {
+            ensureBalanceCanApplyMovement(movements, DepositMovementType.DEDUCTION, damageTotalPaise);
+            DepositMovement movement = DepositMovement.correctionDeduction(
+                    account.getId(), "Damage deduction", damageTotalPaise, actorUserId);
+            depositMovementRepository.save(movement);
+            movements.add(movement);
+        }
+
+        // Any additional custom charges.
+        if (request.customCharges() != null) {
+            for (SettleDepositWithDamagesRequest.CustomChargeInput custom : request.customCharges()) {
+                if (custom.amountPaise() == null || custom.amountPaise() <= 0) {
+                    continue;
+                }
+                ensureBalanceCanApplyMovement(movements, DepositMovementType.DEDUCTION, custom.amountPaise());
+                DepositMovement movement = DepositMovement.correctionDeduction(
+                        account.getId(), custom.reason().trim(), custom.amountPaise(), actorUserId);
+                depositMovementRepository.save(movement);
+                movements.add(movement);
+            }
+        }
+
+        long remainingPaise = calculateBalance(movements);
+        String settleReason = request.reason() != null && !request.reason().isBlank()
+                ? request.reason().trim()
+                : "Deposit settled at exit";
 
         account.settle(Instant.now());
-
-        if (settlementAmountPaise > 0) {
-            DepositMovement movement = DepositMovement.settlement(
-                    account.getId(),
-                    "Tenancy exit executed",
-                    settlementAmountPaise,
-                    actorUserId);
-            depositMovementRepository.save(movement);
-            publishPayout(movement, account, tenancy, settlementAmountPaise, "Tenancy exit executed");
+        if (remainingPaise > 0) {
+            DepositMovement settlement = DepositMovement.settlement(
+                    account.getId(), settleReason, remainingPaise, actorUserId);
+            depositMovementRepository.save(settlement);
+            publishPayout(settlement, account, tenancy, remainingPaise, settleReason);
         }
 
         log.info(
-                "Deposit account settled after exit execution depositAccountId={} tenancyId={} actorUserId={} settlementAmount={}",
+                "Deposit settled with damages depositAccountId={} tenancyId={} actorUserId={} damageTotal={} refunded={}",
                 account.getId(),
                 tenancyId,
                 actorUserId,
-                settlementAmountPaise);
+                damageTotalPaise,
+                remainingPaise);
+
+        return toResponse(account);
+    }
+
+    // Sums the property's authoritative charge for each selected damaged item;
+    // unknown names are ignored so a stale client selection can't invent charges.
+    private long resolveDamageTotal(UUID propertyId, List<String> damageItemNames) {
+        if (damageItemNames == null || damageItemNames.isEmpty()) {
+            return 0L;
+        }
+        Map<String, Long> chargeByName = propertyModule.getExitPolicy(propertyId).damageCharges().stream()
+                .collect(Collectors.toMap(
+                        PropertyExitPolicyResponse.DamageChargeView::name,
+                        PropertyExitPolicyResponse.DamageChargeView::chargePaise,
+                        (first, second) -> first));
+
+        long total = 0L;
+        for (String name : damageItemNames) {
+            Long charge = chargeByName.get(name);
+            if (charge != null) {
+                total += charge;
+            }
+        }
+        return total;
     }
 
     // The refund is the property's actual cash outflow; the expense module

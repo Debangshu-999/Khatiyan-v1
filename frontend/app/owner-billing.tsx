@@ -20,14 +20,17 @@ import {
   Download,
   Eye,
   FileDown,
+  History,
   ImagePlus,
   IndianRupee,
+  Landmark,
   MoreHorizontal,
   Percent,
   Plus,
   ReceiptText,
   Search,
   TimerReset,
+  Users,
   X,
 } from "lucide-react-native";
 
@@ -46,6 +49,7 @@ import {
   type BillingCycleLineItem,
   type BillingMonthSummary,
   type ManualPaymentMethod,
+  billTitle,
   useAddTenancyDiscountMutation,
   useAddTenancyExtraChargesMutation,
   useGetPropertyMonthSummaryQuery,
@@ -59,10 +63,10 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
-type CycleView = "cycles" | "history";
+type CycleView = "cycles" | "other";
 type PaymentHistoryStatus = "ON_TIME" | "OVERDUE" | "UNPAID";
 type ReportActionMode = "actions" | "month-picker";
-type SummaryFilter = "all" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount" | "manual";
+type SummaryFilter = "all" | "cycles" | "other" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount" | "manual";
 
 const CYCLE_LIST_MAX_HEIGHT = 440;
 const CYCLE_PAGE_SIZE = 8;
@@ -86,6 +90,10 @@ function paginateArray<T>(items: T[], page: number, size: number) {
 
 function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): BillingCycle[] {
   switch (filter) {
+    case "cycles":
+      return cycles.filter((cycle) => cycle.category === "RENT_CYCLE");
+    case "other":
+      return cycles.filter((cycle) => cycle.category === "ONE_OFF");
     case "overdue":
       return cycles.filter((cycle) => cycle.status === "OVERDUE");
     case "paid":
@@ -107,6 +115,10 @@ function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): Bil
 
 function summaryFilterTitle(filter: SummaryFilter): string {
   switch (filter) {
+    case "cycles":
+      return "Billing cycles";
+    case "other":
+      return "Other bills";
     case "overdue":
       return "Overdue cycles";
     case "paid":
@@ -159,9 +171,8 @@ export default function OwnerBillingScreen() {
   const [receiptCycle, setReceiptCycle] = useState<BillingCycle | null>(null);
   const [page, setPage] = useState(0);
   const summaryMonth = selectedMonth;
-  // Search only applies to the Billing cycles tab; Payment history always shows
-  // every cycle for the month.
-  const cycleSearchQuery = cycleView === "cycles" ? searchQuery : "";
+  // Search applies to both bill lists (rent cycles and other bills).
+  const cycleSearchQuery = searchQuery;
 
   const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
     { month: summaryMonth, propertyId: selectedProperty?.id ?? "" },
@@ -174,6 +185,11 @@ export default function OwnerBillingScreen() {
   const [exportMonthlyReport, exportState] = useLazyExportPropertyBillingCyclesQuery();
 
   const visibleCycles = cyclesQuery.data ?? [];
+  // Rent cycles vs one-off bills (penalties, ad-hoc charges) shown as separate
+  // segmented lists. The summary filter modal still spans all categories.
+  const rentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
+  const oneOffCycles = visibleCycles.filter((cycle) => cycle.category === "ONE_OFF");
+  const listedCycles = cycleView === "cycles" ? rentCycles : oneOffCycles;
   const visibleQuery = cycleSearchQuery;
   // For the current month, cycles are generated lazily on each tenancy's due
   // date, so the summary can project more cycles than have actually been created.
@@ -296,52 +312,64 @@ export default function OwnerBillingScreen() {
             onChange={changeCycleView}
             options={[
               { label: "Billing cycles", value: "cycles" },
-              { label: "Payment history", value: "history" },
+              { label: "Other bills", value: "other" },
             ]}
           />
 
+          <CycleSearchCard
+            onClear={clearSearch}
+            onSearch={runSearch}
+            placeholder="Search tenant, bill ID or tenancy reference"
+            value={searchDraft}
+            onChange={setSearchDraft}
+          />
+
+          <BillingCyclesSection
+            cycles={listedCycles}
+            month={summaryMonth}
+            noun={cycleView === "cycles" ? "billing cycle" : "other bill"}
+            notGeneratedCount={cycleView === "cycles" ? notGeneratedCount : 0}
+            onAction={(cycle) => openAction(cycle, "menu")}
+            onDownloadReceipt={downloadCycleReceipt}
+            onPageChange={setPage}
+            onViewReceipt={setReceiptCycle}
+            page={page}
+            query={visibleQuery}
+          />
+
           {cycleView === "cycles" ? (
-            <CycleSearchCard
-              onClear={clearSearch}
-              onSearch={runSearch}
-              placeholder="Search tenant, bill ID or tenancy reference"
-              value={searchDraft}
-              onChange={setSearchDraft}
+            <UpcomingCyclesLink
+              month={summaryMonth}
+              onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-upcoming-cycles" })}
+              propertyId={selectedProperty.id}
             />
           ) : null}
 
-          {cycleView === "cycles" ? (
-            <>
-              <BillingCyclesSection
-                cycles={visibleCycles}
-                month={summaryMonth}
-                notGeneratedCount={notGeneratedCount}
-                onAction={(cycle) => openAction(cycle, "menu")}
-                onDownloadReceipt={downloadCycleReceipt}
-                onPageChange={setPage}
-                onViewReceipt={setReceiptCycle}
-                page={page}
-                query={visibleQuery}
-              />
-              <UpcomingCyclesLink
-                month={summaryMonth}
-                onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-upcoming-cycles" })}
-                propertyId={selectedProperty.id}
-              />
-            </>
-          ) : (
-            <PaymentHistorySection cycles={visibleCycles} month={summaryMonth} onPageChange={setPage} page={page} query={visibleQuery} />
-          )}
+          <BillNavCard
+            description="Paid, late and unpaid bills for the selected month."
+            icon={History}
+            onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-payment-history" })}
+            title="Payment history"
+          />
+          <BillNavCard
+            description="Pick a tenant to see all their bills — current and past."
+            icon={Users}
+            onPress={() => router.push("/owner-tenant-bills")}
+            title="Tenant bills"
+          />
+          <BillNavCard
+            description="Banks where rent collected in the app is deposited."
+            icon={Landmark}
+            onPress={() => router.push("/owner-payout-setup")}
+            title="Bank accounts"
+          />
 
-          {cycleView === "cycles" ? (
-            <ReportDownloadCard
-              busy={exportState.isFetching}
-              month={reportMonth}
-              onOpenActions={() => setReportActionMode("actions")}
-              onOpenMonthPicker={() => setReportActionMode("month-picker")}
-            />
-          ) : null}
-
+          <ReportDownloadCard
+            busy={exportState.isFetching}
+            month={reportMonth}
+            onOpenActions={() => setReportActionMode("actions")}
+            onOpenMonthPicker={() => setReportActionMode("month-picker")}
+          />
         </>
       ) : null}
 
@@ -412,8 +440,9 @@ function ActiveSummarySection({
       {summary && summary.hasData ? (
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Cycles" value={String(summary.activeCycleCount)} hint="Tap to view all" onPress={() => onOpenFilter("all")} />
+            <SummaryTile label="Billing cycles" value={String(summary.rentCycleCount)} hint="Rent cycles" onPress={() => onOpenFilter("cycles")} />
             <SummaryTile label="Overdue" value={String(summary.overdueCount)} hint={formatMoney(summary.overduePaise)} tone="danger" onPress={() => onOpenFilter("overdue")} />
+            <SummaryTile label="Other bills" value={String(summary.oneOffCount)} hint="Penalties" onPress={() => onOpenFilter("other")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SummaryTile label="Paid" value={String(summary.paidCycleCount)} hint="Incl. manual" tone="success" onPress={() => onOpenFilter("paid")} />
@@ -583,6 +612,7 @@ function PendingGenerationNote({ count }: { count: number }) {
 function BillingCyclesSection({
   cycles,
   month,
+  noun = "billing cycle",
   notGeneratedCount,
   onAction,
   onDownloadReceipt,
@@ -593,6 +623,7 @@ function BillingCyclesSection({
 }: {
   cycles: BillingCycle[];
   month: string;
+  noun?: string;
   notGeneratedCount: number;
   onAction: (cycle: BillingCycle) => void;
   onDownloadReceipt: (cycle: BillingCycle) => void;
@@ -604,7 +635,7 @@ function BillingCyclesSection({
   const paged = paginateArray(cycles, page, CYCLE_PAGE_SIZE);
 
   return (
-    <Section eyebrow={monthLabel(month)} title={`${cycles.length} billing cycle${cycles.length === 1 ? "" : "s"}`}>
+    <Section eyebrow={monthLabel(month)} title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}>
       {cycles.length === 0 ? (
         <EmptyState
           icon={ReceiptText}
@@ -666,23 +697,17 @@ function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
           </View>
 
           <View style={{ flex: 1, gap: spacing.xxs }}>
-            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                  {cycle.referenceCode}
-                </Text>
-                <Text
-                  style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }}
-                  numberOfLines={1}
-                  selectable
-                >
-                  {tenantName}
-                </Text>
-              </View>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+                {cycle.referenceCode}
+              </Text>
               <PaymentStatusBadge cycle={cycle} />
             </View>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+              {tenantName}
+            </Text>
             <Text style={[type.caption, { color: colors.muted }]} selectable>
-              Cycle #{cycle.cycleNumber} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
+              {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
             </Text>
           </View>
         </View>
@@ -867,6 +892,40 @@ function ReportDownloadCard({
 // directly under the billing cycles list. Once every tenancy is billed for the
 // month there is nothing upcoming — the arrow animation stops and it turns into
 // a quiet "No upcoming cycles this month" status.
+function BillNavCard({ description, icon: Icon, onPress, title }: { description: string; icon: typeof History; onPress: () => void; title: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 18,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.md,
+          padding: spacing.lg,
+        }}
+      >
+        <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
+          <Icon color={colors.primary} size={20} strokeWidth={2.2} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
+            {title}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted }]} selectable>
+            {description}
+          </Text>
+        </View>
+        <ArrowRight color={colors.kicker} size={20} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
 function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onPress: () => void; propertyId: string }) {
   const { colors, fonts } = useTheme();
   const { data } = useListUpcomingPropertyCyclesQuery({ month, page: 0, propertyId, size: 1 }, { skip: !propertyId });
@@ -1113,7 +1172,7 @@ function CycleTable({
                   {cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`}
                 </Text>
                 <Text style={[type.caption, { color: colors.kicker }]} selectable>
-                  #{cycle.cycleNumber} · Tenancy {shortId(cycle.tenancyId)}
+                  {billTitle(cycle)} · Tenancy {shortId(cycle.tenancyId)}
                 </Text>
               </View>
               <StatusText cycle={cycle} />
@@ -1223,17 +1282,18 @@ function BillingCycleCard({
         </View>
 
         <View style={{ flex: 1, gap: spacing.xs }}>
-          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                {cycle.referenceCode}
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
-                {tenantName}
-              </Text>
-            </View>
+          {/* The pill shares a row with the short reference code only; the
+              tenant name gets the full card width beneath, wrapping cleanly at
+              word boundaries (surname to the next line) — never clipped. */}
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+              {cycle.referenceCode}
+            </Text>
             <StatusPill cycle={cycle} />
           </View>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+            {tenantName}
+          </Text>
 
           <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", marginTop: spacing.xxs }}>
             <View style={{ gap: 2 }}>
@@ -1270,7 +1330,7 @@ function BillingCycleCard({
           </View>
 
           <Text style={[type.caption, { color: colors.kicker }]} selectable>
-            Cycle #{cycle.cycleNumber} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
+            {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
           </Text>
         </View>
       </View>
@@ -1576,7 +1636,7 @@ function BillingActionModal({
   return (
     <>
     <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View
           style={{
@@ -1660,7 +1720,7 @@ function BillingActionModal({
           {mode === "extra-charge" ? (
             <>
               <FormInput label="Charge label" onChangeText={setChargeLabel} placeholder="Damage, cleaning, extra usage" value={chargeLabel} />
-              <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setChargeAmount} placeholder="Amount in rupees" value={chargeAmount} />
+              <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setChargeAmount} placeholder="0" prefix="₹" value={chargeAmount} />
               <FormInput label="Description" onChangeText={setChargeDescription} placeholder="Optional description" value={chargeDescription} />
               <View style={{ gap: spacing.xs }}>
                 <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
@@ -1977,28 +2037,58 @@ function FormInput({
   label,
   onChangeText,
   placeholder,
+  prefix,
   value,
 }: {
   keyboardType?: "decimal-pad";
   label: string;
   onChangeText: (value: string) => void;
   placeholder: string;
+  prefix?: string;
   value: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
       <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
         {label}
       </Text>
-      <AppTextInput
-        keyboardType={keyboardType}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.kicker}
-        style={{ borderColor: colors.border, borderRadius: 12, borderWidth: 1, color: colors.ink, minHeight: 46, paddingHorizontal: spacing.md }}
-        value={value}
-      />
+      {prefix ? (
+        // Adornment (₹) inside the field: the container owns the border and the
+        // input goes borderless beside the prefix.
+        <View
+          style={{
+            alignItems: "center",
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            flexDirection: "row",
+            minHeight: 46,
+            paddingLeft: spacing.md,
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable={false}>
+            {prefix}
+          </Text>
+          <AppTextInput
+            keyboardType={keyboardType}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={colors.kicker}
+            style={{ color: colors.ink, flex: 1, minHeight: 44, paddingHorizontal: spacing.xs }}
+            value={value}
+          />
+        </View>
+      ) : (
+        <AppTextInput
+          keyboardType={keyboardType}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.kicker}
+          style={{ borderColor: colors.border, borderRadius: 12, borderWidth: 1, color: colors.ink, minHeight: 46, paddingHorizontal: spacing.md }}
+          value={value}
+        />
+      )}
     </View>
   );
 }
@@ -2121,7 +2211,7 @@ function receiptRows(cycle: BillingCycle): { label: string; value: string }[] {
     { label: "Tenant", value: cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}` },
     { label: "Tenancy", value: cycle.tenancyReferenceCode ?? "Tenancy reference unavailable" },
     { label: "Room", value: cycle.roomNumber ? `Room ${cycle.roomNumber}` : "Room unavailable" },
-    { label: "Cycle number", value: `#${cycle.cycleNumber}` },
+    { label: "Bill", value: billTitle(cycle) },
     { label: "Period", value: `${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}` },
     { label: "Due date", value: formatDate(cycle.rentDueDate) },
     { label: "Paid at", value: cycle.paidAt ? formatDate(cycle.paidAt) : "—" },
@@ -2343,7 +2433,7 @@ function shortId(value: string) {
 
 function billingCycleStatusDisplay(cycle: BillingCycle): { label: string; tone: "danger" | "muted" | "primary" | "success" | "warning" } {
   if (cycle.status === "PAID" && paymentHistoryStatus(cycle) === "OVERDUE") {
-    return { label: "Late payment", tone: "warning" };
+    return { label: "Late Pay", tone: "warning" };
   }
 
   if (cycle.status === "PAID") {
@@ -2385,7 +2475,7 @@ function comparePaymentHistoryCycles(left: BillingCycle, right: BillingCycle) {
     return dateDifference;
   }
 
-  return right.cycleNumber - left.cycleNumber;
+  return (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0);
 }
 
 function dateOnlyKey(value: string) {

@@ -20,6 +20,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
@@ -121,11 +122,11 @@ class BillingModuleTest {
                 .isSameAs(depositAccountResponse);
         assertThat(billingModule.getManagedDepositAccount(actorUserId, tenancyId))
                 .isSameAs(depositAccountResponse);
-        billingModule.settleDepositForExecutedExit(actorUserId, tenancyId);
+        billingModule.markDepositPendingSettlementForExit(actorUserId, tenancyId);
 
         verify(depositManagerService).getMyDepositAccountForTenancy(tenantUserId, tenancyId);
         verify(depositManagerService).getForManagedTenancy(actorUserId, tenancyId);
-        verify(depositManagerService).settleForExecutedExit(actorUserId, tenancyId);
+        verify(depositManagerService).markPendingSettlementForExit(actorUserId, tenancyId);
     }
 
     private static BillingCycleResponse billingCycleResponse() {
@@ -146,6 +147,7 @@ class BillingModuleTest {
                 roomId,
                 "101",
                 TenancyBillingType.MONTHLY,
+                BillingCycleCategory.RENT_CYCLE,
                 1,
                 java.time.LocalDate.of(2026, 6, 1),
                 java.time.LocalDate.of(2026, 6, 30),

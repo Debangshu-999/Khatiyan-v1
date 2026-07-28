@@ -251,10 +251,10 @@ export default function OwnerRegisterPropertyScreen() {
       <FormSection eyebrow="Money" title="Pricing & policy">
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Deposit (₹)" onChangeText={setDeposit} placeholder="10000" value={deposit} />
+            <FormInput keyboardType="decimal-pad" label="Deposit" onChangeText={setDeposit} placeholder="10000" prefix="₹" value={deposit} />
           </View>
           <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Late fee/day (₹)" onChangeText={setLateFee} placeholder="Optional" value={lateFee} />
+            <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
           </View>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -267,10 +267,10 @@ export default function OwnerRegisterPropertyScreen() {
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Guest AC/day (₹)" onChangeText={setAcRate} placeholder="Optional" value={acRate} />
+            <FormInput keyboardType="decimal-pad" label="Guest AC/day" onChangeText={setAcRate} placeholder="Optional" prefix="₹" value={acRate} />
           </View>
           <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Guest non-AC/day (₹)" onChangeText={setNonAcRate} placeholder="Optional" value={nonAcRate} />
+            <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" onChangeText={setNonAcRate} placeholder="Optional" prefix="₹" value={nonAcRate} />
           </View>
         </View>
       </FormSection>

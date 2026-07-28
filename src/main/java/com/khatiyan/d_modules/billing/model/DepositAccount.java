@@ -67,11 +67,26 @@ public class DepositAccount extends BaseEntity {
         return new DepositAccount(tenancyId, tenantUserId, propertyId);
     }
 
-    public void settle(Instant settledAt) {
+    /**
+     * Marks the account as awaiting settlement once its tenancy has ended and the
+     * owner chose to settle later. Only an active account can enter this state.
+     */
+    public void markPendingSettlement() {
         ensureActive();
+        this.status = DepositAccountStatus.PENDING_SETTLEMENT;
+    }
+
+    public void settle(Instant settledAt) {
+        if (status == DepositAccountStatus.SETTLED) {
+            throw new ValidationException("Deposit account is already settled");
+        }
 
         this.status = DepositAccountStatus.SETTLED;
         this.settledAt = settledAt;
+    }
+
+    public boolean isSettled() {
+        return status == DepositAccountStatus.SETTLED;
     }
 
     private void ensureActive() {

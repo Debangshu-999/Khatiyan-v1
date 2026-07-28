@@ -2,9 +2,8 @@ package com.khatiyan.d_modules.discovery.model;
 
 import java.math.BigDecimal;
 import java.util.Collections;
-import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -14,8 +13,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -48,12 +45,11 @@ public class PropertyLocalPlace extends BaseEntity {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
-            name = "property_local_place_tags",
+            name = "property_local_place_subcategories",
             schema = "discovery",
             joinColumns = @JoinColumn(name = "local_place_id"))
-    @Enumerated(EnumType.STRING)
-    @Column(name = "tag", nullable = false, length = 40)
-    private Set<PropertyLocalPlaceTag> tags = EnumSet.noneOf(PropertyLocalPlaceTag.class);
+    @Column(name = "subcategory_id", nullable = false)
+    private Set<UUID> subcategoryIds = new HashSet<>();
 
     @Column(length = MAX_DESCRIPTION_LENGTH)
     private String description;
@@ -82,30 +78,30 @@ public class PropertyLocalPlace extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean active;
 
-    private PropertyLocalPlace(UUID propertyId, String name, Set<PropertyLocalPlaceTag> tags,
+    private PropertyLocalPlace(UUID propertyId, String name, Set<UUID> subcategoryIds,
                                String description, String phone,
                                String addressText, BigDecimal latitude, BigDecimal longitude,
                                String directionsUrl, String photoUrl, boolean ownerRecommended) {
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
         this.active = true;
-        update(name, tags, description, phone, addressText,
+        update(name, subcategoryIds, description, phone, addressText,
                 latitude, longitude, directionsUrl, photoUrl, ownerRecommended);
     }
 
-    public static PropertyLocalPlace create(UUID propertyId, String name, Set<PropertyLocalPlaceTag> tags,
+    public static PropertyLocalPlace create(UUID propertyId, String name, Set<UUID> subcategoryIds,
                                             String description, String phone,
                                             String addressText, BigDecimal latitude, BigDecimal longitude,
                                             String directionsUrl, String photoUrl, boolean ownerRecommended) {
-        return new PropertyLocalPlace(propertyId, name, tags, description, phone,
+        return new PropertyLocalPlace(propertyId, name, subcategoryIds, description, phone,
                 addressText, latitude, longitude, directionsUrl, photoUrl, ownerRecommended);
     }
 
-    public void update(String name, Set<PropertyLocalPlaceTag> tags, String description, String phone, String addressText,
+    public void update(String name, Set<UUID> subcategoryIds, String description, String phone, String addressText,
                        BigDecimal latitude, BigDecimal longitude, String directionsUrl,
                        String photoUrl, boolean ownerRecommended) {
         this.name = normalizeRequired(name, MAX_NAME_LENGTH, "Place name");
-        replaceTags(tags);
+        replaceSubcategories(subcategoryIds);
         this.description = normalizeNullable(description, MAX_DESCRIPTION_LENGTH, "Description");
         this.phone = normalizeNullable(phone, MAX_PHONE_LENGTH, "Phone");
         this.addressText = normalizeNullable(addressText, MAX_ADDRESS_LENGTH, "Address");
@@ -131,8 +127,8 @@ public class PropertyLocalPlace extends BaseEntity {
         this.longitude = longitude;
     }
 
-    public Set<PropertyLocalPlaceTag> getTags() {
-        return Collections.unmodifiableSet(new TreeSet<>(tags));
+    public Set<UUID> getSubcategoryIds() {
+        return Collections.unmodifiableSet(new HashSet<>(subcategoryIds));
     }
 
     public void deactivate() {
@@ -165,12 +161,12 @@ public class PropertyLocalPlace extends BaseEntity {
         return normalized;
     }
 
-    private void replaceTags(Set<PropertyLocalPlaceTag> values) {
-        this.tags.clear();
+    private void replaceSubcategories(Set<UUID> values) {
+        this.subcategoryIds.clear();
         if (values == null || values.isEmpty()) {
             return;
         }
 
-        this.tags.addAll(values);
+        this.subcategoryIds.addAll(values);
     }
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
 
@@ -237,7 +237,7 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -315,7 +315,7 @@ function ItemModal({
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>

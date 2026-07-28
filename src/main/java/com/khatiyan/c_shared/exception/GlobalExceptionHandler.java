@@ -85,9 +85,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException e) {
-        log.warn("Database rejected request data", e);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.of("DATA_INTEGRITY_VIOLATION", "Request data violates a database constraint"));
+        // A DB constraint reaching this handler is a server-side fault, not user
+        // error — never surface the constraint/SQL detail. Log it for us; return
+        // a neutral message. Genuinely user-correctable cases (e.g. duplicates)
+        // should be caught earlier as a ValidationException with a clear message.
+        log.error("Database rejected request data", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(ErrorResponse.of("INTERNAL_ERROR", "Something went wrong while processing your request. Please try again."));
     }
 
     @ExceptionHandler(Exception.class)

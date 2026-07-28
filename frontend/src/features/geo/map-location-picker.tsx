@@ -286,7 +286,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
             <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
           </AnimatedPressable>
           <View style={{ flex: 1 }}>
-            <SearchField onChangeText={onSearchChange} placeholder="Search area, landmark or pincode" value={searchDraft} />
+            <SearchField animatePlaceholder={false} onChangeText={onSearchChange} placeholder="Search area, landmark or pincode" value={searchDraft} />
           </View>
         </View>
 

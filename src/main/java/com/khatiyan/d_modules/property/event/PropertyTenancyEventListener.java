@@ -5,6 +5,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
@@ -33,6 +34,13 @@ public class PropertyTenancyEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onTenancyEnded(TenancyEndedEvent event) {
+        propertyModule.handleTenancyEnded(event.propertyId(), event.roomId());
+    }
+
+    // A cancelled pending tenancy frees its reserved bed exactly like an ended
+    // tenancy — occupancy was taken at creation via TenancyStartedEvent.
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onTenancyCancelled(TenancyCancelledEvent event) {
         propertyModule.handleTenancyEnded(event.propertyId(), event.roomId());
     }
 

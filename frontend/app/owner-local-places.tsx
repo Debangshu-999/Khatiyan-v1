@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Compass, MapPinned, Pencil, Phone, Plus, Star, Trash2, X } from "lucide-react-native";
+import { ChevronDown, Compass, MapPinned, Plus, Star, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -13,14 +13,16 @@ import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { SkeletonList } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
+import { CategoryPickerModal } from "@/features/discovery/components/category-picker-modal";
+import { NearbyPlaceCard } from "@/features/discovery/components/nearby-place-card";
 import { LocationPinCard } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
-import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, BackButton, ConfirmDialog, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   useCreateLocalPlaceMutation,
   useDeleteLocalPlaceMutation,
-  useListLocalPlaceTagsQuery,
+  useListLocalPlaceTaxonomyQuery,
   useListManagedLocalPlacesQuery,
   useUpdateLocalPlaceMutation,
   type LocalPlacePayload,
@@ -103,7 +105,7 @@ export default function OwnerLocalPlacesScreen() {
 
               <View style={{ gap: spacing.sm }}>
                 {places.map((place) => (
-                  <PlaceCard
+                  <NearbyPlaceCard
                     key={place.id}
                     onDelete={() => setPendingDelete(place)}
                     onEdit={() => setEditing(place)}
@@ -138,83 +140,16 @@ export default function OwnerLocalPlacesScreen() {
   );
 }
 
-function PlaceCard({ onDelete, onEdit, place }: { onDelete: () => void; onEdit: () => void; place: PropertyLocalPlace }) {
-  const { colors, fonts, type } = useTheme();
-  const pinned = place.latitude != null && place.longitude != null;
-
-  return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Text style={[type.bodyStrong, { color: colors.ink, flexShrink: 1 }]} numberOfLines={1} selectable>
-              {place.name}
-            </Text>
-            {place.ownerRecommended ? (
-              <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 999, flexDirection: "row", gap: 3, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-                <Star color={colors.accent} fill={colors.accent} size={10} strokeWidth={2} />
-                <Text style={{ color: colors.accent, fontFamily: fonts.sans, fontSize: 10, fontWeight: "900", letterSpacing: 0.5 }}>
-                  RECOMMENDED
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
-            {place.tags.map((tag) => humanizeToken(tag)).join(" · ") || "No tags"}
-          </Text>
-        </View>
-        <Text style={{ color: pinned ? colors.jade : colors.muted, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
-          {place.distanceKm != null ? `${place.distanceKm.toFixed(1)} km` : pinned ? "Pinned" : "Not pinned"}
-        </Text>
-      </View>
-
-      {place.addressText ? (
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2} selectable>
-          {place.addressText}
-        </Text>
-      ) : null}
-
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end" }}>
-        {place.phone ? (
-          <View style={{ alignItems: "center", flexDirection: "row", flex: 1, gap: spacing.xs }}>
-            <Phone color={colors.kicker} size={13} strokeWidth={2.2} />
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
-              {place.phone}
-            </Text>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
-        <AnimatedPressable
-          accessibilityLabel={`Edit ${place.name}`}
-          onPress={onEdit}
-          style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, paddingHorizontal: spacing.sm, paddingVertical: 6 }}
-        >
-          <Pencil color={colors.primary} size={13} strokeWidth={2.4} />
-          <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }}>Edit</Text>
-        </AnimatedPressable>
-        <AnimatedPressable
-          accessibilityLabel={`Remove ${place.name}`}
-          onPress={onDelete}
-          style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, paddingHorizontal: spacing.sm, paddingVertical: 6 }}
-        >
-          <Trash2 color={colors.danger} size={13} strokeWidth={2.4} />
-          <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }}>Remove</Text>
-        </AnimatedPressable>
-      </View>
-    </View>
-  );
-}
-
 function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocalPlace | null; onClose: () => void; property: OwnerProperty }) {
   const { colors, type } = useTheme();
   const toast = useToast();
-  const tags = useListLocalPlaceTagsQuery().data ?? [];
+  const taxonomy = useListLocalPlaceTaxonomyQuery(property.id).data ?? [];
   const [createPlace, createState] = useCreateLocalPlaceMutation();
   const [updatePlace, updateState] = useUpdateLocalPlaceMutation();
 
   const [name, setName] = useState(editing?.name ?? "");
-  const [selectedTags, setSelectedTags] = useState<string[]>(editing?.tags ?? []);
+  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>(editing?.subcategoryIds ?? []);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [description, setDescription] = useState(editing?.description ?? "");
   const [phone, setPhone] = useState(editing?.phone ?? "");
   const [addressText, setAddressText] = useState(editing?.addressText ?? "");
@@ -232,8 +167,16 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
     ? { latitude: property.latitude, longitude: property.longitude, label: property.name }
     : undefined;
 
-  function toggleTag(tag: string) {
-    setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
+  // Names of the currently-selected subcategories, for the summary chips.
+  const selectedNames = taxonomy
+    .flatMap((category) => category.subcategories)
+    .filter((sub) => selectedSubcategoryIds.includes(sub.id))
+    .map((sub) => sub.name);
+
+  function toggleSubcategory(id: string) {
+    setSelectedSubcategoryIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   }
 
   function applyPickedLocation(result: PickedLocation) {
@@ -247,8 +190,8 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
     if (!name.trim()) {
       return setError("Give this place a name.");
     }
-    if (selectedTags.length === 0) {
-      return setError("Pick at least one tag so tenants can filter it.");
+    if (selectedSubcategoryIds.length === 0) {
+      return setError("Pick at least one category so tenants can filter it.");
     }
     // PATCH replaces every field, so carry through values the form doesn't
     // surface to avoid wiping them on edit.
@@ -262,7 +205,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
       ownerRecommended: recommended,
       phone: phone.trim() || null,
       photoUrl: editing?.photoUrl ?? null,
-      tags: selectedTags,
+      subcategoryIds: selectedSubcategoryIds,
     };
     try {
       if (editing) {
@@ -282,12 +225,37 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
       <Sheet onClose={onClose} title={editing ? "Edit place" : "Add nearby place"}>
         <FormInput autoCapitalize="words" label="Place name" onChangeText={setName} placeholder="e.g. Hitec City Metro Station" value={name} />
 
-        <FieldLabel>Tags</FieldLabel>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          {tags.map((tag) => (
-            <ChoiceButton active={selectedTags.includes(tag)} key={tag} label={humanizeToken(tag)} onPress={() => toggleTag(tag)} />
-          ))}
-        </View>
+        <FieldLabel>Categories</FieldLabel>
+        <AnimatedPressable
+          accessibilityLabel="Choose categories"
+          accessibilityRole="button"
+          onPress={() => setCategoryPickerOpen(true)}
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surfaceRaised,
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            minHeight: 50,
+            paddingHorizontal: spacing.md,
+          }}
+        >
+          <Text style={[type.body, { color: selectedNames.length > 0 ? colors.ink : colors.muted, flex: 1, fontWeight: "700" }]} numberOfLines={1}>
+            {selectedNames.length > 0 ? `${selectedNames.length} selected` : "Choose categories"}
+          </Text>
+          <ChevronDown color={colors.muted} size={18} strokeWidth={2.3} />
+        </AnimatedPressable>
+        {selectedNames.length > 0 ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+            {selectedNames.map((subcategory) => (
+              <View key={subcategory} style={{ backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+                <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>{subcategory}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <FieldLabel>Location</FieldLabel>
         <LocationPinCard
@@ -329,6 +297,16 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
         <ActionButton disabled={saving} label={saving ? "Saving…" : editing ? "Save changes" : "Add place"} onPress={() => void submit()} />
       </Sheet>
 
+      <CategoryPickerModal
+        categories={taxonomy}
+        mode="assign"
+        onClose={() => setCategoryPickerOpen(false)}
+        onToggleSubcategory={toggleSubcategory}
+        propertyId={property.id}
+        selectedSubcategoryIds={selectedSubcategoryIds}
+        visible={categoryPickerOpen}
+      />
+
       {pickerOpen ? (
         <MapLocationPickerModal
           home={home}
@@ -347,7 +325,10 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      {/* "padding" on BOTH platforms: Android is edge-to-edge (Expo 56), where
+          adjustResize never resizes the modal window — without this the
+          keyboard slides over the sheet instead of lifting it. */}
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{

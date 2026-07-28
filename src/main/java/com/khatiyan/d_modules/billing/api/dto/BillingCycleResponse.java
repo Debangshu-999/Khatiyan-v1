@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
@@ -24,7 +25,8 @@ public record BillingCycleResponse(
     UUID roomId,
     String roomNumber,
     TenancyBillingType billingType,
-    int cycleNumber,
+    BillingCycleCategory category,
+    Integer cycleNumber,
     LocalDate periodStartDate,
     LocalDate periodEndDate,
     LocalDate rentDueDate,
@@ -63,6 +65,7 @@ public record BillingCycleResponse(
             cycle.getRoomId(),
             roomNumber,
             cycle.getBillingType(),
+            cycle.getCategory(),
             cycle.getCycleNumber(),
             cycle.getPeriodStartDate(),
             cycle.getPeriodEndDate(),

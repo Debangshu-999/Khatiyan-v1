@@ -2,6 +2,7 @@ import { api } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type BillingCycleStatus = "UNPAID" | "OVERDUE" | "PAID" | "CANCELLED";
+export type BillingCycleCategory = "RENT_CYCLE" | "ONE_OFF";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
 export type BillingLineItemType = "RENT" | "DEPOSIT" | "EXTRA_CHARGE" | "DISCOUNT" | "LATE_FEE";
 export type BillingLineItemStatus = "PENDING" | "ADDED";
@@ -11,7 +12,7 @@ export type BillingLineSettlementAction =
   | "DISCOUNTED"
   | "SYSTEM_CHARGE"
   | "WAIVED";
-export type DepositAccountStatus = "ACTIVE" | "SETTLED";
+export type DepositAccountStatus = "ACTIVE" | "PENDING_SETTLEMENT" | "SETTLED";
 export type DepositMovementType = "CREDIT" | "DEBIT";
 
 export type BillingCycleLineItem = {
@@ -46,7 +47,8 @@ export type BillingCycle = {
   roomId: string;
   roomNumber: string | null;
   billingType: "DAILY" | "MONTHLY";
-  cycleNumber: number;
+  category: BillingCycleCategory;
+  cycleNumber: number | null;
   periodStartDate: string;
   periodEndDate: string;
   rentDueDate: string;
@@ -63,6 +65,33 @@ export type BillingCycle = {
   updatedAt: string;
   lineItems: BillingCycleLineItem[];
 };
+
+// A bill's display title: rent cycles are numbered; one-off bills (e.g. an
+// early-exit penalty) have no number and take their line-item label instead.
+export function billTitle(cycle: Pick<BillingCycle, "cycleNumber" | "lineItems">): string {
+  if (cycle.cycleNumber != null) {
+    return `Cycle ${cycle.cycleNumber}`;
+  }
+  return cycle.lineItems?.[0]?.label ?? "One-off bill";
+}
+
+// Sort key for bills, newest first, tolerating one-off bills (null cycle number).
+export function byCycleNumberDesc(a: { cycleNumber: number | null }, b: { cycleNumber: number | null }): number {
+  return (b.cycleNumber ?? 0) - (a.cycleNumber ?? 0);
+}
+
+// Whether a bill line is a system-imposed charge (rent, penalty) vs an
+// owner-added extra charge — used to label penalties as "System charge".
+export function lineItemKindLabel(item: BillingCycleLineItem): string {
+  if (item.type === "EXTRA_CHARGE" && item.systemGenerated) {
+    return "System charge";
+  }
+  return item.type
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 export type BillingDashboardSummary = {
   billedThisMonthPaise: number;
@@ -185,6 +214,11 @@ export type BillingMonthSummary = {
   totalDiscountPaise: number;
   manuallyPaidCycleCount: number;
   manuallyPaidPaise: number;
+  // Actual (non-projected) split by bill category.
+  rentCycleCount: number;
+  rentBilledPaise: number;
+  oneOffCount: number;
+  oneOffBilledPaise: number;
 };
 
 export const billingApi = api.injectEndpoints({
@@ -277,6 +311,11 @@ export const billingApi = api.injectEndpoints({
       providesTags: (_result, _error, tenancyId) => [{ type: "Deposit", id: tenancyId }],
     }),
 
+    listManagedTenancyBillingCycles: builder.query<BillingCycle[], string>({
+      query: (tenancyId) => `/api/v1/billing/tenancies/${tenancyId}/cycles`,
+      providesTags: ["BillingCycle"],
+    }),
+
     listPropertyDeposits: builder.query<Page<DepositAccount>, DepositHistoryParams>({
       query: ({ page = 0, propertyId, query, size = 10, status }) => ({
         params: {
@@ -314,7 +353,38 @@ export const billingApi = api.injectEndpoints({
         method: "POST",
         url: `/api/v1/billing/tenancies/${tenancyId}/deposit/settle`,
       }),
-      invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
+      // The refund posts a DepositPayoutEvent that auto-creates an expense row,
+      // so refresh the expense tracker + budget overview too (both tag Expense).
+      invalidatesTags: (_result, _error, { tenancyId }) => [
+        { type: "Deposit", id: tenancyId },
+        { type: "Deposit", id: "LIST" },
+        "Expense",
+      ],
+    }),
+
+    // On-spot settlement: selected property damage items (totalled) + custom
+    // charges deducted, remaining balance refunded, account closed.
+    settleDepositWithDamages: builder.mutation<
+      DepositAccount,
+      {
+        tenancyId: string;
+        damageItemNames: string[];
+        customCharges: { reason: string; amountPaise: number }[];
+        reason?: string;
+      }
+    >({
+      query: ({ customCharges, damageItemNames, reason, tenancyId }) => ({
+        body: { customCharges, damageItemNames, reason: reason ?? null },
+        method: "POST",
+        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/settle-with-damages`,
+      }),
+      // Refunding the remaining balance posts a DepositPayoutEvent that
+      // auto-creates an expense row — refresh the expense views too.
+      invalidatesTags: (_result, _error, { tenancyId }) => [
+        { type: "Deposit", id: tenancyId },
+        { type: "Deposit", id: "LIST" },
+        "Expense",
+      ],
     }),
   }),
 });
@@ -330,10 +400,12 @@ export const {
   useGetPropertyBillingSummaryQuery,
   useGetPropertyMonthSummaryQuery,
   useLazyExportPropertyBillingCyclesQuery,
+  useListManagedTenancyBillingCyclesQuery,
   useListMyTenancyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
   useListPropertyDepositsQuery,
   useListUpcomingPropertyCyclesQuery,
   useRecordManualPaymentMutation,
+  useSettleDepositWithDamagesMutation,
   useSettleManagedDepositMutation,
 } = billingApi;

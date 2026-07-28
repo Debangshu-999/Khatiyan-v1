@@ -147,7 +147,9 @@ public class OwnerDashboardService {
         TenancySnapshot tenancy = buildTenancy(activeTenancies, inactiveTenancies, allTenancies, exitRequests, today);
         MoneySnapshot money = buildMoney(billing, cycles, activeTenancies, prevMonthStart, monthStart);
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
-        AttentionSummary attention = buildAttention(billing, concern, activeTenancies, exitRequests, roomChangeRequests, today);
+        long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(actorUserId, propertyId);
+        AttentionSummary attention = buildAttention(
+                billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements);
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
         List<MonthlyTrendPoint> monthlyTrends = buildMonthlyTrends(allTenancies, cycles, occupancy.totalBeds(), today);
@@ -671,7 +673,8 @@ public class OwnerDashboardService {
             List<TenancyResponse> activeTenancies,
             List<TenancyExitRequestResponse> exitRequests,
             List<TenancyRoomChangeRequestResponse> roomChangeRequests,
-            LocalDate today) {
+            LocalDate today,
+            long pendingDepositSettlements) {
         long tenantsOnNotice = activeTenancies.stream()
                 .filter(tenancy -> tenancy.status() == TenancyStatus.ON_NOTICE
                         || tenancy.status() == TenancyStatus.ON_PREMATURE_NOTICE)
@@ -697,7 +700,8 @@ public class OwnerDashboardService {
                 pendingRoomChangeRequests,
                 upcomingExits,
                 exitsPastDue,
-                tenantsOnNotice);
+                tenantsOnNotice,
+                pendingDepositSettlements);
     }
 
     private ConcernQueueSummary buildConcernQueue(ConcernDashboardSummary concern) {
