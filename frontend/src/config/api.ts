@@ -27,23 +27,23 @@ function hostNameFromUri(uri: string) {
   }
 }
 
-// export function resolveDefaultApiBaseUrl() {
-//   if (Platform.OS === "web") {
-//     return "http://localhost:8080";
-//   }
-
-//   const hostUri = expoHostUri();
-//   const hostName = hostUri ? hostNameFromUri(hostUri) : null;
-
-//   if (hostName) {
-//     return `http://${hostName}:${backendPort}`;
-//   }
-
-//   return "http://localhost:8080";
-// }
-
 export function resolveDefaultApiBaseUrl() {
-  return "https://headcount-handbrake-cotton.ngrok-free.dev";
+  if (Platform.OS === "web") {
+    return "http://localhost:8080";
+  }
+
+  const hostUri = expoHostUri();
+  const hostName = hostUri ? hostNameFromUri(hostUri) : null;
+
+  if (hostName) {
+    return `http://${hostName}:${backendPort}`;
+  }
+
+  return "http://localhost:8080";
 }
+
+// export function resolveDefaultApiBaseUrl() {
+//   return "<tunnel-backend-url-here";
+// }
 
 export const defaultApiBaseUrl = resolveDefaultApiBaseUrl();
