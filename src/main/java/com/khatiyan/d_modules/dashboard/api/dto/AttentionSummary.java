@@ -16,6 +16,8 @@ public record AttentionSummary(
     long upcomingExits,
     long exitsPastDue,
     long tenantsOnNotice,
-    long pendingDepositSettlements
+    long pendingDepositSettlements,
+    /** Enquiries from the property's public profile with no answer yet. */
+    long newEnquiries
 ) {
 }

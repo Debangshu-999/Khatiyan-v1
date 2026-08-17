@@ -35,7 +35,8 @@ export type EnquiryDetail = {
   /** Null unless registered and verified. */
   enquirerEmail: string | null;
   reachableChannels: ReachableChannel[];
-  response: EnquiryResponseView | null;
+  /** The action log — every response, newest first. Empty while still open. */
+  responses: EnquiryResponseView[];
 };
 
 /** Everything the confirmation dialog needs, straight from the send call. */

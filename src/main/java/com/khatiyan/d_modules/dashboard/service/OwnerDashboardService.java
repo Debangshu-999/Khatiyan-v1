@@ -38,6 +38,7 @@ import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityItem;
 import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityType;
 import com.khatiyan.d_modules.dashboard.api.dto.TenancySnapshot;
 import com.khatiyan.d_modules.dashboard.api.dto.TodayDigest;
+import com.khatiyan.d_modules.enquiry.EnquiryModule;
 import com.khatiyan.d_modules.expense.ExpenseModule;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
 import com.khatiyan.d_modules.notice.NoticeModule;
@@ -80,6 +81,7 @@ public class OwnerDashboardService {
     private final AuthModule authModule;
     private final StaffModule staffModule;
     private final ExpenseModule expenseModule;
+    private final EnquiryModule enquiryModule;
 
     private final int upcomingExitDays;
     private final ActivityEventService activityEventService;
@@ -94,6 +96,7 @@ public class OwnerDashboardService {
             AuthModule authModule,
             StaffModule staffModule,
             ExpenseModule expenseModule,
+            EnquiryModule enquiryModule,
             @Value("${app.dashboard.upcoming-exit-days:7}") int upcomingExitDays,
             ActivityEventService activityEventService,
             @Value("${app.dashboard.recent-activity-limit:10}") int recentActivityLimit) {
@@ -105,6 +108,7 @@ public class OwnerDashboardService {
         this.authModule = authModule;
         this.staffModule = staffModule;
         this.expenseModule = expenseModule;
+        this.enquiryModule = enquiryModule;
         this.upcomingExitDays = upcomingExitDays;
         this.activityEventService = activityEventService;
         this.recentActivityLimit = recentActivityLimit;
@@ -146,7 +150,8 @@ public class OwnerDashboardService {
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
         long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
         AttentionSummary attention = buildAttention(
-                billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements);
+                billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements,
+                enquiryModule.countNewForProperty(propertyId));
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
         List<MonthlyTrendPoint> monthlyTrends = buildMonthlyTrends(allTenancies, cycles, occupancy.totalBeds(), today);
@@ -492,7 +497,8 @@ public class OwnerDashboardService {
             List<TenancyExitRequestResponse> exitRequests,
             List<TenancyRoomChangeRequestResponse> roomChangeRequests,
             LocalDate today,
-            long pendingDepositSettlements) {
+            long pendingDepositSettlements,
+            long newEnquiries) {
         long tenantsOnNotice = activeTenancies.stream()
                 .filter(tenancy -> tenancy.status() == TenancyStatus.ON_NOTICE
                         || tenancy.status() == TenancyStatus.ON_PREMATURE_NOTICE)
@@ -519,7 +525,8 @@ public class OwnerDashboardService {
                 upcomingExits,
                 exitsPastDue,
                 tenantsOnNotice,
-                pendingDepositSettlements);
+                pendingDepositSettlements,
+                newEnquiries);
     }
 
     private ConcernQueueSummary buildConcernQueue(ConcernDashboardSummary concern) {

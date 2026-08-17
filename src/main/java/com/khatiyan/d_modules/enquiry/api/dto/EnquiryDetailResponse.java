@@ -30,6 +30,12 @@ public record EnquiryDetailResponse(
     /** Exactly the channels the respond sheet may enable. */
     List<ReachableChannelResponse> reachableChannels,
 
-    /** Null while the enquiry is still open. */
-    EnquiryResponseView response
+    /**
+     * Every action taken on this enquiry, newest first — the action log.
+     *
+     * <p>A list rather than a single latest response because responding is
+     * repeatable: an owner may call, then call again, then write. Empty while the
+     * enquiry is still open.
+     */
+    List<EnquiryResponseView> responses
 ) {}

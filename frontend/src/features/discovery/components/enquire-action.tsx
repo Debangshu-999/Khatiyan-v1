@@ -20,10 +20,13 @@ import { useTheme } from "@/theme/use-theme";
 /**
  * The enquire button on a property profile, and everything behind it.
  *
- * <p>Three states, all decided by the server: offer the button, say "Enquiry
- * sent" when one is already open, or render nothing when the viewer manages the
- * place. The last two are the same `canEnquire: false` with different reasons —
- * which is why the endpoint returns a reason rather than a bare boolean.
+ * <p>Three states decided by the server: offer the button, say "Enquiry sent"
+ * when one is already open, or render nothing when the viewer manages the place.
+ * The last two are the same `canEnquire: false` with different reasons — which
+ * is why the endpoint returns a reason rather than a bare boolean.
+ *
+ * <p>A fourth state is decided here: when the check itself fails, fall OPEN and
+ * offer the button. See the comment on `checkFailed`.
  */
 export function EnquireAction({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
   const { colors, fonts, type } = useTheme();
@@ -35,18 +38,27 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
 
   // Nothing at all while it loads: a button that appears and then disappears
   // once the answer arrives is worse than one that arrives a moment late.
-  if (!myEnquiry) {
+  if (!myEnquiry && myEnquiryQuery.isLoading) {
     return null;
   }
 
+  // The check FAILED rather than answered — offer the button anyway. The server
+  // re-enforces every rule on the POST and refuses with a readable message, so
+  // the worst case is a clear error. Hiding it instead makes a broken request
+  // indistinguishable from "you may not enquire here", which is unreadable from
+  // the outside and sends anyone debugging it looking in the wrong place.
+  const checkFailed = !myEnquiry;
+
   // Managing the place is not a state worth explaining on your own listing.
-  if (!myEnquiry.canEnquire && !myEnquiry.openEnquiryId) {
+  if (!checkFailed && !myEnquiry.canEnquire && !myEnquiry.openEnquiryId) {
     return null;
   }
+
+  const canEnquire = checkFailed || myEnquiry.canEnquire;
 
   return (
     <View style={{ gap: spacing.xs }}>
-      {myEnquiry.canEnquire ? (
+      {canEnquire ? (
         <ActionButton icon={MessageSquare} label="Enquire about this property" onPress={() => setComposing(true)} />
       ) : (
         <View
@@ -65,12 +77,12 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
         >
           <MessageSquare color={colors.muted} size={16} strokeWidth={2.2} />
           <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 14 }}>
-            Enquiry sent{myEnquiry.openEnquiryAt ? ` · ${formatWhen(myEnquiry.openEnquiryAt)}` : ""}
+            Enquiry sent{myEnquiry?.openEnquiryAt ? ` · ${formatWhen(myEnquiry.openEnquiryAt)}` : ""}
           </Text>
         </View>
       )}
 
-      {myEnquiry.canEnquire ? (
+      {canEnquire ? (
         <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
           They will see your name and phone so they can reply.
         </Text>

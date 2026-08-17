@@ -72,16 +72,15 @@ public class Enquiry extends BaseEntity {
     }
 
     /**
-     * Closes the enquiry once a channel has been chosen.
+     * Marks the enquiry as dealt with. Idempotent by design.
      *
-     * <p>Rejects a second response rather than silently overwriting: the
-     * enquirer has already been told how they will be reached, and quietly
-     * changing it would leave them waiting on the wrong one.
+     * <p>An earlier version threw on a second response, back when choosing a
+     * channel was a promise made to the enquirer and changing it would have left
+     * them waiting on the wrong one. It no longer is: picking a channel opens the
+     * dialer or the mail app, and an owner may reasonably call twice, or call and
+     * then write. Each attempt is its own row; the status only ever moves once.
      */
     public void markResponded() {
-        if (status == EnquiryStatus.RESPONDED) {
-            throw new ValidationException("This enquiry has already been answered.");
-        }
         this.status = EnquiryStatus.RESPONDED;
     }
 

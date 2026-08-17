@@ -47,7 +47,6 @@ import {
   Users,
   Wallet,
   Activity,
-  MessageSquare,
   Radar,
   Waves,
   Wrench,
@@ -77,7 +76,6 @@ import { useGetProfileQuery } from "@/store/services/auth-api";
 import type { ConcernSummary } from "@/store/services/concern-api";
 import { useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import { useSearchDiscoveryPropertiesQuery } from "@/store/services/discovery-api";
-import { useGetOpenEnquiryCountQuery } from "@/store/services/enquiry-api";
 import type { NoticeSummary, PropertyBoardItem } from "@/store/services/notice-api";
 import {
   useListMyPropertyBoardItemsQuery,
@@ -1249,35 +1247,7 @@ type OwnerRoute =
   | "/owner-vacancy-finder"
   | "/owner-staff"
   | "/owner-expenses"
-  | "/owner-enquiries"
   | "/owner-pnl";
-
-/**
- * The Enquiries tool, split out only so it can carry its own unanswered count.
- *
- * <p>Every other badge on this screen rides in on the dashboard's `attention`
- * payload. Enquiries do not, and adding them there would mean a dashboard
- * change for one number — so it asks for its own, which is a cached call the
- * enquiries screen shares.
- */
-function EnquiriesToolBox({
-  onNavigate,
-  propertyId,
-}: {
-  onNavigate: (route: OwnerRoute) => void;
-  propertyId: string | null;
-}) {
-  const openCountQuery = useGetOpenEnquiryCountQuery(propertyId ?? "", { skip: !propertyId });
-
-  return (
-    <HomeToolBox
-      badge={openCountQuery.data ?? 0}
-      icon={MessageSquare}
-      label="Enquiries"
-      onPress={() => onNavigate("/owner-enquiries")}
-    />
-  );
-}
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
 
@@ -1866,13 +1836,6 @@ function WorkspaceTab({
               onPress={() => onNavigate("/owner-deposit-manager")}
             />
             <HomeToolBox icon={TrendingUp} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
-          </View>
-          {/* An odd fifth tool. It keeps its half-width against a spacer rather
-              than stretching across the row — a lone full-width tile among
-              four half-width ones reads as a layout bug, not a feature. */}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <EnquiriesToolBox onNavigate={onNavigate} propertyId={dashboard.property?.propertyId ?? null} />
-            <View style={{ flex: 1 }} />
           </View>
         </View>
       </Section>

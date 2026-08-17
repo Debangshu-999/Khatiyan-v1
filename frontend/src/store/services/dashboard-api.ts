@@ -63,6 +63,8 @@ export type AttentionSummary = {
   exitsPastDue: number;
   tenantsOnNotice: number;
   pendingDepositSettlements: number;
+  /** Enquiries from the property's public profile with no answer yet. */
+  newEnquiries: number;
 };
 
 export type BudgetAttentionLevel = "NONE" | "APPROACHING" | "EXCEEDED";
@@ -136,7 +138,11 @@ export const dashboardApi = api.injectEndpoints({
   endpoints: (builder) => ({
     getOwnerDashboard: builder.query<OwnerDashboard, string>({
       query: (propertyId) => `/api/v1/dashboard/owner/${propertyId}`,
-      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff", "Expense"],
+      // "Enquiry" included so responding to one refreshes the action centre's
+      // "New enquiries" row. Its count rides in on `attention.newEnquiries`, so
+      // without this the row keeps the old number while the property-card badge
+      // — which reads the enquiry endpoint directly — already dropped.
+      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff", "Expense", "Enquiry"],
     }),
   }),
 });

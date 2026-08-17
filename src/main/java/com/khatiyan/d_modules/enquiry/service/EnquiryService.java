@@ -139,20 +139,26 @@ public class EnquiryService {
             return List.of();
         }
 
-        Map<UUID, EnquiryResponse> responseByEnquiry = enquiryResponseRepository
+        // Every response, grouped — this is the action log. The query already
+        // orders newest first, and groupingBy preserves encounter order, so each
+        // list arrives in the order the log wants to show it.
+        Map<UUID, List<EnquiryResponse>> responsesByEnquiry = enquiryResponseRepository
                 .findByEnquiryIdInOrderByCreatedAtDesc(enquiries.stream().map(Enquiry::getId).toList())
                 .stream()
-                // Newest first, so the first one seen per enquiry is the current
-                // answer. Today there is only ever one; keeping the reduction
-                // means chat can add more without this list breaking.
-                .collect(Collectors.toMap(EnquiryResponse::getEnquiryId, response -> response, (first, later) -> first));
+                .collect(Collectors.groupingBy(EnquiryResponse::getEnquiryId));
 
         Set<UUID> userIds = new LinkedHashSet<>(enquiries.stream().map(Enquiry::getEnquirerUserId).toList());
-        responseByEnquiry.values().forEach(response -> userIds.add(response.getRespondedByUserId()));
+        responsesByEnquiry.values().stream()
+                .flatMap(List::stream)
+                .forEach(response -> userIds.add(response.getRespondedByUserId()));
         Map<UUID, UserSummaryResponse> users = authModule.findByIds(userIds);
 
         return enquiries.stream()
-                .map(enquiry -> toDetail(enquiry, users.get(enquiry.getEnquirerUserId()), responseByEnquiry.get(enquiry.getId()), users))
+                .map(enquiry -> toDetail(
+                        enquiry,
+                        users.get(enquiry.getEnquirerUserId()),
+                        responsesByEnquiry.getOrDefault(enquiry.getId(), List.of()),
+                        users))
                 .toList();
     }
 
@@ -173,18 +179,29 @@ public class EnquiryService {
         ensureChannelIsReachable(request.channel(), enquirer);
 
         enquiry.markResponded();
-        EnquiryResponse response = enquiryResponseRepository.save(
+        enquiryResponseRepository.save(
                 EnquiryResponse.of(enquiry.getId(), request.channel(), actorUserId, request.note()));
 
-        PropertyResponse property = propertyModule.getActiveProperty(enquiry.getPropertyId());
-        notifyEnquirer(property, enquiry, request.channel());
+        // Re-read the whole log rather than returning just the new row: the card
+        // that receives this renders the log button from it, and handing back a
+        // one-entry list would make the history look like it had been erased.
+        List<EnquiryResponse> responses =
+                enquiryResponseRepository.findByEnquiryIdInOrderByCreatedAtDesc(List.of(enquiry.getId()));
+
+        // The enquirer is told nothing in-app. Picking a channel opens the
+        // owner's dialer or mail app, so the reply reaches them as a phone call
+        // or an email — announcing "they replied" alongside that would be a
+        // second, emptier message about a conversation happening elsewhere.
+        // Revisit when chat lands: a chat reply DOES live in the app and should
+        // announce itself. NotificationSubtype.ENQUIRY_ANSWERED is kept for that.
 
         log.info(
                 "Enquiry answered enquiryId={} channel={} respondedByUserId={}",
                 enquiry.getId(), request.channel(), actorUserId);
 
-        Map<UUID, UserSummaryResponse> users = authModule.findByIds(List.of(actorUserId));
-        return toDetail(enquiry, enquirer, response, users);
+        Map<UUID, UserSummaryResponse> users = authModule.findByIds(
+                responses.stream().map(EnquiryResponse::getRespondedByUserId).toList());
+        return toDetail(enquiry, enquirer, responses, users);
     }
 
     // ---- Rules -----------------------------------------------------------
@@ -249,7 +266,7 @@ public class EnquiryService {
     private EnquiryDetailResponse toDetail(
             Enquiry enquiry,
             UserSummaryResponse enquirer,
-            EnquiryResponse response,
+            List<EnquiryResponse> responses,
             Map<UUID, UserSummaryResponse> users) {
         return new EnquiryDetailResponse(
                 enquiry.getId(),
@@ -264,7 +281,9 @@ public class EnquiryService {
                 // offer an address the server would then refuse.
                 enquirer != null && enquirer.emailVerified() ? enquirer.email() : null,
                 reachableChannels(enquirer),
-                response == null ? null : EnquiryResponseView.of(response, nameOf(users, response.getRespondedByUserId())));
+                responses.stream()
+                        .map(response -> EnquiryResponseView.of(response, nameOf(users, response.getRespondedByUserId())))
+                        .toList());
     }
 
     private void notifyManagement(PropertyResponse property, Enquiry enquiry, UserSummaryResponse enquirer) {
@@ -280,27 +299,6 @@ public class EnquiryService {
                 NotificationCategory.ENQUIRY,
                 NotificationPriority.NORMAL,
                 NotificationSubtype.ENQUIRY_RECEIVED,
-                enquiry.getId(),
-                Map.of("enquiryId", enquiry.getId().toString(), "propertyId", property.id().toString()),
-                NotificationDeliveryMode.IN_APP_AND_PUSH);
-    }
-
-    /**
-     * The enquirer has no enquiries screen of their own, so this notification is
-     * the whole of their answer — it goes in the queue, not push-only.
-     */
-    private void notifyEnquirer(PropertyResponse property, Enquiry enquiry, EnquiryResponseChannel channel) {
-        String how = channel == EnquiryResponseChannel.EMAIL
-                ? "They will email you shortly."
-                : "They will call you back shortly.";
-
-        notificationModule.notifyUser(
-                enquiry.getEnquirerUserId(),
-                property.name() + " replied to your enquiry",
-                how,
-                NotificationCategory.ENQUIRY,
-                NotificationPriority.NORMAL,
-                NotificationSubtype.ENQUIRY_ANSWERED,
                 enquiry.getId(),
                 Map.of("enquiryId", enquiry.getId().toString(), "propertyId", property.id().toString()),
                 NotificationDeliveryMode.IN_APP_AND_PUSH);

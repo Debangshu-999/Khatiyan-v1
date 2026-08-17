@@ -3,7 +3,7 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useRouteGate } from "@/features/owner/route-gates";
 import { Animated, Easing, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
+import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, MessageSquare, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -22,11 +22,12 @@ type ActionRoute =
   | "/owner-billing"
   | "/owner-concerns"
   | "/owner-deposit-history"
+  | "/owner-enquiries"
   | "/owner-exit-requests"
   | "/owner-expenses"
   | "/owner-room-change-requests"
   | "/owner-tenancy";
-type ActionSource = "billing" | "concern" | "tenancy" | "budget";
+type ActionSource = "billing" | "concern" | "tenancy" | "budget" | "enquiry";
 type ActionFilter = ActionSource | "all";
 type ActionTone = "primary" | "warning" | "danger";
 
@@ -48,6 +49,7 @@ const FILTERS: Array<{ key: ActionFilter; label: string }> = [
   { key: "billing", label: "Billing" },
   { key: "concern", label: "Concerns" },
   { key: "tenancy", label: "Tenancy" },
+  { key: "enquiry", label: "Enquiries" },
 ];
 
 const TONE_RANK: Record<ActionTone, number> = { danger: 0, warning: 1, primary: 2 };
@@ -163,6 +165,13 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
   if (attention.tenantsOnNotice > 0) {
     items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });
   }
+  // A stranger asking about the property, with nobody having answered. Ranked
+  // primary rather than danger: nothing is broken, but every hour it sits there
+  // is a prospective tenant deciding the place is unresponsive.
+  if (attention.newEnquiries > 0) {
+    items.push({ badge: String(attention.newEnquiries), detail: "Awaiting your response", emphasize: false, icon: MessageSquare, key: "enquiries", label: "New enquiries", route: "/owner-enquiries", source: "enquiry", tone: "primary" });
+  }
+
   if (attention.pendingDepositSettlements > 0) {
     items.push({ badge: String(attention.pendingDepositSettlements), detail: "Deposit awaiting settlement", emphasize: false, icon: Wallet, key: "deposit-settlements", label: "Deposits to settle", route: "/owner-deposit-history", source: "tenancy", tone: "primary" });
   }

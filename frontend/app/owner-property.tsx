@@ -2,9 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { BedDouble, Building2, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, Pencil, X } from "lucide-react-native";
+import { BedDouble, Building2, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
@@ -51,6 +52,7 @@ import {
   type PropertyType,
   type RoomType,
 } from "@/store/services/property-api";
+import { useGetOpenEnquiryCountQuery } from "@/store/services/enquiry-api";
 import {
   useGetOwnerDiscoveryProfileQuery,
   usePublishOwnerDiscoveryProfileMutation,
@@ -122,8 +124,11 @@ export default function OwnerPropertyScreen() {
                 {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
               </Text>
             </View>
-            <View style={{ flexDirection: "row" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
               <ActionButton disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="secondary" />
+              {/* Enquiries belong on the property, not in a tools list: they are
+                  asked ABOUT this property, from its public profile. */}
+              <EnquiriesIconButton propertyId={selectedProperty.id} />
             </View>
           </Card>
 
@@ -403,6 +408,65 @@ function EditListingDetailsSheet({
 
 function open(router: ReturnType<typeof useGuardedRouter>, route: PropertyRoute) {
   router.push(route);
+}
+
+/**
+ * Way into the enquiries screen, badged with what is unanswered.
+ *
+ * <p>Outlined container, ink glyph, no fill — the house treatment for icons. The
+ * badge appears only when something is waiting; at zero the icon stays put and
+ * stays tappable, because "no enquiries" is a thing an owner may want to confirm
+ * rather than a reason to hide the door to them.
+ */
+function EnquiriesIconButton({ propertyId }: { propertyId: string }) {
+  const router = useGuardedRouter();
+  const { colors, fonts } = useTheme();
+  const openCountQuery = useGetOpenEnquiryCountQuery(propertyId, { skip: !propertyId });
+  const count = openCountQuery.data ?? 0;
+
+  return (
+    <View>
+      <AnimatedPressable
+        accessibilityLabel={count > 0 ? `Enquiries, ${count} unanswered` : "Enquiries"}
+        accessibilityRole="button"
+        onPress={() => router.push("/owner-enquiries")}
+        style={{
+          alignItems: "center",
+          borderColor: colors.ink,
+          borderCurve: "continuous",
+          borderRadius: 12,
+          borderWidth: 1,
+          height: 44,
+          justifyContent: "center",
+          width: 44,
+        }}
+      >
+        <MessageSquare color={colors.ink} size={20} strokeWidth={2} />
+      </AnimatedPressable>
+      {count > 0 ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.primary,
+            borderColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 2,
+            height: 20,
+            justifyContent: "center",
+            minWidth: 20,
+            paddingHorizontal: 4,
+            position: "absolute",
+            right: -6,
+            top: -6,
+          }}
+        >
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 10 }}>
+            {count > 9 ? "9+" : count}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {

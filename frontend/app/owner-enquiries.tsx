@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { Dimensions, Text, View } from "react-native";
-import { Mail, MessageSquare, Phone, User } from "lucide-react-native";
+import { Dimensions, Linking, Text, View } from "react-native";
+import { History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilterBubbles } from "@/components/filter-bubbles";
@@ -50,6 +49,7 @@ export default function OwnerEnquiriesScreen() {
   const [filter, setFilter] = useState<EnquiryFilter>("new");
   const [page, setPage] = useState(0);
   const [responding, setResponding] = useState<EnquiryDetail | null>(null);
+  const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
 
   const enquiriesQuery = useListPropertyEnquiriesQuery(selectedProperty?.id ?? "", {
     skip: !selectedProperty,
@@ -117,6 +117,7 @@ export default function OwnerEnquiriesScreen() {
                   enquiry={enquiry}
                   key={enquiry.id}
                   onRespond={() => setResponding(enquiry)}
+                  onViewLog={() => setViewingLog(enquiry)}
                 />
               ))}
               <PaginationBar
@@ -139,13 +140,14 @@ export default function OwnerEnquiriesScreen() {
           onClose={() => setResponding(null)}
           onResponded={(channel) => {
             setResponding(null);
-            toast.show(
-              channel === "EMAIL" ? "They have been told to expect an email." : "They have been told to expect a call.",
-              "success",
-            );
+            // Accurate about what happened: the app handed off to the dialer or
+            // mail client. Nothing was sent to the enquirer from in here.
+            toast.show(channel === "EMAIL" ? "Marked as emailed." : "Marked as called.", "success");
           }}
         />
       ) : null}
+
+      {viewingLog ? <ActionLogSheet enquiry={viewingLog} onClose={() => setViewingLog(null)} /> : null}
     </ScreenScrollView>
   );
 }
@@ -153,12 +155,17 @@ export default function OwnerEnquiriesScreen() {
 function EnquiryCard({
   enquiry,
   onRespond,
+  onViewLog,
 }: {
   enquiry: EnquiryDetail;
   onRespond: () => void;
+  onViewLog: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
-  const answered = enquiry.response !== null;
+  // Status, not `responses.length` — the New filter and both badges count on
+  // status, and a pill disagreeing with the number beside it is worse than
+  // either being wrong on its own.
+  const isNew = enquiry.status === "NEW";
 
   return (
     <Card>
@@ -170,7 +177,7 @@ function EnquiryCard({
               {enquiry.enquirerName ?? "Someone"}
             </Text>
           </View>
-          {!answered ? (
+          {isNew ? (
             <View
               style={{
                 borderColor: colors.primary,
@@ -197,39 +204,103 @@ function EnquiryCard({
           {enquiry.message}
         </Text>
 
-        {answered && enquiry.response ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs }}>
-            {enquiry.response.channel === "EMAIL" ? (
-              <Mail color={colors.jade} size={12} strokeWidth={2.4} />
-            ) : (
-              <Phone color={colors.jade} size={12} strokeWidth={2.4} />
-            )}
-            <Text style={[type.caption, { color: colors.jade, flex: 1 }]} numberOfLines={1}>
-              {enquiry.response.channel === "EMAIL" ? "Email promised" : "Call-back promised"}
-              {enquiry.response.respondedByName ? ` · ${enquiry.response.respondedByName}` : ""}
-            </Text>
-            <Text style={[type.caption, { color: colors.kicker }]}>
-              {formatWhen(enquiry.response.respondedAt)}
-            </Text>
+        {/* Respond takes the row; the log is a square beside it. What was done
+            and by whom lives behind that button rather than on the card — it is
+            history, and history on every card buries the message that matters. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+          <View style={{ flex: 1 }}>
+            <ActionButton label="Respond" onPress={onRespond} />
           </View>
-        ) : (
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              gap: spacing.sm,
-              justifyContent: "space-between",
-              marginTop: spacing.xs,
-            }}
-          >
-            <ActionButton compact label="Respond" onPress={onRespond} variant="outline" />
-            <Text style={[type.caption, { color: colors.kicker }]}>
-              {formatWhen(enquiry.createdAt)}
-            </Text>
-          </View>
-        )}
+          <ActionLogButton count={enquiry.responses.length} onPress={onViewLog} />
+        </View>
+
+        <Text style={[type.caption, { color: colors.kicker }]}>
+          {formatWhen(enquiry.createdAt)}
+        </Text>
       </View>
     </Card>
+  );
+}
+
+/**
+ * Opens the action log. Outlined container, ink glyph, no fill — the house icon
+ * treatment, matched in height to the Respond button beside it.
+ *
+ * <p>Greyed with nothing to show rather than hidden: an owner checking "has
+ * anyone dealt with this" needs the same control to answer "no" as to answer
+ * "yes", and a button that appears only after the fact is one they never learn
+ * is there.
+ */
+function ActionLogButton({ count, onPress }: { count: number; onPress: () => void }) {
+  const { colors } = useTheme();
+  const empty = count === 0;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={empty ? "Action log, nothing yet" : `Action log, ${count} action${count === 1 ? "" : "s"}`}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: empty }}
+      disabled={empty}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        borderColor: empty ? colors.borderStrong : colors.ink,
+        borderCurve: "continuous",
+        borderRadius: 12,
+        borderWidth: 1,
+        height: 48,
+        justifyContent: "center",
+        width: 48,
+      }}
+    >
+      <History color={empty ? colors.muted : colors.ink} size={20} strokeWidth={2} />
+    </AnimatedPressable>
+  );
+}
+
+/** What was done, by whom, when — the whole history, newest first. */
+function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose: () => void }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <SheetShell onClose={onClose} title="Action log">
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        Every time someone reached out to {firstName(enquiry.enquirerName)}.
+      </Text>
+
+      {enquiry.responses.map((response) => (
+        <View
+          key={response.id}
+          style={{
+            borderColor: colors.border,
+            borderLeftColor: colors.jade,
+            borderLeftWidth: 4,
+            borderWidth: 1,
+            gap: 3,
+            padding: spacing.md,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+            {response.channel === "EMAIL" ? (
+              <Mail color={colors.jade} size={13} strokeWidth={2.4} />
+            ) : (
+              <Phone color={colors.jade} size={13} strokeWidth={2.4} />
+            )}
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+              {response.channel === "EMAIL" ? "Emailed" : "Called"}
+            </Text>
+          </View>
+          <Text style={[type.caption, { color: colors.kicker }]}>
+            {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
+          </Text>
+          {response.note ? (
+            <Text style={[type.caption, { color: colors.muted, marginTop: 2 }]}>
+              {response.note}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+    </SheetShell>
   );
 }
 
@@ -242,45 +313,64 @@ function RespondSheet({
   onClose: () => void;
   onResponded: (channel: EnquiryResponseChannel) => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const [note, setNote] = useState("");
+  const { colors, type } = useTheme();
   const [error, setError] = useState<string | null>(null);
-  const [respond, respondState] = useRespondToEnquiryMutation();
+  const [respond] = useRespondToEnquiryMutation();
 
   const emailChannel = enquiry.reachableChannels.find((channel) => channel.channel === "EMAIL");
   const callChannel = enquiry.reachableChannels.find((channel) => channel.channel === "CALL_BACK");
 
-  async function choose(channel: EnquiryResponseChannel) {
+  /**
+   * Hands the conversation to the phone, and records that it happened.
+   *
+   * <p>The hand-off comes first and is what must not fail: the record is an
+   * internal note, but the dialer opening is the actual reply. If recording
+   * fails the owner is still mid-call, so it is logged into the error line
+   * rather than blocking anything.
+   */
+  async function choose(channel: EnquiryResponseChannel, target: string | undefined) {
     setError(null);
+
+    const url = channel === "EMAIL" ? `mailto:${target}` : `tel:${target}`;
     try {
-      await respond({ channel, enquiryId: enquiry.id, note: note.trim() || null }).unwrap();
-      onResponded(channel);
-    } catch (caught) {
-      setError(readErrorMessage(caught) ?? "Could not record the response. Try again.");
+      await Linking.openURL(url);
+    } catch {
+      setError(
+        channel === "EMAIL"
+          ? "No email app is set up on this device."
+          : "Could not open the dialer on this device.",
+      );
+      return;
     }
+
+    try {
+      await respond({ channel, enquiryId: enquiry.id, note: null }).unwrap();
+    } catch {
+      // The reply is already happening; a failed bookkeeping write must not
+      // look like a failed response.
+    }
+    onResponded(channel);
   }
 
   return (
     <SheetShell onClose={onClose} title={`Respond to ${firstName(enquiry.enquirerName)}`}>
       <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-        They are told how you will reach them. Choosing a channel closes the enquiry.
+        Reach them directly — nothing is sent from inside the app.
       </Text>
 
       <ChannelOption
         available={Boolean(callChannel)}
-        disabled={respondState.isLoading}
         icon={Phone}
         label="Call back"
-        onPress={() => void choose("CALL_BACK")}
+        onPress={() => void choose("CALL_BACK", callChannel?.target)}
         subtitle={callChannel?.target ?? "No phone number on file"}
       />
 
       <ChannelOption
         available={Boolean(emailChannel)}
-        disabled={respondState.isLoading}
         icon={Mail}
         label="Email"
-        onPress={() => void choose("EMAIL")}
+        onPress={() => void choose("EMAIL", emailChannel?.target)}
         subtitle={emailChannel?.target ?? `${firstName(enquiry.enquirerName)} has no verified email`}
       />
 
@@ -289,42 +379,18 @@ function RespondSheet({
       <ChannelOption
         available={false}
         dashed
-        disabled
         icon={MessageSquare}
         label="Chat"
         onPress={() => undefined}
         subtitle="Coming soon"
       />
 
-      <View style={{ gap: spacing.xs }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
-          Note (optional, only you see this)
+      {error ? (
+        <Text style={[type.caption, { color: colors.danger }]}>
+          {error}
         </Text>
-        <AppTextInput
-          maxLength={500}
-          multiline
-          onChangeText={setNote}
-          placeholder="Quoted 12k for the single AC room."
-          placeholderTextColor={colors.kicker}
-          style={{
-            borderColor: colors.borderStrong,
-            borderRadius: 14,
-            borderWidth: 1.5,
-            color: colors.ink,
-            fontFamily: fonts.sansMedium,
-            fontSize: 15,
-            minHeight: 72,
-            padding: spacing.md,
-            textAlignVertical: "top",
-          }}
-          value={note}
-        />
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
-      </View>
+      ) : null}
+
     </SheetShell>
   );
 }
