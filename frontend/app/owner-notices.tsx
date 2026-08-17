@@ -4,11 +4,16 @@ import DateTimePicker, { type DateTimePickerEvent } from "@react-native-communit
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Archive, CalendarClock, Check, Edit3, Info, Megaphone, Plus, Repeat2, Trash2, X } from "lucide-react-native";
 
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { InfoModal } from "@/components/info-modal";
 import { Section } from "@/components/section";
+import { TabSwitcher } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
 import {
@@ -18,10 +23,14 @@ import {
   ConfirmDialog,
   FormInput,
   IconButton,
+  ViewOnlyChip,
   humanizeToken,
 } from "@/features/owner/owner-ui";
+import { NoticeCardBody } from "@/features/notice/notice-card-body";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
+  canEditNotice,
   type CreateNoticePayload,
   type CreateRecurringNoticePayload,
   type NoticePriority,
@@ -29,15 +38,12 @@ import {
   type RecurringNoticeFrequency,
   type RecurringNoticeSummary,
   useArchiveNoticeMutation,
-  useCreateRecurringNoticeMutation,
   useDeleteNoticeMutation,
   useDeleteRecurringNoticeMutation,
   useListArchivedNoticesQuery,
   useListPublishedNoticesQuery,
   useListRecurringNoticesQuery,
   useListVisiblePropertyNoticesQuery,
-  usePublishNoticeMutation,
-  useUpdateNoticeMutation,
   useUpdateRecurringNoticeMutation,
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -46,11 +52,6 @@ import { useTheme } from "@/theme/use-theme";
 
 type NoticeView = "normal" | "recurring";
 type NoticeTab = "published" | "visible" | "archived";
-type NoticeComposerState =
-  | { mode: "normal-create" }
-  | { mode: "normal-edit"; notice: NoticeSummary }
-  | { mode: "recurring-create" }
-  | { mode: "recurring-edit"; recurringNotice: RecurringNoticeSummary };
 type NoticeConfirmState =
   | { action: "archive" | "delete"; notice: NoticeSummary }
   | { action: "delete-recurring"; recurringNotice: RecurringNoticeSummary };
@@ -68,9 +69,14 @@ export default function OwnerNoticesScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
+
+  // Publishing, editing, archiving and scheduling are NOTICES at MANAGE. The
+  // backend enforces it; without this the buttons stayed live and a view-only
+  // manager only learned the truth from a 403.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const canManageNotices = canManageResource("NOTICES");
   const [view, setView] = useState<NoticeView>("normal");
   const [tab, setTab] = useState<NoticeTab>("published");
-  const [composer, setComposer] = useState<NoticeComposerState | null>(null);
   const [confirm, setConfirm] = useState<NoticeConfirmState | null>(null);
   const setStatus = (value: string | null) => {
     if (value) {
@@ -118,8 +124,17 @@ export default function OwnerNoticesScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
+    // Publish is pinned below the scroll area rather than sitting above the
+    // list: the notice list runs long, and a button at the top is the one thing
+    // an owner scrolls away from the moment they start reading.
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+      <ScreenScrollView
+        safeAreaEdges={["top"]}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
+      >
+      <ScreenHeader
+        badge={!canManageNotices ? <ViewOnlyChip /> : null}
+        onBack={() => router.back()}
         eyebrow="Owner notice"
         italicTail="desk."
         subtitle={selectedProperty ? `Publish and review notices for ${selectedProperty.name}.` : "Select a property from Home first."}
@@ -137,21 +152,24 @@ export default function OwnerNoticesScreen() {
 
       {selectedProperty ? (
         <>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton
-              icon={Plus}
-              label="Publish notice"
-              onPress={() => setComposer({ mode: "normal-create" })}
-            />
-          </View>
-
           <NoticeViewBar active={view} onChange={setView} />
-          {view === "normal" ? <TabBar active={tab} onChange={setTab} /> : null}
-
 
           <Section
-            eyebrow={view === "normal" ? tabLabel(tab) : "Recurring notices"}
             title={view === "recurring" ? `${recurringQuery.data?.length ?? 0} schedules` : `${notices.length} notices`}
+            trailingInline
+            trailing={
+              view === "normal" ? (
+                <CollapsibleFilterBubbles
+                  onChange={setTab}
+                  options={[
+                    { label: "Published", value: "published" as const },
+                    { label: "Visible", value: "visible" as const },
+                    { label: "Archived", value: "archived" as const },
+                  ]}
+                  value={tab}
+                />
+              ) : null
+            }
           >
             {loading ? (
               <SkeletonCard />
@@ -159,9 +177,10 @@ export default function OwnerNoticesScreen() {
               (recurringQuery.data ?? []).length > 0 ? (
                 (recurringQuery.data ?? []).map((recurringNotice) => (
                   <RecurringNoticeCard
+                    canManage={canManageNotices}
                     key={recurringNotice.id}
                     onDelete={() => setConfirm({ action: "delete-recurring", recurringNotice })}
-                    onEdit={() => setComposer({ mode: "recurring-edit", recurringNotice })}
+                    onEdit={() => router.push(`/owner-notice-create?recurringNoticeId=${recurringNotice.id}`)}
                     recurringNotice={recurringNotice}
                   />
                 ))
@@ -176,11 +195,13 @@ export default function OwnerNoticesScreen() {
             ) : notices.length > 0 ? (
               notices.map((notice) => (
                 <NoticeCard
+                  canManage={canManageNotices}
                   key={notice.id}
                   notice={notice}
                   onArchive={() => setConfirm({ action: "archive", notice })}
                   onDelete={() => setConfirm({ action: "delete", notice })}
-                  onEdit={() => setComposer({ mode: "normal-edit", notice })}
+                  onEdit={() => router.push(`/owner-notice-detail?noticeId=${notice.id}&edit=1`)}
+                  onOpen={() => router.push(`/owner-notice-detail?noticeId=${notice.id}`)}
                   readOnly={tab === "archived"}
                 />
               ))
@@ -196,9 +217,6 @@ export default function OwnerNoticesScreen() {
         </>
       ) : null}
 
-      {selectedProperty && composer ? (
-        <NoticeComposerModal composer={composer} onClose={() => setComposer(null)} propertyId={selectedProperty.id} />
-      ) : null}
       {confirm ? (
         <ConfirmDialog
           confirmLabel={confirm.action === "archive" ? "Archive" : "Delete"}
@@ -209,45 +227,75 @@ export default function OwnerNoticesScreen() {
           title={confirm.action === "archive" ? "Archive notice?" : "Delete notice?"}
         />
       ) : null}
-    </ScreenScrollView>
+      </ScreenScrollView>
+
+      {selectedProperty ? (
+        <PinnedFooter>
+          <ActionButton
+            disabled={!canManageNotices}
+            icon={Plus}
+            label="Publish notice"
+            onPress={() => router.push("/owner-notice-create")}
+          />
+        </PinnedFooter>
+      ) : null}
+    </View>
   );
 }
 
 function NoticeCard({
+  canManage = true,
   notice,
   onArchive,
   onDelete,
   onEdit,
+  onOpen,
   readOnly,
 }: {
+  canManage?: boolean;
   notice: NoticeSummary;
   onArchive: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  onOpen: () => void;
   readOnly: boolean;
 }) {
   const { colors, type } = useTheme();
+  const editable = canManage !== false && canEditNotice(notice);
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: priorityColor(notice.priority, colors) }]} selectable>
+        <Text style={[type.eyebrow, { color: priorityColor(notice.priority, colors) }]}>
           {humanizeToken(notice.priority)} · {humanizeToken(notice.status)}
         </Text>
-        <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} selectable>
-          {notice.title}
-        </Text>
-        <Text style={[type.body, { color: colors.muted }]} selectable>
-          {notice.body}
-        </Text>
-        <Text style={[type.caption, { color: colors.kicker }]} selectable>
+        <NoticeCardBody attachmentCount={notice.attachments.length} body={notice.body} onPress={onOpen} title={notice.title} />
+        <Text style={[type.caption, { color: colors.kicker }]}>
           Visible {formatDateTime(notice.visibleFrom)}
           {notice.visibleUntil ? ` to ${formatDateTime(notice.visibleUntil)}` : ""}
         </Text>
         {!readOnly ? (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            <ActionButton icon={Edit3} label="Edit" onPress={onEdit} variant="secondary" />
-            <ActionButton icon={Archive} label="Archive" onPress={onArchive} variant="secondary" />
-            <ActionButton icon={Trash2} label="Delete" onPress={onDelete} variant="danger" />
+          <View style={{ flexDirection: "row", gap: spacing.xs }}>
+            {/* Edit and Delete close together, the moment the notice goes live.
+                Both rewrite what tenants were already told, so they are absent
+                rather than disabled — a greyed button invites a tap and
+                explains nothing about why the window shut. */}
+            {editable ? (
+              <ActionButton compact icon={Edit3} label="Edit" onPress={onEdit} variant="secondary" />
+            ) : null}
+            {/* Archiving retires a notice tenants have finished seeing. Before
+                that there is nothing to retire — an unwanted notice is deleted,
+                not archived. */}
+            <ActionButton
+              compact
+              disabled={!canManage || !canBeArchived(notice)}
+              icon={Archive}
+              label="Archive"
+              onPress={onArchive}
+              variant="secondary"
+            />
+            {editable ? (
+              <ActionButton compact icon={Trash2} label="Delete" onPress={onDelete} variant="danger" />
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -256,10 +304,12 @@ function NoticeCard({
 }
 
 function RecurringNoticeCard({
+  canManage = true,
   recurringNotice,
   onDelete,
   onEdit,
 }: {
+  canManage?: boolean;
   recurringNotice: RecurringNoticeSummary;
   onDelete: () => void;
   onEdit: () => void;
@@ -268,394 +318,50 @@ function RecurringNoticeCard({
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {humanizeToken(recurringNotice.frequency)} · {formatTime(recurringNotice.startTime)} to {formatTime(recurringNotice.endTime)}
         </Text>
-        <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} selectable>
-          {recurringNotice.title}
-        </Text>
-        <Text style={[type.body, { color: colors.muted }]} selectable>
-          {recurringNotice.body}
-        </Text>
-        <Text style={[type.caption, { color: colors.kicker }]} selectable>
+        <NoticeCardBody attachmentCount={recurringNotice.attachments.length} body={recurringNotice.body} title={recurringNotice.title} />
+        <Text style={[type.caption, { color: colors.kicker }]}>
           Active {recurringNotice.activeFrom ?? "now"}
           {recurringNotice.activeUntil ? ` to ${recurringNotice.activeUntil}` : " onward"}
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <ActionButton icon={Edit3} label="Edit" onPress={onEdit} variant="secondary" />
-          <ActionButton icon={Trash2} label="Delete" onPress={onDelete} variant="danger" />
+          <ActionButton disabled={!canManage} icon={Edit3} label="Edit" onPress={onEdit} variant="secondary" />
+          <ActionButton disabled={!canManage} icon={Trash2} label="Delete" onPress={onDelete} variant="danger" />
         </View>
       </View>
     </Card>
   );
 }
 
-function NoticeComposerModal({
-  composer,
-  onClose,
-  propertyId,
-}: {
-  composer: NoticeComposerState;
-  onClose: () => void;
-  propertyId: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const initialNotice = noticeInitialValues(composer);
-  const recurringInitial = composer.mode === "recurring-edit" ? composer.recurringNotice : null;
-  const [makeRecurring, setMakeRecurring] = useState(composer.mode === "recurring-create" || composer.mode === "recurring-edit");
-  const [recurringInfoOpen, setRecurringInfoOpen] = useState(false);
-  const isRecurring = makeRecurring;
-  const isEdit = composer.mode === "normal-edit" || composer.mode === "recurring-edit";
-  const canChooseRecurring = composer.mode === "normal-create" || composer.mode === "recurring-create";
-  const [title, setTitle] = useState(initialNotice.title);
-  const [body, setBody] = useState(initialNotice.body);
-  const [priority, setPriority] = useState<NoticePriority>(initialNotice.priority);
-  const [visibleFrom, setVisibleFrom] = useState<Date | null>(() => parseOptionalDate(initialNotice.visibleFrom));
-  const [visibleUntil, setVisibleUntil] = useState<Date | null>(() => parseOptionalDate(initialNotice.visibleUntil));
-  const [picker, setPicker] = useState<NoticeDatePickerState>(null);
-  const [frequency, setFrequency] = useState<RecurringNoticeFrequency>(recurringInitial?.frequency ?? "DAILY");
-  const [startTime, setStartTime] = useState(normalizeTimeForInput(recurringInitial?.startTime ?? "08:00"));
-  const [endTime, setEndTime] = useState(normalizeTimeForInput(recurringInitial?.endTime ?? "10:00"));
-  const [activeFrom, setActiveFrom] = useState(recurringInitial?.activeFrom ?? "");
-  const [activeUntil, setActiveUntil] = useState(recurringInitial?.activeUntil ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [publishNotice, publishState] = usePublishNoticeMutation();
-  const [updateNotice, updateState] = useUpdateNoticeMutation();
-  const [createRecurringNotice, createRecurringState] = useCreateRecurringNoticeMutation();
-  const [updateRecurringNotice, updateRecurringState] = useUpdateRecurringNoticeMutation();
-  const saving = publishState.isLoading || updateState.isLoading || createRecurringState.isLoading || updateRecurringState.isLoading;
-
-  async function submit() {
-    if (!title.trim() || !body.trim()) {
-      setError("Title and body are required.");
-      return;
-    }
-    if (isRecurring && !isValidTimeRange(startTime, endTime)) {
-      setError("Start time and end time must use HH:mm, and end time must be after start time.");
-      return;
-    }
-
-    const noticePayload: CreateNoticePayload = {
-      body: body.trim(),
-      priority,
-      title: title.trim(),
-      visibleFrom: isRecurring ? null : toIsoOrNull(visibleFrom),
-      visibleUntil: isRecurring ? null : toIsoOrNull(visibleUntil),
-    };
-
-    try {
-      if (composer.mode === "normal-create" && !isRecurring) {
-        await publishNotice({ payload: noticePayload, propertyId }).unwrap();
-      } else if (composer.mode === "normal-edit") {
-        await updateNotice({ noticeId: composer.notice.id, payload: noticePayload }).unwrap();
-      } else {
-        const recurringPayload: CreateRecurringNoticePayload = {
-          activeFrom: emptyToNull(activeFrom),
-          activeUntil: emptyToNull(activeUntil),
-          endTime: normalizeTimeForApi(endTime),
-          frequency,
-          notice: noticePayload,
-          startTime: normalizeTimeForApi(startTime),
-        };
-        if (composer.mode === "recurring-create" || composer.mode === "normal-create") {
-          await createRecurringNotice({ payload: recurringPayload, propertyId }).unwrap();
-        } else {
-          await updateRecurringNotice({ payload: recurringPayload, recurringNoticeId: composer.recurringNotice.id }).unwrap();
-        }
-      }
-      onClose();
-    } catch {
-      setError(isEdit ? "Could not update notice." : "Could not create notice.");
-    }
-  }
-
-  function updatePickerValue(event: DateTimePickerEvent, selected?: Date) {
-    if (!picker) {
-      return;
-    }
-    if (event.type === "dismissed") {
-      setPicker(null);
-      return;
-    }
-    if (!selected) {
-      setPicker(null);
-      return;
-    }
-
-    const currentValue = picker.field === "visibleFrom" ? visibleFrom : visibleUntil;
-    const nextValue = mergePickedDateTime(currentValue, selected, picker.mode);
-    if (picker.field === "visibleFrom") {
-      setVisibleFrom(nextValue);
-    } else {
-      setVisibleUntil(nextValue);
-    }
-    setPicker(null);
-  }
-
-  function clearDateField(field: NoticeDateField) {
-    if (field === "visibleFrom") {
-      setVisibleFrom(null);
-    } else {
-      setVisibleUntil(null);
-    }
-  }
-
-  return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 22,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "90%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>
-              {modalTitle(composer)}
-            </Text>
-            <IconButton accessibilityLabel="Close notice composer" icon={X} onPress={onClose} />
-          </View>
-          <ScrollView contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <FormInput label="Title" onChangeText={setTitle} placeholder="Notice title" value={title} />
-            <FormInput label="Body" multiline onChangeText={setBody} placeholder="Write the notice" value={body} />
-            {canChooseRecurring ? (
-              <RecurringToggle
-                active={makeRecurring}
-                onInfoPress={() => setRecurringInfoOpen(true)}
-                onToggle={() => setMakeRecurring((current) => !current)}
-              />
-            ) : null}
-            {!isRecurring ? (
-              <>
-                <DateTimeField
-                  label="Visible from"
-                  onClear={() => clearDateField("visibleFrom")}
-                  onPickDate={() => setPicker({ field: "visibleFrom", mode: "date" })}
-                  onPickTime={() => setPicker({ field: "visibleFrom", mode: "time" })}
-                  value={visibleFrom}
-                />
-                <DateTimeField
-                  label="Visible until"
-                  onClear={() => clearDateField("visibleUntil")}
-                  onPickDate={() => setPicker({ field: "visibleUntil", mode: "date" })}
-                  onPickTime={() => setPicker({ field: "visibleUntil", mode: "time" })}
-                  value={visibleUntil}
-                />
-                {picker ? (
-                  <DateTimePicker
-                    mode={picker.mode}
-                    onChange={updatePickerValue}
-                    value={picker.field === "visibleFrom" ? visibleFrom ?? new Date() : visibleUntil ?? new Date()}
-                  />
-                ) : null}
-              </>
-            ) : null}
-            <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
-              Priority
-            </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              {PRIORITIES.map((item) => (
-                <ChoiceButton active={priority === item} key={item} label={humanizeToken(item)} onPress={() => setPriority(item)} />
-              ))}
-            </View>
-            {isRecurring ? (
-              <>
-                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
-                  Frequency
-                </Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                  {FREQUENCIES.map((item) => (
-                    <ChoiceButton active={frequency === item} key={item} label={humanizeToken(item)} onPress={() => setFrequency(item)} />
-                  ))}
-                </View>
-                <FormInput label="Start time" onChangeText={setStartTime} placeholder="08:00" value={startTime} />
-                <FormInput label="End time" onChangeText={setEndTime} placeholder="10:00" value={endTime} />
-                <FormInput label="Active from" onChangeText={setActiveFrom} placeholder="YYYY-MM-DD" value={activeFrom} />
-                <FormInput label="Active until" onChangeText={setActiveUntil} placeholder="optional" value={activeUntil} />
-              </>
-            ) : null}
-            {error ? (
-              <Text style={[type.caption, { color: colors.danger }]} selectable>
-                {error}
-              </Text>
-            ) : null}
-          </ScrollView>
-          <ActionButton
-            disabled={saving}
-            icon={isRecurring ? Repeat2 : Megaphone}
-            label={saving ? "Saving" : isEdit ? "Save changes" : isRecurring ? "Create recurring" : "Publish"}
-            onPress={submit}
-          />
-        </View>
-      </View>
-      {recurringInfoOpen ? <RecurringInfoModal onClose={() => setRecurringInfoOpen(false)} /> : null}
-    </Modal>
-  );
-}
-
 function NoticeViewBar({ active, onChange }: { active: NoticeView; onChange: (view: NoticeView) => void }) {
-  const { colors, type } = useTheme();
-  const views: NoticeView[] = ["normal", "recurring"];
   return (
-    <View
-      style={{
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: 16,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: 4,
-        padding: 4,
-      }}
-    >
-      {views.map((view) => (
-        <Pressable
-          accessibilityRole="tab"
-          accessibilityState={{ selected: active === view }}
-          key={view}
-          onPress={() => onChange(view)}
-          style={{
-            alignItems: "center",
-            backgroundColor: active === view ? colors.surface : "transparent",
-            borderColor: active === view ? colors.border : "transparent",
-            borderRadius: 12,
-            borderWidth: 1,
-            flex: 1,
-            minHeight: 42,
-            justifyContent: "center",
-            paddingHorizontal: spacing.sm,
-          }}
-        >
-          <Text
-            style={[
-              type.caption,
-              {
-                color: active === view ? colors.ink : colors.muted,
-                fontWeight: active === view ? "900" : "700",
-                textAlign: "center",
-              },
-            ]}
-            selectable
-          >
-            {view === "normal" ? "Normal" : "Recurring"}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
+    <TabSwitcher
+      active={active}
+      onChange={onChange}
+      options={[
+        { label: "Notices", value: "normal" },
+        { label: "Recurring", value: "recurring" },
+      ]}
+    />
   );
 }
 
-function RecurringToggle({
-  active,
-  onInfoPress,
-  onToggle,
-}: {
-  active: boolean;
-  onInfoPress: () => void;
-  onToggle: () => void;
-}) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: 16,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.sm,
-        padding: spacing.md,
-      }}
-    >
-      <Pressable
-        accessibilityLabel="Make notice recurring"
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: active }}
-        onPress={onToggle}
-        style={{
-          alignItems: "center",
-          borderColor: active ? colors.primary : colors.border,
-          borderRadius: 8,
-          borderWidth: 1,
-          height: 26,
-          justifyContent: "center",
-          width: 26,
-        }}
-      >
-        {active ? <Check color={colors.primary} size={17} strokeWidth={3} /> : null}
-      </Pressable>
-      <Pressable onPress={onToggle} style={{ flex: 1 }}>
-        <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
-          Make it recurring
-        </Text>
-      </Pressable>
-      <Pressable
-        accessibilityLabel="What is a recurring notice?"
-        accessibilityRole="button"
-        onPress={onInfoPress}
-        style={{
-          alignItems: "center",
-          borderColor: colors.border,
-          borderRadius: 999,
-          borderWidth: 1,
-          height: 34,
-          justifyContent: "center",
-          width: 34,
-        }}
-      >
-        <Info color={colors.muted} size={17} strokeWidth={2.5} />
-      </Pressable>
-    </View>
-  );
-}
 
 function RecurringInfoModal({ onClose }: { onClose: () => void }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, type } = useTheme();
 
   return (
-    <Pressable
-      onPress={onClose}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.overlay,
-        bottom: 0,
-        justifyContent: "center",
-        left: 0,
-        padding: spacing.lg,
-        position: "absolute",
-        right: 0,
-        top: 0,
-      }}
-    >
-      <Pressable
-        onPress={(event) => event.stopPropagation()}
-        style={{
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 18,
-          borderWidth: 1,
-          gap: spacing.sm,
-          padding: spacing.lg,
-          width: "100%",
-        }}
-      >
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
-          Recurring notice
-        </Text>
-        <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]} selectable>
-          A recurring notice is a reusable schedule. The system creates normal tenant-visible notices from it at the selected frequency and time window.
-        </Text>
-      </Pressable>
-    </Pressable>
+    <InfoModal onClose={onClose} title="Recurring notice">
+      <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+        A recurring notice is a reusable schedule. The system creates normal tenant-visible notices from it at the
+        selected frequency and time window.
+      </Text>
+    </InfoModal>
   );
 }
+
 
 function DateTimeField({
   label,
@@ -684,18 +390,18 @@ function DateTimeField({
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: spacing.sm }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]} selectable>
+        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
           {label}
         </Text>
         {value ? (
           <Pressable accessibilityRole="button" onPress={onClear}>
-            <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]} selectable>
+            <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]}>
               Clear
             </Text>
           </Pressable>
         ) : null}
       </View>
-      <Text style={[type.body, { color: value ? colors.ink : colors.muted, fontWeight: "800" }]} selectable>
+      <Text style={[type.body, { color: value ? colors.ink : colors.muted, fontWeight: "800" }]}>
         {value ? formatNoticeDateTime(value) : "Not set"}
       </Text>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -706,21 +412,9 @@ function DateTimeField({
   );
 }
 
-function TabBar({ active, onChange }: { active: NoticeTab; onChange: (tab: NoticeTab) => void }) {
-  const tabs: NoticeTab[] = ["published", "visible", "archived"];
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {tabs.map((tab) => (
-        <ChoiceButton active={active === tab} key={tab} label={tabLabel(tab)} onPress={() => onChange(tab)} />
-      ))}
-    </View>
-  );
-}
-
-function tabLabel(tab: NoticeTab) {
-  return tab === "published" ? "Published" : tab === "visible" ? "Visible" : "Archived";
-}
-
+// A filter, not a view switch — these narrow the same list rather than showing
+// a different thing, so they stay chips. Notices vs Recurring above is the
+// actual switcher.
 function priorityColor(priority: NoticePriority, colors: ReturnType<typeof useTheme>["colors"]) {
   return priority === "EMERGENCY" || priority === "URGENT" ? colors.danger : priority === "IMPORTANT" ? colors.primary : colors.kicker;
 }
@@ -743,38 +437,6 @@ function formatTime(value: string) {
   return normalizeTimeForInput(value);
 }
 
-function noticeInitialValues(composer: NoticeComposerState) {
-  if (composer.mode === "normal-edit") {
-    return {
-      body: composer.notice.body,
-      priority: composer.notice.priority,
-      title: composer.notice.title,
-      visibleFrom: composer.notice.visibleFrom ?? "",
-      visibleUntil: composer.notice.visibleUntil ?? "",
-    };
-  }
-  if (composer.mode === "recurring-edit") {
-    return {
-      body: composer.recurringNotice.body,
-      priority: composer.recurringNotice.priority,
-      title: composer.recurringNotice.title,
-      visibleFrom: "",
-      visibleUntil: "",
-    };
-  }
-  return { body: "", priority: "NORMAL" as NoticePriority, title: "", visibleFrom: "", visibleUntil: "" };
-}
-
-function modalTitle(composer: NoticeComposerState) {
-  return composer.mode === "normal-create"
-    ? "Publish notice"
-    : composer.mode === "normal-edit"
-      ? "Edit notice"
-      : composer.mode === "recurring-create"
-        ? "Create recurring notice"
-        : "Edit recurring notice";
-}
-
 function normalizeTimeForInput(value: string) {
   return value.length >= 5 ? value.slice(0, 5) : value;
 }
@@ -789,6 +451,24 @@ function parseOptionalDate(value: string) {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Mirrors the backend's archive rule exactly (`Notice.isExpiredAt`): a notice
+ * can only be archived once its window has closed. A notice that has not gone
+ * live has nothing to retire, and one with no end never expires — neither can
+ * be archived, and the button should say so rather than fail on tap.
+ */
+/**
+ * Archiving retires a notice that is already live — the only exit it has, since
+ * editing and deleting both close the moment it goes live.
+ *
+ * <p>Keyed on having gone live, not on having expired. The expiry rule left a
+ * notice with no end date unarchivable for ever, and for the ones that did
+ * expire the scheduler had usually archived them already.
+ */
+function canBeArchived(notice: NoticeSummary) {
+  return notice.status === "PUBLISHED" && new Date(notice.visibleFrom).getTime() <= Date.now();
 }
 
 function toIsoOrNull(value: Date | null) {

@@ -60,6 +60,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final RoomActivityRepository roomActivityRepository;
     private final PropertyManagerService propertyManagerService;
+    private final PropertyAccessPolicy propertyAccessPolicy;
     private final AuthModule authModule;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -68,24 +69,44 @@ public class RoomService {
             RoomRepository roomRepository,
             RoomActivityRepository roomActivityRepository,
             PropertyManagerService propertyManagerService,
+            PropertyAccessPolicy propertyAccessPolicy,
             AuthModule authModule,
             ApplicationEventPublisher eventPublisher) {
         this.propertyRepository = propertyRepository;
         this.roomRepository = roomRepository;
         this.roomActivityRepository = roomActivityRepository;
         this.propertyManagerService = propertyManagerService;
+        this.propertyAccessPolicy = propertyAccessPolicy;
         this.authModule = authModule;
         this.eventPublisher = eventPublisher;
     }
 
     /**
-     * Loads an active property and verifies that the actor owns or manages it.
+     * Loads an active property the actor may READ rooms on.
+     *
+     * <p>
+     * Split from {@link #getManageableActiveProperty} when ROOMS became a
+     * graded permission: routing the room LISTS through the manage helper would
+     * make view-only worthless, since a manager who cannot see the rooms has no
+     * reason to open the module.
+     */
+    private Property getViewableActiveProperty(UUID actorUserId, UUID propertyId) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
+
+        propertyAccessPolicy.ensureCanViewRooms(actorUserId, propertyId);
+
+        return property;
+    }
+
+    /**
+     * Loads an active property and verifies the actor may CHANGE its rooms.
      */
     private Property getManageableActiveProperty(UUID actorUserId, UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
-        propertyManagerService.ensureCanManageProperty(actorUserId, propertyId);
+        propertyAccessPolicy.ensureCanManageRooms(actorUserId, propertyId);
 
         return property;
     }
@@ -194,7 +215,7 @@ public class RoomService {
      */
     private Room getActiveRoomInProperty(UUID propertyId, UUID roomId) {
         return roomRepository.findByIdAndPropertyIdAndActiveTrue(roomId, propertyId)
-                .orElseThrow(() -> new NotFoundException("Room_", roomId));
+                .orElseThrow(() -> new NotFoundException("Room", roomId));
     }
 
     /**
@@ -202,7 +223,7 @@ public class RoomService {
      */
     private Room getActiveRoomInPropertyForUpdate(UUID propertyId, UUID roomId) {
         return roomRepository.findActiveRoomForUpdate(propertyId, roomId)
-                .orElseThrow(() -> new NotFoundException("Room_", roomId));
+                .orElseThrow(() -> new NotFoundException("Room", roomId));
     }
 
     /**
@@ -414,7 +435,7 @@ public class RoomService {
     public RoomResponse reactivateRoom(UUID actorUserId, UUID propertyId, UUID roomId) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = roomRepository.findByIdAndPropertyId(roomId, propertyId)
-                .orElseThrow(() -> new NotFoundException("Room_", roomId));
+                .orElseThrow(() -> new NotFoundException("Room", roomId));
 
         ensureRoomNumberIsAvailable(propertyId, room.getRoomNumber());
         room.reactivate();
@@ -463,7 +484,7 @@ public class RoomService {
      */
     @Transactional(readOnly = true)
     public List<RoomActivityResponse> listRecentRoomActivities(UUID actorUserId, UUID propertyId, int limit) {
-        Property property = getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getViewableActiveProperty(actorUserId, propertyId);
         List<RoomActivity> activities = roomActivityRepository.findByPropertyIdOrderByOccurredAtDesc(
                 property.getId(),
                 PageRequest.of(0, Math.max(1, limit)));
@@ -492,7 +513,7 @@ public class RoomService {
      */
     @Transactional(readOnly = true)
     public List<RoomResponse> listRooms(UUID actorUserId, UUID propertyId) {
-        Property property = getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getViewableActiveProperty(actorUserId, propertyId);
 
         return roomRepository.findByPropertyIdAndActiveTrue(property.getId())
                 .stream()
@@ -508,7 +529,7 @@ public class RoomService {
      */
     @Transactional(readOnly = true)
     public List<RoomResponse> listAllRooms(UUID actorUserId, UUID propertyId) {
-        Property property = getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getViewableActiveProperty(actorUserId, propertyId);
         List<Room> rooms = roomRepository.findByPropertyId(property.getId());
 
         Set<UUID> markerIds = rooms.stream()
@@ -547,7 +568,7 @@ public class RoomService {
     @Transactional(readOnly = true)
     public List<RoomResponse> listActiveRoomsForProperty(UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         return roomRepository.findByPropertyIdAndActiveTrue(property.getId())
                 .stream()
@@ -560,7 +581,7 @@ public class RoomService {
      */
     @Transactional(readOnly = true)
     public List<RoomResponse> listRoomsByStatus(UUID actorUserId, UUID propertyId, RoomStatus status) {
-        Property property = getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getViewableActiveProperty(actorUserId, propertyId);
 
         return roomRepository.findByPropertyIdAndStatusAndActiveTrue(property.getId(), status)
                 .stream()
@@ -643,6 +664,40 @@ public class RoomService {
                 room.getOccupiedCount(),
                 room.getAvailableVacancies(),
                 room.getStatus());
+    }
+
+    /**
+     * Holds a bed for an approved room change. Row-locked like the occupancy
+     * handlers so two approvals cannot both claim the last bed.
+     */
+    @Transactional
+    public void reserveSlot(UUID propertyId, UUID roomId) {
+        Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+        room.reserveOneSlot();
+
+        log.info(
+                "Room bed reserved propertyId={} roomId={} reservedCount={} availableVacancies={}",
+                propertyId,
+                roomId,
+                room.getReservedCount(),
+                room.getAvailableVacancies());
+    }
+
+    /**
+     * Releases a held bed. Called when the move executes — the bed is then taken
+     * through the normal tenancy-transfer path — or when it can no longer run.
+     */
+    @Transactional
+    public void releaseReservedSlot(UUID propertyId, UUID roomId) {
+        Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+        room.releaseReservedSlot();
+
+        log.info(
+                "Room bed reservation released propertyId={} roomId={} reservedCount={} availableVacancies={}",
+                propertyId,
+                roomId,
+                room.getReservedCount(),
+                room.getAvailableVacancies());
     }
 
     /**

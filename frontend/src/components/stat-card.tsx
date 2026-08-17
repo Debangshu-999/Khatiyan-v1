@@ -46,13 +46,13 @@ export function StatCard({ icon: Icon, label, tone = "default", value, valueSuff
       >
         <Icon color={accent} size={18} strokeWidth={2.2} />
       </View>
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontWeight: "600" }]} selectable>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontWeight: "600" }]}>
         {label}
       </Text>
-      <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 22, fontWeight: "800", letterSpacing: -0.3 }} selectable>
+      <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: -0.3 }}>
         {value}
         {valueSuffix ? (
-          <Text style={{ color: colors.kicker, fontSize: 17, fontWeight: "700" }} selectable>
+          <Text style={{ color: colors.kicker, fontSize: 17, fontWeight: "700" }}>
             {valueSuffix}
           </Text>
         ) : null}

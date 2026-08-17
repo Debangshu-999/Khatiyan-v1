@@ -67,14 +67,14 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
             }}
           >
             <ImageOff color={colors.kicker} size={22} strokeWidth={1.9} />
-            <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 9, fontWeight: "700", letterSpacing: 0.4 }}>
+            <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 9, letterSpacing: 0.4 }}>
               No image
             </Text>
           </View>
         )}
 
         <View style={{ flex: 1, gap: spacing.xxs, justifyContent: "center", minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.primary }]}>
             {humanizeToken(property.type)}
           </Text>
           <Text
@@ -82,11 +82,9 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               color: colors.ink,
               fontFamily: fonts.display,
               fontSize: 20,
-              fontWeight: "500",
               letterSpacing: -0.3,
               lineHeight: 24,
             }}
-            selectable
           >
             {property.name}
           </Text>
@@ -95,12 +93,12 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
 
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Address
           </Text>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
             <MapPin color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-            <Text style={[type.body, { color: colors.inkSoft, flex: 1, fontSize: 13, lineHeight: 18 }]} selectable>
+            <Text style={[type.body, { color: colors.inkSoft, flex: 1, fontSize: 13, lineHeight: 18 }]}>
               {addressLine}
             </Text>
           </View>
@@ -118,7 +116,7 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
             }}
           >
             <Navigation color={colors.jade} fill={colors.jade} size={10} strokeWidth={2} />
-            <Text style={{ color: colors.jade, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+            <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
               {property.distanceKm < 1
                 ? `${Math.round(property.distanceKm * 1000)} m away`
                 : `${property.distanceKm.toFixed(1)} km away`}
@@ -131,7 +129,7 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
 
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Rent from
           </Text>
           <Text
@@ -142,32 +140,32 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               fontVariant: ["tabular-nums"],
               fontWeight: "500",
             }}
-            selectable
           >
             {formatMoneyPaise(property.startingRoomRentPaise)}
           </Text>
         </View>
         <View style={{ backgroundColor: colors.border, width: 1 }} />
         <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Deposit
           </Text>
+          {/* "None" rather than the profile's "No deposit": this slot is sized
+              for a number and sits beside the rent, where the longer phrase
+              wraps. ₹0 is the one thing it must not say. */}
           <Text
             style={{
               color: colors.ink,
-              fontFamily: fonts.mono,
+              fontFamily: property.standardDepositPaise > 0 ? fonts.mono : fonts.sansBold,
               fontSize: 17,
               fontVariant: ["tabular-nums"],
-              fontWeight: "500",
             }}
-            selectable
           >
-            {formatMoneyPaise(property.standardDepositPaise)}
+            {property.standardDepositPaise > 0 ? formatMoneyPaise(property.standardDepositPaise) : "None"}
           </Text>
         </View>
       </View>
 
-      <Text style={[type.caption, { color: property.dailyRentingAvailable ? colors.jade : colors.muted }]} selectable>
+      <Text style={[type.caption, { color: property.dailyRentingAvailable ? colors.jade : colors.muted }]}>
         {property.dailyRentingAvailable ? "✦ Daily renting available" : "Monthly renting only"}
       </Text>
 
@@ -207,7 +205,7 @@ function MatchSummary({ match }: { match: FilterMatch }) {
           ))}
         </View>
       ) : (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Outside your preferences, shown nearby.
         </Text>
       )}
@@ -234,7 +232,7 @@ function StrengthBadge({ matched, strength, total }: { matched: number; strength
       }}
     >
       <View style={{ backgroundColor: color, borderRadius: 999, height: 7, width: 7 }} />
-      <Text style={[type.caption, { color, fontWeight: "800" }]} selectable>
+      <Text style={[type.caption, { color, fontWeight: "800" }]}>
         {label} · {matched}/{total}
       </Text>
     </View>
@@ -255,7 +253,7 @@ function FeatureTag({ highlighted, label }: { highlighted?: boolean; label: stri
         paddingVertical: 6,
       }}
     >
-      <Text style={[type.caption, { color: highlighted ? colors.primary : colors.inkSoft, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: highlighted ? colors.primary : colors.inkSoft, fontWeight: "700" }]}>
         {label}
       </Text>
     </View>

@@ -8,6 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { loadSession } from "@/auth/session-storage";
 import { ScreenErrorFallback } from "@/components/screen-error-fallback";
 import { ToastProvider } from "@/components/toast";
+import { SessionExpiryGuard } from "@/features/auth/session-expiry-guard";
 import { loadAppSettings, pinnedOwnerModulesForUser, themeModeForUser } from "@/config/app-settings-storage";
 import { useAppDispatch } from "@/store/hooks";
 import { setActiveAccount } from "@/store/slices/account-slice";
@@ -15,11 +16,13 @@ import { setThemeMode } from "@/store/slices/app-config-slice";
 import { markSessionHydrated, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { store } from "@/store/store";
+import { useAppFonts } from "@/theme/use-app-fonts";
 import { useTheme } from "@/theme/use-theme";
 
 function ThemedRootStack() {
   const dispatch = useAppDispatch();
   const { colors, isDark } = useTheme();
+  const fontsLoaded = useAppFonts();
 
   useEffect(() => {
     let mounted = true;
@@ -62,9 +65,17 @@ function ThemedRootStack() {
     };
   }, [dispatch]);
 
+  // Hold on a plain background until the typefaces are in. Rendering first and
+  // reflowing when they land flashes the whole app on every cold start.
+  if (!fontsLoaded) {
+    return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
+  }
+
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <StatusBar style={isDark ? "light" : "dark"} />
+      {/* Above the navigator so it can announce an expiry from any screen. */}
+      <SessionExpiryGuard />
       <Stack
         screenOptions={{
           // Native push/pop. "simple_push" is JS-driven and flashes a blank
@@ -86,17 +97,16 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
-        <Stack.Screen name="payment-method" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payment-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenant-bills" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-payout-setup" options={{ headerShown: false }} />
         <Stack.Screen name="owner-upcoming-cycles" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-register-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
@@ -106,16 +116,22 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-local-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-nearby-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-staff" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-manager-permissions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy-agreement" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-policies" options={{ headerShown: false }} />
         <Stack.Screen name="owner-end-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notices" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-upcoming-notices" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-nudges" options={{ headerShown: false }} />
+        <Stack.Screen name="nudges" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-enquiries" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-notice-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-notice-create" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concern-monitor" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concern-detail" options={{ headerShown: false }} />
         <Stack.Screen name="concern-detail" options={{ headerShown: false, presentation: "card" }} />
-        <Stack.Screen name="owner-service-placeholder" options={{ headerShown: false }} />
         <Stack.Screen
           name="notifications-feed"
           options={{
@@ -162,13 +178,6 @@ function ThemedRootStack() {
         />
         <Stack.Screen
           name="tenancy-billing-history"
-          options={{
-            headerShown: false,
-            presentation: "card",
-          }}
-        />
-        <Stack.Screen
-          name="razorpay-checkout"
           options={{
             headerShown: false,
             presentation: "card",

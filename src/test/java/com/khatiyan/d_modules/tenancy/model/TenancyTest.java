@@ -99,40 +99,39 @@ class TenancyTest {
     }
 
     @Test
-    void tenancyWithoutStampedTermsIsNotAgreementBackedAndHasNoPenalty() {
+    void anIndefiniteAgreementHasNoTermAndNoEndDate() {
         Tenancy tenancy = monthlyTenancy();
+        tenancy.stampAgreementTerms(null, null);
 
-        assertThat(tenancy.isAgreementBacked()).isFalse();
-        assertThat(tenancy.earlyExitPenaltyPaise(LocalDate.of(2026, 7, 1))).isZero();
+        assertThat(tenancy.hasFixedTerm()).isFalse();
+        assertThat(tenancy.getAgreementEndDate()).isNull();
+        // Nothing schedules an end, so it closes only through an exit request.
+        assertThat(tenancy.getPlannedEndDate()).isNull();
     }
 
     @Test
-    void remainingTermPenaltyProratesRemainingLockInDaysOverThirty() {
-        Tenancy tenancy = monthlyTenancy(); // rent 12,000; start 2026-06-01
-        // 3-month lock-in -> ends 2026-09-01.
-        tenancy.stampAgreementExitTerms(LocalDate.of(2026, 9, 1), EarlyExitPenaltyType.REMAINING_TERM, null);
+    void aFixedTermCarriesItsEndDateFromTheStart() {
+        Tenancy tenancy = monthlyTenancy(); // starts 2026-06-01
+        tenancy.stampAgreementTerms(6, "One month's rent, deducted from the deposit.");
 
-        assertThat(tenancy.isAgreementBacked()).isTrue();
-        // 15 days remain (2026-08-17 -> 2026-09-01): 12,000 * 15/30 = 6,000.
-        assertThat(tenancy.earlyExitPenaltyPaise(LocalDate.of(2026, 8, 17))).isEqualTo(6_000_00);
+        assertThat(tenancy.hasFixedTerm()).isTrue();
+        assertThat(tenancy.getAgreementEndDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+        // The planned end is what puts it into Upcoming exits without any job
+        // discovering it later — the same shape a daily stay already uses.
+        assertThat(tenancy.getPlannedEndDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(tenancy.getEarlyExitRule()).isEqualTo("One month's rent, deducted from the deposit.");
     }
 
     @Test
-    void fixedPenaltyReturnsTheFlatAmountWhileInsideLockIn() {
+    void leavingBeforeTheTermEndsIsEarly_andOnTheEndDateIsNot() {
         Tenancy tenancy = monthlyTenancy();
-        tenancy.stampAgreementExitTerms(LocalDate.of(2026, 9, 1), EarlyExitPenaltyType.FIXED, 5_000_00L);
+        tenancy.stampAgreementTerms(3, "As per policy.");
 
-        assertThat(tenancy.earlyExitPenaltyPaise(LocalDate.of(2026, 8, 1))).isEqualTo(5_000_00);
-    }
-
-    @Test
-    void noPenaltyOnceLockInHasBeenServed() {
-        Tenancy tenancy = monthlyTenancy();
-        tenancy.stampAgreementExitTerms(LocalDate.of(2026, 9, 1), EarlyExitPenaltyType.FIXED, 5_000_00L);
-
-        // Checkout on the lock-in end date and after it both carry no penalty.
-        assertThat(tenancy.earlyExitPenaltyPaise(LocalDate.of(2026, 9, 1))).isZero();
-        assertThat(tenancy.earlyExitPenaltyPaise(LocalDate.of(2026, 10, 1))).isZero();
+        assertThat(tenancy.isWithinTerm(LocalDate.of(2026, 8, 15))).isTrue();
+        // The term was served, so the last day is not an early exit. The old
+        // engine charged a full penalty here through an off-by-one.
+        assertThat(tenancy.isWithinTerm(LocalDate.of(2026, 9, 1))).isFalse();
+        assertThat(tenancy.isWithinTerm(LocalDate.of(2026, 10, 1))).isFalse();
     }
 
     private static Tenancy monthlyTenancy() {

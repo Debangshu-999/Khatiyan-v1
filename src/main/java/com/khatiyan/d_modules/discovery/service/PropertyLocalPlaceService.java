@@ -32,16 +32,19 @@ public class PropertyLocalPlaceService {
     private final PropertyLocalPlaceRepository localPlaceRepository;
     private final LocalPlaceSubcategoryRepository subcategoryRepository;
     private final PropertyModule propertyModule;
+    private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final TenancyModule tenancyModule;
 
     public PropertyLocalPlaceService(
             PropertyLocalPlaceRepository localPlaceRepository,
             LocalPlaceSubcategoryRepository subcategoryRepository,
             PropertyModule propertyModule,
+            DiscoveryAccessPolicy discoveryAccessPolicy,
             TenancyModule tenancyModule) {
         this.localPlaceRepository = localPlaceRepository;
         this.subcategoryRepository = subcategoryRepository;
         this.propertyModule = propertyModule;
+        this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.tenancyModule = tenancyModule;
     }
 
@@ -53,7 +56,7 @@ public class PropertyLocalPlaceService {
             BigDecimal latitude,
             BigDecimal longitude) {
         TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser_", tenantUserId));
+                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser", tenantUserId));
 
         return listActiveLocalPlaces(tenancy.propertyId(), latitude, longitude);
     }
@@ -66,7 +69,7 @@ public class PropertyLocalPlaceService {
             UUID propertyId,
             BigDecimal latitude,
             BigDecimal longitude) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanViewNearbyPlaces(actorUserId, propertyId);
         return listActiveLocalPlaces(propertyId, latitude, longitude);
     }
 
@@ -75,7 +78,7 @@ public class PropertyLocalPlaceService {
             UUID actorUserId,
             UUID propertyId,
             CreatePropertyLocalPlaceRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageNearbyPlaces(actorUserId, propertyId);
 
         PropertyLocalPlace place = PropertyLocalPlace.create(
                 propertyId,
@@ -105,7 +108,7 @@ public class PropertyLocalPlaceService {
             UUID propertyId,
             UUID placeId,
             UpdatePropertyLocalPlaceRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageNearbyPlaces(actorUserId, propertyId);
 
         PropertyLocalPlace place = getActiveLocalPlace(placeId);
         ensurePlaceBelongsToProperty(place, propertyId);
@@ -131,7 +134,7 @@ public class PropertyLocalPlaceService {
 
     @Transactional
     public void deleteLocalPlace(UUID actorUserId, UUID propertyId, UUID placeId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageNearbyPlaces(actorUserId, propertyId);
 
         PropertyLocalPlace place = getActiveLocalPlace(placeId);
         ensurePlaceBelongsToProperty(place, propertyId);
@@ -155,7 +158,7 @@ public class PropertyLocalPlaceService {
 
     private PropertyLocalPlace getActiveLocalPlace(UUID placeId) {
         return localPlaceRepository.findActiveById(placeId)
-                .orElseThrow(() -> new NotFoundException("PropertyLocalPlace_", placeId));
+                .orElseThrow(() -> new NotFoundException("PropertyLocalPlace", placeId));
     }
 
     private List<PropertyLocalPlaceResponse> listActiveLocalPlaces(
@@ -205,7 +208,7 @@ public class PropertyLocalPlaceService {
 
     private void ensurePlaceBelongsToProperty(PropertyLocalPlace place, UUID propertyId) {
         if (!place.getPropertyId().equals(propertyId)) {
-            throw new NotFoundException("PropertyLocalPlace_", place.getId());
+            throw new NotFoundException("PropertyLocalPlace", place.getId());
         }
     }
 }

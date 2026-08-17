@@ -17,7 +17,11 @@ import { CategoryPickerModal } from "@/features/discovery/components/category-pi
 import { NearbyPlaceCard } from "@/features/discovery/components/nearby-place-card";
 import { LocationPinCard } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
-import { ActionButton, BackButton, ConfirmDialog, FormInput, IconButton } from "@/features/owner/owner-ui";
+import { SingleImageField } from "@/features/uploads/single-image-field";
+import { ActionButton, ConfirmDialog, FormInput, IconButton,
+  ViewOnlyChip,
+} from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
   useCreateLocalPlaceMutation,
@@ -40,6 +44,9 @@ export default function OwnerLocalPlacesScreen() {
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
   const propertyId = property?.id ?? "";
+  // Curating places is NEARBY_PLACES at MANAGE.
+  const { canManage: canManageResource } = usePropertyPermissions(propertyId);
+  const canManagePlaces = canManageResource("NEARBY_PLACES");
 
   const placesQuery = useListManagedLocalPlacesQuery(propertyId, { skip: !propertyId });
   const places = placesQuery.data ?? [];
@@ -64,8 +71,9 @@ export default function OwnerLocalPlacesScreen() {
   return (
     <>
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-        <BackButton onPress={() => router.back()} />
         <ScreenHeader
+        onBack={() => router.back()}
+        badge={!canManagePlaces ? <ViewOnlyChip /> : null}
           eyebrow="Discovery"
           title="Nearby"
           italicTail="places."
@@ -86,7 +94,7 @@ export default function OwnerLocalPlacesScreen() {
         ) : (
           <>
             <View style={{ flexDirection: "row" }}>
-              <ActionButton icon={Plus} label="Add nearby place" onPress={() => setEditing("new")} />
+              <ActionButton disabled={!canManagePlaces} icon={Plus} label="Add nearby place" onPress={() => setEditing("new")} />
             </View>
 
             <Section eyebrow={`${places.length} place${places.length === 1 ? "" : "s"}`} title="Curated list">
@@ -105,10 +113,13 @@ export default function OwnerLocalPlacesScreen() {
 
               <View style={{ gap: spacing.sm }}>
                 {places.map((place) => (
+                  // Withholding the handlers drops the card into its view mode
+                  // (call + directions) instead of manage mode. The component
+                  // already had both; a view-only manager gets the read half.
                   <NearbyPlaceCard
                     key={place.id}
-                    onDelete={() => setPendingDelete(place)}
-                    onEdit={() => setEditing(place)}
+                    onDelete={canManagePlaces ? () => setPendingDelete(place) : undefined}
+                    onEdit={canManagePlaces ? () => setEditing(place) : undefined}
                     place={place}
                   />
                 ))}
@@ -159,6 +170,8 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
       : null,
   );
   const [recommended, setRecommended] = useState(editing?.ownerRecommended ?? false);
+  // Stored URL, not a device URI: the photo is uploaded when it is picked.
+  const [photoUrl, setPhotoUrl] = useState(editing?.photoUrl ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saving = createState.isLoading || updateState.isLoading;
@@ -204,7 +217,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
       name: name.trim(),
       ownerRecommended: recommended,
       phone: phone.trim() || null,
-      photoUrl: editing?.photoUrl ?? null,
+      photoUrl: photoUrl.trim() || null,
       subcategoryIds: selectedSubcategoryIds,
     };
     try {
@@ -268,6 +281,14 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
         <FormInput label="Description" multiline onChangeText={setDescription} placeholder="What makes it useful? Timings, tips…" value={description} />
         <FormInput keyboardType="phone-pad" label="Phone" onChangeText={setPhone} placeholder="Optional contact number" value={phone} />
 
+        <SingleImageField
+          attachedLabel="Photo attached"
+          label="Photo (optional)"
+          onChange={setPhotoUrl}
+          target="LOCAL_PLACE_PHOTO"
+          url={photoUrl}
+        />
+
         <AnimatedPressable
           accessibilityRole="button"
           onPress={() => setRecommended((current) => !current)}
@@ -290,7 +311,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
         </AnimatedPressable>
 
         {error ? (
-          <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
+          <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
             {error}
           </Text>
         ) : null}
@@ -338,13 +359,13 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
               borderTopRightRadius: 24,
               borderWidth: 1,
               maxHeight: "92%",
-              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingBottom: insets.bottom + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} numberOfLines={1} selectable>
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
                 {title}
               </Text>
               <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
@@ -362,7 +383,7 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
 function FieldLabel({ children }: { children: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} selectable>
+    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
       {children}
     </Text>
   );

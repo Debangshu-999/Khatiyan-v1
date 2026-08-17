@@ -10,6 +10,26 @@ import { useTheme } from "@/theme/use-theme";
 
 // ---------------------------------------------------------------- helpers
 
+/** Plain-language fallback for a response that carried no usable message. */
+function statusMessage(status: number) {
+  if (status === 401 || status === 403) {
+    return "You do not have access to do that.";
+  }
+  if (status === 404) {
+    return "We could not find what you asked for.";
+  }
+  if (status === 408 || status === 504) {
+    return "That took too long. Check your connection and try again.";
+  }
+  if (status === 429) {
+    return "Too many attempts. Wait a moment and try again.";
+  }
+  if (status >= 500) {
+    return "Something went wrong at our end. Please try again.";
+  }
+  return "Please check the details and try again.";
+}
+
 export function errorMessage(error: unknown) {
   if (typeof error === "object" && error && "data" in error) {
     const data = (error as { data?: { message?: string } }).data;
@@ -20,6 +40,9 @@ export function errorMessage(error: unknown) {
 
   if (typeof error === "object" && error && "status" in error) {
     const queryError = error as { status?: unknown; error?: unknown; data?: unknown };
+    if (queryError.status === "TIMEOUT_ERROR") {
+      return "The server took too long to respond. Check your connection and try again.";
+    }
     if (queryError.status === "FETCH_ERROR") {
       return "Could not reach the backend. If you are on Expo Go, use the detected laptop URL.";
     }
@@ -33,15 +56,30 @@ export function errorMessage(error: unknown) {
           return message;
         }
       }
-      return `Request failed with HTTP ${queryError.status}.`;
+      // A body that came back as plain text rather than our ErrorResponse
+      // shape — a proxy page, a gateway error, a filter that rejected before
+      // the handler ran. Still more use to the reader than a status code.
+      if (typeof queryError.data === "string" && queryError.data.trim()) {
+        return queryError.data.trim();
+      }
+      // Last resort. Never show a raw HTTP status: it tells the person nothing
+      // they can act on and reads like the app broke. Say what it means.
+      return statusMessage(queryError.status);
     }
     if (typeof queryError.error === "string") {
       return queryError.error;
     }
   }
 
+  // A plain Error is OUR bug, not the server's — a TypeError, a storage
+  // failure, a bad assumption. Its message is written for whoever is reading
+  // the stack trace, not for the person holding the phone, and shipping it to a
+  // toast has already put "Cannot read properties of null" in front of a user.
+  // Keep it in the console where it is useful; say something actionable on
+  // screen.
   if (error instanceof Error) {
-    return error.message;
+    console.warn("Unexpected client error surfaced to the user", error);
+    return "Something went wrong. Please try again.";
   }
 
   return "Something went wrong. Please try again.";
@@ -101,7 +139,7 @@ export function AuthCard({ children, tone = "default" }: { children: ReactNode; 
 export function FieldLabel({ children }: { children: string }) {
   const { colors, fonts } = useTheme();
   return (
-    <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 12.5, fontWeight: "700", letterSpacing: 0.3 }} selectable>
+    <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12.5, letterSpacing: 0.3 }}>
       {children}
     </Text>
   );
@@ -120,7 +158,7 @@ export function StepBadge({ text }: { text: string }) {
         paddingVertical: 6,
       }}
     >
-      <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase" }} selectable>
+      <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }}>
         {text}
       </Text>
     </View>
@@ -146,10 +184,10 @@ export function PhoneSummaryRow({ phone, onEdit }: { phone: string; onEdit: () =
   const { colors, fonts } = useTheme();
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, marginTop: -spacing.xs }}>
-      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15 }} selectable>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15 }}>
         Sent to
       </Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800", letterSpacing: 0.3 }} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, letterSpacing: 0.3 }}>
         +91 {formatIndianPhone(phone)}
       </Text>
       <AnimatedPressable
@@ -220,9 +258,8 @@ export function AuthTextField({
             backgroundColor: "transparent",
             color: colors.ink,
             flex: 1,
-            fontFamily: fonts.sans,
+            fontFamily: fonts.sansMedium,
             fontSize: 16,
-            fontWeight: "600",
             paddingVertical: spacing.md,
           }}
         />
@@ -267,7 +304,7 @@ export function PhoneField({
           }}
         >
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, }}>
             +91
           </Text>
         </View>
@@ -298,7 +335,7 @@ export function PhoneField({
             maxLength={10}
             onBlur={() => setFocused(false)}
             onFocus={() => setFocused(true)}
-            placeholder="Enter your 10-digit mobile number"
+            placeholder="Enter your phone"
             placeholderTextColor={colors.muted}
             textContentType="telephoneNumber"
             underlineColorAndroid="transparent"
@@ -306,9 +343,8 @@ export function PhoneField({
               backgroundColor: "transparent",
               color: colors.ink,
               flex: 1,
-              fontFamily: fonts.sans,
+              fontFamily: fonts.sansBold,
               fontSize: 16,
-              fontWeight: "700",
               letterSpacing: 0.6,
               paddingVertical: spacing.md,
             }}
@@ -365,9 +401,8 @@ export function CodeField({
               pointerEvents="none"
               style={{
                 color: colors.muted,
-                fontFamily: fonts.sans,
+                fontFamily: fonts.sansBold,
                 fontSize: 15,
-                fontWeight: "700",
                 left: 4,
                 position: "absolute",
                 right: 0,
@@ -442,12 +477,10 @@ export function SegmentButton({ active, label, onPress }: { active: boolean; lab
       <Text
         style={{
           color: active ? colors.primary : colors.muted,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 14.5,
-          fontWeight: "800",
           letterSpacing: 0.3,
         }}
-        selectable
       >
         {label}
       </Text>
@@ -457,29 +490,6 @@ export function SegmentButton({ active, label, onPress }: { active: boolean; lab
 
 // ---------------------------------------------------------------- actions
 
-export function AuthModeFooter({ actionLabel, label, onPress }: { actionLabel: string; label: string; onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <View style={{ alignItems: "center", borderTopColor: colors.border, borderTopWidth: 1, marginTop: spacing.xxs, paddingTop: spacing.md }}>
-      <AnimatedPressable
-        accessibilityRole="button"
-        onPress={onPress}
-        style={{
-          alignItems: "center",
-          flexDirection: "row",
-          gap: 5,
-          justifyContent: "center",
-          minHeight: 32,
-          paddingHorizontal: spacing.sm,
-        }}
-      >
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 13.5 }}>{label}</Text>
-        <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 13.5, fontWeight: "800" }}>{actionLabel}</Text>
-      </AnimatedPressable>
-    </View>
-  );
-}
 
 export function PrimaryButton({
   label,
@@ -506,12 +516,10 @@ export function PrimaryButton({
     <Text
       style={{
         color: textColor,
-        fontFamily: fonts.sans,
+        fontFamily: fonts.sansBold,
         fontSize: 15.5,
-        fontWeight: "800",
         letterSpacing: 0.4,
       }}
-      selectable
     >
       {label}
     </Text>
@@ -557,6 +565,50 @@ export function PrimaryButton({
   );
 }
 
+/**
+ * A secondary route out of the current step, as an outlined chip.
+ *
+ * <p>These used to be plain text links stacked under the primary button, where
+ * they read as equal alternatives to it. A chip is quiet until you are looking
+ * for it and unmistakable once you are — which is what a side door should be.
+ */
+export function AuthChipLink({
+  align = "center",
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  /** "end" lines the chip up with the right edge of the field above it. */
+  align?: "center" | "end" | "auto";
+  icon?: ComponentType<LucideProps>;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        alignSelf: align === "end" ? "flex-end" : align === "auto" ? "auto" : "center",
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+      }}
+    >
+      {Icon ? <Icon color={colors.kicker} size={14} strokeWidth={2.2} /> : null}
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>{label}</Text>
+    </AnimatedPressable>
+  );
+}
+
 export function LinkButton({ label, onPress, center, muted }: { label: string; onPress: () => void; center?: boolean; muted?: boolean }) {
   const { colors, fonts } = useTheme();
 
@@ -565,12 +617,10 @@ export function LinkButton({ label, onPress, center, muted }: { label: string; o
       <Text
         style={{
           color: muted ? colors.muted : colors.primary,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 13,
-          fontWeight: "700",
           letterSpacing: 0.2,
         }}
-        selectable
       >
         {label}
       </Text>

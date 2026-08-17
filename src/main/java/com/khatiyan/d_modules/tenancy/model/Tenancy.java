@@ -99,19 +99,16 @@ public class Tenancy extends BaseEntity {
     @Column(name = "tos_accepted", nullable = false)
     private boolean tosAccepted;
 
-    // Lock-in / early-exit terms, stamped from the accepted agreement at
-    // acceptance (agreement-backed tenancies only). lockInEndDate is a
-    // minimum-stay MARKER — it never auto-terminates the tenancy. Its presence is
-    // also what marks a tenancy agreement-backed (premature-only exit).
-    @Column(name = "lock_in_end_date")
-    private LocalDate lockInEndDate;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "early_exit_penalty_type", length = 20)
-    private EarlyExitPenaltyType earlyExitPenaltyType;
-
-    @Column(name = "early_exit_penalty_fixed_paise")
-    private Long earlyExitPenaltyFixedPaise;
+    /**
+     * The day a fixed-term agreement — and the tenancy with it — ends.
+     *
+     * <p>Null on an indefinite agreement, which ends when the tenant exits. This
+     * was {@code agreementEndDate}, a minimum-stay marker that never terminated
+     * anything and was never cleared, so a tenant whose term ended long ago
+     * still looked agreement-backed forever.
+     */
+    @Column(name = "agreement_end_date")
+    private LocalDate agreementEndDate;
 
     // The owner's declaration that they collected and checked this tenant's ID
     // proof and photograph before onboarding. Khatiyan verifies nothing and stores
@@ -266,6 +263,27 @@ public class Tenancy extends BaseEntity {
         this.status = TenancyStatus.ON_PREMATURE_NOTICE;
     }
 
+    /**
+     * Takes a tenancy back off notice because the exit behind it was undone.
+     *
+     * <p>Clears the scheduled end date as well — leaving it set would keep the
+     * bed marked for turnover and let the exit scheduler end a stay that is no
+     * longer ending.
+     *
+     * <p>No billing repair is needed for the cycles the notice caused to be
+     * skipped: the skip never created anything, and generation only skips cycles
+     * whose start is still in the future, so the next daily run backfills any
+     * whose start has since passed.
+     */
+    public void revertNotice() {
+        if (status != TenancyStatus.ON_NOTICE && status != TenancyStatus.ON_PREMATURE_NOTICE) {
+            throw new IllegalStateException("Tenancy is not on notice");
+        }
+
+        this.status = TenancyStatus.ACTIVE;
+        this.endDate = null;
+    }
+
     public void scheduleEndDate(LocalDate endDate) {
         ensureActive();
         if (endDate == null) {
@@ -370,43 +388,49 @@ public class Tenancy extends BaseEntity {
      * Called once at acceptance so the tenancy module can compute early-exit
      * penalties itself, without ever reading the compliance agreement.
      */
-    public void stampAgreementExitTerms(
-            LocalDate lockInEndDate, EarlyExitPenaltyType penaltyType, Long penaltyFixedPaise) {
-        this.lockInEndDate = lockInEndDate;
-        this.earlyExitPenaltyType = penaltyType;
-        this.earlyExitPenaltyFixedPaise = penaltyFixedPaise;
+    /**
+     * Stamps the agreement's terms onto the tenancy at acceptance.
+     *
+     * <p>{@code validityMonths} null means indefinite; a value gives the fixed
+     * term whose end date is derived here and known from day one.
+     * {@code earlyExitRule} is the owner's own words, applied by a person at
+     * end-tenancy rather than computed.
+     */
+    public void stampAgreementTerms(Integer validityMonths, String earlyExitRule) {
+        this.agreementValidityMonths = validityMonths;
+        this.agreementEndDate = validityMonths != null && startDate != null
+                ? startDate.plusMonths(validityMonths)
+                : null;
+        // A fixed term's last day is the tenancy's planned end, exactly as a
+        // daily stay carries one from the start. That is what puts it into
+        // Upcoming exits without any expiry job discovering it later.
+        this.plannedEndDate = this.agreementEndDate;
+        this.earlyExitRule = earlyExitRule;
     }
 
     /** Agreement-backed tenancies carry stamped lock-in terms and exit premature-only. */
-    public boolean isAgreementBacked() {
-        return lockInEndDate != null;
-    }
-
-    /** True while the given checkout date still falls inside the lock-in period. */
-    public boolean isWithinLockIn(LocalDate checkoutDate) {
-        return lockInEndDate != null && checkoutDate != null && checkoutDate.isBefore(lockInEndDate);
-    }
-
     /**
-     * The early-exit penalty for leaving on {@code checkoutDate}. Zero for
-     * non-agreement tenancies and for checkouts on/after the lock-in end (the
-     * minimum stay has been served). REMAINING_TERM prorates the remaining
-     * lock-in days over a 30-day month against the monthly rent; FIXED returns
-     * the flat amount.
+     * How long the agreement runs, in months. Null means indefinite.
+     *
+     * <p>A fixed term ends the tenancy when it expires; an indefinite one ends
+     * when the tenant exits. This replaces lock-in, which only ever constrained
+     * the early end and left the later one undefined.
      */
-    public long earlyExitPenaltyPaise(LocalDate checkoutDate) {
-        if (lockInEndDate == null || checkoutDate == null) {
-            return 0L;
-        }
-        long daysRemaining = ChronoUnit.DAYS.between(checkoutDate, lockInEndDate);
-        if (daysRemaining <= 0) {
-            return 0L;
-        }
-        if (earlyExitPenaltyType == EarlyExitPenaltyType.FIXED) {
-            return earlyExitPenaltyFixedPaise != null ? earlyExitPenaltyFixedPaise : 0L;
-        }
-        long rent = rentAmountPaise != null ? rentAmountPaise : 0L;
-        return Math.round((double) rent * daysRemaining / 30.0);
+    @Column(name = "agreement_validity_months")
+    private Integer agreementValidityMonths;
+
+    /** What leaving early costs, in the owner's words. Applied by a person. */
+    @Column(name = "early_exit_rule", length = 2000)
+    private String earlyExitRule;
+
+    /** Whether this agreement runs for a fixed term rather than indefinitely. */
+    public boolean hasFixedTerm() {
+        return agreementValidityMonths != null;
+    }
+
+    /** True while the given checkout date falls inside a fixed term. */
+    public boolean isWithinTerm(LocalDate checkoutDate) {
+        return agreementEndDate != null && checkoutDate != null && checkoutDate.isBefore(agreementEndDate);
     }
 
     public boolean isMonthly() {

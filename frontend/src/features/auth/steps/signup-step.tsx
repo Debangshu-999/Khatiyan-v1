@@ -1,7 +1,9 @@
 import { View } from "react-native";
 import { Mail, User } from "lucide-react-native";
 
-import { AuthModeFooter, AuthTextField, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { UserCheck } from "lucide-react-native";
+
+import { AuthChipLink, AuthTextField, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -35,7 +37,7 @@ export function SignupStep({
     <>
       <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
       <AuthTextField
-        label="Recovery email (optional)"
+        label="Email (optional)"
         value={email}
         onChangeText={onEmailChange}
         placeholder="you@example.com"
@@ -44,7 +46,7 @@ export function SignupStep({
       <AuthTextField label="Full name" value={fullName} onChangeText={onFullNameChange} placeholder="Enter your name" autoCapitalize="words" icon={User} />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Create account" onPress={onRegister} busy={busy} />
-        <AuthModeFooter actionLabel="Sign in" label="Already have an account?" onPress={onGoToLogin} />
+        <AuthChipLink icon={UserCheck} label="Already have an account?" onPress={onGoToLogin} />
       </View>
     </>
   );

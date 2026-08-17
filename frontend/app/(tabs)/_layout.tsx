@@ -1,18 +1,18 @@
 import { useEffect, type ReactNode } from "react";
 import { Redirect, Tabs } from "expo-router";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Bell, Building2, Compass, Home, KeyRound, ShieldCheck, UserRound } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
+import { useScopedUnreadCount } from "@/features/notifications/alert-filters";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
 import { selectHaptic } from "@/lib/haptics";
 import { api } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
-import { NOTIFICATION_REFETCH_OPTIONS, useGetUnreadNotificationCountQuery } from "@/store/services/notification-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
 import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-slice";
 import { clearSession } from "@/store/slices/auth-slice";
@@ -47,6 +47,44 @@ type TabBarProps = {
   blockedRoutes?: string[];
 };
 
+/**
+ * A tab icon, solid when selected.
+ *
+ * <p>Filling a Lucide glyph in place does not work. Its paths are siblings in
+ * source order, and for Home the DOOR is drawn before the house body — so a
+ * fill on the whole glyph paints the body straight over the door. Recolouring
+ * the stroke cannot rescue it; the door is already buried. The same applies to
+ * the compass needle and the building's windows.
+ *
+ * <p>So the selected state draws the icon twice: a solid silhouette underneath,
+ * then the ordinary outlined glyph on top in the page colour. The second pass
+ * carries no fill, so every path — including ones the silhouette swallowed —
+ * comes back as a clean knocked-out line.
+ */
+function TabIcon({
+  color,
+  focused,
+  icon: Icon,
+}: {
+  // Expo Router types this as ColorValue, which is wider than a hex string.
+  color: ColorValue;
+  focused: boolean;
+  icon: typeof Home;
+}) {
+  const { colors } = useTheme();
+
+  if (!focused) {
+    return <Icon color={color} size={20} strokeWidth={2} />;
+  }
+
+  return (
+    <View style={{ height: 20, width: 20 }}>
+      <Icon color={color} fill={color} size={20} strokeWidth={2} style={{ position: "absolute" }} />
+      <Icon color={colors.surface} fill="none" size={20} strokeWidth={2} style={{ position: "absolute" }} />
+    </View>
+  );
+}
+
 function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: TabBarProps) {
   const { colors, fonts, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -74,7 +112,8 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
           }
           const focused = route.key === focusedKey;
           const blocked = blockedRoutes.includes(route.name) && !focused;
-          const color = focused ? colors.primary : colors.kicker;
+          // Ink, not the blue accent — same selection language as TabSwitcher.
+          const color = focused ? colors.ink : colors.kicker;
           const label = typeof options.tabBarLabel === "string" ? options.tabBarLabel : options.title ?? route.name;
 
           function onPress() {
@@ -96,8 +135,6 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
               onPress={onPress}
               style={{
                 alignItems: "center",
-                // Active tint fills the whole tab cell — no top/bottom gap.
-                backgroundColor: focused ? colors.primarySoft : "transparent",
                 flex: 1,
                 gap: 3,
                 height: "100%",
@@ -105,29 +142,18 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
                 opacity: blocked ? 0.35 : 1,
               }}
             >
-              {/* Accent rail across the top edge marks the active tab. */}
-              {focused ? (
-                <View
-                  style={{
-                    backgroundColor: colors.primary,
-                    borderBottomLeftRadius: 3,
-                    borderBottomRightRadius: 3,
-                    height: 3,
-                    left: 0,
-                    position: "absolute",
-                    right: 0,
-                    top: 0,
-                  }}
-                />
-              ) : null}
+              {/* Selection is carried by the icon itself — a solid glyph rather
+                  than a tinted cell or a rail. One signal, and it sits on the
+                  thing you actually looked at. */}
               {options.tabBarIcon?.({ color, focused, size: 22 })}
               <Text
                 numberOfLines={1}
                 style={{
                   color,
-                  fontFamily: fonts.sans,
+                  // The weight lives in the FILE — a fontWeight on top of a
+                  // loaded family makes Android synthesise a second bolding.
+                  fontFamily: focused ? fonts.sansBold : fonts.sansMedium,
                   fontSize: 9,
-                  fontWeight: focused ? "900" : "800",
                   letterSpacing: 0,
                   textAlign: "center",
                 }}
@@ -173,12 +199,9 @@ export default function TabLayout() {
       : null;
   const blockedRoutes = showOwnerTab && !resolvedManagedProperty ? ["discovery", "owner", "notifications"] : [];
 
-  // Drives the red dot on the Alerts tab. Account-scoped like the feed itself.
-  const { data: unreadAlertCount = 0 } = useGetUnreadNotificationCountQuery(activeAccount, {
-    ...NOTIFICATION_REFETCH_OPTIONS,
-    skip: !auth.accessToken,
-    pollingInterval: 30_000,
-  });
+  // Drives the badge on the Alerts tab. Shares one hook with the notifications
+  // screen so the number on the bell always matches the list behind it.
+  const unreadAlertCount = useScopedUnreadCount({ enabled: Boolean(auth.accessToken) });
   const hasUnreadAlerts = unreadAlertCount > 0;
 
   useEffect(() => {
@@ -263,7 +286,6 @@ export default function TabLayout() {
           color: colors.ink,
           fontFamily: fonts.display,
           fontSize: 22,
-          fontWeight: "500",
         },
         tabBarStyle: {
           backgroundColor: "transparent",
@@ -281,7 +303,7 @@ export default function TabLayout() {
           headerShown: false,
           title: "Home",
           tabBarLabel: "HOME",
-          tabBarIcon: ({ color }) => <Home color={color} size={20} strokeWidth={2} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Home} />,
         }}
       />
       <Tabs.Screen
@@ -290,7 +312,7 @@ export default function TabLayout() {
           headerShown: false,
           tabBarLabel: "DISCOVER",
           title: "Discovery",
-          tabBarIcon: ({ color }) => <Compass color={color} size={20} strokeWidth={2} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Compass} />,
         }}
       />
       <Tabs.Screen
@@ -300,7 +322,7 @@ export default function TabLayout() {
           title: "Tenancy",
           tabBarLabel: "TENANCY",
           href: showTenancyTab ? undefined : null,
-          tabBarIcon: ({ color }) => <KeyRound color={color} size={20} strokeWidth={2} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={KeyRound} />,
         }}
       />
       <Tabs.Screen
@@ -310,46 +332,22 @@ export default function TabLayout() {
           title: isManagerAccount ? "Manager" : "Owner",
           tabBarLabel: isManagerAccount ? "MANAGER" : "OWNER",
           href: showOwnerTab ? undefined : null,
-          tabBarIcon: ({ color }) =>
-            isManagerAccount ? <ShieldCheck color={color} size={20} strokeWidth={2} /> : <Building2 color={color} size={20} strokeWidth={2} />,
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          headerShown: false,
-          title: "Notifications",
-          tabBarLabel: "NOTIFICATIONS",
-          tabBarIcon: ({ color }) => (
-            <View>
-              <Bell color={color} size={20} strokeWidth={2} />
-              {hasUnreadAlerts ? (
-                <View
-                  style={{
-                    backgroundColor: colors.danger,
-                    borderColor: colors.surface,
-                    borderRadius: 999,
-                    borderWidth: 1.5,
-                    height: 11,
-                    position: "absolute",
-                    right: -5,
-                    top: -3,
-                    width: 11,
-                  }}
-                />
-              ) : null}
-            </View>
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} icon={isManagerAccount ? ShieldCheck : Building2} />
           ),
         }}
       />
+      {/* Off the tab bar. Notifications open from the bell on Home, which is
+          where the profile chip used to sit — a notification feed is something
+          you glance at and dismiss, not a place you navigate to and stay. */}
+      <Tabs.Screen name="notifications" options={{ headerShown: false, href: null, title: "Notifications" }} />
       <Tabs.Screen
         name="account"
         options={{
           headerShown: false,
-          href: null,
           title: "Account",
           tabBarLabel: "ACCOUNT",
-          tabBarIcon: ({ color }) => <UserRound color={color} size={20} strokeWidth={2} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={UserRound} />,
         }}
       />
       </Tabs>

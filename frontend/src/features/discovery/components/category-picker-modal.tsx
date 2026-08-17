@@ -106,7 +106,7 @@ export function CategoryPickerModal({
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }} selectable>
+            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, }}>
               {isFilter ? "Filter by category" : "Choose categories"}
             </Text>
             <AnimatedPressable
@@ -142,7 +142,7 @@ export function CategoryPickerModal({
                     style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 50, paddingVertical: spacing.xs }}
                   >
                     {open ? <ChevronDown color={colors.muted} size={18} strokeWidth={2.3} /> : <ChevronRight color={colors.muted} size={18} strokeWidth={2.3} />}
-                    <Text style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]} selectable>
+                    <Text style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]}>
                       {category.name}
                     </Text>
                     <CountBadge active={count > 0} value={count} />
@@ -202,7 +202,7 @@ export function CategoryPickerModal({
                                 {selected ? <Check color={colors.onPrimary} size={12} strokeWidth={3} /> : null}
                               </View>
                             ) : null}
-                            <Text style={[type.body, { color: selected ? colors.primary : colors.inkSoft, flex: 1, fontWeight: selected ? "800" : "600" }]} selectable>
+                            <Text style={[type.body, { color: selected ? colors.primary : colors.inkSoft, flex: 1, fontWeight: selected ? "800" : "600" }]}>
                               {sub.name}
                             </Text>
                             {isFilter ? <CountBadge active={(subcategoryCounts[sub.id] ?? 0) > 0} value={subcategoryCounts[sub.id] ?? 0} /> : null}
@@ -278,7 +278,7 @@ export function CategoryPickerModal({
               onPress={onClose}
               style={{ alignItems: "center", backgroundColor: colors.primary, borderRadius: 14, marginTop: spacing.md, minHeight: 46, justifyContent: "center" }}
             >
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }}>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 14, }}>
                 Done ({selectedSubcategoryIds.length})
               </Text>
             </AnimatedPressable>
@@ -297,7 +297,7 @@ function AccordionRowButton({ label, onPress, subtle }: { label: string; onPress
       onPress={onPress}
       style={{ borderBottomColor: subtle ? "transparent" : colors.border, borderBottomWidth: subtle ? 0 : 1, justifyContent: "center", minHeight: subtle ? 40 : 48, paddingHorizontal: subtle ? spacing.sm : 0 }}
     >
-      <Text style={[type.body, { color: colors.primary, fontWeight: subtle ? "700" : "900" }]} selectable>
+      <Text style={[type.body, { color: colors.primary, fontWeight: subtle ? "700" : "900" }]}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -308,7 +308,7 @@ function CountBadge({ active, value }: { active: boolean; value: number }) {
   const { colors, fonts } = useTheme();
   return (
     <View style={{ backgroundColor: active ? colors.primarySoft : colors.surfaceSunken, borderRadius: 999, minWidth: 24, paddingHorizontal: 8, paddingVertical: 2 }}>
-      <Text style={{ color: active ? colors.primary : colors.muted, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800", textAlign: "center" }}>
+      <Text style={{ color: active ? colors.primary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], textAlign: "center" }}>
         {value}
       </Text>
     </View>
@@ -334,7 +334,7 @@ function PillButton({ disabled, label, onPress, primary }: { disabled?: boolean;
         paddingHorizontal: spacing.md,
       }}
     >
-      <Text style={{ color: primary ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }}>{label}</Text>
+      <Text style={{ color: primary ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>{label}</Text>
     </AnimatedPressable>
   );
 }

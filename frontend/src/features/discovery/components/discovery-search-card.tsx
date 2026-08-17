@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Keyboard, Modal, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { ChevronDown, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
 
@@ -53,7 +53,16 @@ export function DiscoverySearchCard({
   const [areaModalOpen, setAreaModalOpen] = useState(false);
   const [citySearch, setCitySearch] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
-  const showSuggestions = focused && searchText.trim().length >= 2 && suggestions.length > 0;
+  // Picking a suggestion writes its label into the box, and that label is
+  // itself a valid query — so the debounced lookup ran again, came back with
+  // matches, and the dropdown reopened over the results the person had just
+  // asked for. Blurring does not help either: the list sets
+  // keyboardShouldPersistTaps="handled" precisely so a tap does NOT blur.
+  //
+  // So a pick is recorded explicitly and holds until the text is edited again.
+  const [pickedFromList, setPickedFromList] = useState(false);
+  const showSuggestions =
+    focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
 
@@ -80,7 +89,11 @@ export function DiscoverySearchCard({
           onBlur={() => {
             setTimeout(() => setFocused(false), 160);
           }}
-          onChangeText={onSearchTextChange}
+          onChangeText={(text) => {
+            // Typing means they are searching again, so the list may reopen.
+            setPickedFromList(false);
+            onSearchTextChange(text);
+          }}
           onFocus={() => setFocused(true)}
           onSubmitEditing={onSearch}
           placeholder="Search city, area or pincode"
@@ -89,9 +102,8 @@ export function DiscoverySearchCard({
           style={{
             color: colors.ink,
             flex: 1,
-            fontFamily: fonts.sans,
+            fontFamily: fonts.sansMedium,
             fontSize: 15,
-            fontWeight: "500",
             minHeight: 48,
             paddingVertical: 0,
           }}
@@ -99,7 +111,13 @@ export function DiscoverySearchCard({
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
         {searchText.length > 0 && !loadingSuggestions ? (
-          <AnimatedPressable accessibilityLabel="Clear search" onPress={onClearSearch}>
+          <AnimatedPressable
+            accessibilityLabel="Clear search"
+            onPress={() => {
+              setPickedFromList(false);
+              onClearSearch();
+            }}
+          >
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
         ) : null}
@@ -155,7 +173,13 @@ export function DiscoverySearchCard({
               <AnimatedPressable
                 accessibilityLabel={`Search ${suggestion.name ?? suggestion.address ?? "location"}`}
                 key={`${suggestion.providerPlaceId ?? suggestion.name ?? "geo"}-${index}`}
-                onPress={() => onSuggestionSelect(suggestion)}
+                onPress={() => {
+                  setPickedFromList(true);
+                  // Native only — on web the input keeps focus, which is why
+                  // the flag above does the actual closing.
+                  Keyboard.dismiss();
+                  onSuggestionSelect(suggestion);
+                }}
                 style={{
                   alignItems: "center",
                   borderBottomColor: colors.border,
@@ -168,11 +192,11 @@ export function DiscoverySearchCard({
               >
                 <MapPin color={colors.primary} size={16} strokeWidth={2.3} />
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+                  <Text numberOfLines={1} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
                     {suggestion.name ?? suggestion.address ?? "Location"}
                   </Text>
                   {suggestion.address && suggestion.address !== suggestion.name ? (
-                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
                       {suggestion.address}
                     </Text>
                   ) : null}
@@ -285,11 +309,11 @@ function FilterPickerButton({
         ...style,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]} selectable>
+        <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]}>
           {value}
         </Text>
         <ChevronDown color={colors.muted} size={16} strokeWidth={2.4} />
@@ -362,9 +386,7 @@ function LocationFilterModal<T>({
                 color: colors.ink,
                 fontFamily: fonts.display,
                 fontSize: 20,
-                fontWeight: "500",
               }}
-              selectable
             >
               {title}
             </Text>
@@ -397,9 +419,8 @@ function LocationFilterModal<T>({
               style={{
                 color: colors.ink,
                 flex: 1,
-                fontFamily: fonts.sans,
+                fontFamily: fonts.sansMedium,
                 fontSize: 15,
-                fontWeight: "600",
                 minHeight: 46,
                 paddingVertical: 0,
               }}
@@ -423,7 +444,7 @@ function LocationFilterModal<T>({
                 justifyContent: "center",
               }}
             >
-              <Text style={[type.body, { color: colors.primary, fontWeight: "900" }]} selectable>
+              <Text style={[type.body, { color: colors.primary, fontWeight: "900" }]}>
                 Clear selection
               </Text>
             </AnimatedPressable>
@@ -448,10 +469,10 @@ function LocationFilterModal<T>({
                     paddingHorizontal: spacing.sm,
                   }}
                 >
-                  <Text style={[type.body, { color: colors.ink, fontWeight: selected ? "900" : "700" }]} selectable>
+                  <Text style={[type.body, { color: colors.ink, fontWeight: selected ? "900" : "700" }]}>
                     {itemTitle(item)}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted }]}>
                     {itemSubtitle(item)}
                   </Text>
                 </AnimatedPressable>
@@ -460,7 +481,7 @@ function LocationFilterModal<T>({
 
             {filteredItems.length === 0 ? (
               <View style={{ alignItems: "center", minHeight: 120, justifyContent: "center" }}>
-                <Text style={[type.body, { color: colors.muted, fontWeight: "800" }]} selectable>
+                <Text style={[type.body, { color: colors.muted, fontWeight: "800" }]}>
                   {emptyLabel}
                 </Text>
               </View>

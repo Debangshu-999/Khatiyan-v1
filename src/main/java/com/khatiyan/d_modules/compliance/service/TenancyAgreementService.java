@@ -7,6 +7,8 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -14,6 +16,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.khatiyan.c_shared.exception.NotFoundException;
@@ -51,7 +54,18 @@ public class TenancyAgreementService {
     private final AgreementAssembler assembler;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
-    private final ObjectMapper objectMapper;
+    private final ComplianceAccessPolicy complianceAccessPolicy;
+    /**
+     * Dedicated mapper for {@link #contentHash}, pinned to NON_NULL inclusion.
+     *
+     * <p>
+     * The hash pins an accepted legal agreement, so its bytes must never move.
+     * Sharing the application mapper made it depend on
+     * {@code spring.jackson.default-property-inclusion} — flipping that setting
+     * would silently invalidate every hash already stored against a signed
+     * agreement. Pinning it here makes the hash independent of app config.
+     */
+    private final ObjectMapper hashMapper;
 
     public TenancyAgreementService(
             TenancyAgreementRepository agreementRepository,
@@ -59,13 +73,15 @@ public class TenancyAgreementService {
             AgreementAssembler assembler,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
+            ComplianceAccessPolicy complianceAccessPolicy,
             ObjectMapper objectMapper) {
         this.agreementRepository = agreementRepository;
         this.agreementService = agreementService;
         this.assembler = assembler;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
-        this.objectMapper = objectMapper;
+        this.complianceAccessPolicy = complianceAccessPolicy;
+        this.hashMapper = objectMapper.copy().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
     /**
@@ -87,6 +103,39 @@ public class TenancyAgreementService {
                 : property.standardDepositPaise();
 
         return assembler.assemble(property, billingPolicy, exitPolicy, rent, deposit, settings.getDefaultClauses(), null);
+    }
+
+    /**
+     * Assembles the clause set for a tenancy that already exists.
+     *
+     * <p>Used by the one-time backfill that gives pre-agreement monthly stays the
+     * agreement the model now requires. Reads the tenancy's own rent and deposit
+     * so the document states what the tenant is actually paying, not the
+     * property's current defaults.
+     */
+    @Transactional(readOnly = true)
+    public List<AgreementClause> assembleForExistingTenancy(TenancyResponse tenancy) {
+        // The tenancy's creator is used as the actor: settings seeding is an
+        // owner-scoped read, and there is no human present during a backfill.
+        PropertyAgreementSettings settings =
+                agreementService.getOrSeedPropertySettings(tenancy.createdByUserId(), tenancy.propertyId());
+        PropertyResponse property = propertyModule.getActiveProperty(tenancy.propertyId());
+        PropertyBillingPolicyResponse billingPolicy = propertyModule.getBillingPolicy(tenancy.propertyId());
+        PropertyExitPolicyResponse exitPolicy = propertyModule.getExitPolicy(tenancy.propertyId());
+
+        return assembler.assemble(
+                property,
+                billingPolicy,
+                exitPolicy,
+                tenancy.rentAmountPaise() != null ? tenancy.rentAmountPaise() : 0,
+                tenancy.depositAmountPaise() != null ? tenancy.depositAmountPaise() : 0,
+                settings.getDefaultClauses(),
+                null);
+    }
+
+    /** The content hash for a clause set, using the same pinned mapper as acceptance. */
+    public String contentHashOf(List<AgreementClause> clauses) {
+        return contentHash(clauses);
     }
 
     /** Result of agreement-path onboarding: the pending tenancy + its agreement. */
@@ -117,14 +166,30 @@ public class TenancyAgreementService {
                 request.idCheckConfirmed());
         TenancyResponse tenancy = onboarding.tenancy();
 
+        // Authoring clause prose is a TENANCY_RULES power, but creating the
+        // tenancy is TENANCY_CREATE — a manager can hold one without the other.
+        // Passing null makes the assembler fall back to the property's stored
+        // defaults, so someone who may create but not write rules gets the
+        // agreement the owner intended rather than a rejected request.
+        List<AgreementClause> customClauses = complianceAccessPolicy.canManageRules(actorUserId, request.propertyId())
+                ? toCustomClauses(request.customClauses())
+                : null;
+
+        // Per-tenancy system-rule overrides are applied to a COPY of the
+        // property's defaults. The stored settings are never touched, so a term
+        // agreed with one tenant cannot leak into anyone else's agreement or
+        // into the property template the next onboarding starts from.
+        List<AgreementClause> tenancyDefaults = withTenancyOverrides(
+                settings.getDefaultClauses(), request.term(), request.permittedDeductions());
+
         List<AgreementClause> clauses = assembler.assemble(
                 property,
                 billingPolicy,
                 exitPolicy,
                 tenancy.rentAmountPaise() != null ? tenancy.rentAmountPaise() : 0,
                 tenancy.depositAmountPaise() != null ? tenancy.depositAmountPaise() : 0,
-                settings.getDefaultClauses(),
-                toCustomClauses(request.customClauses()));
+                tenancyDefaults,
+                customClauses);
 
         TenancyAgreement agreement = agreementRepository.save(
                 TenancyAgreement.pending(tenancy.id(), request.propertyId(), clauses));
@@ -144,7 +209,7 @@ public class TenancyAgreementService {
     @Transactional(readOnly = true)
     public TenancyAgreement getForManagedTenancy(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        complianceAccessPolicy.ensureCanViewTenancyAgreement(actorUserId, tenancy.propertyId());
         return getAgreementByTenancyId(tenancyId);
     }
 
@@ -162,7 +227,7 @@ public class TenancyAgreementService {
     @Transactional
     public TenancyAgreement updateCustomClauses(UUID actorUserId, UUID tenancyId, List<CustomClauseInput> customClauses) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        complianceAccessPolicy.ensureCanAmendTenancyAgreement(actorUserId, tenancy.propertyId());
 
         TenancyAgreement agreement = getAgreementByTenancyId(tenancyId);
         ensurePending(agreement);
@@ -203,7 +268,7 @@ public class TenancyAgreementService {
 
         agreement.accept(tenantUserId, contentHash(agreement.getClauses()), Instant.now());
         tenancyModule.acceptTermsAndActivate(tenancy.id(), tenantUserId);
-        stampLockInTerms(tenancy, agreement);
+        stampAgreementTerms(tenancy, agreement);
 
         log.info(
                 "Tenancy agreement accepted agreementId={} tenancyId={} tenantUserId={} contentHash={}",
@@ -215,32 +280,124 @@ public class TenancyAgreementService {
         return agreement;
     }
 
-    // Resolves the lock-in rule from the frozen agreement and stamps the derived
-    // exit terms onto the tenancy, so the tenancy module can compute early-exit
-    // penalties itself. lockInEndDate is a minimum-stay marker (start + months);
-    // it is stamped even when months is 0, which marks the tenancy agreement-backed
-    // (premature-only exit) with a zero penalty.
-    private void stampLockInTerms(TenancyResponse tenancy, TenancyAgreement agreement) {
-        AgreementClause lockIn = agreement.getClauses().stream()
+    /**
+     * The property's default clauses with this tenancy's overrides folded in.
+     *
+     * <p>Returns a new list; the stored settings are left alone. Only VALIDITY
+     * and ALLOWED_DEDUCTIONS may be varied — everything else stays uniform
+     * across the property, which is the whole reason system rules are derived
+     * rather than copied.
+     */
+    private List<AgreementClause> withTenancyOverrides(
+            List<AgreementClause> propertyDefaults,
+            OnboardTenancyWithAgreementRequest.AgreementTermInput term,
+            List<String> permittedDeductions) {
+
+        if (term == null && permittedDeductions == null) {
+            return propertyDefaults;
+        }
+
+        List<AgreementClause> result = new ArrayList<>();
+        for (AgreementClause clause : propertyDefaults != null ? propertyDefaults : List.<AgreementClause>of()) {
+            boolean isValidity = clause.getKind() == ClauseKind.SYSTEM
+                    && (clause.getSystemType() == SystemClauseType.VALIDITY
+                            || clause.getSystemType() == SystemClauseType.LOCK_IN);
+            boolean isDeductions = clause.getKind() == ClauseKind.SYSTEM
+                    && clause.getSystemType() == SystemClauseType.ALLOWED_DEDUCTIONS;
+
+            if (isValidity && term != null) {
+                result.add(validityClause(clause, term.months()));
+            } else if (isDeductions && permittedDeductions != null) {
+                result.add(deductionsClause(clause, permittedDeductions));
+            } else {
+                result.add(clause);
+            }
+        }
+        return result;
+    }
+
+    /** Rebuilds the validity clause, prose included, so value and text agree. */
+    private static AgreementClause validityClause(AgreementClause original, Integer months) {
+        Map<String, Object> value = original.getValue() != null ? new LinkedHashMap<>(original.getValue()) : new LinkedHashMap<>();
+        String rule = value.get("earlyExitRule") != null ? value.get("earlyExitRule").toString().trim() : "";
+        value.put("validityMonths", months);
+        value.remove("months");
+
+        String body = months != null
+                ? "This agreement runs for " + months + " month" + (months == 1 ? "" : "s")
+                        + " from the start of the tenancy, and the tenancy ends with it."
+                        + (rule.isEmpty() ? "" : " If the tenancy ends earlier: " + rule)
+                : "This agreement runs until the tenancy ends. Either party may end it with the required notice.";
+
+        return AgreementClause.system(
+                SystemClauseType.VALIDITY, original.getHeading(), body, value, original.getDisplayOrder());
+    }
+
+    /**
+     * Narrows the permitted deductions to the chosen subset.
+     *
+     * <p>Anything not already permitted by the property is dropped rather than
+     * rejected: the list is a narrowing, and silently widening it would grant
+     * the deposit powers the property's own agreement never claimed.
+     */
+    private static AgreementClause deductionsClause(AgreementClause original, List<String> chosen) {
+        Map<String, Object> value = original.getValue() != null ? new LinkedHashMap<>(original.getValue()) : new LinkedHashMap<>();
+        Object existing = value.get("categories");
+        List<String> allowed = existing instanceof List<?> list
+                ? list.stream().map(String::valueOf).toList()
+                : List.of();
+        List<String> narrowed = chosen.stream().filter(allowed::contains).toList();
+
+        value.put("categories", narrowed);
+        String body = narrowed.isEmpty()
+                ? "The deposit may not be used for deductions; it is returned in full less any agreed charges."
+                : "At move-out the deposit may be used only for "
+                        + String.join(", ", narrowed.stream().map(TenancyAgreementService::humanize).toList())
+                        + ".";
+
+        return AgreementClause.system(
+                SystemClauseType.ALLOWED_DEDUCTIONS, original.getHeading(), body, value, original.getDisplayOrder());
+    }
+
+    private static String humanize(String token) {
+        return token.toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    // Reads the agreement's validity and early-exit rule off the frozen clause and
+    // stamps them onto the tenancy, so tenancy can answer "is this a fixed term,
+    // and when does it end" without reaching into compliance.
+    //
+    // Null months means indefinite — the agreement, and the tenancy, end only
+    // when the tenant exits. A value gives a fixed term whose end date the
+    // tenancy derives once and carries from day one.
+    private void stampAgreementTerms(TenancyResponse tenancy, TenancyAgreement agreement) {
+        AgreementClause validity = agreement.getClauses().stream()
+                // LOCK_IN too: agreements signed before the rename are frozen and
+                // keep the old name forever.
                 .filter(clause -> clause.getKind() == ClauseKind.SYSTEM
-                        && clause.getSystemType() == SystemClauseType.LOCK_IN)
+                        && (clause.getSystemType() == SystemClauseType.VALIDITY
+                                || clause.getSystemType() == SystemClauseType.LOCK_IN))
                 .findFirst()
                 .orElse(null);
 
-        int months = 0;
-        String penaltyType = "REMAINING_TERM";
-        long penaltyFixedPaise = 0L;
-        if (lockIn != null && lockIn.getValue() != null) {
-            Map<String, Object> value = lockIn.getValue();
-            months = intValue(value.get("months"));
-            Object type = value.get("penaltyType");
-            penaltyType = type != null ? type.toString() : "REMAINING_TERM";
-            penaltyFixedPaise = longValue(value.get("penaltyFixedPaise"));
+        Integer validityMonths = null;
+        String earlyExitRule = null;
+        if (validity != null && validity.getValue() != null) {
+            Map<String, Object> value = validity.getValue();
+            // Legacy clauses carry "months"; current ones carry "validityMonths".
+            int months = value.containsKey("validityMonths")
+                    ? intValue(value.get("validityMonths"))
+                    : intValue(value.get("months"));
+            // Null or zero both mean indefinite. Zero was the old lock-in's way
+            // of saying "agreement-backed with no minimum stay"; that state no
+            // longer exists, and JSONB gives null for a key nobody wrote.
+            validityMonths = months > 0 ? months : null;
+            Object rule = value.get("earlyExitRule");
+            String ruleText = rule != null ? rule.toString().trim() : "";
+            earlyExitRule = ruleText.isEmpty() ? null : ruleText;
         }
 
-        LocalDate startDate = tenancy.startDate();
-        LocalDate lockInEndDate = startDate != null ? startDate.plusMonths(months) : null;
-        tenancyModule.stampAgreementExitTerms(tenancy.id(), lockInEndDate, penaltyType, penaltyFixedPaise);
+        tenancyModule.stampAgreementTerms(tenancy.id(), validityMonths, earlyExitRule);
     }
 
     private static int intValue(Object raw) {
@@ -333,7 +490,7 @@ public class TenancyAgreementService {
     // content; the frozen row itself remains the readable record.
     private String contentHash(List<AgreementClause> clauses) {
         try {
-            byte[] json = objectMapper.writeValueAsBytes(clauses);
+            byte[] json = hashMapper.writeValueAsBytes(clauses);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(json));
         } catch (JsonProcessingException | NoSuchAlgorithmException exception) {

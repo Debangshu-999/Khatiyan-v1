@@ -1,6 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, ClipboardList } from "lucide-react-native";
+import { ClipboardList } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -23,11 +23,11 @@ export default function PropertyBoardScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Property board"
+        eyebrow="Property"
+        onBack={() => router.back()}
         title="Always-on,"
         italicTail="info."
         subtitle="Rules, timings, contacts and property details published by your property team."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {boardQuery.isFetching ? (
@@ -38,10 +38,10 @@ export default function PropertyBoardScreen() {
             {items.map((item) => (
               <Card key={item.id} tone="sunken">
                 <View style={{ gap: spacing.xs }}>
-                  <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]} selectable>
+                  <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
                     {item.title}
                   </Text>
-                  <Text style={[type.body, { color: colors.muted }]} selectable>
+                  <Text style={[type.body, { color: colors.muted }]}>
                     {item.body}
                   </Text>
                 </View>
@@ -61,28 +61,6 @@ export default function PropertyBoardScreen() {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 44,
-        justifyContent: "center",
-        width: 44,
-      }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function groupByCategory<T extends { categoryName: string; displayOrder: number }>(items: T[]) {
   const grouped = new Map<string, T[]>();

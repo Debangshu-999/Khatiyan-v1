@@ -30,7 +30,7 @@ export function BarChart({ data, formatTick, height = 150 }: BarChartProps) {
     <View style={{ flexDirection: "row", gap: spacing.sm }}>
       <View style={{ height, justifyContent: "space-between", paddingBottom: 18 }}>
         {ticks.map((tick) => (
-          <Text key={tick} style={[type.caption, { color: colors.kicker, fontSize: 10 }]} selectable>
+          <Text key={tick} style={[type.caption, { color: colors.kicker, fontSize: 10 }]}>
             {format(max * tick)}
           </Text>
         ))}
@@ -61,7 +61,7 @@ export function BarChart({ data, formatTick, height = 150 }: BarChartProps) {
                   <Rect fill={`url(#bar-${index})`} height={barHeight} rx={barWidth / 2} width={barWidth} x="0" y="0" />
                 </Svg>
               </View>
-              <Text style={[type.caption, { color: colors.muted, fontSize: 10.5 }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, fontSize: 10.5 }]}>
                 {datum.label}
               </Text>
             </View>

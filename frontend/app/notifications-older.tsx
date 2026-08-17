@@ -69,7 +69,7 @@ export default function NotificationsOlderScreen() {
     <ScreenScrollView>
       <ScreenHeader
         onBack={() => router.back()}
-        eyebrow="On record"
+        eyebrow="Notifications"
         title="Older"
         italicTail="notifications."
         subtitle={

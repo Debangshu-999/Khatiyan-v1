@@ -29,15 +29,15 @@ export function LocalPlaceCard({ place }: LocalPlaceCardProps) {
     <Card>
       <View style={{ gap: spacing.xs }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={{ color: colors.text, flex: 1, fontSize: 19, fontWeight: "900" }} selectable>
+          <Text style={{ color: colors.text, flex: 1, fontSize: 19, fontWeight: "900" }}>
             {place.name}
           </Text>
           {place.ownerRecommended ? <InlineTag label="Owner recommended" tone="success" /> : null}
         </View>
-        <Text style={{ color: colors.primary, fontWeight: "800" }} selectable>
+        <Text style={{ color: colors.primary, fontWeight: "800" }}>
           {formatDistance(place.distanceKm)}
         </Text>
-        <Text style={{ color: colors.muted, lineHeight: 20 }} selectable>
+        <Text style={{ color: colors.muted, lineHeight: 20 }}>
           {place.description || place.addressText}
         </Text>
       </View>
@@ -51,7 +51,7 @@ export function LocalPlaceCard({ place }: LocalPlaceCardProps) {
       ) : null}
 
       {place.phone ? (
-        <Text style={{ color: colors.muted, fontWeight: "700" }} selectable>
+        <Text style={{ color: colors.muted, fontWeight: "700" }}>
           {place.phone}
         </Text>
       ) : null}
@@ -76,7 +76,7 @@ function InlineTag({ label, tone = "neutral" }: { label: string; tone?: "neutral
         paddingVertical: 6,
       }}
     >
-      <Text style={{ color: textColor, fontSize: 12, fontWeight: "800" }} selectable>
+      <Text style={{ color: textColor, fontSize: 12, fontWeight: "800" }}>
         {label}
       </Text>
     </View>

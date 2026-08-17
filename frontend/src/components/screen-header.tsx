@@ -13,6 +13,11 @@ type ScreenHeaderProps = {
   italicTail?: string;
   subtitle?: string;
   trailing?: ReactNode;
+  // A status that qualifies the whole screen — "View only" is the case. Sits on
+  // the TITLE row, right of the title, because that is the screen's name and the
+  // badge is a fact about it. Sharing the row with `trailing` is fine: they
+  // render side by side.
+  badge?: ReactNode;
   // Renders a compact back chip inline on the eyebrow row (left of the kicker)
   // so navigation doesn't cost the screen its own row of white space.
   onBack?: () => void;
@@ -24,7 +29,7 @@ type ScreenHeaderProps = {
 // A thin rule runs along the kicker row — a letterhead detail that ties
 // screens together. The back affordance shares that row instead of sitting
 // above the header on its own line.
-export function ScreenHeader({ eyebrow, italicTail, onBack, style, subtitle, title, trailing }: ScreenHeaderProps) {
+export function ScreenHeader({ badge, eyebrow, italicTail, onBack, style, subtitle, title, trailing }: ScreenHeaderProps) {
   const { colors, type } = useTheme();
 
   return (
@@ -52,7 +57,7 @@ export function ScreenHeader({ eyebrow, italicTail, onBack, style, subtitle, tit
             </AnimatedPressable>
           ) : null}
           {eyebrow ? (
-            <Text style={[type.eyebrow, { color: colors.accent }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.accent }]}>
               {eyebrow}
             </Text>
           ) : null}
@@ -62,10 +67,10 @@ export function ScreenHeader({ eyebrow, italicTail, onBack, style, subtitle, tit
 
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.display, { color: colors.ink, fontSize: 30, lineHeight: 36 }]} selectable>
+          <Text style={[type.brand, { color: colors.ink, fontSize: 30, lineHeight: 36 }]}>
             {title}
             {italicTail ? (
-              <Text style={[type.displayItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]} selectable>
+              <Text style={[type.brandItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]}>
                 {" "}
                 {italicTail}
               </Text>
@@ -74,7 +79,12 @@ export function ScreenHeader({ eyebrow, italicTail, onBack, style, subtitle, tit
           {subtitle ? <HeaderNote>{subtitle}</HeaderNote> : null}
         </View>
 
-        {trailing ? <View style={{ alignItems: "flex-end" }}>{trailing}</View> : null}
+        {badge || trailing ? (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            {badge}
+            {trailing}
+          </View>
+        ) : null}
       </View>
     </View>
   );

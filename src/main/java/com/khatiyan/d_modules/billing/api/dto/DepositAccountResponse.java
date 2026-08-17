@@ -19,6 +19,11 @@ public record DepositAccountResponse(
     String tenancyReferenceCode,
     long currentBalancePaise,
     DepositAccountStatus status,
+    /**
+     * The end-tenancy payability decision, or null if none was recorded. Drives
+     * which single action the settlement screen offers.
+     */
+    Boolean payableAtExit,
     Instant settledAt,
     Instant createdAt,
     Instant updatedAt,
@@ -39,6 +44,7 @@ public record DepositAccountResponse(
             tenancyReferenceCode,
             currentBalancePaise,
             account.getStatus(),
+            account.getPayableAtExit(),
             account.getSettledAt(),
             account.getCreatedAt(),
             account.getUpdatedAt(),

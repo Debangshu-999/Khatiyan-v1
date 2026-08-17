@@ -48,11 +48,11 @@ export function LedgerRow({ caption, chevron, footer, icon: Icon, iconBackground
           </View>
         ) : null}
         <View style={{ flex: 1, gap: 1 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {title}
           </Text>
           {caption ? (
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
               {caption}
             </Text>
           ) : null}

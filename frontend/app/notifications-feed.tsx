@@ -75,7 +75,7 @@ export default function NotificationsFeedScreen() {
       {(close) => (
     <ScreenScrollView>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           Inbox · last 7 days
         </Text>
         <CloseButton onPress={close} />
@@ -111,12 +111,10 @@ export default function NotificationsFeedScreen() {
               <Text
                 style={{
                   color: colors.primary,
-                  fontFamily: fonts.sans,
+                  fontFamily: fonts.sansBold,
                   fontSize: 11,
-                  fontWeight: "700",
                   letterSpacing: 0.4,
                 }}
-                selectable
               >
                 Mark all read
               </Text>
@@ -177,7 +175,7 @@ export default function NotificationsFeedScreen() {
           }}
         >
           <View style={{ flex: 1 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               On record
             </Text>
             <Text
@@ -185,14 +183,12 @@ export default function NotificationsFeedScreen() {
                 color: colors.ink,
                 fontFamily: fonts.display,
                 fontSize: 17,
-                fontWeight: "500",
                 letterSpacing: -0.2,
               }}
-              selectable
             >
               Older notifications
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
             </Text>
           </View>

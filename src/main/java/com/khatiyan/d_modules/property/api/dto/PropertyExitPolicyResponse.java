@@ -11,7 +11,9 @@ import com.khatiyan.d_modules.property.model.Property;
  */
 public record PropertyExitPolicyResponse(
         List<DamageChargeView> damageCharges,
-        List<String> exitChecklist) {
+        List<String> exitChecklist,
+        /** Null when the owner has not written one. */
+        String prematureExitPolicy) {
 
     public record DamageChargeView(String name, long chargePaise) {
     }
@@ -21,6 +23,7 @@ public record PropertyExitPolicyResponse(
                 .map(charge -> new DamageChargeView(charge.getName(), charge.getChargePaise()))
                 .toList();
 
-        return new PropertyExitPolicyResponse(charges, List.copyOf(property.getExitChecklist()));
+        return new PropertyExitPolicyResponse(
+                charges, List.copyOf(property.getExitChecklist()), property.getPrematureExitPolicy());
     }
 }

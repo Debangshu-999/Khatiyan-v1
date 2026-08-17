@@ -33,6 +33,7 @@ import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyType;
@@ -66,6 +67,9 @@ class TenancyServiceTest {
     private PropertyModule propertyModule;
 
     @Mock
+    private TenancyAccessPolicy tenancyAccessPolicy;
+
+    @Mock
     private AuthModule authModule;
 
     @Mock
@@ -82,6 +86,7 @@ class TenancyServiceTest {
                 tenancyRepository,
                 eventPublisher,
                 propertyModule,
+                tenancyAccessPolicy,
                 authModule,
                 billingModule,
                 referenceCodeGenerator);
@@ -117,7 +122,9 @@ class TenancyServiceTest {
         assertThat(tenancy.getRentAmountPaise()).isEqualTo(12_000_00);
         assertThat(tenancy.getDepositAmountPaise()).isEqualTo(10_000_00);
 
-        verify(propertyModule).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
+        // Onboarding is governed by Create tenancy, which is manage-only —
+        // there is nothing to "view" about creating a stay.
+        verify(tenancyAccessPolicy).ensureCanCreateTenancy(ACTOR_ID, PROPERTY_ID);
         verify(authModule).markActiveTenant(TENANT_ID);
         verify(billingModule).initializeStartedTenancy(ACTOR_ID, TenancyResponse.from(tenancy));
 
@@ -192,7 +199,8 @@ class TenancyServiceTest {
         tenancyService.end(ACTOR_ID, tenancy.getId(), LocalDate.of(2026, 6, 30), "Checkout");
 
         assertThat(tenancy.getStatus()).isEqualTo(TenancyStatus.EXITED);
-        verify(propertyModule).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
+        // Ending a stay is Property stays at MANAGE, per the owner-set rule.
+        verify(tenancyAccessPolicy).ensureCanManageStays(ACTOR_ID, PROPERTY_ID);
         verify(billingModule).ensureLatestCyclePaidForExit(ACTOR_ID, tenancy.getId());
         verify(authModule).clearActiveTenant(TENANT_ID);
 
@@ -234,7 +242,8 @@ class TenancyServiceTest {
         assertThat(activePage.totalElements()).isEqualTo(1);
         assertThat(pastPage.items()).extracting(TenancyResponse::id).containsExactly(pastTenancy.getId());
         assertThat(pastPage.totalElements()).isEqualTo(1);
-        verify(propertyModule, org.mockito.Mockito.times(2)).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
+        // Both pages are reads of the stays list.
+        verify(tenancyAccessPolicy, org.mockito.Mockito.times(2)).ensureCanViewStays(ACTOR_ID, PROPERTY_ID);
     }
     private static UserSummaryResponse userSummary(boolean activeTenant) {
         return new UserSummaryResponse(
@@ -280,7 +289,9 @@ class TenancyServiceTest {
                 BillingCollectionTiming.CYCLE_START,
                 3,
                 10_000_00,
-                30,
+                NoticePeriod.ONE_MONTH,
+                0,
+                null,
                 true,
                 true);
     }
@@ -292,6 +303,7 @@ class TenancyServiceTest {
                 "101",
                 "1",
                 2,
+                0,
                 0,
                 2,
                 RoomType.DOUBLE,

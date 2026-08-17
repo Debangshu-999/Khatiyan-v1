@@ -19,6 +19,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
@@ -29,6 +30,7 @@ import com.khatiyan.d_modules.billing.model.DepositAccountStatus;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
+import com.khatiyan.d_modules.billing.service.ExitSettlementService;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 
@@ -44,6 +46,9 @@ class BillingModuleTest {
     @Mock
     private DepositManagerService depositManagerService;
 
+    @Mock
+    private ExitSettlementService exitSettlementService;
+
     private BillingModule billingModule;
     private BillingCycleResponse billingCycleResponse;
     private BillingCycleLineItemResponse lineItemResponse;
@@ -54,7 +59,8 @@ class BillingModuleTest {
         billingModule = new BillingModule(
                 billingCycleService,
                 billingCycleLineItemService,
-                depositManagerService);
+                depositManagerService,
+                exitSettlementService);
         billingCycleResponse = billingCycleResponse();
         lineItemResponse = lineItemResponse();
         depositAccountResponse = depositAccountResponse();
@@ -122,11 +128,21 @@ class BillingModuleTest {
                 .isSameAs(depositAccountResponse);
         assertThat(billingModule.getManagedDepositAccount(actorUserId, tenancyId))
                 .isSameAs(depositAccountResponse);
-        billingModule.markDepositPendingSettlementForExit(actorUserId, tenancyId);
 
         verify(depositManagerService).getMyDepositAccountForTenancy(tenantUserId, tenancyId);
         verify(depositManagerService).getForManagedTenancy(actorUserId, tenancyId);
-        verify(depositManagerService).markPendingSettlementForExit(actorUserId, tenancyId);
+    }
+
+    @Test
+    void delegatesExitPolicyToExitSettlementService() {
+        UUID actorUserId = UUID.randomUUID();
+        UUID tenancyId = UUID.randomUUID();
+        UUID propertyId = UUID.randomUUID();
+        ApplyExitPolicyRequest request = new ApplyExitPolicyRequest(null, null, true, null);
+
+        billingModule.applyExitPolicy(actorUserId, tenancyId, propertyId, request);
+
+        verify(exitSettlementService).applyExitPolicy(actorUserId, tenancyId, propertyId, request);
     }
 
     private static BillingCycleResponse billingCycleResponse() {
@@ -157,6 +173,7 @@ class BillingModuleTest {
                 12_000_00,
                 0,
                 0,
+                50_00L,
                 0,
                 12_000_00,
                 BillingCycleStatus.UNPAID,
@@ -203,6 +220,7 @@ class BillingModuleTest {
                 "TEN-TEST-0001",
                 10_000_00L,
                 DepositAccountStatus.ACTIVE,
+                null,
                 null,
                 null,
                 null,

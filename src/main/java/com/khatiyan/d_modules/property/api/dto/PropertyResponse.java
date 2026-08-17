@@ -3,6 +3,7 @@ package com.khatiyan.d_modules.property.api.dto;
 import com.khatiyan.d_modules.property.model.Property;
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
@@ -46,7 +47,16 @@ public record PropertyResponse(
     BillingCollectionTiming billingCollectionTiming,
     int rentGraceDays,
     long standardDepositPaise,
+    NoticePeriod noticePeriod,
+    // Derived for display only. Zero for the whole-month options, which are
+    // counted in cycles rather than days -- clients should render `noticePeriod`.
     int noticePeriodDays,
+    /**
+     * What leaving before serving notice costs, in the owner's words. Null when
+     * the property has not written one. Read into the agreement's
+     * PREMATURE_EXIT clause for indefinite terms.
+     */
+    String prematureExitPolicy,
     boolean discoveryProfileCreated,
     boolean active
 ) {
@@ -80,7 +90,9 @@ public record PropertyResponse(
             property.getBillingCollectionTiming(),
             property.getRentGraceDays(),
             property.getStandardDepositPaise(),
-            property.getNoticePeriodDays(),
+            property.getNoticePeriod(),
+            property.getNoticePeriod().days(),
+            property.getPrematureExitPolicy(),
             property.isDiscoveryProfileCreated(),
             property.isCurrentlyActive()
         );

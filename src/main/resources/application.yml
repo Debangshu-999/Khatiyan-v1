@@ -31,7 +31,7 @@ spring:
     redis:
       host: ${VALKEY_HOST:localhost}
       port: ${VALKEY_PORT:6379}
-      password: ${VALKEY_PASSWORD:Ddnhksnu@1234}
+      password: ${VALKEY_PASSWORD:}
       database: ${VALKEY_DATABASE:0}
       timeout: ${VALKEY_TIMEOUT:2s}
       connect-timeout: ${VALKEY_CONNECT_TIMEOUT:2s}
@@ -69,6 +69,9 @@ spring:
       - classpath:db/migration/reminder
       - classpath:db/migration/expense
       - classpath:db/migration/compliance
+      - classpath:db/migration/dashboard
+      - classpath:db/migration/nudge
+      - classpath:db/migration/enquiry
 
   modulith:
     events:
@@ -95,7 +98,15 @@ spring:
           starttls:
             enable: ${SMTP_STARTTLS_ENABLE:false}
   jackson:
-    default-property-inclusion: non_null
+    # ALWAYS, deliberately. With non_null every null field was dropped from the
+    # response, so a field the client types as `T | null` arrived as `undefined`
+    # instead — `x === null` never matched and reads like `x.length` blew up on
+    # whichever record happened to have a null. Data-dependent, so it surfaced as
+    # rare unreproducible TypeErrors. Sending null makes the wire match the
+    # declared contract. Costs a few bytes per response.
+    # NOTE: TenancyAgreementService pins its own NON_NULL mapper for the
+    # agreement content hash, which must not move when this changes.
+    default-property-inclusion: always
     serialization:
       write-dates-as-timestamps: false
       indent-output: false
@@ -143,6 +154,16 @@ resilience4j:
 app:
   logging:
     dir: ${KHATIYAN_LOG_DIR:logs}
+  # Signed direct upload: the device sends bytes straight to Cloudinary and only
+  # the signature is minted here, so image traffic never occupies a request
+  # thread. The secret signs and is never sent to the client.
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+    # How long a minted signature stays usable. Long enough for a slow upload to
+    # start, short enough that a leaked one is worthless by the time it is found.
+    signature-ttl-seconds: ${CLOUDINARY_SIGNATURE_TTL_SECONDS:600}
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:60}

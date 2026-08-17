@@ -103,6 +103,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhooks/razorpay").permitAll()
                         .requestMatchers("/api/v1/payments/**").authenticated()
                         .requestMatchers("/api/v1/dashboard/**").authenticated()
+                        // A tenant reads only their own nudges; sending and the
+                        // Sent tab are property-scoped and gated by
+                        // ensureCanManageProperty inside the service.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/nudges/received", "/api/v1/nudges/unread-count").hasRole("USER")
+                        .requestMatchers("/api/v1/nudges/**").authenticated()
+                        .requestMatchers("/api/v1/properties/{propertyId}/nudges/**").authenticated()
+                        // Discovery itself is public, but enquiring is not: an
+                        // enquiry is a request to be contacted, so it needs a
+                        // signed-in person with a verified phone behind it.
+                        .requestMatchers("/api/v1/properties/{propertyId}/enquiries/**").authenticated()
+                        .requestMatchers("/api/v1/enquiries/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(apiRateLimitFilter, JwtAuthenticationFilter.class)
@@ -119,7 +130,11 @@ public class SecurityConfig {
             @Value("${app.cors.allowed-origins}") String allowedOrigins) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(parseCsv(allowedOrigins));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+        // PUT included: the manager-permissions endpoint replaces wholesale.
+        // Leaving it out made the browser preflight fail with 403 and the
+        // request never reached the controller — which reads in the client as a
+        // generic "could not save" with no server message to show.
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
         configuration.setExposedHeaders(List.of("Location"));
         configuration.setAllowCredentials(true);

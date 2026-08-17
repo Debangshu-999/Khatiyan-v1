@@ -159,7 +159,7 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
       {!loading && (direct.length > 0 || related.length > 0) ? (
         <View style={{ gap: spacing.md }}>
           {hasQuery && direct.length > 0 ? (
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Direct matches ({direct.length})
             </Text>
           ) : null}
@@ -171,7 +171,7 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
             <>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                 <MapPinned color={colors.muted} size={14} strokeWidth={2.2} />
-                <Text style={[type.eyebrow, { color: colors.muted }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.muted }]}>
                   Related nearby ({related.length})
                 </Text>
               </View>
@@ -228,7 +228,7 @@ function FilterBubble({
       }}
     >
       {icon}
-      <Text style={{ color: active ? colors.primary : colors.inkSoft, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }} selectable={false}>
+      <Text style={{ color: active ? colors.primary : colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12, }}>
         {label}
       </Text>
       {trailing}

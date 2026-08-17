@@ -206,7 +206,8 @@ public class AuthController {
     public UserSummaryResponse updateProfile(
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody UpdateUserProfileRequest request) {
-        return authService.updateProfile(user.userId(), request.fullName());
+        return authService.updateProfile(
+                user.userId(), request.fullName(), request.profilePhotoUrl(), request.profilePhotoPublicId());
     }
 
     @GetMapping("/me")

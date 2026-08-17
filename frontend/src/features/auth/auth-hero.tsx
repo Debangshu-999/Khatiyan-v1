@@ -1,14 +1,14 @@
 import { useEffect, useRef, type ComponentType } from "react";
-import { Animated, Easing, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, ImageBackground, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Rect } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import { KeyRound, Lock, Mail, ShieldCheck, ShieldPlus, UserPlus, type LucideProps } from "lucide-react-native";
 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type AuthMode = "login" | "signup";
-export type AuthStep = "entry" | "setupOtp" | "setupPin" | "resetRequest" | "resetOtp" | "resetPin" | "emailLogin";
+export type AuthStep = "entry" | "activate" | "setupOtp" | "setupPin" | "resetRequest" | "resetOtp" | "resetPin" | "emailLogin";
 
 type HeroTint = "primary" | "jade" | "accent";
 
@@ -33,6 +33,14 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         eyebrow: "Verified email access",
         title: "Email sign-in",
         subtitle: "We'll send a one-time code to your verified email.",
+      };
+    case "activate":
+      return {
+        icon: ShieldPlus,
+        tint: "jade",
+        eyebrow: "Account setup",
+        title: "Activate account",
+        subtitle: "Your account was created for you. Confirm your number to set a PIN.",
       };
     case "setupOtp":
       return {
@@ -95,19 +103,32 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
   }
 }
 
-const ART_W = 400;
-const ART_H = 110;
+const HERO_IMAGE = require("../../../assets/auth/hero-property.jpg");
+
+/**
+ * Opacity of the tint scrim laid over the photograph.
+ *
+ * <p>
+ * High enough that white text and the step's colour identity both survive —
+ * the band still reads blue on login, jade on setup, amber on PIN recovery —
+ * while the building and sky stay legible underneath.
+ */
+const SCRIM_OPACITY = 0.58;
 
 export function heroTintColor(copy: AuthHeroCopy, colors: { primary: string; jade: string; accent: string }) {
   return copy.tint === "jade" ? colors.jade : copy.tint === "accent" ? colors.accent : colors.primary;
 }
 
 /**
- * Full-bleed brand band at the very top of the auth screens (Swiggy-style):
- * solid step-tinted background running edge-to-edge under the status bar, a
- * floating white icon badge, the brand tagline in white, and the skyline
- * illustration as a subtle white texture along the band floor. The content
- * sheet below overlaps it by {@link AUTH_SHEET_OVERLAP} with rounded corners.
+ * Full-bleed brand band at the very top of the auth screens: a photograph of
+ * residential buildings under open sky, covered by a step-tinted scrim so the
+ * band still reads blue on login, jade on account setup and amber on PIN
+ * recovery. A floating white icon badge and the brand tagline sit on top, and
+ * the content sheet below overlaps it by {@link AUTH_SHEET_OVERLAP}.
+ *
+ * <p>
+ * The photo replaced a hand-drawn SVG skyline: the illustration read as filler,
+ * where a real building says what the product is about before a word is read.
  */
 export function AuthHero({ copy }: { copy: AuthHeroCopy }) {
   const { colors, fonts } = useTheme();
@@ -138,80 +159,65 @@ export function AuthHero({ copy }: { copy: AuthHeroCopy }) {
       style={{
         alignItems: "center",
         backgroundColor: tint,
-        gap: compact ? spacing.sm : spacing.md,
+        gap: compact ? spacing.md : spacing.lg,
+        justifyContent: "center",
+        // Taller than it needs to be for its content, on purpose: the band is
+        // carrying a photograph now, and a shallow strip crops it to an
+        // unreadable sliver. The sheet below still scrolls, so the extra height
+        // costs nothing on small screens.
+        minHeight: compact ? 210 : 260,
         overflow: "hidden",
-        paddingBottom: (compact ? spacing.lg : spacing.xl) + AUTH_SHEET_OVERLAP,
+        paddingBottom: (compact ? spacing.xl : spacing.xxl) + AUTH_SHEET_OVERLAP,
         paddingHorizontal: spacing.xl,
-        paddingTop: insets.top + (compact ? spacing.md : spacing.lg),
+        paddingTop: insets.top + (compact ? spacing.lg : spacing.xl),
       }}
     >
-      {/* Skyline texture in translucent white, pinned to the band floor. */}
-      <Svg
-        height="100%"
-        width="100%"
-        preserveAspectRatio="xMaxYMax slice"
-        style={{ position: "absolute" }}
-        viewBox={`0 0 ${ART_W} ${ART_H}`}
+      <ImageBackground
+        source={HERO_IMAGE}
+        resizeMode="cover"
+        style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
       >
-        <Circle cx={40} cy={26} fill="#FFFFFF" opacity={0.16} r={11} />
-        <Circle cx={90} cy={14} fill="#FFFFFF" opacity={0.12} r={2.6} />
-        <Circle cx={352} cy={18} fill="#FFFFFF" opacity={0.12} r={3} />
-
-        <Rect fill="#FFFFFF" height={44} opacity={0.08} rx={4} width={30} x={10} y={ART_H - 44} />
-        <Rect fill="#FFFFFF" height={62} opacity={0.08} rx={4} width={36} x={58} y={ART_H - 62} />
-        <Rect fill="#FFFFFF" height={38} opacity={0.08} rx={4} width={28} x={128} y={ART_H - 38} />
-        <Rect fill="#FFFFFF" height={52} opacity={0.12} rx={5} width={36} x={30} y={ART_H - 52} />
-        <Rect fill="#FFFFFF" height={72} opacity={0.12} rx={5} width={42} x={92} y={ART_H - 72} />
-
-        <Rect fill="#FFFFFF" height={54} opacity={0.08} rx={4} width={34} x={250} y={ART_H - 54} />
-        <Rect fill="#FFFFFF" height={70} opacity={0.08} rx={4} width={40} x={306} y={ART_H - 70} />
-        <Rect fill="#FFFFFF" height={46} opacity={0.08} rx={4} width={30} x={368} y={ART_H - 46} />
-        <Rect fill="#FFFFFF" height={60} opacity={0.12} rx={5} width={38} x={276} y={ART_H - 60} />
-        <Rect fill="#FFFFFF" height={80} opacity={0.12} rx={5} width={44} x={332} y={ART_H - 80} />
-
-        {[0, 1].map((col) =>
-          [0, 1, 2].map((row) => (
-            <Rect fill="#FFFFFF" height={5} key={`wl-${col}-${row}`} opacity={0.22} rx={1.2} width={6} x={100 + col * 14} y={ART_H - 62 + row * 15} />
-          )),
-        )}
-        {[0, 1].map((col) =>
-          [0, 1, 2].map((row) => (
-            <Rect fill="#FFFFFF" height={5} key={`wr-${col}-${row}`} opacity={0.22} rx={1.2} width={6} x={340 + col * 15} y={ART_H - 70 + row * 16} />
-          )),
-        )}
-      </Svg>
+        {/* Tint scrim: keeps the step colour identity and guarantees contrast
+            for the white tagline, whatever the photo is doing underneath. */}
+        <View style={{ backgroundColor: tint, flex: 1, opacity: SCRIM_OPACITY }} />
+        {/* Extra darkening at the floor so the sheet's rounded corners read
+            against the band rather than dissolving into a bright patch. */}
+        <LinearGradient
+          colors={["rgba(0,0,0,0.22)", "transparent", "rgba(0,0,0,0.34)"]}
+          locations={[0, 0.45, 1]}
+          style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
+        />
+      </ImageBackground>
 
       <Animated.View
         style={{
           alignItems: "center",
-          backgroundColor: "#FFFFFF",
+          // Outlined, not filled: the app-wide icon rule, and against a
+          // photograph a hairline ring reads as a mark where a white slab reads
+          // as a button someone forgot to wire up. The glyph is white because
+          // ink would vanish into the scrim.
+          borderColor: "rgba(255,255,255,0.9)",
           borderCurve: "continuous",
-          borderRadius: Math.round(badgeSize * 0.32),
-          elevation: 6,
+          borderRadius: Math.round(badgeSize * 0.34),
+          borderWidth: 1.5,
           height: badgeSize,
           justifyContent: "center",
-          shadowColor: "#000000",
-          shadowOffset: { height: 6, width: 0 },
-          shadowOpacity: 0.18,
-          shadowRadius: 12,
           transform: [{ translateY }],
           width: badgeSize,
         }}
       >
-        <Icon color={tint} size={Math.round(badgeSize * 0.5)} strokeWidth={2.1} />
+        <Icon color="#FFFFFF" size={Math.round(badgeSize * 0.46)} strokeWidth={1.9} />
       </Animated.View>
 
       <Text
         style={{
           color: "#FFFFFF",
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: compact ? 15 : 16.5,
-          fontWeight: "800",
           lineHeight: compact ? 21 : 23,
           maxWidth: 320,
           textAlign: "center",
         }}
-        selectable
       >
         One place for your stays, rent{"\n"}and properties.
       </Text>

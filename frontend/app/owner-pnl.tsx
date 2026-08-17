@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Linking, Platform, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ChevronLeft, ChevronRight, Download, FileText, Plus, Receipt, TrendingUp, Undo2, Wallet } from "lucide-react-native";
+import { Download, FileText, Plus, Receipt, TrendingUp, Undo2, Wallet } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -19,6 +19,7 @@ import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ActionButton, FormInput, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { PnlTrendChart } from "@/features/owner/pnl-trend-chart";
+import { MonthSelector } from "@/components/month-selector";
 import { useAppSelector } from "@/store/hooks";
 import {
   useCreateIncomeMutation,
@@ -58,13 +59,6 @@ export default function OwnerPnlScreen() {
   const trend = trendQuery.data;
   const incomePage = incomeQuery.data;
 
-  function changeMonth(delta: number) {
-    setMonth((current) => shiftMonth(current, delta));
-    setPage(0);
-  }
-
-  const atCurrentMonth = month >= firstOfMonth();
-
   return (
     <>
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
@@ -85,7 +79,7 @@ export default function OwnerPnlScreen() {
           />
         ) : (
           <>
-            <MonthSelector atCurrentMonth={atCurrentMonth} label={monthLabel(month)} onNext={() => changeMonth(1)} onPrevious={() => changeMonth(-1)} />
+            <MonthSelector onChange={(picked) => setMonth(`${picked}-01`)} value={month.slice(0, 7)} />
 
             {statementQuery.isLoading && !statement ? (
               <SkeletonScreen tiles={3} rows={0} />
@@ -177,33 +171,7 @@ export default function OwnerPnlScreen() {
   );
 }
 
-function MonthSelector({ atCurrentMonth, label, onNext, onPrevious }: { atCurrentMonth: boolean; label: string; onNext: () => void; onPrevious: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
-      <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={onPrevious} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
-        {label}
-      </Text>
-      <RoundIconButton disabled={atCurrentMonth} icon={ChevronRight} label="Next month" onPress={onNext} />
-    </View>
-  );
-}
 
-function RoundIconButton({ disabled = false, icon: Icon, label, onPress }: { disabled?: boolean; icon: typeof ChevronLeft; label: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, height: 40, justifyContent: "center", opacity: disabled ? 0.4 : 1, width: 40 }}
-    >
-      <Icon color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function NetHero({ statement }: { statement: PnlStatement }) {
   const { colors, type } = useTheme();
@@ -214,11 +182,11 @@ function NetHero({ statement }: { statement: PnlStatement }) {
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             {profit ? "Net profit" : "Net loss"}
           </Text>
           <MoneyText animate color={accent} paise={Math.abs(statement.netPaise)} size={32} weight="700" />
-          <Text style={[type.caption, { color: colors.muted }]} selectable>
+          <Text style={[type.caption, { color: colors.muted }]}>
             {profit ? "What you kept after expenses this month" : "You spent more than you earned this month"}
           </Text>
         </View>
@@ -239,14 +207,14 @@ function MiniStat({ color, label, sub, value }: { color: string; label: string; 
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
         {label}
       </Text>
-      <Text style={{ color, fontFamily: fonts.sans, fontSize: 14, fontVariant: ["tabular-nums"], fontWeight: "800" }} numberOfLines={1} adjustsFontSizeToFit selectable>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 14, fontVariant: ["tabular-nums"], }} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       {sub ? (
-        <Text style={[type.caption, { color: colors.kicker, fontSize: 10 }]} numberOfLines={2} selectable>
+        <Text style={[type.caption, { color: colors.kicker, fontSize: 10 }]} numberOfLines={2}>
           {sub}
         </Text>
       ) : null}
@@ -261,7 +229,7 @@ function CollectionStatus({ uncollectedPaise }: { uncollectedPaise: number }) {
   return (
     <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
       <View style={{ backgroundColor: dot, borderRadius: 999, height: 8, width: 8 }} />
-      <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]} selectable>
+      <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
         {pending ? `Collection pending · ${formatMoneyPaise(uncollectedPaise)} yet to be collected` : "All bills collected"}
       </Text>
     </View>
@@ -319,26 +287,26 @@ function Breakdown({
     <Section eyebrow={eyebrow} title={title}>
       <Card>
         {lines.length === 0 ? (
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             {emptyText}
           </Text>
         ) : (
           <View style={{ gap: spacing.md }}>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {totalLabel}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
                 {formatMoneyPaise(totalPaise)}
               </Text>
             </View>
             {lines.map((item) => (
               <View key={item.label} style={{ gap: spacing.xs }}>
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1} selectable>
+                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
                     {item.label}
                   </Text>
-                  <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"], }}>
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
                 </View>
@@ -362,7 +330,7 @@ function ToolBox({ icon: Icon, label, onPress }: { icon: typeof Plus; label: str
       style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 96, paddingHorizontal: spacing.xs, paddingVertical: spacing.md }}
     >
       <Icon color={colors.primary} size={30} strokeWidth={2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", textAlign: "center" }} numberOfLines={2} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, textAlign: "center" }} numberOfLines={2}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -378,10 +346,10 @@ function IncomeRow({ entry, onReverse }: { entry: IncomeEntry; onReverse: () => 
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: spacing.sm, opacity: entry.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {entry.source}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {entry.receivedFrom ? `${entry.receivedFrom} · ` : ""}{formatDate(entry.receivedDate)}
           </Text>
         </View>
@@ -392,7 +360,7 @@ function IncomeRow({ entry, onReverse }: { entry: IncomeEntry; onReverse: () => 
           <IncomeBadge entryType={entry.entryType} />
           {entry.reversed ? (
             <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-              <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+              <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, }}>
                 Reversed
               </Text>
             </View>
@@ -405,14 +373,14 @@ function IncomeRow({ entry, onReverse }: { entry: IncomeEntry; onReverse: () => 
             style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, paddingHorizontal: spacing.sm, paddingVertical: 6 }}
           >
             <Undo2 color={colors.danger} size={14} strokeWidth={2.4} />
-            <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }} selectable>
+            <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 12, }}>
               Reverse
             </Text>
           </AnimatedPressable>
         ) : null}
       </View>
       {entry.description ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {entry.description}
         </Text>
       ) : null}
@@ -427,7 +395,7 @@ function IncomeBadge({ entryType }: { entryType: IncomeEntry["entryType"] }) {
     : { bg: colors.primarySoft, fg: colors.primary, label: "Manual" };
   return (
     <View style={{ backgroundColor: tone.bg, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-      <Text style={{ color: tone.fg, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+      <Text style={{ color: tone.fg, fontFamily: fonts.sansBold, fontSize: 11, }}>
         {tone.label}
       </Text>
     </View>
@@ -440,7 +408,7 @@ function InlineError({ message }: { message: string | null }) {
   const { colors, type } = useTheme();
   if (!message) return null;
   return (
-    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
+    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
       {message}
     </Text>
   );
@@ -449,7 +417,7 @@ function InlineError({ message }: { message: string | null }) {
 function FieldLabel({ children }: { children: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} selectable>
+    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
       {children}
     </Text>
   );
@@ -458,7 +426,7 @@ function FieldLabel({ children }: { children: string }) {
 function BodyNote({ children }: { children: ReactNode }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted }]} selectable>
+    <Text style={[type.caption, { color: colors.muted }]}>
       {children}
     </Text>
   );
@@ -586,11 +554,11 @@ function ReportBlock({ lines, title }: { lines: PnlLine[]; title: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {title}
       </Text>
       {lines.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           None
         </Text>
       ) : (
@@ -605,10 +573,10 @@ function ReportRow({ bold = false, label, paise, signed = false }: { bold?: bool
   const negative = signed && paise < 0;
   return (
     <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-      <Text style={[type.caption, { color: bold ? colors.ink : colors.muted, fontWeight: bold ? "800" : "500" }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: bold ? colors.ink : colors.muted, fontWeight: bold ? "800" : "500" }]} numberOfLines={1}>
         {label}
       </Text>
-      <Text style={{ color: negative ? colors.danger : bold ? colors.ink : colors.inkSoft, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: bold ? "800" : "700" }} selectable>
+      <Text style={{ color: negative ? colors.danger : bold ? colors.ink : colors.inkSoft, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: bold ? "800" : "700" }}>
         {signed && paise < 0 ? "−" : ""}{formatMoneyPaise(Math.abs(paise))}
       </Text>
     </View>
@@ -639,7 +607,7 @@ function IncomeDateField({ label, onChange, value }: { label: string; onChange: 
         onPress={() => setOpen(true)}
         style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: spacing.md }}
       >
-        <Text style={[type.body, { color: value ? colors.ink : colors.muted }]} selectable>
+        <Text style={[type.body, { color: value ? colors.ink : colors.muted }]}>
           {value ? formatDate(value) : "Select date"}
         </Text>
       </AnimatedPressable>
@@ -693,11 +661,6 @@ function firstOfMonth() {
   return `${istIsoToday().slice(0, 7)}-01`;
 }
 
-function shiftMonth(iso: string, delta: number) {
-  const [year, month] = iso.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-  return `${toLocalIso(date).slice(0, 7)}-01`;
-}
 
 function defaultReceivedDate(month: string) {
   return month >= firstOfMonth() ? istIsoToday() : month;

@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
-import com.khatiyan.d_modules.tenancy.model.EarlyExitPenaltyType;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
@@ -37,10 +36,12 @@ public record TenancyResponse(
     Instant createdAt,
     boolean billingStarted,
     boolean tosAccepted,
-    boolean agreementBacked,
-    LocalDate lockInEndDate,
-    EarlyExitPenaltyType earlyExitPenaltyType,
-    Long earlyExitPenaltyFixedPaise,
+    /** True when the agreement runs for a fixed term rather than indefinitely. */
+    boolean fixedTerm,
+    /** The day a fixed term — and the tenancy — ends. Null when indefinite. */
+    LocalDate agreementEndDate,
+    /** What leaving early costs, in the owner's words. Applied by a person. */
+    String earlyExitRule,
     // The owner's own declaration that they checked the tenant's ID proof and
     // photograph. Null on tenancies onboarded before it was required.
     Boolean idCheckConfirmed,
@@ -69,10 +70,9 @@ public record TenancyResponse(
             t.getCreatedAt(),
             t.isBillingStarted(),
             t.isTosAccepted(),
-            t.isAgreementBacked(),
-            t.getLockInEndDate(),
-            t.getEarlyExitPenaltyType(),
-            t.getEarlyExitPenaltyFixedPaise(),
+            t.hasFixedTerm(),
+            t.getAgreementEndDate(),
+            t.getEarlyExitRule(),
             t.getIdCheckConfirmed(),
             t.getIdCheckedAt()
         );
@@ -101,10 +101,9 @@ public record TenancyResponse(
             t.getCreatedAt(),
             t.isBillingStarted(),
             t.isTosAccepted(),
-            t.isAgreementBacked(),
-            t.getLockInEndDate(),
-            t.getEarlyExitPenaltyType(),
-            t.getEarlyExitPenaltyFixedPaise(),
+            t.hasFixedTerm(),
+            t.getAgreementEndDate(),
+            t.getEarlyExitRule(),
             t.getIdCheckConfirmed(),
             t.getIdCheckedAt()
         );

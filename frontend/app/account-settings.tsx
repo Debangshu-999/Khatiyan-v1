@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BlurView } from "expo-blur";
 import {
   ActivityIndicator,
   Image,
@@ -13,7 +12,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppTextInput } from "@/components/app-text-input";
 import { CodeField } from "@/features/auth/auth-ui";
-import { BellRing, Fingerprint, Mail, Moon, Pencil, ShieldCheck, Smartphone, X } from "lucide-react-native";
+import { AlertTriangle, BellRing, Fingerprint, Mail, Moon, ShieldCheck, Smartphone, X, type LucideProps } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -24,7 +24,6 @@ import { Divider } from "@/components/divider";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { StatusPill } from "@/components/status-pill";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -43,12 +42,11 @@ import {
   useRegisterDeviceMutation,
 } from "@/store/services/notification-api";
 import { setRegisteredDeviceTokenId, setSession } from "@/store/slices/auth-slice";
+import { NoticeBar } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PinModalMode = "change" | "forgot";
-type ProfileEditField = "name" | "email";
-
 type PinFlowStep = "details" | "otp" | "pin";
 
 export default function AccountSettingsScreen() {
@@ -65,7 +63,6 @@ export default function AccountSettingsScreen() {
   const [changePin, changePinState] = useChangePinMutation();
   const toast = useToast();
   const [pinModalMode, setPinModalMode] = useState<PinModalMode | null>(null);
-  const [profileEdit, setProfileEdit] = useState<ProfileEditField | null>(null);
   const emailQuery = useGetEmailRecoveryStatusQuery(undefined, { skip: !auth.accessToken });
   const emailStatus = emailQuery.data;
   const [updateProfile, updateProfileState] = useUpdateProfileMutation();
@@ -129,7 +126,7 @@ export default function AccountSettingsScreen() {
         <>
           <ScreenScrollView>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Account · settings
               </Text>
               <CloseButton onPress={close} />
@@ -139,17 +136,14 @@ export default function AccountSettingsScreen() {
 
             <ProfileCard
               email={emailStatus?.email ?? null}
-              emailVerified={Boolean(emailStatus?.verified)}
               fullName={auth.user?.fullName ?? ""}
-              onEditEmail={() => setProfileEdit("email")}
-              onEditName={() => setProfileEdit("name")}
               phone={phone}
               photoUrl={auth.user?.profilePhotoUrl ?? null}
             />
 
             <Section eyebrow="Security" title="PIN">
               <SettingsRow
-                icon={Fingerprint}
+                icon={DialpadIcon}
                 title="Change PIN"
                 description="Use current PIN, verify OTP, then choose a new PIN."
                 onPress={() => setPinModalMode("change")}
@@ -179,7 +173,7 @@ export default function AccountSettingsScreen() {
                   }
                 />
                 {activeDevice ? (
-                  <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
                     {activeDevice.platform} / {activeDevice.provider} / last seen {formatRelativeTime(activeDevice.lastSeenAt)}
                   </Text>
                 ) : null}
@@ -216,7 +210,6 @@ export default function AccountSettingsScreen() {
                         fontSize: 13,
                         fontWeight: "800",
                       }}
-                      selectable
                     >
                       v1
                     </Text>
@@ -226,32 +219,6 @@ export default function AccountSettingsScreen() {
             </Section>
 
           </ScreenScrollView>
-
-          <ProfileEditModal
-            busy={updateProfileState.isLoading || updateRecoveryEmailState.isLoading}
-            field={profileEdit}
-            initialValue={profileEdit === "email" ? (emailStatus?.email ?? "") : (auth.user?.fullName ?? "")}
-            onClose={() => setProfileEdit(null)}
-            onSave={async (nextValue) => {
-              if (profileEdit === "email") {
-                await updateRecoveryEmail({ email: nextValue }).unwrap();
-                setProfileEdit(null);
-                toast.success("Email updated. Verify it from the link we sent.");
-                return;
-              }
-
-              const updated = await updateProfile({ fullName: nextValue }).unwrap();
-              // Keep the cached session in step so the name changes everywhere
-              // immediately rather than only after the next sign-in.
-              if (auth.accessToken) {
-                const session = { accessToken: auth.accessToken, user: updated };
-                dispatch(setSession(session));
-                await saveSession(session);
-              }
-              setProfileEdit(null);
-              toast.success("Name updated.");
-            }}
-          />
 
           <PinVerificationModal
             busy={pinFlowBusy}
@@ -286,20 +253,18 @@ export default function AccountSettingsScreen() {
  * change about it. Phone is deliberately read-only — changing it needs its own
  * OTP re-verification flow, which the backend does not expose.
  */
+function DialpadIcon({ color, size }: LucideProps) {
+  return <MaterialCommunityIcons color={typeof color === "string" ? color : undefined} name="dialpad" size={typeof size === "number" ? size : 18} />;
+}
+
 function ProfileCard({
   email,
-  emailVerified,
   fullName,
-  onEditEmail,
-  onEditName,
   phone,
   photoUrl,
 }: {
   email: string | null;
-  emailVerified: boolean;
   fullName: string;
-  onEditEmail: () => void;
-  onEditName: () => void;
   phone: string;
   photoUrl: string | null;
 }) {
@@ -320,11 +285,13 @@ function ProfileCard({
             style={{ borderRadius: 999, height: 84, width: 84 }}
           />
         ) : (
+          // Same treatment as the profile screen's avatar: an outlined ring
+          // with ink initials. The tinted disc read as a coloured tile behind a
+          // glyph, which is the one thing the icon rule rules out.
           <View
             style={{
               alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderColor: colors.primary,
+              borderColor: colors.border,
               borderRadius: 999,
               borderWidth: 1,
               height: 84,
@@ -332,43 +299,23 @@ function ProfileCard({
               width: 84,
             }}
           >
-            <Text style={{ color: colors.primary, fontFamily: fonts.display, fontSize: 30, fontWeight: "600" }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 30, letterSpacing: 0.5 }}>
               {initials || "?"}
             </Text>
           </View>
         )}
 
-        {/* Name sits directly under the photo with the pencil beside it, so the
-            edit affordance is where the eye already is. */}
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-          <Text
-            numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }}
-            selectable
-          >
-            {fullName || "Add your name"}
-          </Text>
-          <AnimatedPressable
-            accessibilityLabel="Edit name"
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={onEditName}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceSunken,
-              borderColor: colors.border,
-              borderRadius: 999,
-              borderWidth: 1,
-              height: 28,
-              justifyContent: "center",
-              width: 28,
-            }}
-          >
-            <Pencil color={colors.kicker} size={14} strokeWidth={2.2} />
-          </AnimatedPressable>
-        </View>
+        {/* Read-only. This card is an identity reminder at the top of settings;
+            the name, photo and email are all edited on the profile screen,
+            where they are the subject rather than a header. */}
+        <Text
+          numberOfLines={1}
+          style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21 }}
+        >
+          {fullName || "Add your name"}
+        </Text>
 
-        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]} selectable>
+        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
           {phone}
         </Text>
       </View>
@@ -378,147 +325,13 @@ function ProfileCard({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <Mail color={colors.kicker} size={16} strokeWidth={2.2} />
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-            Email
-          </Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>Email</Text>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
             {email ?? "Not added"}
           </Text>
         </View>
-        {email ? (
-          // StatusPill defaults to alignSelf "flex-start", which overrides the
-          // row's centring and floats the chip above the pencil beside it.
-          <StatusPill
-            label={emailVerified ? "Verified" : "Unverified"}
-            style={{ alignSelf: "center" }}
-            tone={emailVerified ? "success" : "warning"}
-          />
-        ) : null}
-        <AnimatedPressable
-          accessibilityLabel={email ? "Edit email" : "Add email"}
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={onEditEmail}
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderColor: colors.border,
-            borderRadius: 999,
-            borderWidth: 1,
-            height: 28,
-            justifyContent: "center",
-            width: 28,
-          }}
-        >
-          <Pencil color={colors.kicker} size={14} strokeWidth={2.2} />
-        </AnimatedPressable>
       </View>
     </Card>
-  );
-}
-
-function ProfileEditModal({
-  busy,
-  field,
-  initialValue,
-  onClose,
-  onSave,
-}: {
-  busy: boolean;
-  field: ProfileEditField | null;
-  initialValue: string;
-  onClose: () => void;
-  onSave: (value: string) => Promise<void>;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const [value, setValue] = useState(initialValue);
-  const [error, setError] = useState<string | null>(null);
-  const isEmail = field === "email";
-
-  // Re-seed whenever a different field is opened; the modal is mounted once and
-  // reused, so state would otherwise carry over from the previous edit.
-  useEffect(() => {
-    setValue(initialValue);
-    setError(null);
-  }, [field, initialValue]);
-
-  async function submit() {
-    const trimmed = value.trim();
-    if (isEmail) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
-        return setError("Enter a valid email address.");
-      }
-    } else if (trimmed.length < 2) {
-      return setError("Enter your full name.");
-    }
-
-    try {
-      await onSave(trimmed);
-    } catch (submitError) {
-      setError(errorMessage(submitError));
-    }
-  }
-
-  return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={field !== null}>
-      <BlurView
-        intensity={36}
-        tint="dark"
-        style={{ alignItems: "center", flex: 1, justifyContent: "center", padding: spacing.lg }}
-      >
-        <KeyboardAvoidingView behavior="padding" style={{ maxWidth: 520, width: "100%" }}>
-          <Card style={{ borderRadius: 18, gap: spacing.md }}>
-            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "500" }}
-                selectable
-              >
-                {isEmail ? "Edit email" : "Edit name"}
-              </Text>
-              <CloseButton onPress={onClose} />
-            </View>
-
-            <AppTextInput
-              autoCapitalize={isEmail ? "none" : "words"}
-              autoCorrect={false}
-              keyboardType={isEmail ? "email-address" : "default"}
-              onChangeText={(next) => {
-                setValue(next);
-                setError(null);
-              }}
-              placeholder={isEmail ? "you@example.com" : "Your full name"}
-              style={{
-                backgroundColor: colors.surfaceRaised,
-                borderColor: error ? colors.danger : colors.borderStrong,
-                borderRadius: 12,
-                borderWidth: 1,
-                color: colors.ink,
-                fontFamily: fonts.sans,
-                fontSize: 16,
-                minHeight: 52,
-                paddingHorizontal: spacing.md,
-              }}
-              value={value}
-            />
-
-            {isEmail ? (
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
-                Changing this sends a fresh verification link. Payout setup needs a verified address.
-              </Text>
-            ) : null}
-
-            {error ? (
-              <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
-                {error}
-              </Text>
-            ) : null}
-
-            <PrimaryButton busy={busy} label="Save" onPress={() => void submit()} />
-            <SafeAreaView edges={["bottom"]} />
-          </Card>
-        </KeyboardAvoidingView>
-      </BlurView>
-    </Modal>
   );
 }
 
@@ -668,11 +481,13 @@ function PinVerificationModal({
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={resetAndClose}>
-      <BlurView
-        intensity={36}
-        tint="dark"
+      {/* A plain dim, not a blur — see ProfileEditModal for the reasoning: a
+          Modal is its own window on Android, so expo-blur has nothing it is
+          allowed to sample. */}
+      <View
         style={{
           alignItems: "center",
+          backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           padding: spacing.lg,
@@ -709,7 +524,7 @@ function PinVerificationModal({
                   pinning it to the card's top corner. */}
               <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ flex: 1, gap: spacing.xs }}>
-                  <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+                  <Text style={[type.eyebrow, { color: colors.primary }]}>
                     PIN verification
                   </Text>
                   <Text
@@ -717,13 +532,11 @@ function PinVerificationModal({
                       color: colors.ink,
                       fontFamily: fonts.display,
                       fontSize: 24,
-                      fontWeight: "500",
                     }}
-                    selectable
                   >
                     {title}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted }]}>
                     {subtitle}
                   </Text>
                 </View>
@@ -733,6 +546,17 @@ function PinVerificationModal({
               </View>
 
               <View style={{ gap: spacing.md, paddingTop: spacing.xs }}>
+                {/* Said before the PIN is typed, not after the sign-out. A new
+                    PIN invalidates every token the account holds, so any other
+                    phone or tablet still signed in is dropped too — surprising
+                    if you are mid-task on one of them, and unguessable from a
+                    screen that only talks about this device. */}
+                <NoticeBar
+                  icon={AlertTriangle}
+                  message="Any other phone or tablet signed in to this account is signed out too."
+                  title="This signs you out everywhere"
+                  tone="warning"
+                />
                 {step === "details" ? (
                   <>
                     {mode === "change" ? (
@@ -769,7 +593,7 @@ function PinVerificationModal({
             <SafeAreaView edges={["bottom"]} />
           </Card>
         </KeyboardAvoidingView>
-      </BlurView>
+      </View>
     </Modal>
   );
 }
@@ -781,7 +605,7 @@ function SettingsRow({
   title,
 }: {
   description: string;
-  icon: typeof Fingerprint;
+  icon: ComponentType<LucideProps>;
   onPress: () => void;
   title: string;
 }) {
@@ -804,14 +628,15 @@ function SettingsRow({
         <View
           style={{
             alignItems: "center",
-            backgroundColor: colors.primarySoft,
+            borderColor: colors.ink,
+            borderWidth: 1,
             borderRadius: 10,
             height: 40,
             justifyContent: "center",
             width: 40,
           }}
         >
-          <Icon color={colors.primary} size={18} strokeWidth={2} />
+          <Icon color={colors.ink} size={18} strokeWidth={2} />
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
           <Text
@@ -819,13 +644,11 @@ function SettingsRow({
               color: colors.ink,
               fontFamily: fonts.display,
               fontSize: 18,
-              fontWeight: "500",
             }}
-            selectable
           >
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
+          <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
             {description}
           </Text>
         </View>
@@ -852,14 +675,15 @@ function PreferenceRow({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          borderColor: colors.ink,
+          borderWidth: 1,
           borderRadius: 10,
           height: 40,
           justifyContent: "center",
           width: 40,
         }}
       >
-        <Icon color={colors.primary} size={18} strokeWidth={2} />
+        <Icon color={colors.ink} size={18} strokeWidth={2} />
       </View>
       <View style={{ flex: 1, gap: spacing.xxs }}>
         <Text
@@ -867,13 +691,11 @@ function PreferenceRow({
             color: colors.ink,
             fontFamily: fonts.display,
             fontSize: 18,
-            fontWeight: "500",
           }}
-          selectable
         >
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
+        <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
           {description}
         </Text>
       </View>
@@ -903,12 +725,10 @@ function PrimaryButton({ busy, label, onPress }: { busy?: boolean; label: string
         <Text
           style={{
             color: colors.onPrimary,
-            fontFamily: fonts.sans,
+            fontFamily: fonts.sansBold,
             fontSize: 14,
-            fontWeight: "800",
             letterSpacing: 0.4,
           }}
-          selectable
         >
           {label}
         </Text>
@@ -937,12 +757,10 @@ function SecondaryButton({ busy, label, onPress }: { busy?: boolean; label: stri
       <Text
         style={{
           color: colors.primary,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 13,
-          fontWeight: "800",
           letterSpacing: 0.4,
         }}
-        selectable
       >
         {label}
       </Text>

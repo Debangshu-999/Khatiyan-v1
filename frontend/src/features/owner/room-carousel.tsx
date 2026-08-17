@@ -42,7 +42,7 @@ export function RoomCarousel<T extends RoomCarouselItem>({ rooms, renderRoom }: 
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+        <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
           Room {displayedIndex + 1} of {rooms.length}
         </Text>
         <View style={{ flexDirection: "row", gap: spacing.xs }}>

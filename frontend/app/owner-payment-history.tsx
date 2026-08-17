@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ChevronLeft, ChevronRight, ReceiptText } from "lucide-react-native";
+import { ReceiptText } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -11,6 +11,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonList } from "@/components/skeleton";
+import { MonthSelector, currentMonth } from "@/components/month-selector";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
   PaymentHistoryRow,
@@ -25,6 +26,13 @@ import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 8;
 
+type BillFilter = "ALL" | "RENT_CYCLE" | "ONE_OFF";
+const FILTERS: { label: string; value: BillFilter }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Cycles", value: "RENT_CYCLE" },
+  { label: "Other bills", value: "ONE_OFF" },
+];
+
 export default function OwnerPaymentHistoryScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{ month?: string }>();
@@ -35,24 +43,30 @@ export default function OwnerPaymentHistoryScreen() {
 
   const [month, setMonth] = useState(params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : currentMonth());
   const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState<BillFilter>("ALL");
 
   const cyclesQuery = useListPropertyBillingCyclesQuery({ month, propertyId }, { skip: !propertyId });
   const ordered = useMemo(() => [...(cyclesQuery.data ?? [])].sort(comparePaymentHistoryCycles), [cyclesQuery.data]);
 
-  const paidCount = ordered.filter((c) => c.status === "PAID").length;
-  const lateCount = ordered.filter((c) => c.status === "PAID" && paymentHistoryStatus(c) === "OVERDUE").length;
-  const unpaidCount = ordered.filter((c) => c.status === "UNPAID" || c.status === "OVERDUE").length;
+  // Rent cycles and one-off bills read very differently — a penalty next to a
+  // month's rent is easy to misread as rent. Split them the way tenant bills do.
+  const rentCount = ordered.filter((c) => c.category === "RENT_CYCLE").length;
+  const oneOffCount = ordered.filter((c) => c.category === "ONE_OFF").length;
+  const visible = filter === "ALL" ? ordered : ordered.filter((c) => c.category === filter);
 
-  const totalPages = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
+  // The metrics describe what is on screen, so they follow the filter too.
+  const paidCount = visible.filter((c) => c.status === "PAID").length;
+  const lateCount = visible.filter((c) => c.status === "PAID" && paymentHistoryStatus(c) === "OVERDUE").length;
+  const unpaidCount = visible.filter((c) => c.status === "UNPAID" || c.status === "OVERDUE").length;
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
-  const pageItems = ordered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const pageItems = visible.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
-  function changeMonth(delta: number) {
-    setMonth((current) => shiftMonth(current, delta));
+  function pickFilter(next: BillFilter) {
+    setFilter(next);
     setPage(0);
   }
-
-  const atCurrentMonth = month >= currentMonth();
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
@@ -73,23 +87,39 @@ export default function OwnerPaymentHistoryScreen() {
         />
       ) : (
         <>
-          <MonthSelector atCurrentMonth={atCurrentMonth} label={monthLabel(month)} onNext={() => changeMonth(1)} onPrevious={() => changeMonth(-1)} />
+          <MonthSelector onChange={setMonth} value={month} />
 
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HistoryMetric label="Paid" tone="success" value={String(paidCount)} />
-            <HistoryMetric label="Late" tone="warning" value={String(lateCount)} />
-            <HistoryMetric label="Unpaid" tone="primary" value={String(unpaidCount)} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {FILTERS.map((entry) => (
+              <FilterPill
+                active={filter === entry.value}
+                count={entry.value === "RENT_CYCLE" ? rentCount : entry.value === "ONE_OFF" ? oneOffCount : ordered.length}
+                key={entry.value}
+                label={entry.label}
+                onPress={() => pickFilter(entry.value)}
+              />
+            ))}
           </View>
 
-          <Section eyebrow={monthLabel(month)} title={`${ordered.length} bill${ordered.length === 1 ? "" : "s"}`}>
-            {cyclesQuery.isFetching && ordered.length === 0 ? <SkeletonList rows={4} /> : null}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HistoryMetric label="Paid" value={String(paidCount)} />
+            <HistoryMetric label="Late" value={String(lateCount)} />
+            <HistoryMetric label="Unpaid" value={String(unpaidCount)} />
+          </View>
 
-            {!cyclesQuery.isFetching && ordered.length === 0 ? (
+          <Section eyebrow={monthLabel(month)} title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
+            {cyclesQuery.isFetching && visible.length === 0 ? <SkeletonList rows={4} /> : null}
+
+            {!cyclesQuery.isFetching && visible.length === 0 ? (
               <EmptyState
                 icon={ReceiptText}
                 eyebrow="No history"
                 title="No payment history found"
-                description="No bills started in this month."
+                description={
+                  ordered.length === 0
+                    ? "No bills started in this month."
+                    : "Switch the filter above to see this month's other bills."
+                }
               />
             ) : null}
 
@@ -99,14 +129,14 @@ export default function OwnerPaymentHistoryScreen() {
               ))}
             </View>
 
-            {ordered.length > 0 ? (
+            {visible.length > 0 ? (
               <PaginationBar
                 hasNext={safePage + 1 < totalPages}
                 hasPrevious={safePage > 0}
                 onNext={() => setPage(safePage + 1)}
                 onPrevious={() => setPage(Math.max(0, safePage - 1))}
                 page={safePage}
-                totalElements={ordered.length}
+                totalElements={visible.length}
                 totalPages={totalPages}
               />
             ) : null}
@@ -117,56 +147,61 @@ export default function OwnerPaymentHistoryScreen() {
   );
 }
 
-function MonthSelector({ atCurrentMonth, label, onNext, onPrevious }: { atCurrentMonth: boolean; label: string; onNext: () => void; onPrevious: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
-      <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={onPrevious} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
-        {label}
-      </Text>
-      <RoundIconButton disabled={atCurrentMonth} icon={ChevronRight} label="Next month" onPress={onNext} />
-    </View>
-  );
-}
 
-function RoundIconButton({ disabled = false, icon: Icon, label, onPress }: { disabled?: boolean; icon: typeof ChevronLeft; label: string; onPress: () => void }) {
-  const { colors } = useTheme();
+
+/**
+ * Matches the billing summary tiles: eyebrow label, ink figure, no tone colour.
+ * Colouring each figure by status made three tiles shout at once — green, amber
+ * and blue side by side read as three warnings rather than one breakdown. The
+ * label carries the meaning; the figure just has to be legible.
+ */
+function HistoryMetric({ label, value }: { label: string; value: string }) {
+  const { colors, type } = useTheme();
   return (
-    <AnimatedPressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, height: 40, justifyContent: "center", opacity: disabled ? 0.4 : 1, width: 40 }}
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 14,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.xs,
+        padding: spacing.md,
+      }}
     >
-      <Icon color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
-
-function HistoryMetric({ label, tone, value }: { label: string; tone: "success" | "warning" | "primary"; value: string }) {
-  const { colors, fonts, type } = useTheme();
-  const color = tone === "success" ? colors.successText : tone === "warning" ? colors.warningText : colors.primary;
-  return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flex: 1, gap: 2, padding: spacing.md }}>
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
-        {label}
-      </Text>
-      <Text style={{ color, fontFamily: fonts.display, fontSize: 22, fontWeight: "700" }} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        numberOfLines={1}
+        style={[type.metric, { color: colors.ink, fontSize: 22, lineHeight: 26 }]}
+      >
         {value}
       </Text>
     </View>
   );
 }
 
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
 
-function shiftMonth(value: string, delta: number) {
-  const [year, month] = value.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+function FilterPill({ active, count, label, onPress }: { active: boolean; count: number; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        borderColor: active ? colors.primary : colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm - 2,
+      }}
+    >
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
+        {label} · {count}
+      </Text>
+    </AnimatedPressable>
+  );
 }

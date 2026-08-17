@@ -9,6 +9,11 @@ import { useTheme } from "@/theme/use-theme";
 type ActionCardProps = {
   title: string;
   description: string;
+  /**
+   * Drops the card's own border and fill so it can sit inside another card as a
+   * row. Without it, nesting draws a box inside a box.
+   */
+  flush?: boolean;
   meta?: string;
   // Optional leading icon rendered in a soft rounded box.
   icon?: ComponentType<LucideProps>;
@@ -21,7 +26,7 @@ type ActionCardProps = {
 // Press-target card with a tracked-out kicker, a serif title, and a quiet
 // affordance arrow at the corner so it reads as navigable without a noisy
 // "Open" button.
-export function ActionCard({ badge, description, icon: Icon, meta, onPress, title, tone = "default" }: ActionCardProps) {
+export function ActionCard({ badge, description, flush, icon: Icon, meta, onPress, title, tone = "default" }: ActionCardProps) {
   const { colors, fonts, type } = useTheme();
   const badgeLabel = badge != null && badge > 0 ? (badge > 99 ? "99+" : String(badge)) : null;
   const isPrimary = tone === "primary";
@@ -34,7 +39,7 @@ export function ActionCard({ badge, description, icon: Icon, meta, onPress, titl
   const content = (
     <>
       {meta ? (
-        <Text style={[type.eyebrow, { color: metaColor }]} selectable>
+        <Text style={[type.eyebrow, { color: metaColor }]}>
           {meta}
         </Text>
       ) : null}
@@ -45,7 +50,6 @@ export function ActionCard({ badge, description, icon: Icon, meta, onPress, titl
             type.display,
             { color: titleColor, flex: 1, fontSize: 19, lineHeight: 25 },
           ]}
-          selectable
         >
           {title}
         </Text>
@@ -62,7 +66,7 @@ export function ActionCard({ badge, description, icon: Icon, meta, onPress, titl
                 paddingVertical: 1,
               }}
             >
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800" }} selectable={false}>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, }}>
                 {badgeLabel}
               </Text>
             </View>
@@ -71,7 +75,7 @@ export function ActionCard({ badge, description, icon: Icon, meta, onPress, titl
         </View>
       </View>
 
-      <Text style={[type.body, { color: isPrimary ? colors.inkSoft : colors.muted }]} selectable>
+      <Text style={[type.body, { color: isPrimary ? colors.inkSoft : colors.muted }]}>
         {description}
       </Text>
     </>
@@ -81,28 +85,20 @@ export function ActionCard({ badge, description, icon: Icon, meta, onPress, titl
     <AnimatedPressable onPress={onPress}>
       <View
         style={{
-          backgroundColor,
-          borderColor,
+          backgroundColor: flush ? "transparent" : backgroundColor,
+          borderColor: flush ? "transparent" : borderColor,
           borderCurve: "continuous",
           borderRadius: 20,
-          borderWidth: 1,
+          borderWidth: flush ? 0 : 1,
           padding: spacing.lg,
           ...(Icon ? { alignItems: "flex-start", flexDirection: "row" as const, gap: spacing.md } : { gap: spacing.sm }),
         }}
       >
+        {/* The glyph alone — no tile, no ring. A container behind an icon
+            competes with the card's own edge and turns a label into a badge. */}
         {Icon ? (
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: isPrimary ? colors.surface : colors.primarySoft,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              height: 42,
-              justifyContent: "center",
-              width: 42,
-            }}
-          >
-            <Icon color={isPrimary ? colors.accent : colors.primary} size={20} strokeWidth={2.2} />
+          <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+            <Icon color={colors.ink} size={22} strokeWidth={2.2} />
           </View>
         ) : null}
         {Icon ? <View style={{ flex: 1, gap: spacing.sm }}>{content}</View> : content}

@@ -92,7 +92,7 @@ export default function OwnerUpcomingCyclesScreen() {
           ) : null}
 
           {upcomingQuery.isError ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               Could not load upcoming cycles. Pull to retry.
             </Text>
           ) : null}
@@ -140,15 +140,14 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
         <View style={{ flex: 1, gap: 2 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <Text
-              style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 17, fontWeight: "800" }}
+              style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 17, }}
               numberOfLines={1}
-              selectable
             >
               {item.tenantName || "Tenant"}
             </Text>
             {item.tenancyEndDate != null ? <StatusPill label="On notice" tone="warning" /> : null}
           </View>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {[item.roomNumber ? `Room ${item.roomNumber}` : null, item.tenancyReferenceCode, `${formatMoneyPaise(item.baseAmountPaise)}/mo`]
               .filter(Boolean)
               .join(" · ")}
@@ -176,7 +175,7 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <DueChip days={days} suppressed={endsBeforeNextCycle} />
         {endsBeforeNextCycle ? (
-          <Text style={[type.caption, { color: colors.muted, flex: 1, textAlign: "right" }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, flex: 1, textAlign: "right" }]}>
             Tenancy ends {formatFullDate(item.tenancyEndDate as string)} — before this cycle.
           </Text>
         ) : null}
@@ -201,7 +200,7 @@ function DueChip({ days, suppressed }: { days: number; suppressed: boolean }) {
 
   return (
     <View style={{ backgroundColor, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
-      <Text style={{ color, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
         {label}
       </Text>
     </View>
@@ -226,15 +225,13 @@ function ScheduleCell({
     <View style={[{ gap: 4, minWidth: 0, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 }, style]}>
       <Text
         numberOfLines={1}
-        style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 10, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase" }}
-        selectable
+        style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.8, textTransform: "uppercase" }}
       >
         {label}
       </Text>
       <Text
         numberOfLines={1}
-        style={{ color: highlight ? colors.primary : colors.ink, fontFamily: fonts.sans, fontSize: 14, fontVariant: ["tabular-nums"], fontWeight: "800", lineHeight: 19 }}
-        selectable
+        style={{ color: highlight ? colors.primary : colors.ink, fontFamily: fonts.sansBold, fontSize: 14, fontVariant: ["tabular-nums"], lineHeight: 19 }}
       >
         {value}
       </Text>

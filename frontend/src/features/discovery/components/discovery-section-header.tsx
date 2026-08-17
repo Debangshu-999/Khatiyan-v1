@@ -15,7 +15,7 @@ export function DiscoverySectionHeader({ eyebrow, subtitle, title }: DiscoverySe
   return (
     <View style={{ gap: spacing.xs }}>
       {eyebrow ? (
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {eyebrow}
         </Text>
       ) : null}
@@ -24,16 +24,14 @@ export function DiscoverySectionHeader({ eyebrow, subtitle, title }: DiscoverySe
           color: colors.ink,
           fontFamily: fonts.display,
           fontSize: 24,
-          fontWeight: "500",
           letterSpacing: -0.4,
           lineHeight: 28,
         }}
-        selectable
       >
         {title}
       </Text>
       {subtitle ? (
-        <Text style={[type.body, { color: colors.muted }]} selectable>
+        <Text style={[type.body, { color: colors.muted }]}>
           {subtitle}
         </Text>
       ) : null}

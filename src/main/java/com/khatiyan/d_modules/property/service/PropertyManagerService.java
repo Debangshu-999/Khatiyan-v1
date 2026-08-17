@@ -194,7 +194,7 @@ public class PropertyManagerService {
     @Transactional(readOnly = true)
     public ManagerEmploymentResponse getManagerEmploymentById(UUID propertyManagerId) {
         PropertyManager manager = propertyManagerRepository.findById(propertyManagerId)
-                .orElseThrow(() -> new NotFoundException("PropertyManager_", propertyManagerId));
+                .orElseThrow(() -> new NotFoundException("PropertyManager", propertyManagerId));
         return toEmploymentResponse(manager);
     }
 
@@ -216,10 +216,49 @@ public class PropertyManagerService {
     public void endManagerEmployment(UUID ownerId, UUID propertyId, UUID managerUserId, String reason, String review) {
         PropertyManager manager = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
-                .orElseThrow(() -> new NotFoundException("PropertyManager_", managerUserId));
+                .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
         manager.endEmployment(LocalDate.now(), reason, review);
         log.info("Property manager employment ended propertyId={} managerUserId={} ownerId={}", propertyId, managerUserId, ownerId);
         eventPublisher.publishEvent(new ManagerRemovedEvent(propertyId, managerUserId, ownerId));
+    }
+
+    /**
+     * Records a future leaving date without removing the assignment.
+     *
+     * <p>No ManagerRemovedEvent: nothing has been removed yet, and firing it now
+     * would revoke access on a manager who is still working.
+     */
+    @Transactional
+    public void scheduleManagerEnd(
+            UUID ownerId, UUID propertyId, UUID managerUserId, LocalDate endDate, String reason, String review) {
+        PropertyManager manager = propertyManagerRepository
+                .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
+                .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
+        manager.scheduleEnd(endDate, reason, review);
+        log.info("Property manager end scheduled propertyId={} managerUserId={} endDate={} ownerId={}",
+                propertyId, managerUserId, endDate, ownerId);
+    }
+
+    /**
+     * Closes every manager assignment whose scheduled last day has arrived.
+     *
+     * <p>Publishes ManagerRemovedEvent per manager, which is what actually
+     * revokes their access — the scheduling step deliberately did not.
+     *
+     * @return how many were ended
+     */
+    @Transactional
+    public int endDueScheduledAssignments(LocalDate today) {
+        List<PropertyManager> due =
+                propertyManagerRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today);
+        for (PropertyManager manager : due) {
+            manager.endScheduled();
+            log.info("Scheduled manager end actioned propertyId={} managerUserId={} endDate={}",
+                    manager.getPropertyId(), manager.getManagerUserId(), manager.getEmploymentEndDate());
+            eventPublisher.publishEvent(new ManagerRemovedEvent(
+                    manager.getPropertyId(), manager.getManagerUserId(), manager.getAssignedByUserId()));
+        }
+        return due.size();
     }
 
     /** Removed (inactive) managers for the employee history. */
@@ -233,12 +272,12 @@ public class PropertyManagerService {
 
     private PropertyManager managerByReference(UUID propertyId, String referenceCode) {
         return propertyManagerRepository.findByPropertyIdAndReferenceCodeAndActiveTrue(propertyId, referenceCode)
-                .orElseThrow(() -> new NotFoundException("PropertyManager_", referenceCode));
+                .orElseThrow(() -> new NotFoundException("PropertyManager", referenceCode));
     }
 
     private ManagerEmploymentResponse toEmploymentResponse(PropertyManager manager) {
         UserSummaryResponse user = authModule.findById(manager.getManagerUserId())
-                .orElseThrow(() -> new NotFoundException("User_", manager.getManagerUserId()));
+                .orElseThrow(() -> new NotFoundException("User", manager.getManagerUserId()));
         return ManagerEmploymentResponse.from(manager, user.fullName(), user.phone(), age(manager.getDateOfBirth()));
     }
 
@@ -268,7 +307,7 @@ public class PropertyManagerService {
 
         PropertyManager current = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(fromProperty.getId(), managerUserId)
-                .orElseThrow(() -> new NotFoundException("PropertyManager_", managerUserId));
+                .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
 
         if (toProperty.getOwnerId().equals(managerUserId)) {
             throw new ValidationException("Owner cannot be assigned as manager");
@@ -323,7 +362,7 @@ public class PropertyManagerService {
 
         PropertyManager manager = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(property.getId(), managerUserId)
-                .orElseThrow(() -> new NotFoundException("PropertyManager_", managerUserId));
+                .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
 
         manager.deactivate();
 
@@ -385,7 +424,7 @@ public class PropertyManagerService {
     }
     private PropertyManagerResponse toResponse(PropertyManager manager) {
         UserSummaryResponse managerUser = authModule.findById(manager.getManagerUserId())
-                .orElseThrow(() -> new NotFoundException("User_", manager.getManagerUserId()));
+                .orElseThrow(() -> new NotFoundException("User", manager.getManagerUserId()));
 
         return PropertyManagerResponse.from(manager, managerUser);
     }

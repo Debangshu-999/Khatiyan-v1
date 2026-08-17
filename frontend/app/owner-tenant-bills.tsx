@@ -1,22 +1,24 @@
 import { useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ChevronRight, ReceiptText, Users } from "lucide-react-native";
+import { ChevronRight, Plus, ReceiptText, Users, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
 import { SkeletonList } from "@/components/skeleton";
+import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { ActionButton } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { BillCard, compareByPeriodDesc } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
-import { useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
+import { useCreateOneOffBillMutation, useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -38,10 +40,13 @@ export default function OwnerTenantBillsScreen() {
   const propertyId = property?.id ?? "";
 
   const [selected, setSelected] = useState<TenancySummary | null>(null);
+  const { canManage: canManageResource } = usePropertyPermissions(propertyId);
+  const canManageBilling = canManageResource("BILLING_CYCLES");
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
+        badge={!canManageBilling ? <ViewOnlyChip /> : null}
         onBack={() => (selected ? setSelected(null) : router.back())}
         eyebrow="Billing"
         title="Tenant"
@@ -109,14 +114,14 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
           <AnimatedPressable accessibilityRole="button" key={tenancy.id} onPress={() => onSelect(tenancy)}>
             <Card>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-                <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-                  <ReceiptText color={colors.primary} size={20} strokeWidth={2.2} />
+                <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }}>
+                  <ReceiptText color={colors.ink} size={20} strokeWidth={2.2} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} numberOfLines={1} selectable>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }} numberOfLines={1}>
                     {tenancy.tenantName?.trim() || "Unnamed tenant"}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+                  <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
                     {tenancy.referenceCode}
                     {tenancy.tenantPhone ? ` · ${tenancy.tenantPhone}` : ""}
                   </Text>
@@ -132,9 +137,16 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
 }
 
 function TenantBills({ onChangeTenant, tenancy }: { onChangeTenant: () => void; tenancy: TenancySummary }) {
+  // Raising a one-off bill is BILLING_CYCLES at MANAGE. Blocked here rather
+  // than left to fail on submit: the modal's error had no way to say "you are
+  // not allowed", so it read as a bug.
+  const { canManage: canManageResource } = usePropertyPermissions(tenancy.propertyId);
+  const canManageBilling = canManageResource("BILLING_CYCLES");
+  const { colors, type } = useTheme();
   const cyclesQuery = useListManagedTenancyBillingCyclesQuery(tenancy.id);
   const [filter, setFilter] = useState<BillFilter>("ALL");
   const [page, setPage] = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
 
   const all = useMemo(() => [...(cyclesQuery.data ?? [])].sort(compareByPeriodDesc), [cyclesQuery.data]);
   const filtered = filter === "ALL" ? all : all.filter((c) => c.category === filter);
@@ -199,7 +211,143 @@ function TenantBills({ onChangeTenant, tenancy }: { onChangeTenant: () => void; 
           />
         ) : null}
       </Section>
+
+      {/* Pinned under the list: raising a bill is the one thing you come to this
+          screen to DO, everything above it is reading. */}
+      <View style={{ gap: spacing.sm }}>
+        <ActionButton
+          disabled={!canManageBilling}
+          icon={Plus}
+          label="Add bill"
+          onPress={() => setAddOpen(true)}
+        />
+        <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+          {canManageBilling
+            ? `Raises a one-off bill for ${tenancy.tenantName ?? "this tenant"}, separate from their rent cycles.`
+            : "You have view-only access to billing, so you cannot raise a bill."}
+        </Text>
+      </View>
+
+      {addOpen ? <AddOneOffBillSheet onClose={() => setAddOpen(false)} tenancy={tenancy} /> : null}
     </>
+  );
+}
+
+// A charge that belongs to no rent cycle. It exists because a live cycle is
+// frozen — once its window opens nothing can be added to it, so anything that
+// cannot wait for the next cycle has to become a bill of its own.
+function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy: TenancySummary }) {
+  const { colors, fonts, type } = useTheme();
+  const toast = useToast();
+  const [createOneOffBill, state] = useCreateOneOffBillMutation();
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setError("Add a reason so the tenant knows what this is for.");
+      return;
+    }
+    const rupees = Number(amount.trim());
+    if (!Number.isFinite(rupees) || rupees <= 0) {
+      setError("Enter an amount greater than zero.");
+      return;
+    }
+    setError(null);
+    try {
+      await createOneOffBill({
+        payload: { amountPaise: Math.round(rupees * 100), reason: trimmedReason },
+        tenancyId: tenancy.id,
+      }).unwrap();
+      toast.success("One-off bill raised.");
+      onClose();
+    } catch (error) {
+      const message = (error as { data?: { message?: string } })?.data?.message;
+      setError(message ?? "Could not raise the bill. Try again.");
+    }
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderCurve: "continuous",
+              borderRadius: 22,
+              borderWidth: 1,
+              gap: spacing.md,
+              maxHeight: "88%",
+              padding: spacing.lg,
+            }}
+          >
+            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                  One-off bill
+                </Text>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+                  Add a bill
+                </Text>
+              </View>
+              <IconButton accessibilityLabel="Close add bill" icon={X} onPress={onClose} />
+            </View>
+
+            <ScrollView contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, padding: spacing.md }}>
+                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  This is a <Text style={{ color: colors.ink, fontWeight: "800" }}>one-off bill</Text> for{" "}
+                  {tenancy.tenantName ?? "this tenant"} — it stands on its own and is due today, not part of any rent
+                  cycle. Use it when a charge cannot wait for the next cycle.
+                </Text>
+              </View>
+
+              <FormInput
+                keyboardType="decimal-pad"
+                label="Amount"
+                onChangeText={(next) => {
+                  setAmount(next);
+                  setError(null);
+                }}
+                placeholder="0"
+                prefix="₹"
+                value={amount}
+              />
+              <FormInput
+                label="Reason"
+                maxLength={120}
+                onChangeText={(next) => {
+                  setReason(next);
+                  setError(null);
+                }}
+                placeholder="Damage, cleaning, extra usage"
+                value={reason}
+              />
+
+              {error ? (
+                <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
+                  {error}
+                </Text>
+              ) : null}
+            </ScrollView>
+
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <ActionButton label="Cancel" onPress={onClose} variant="secondary" />
+              <ActionButton
+                disabled={state.isLoading}
+                icon={Plus}
+                label={state.isLoading ? "Adding…" : "Add bill"}
+                onPress={() => void submit()}
+              />
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -218,7 +366,7 @@ function FilterPill({ active, count, label, onPress }: { active: boolean; count:
         paddingVertical: spacing.sm - 2,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label} · {count}
       </Text>
     </AnimatedPressable>

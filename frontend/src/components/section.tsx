@@ -8,6 +8,13 @@ type SectionProps = {
   eyebrow?: string;
   title: string;
   trailing?: ReactNode;
+  /**
+   * Puts `trailing` immediately after the title instead of against the right
+   * edge. For controls that grow — a collapsible filter row needs somewhere to
+   * grow INTO, and pinned right it would have to expand leftward across the
+   * title.
+   */
+  trailingInline?: boolean;
   children?: ReactNode;
   style?: ViewStyle;
 };
@@ -16,20 +23,27 @@ type SectionProps = {
 // serif title and an optional eyebrow / trailing action. The rule underneath is
 // a ledger "ruled margin": a short accent tick flush-left, then a hairline
 // running across — a letterhead detail that ties every section together.
-export function Section({ children, eyebrow, style, title, trailing }: SectionProps) {
+export function Section({ children, eyebrow, style, title, trailing, trailingInline }: SectionProps) {
   const { colors, type } = useTheme();
 
   return (
     <View style={[{ gap: spacing.md }, style]}>
       <View style={{ gap: spacing.xs }}>
         {eyebrow ? (
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             {eyebrow}
           </Text>
         ) : null}
 
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} selectable>
+        <View
+          style={{
+            alignItems: "center",
+            flexDirection: "row",
+            gap: spacing.sm,
+            justifyContent: trailingInline ? "flex-start" : "space-between",
+          }}
+        >
+          <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
             {title}
           </Text>
           {trailing}

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,6 +27,7 @@ import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
@@ -128,7 +130,7 @@ class PropertyServiceTest {
                 100_00L,
                 3,
                 10_000_00L,
-                30);
+                NoticePeriod.ONE_MONTH);
     }
 
     private static CreatePropertyRequest createPropertyRequest() {
@@ -156,9 +158,10 @@ class PropertyServiceTest {
                 100_00L,
                 4,
                 10_000_00L,
-                30,
+                NoticePeriod.ONE_MONTH,
                 "Near metro PG",
                 "Clean managed PG near metro.",
-                "https://cdn.example.com/pg.jpg");
+                "https://cdn.example.com/pg.jpg",
+                List.of());
     }
 }

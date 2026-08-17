@@ -26,7 +26,16 @@ public enum NotificationSubtype {
     TENANCY_EXIT_APPROVED,
     TENANCY_EXIT_REJECTED,
     TENANCY_EXIT_CANCELLED,
+    TENANCY_ROOM_CHANGE_REQUESTED,
+    TENANCY_ROOM_CHANGE_APPROVED,
+    TENANCY_ROOM_CHANGE_REJECTED,
+    TENANCY_ROOM_CHANGE_EXECUTED,
     TENANCY_EXIT_EXECUTED,
+    TENANCY_EXIT_EXPIRED,
+    TENANCY_EXIT_WITHDRAWAL_REQUESTED,
+    TENANCY_EXIT_WITHDRAWAL_APPROVED,
+    TENANCY_EXIT_WITHDRAWAL_REJECTED,
+    TENANCY_AGREEMENT_EXPIRY_APPROACHING,
 
     // Concern (ticket) workflow.
     CONCERN_RAISED,
@@ -70,4 +79,12 @@ public enum NotificationSubtype {
     BUDGET_RAISED,
     BUDGET_APPROACHING,
     BUDGET_EXCEEDED,
+
+    // Management nudged a tenant. Carries no body of its own worth storing —
+    // the push text is the message, and the record lives in the nudge module.
+    NUDGE_RECEIVED,
+
+    // Enquiries from a property's public profile.
+    ENQUIRY_RECEIVED,
+    ENQUIRY_ANSWERED,
 }

@@ -106,7 +106,7 @@ public class PushDeliveryService {
         Instant now = Instant.now();
         PushNotification pushNotification = pushNotificationRepository
                 .findPushNotificationById(pushNotificationId)
-                .orElseThrow(() -> new NotFoundException("PushNotification_", pushNotificationId));
+                .orElseThrow(() -> new NotFoundException("PushNotification", pushNotificationId));
 
         List<NotificationDeviceToken> tokens = notificationDeviceTokenRepository
                 .findActiveByUserId(pushNotification.getUserId());

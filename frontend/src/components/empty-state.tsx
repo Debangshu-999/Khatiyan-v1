@@ -24,8 +24,7 @@ export function EmptyState({ action, description, eyebrow, icon: Icon, title }: 
           <View
             style={{
               alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderColor: colors.primary,
+              borderColor: colors.ink,
               borderCurve: "continuous",
               borderRadius: 14,
               borderWidth: 1,
@@ -34,20 +33,20 @@ export function EmptyState({ action, description, eyebrow, icon: Icon, title }: 
               width: 46,
             }}
           >
-            <Icon color={colors.primary} size={21} strokeWidth={2} />
+            <Icon color={colors.ink} size={21} strokeWidth={2} />
           </View>
         ) : null}
 
         <View style={{ gap: spacing.xs }}>
           {eyebrow ? (
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               {eyebrow}
             </Text>
           ) : null}
-          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]} selectable>
+          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted, maxWidth: 480 }]} selectable>
+          <Text style={[type.body, { color: colors.muted, maxWidth: 480 }]}>
             {description}
           </Text>
         </View>

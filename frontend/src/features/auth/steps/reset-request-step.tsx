@@ -1,6 +1,7 @@
 import { View } from "react-native";
+import { ArrowLeft } from "lucide-react-native";
 
-import { LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { AuthChipLink, LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -23,9 +24,10 @@ export function ResetRequestStep({
   return (
     <>
       <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
+
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Request reset OTP" onPress={onRequestOtp} busy={busy} />
-        <LinkButton label="Back to login" onPress={onBackToLogin} center />
+        <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>
     </>
   );

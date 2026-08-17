@@ -22,13 +22,16 @@ import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.CreateExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateTenancyRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.CreateNormalExitRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.EarlyExitPenaltyPreview;
+import com.khatiyan.d_modules.tenancy.api.dto.ExitCheckoutWindowResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.RejectTenancyExitRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.DecideTenancyExitWithdrawalRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.WithdrawTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ReviewRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -63,11 +66,19 @@ public class TenancyController {
         this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
     }
 
+    /**
+     * @param propertyId the property being onboarded into, so the lookup can say
+     *                   at step one that this person manages it — the creation
+     *                   guard would otherwise only surface that at the very end,
+     *                   after the whole wizard has been filled in. Optional so
+     *                   the endpoint still answers before a property is chosen.
+     */
     @GetMapping("/tenant-lookup")
     public TenantLookupResponse lookupTenant(
             @AuthenticationPrincipal UserPrincipal user,
-            @RequestParam String phone) {
-        return tenancyService.lookupTenant(phone);
+            @RequestParam String phone,
+            @RequestParam(required = false) UUID propertyId) {
+        return tenancyService.lookupTenant(phone, propertyId);
     }
 
     @PostMapping
@@ -129,7 +140,7 @@ public class TenancyController {
     public TenancyResponse getTenancyById(@PathVariable UUID id) {
         return tenancyService.findById(id)
             .map(tenancyService::toResponse)
-            .orElseThrow(() -> new NotFoundException("Tenancy_", id));
+            .orElseThrow(() -> new NotFoundException("Tenancy", id));
     }
 
     @GetMapping
@@ -196,20 +207,40 @@ public class TenancyController {
                 .body(tenancyService.toResponse(tenancy));
     }
 
+    /**
+     * Ends a stay, applying everything the end-tenancy screen decided in one
+     * transaction. This is the only way a tenancy ends.
+     */
     @PostMapping("/{id}/end")
     public ResponseEntity<Void> endTenancy(
             @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID id) {
-        tenancyExitRequestService.endTenancyNow(user.userId(), id);
+            @PathVariable UUID id,
+            @Valid @RequestBody EndTenancyRequest request) {
+        tenancyExitRequestService.endTenancyNow(user.userId(), id, request);
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/me/exit-requests/normal")
-    public ResponseEntity<TenancyExitRequestResponse> requestNormalExit(
+    /**
+     * The dates this tenant may choose to leave on. Clients call this before
+     * showing the exit form: a whole-month notice yields one fixed date, a
+     * sub-month notice a range to pick from.
+     */
+    @GetMapping("/me/exit-requests/checkout-window")
+    public ExitCheckoutWindowResponse getExitCheckoutWindow(@AuthenticationPrincipal UserPrincipal user) {
+        return tenancyExitRequestService.getExitCheckoutWindow(user.userId());
+    }
+
+    /**
+     * The single exit route. Replaces the old normal/premature split, which made
+     * the tenant pick a flow based on state they could not see.
+     */
+    @PostMapping("/me/exit-requests")
+    public ResponseEntity<TenancyExitRequestResponse> requestExit(
             @AuthenticationPrincipal UserPrincipal user,
-            @Valid @RequestBody CreateNormalExitRequest req) {
-        TenancyExitRequestResponse response = tenancyExitRequestService.requestNormalNotice(
+            @Valid @RequestBody CreateExitRequest req) {
+        TenancyExitRequestResponse response = tenancyExitRequestService.requestExit(
                 user.userId(),
+                req.chosenCheckoutDate(),
                 req.reason());
 
         return ResponseEntity
@@ -218,42 +249,7 @@ public class TenancyController {
                 .body(response);
     }
 
-    @PostMapping("/me/exit-requests/premature")
-    public ResponseEntity<TenancyExitRequestResponse> requestPrematureExit(
-            @AuthenticationPrincipal UserPrincipal user,
-            @Valid @RequestBody CreatePrematureExitRequest req) {
-        TenancyExitRequestResponse response = tenancyExitRequestService.requestPremature(
-                user.userId(),
-                req.requestedCheckoutDate(),
-                req.reason());
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .location(URI.create("/api/v1/tenancies/exit-requests/" + response.id()))
-                .body(response);
-    }
-
-    @GetMapping("/me/exit-requests/early-exit-preview")
-    public EarlyExitPenaltyPreview previewEarlyExitPenalty(
-            @AuthenticationPrincipal UserPrincipal user,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkoutDate) {
-        return tenancyService.previewEarlyExitPenalty(user.userId(), checkoutDate);
-    }
-
-    @PostMapping("/me/exit-requests/early-exit")
-    public ResponseEntity<TenancyExitRequestResponse> requestAgreementEarlyExit(
-            @AuthenticationPrincipal UserPrincipal user,
-            @Valid @RequestBody CreatePrematureExitRequest req) {
-        TenancyExitRequestResponse response = tenancyExitRequestService.requestAgreementExit(
-                user.userId(),
-                req.requestedCheckoutDate(),
-                req.reason());
-
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .location(URI.create("/api/v1/tenancies/exit-requests/" + response.id()))
-                .body(response);
-    }
 
     @GetMapping("/me/exit-requests")
     public List<TenancyExitRequestResponse> listMyExitRequests(@AuthenticationPrincipal UserPrincipal user) {
@@ -341,11 +337,26 @@ public class TenancyController {
         return tenancyExitRequestService.cancel(user.userId(), requestId);
     }
 
-    @PostMapping("/exit-requests/{requestId}/execute")
-    public TenancyExitRequestResponse executeExitRequest(
+    /**
+     * Tenant asks to undo an approved exit. Distinct from {@code /cancel}, which
+     * is unilateral and only works before a decision has been made.
+     */
+    @PostMapping("/me/exit-requests/{requestId}/withdraw")
+    public TenancyExitRequestResponse withdrawApprovedExitRequest(
             @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID requestId) {
-        return tenancyExitRequestService.execute(user.userId(), requestId);
+            @PathVariable UUID requestId,
+            @Valid @RequestBody WithdrawTenancyExitRequest req) {
+        return tenancyExitRequestService.requestWithdrawal(user.userId(), requestId, req.reason());
+    }
+
+    /** Owner/manager decides on a pending withdrawal. */
+    @PostMapping("/exit-requests/{requestId}/withdrawal-decision")
+    public TenancyExitRequestResponse decideExitWithdrawal(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID requestId,
+            @Valid @RequestBody DecideTenancyExitWithdrawalRequest req) {
+        return tenancyExitRequestService.decideWithdrawal(
+                user.userId(), requestId, req.approved(), req.adminNotes());
     }
 
 }

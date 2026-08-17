@@ -71,19 +71,19 @@ export function LocationPinCard({
       <View style={{ flex: 1, gap: 2 }}>
         {pinned ? (
           <>
-            <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={2} selectable>
+            <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={2}>
               {addressSummary || "Location set"}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
               Tap to adjust
             </Text>
           </>
         ) : (
           <>
-            <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+            <Text style={[type.bodyStrong, { color: colors.ink }]}>
               Set location on map
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2} selectable>
+            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
               Search your area or drop a pin — the address fills in automatically.
             </Text>
           </>

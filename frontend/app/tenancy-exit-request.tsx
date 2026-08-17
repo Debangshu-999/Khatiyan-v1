@@ -3,27 +3,29 @@ import { ActivityIndicator, Platform, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
-import { ArrowLeft, CalendarClock, CalendarDays, ShieldAlert } from "lucide-react-native";
+import { CalendarClock, CalendarDays, FileClock, TriangleAlert } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
 import { rupeesLabel } from "@/features/compliance/clause-values";
+import { ActionButton } from "@/features/owner/owner-ui";
+import { isRequestActive } from "@/features/tenancy/request-activity";
 import {
-  useCreateNormalExitRequestMutation,
-  useCreatePrematureExitRequestMutation,
+  useCreateExitRequestMutation,
+  useGetExitCheckoutWindowQuery,
   useGetMyActiveTenancyQuery,
-  usePreviewEarlyExitPenaltyQuery,
-  useRequestAgreementEarlyExitMutation,
+  useListMyExitRequestsQuery,
 } from "@/store/services/tenancy-api";
+import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
+import type { ExitCheckoutWindow } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-
-type ExitMode = "NORMAL_NOTICE" | "PREMATURE";
 
 export default function TenancyExitRequestScreen() {
   const router = useRouter();
@@ -33,15 +35,11 @@ export default function TenancyExitRequestScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="REQUEST"
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
         title="Exit"
         italicTail="tenancy."
-        subtitle={
-          tenancy?.agreementBacked
-            ? "Your tenancy has an agreement. Review the effect of leaving early before you request."
-            : "Choose normal notice or premature exit and share the reason for review."
-        }
-        trailing={<BackButton onPress={() => router.back()} />}
+        subtitle="Serve your notice period and pick your last day. Management reviews the request."
       />
 
       {activeTenancyQuery.isFetching && !tenancy ? (
@@ -53,12 +51,56 @@ export default function TenancyExitRequestScreen() {
           title="No current stay"
           description="Exit requests can be raised only from an active tenancy."
         />
-      ) : tenancy.agreementBacked ? (
-        <AgreementExitForm lockInEndDate={tenancy.lockInEndDate} onDone={() => goToTenancy(router)} />
       ) : (
-        <StandardExitForm onDone={() => goToTenancy(router)} />
+        <ExitRequestGate onDone={() => goToTenancy(router)} />
       )}
     </ScreenScrollView>
+  );
+}
+
+/**
+ * Refuses to open the form while a request is still live.
+ *
+ * <p>The server enforces one open request per tenancy, so without this the
+ * tenant fills in a whole form and is rejected on submit. Worse, "live" now
+ * includes decided-but-not-yet-expired requests, so the reason for the refusal
+ * is genuinely invisible from here — it has to be spelled out.
+ *
+ * <p>The way forward is on the request itself: re-raise a lapsed one, or ask to
+ * cancel an approved one, both from its card.
+ */
+function ExitRequestGate({ onDone }: { onDone: () => void }) {
+  const { colors, type } = useTheme();
+  const router = useRouter();
+  const requestsQuery = useListMyExitRequestsQuery();
+
+  if (requestsQuery.isLoading) {
+    return <SkeletonCard />;
+  }
+
+  const live = (requestsQuery.data ?? []).find((request) => isRequestActive(request));
+  if (!live) {
+    return <ServeNoticeForm onDone={onDone} />;
+  }
+
+  return (
+    <Card>
+      <View style={{ gap: spacing.md }}>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>ALREADY OPEN</Text>
+        <Text style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>
+          You have a request in progress
+        </Text>
+        <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+          {live.referenceCode} is still open. You can only have one exit request at a time — open it
+          to raise it again, cancel it, or wait for it to expire before starting a new one.
+        </Text>
+        <ActionButton
+          icon={FileClock}
+          label="Go to my requests"
+          onPress={() => router.push("/tenancy-request-history")}
+        />
+      </View>
+    </Card>
   );
 }
 
@@ -66,65 +108,125 @@ function goToTenancy(router: ReturnType<typeof useRouter>) {
   router.replace({ pathname: "/tenancy", params: { exitRequestCreated: "1" } });
 }
 
-// Agreement tenants exit premature-only: pick a checkout date, see the lock-in
-// penalty (₹0 once the minimum stay is served), then request. The penalty is
-// applied by the owner at approval.
-function AgreementExitForm({ lockInEndDate, onDone }: { lockInEndDate: string | null; onDone: () => void }) {
-  const { colors, type } = useTheme();
-  const router = useRouter();
-  const toast = useToast();
-  const [checkoutDate, setCheckoutDate] = useState<Date | null>(null);
-  const [reason, setReason] = useState("");
-  const [requestExit, requestState] = useRequestAgreementEarlyExitMutation();
+/**
+ * The single exit route: the server computes what the notice period allows, and
+ * the tenant picks a day inside it.
+ *
+ * <p>Whole-month notice collapses the window to one date, so there is nothing to
+ * choose and a picker would be a lie. Sub-month notice is a *minimum lead time* —
+ * five days' notice buys the right to leave in five days, it does not oblige
+ * leaving on the fifth — so the tenant picks any day up to the cycle end. They
+ * have already paid for the month; this is them deciding how much of it to use.
+ */
+function ServeNoticeForm({ onDone }: { onDone: () => void }) {
+  const windowQuery = useGetExitCheckoutWindowQuery();
 
-  const isoDate = checkoutDate ? toISODate(checkoutDate) : "";
-  const previewQuery = usePreviewEarlyExitPenaltyQuery(isoDate, { skip: !isoDate });
-  const preview = previewQuery.data;
+  if (windowQuery.isLoading) {
+    return <SkeletonCard />;
+  }
+
+  if (!windowQuery.data) {
+    return (
+      <EmptyState
+        icon={CalendarClock}
+        eyebrow="Unavailable"
+        title="Cannot work out your notice"
+        description="We could not load your notice period right now. Please try again shortly."
+      />
+    );
+  }
+
+  return <NoticeWindowForm checkoutWindow={windowQuery.data} onDone={onDone} />;
+}
+
+/** The form proper, once the window is known. */
+function NoticeWindowForm({
+  checkoutWindow,
+  onDone,
+}: {
+  checkoutWindow: ExitCheckoutWindow;
+  onDone: () => void;
+}) {
+  const { colors, type } = useTheme();
+  const toast = useToast();
+  const [createExit, createState] = useCreateExitRequestMutation();
+  const [reason, setReason] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Starts on the notice-served date — the one that carries no consequence. The
+  // tenant can move it earlier, but never by accident: that takes a deliberate
+  // tap on Change.
+  const noticeDate = parseISODate(checkoutWindow.earliestCheckoutDate);
+  const [chosenDate, setChosenDate] = useState<Date>(noticeDate);
+
+  const chosenIso = toISODate(chosenDate);
+  const premature = chosenIso < checkoutWindow.earliestCheckoutDate;
 
   async function submit() {
-    if (!isoDate) {
-      toast.error("Pick a checkout date first.");
-      return;
-    }
     try {
-      await requestExit({ reason: reason.trim() || null, requestedCheckoutDate: isoDate }).unwrap();
+      await createExit({ chosenCheckoutDate: chosenIso, reason: reason.trim() || null }).unwrap();
       onDone();
-    } catch (error) {
-      const message = (error as { data?: { message?: string } })?.data?.message;
-      toast.error(message ?? "Could not create the exit request. Please try again.");
+    } catch {
+      toast.error("Could not raise the exit request. Please try again.");
     }
   }
 
   return (
     <Card>
       <View style={{ gap: spacing.md }}>
-        {lockInEndDate ? (
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>NOTICE PERIOD</Text>
+          <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
+            {NOTICE_PERIOD_LABELS[checkoutWindow.noticePeriod]}
+          </Text>
+        </View>
+
+        {checkoutWindow.reRaise ? (
           <Card tone="sunken">
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
-              Your minimum stay (lock-in) runs until{" "}
-              <Text style={{ color: colors.ink, fontWeight: "800" }}>{formatDate(lockInEndDate)}</Text>. Leaving before
-              then carries an early-exit penalty as per{" "}
-              <Text
-                onPress={() => router.push("/tenancy-agreement-view")}
-                style={{ color: colors.primary, fontWeight: "800", textDecorationLine: "underline" }}
-              >
-                agreement
+            <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+              Your earlier request lapsed without a decision, so your notice still counts from{" "}
+              <Text style={{ color: colors.ink, fontWeight: "800" }}>
+                {formatDate(checkoutWindow.noticeAnchorDate)}
               </Text>
-              .
+              . You have not lost any time.
             </Text>
           </Card>
         ) : null}
 
-        <CheckoutDateField value={checkoutDate} onChange={setCheckoutDate} />
+        <Card tone="sunken">
+          <View style={{ gap: spacing.sm }}>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+              {premature ? "YOUR LAST DAY" : "SERVING FULL NOTICE"}
+            </Text>
 
-        {isoDate ? (
-          <PenaltyPreviewCard
-            loading={previewQuery.isFetching}
-            onViewAgreement={() => router.push("/tenancy-agreement-view")}
-            penaltyPaise={preview?.penaltyPaise ?? null}
-            withinLockIn={preview?.withinLockIn ?? false}
-          />
-        ) : null}
+            <View
+              style={{
+                alignItems: "center",
+                flexDirection: "row",
+                gap: spacing.sm,
+                justifyContent: "space-between",
+              }}
+            >
+              <Text style={{ color: colors.ink, flex: 1, fontSize: 20, fontWeight: "800" }}>
+                {formatDateLong(chosenDate)}
+              </Text>
+              <ChangeDateButton onPress={() => setPickerOpen(true)} />
+            </View>
+
+            {premature ? (
+              <PrematureWarning
+                noticeDate={checkoutWindow.earliestCheckoutDate}
+                onServeFullNotice={() => setChosenDate(noticeDate)}
+              />
+            ) : (
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                {checkoutWindow.fixed
+                  ? "Your notice runs to the end of a billing cycle, so this is the date it lands on."
+                  : `Any day up to ${formatDate(checkoutWindow.latestCheckoutDate)} still serves your full notice. You have already paid for this month, so leaving earlier does not reduce the rent.`}
+              </Text>
+            )}
+          </View>
+        </Card>
 
         <FormField
           label="Reason"
@@ -136,142 +238,94 @@ function AgreementExitForm({ lockInEndDate, onDone }: { lockInEndDate: string | 
         />
 
         <SubmitButton
-          busy={requestState.isLoading}
-          label="Request early exit"
+          busy={createState.isLoading}
+          label={premature ? "Request early exit" : `Request exit on ${formatDateLong(chosenDate)}`}
           onPress={() => void submit()}
         />
       </View>
+
+      {pickerOpen ? (
+        <CheckoutDatePicker
+          maximumDate={parseISODate(checkoutWindow.latestCheckoutDate)}
+          minimumDate={parseISODate(checkoutWindow.earliestPossibleDate)}
+          onClose={() => setPickerOpen(false)}
+          onPick={(picked) => setChosenDate(picked)}
+          value={chosenDate}
+        />
+      ) : null}
     </Card>
   );
 }
 
-function PenaltyPreviewCard({
-  loading,
-  onViewAgreement,
-  penaltyPaise,
-  withinLockIn,
-}: {
-  loading: boolean;
-  onViewAgreement: () => void;
-  penaltyPaise: number | null;
-  withinLockIn: boolean;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const hasPenalty = (penaltyPaise ?? 0) > 0;
-  const tone = hasPenalty ? colors.danger : colors.jade;
-  const toneSoft = hasPenalty ? colors.dangerSoft : colors.jadeSoft;
+function ChangeDateButton({ onPress }: { onPress: () => void }) {
+  const { colors, type } = useTheme();
 
   return (
-    <View style={{ backgroundColor: toneSoft, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <ShieldAlert color={tone} size={16} strokeWidth={2.3} />
-        <Text style={[type.eyebrow, { color: tone }]} selectable>
-          Early-exit penalty
+    <AnimatedPressable
+      accessibilityLabel="Change your last day"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        borderColor: colors.ink,
+        borderRadius: 10,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 6,
+      }}
+    >
+      <CalendarDays color={colors.ink} size={14} strokeWidth={2.2} />
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]}>Change</Text>
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * Shown when the chosen day falls before the notice has been served.
+ *
+ * <p>Not a block. Someone who has to move at short notice needs a route — refuse
+ * one and they leave without telling anybody, which is worse for everyone. What
+ * they need is to know it is reviewed differently, and a one-tap way back to the
+ * date that is not.
+ *
+ * <p>No amount is quoted. What an early exit costs is the property's own policy,
+ * written by the owner and applied by a person at the end-tenancy step — this
+ * screen has no business inventing a figure.
+ */
+function PrematureWarning({
+  noticeDate,
+  onServeFullNotice,
+}: {
+  noticeDate: string;
+  onServeFullNotice: () => void;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        {/* No filled tile behind it — the triangle carries the warning on its own. */}
+        <TriangleAlert color={colors.warningText} size={18} strokeWidth={2.2} style={{ marginTop: 1 }} />
+        <Text style={[type.caption, { color: colors.ink, flex: 1, lineHeight: 18 }]}>
+          You will not be serving your full notice, so management reviews this as a premature exit
+          and can penalize the exit as per policy or decline it. Serving notice in full would mean
+          leaving on {formatDate(noticeDate)}.
         </Text>
       </View>
-      {loading ? (
-        <ActivityIndicator color={tone} />
-      ) : hasPenalty ? (
-        <>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "700" }} selectable>
-            {rupeesLabel(penaltyPaise ?? 0)}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
-            This is charged to your bill when the owner approves the request. You then serve the notice period, as per your{" "}
-            <Text
-              onPress={onViewAgreement}
-              style={{ color: colors.primary, fontWeight: "800", textDecorationLine: "underline" }}
-            >
-              agreement
-            </Text>
-            .
-          </Text>
-        </>
-      ) : (
-        <>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "700" }} selectable>
-            {rupeesLabel(penaltyPaise ?? 0)}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
-            {withinLockIn
-              ? "No penalty for this date."
-              : "Your minimum stay is complete — no early-exit penalty."}
-          </Text>
-        </>
-      )}
-    </View>
-  );
-}
 
-// Non-agreement tenants keep the original normal-notice / premature toggle.
-function StandardExitForm({ onDone }: { onDone: () => void }) {
-  const { colors, type } = useTheme();
-  const toast = useToast();
-  const [createNormalExit, normalState] = useCreateNormalExitRequestMutation();
-  const [createPrematureExit, prematureState] = useCreatePrematureExitRequestMutation();
-  const [mode, setMode] = useState<ExitMode>("NORMAL_NOTICE");
-  const [requestedCheckoutDate, setRequestedCheckoutDate] = useState<Date | null>(null);
-  const [reason, setReason] = useState("");
-  const submitting = normalState.isLoading || prematureState.isLoading;
-
-  async function submit() {
-    const trimmedReason = reason.trim();
-    try {
-      if (mode === "NORMAL_NOTICE") {
-        await createNormalExit({ reason: trimmedReason || null }).unwrap();
-      } else {
-        if (!requestedCheckoutDate) {
-          toast.error("Pick a checkout date first.");
-          return;
-        }
-        await createPrematureExit({
-          reason: trimmedReason || null,
-          requestedCheckoutDate: toISODate(requestedCheckoutDate),
-        }).unwrap();
-      }
-      onDone();
-    } catch {
-      toast.error("Could not create exit request. Check notice rules and try again.");
-    }
-  }
-
-  return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <OptionGroup
-          label="Exit type"
-          options={[
-            { label: "Normal notice", value: "NORMAL_NOTICE" },
-            { label: "Premature", value: "PREMATURE" },
+      <AnimatedPressable accessibilityRole="button" onPress={onServeFullNotice}>
+        <Text
+          style={[
+            type.caption,
+            { color: colors.primary, fontWeight: "900", textDecorationLine: "underline" },
           ]}
-          selected={mode}
-          onSelect={setMode}
-        />
-
-        <Card tone="sunken">
-          <Text style={[type.body, { color: colors.muted }]} selectable>
-            {mode === "NORMAL_NOTICE"
-              ? "Normal notice uses the current billing cycle notice rules and calculates the checkout date for you."
-              : "Premature exit asks management to review a custom checkout date before the cycle ends."}
-          </Text>
-        </Card>
-
-        {mode === "PREMATURE" ? (
-          <CheckoutDateField value={requestedCheckoutDate} onChange={setRequestedCheckoutDate} />
-        ) : null}
-
-        <FormField
-          label="Reason"
-          maxLength={500}
-          multiline
-          onChangeText={setReason}
-          placeholder="Add context for the property team."
-          value={reason}
-        />
-
-        <SubmitButton busy={submitting} label="Submit exit request" onPress={() => void submit()} />
-      </View>
-    </Card>
+        >
+          Serve full notice instead
+        </Text>
+      </AnimatedPressable>
+    </View>
   );
 }
 
@@ -294,7 +348,7 @@ function SubmitButton({ busy, label, onPress }: { busy: boolean; label: string; 
       {busy ? (
         <ActivityIndicator color={colors.onPrimary} />
       ) : (
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
           {label}
         </Text>
       )}
@@ -302,64 +356,6 @@ function SubmitButton({ busy, label, onPress }: { busy: boolean; label: string; 
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back to tenancy"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
-
-function OptionGroup({
-  label,
-  onSelect,
-  options,
-  selected,
-}: {
-  label: string;
-  onSelect: (value: ExitMode) => void;
-  options: { label: string; value: ExitMode }[];
-  selected: ExitMode;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-        {label}
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {options.map((option) => {
-          const active = selected === option.value;
-          return (
-            <AnimatedPressable
-              key={option.value}
-              accessibilityRole="button"
-              onPress={() => onSelect(option.value)}
-              style={{
-                backgroundColor: active ? colors.primarySoft : colors.surface,
-                borderColor: active ? colors.primary : colors.border,
-                borderRadius: 999,
-                borderWidth: 1,
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
-              }}
-            >
-              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "900" }} selectable>
-                {option.label}
-              </Text>
-            </AnimatedPressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
 
 function FormField({
   label,
@@ -381,11 +377,11 @@ function FormField({
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {label}
         </Text>
         {maxLength ? (
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>
+          <Text style={[type.caption, { color: colors.kicker }]}>
             {value.length}/{maxLength}
           </Text>
         ) : null}
@@ -422,90 +418,111 @@ function formatDate(iso: string) {
   return parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// Tap-to-open native date picker for the requested checkout. The checkout must be
-// in the future, so the minimum selectable date is tomorrow.
-function CheckoutDateField({ value, onChange }: { value: Date | null; onChange: (date: Date) => void }) {
+/**
+ * Tap-to-open native date picker for a checkout date.
+ *
+ * <p>Bounds are passed in rather than assumed: on the serve-notice route they
+ * come from the server's window, so the picker cannot offer a day the request
+ * would be rejected for. Left unset it falls back to "any future date", which is
+ * what the break-lock-in route wants.
+ */
+/**
+ * Opens straight onto the native date picker, bounded by the window.
+ *
+ * <p>The bounds are the enforcement, not a validation message afterwards: a date
+ * past the notice window is simply not selectable, so the tenant never composes
+ * a request the server would reject. The API applies the same cap independently —
+ * a picker is a convenience, never the guard.
+ */
+function CheckoutDatePicker({
+  maximumDate,
+  minimumDate,
+  onClose,
+  onPick,
+  value,
+}: {
+  maximumDate: Date;
+  minimumDate: Date;
+  onClose: () => void;
+  onPick: (date: Date) => void;
+  value: Date;
+}) {
   const { colors, fonts, type } = useTheme();
-  const [show, setShow] = useState(false);
+  const [draft, setDraft] = useState(value);
 
-  // The native picker has no web implementation — dev-web falls back to a
-  // plain YYYY-MM-DD field so the flow stays testable in a browser.
+  // The native picker has no web implementation, so dev-web gets a plain
+  // YYYY-MM-DD field and keeps the flow testable in a browser.
   if (Platform.OS === "web") {
     return (
-      <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-          Requested checkout
-        </Text>
-        <AppTextInput
-          onChangeText={(text) => {
-            const parsed = new Date(`${text.trim()}T00:00:00`);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(text.trim()) && !Number.isNaN(parsed.getTime())) {
-              onChange(parsed);
-            }
-          }}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor={colors.kicker}
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 14,
-            borderWidth: 1,
-            color: colors.ink,
-            fontFamily: fonts.sans,
-            fontSize: 15,
-            minHeight: 54,
-            paddingHorizontal: spacing.md,
-          }}
-          defaultValue={value ? toISODate(value) : ""}
-        />
-      </View>
+      <SheetShell onClose={onClose} title="Choose your last day">
+        <View style={{ gap: spacing.md }}>
+          <AppTextInput
+            defaultValue={toISODate(value)}
+            onChangeText={(text) => {
+              const trimmed = text.trim();
+              const parsed = new Date(`${trimmed}T00:00:00`);
+              if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed) && !Number.isNaN(parsed.getTime())) {
+                setDraft(parsed);
+              }
+            }}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.kicker}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: 14,
+              borderWidth: 1,
+              color: colors.ink,
+              fontFamily: fonts.sans,
+              fontSize: 15,
+              minHeight: 54,
+              paddingHorizontal: spacing.md,
+            }}
+          />
+          <Text style={[type.caption, { color: colors.muted }]}>
+            Between {formatDate(toISODate(minimumDate))} and {formatDate(toISODate(maximumDate))}.
+          </Text>
+          <SubmitButton
+            busy={false}
+            label="Use this date"
+            onPress={() => {
+              onPick(clamp(draft, minimumDate, maximumDate));
+              onClose();
+            }}
+          />
+        </View>
+      </SheetShell>
     );
   }
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-        Requested checkout
-      </Text>
-      <AnimatedPressable
-        accessibilityRole="button"
-        onPress={() => setShow(true)}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.sm,
-          minHeight: 54,
-          paddingHorizontal: spacing.md,
-        }}
-      >
-        <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
-        <Text style={[type.body, { color: value ? colors.ink : colors.kicker, flex: 1 }]} selectable={false}>
-          {value ? formatDateLong(value) : "Select a date"}
-        </Text>
-      </AnimatedPressable>
-      {show ? (
-        <DateTimePicker
-          value={value ?? tomorrow()}
-          mode="date"
-          display={Platform.OS === "ios" ? "inline" : "default"}
-          minimumDate={tomorrow()}
-          onChange={(event: DateTimePickerEvent, selected?: Date) => {
-            if (Platform.OS !== "ios") {
-              setShow(false);
-            }
-            if (event.type === "set" && selected) {
-              onChange(selected);
-            }
-          }}
-        />
-      ) : null}
-      {show && Platform.OS === "ios" ? <SubmitButton busy={false} label="Done" onPress={() => setShow(false)} /> : null}
-    </View>
+    <DateTimePicker
+      display={Platform.OS === "ios" ? "inline" : "default"}
+      maximumDate={maximumDate}
+      minimumDate={minimumDate}
+      mode="date"
+      onChange={(event: DateTimePickerEvent, selected?: Date) => {
+        // Android dismisses itself on any outcome; iOS keeps the wheel up, so
+        // committing on "set" is what closes it there too.
+        if (event.type === "set" && selected) {
+          onPick(clamp(selected, minimumDate, maximumDate));
+        }
+        onClose();
+      }}
+      value={value}
+    />
   );
+}
+
+/** Belt and braces: a picker should never hand back an out-of-range date. */
+function clamp(date: Date, min: Date, max: Date) {
+  if (date.getTime() < min.getTime()) {
+    return min;
+  }
+  if (date.getTime() > max.getTime()) {
+    return max;
+  }
+  return date;
 }
 
 function tomorrow() {
@@ -526,3 +543,9 @@ function toISODate(date: Date) {
 function formatDateLong(date: Date) {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 }
+
+/** Parses a YYYY-MM-DD as a local date, so it does not shift a day in IST. */
+function parseISODate(iso: string) {
+  return new Date(`${iso}T00:00:00`);
+}
+

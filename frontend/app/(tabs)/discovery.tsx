@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, BackHandler, Easing, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Compass, Search } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
+import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonScreen } from "@/components/skeleton";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
@@ -58,6 +60,23 @@ export default function DiscoveryScreen() {
   const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+
+  // The property profile is a state on this tab, not a route, so the device
+  // back button knew nothing about it and popped the tab instead — landing on
+  // home with the profile silently discarded. Close the profile first; only
+  // let the press through when the list is what is showing.
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (selectedPropertyId) {
+          setSelectedPropertyId(null);
+          return true;
+        }
+        return false;
+      });
+      return () => subscription.remove();
+    }, [selectedPropertyId]),
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
@@ -324,10 +343,9 @@ export default function DiscoveryScreen() {
         title="Find"
         italicTail="nearby."
         subtitle="Properties and local services around your selected location."
-        trailing={<DiscoveryHeaderIcon />}
       />
 
-      <DiscoveryTabs activeTab={activeTab} tabs={tabs} onChange={setActiveTab} />
+      <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
 
       {activeTab === "properties" ? (
         <>
@@ -386,7 +404,7 @@ export default function DiscoveryScreen() {
           <Card>
             <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   Results
                 </Text>
                 <Text
@@ -394,14 +412,12 @@ export default function DiscoveryScreen() {
                     color: colors.ink,
                     fontFamily: fonts.display,
                     fontSize: 20,
-                    fontWeight: "500",
                     letterSpacing: -0.3,
                   }}
-                  selectable
                 >
                   Property listings
                 </Text>
-                <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
+                <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
                   {propertyPage
                     ? exactProperties.length === 0
                       ? `No listings found${areaLabel ? ` for "${areaLabel}"` : ""}`
@@ -433,7 +449,7 @@ export default function DiscoveryScreen() {
               inline label rather than a heavy section header. */}
           {nearbyProperties.length > 0 ? (
             <>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700", marginTop: spacing.xs }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, fontWeight: "700", marginTop: spacing.xs }]}>
                 {nearbyProperties.length} listing{nearbyProperties.length === 1 ? "" : "s"}
                 {nearbyCityLabel ? ` elsewhere in ${nearbyCityLabel}` : " nearby"}
               </Text>
@@ -547,51 +563,33 @@ function editDistanceAtMost(a: string, b: string, max: number) {
 // soft badge with a looping "sonar ping" ring, over a large centred prompt.
 function EmptySearchPrompt() {
   const { colors, fonts, type } = useTheme();
-  const pulse = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
 
+  // Only the gentle bob remains; the radiating ring is gone.
   useEffect(() => {
-    const pulseLoop = Animated.loop(
-      Animated.timing(pulse, { toValue: 1, duration: 1900, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-    );
     const bobLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(bob, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(bob, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
-    pulseLoop.start();
     bobLoop.start();
     return () => {
-      pulseLoop.stop();
       bobLoop.stop();
     };
-  }, [pulse, bob]);
+  }, [bob]);
 
-  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.9] });
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.12, 1], outputRange: [0, 0.4, 0] });
   const iconTranslateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
 
   return (
     <View style={{ alignItems: "center", gap: spacing.lg, justifyContent: "center", paddingVertical: spacing.xxl }}>
       <View style={{ alignItems: "center", height: 150, justifyContent: "center", width: 150 }}>
-        <Animated.View
-          style={{
-            borderColor: colors.primary,
-            borderRadius: 999,
-            borderWidth: 2,
-            height: 128,
-            opacity: ringOpacity,
-            position: "absolute",
-            transform: [{ scale: ringScale }],
-            width: 128,
-          }}
-        />
+        {/* Outlined container, black border, ink glyph — no tinted tile behind
+            an icon anywhere in the app. */}
         <Animated.View
           style={{
             alignItems: "center",
-            backgroundColor: colors.primarySoft,
-            borderColor: colors.primary,
+            borderColor: colors.ink,
             borderRadius: 999,
             borderWidth: 1,
             height: 104,
@@ -600,7 +598,7 @@ function EmptySearchPrompt() {
             width: 104,
           }}
         >
-          <Search color={colors.primary} size={44} strokeWidth={2.4} />
+          <Search color={colors.ink} size={44} strokeWidth={2.4} />
         </Animated.View>
       </View>
       <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg }}>
@@ -609,15 +607,13 @@ function EmptySearchPrompt() {
             color: colors.ink,
             fontFamily: fonts.display,
             fontSize: 23,
-            fontWeight: "600",
             letterSpacing: -0.3,
             textAlign: "center",
           }}
-          selectable
         >
           Search a place to see listings
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]} selectable>
+        <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
           Enter a city, area or place above to find properties nearby.
         </Text>
       </View>

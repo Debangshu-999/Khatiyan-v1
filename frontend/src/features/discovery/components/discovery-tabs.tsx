@@ -94,7 +94,6 @@ export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps)
                 textAlign: "center",
                 textTransform: "uppercase",
               }}
-              selectable
             >
               {tab.label}
             </Text>

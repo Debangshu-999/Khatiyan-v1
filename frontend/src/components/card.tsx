@@ -14,10 +14,13 @@ export function Card({ children, style, tone = "default" }: CardProps) {
   const backgroundColor =
     tone === "sunken" ? colors.surfaceSunken : tone === "raised" ? colors.surfaceRaised : colors.surface;
 
-  // Flat, borderless-of-shadow surfaces: a clear 1px border defines the card
-  // against the near-white page instead of a drop shadow. Sunken/raised tones
-  // sit inside other surfaces so they keep the softer hairline border.
   const borderColor = tone === "default" ? colors.borderStrong : colors.border;
+
+  // Default cards lift off the page; sunken and raised tones sit INSIDE another
+  // surface, so a shadow there would read as a card floating inside a card. The
+  // border stays either way — the shadow gives depth, the hairline still defines
+  // the edge on dark backgrounds where a shadow is invisible.
+  const elevated = tone === "default";
 
   return (
     <View
@@ -31,6 +34,15 @@ export function Card({ children, style, tone = "default" }: CardProps) {
           gap: spacing.md,
           padding: spacing.lg,
         },
+        elevated
+          ? {
+              elevation: 3,
+              shadowColor: colors.shadow,
+              shadowOffset: { height: 4, width: 0 },
+              shadowOpacity: 1,
+              shadowRadius: 12,
+            }
+          : null,
         style,
       ]}
     >

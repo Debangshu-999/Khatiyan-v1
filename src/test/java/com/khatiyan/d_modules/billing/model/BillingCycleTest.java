@@ -85,6 +85,42 @@ class BillingCycleTest {
         assertThat(cycle.isEditableForExtraCharges(LocalDate.of(2026, 6, 5))).isTrue();
     }
 
+    /**
+     * Money semantics, deliberately locked down.
+     *
+     * <p>
+     * An UPCOMING cycle is generated ~10 days before its window opens. Excluding
+     * it from "billed" made P&amp;L report those days as a loss while the billing
+     * snapshot showed the same rent as expected income — two screens, one summary
+     * object, different answers.
+     */
+    @Test
+    void upcomingCountsAsBilledButCancelledDoesNot() {
+        BillingCycle upcoming = BillingCycle.createUpcoming(
+                UUID.randomUUID(),
+                "BIL-2026-000001",
+                UUID.randomUUID(),
+                "Test Tenant",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                TenancyBillingType.MONTHLY,
+                1,
+                LocalDate.of(2026, 8, 5),
+                LocalDate.of(2026, 9, 4),
+                LocalDate.of(2026, 8, 8),
+                BillingCollectionTiming.CYCLE_START,
+                3);
+
+        assertThat(upcoming.countsAsBilled())
+                .as("a generated bill is money owed for the month, even before it is payable")
+                .isTrue();
+
+        upcoming.activate(50_00L);
+        assertThat(upcoming.countsAsBilled())
+                .as("going live must not change whether it counts")
+                .isTrue();
+    }
+
     private static BillingCycle monthlyCycle(int cycleNumber, LocalDate periodStartDate) {
         return BillingCycle.create(
                 UUID.randomUUID(),

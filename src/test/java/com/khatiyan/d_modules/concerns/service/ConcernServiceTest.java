@@ -70,6 +70,9 @@ class ConcernServiceTest {
     @Mock
     private ReferenceCodeGenerator referenceCodeGenerator;
 
+    @Mock
+    private ConcernAccessPolicy concernAccessPolicy;
+
     private ConcernService concernService;
 
     @BeforeEach
@@ -78,6 +81,7 @@ class ConcernServiceTest {
                 concernRepository,
                 tenancyModule,
                 propertyModule,
+                concernAccessPolicy,
                 authModule,
                 eventPublisher,
                 referenceCodeGenerator);
@@ -143,8 +147,10 @@ class ConcernServiceTest {
 
         assertThat(response.status()).isEqualTo(ConcernStatus.UNDER_REVIEW);
         assertThat(response.assignedToUserId()).isEqualTo(MANAGER_ID);
-        verify(propertyModule).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
-        verify(propertyModule).ensureCanManageProperty(MANAGER_ID, PROPERTY_ID);
+        // The actor needs MANAGE on concerns; the assignee is checked separately,
+        // because being handed a concern you cannot act on leaves it unclearable.
+        verify(concernAccessPolicy).ensureCanManage(ACTOR_ID, PROPERTY_ID);
+        verify(concernAccessPolicy).ensureAssigneeCanWorkConcerns(MANAGER_ID, PROPERTY_ID);
         verify(eventPublisher).publishEvent(any(ConcernAssignedEvent.class));
     }
 
@@ -187,7 +193,6 @@ class ConcernServiceTest {
                 null,
                 null,
                 null,
-                null,
                 null);
     }
 
@@ -199,6 +204,7 @@ class ConcernServiceTest {
                 "1",
                 1,
                 1,
+                0,
                 0,
                 RoomType.SINGLE,
                 RoomConditioning.NON_AC,

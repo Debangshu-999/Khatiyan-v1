@@ -14,7 +14,15 @@ import jakarta.validation.constraints.Size;
  */
 public record UpdatePropertyExitPolicyRequest(
         @Valid List<DamageChargeInput> damageCharges,
-        List<@NotBlank @Size(max = 120) String> exitChecklist) {
+        List<@NotBlank @Size(max = 120) String> exitChecklist,
+        /**
+         * What leaving before serving notice costs, in the owner's words.
+         *
+         * <p>Free text, never a formula: the computed penalty this replaced was
+         * a number nobody had agreed to, and every property prices an early
+         * departure differently. Applied by a person at end-tenancy.
+         */
+        @Size(max = 2000) String prematureExitPolicy) {
 
     public record DamageChargeInput(
             @NotBlank @Size(max = 80) String name,

@@ -40,15 +40,21 @@ public class PropertyDiscoveryService {
 
     private final PropertyDiscoveryProfileRepository discoveryProfileRepository;
     private final PropertyModule propertyModule;
+    private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final AuthModule authModule;
+    private final PropertyImageService propertyImageService;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
             PropertyModule propertyModule,
-            AuthModule authModule) {
+            DiscoveryAccessPolicy discoveryAccessPolicy,
+            AuthModule authModule,
+            PropertyImageService propertyImageService) {
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
+        this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.authModule = authModule;
+        this.propertyImageService = propertyImageService;
     }
 
     // Public/user side property discovery
@@ -93,10 +99,18 @@ public class PropertyDiscoveryService {
 
         // Candidate pool: every visible property whose owner-set discovery
         // filters match. Region/area matching is layered on top of this.
-        List<PropertyDiscoveryCardResponse> candidates = discoveryProfileRepository.findAllVisible()
+        List<PropertyDiscoveryProfile> visibleProfiles = discoveryProfileRepository.findAllVisible();
+        // One query for every card's gallery. Fetching per card would be an N+1
+        // across the whole result page.
+        Map<UUID, List<String>> imagesByPropertyId = propertyImageService.imageUrlsFor(
+                visibleProfiles.stream().map(PropertyDiscoveryProfile::getPropertyId).toList());
+
+        List<PropertyDiscoveryCardResponse> candidates = visibleProfiles
                 .stream()
                 .map(profile -> toCardResponseIfPropertyVisible(
-                        profile, distanceByPropertyId.get(profile.getPropertyId())))
+                        profile,
+                        distanceByPropertyId.get(profile.getPropertyId()),
+                        imagesByPropertyId.getOrDefault(profile.getPropertyId(), List.of())))
                 .filter(response -> response != null)
                 .filter(response -> !hasRadius || distanceByPropertyId.containsKey(response.propertyId()))
                 .filter(response -> matchesDiscoveryFilters(
@@ -194,7 +208,7 @@ public class PropertyDiscoveryService {
             BigDecimal latitude,
             BigDecimal longitude) {
         PropertyDiscoveryProfile profile = discoveryProfileRepository.findVisibleByPropertyId(propertyId)
-                .orElseThrow(() -> new NotFoundException("DiscoveryProperty_", propertyId));
+                .orElseThrow(() -> new NotFoundException("DiscoveryProperty", propertyId));
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         String directionsUrl = DiscoveryGeoSupport.propertyDirectionsUrl(
@@ -216,7 +230,8 @@ public class PropertyDiscoveryService {
                 directionsUrl,
                 startingRoomRentPaise,
                 owner == null ? null : owner.fullName(),
-                owner == null ? null : owner.phone());
+                owner == null ? null : owner.phone(),
+                propertyImageService.imageUrlsFor(propertyId));
     }
 
     // Owner/manager side discovery profile management
@@ -245,7 +260,7 @@ public class PropertyDiscoveryService {
 
     @Transactional
     public PropertyDiscoveryProfileResponse getManagedProfile(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanViewListing(actorUserId, propertyId);
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         PropertyDiscoveryProfile profile = getOrCreateProfile(
@@ -261,7 +276,7 @@ public class PropertyDiscoveryService {
             UUID actorUserId,
             UUID propertyId,
             UpdatePropertyDiscoveryProfileRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageListing(actorUserId, propertyId);
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         PropertyDiscoveryProfile profile = getOrCreateProfile(
@@ -282,7 +297,7 @@ public class PropertyDiscoveryService {
 
     @Transactional
     public PropertyDiscoveryProfileResponse publishProfile(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageListing(actorUserId, propertyId);
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         PropertyDiscoveryProfile profile = getOrCreateProfile(
@@ -298,7 +313,7 @@ public class PropertyDiscoveryService {
 
     @Transactional
     public PropertyDiscoveryProfileResponse unpublishProfile(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageListing(actorUserId, propertyId);
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         PropertyDiscoveryProfile profile = getOrCreateProfile(
@@ -323,7 +338,7 @@ public class PropertyDiscoveryService {
 
     @Transactional
     public PropertyDiscoveryProfileResponse repairManagedProfile(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageListing(actorUserId, propertyId);
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         PropertyDiscoveryProfile profile = getOrCreateProfile(
@@ -367,7 +382,7 @@ public class PropertyDiscoveryService {
     }
 
     private PropertyDiscoveryCardResponse toCardResponseIfPropertyVisible(
-            PropertyDiscoveryProfile profile, Double distanceKm) {
+            PropertyDiscoveryProfile profile, Double distanceKm, List<String> imageUrls) {
         try {
             PropertyResponse property = propertyModule.getActiveProperty(profile.getPropertyId());
             String directionsUrl = DiscoveryGeoSupport.propertyDirectionsUrl(
@@ -386,7 +401,8 @@ public class PropertyDiscoveryService {
                     profile,
                     distanceKm,
                     directionsUrl,
-                    startingRoomRentPaise);
+                    startingRoomRentPaise,
+                    imageUrls);
         } catch (NotFoundException exception) {
             log.warn("Skipping discovery profile because property is not active propertyId={}",
                     profile.getPropertyId());

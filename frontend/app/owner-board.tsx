@@ -5,10 +5,12 @@ import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import {
@@ -34,6 +36,9 @@ export default function OwnerBoardScreen() {
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
   const propertyId = selectedProperty?.id ?? "";
+  // Adding, editing and removing board content is PROPERTY_BOARD at MANAGE.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const canManageBoard = canManageResource("PROPERTY_BOARD");
 
   const categoriesQuery = useListBoardCategoriesQuery(propertyId, { skip: !selectedProperty });
   const itemsQuery = useListBoardItemsQuery(propertyId, { skip: !selectedProperty });
@@ -49,7 +54,14 @@ export default function OwnerBoardScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
+      <ScreenHeader
+        badge={!canManageBoard ? <ViewOnlyChip /> : null}
+        eyebrow="Property"
+        onBack={() => router.back()}
+        title="Property"
+        italicTail="board."
+        subtitle="Categories and items shown on this property's board."
+      />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
@@ -63,19 +75,19 @@ export default function OwnerBoardScreen() {
       {selectedProperty ? (
         <>
           <Card>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Property board
             </Text>
-            <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]} selectable>
+            <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
               {selectedProperty.name}
             </Text>
-            <Text style={[type.body, { color: colors.muted }]} selectable>
+            <Text style={[type.body, { color: colors.muted }]}>
               Always-on info for tenants — rules, timings, contacts and shared information, organised by category.
             </Text>
           </Card>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} variant="secondary" />
+            <ActionButton disabled={!canManageBoard} icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} variant="secondary" />
           </View>
 
           {categories.length === 0 ? (
@@ -95,8 +107,9 @@ export default function OwnerBoardScreen() {
                   title={category.name}
                 >
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                    <ActionButton icon={Pencil} label="Edit category" onPress={() => setCategoryModal({ category })} variant="secondary" />
+                    <ActionButton disabled={!canManageBoard} icon={Pencil} label="Edit category" onPress={() => setCategoryModal({ category })} variant="secondary" />
                     <ActionButton
+                      disabled={!canManageBoard}
                       icon={Trash2}
                       label="Delete"
                       onPress={() => setPendingDelete({ id: category.id, kind: "category", label: category.name })}
@@ -104,12 +117,13 @@ export default function OwnerBoardScreen() {
                     />
                   </View>
                   {categoryItems.length === 0 ? (
-                    <Text style={[type.caption, { color: colors.muted }]} selectable>
+                    <Text style={[type.caption, { color: colors.muted }]}>
                       No items in this category yet.
                     </Text>
                   ) : (
                     categoryItems.map((item) => (
                       <BoardItemCard
+                        canManage={canManageBoard}
                         key={item.id}
                         item={item}
                         onDelete={() => setPendingDelete({ id: item.id, kind: "item", label: item.title })}
@@ -119,6 +133,7 @@ export default function OwnerBoardScreen() {
                   )}
                   <View style={{ flexDirection: "row" }}>
                     <ActionButton
+                      disabled={!canManageBoard}
                       icon={Plus}
                       label="Add item"
                       onPress={() => setItemModal({ categoryId: category.id, item: null })}
@@ -179,21 +194,38 @@ export default function OwnerBoardScreen() {
   );
 }
 
-function BoardItemCard({ item, onDelete, onEdit }: { item: BoardItem; onDelete: () => void; onEdit: () => void }) {
+function BoardItemCard({
+  canManage,
+  item,
+  onDelete,
+  onEdit,
+}: {
+  // Edit and delete are removed rather than greyed on a per-item row: two dead
+  // icons repeated down a list is noise, where one dead "Add" button at the top
+  // reads as a locked capability.
+  canManage: boolean;
+  item: BoardItem;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
   const { colors, fonts, type } = useTheme();
   return (
     <Card tone="sunken">
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 18, fontWeight: "500" }} selectable>
+          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 18, }}>
             {item.title}
           </Text>
           <View style={{ flexDirection: "row" }}>
-            <IconButton accessibilityLabel="Edit item" icon={Pencil} onPress={onEdit} />
-            <IconButton accessibilityLabel="Delete item" icon={Trash2} onPress={onDelete} />
+            {canManage ? (
+              <>
+                <IconButton accessibilityLabel="Edit item" icon={Pencil} onPress={onEdit} />
+                <IconButton accessibilityLabel="Delete item" icon={Trash2} onPress={onDelete} />
+              </>
+            ) : null}
           </View>
         </View>
-        <Text style={[type.body, { color: colors.muted }]} selectable>
+        <Text style={[type.body, { color: colors.muted }]}>
           {item.body}
         </Text>
       </View>
@@ -241,7 +273,7 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
             </Text>
             <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
@@ -249,7 +281,7 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
           <FormInput label="Name" onChangeText={setName} placeholder="Rules, Timings, Contacts…" value={name} />
           <FormInput keyboardType="number-pad" label="Display order (optional)" onChangeText={setOrder} placeholder="e.g. 1" value={order} />
           {error ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               {error}
             </Text>
           ) : null}
@@ -319,13 +351,13 @@ function ItemModal({
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}
             </Text>
             <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
           </View>
           <View style={{ gap: spacing.xs }}>
-            <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+            <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
               Category
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -337,7 +369,7 @@ function ItemModal({
           <FormInput label="Title" onChangeText={setTitle} placeholder="Item title" value={title} />
           <FormInput multiline label="Body" onChangeText={setBody} placeholder="Details shown to tenants" value={body} />
           {error ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               {error}
             </Text>
           ) : null}

@@ -129,13 +129,13 @@ function ConcernOverviewCard({ concern, onOpen }: { concern: ConcernSummary; onO
             <ConcernStatusIcon color={status.fg} concern={concern} />
           </View>
           <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               {concern.referenceCode}
             </Text>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "700", lineHeight: 26 }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 26 }}>
               {concern.title}
             </Text>
-            <Text style={[type.caption, { color: status.fg, fontWeight: "800" }]} selectable>
+            <Text style={[type.caption, { color: status.fg, fontWeight: "800" }]}>
               {humanizeToken(concern.status)}
               {concern.reopened ? " · Reopened" : ""}
             </Text>
@@ -176,7 +176,7 @@ function ViewDetailButton({ onPress }: { onPress: () => void }) {
       }}
     >
       <Eye color={colors.primary} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+      <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 14, }}>
         View detail
       </Text>
     </AnimatedPressable>
@@ -187,10 +187,10 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, width: 92 }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, width: 92 }]}>
         {label}
       </Text>
-      <Text numberOfLines={2} style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700" }]} selectable>
+      <Text numberOfLines={2} style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700" }]}>
         {value}
       </Text>
     </View>

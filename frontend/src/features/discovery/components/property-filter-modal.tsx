@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { OptionPicker } from "@/components/option-picker";
 import {
   BATHROOM_TYPES,
   MEAL_TYPES,
@@ -91,15 +92,6 @@ export function PropertyFilterModal({
     });
   }
 
-  function toggleSharingType(sharingType: RoomType) {
-    const exists = filters.sharingTypes.includes(sharingType);
-    update({
-      sharingTypes: exists
-        ? filters.sharingTypes.filter((item) => item !== sharingType)
-        : [...filters.sharingTypes, sharingType],
-    });
-  }
-
   return (
     <Modal
       animationType="slide"
@@ -135,14 +127,12 @@ export function PropertyFilterModal({
                   color: colors.ink,
                   fontFamily: fonts.display,
                   fontSize: 22,
-                  fontWeight: "600",
                   letterSpacing: -0.2,
                 }}
-                selectable
               >
                 Property filters
               </Text>
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
+              <Text style={[type.caption, { color: colors.muted }]}>
                 Refine listed PG and hostel profiles
               </Text>
             </View>
@@ -160,7 +150,10 @@ export function PropertyFilterModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <FilterSection title="PG for">
+            {/* "PG for" understated the results. Discovery draws from every
+                visible profile with no property-type restriction, so hostels
+                come back alongside PGs — the heading has to cover both. */}
+            <FilterSection title="PG/Hostel for">
               <ChoiceGrid
                 options={PG_FOR_OPTIONS}
                 selected={filters.pgFor ?? "ANYONE"}
@@ -227,16 +220,14 @@ export function PropertyFilterModal({
             </FilterSection>
 
             <FilterSection title="Room sharing">
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                {ROOM_TYPES.map((sharingType) => (
-                  <FilterChip
-                    key={sharingType}
-                    label={humanizeToken(sharingType)}
-                    selected={filters.sharingTypes.includes(sharingType)}
-                    onPress={() => toggleSharingType(sharingType)}
-                  />
-                ))}
-              </View>
+              <OptionPicker
+                emptyLabel="Any sharing"
+                label="Sharing options"
+                onChange={(sharingTypes) => update({ sharingTypes })}
+                options={ROOM_TYPES.map((sharingType) => ({ label: humanizeToken(sharingType), value: sharingType }))}
+                title="Room sharing"
+                value={filters.sharingTypes}
+              />
             </FilterSection>
           </ScrollView>
 
@@ -249,7 +240,7 @@ export function PropertyFilterModal({
               flexDirection: "row",
               gap: spacing.sm,
               left: 0,
-              paddingBottom: Math.max(insets.bottom, spacing.lg),
+              paddingBottom: insets.bottom + spacing.lg,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.md,
               position: "absolute",
@@ -270,7 +261,7 @@ function FilterSection({ children, title }: { children: React.ReactNode; title: 
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {title}
       </Text>
       {children}
@@ -307,7 +298,7 @@ function BooleanChoice({ onChange, value }: { onChange: (value: boolean | null) 
 }
 
 function FilterChip({ label, onPress, selected }: { label: string; onPress: () => void; selected: boolean }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
 
   return (
     <AnimatedPressable
@@ -315,15 +306,19 @@ function FilterChip({ label, onPress, selected }: { label: string; onPress: () =
       accessibilityState={{ selected }}
       onPress={onPress}
       style={{
-        backgroundColor: selected ? colors.primary : colors.surfaceRaised,
-        borderColor: selected ? colors.primary : colors.border,
-        borderRadius: 13,
+        backgroundColor: selected ? colors.ink : colors.surfaceRaised,
+        borderColor: selected ? colors.ink : colors.border,
+        // Square by intent: these read as a set of switches, and the rounded
+        // pill shape made them compete with the app's actual pill badges.
+        borderRadius: 0,
         borderWidth: 1,
         paddingHorizontal: spacing.md,
         paddingVertical: 10,
       }}
     >
-      <Text style={[type.caption, { color: selected ? colors.onPrimary : colors.ink, fontWeight: "900" }]} selectable>
+      {/* fontFamily, not fontWeight — the loaded families carry their own
+          weight, and asking for 900 on top gets synthetic bolding on Android. */}
+      <Text style={[type.caption, { color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold }]}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -377,10 +372,10 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]} selectable>
+        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
           At least
         </Text>
-        <Text style={{ color: colors.ink, fontFamily: fonts.mono, fontSize: 17, fontWeight: "800" }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.mono, fontSize: 17, fontWeight: "800" }}>
           {value === 0 ? "Any" : `₹${value.toLocaleString("en-IN")}`}
         </Text>
       </View>
@@ -412,10 +407,10 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
       </View>
 
       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.kicker }]} selectable>
+        <Text style={[type.caption, { color: colors.kicker }]}>
           ₹0
         </Text>
-        <Text style={[type.caption, { color: colors.kicker }]} selectable>
+        <Text style={[type.caption, { color: colors.kicker }]}>
           ₹{RENT_MAX.toLocaleString("en-IN")}
         </Text>
       </View>

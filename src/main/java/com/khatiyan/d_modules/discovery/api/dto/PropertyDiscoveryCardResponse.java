@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.discovery.api.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,7 +44,12 @@ public record PropertyDiscoveryCardResponse(
         boolean dailyRentingAvailable,
         Long dailyGuestAcRatePaise,
         Long dailyGuestNonAcRatePaise,
-        String profileImageUrl
+        String profileImageUrl,
+        /**
+         * The full gallery, cover first. {@code profileImageUrl} is the cover and
+         * stays for older clients; new ones should read this.
+         */
+        List<String> imageUrls
 ) {
 
     public static PropertyDiscoveryCardResponse from(
@@ -51,7 +57,8 @@ public record PropertyDiscoveryCardResponse(
             PropertyDiscoveryProfile profile,
             Double distanceKm,
             String directionsUrl,
-            Long startingRoomRentPaise) {
+            Long startingRoomRentPaise,
+            List<String> imageUrls) {
         return new PropertyDiscoveryCardResponse(
                 property.id(),
                 property.name(),
@@ -82,7 +89,8 @@ public record PropertyDiscoveryCardResponse(
                         || hasPositiveDailyRate(property.dailyGuestNonAcRatePaise()),
                 property.dailyGuestAcRatePaise(),
                 property.dailyGuestNonAcRatePaise(),
-                profile.getProfileImageUrl());
+                profile.getProfileImageUrl(),
+                imageUrls == null ? List.of() : imageUrls);
     }
 
     private static boolean hasPositiveDailyRate(Long value) {

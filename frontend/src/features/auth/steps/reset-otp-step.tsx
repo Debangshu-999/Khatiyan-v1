@@ -1,6 +1,7 @@
 import { View } from "react-native";
+import { ArrowLeft } from "lucide-react-native";
 
-import { CodeField, LinkButton, otpTimerLabel, PhoneSummaryRow, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
+import { AuthChipLink, CodeField, LinkButton, PhoneSummaryRow, PrimaryButton, StepBadge, otpTimerLabel } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -46,7 +47,7 @@ export function ResetOtpStep({
           />
           <PrimaryButton label="Validate" onPress={onVerifyOtp} busy={busy} grow />
         </View>
-        <LinkButton label="Back to login" onPress={onBackToLogin} center />
+        <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>
     </>
   );

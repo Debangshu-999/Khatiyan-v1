@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.tenancy.repository;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -61,5 +62,20 @@ public interface TenancyRoomChangeRequestRepository extends JpaRepository<Tenanc
     List<UUID> findDueForExecutionIds(
             TenancyRoomChangeRequestStatus status,
             LocalDate today,
+            Pageable pageable);
+
+    /**
+     * Requests left unreviewed past the review window, oldest first.
+     */
+    @Query("""
+        SELECT request.id
+        FROM TenancyRoomChangeRequest request
+        WHERE request.status = :status
+          AND request.createdAt <= :cutoff
+        ORDER BY request.createdAt ASC
+        """)
+    List<UUID> findStaleForExpiryIds(
+            TenancyRoomChangeRequestStatus status,
+            Instant cutoff,
             Pageable pageable);
 }

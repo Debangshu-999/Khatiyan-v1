@@ -22,6 +22,7 @@ public record EmployeeHistoryResponse(
     String employmentReview,
     LocalDate settledOn,
     long settlementAmountPaise,
-    long totalPaidPaise
+    long totalPaidPaise,
+    String salaryAccountReferenceCode
 ) {
 }

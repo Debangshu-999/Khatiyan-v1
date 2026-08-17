@@ -258,7 +258,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
               </View>
               {home.label ? (
                 <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 8, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 }}>
-                  <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 10, fontWeight: "800" }}>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 10, }}>
                     {home.label}
                   </Text>
                 </View>
@@ -336,9 +336,9 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
           <AnimatedPressable
             accessibilityLabel="Use my location"
             onPress={() => void useMyLocation()}
-            style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 21, height: 42, justifyContent: "center", width: 42 }}
+            style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 21, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
           >
-            {locating ? <ActivityIndicator color={colors.primary} size="small" /> : <Crosshair color={colors.primary} size={20} strokeWidth={2.2} />}
+            {locating ? <ActivityIndicator color={colors.ink} size="small" /> : <Crosshair color={colors.primary} size={20} strokeWidth={2.2} />}
           </AnimatedPressable>
         </View>
         <ActionButton disabled={!center || resolvingAddress} label="Confirm location" onPress={confirm} />

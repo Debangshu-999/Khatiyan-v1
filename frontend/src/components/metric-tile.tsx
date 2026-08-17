@@ -15,7 +15,7 @@ type MetricTileProps = {
 };
 
 export function MetricTile({ dense = false, hint, label, tone = "default", value }: MetricTileProps) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
   const backgroundColor = tone === "primary" ? colors.jadeSoft : colors.surface;
   const borderColor = tone === "primary" ? colors.jadeSoft : colors.borderStrong;
@@ -29,33 +29,38 @@ export function MetricTile({ dense = false, hint, label, tone = "default", value
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,
+        elevation: 2,
         flex: 1,
         gap: spacing.xs,
         padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
       }}
     >
       {/* A long tile label (e.g. a one-off bill's name) scrolls instead of
           ellipsising, per the app-wide overflow-label rule. */}
       <MarqueeText style={[type.eyebrow, { color: colors.kicker }]}>{label}</MarqueeText>
+      {/* The family carries the weight — no fontWeight here, or Android
+          synthesises a second bolding pass on top of ExtraBold. */}
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.6}
         numberOfLines={1}
-        style={{
-          color: accentColor,
-          fontFamily: fonts.display,
-          fontSize,
-          fontVariant: ["tabular-nums"],
-          fontWeight: "500",
-          letterSpacing: -0.5,
-          lineHeight: fontSize + 4,
-        }}
-        selectable
+        style={[
+          type.metric,
+          {
+            color: accentColor,
+            fontSize,
+            lineHeight: fontSize + 4,
+          },
+        ]}
       >
         {value}
       </Text>
       {hint ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {hint}
         </Text>
       ) : null}

@@ -18,6 +18,8 @@ public record RoomResponse(
     String floor,
     int capacity,
     int occupiedCount,
+    // Beds held for approved room changes that have not transferred yet.
+    int reservedCount,
     int availableVacancies,
     RoomType roomType,
     RoomConditioning conditioning,
@@ -48,6 +50,7 @@ public record RoomResponse(
             room.getFloor(),
             room.getCapacity(),
             room.getOccupiedCount(),
+            room.getReservedCount(),
             room.getAvailableVacancies(),
             room.getRoomType(),
             room.getConditioning(),

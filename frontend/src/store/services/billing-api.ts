@@ -1,7 +1,9 @@
 import { api } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
-export type BillingCycleStatus = "UNPAID" | "OVERDUE" | "PAID" | "CANCELLED";
+// UPCOMING is generated ahead of the due date and is NOT payable or billed yet;
+// it is also the only state in which a rent cycle can still be edited.
+export type BillingCycleStatus = "UPCOMING" | "UNPAID" | "OVERDUE" | "PAID" | "CANCELLED";
 export type BillingCycleCategory = "RENT_CYCLE" | "ONE_OFF";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
 export type BillingLineItemType = "RENT" | "DEPOSIT" | "EXTRA_CHARGE" | "DISCOUNT" | "LATE_FEE";
@@ -13,7 +15,20 @@ export type BillingLineSettlementAction =
   | "SYSTEM_CHARGE"
   | "WAIVED";
 export type DepositAccountStatus = "ACTIVE" | "PENDING_SETTLEMENT" | "SETTLED";
-export type DepositMovementType = "CREDIT" | "DEBIT";
+/**
+ * Mirrors the server's DepositMovementType exactly.
+ *
+ * <p>It read "CREDIT" | "DEBIT" until 2026-08-15, which the API has never sent.
+ * Every `type === "CREDIT"` comparison was therefore permanently false and each
+ * ledger row rendered as a debit — a type that lies is worse than no type,
+ * because it makes the wrong comparison typecheck.
+ */
+export type DepositMovementType = "ADDITION" | "DEDUCTION" | "SETTLEMENT";
+
+/** Only an ADDITION puts money in; a settlement pays it back out. */
+export function isDepositCredit(movementType: DepositMovementType) {
+  return movementType === "ADDITION";
+}
 
 export type BillingCycleLineItem = {
   id: string;
@@ -57,6 +72,10 @@ export type BillingCycle = {
   baseAmountPaise: number;
   extraChargePaise: number;
   lateFeeAmountPaise: number;
+  // The rate stamped when the cycle activated. Absent while UPCOMING (and note
+  // the API omits nulls entirely, so this arrives as undefined, not null) —
+  // fall back to the property's current rentLateFeePerDayPaise.
+  lateFeePerDayPaise: number | null;
   discountAmountPaise: number;
   totalAmountPaise: number;
   status: BillingCycleStatus;
@@ -132,6 +151,11 @@ export type RecordManualPaymentPayload = {
   note?: string | null;
 };
 
+export type CreateOneOffBillPayload = {
+  reason: string;
+  amountPaise: number;
+};
+
 export type ManualPayment = {
   id: string;
   billingCycleId: string;
@@ -168,6 +192,12 @@ export type DepositAccount = {
   tenancyReferenceCode: string | null;
   currentBalancePaise: number;
   status: DepositAccountStatus;
+  /**
+   * The payability decision recorded at end-tenancy. Null means none was
+   * recorded — an account from before the exit flow, or a tenancy still
+   * running. Never treat null as "refundable".
+   */
+  payableAtExit: boolean | null;
   settledAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -304,6 +334,20 @@ export const billingApi = api.injectEndpoints({
       invalidatesTags: ["BillingCycle", "Notification", "Payment"],
     }),
 
+    createOneOffBill: builder.mutation<BillingCycle, { tenancyId: string; payload: CreateOneOffBillPayload }>({
+      query: ({ payload, tenancyId }) => ({
+        body: payload,
+        method: "POST",
+        url: `/api/v1/billing/tenancies/${tenancyId}/one-off-bills`,
+      }),
+      invalidatesTags: ["BillingCycle", "Notification"],
+    }),
+
+    listManualPayments: builder.query<ManualPayment[], string>({
+      query: (billingCycleId) => `/api/v1/billing/cycles/${billingCycleId}/manual-payments`,
+      providesTags: (_result, _error, billingCycleId) => [{ type: "BillingCycle", id: billingCycleId }],
+    }),
+
     // ----- Owner / manager deposit manager -----
 
     getManagedTenancyDeposit: builder.query<DepositAccount, string>({
@@ -362,28 +406,17 @@ export const billingApi = api.injectEndpoints({
       ],
     }),
 
-    // On-spot settlement: selected property damage items (totalled) + custom
-    // charges deducted, remaining balance refunded, account closed.
-    settleDepositWithDamages: builder.mutation<
-      DepositAccount,
-      {
-        tenancyId: string;
-        damageItemNames: string[];
-        customCharges: { reason: string; amountPaise: number }[];
-        reason?: string;
-      }
-    >({
-      query: ({ customCharges, damageItemNames, reason, tenancyId }) => ({
-        body: { customCharges, damageItemNames, reason: reason ?? null },
+    // Closes a deposit the exit marked not refundable. Pays out nothing, so no
+    // DepositPayoutEvent and no expense row — only the account's own views move.
+    closeDepositUnpaid: builder.mutation<DepositAccount, { tenancyId: string; reason: string }>({
+      query: ({ reason, tenancyId }) => ({
+        body: { reason },
         method: "POST",
-        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/settle-with-damages`,
+        url: `/api/v1/billing/tenancies/${tenancyId}/deposit/close-unpaid`,
       }),
-      // Refunding the remaining balance posts a DepositPayoutEvent that
-      // auto-creates an expense row — refresh the expense views too.
       invalidatesTags: (_result, _error, { tenancyId }) => [
         { type: "Deposit", id: tenancyId },
         { type: "Deposit", id: "LIST" },
-        "Expense",
       ],
     }),
   }),
@@ -405,7 +438,9 @@ export const {
   useListPropertyBillingCyclesQuery,
   useListPropertyDepositsQuery,
   useListUpcomingPropertyCyclesQuery,
+  useCreateOneOffBillMutation,
+  useListManualPaymentsQuery,
   useRecordManualPaymentMutation,
-  useSettleDepositWithDamagesMutation,
+  useCloseDepositUnpaidMutation,
   useSettleManagedDepositMutation,
 } = billingApi;

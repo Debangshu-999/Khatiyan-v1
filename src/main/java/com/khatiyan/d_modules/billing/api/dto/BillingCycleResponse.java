@@ -35,6 +35,9 @@ public record BillingCycleResponse(
     long baseAmountPaise,
     long extraChargePaise,
     long lateFeeAmountPaise,
+    // Null while UPCOMING: the rate is stamped when the cycle activates, so
+    // until then the property's current setting still applies and may change.
+    Long lateFeePerDayPaise,
     long discountAmountPaise,
     long totalAmountPaise,
     BillingCycleStatus status,
@@ -75,6 +78,7 @@ public record BillingCycleResponse(
             cycle.getBaseAmountPaise(),
             cycle.getExtraChargePaise(),
             cycle.getLateFeeAmountPaise(),
+            cycle.getLateFeePerDayPaise(),
             cycle.getDiscountAmountPaise(),
             cycle.getTotalAmountPaise(),
             cycle.getStatus(),

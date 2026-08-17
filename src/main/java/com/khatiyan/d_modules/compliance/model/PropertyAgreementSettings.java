@@ -37,25 +37,19 @@ public class PropertyAgreementSettings extends BaseEntity {
     @Column(name = "property_id", nullable = false, unique = true)
     private UUID propertyId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private AgreementMode mode;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "default_clauses", columnDefinition = "jsonb", nullable = false)
     private List<AgreementClause> defaultClauses = new ArrayList<>();
 
-    public static PropertyAgreementSettings create(UUID propertyId, AgreementMode mode, List<AgreementClause> defaultClauses) {
+    public static PropertyAgreementSettings create(UUID propertyId, List<AgreementClause> defaultClauses) {
         PropertyAgreementSettings settings = new PropertyAgreementSettings();
         settings.id = UUID.randomUUID();
         settings.propertyId = propertyId;
-        settings.mode = mode;
         settings.defaultClauses = defaultClauses != null ? new ArrayList<>(defaultClauses) : new ArrayList<>();
         return settings;
     }
 
-    public void update(AgreementMode mode, List<AgreementClause> defaultClauses) {
-        this.mode = mode;
+    public void update(List<AgreementClause> defaultClauses) {
         this.defaultClauses = defaultClauses != null ? new ArrayList<>(defaultClauses) : new ArrayList<>();
     }
 }

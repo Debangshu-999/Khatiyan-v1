@@ -38,7 +38,7 @@ export function NotificationRow({ notification, onPress }: Props) {
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {categoryLabel(notification)}
         </Text>
         {urgency ? <UrgencyMarker signal={urgency} /> : null}
@@ -53,11 +53,10 @@ export function NotificationRow({ notification, onPress }: Props) {
           letterSpacing: -0.2,
           lineHeight: 22,
         }}
-        selectable
       >
         {notification.title}
       </Text>
-      <Text style={[type.body, { color: colors.muted, fontSize: 14 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
         {notification.body}
       </Text>
       {details.length > 0 ? (
@@ -66,7 +65,6 @@ export function NotificationRow({ notification, onPress }: Props) {
             <Text
               key={`${detail.label}-${detail.value}`}
               style={[type.caption, { color: colors.inkSoft, fontSize: 12 }]}
-              selectable
             >
               <Text style={{ color: colors.kicker, fontWeight: "700" }}>{detail.label}: </Text>
               {detail.value}
@@ -74,7 +72,7 @@ export function NotificationRow({ notification, onPress }: Props) {
           ))}
         </View>
       ) : null}
-      <Text style={[type.caption, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]} selectable>
+      <Text style={[type.caption, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]}>
         {formatRelative(notification.createdAt)}
       </Text>
     </AnimatedPressable>
@@ -92,13 +90,11 @@ function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
       <Text
         style={{
           color: tone,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 11,
-          fontWeight: "900",
           letterSpacing: 0.6,
           textTransform: "uppercase",
         }}
-        selectable
       >
         {signal.label}
       </Text>
@@ -135,17 +131,39 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Tenancy ID", shortId(data.tenancyId));
       add(details, "Transfer date", formatDate(data.transferDate));
       break;
+    // Every exit row quotes the REQUEST's short code. It used to print eight
+    // characters of the tenancy UUID, which named nothing anyone could look up.
     case "TENANCY_EXIT_REQUESTED":
     case "TENANCY_EXIT_CANCELLED":
       add(details, "Property", data.propertyName);
       add(details, "Type", titleCase(data.exitType));
       add(details, "Checkout date", formatDate(data.requestedCheckoutDate));
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Request", data.referenceCode);
       break;
     case "TENANCY_EXIT_APPROVED":
     case "TENANCY_EXIT_EXECUTED":
       add(details, "Property", data.propertyName);
       add(details, "Checkout date", formatDate(data.approvedCheckoutDate ?? data.checkoutDate));
+      add(details, "Request", data.referenceCode);
+      break;
+    case "TENANCY_EXIT_EXPIRED":
+      add(details, "Property", data.propertyName);
+      add(details, "Type", titleCase(data.exitType));
+      add(details, "Request", data.referenceCode);
+      break;
+    case "TENANCY_EXIT_WITHDRAWAL_REQUESTED":
+    case "TENANCY_EXIT_WITHDRAWAL_APPROVED":
+    case "TENANCY_EXIT_WITHDRAWAL_REJECTED":
+      add(details, "Property", data.propertyName);
+      // The date at stake either way: what they were leaving on, and what they
+      // still leave on if the withdrawal is refused.
+      add(details, "Checkout date", formatDate(data.approvedCheckoutDate));
+      add(details, "Request", data.referenceCode);
+      break;
+    case "TENANCY_AGREEMENT_EXPIRY_APPROACHING":
+      add(details, "Property", data.propertyName);
+      add(details, "Agreement ends", formatDate(data.agreementEndDate));
+      add(details, "Days left", data.daysRemaining);
       add(details, "Tenancy ID", shortId(data.tenancyId));
       break;
     case "CONCERN_RAISED":

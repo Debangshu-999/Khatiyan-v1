@@ -75,6 +75,9 @@ class BillingCycleServiceTest {
     private PropertyModule propertyModule;
 
     @Mock
+    private BillingAccessPolicy billingAccessPolicy;
+
+    @Mock
     private AuthModule authModule;
 
     @Mock
@@ -98,6 +101,7 @@ class BillingCycleServiceTest {
                 monthlyReportRepository,
                 tenancyModule,
                 propertyModule,
+                billingAccessPolicy,
                 authModule,
                 depositManagerService,
                 eventPublisher,
@@ -141,7 +145,7 @@ class BillingCycleServiceTest {
                 .extracting(lineItem -> lineItem.type())
                 .containsExactly(BillingCycleLineItemType.RENT, BillingCycleLineItemType.DEPOSIT);
 
-        verify(propertyModule).ensureCanManageProperty(ACTOR_ID, PROPERTY_ID);
+        verify(billingAccessPolicy).ensureCanManageBilling(ACTOR_ID, PROPERTY_ID);
         verify(tenancyModule).markBillingStarted(TENANCY_ID);
         verify(eventPublisher).publishEvent(any(BillingCycleGeneratedEvent.class));
     }
@@ -239,6 +243,55 @@ class BillingCycleServiceTest {
                 .toList();
     }
 
+    /**
+     * Regression: raising a one-off bill used to make a tenant disappear from the
+     * pending-generation list. The one-off is dated today, so treating it as the
+     * tenancy's latest cycle put that date inside the current month and the
+     * "latest cycle is from a prior month" filter dropped the tenant — the screen
+     * then claimed their rent cycle had been generated when it had not.
+     */
+    @Test
+    void oneOffBillDoesNotHideATenancyStillAwaitingItsRentCycle() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        LocalDate lastMonthStart = today.withDayOfMonth(1).minusMonths(1);
+
+        BillingCycle lastMonthsRent = BillingCycle.create(
+                TENANCY_ID,
+                "BIL-2026-000001",
+                TENANT_ID,
+                "Test Tenant",
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.MONTHLY,
+                1,
+                lastMonthStart,
+                lastMonthStart.plusMonths(1).minusDays(1),
+                lastMonthStart.plusDays(3),
+                BillingCollectionTiming.CYCLE_START,
+                3);
+        BillingCycle todaysOneOff = BillingCycle.createOneOff(
+                TENANCY_ID,
+                "BIL-2026-000002",
+                TENANT_ID,
+                "Test Tenant",
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.MONTHLY,
+                today);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(lastMonthsRent, todaysOneOff));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(monthlyTenancy()));
+        when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
+
+        var result = billingCycleService.listUpcomingPropertyCycles(ACTOR_ID, PROPERTY_ID, null, 0, 20);
+
+        assertThat(result.items())
+                .as("the tenant still owes a rent cycle this month, one-off bill or not")
+                .hasSize(1);
+        assertThat(result.items().get(0).tenancyId()).isEqualTo(TENANCY_ID);
+    }
+
     private static BillingCycle monthlyCycleDue(LocalDate dueDate) {
         return BillingCycle.create(
                 TENANCY_ID,
@@ -324,7 +377,6 @@ class BillingCycleServiceTest {
                 null,
                 null,
                 null,
-                null,
                 null);
     }
 
@@ -357,6 +409,7 @@ class BillingCycleServiceTest {
                 "101",
                 "1",
                 1,
+                0,
                 0,
                 1,
                 RoomType.SINGLE,

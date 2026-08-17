@@ -62,6 +62,9 @@ class AuthServiceLoginTest {
     @Mock
     private EmailVerificationLinkSender emailVerificationLinkSender;
 
+    @Mock
+    private RecoveryEmailChangeNotifier recoveryEmailChangeNotifier;
+
     private AuthService authService;
     private LoginRateLimitProperties properties;
 
@@ -81,7 +84,8 @@ class AuthServiceLoginTest {
                 rateLimitService,
                 properties,
                 loginAttemptService,
-                emailVerificationLinkSender);
+                emailVerificationLinkSender,
+                recoveryEmailChangeNotifier);
     }
 
     @Test
@@ -243,14 +247,13 @@ class AuthServiceLoginTest {
         user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> authService.requestPINResetOTP(
-                RAW_PHONE,
-                OtpDeliveryChannel.SMS,
-                IP_ADDRESS))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("PIN reset is temporarily unavailable");
+        // Silent, not an exception. The rule is unchanged — a locked account
+        // gets no reset code — but saying so out loud would confirm the number
+        // has an account, which is the enumeration leak the whole path avoids.
+        // The refusal is proved by no OTP being issued, not by a thrown error.
+        authService.requestPINResetOTP(RAW_PHONE, OtpDeliveryChannel.SMS, IP_ADDRESS);
 
-        verify(otpService, never()).issue(anyString(), anyString(), any(OtpPurpose.class), any(OtpDeliveryChannel.class));
+        verify(otpService, never()).issue(any(), any(), any(), any());
     }
 
     @Test

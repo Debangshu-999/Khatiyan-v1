@@ -210,9 +210,7 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         WHERE cycle.propertyId = :propertyId
           AND cycle.periodStartDate >= :fromDate
           AND cycle.periodStartDate < :toDate
-          AND cycle.status NOT IN (
-              com.khatiyan.d_modules.billing.model.BillingCycleStatus.UPCOMING,
-              com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED)
+          AND cycle.status <> com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED
         """)
     long sumTotalForPropertyByPeriodStartBetween(UUID propertyId, LocalDate fromDate, LocalDate toDate);
 
@@ -297,14 +295,12 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         """)
     long countForPropertyByStatusIn(UUID propertyId, List<BillingCycleStatus> statuses);
 
-    /** Discounts actually given, so drafts and cancelled bills do not count. */
+    /** Discounts given on bills that stand — cancelled bills do not count. */
     @Query("""
         SELECT COALESCE(SUM(cycle.discountAmountPaise), 0)
         FROM BillingCycle cycle
         WHERE cycle.propertyId = :propertyId
-          AND cycle.status NOT IN (
-              com.khatiyan.d_modules.billing.model.BillingCycleStatus.UPCOMING,
-              com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED)
+          AND cycle.status <> com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED
         """)
     long sumDiscountForProperty(UUID propertyId);
 }

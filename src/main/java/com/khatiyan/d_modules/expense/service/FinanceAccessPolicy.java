@@ -5,13 +5,22 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.model.ManagerResource;
 
 /**
- * Single chokepoint for finance (expense / P&L) authorization.
+ * Single chokepoint for finance authorization.
  *
- * <p>For now finance access equals property management — an owner or an active
- * manager. A future per-capability IAM layer (owner-customisable manager scopes)
- * can narrow this here without touching the many call sites.
+ * <p>
+ * Two resources, and <b>neither has a view-only level</b>: an owner grants the
+ * expense ledger or the P&amp;L outright, or not at all. A read-only tier would
+ * be redundant — the month's spend already shows on Home's live digest and
+ * profitability on the dashboard, both of which every manager sees. So the
+ * question these answer is "do they get the tool", not "may they change it",
+ * which is why both checks demand MANAGE.
+ *
+ * <p>
+ * They are separate because the powers differ in kind: logging what was spent is
+ * daily upkeep, while profitability is the owner's own numbers.
  */
 @Component
 public class FinanceAccessPolicy {
@@ -22,7 +31,13 @@ public class FinanceAccessPolicy {
         this.propertyModule = propertyModule;
     }
 
-    public void ensureCanManageFinances(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+    /** The expense ledger, categories, budgets, recurring expenses and income. */
+    public void ensureCanUseExpenses(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.EXPENSES);
+    }
+
+    /** The profit-and-loss statement and its trend. */
+    public void ensureCanUsePnl(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.PNL);
     }
 }

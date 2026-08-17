@@ -45,7 +45,7 @@ export default function OwnerConcernMonitorScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader onBack={() => router.back()}
-        eyebrow="Owner monitor"
+        eyebrow="Concerns"
         title="Concern"
         italicTail="monitor."
         subtitle="Track assigned concerns and resolved concerns still inside the reopen window."
@@ -108,15 +108,15 @@ function MonitorConcernCard({ concern, onOpen }: { concern: ConcernSummary; onOp
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 16, height: 48, justifyContent: "center", width: 48 }}>
-            <Icon color={colors.primary} size={22} />
+          <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 16, borderWidth: 1, height: 48, justifyContent: "center", width: 48 }}>
+            <Icon color={colors.ink} size={22} />
           </View>
           <View style={{ flex: 1, gap: spacing.xs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>{concern.referenceCode}</Text>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "700", lineHeight: 27 }} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>{concern.referenceCode}</Text>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, lineHeight: 27 }}>
               {concern.title}
             </Text>
-            <Text style={[type.body, { color: colors.muted }]} selectable>
+            <Text style={[type.body, { color: colors.muted }]}>
               {humanizeToken(concern.status)}{concern.reopened ? " · Reopened" : ""}
             </Text>
           </View>
@@ -142,8 +142,8 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, width: 92 }]} selectable>{label}</Text>
-      <Text style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700" }]} selectable>{value}</Text>
+      <Text style={[type.caption, { color: colors.muted, width: 92 }]}>{label}</Text>
+      <Text style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700" }]}>{value}</Text>
     </View>
   );
 }

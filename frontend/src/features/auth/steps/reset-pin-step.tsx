@@ -1,6 +1,7 @@
 import { View } from "react-native";
+import { ArrowLeft } from "lucide-react-native";
 
-import { CodeField, LinkButton, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
+import { AuthChipLink, CodeField, LinkButton, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -31,7 +32,7 @@ export function ResetPinStep({
       <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Reset PIN and enter app" onPress={onResetPin} busy={busy} />
-        <LinkButton label="Back to login" onPress={onBackToLogin} center />
+        <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>
     </>
   );

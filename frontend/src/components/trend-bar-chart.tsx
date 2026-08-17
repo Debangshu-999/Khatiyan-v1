@@ -37,7 +37,7 @@ export function TrendBarChart({ data, mode = "percent", title }: { data: TrendBa
   return (
     <Card>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600", letterSpacing: -0.3 }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.3 }}>
           {title}
         </Text>
         <View
@@ -51,7 +51,7 @@ export function TrendBarChart({ data, mode = "percent", title }: { data: TrendBa
             paddingVertical: 6,
           }}
         >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12, }}>
             Monthly
           </Text>
           <ChevronDown color={colors.muted} size={14} strokeWidth={2.4} />
@@ -65,14 +65,12 @@ export function TrendBarChart({ data, mode = "percent", title }: { data: TrendBa
               key={fraction}
               style={{
                 color: colors.kicker,
-                fontFamily: fonts.sans,
+                fontFamily: fonts.sansBold,
                 fontSize: 10,
-                fontWeight: "700",
                 position: "absolute",
                 right: 0,
                 top: Math.max(0, (1 - fraction) * CHART_HEIGHT - 6),
               }}
-              selectable
             >
               {mode === "money" ? formatAxisMoney(fraction * scaleMax) : `${Math.round(fraction * 100)}%`}
             </Text>
@@ -120,7 +118,6 @@ export function TrendBarChart({ data, mode = "percent", title }: { data: TrendBa
               <Text
                 key={`${point.label}-label-${index}`}
                 style={[type.caption, { color: colors.muted, flex: 1, textAlign: "center" }]}
-                selectable
               >
                 {point.label}
               </Text>

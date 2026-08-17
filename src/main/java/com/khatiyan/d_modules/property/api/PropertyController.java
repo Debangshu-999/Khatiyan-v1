@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,6 +27,8 @@ import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
 import com.khatiyan.d_modules.property.api.dto.MarkRoomStatusRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
+import com.khatiyan.d_modules.property.api.dto.ManagerPermissionsResponse;
+import com.khatiyan.d_modules.property.api.dto.UpdateManagerPermissionsRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.ShiftManagerRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyExitPolicyRequest;
@@ -33,7 +36,10 @@ import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomMaintenanceRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomRequest;
+import com.khatiyan.d_modules.property.model.ManagerResource;
 import com.khatiyan.d_modules.property.model.RoomStatus;
+import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
+import com.khatiyan.d_modules.property.service.PropertyAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.service.PropertyService;
 import com.khatiyan.d_modules.property.service.RoomService;
@@ -55,14 +61,20 @@ public class PropertyController {
     private final PropertyService propertyService;
     private final RoomService roomService;
     private final PropertyManagerService propertyManagerService;
+    private final ManagerAccessPolicy managerAccessPolicy;
+    private final PropertyAccessPolicy propertyAccessPolicy;
 
     public PropertyController(
             PropertyService propertyService,
             RoomService roomService,
-            PropertyManagerService propertyManagerService) {
+            PropertyManagerService propertyManagerService,
+            ManagerAccessPolicy managerAccessPolicy,
+            PropertyAccessPolicy propertyAccessPolicy) {
         this.propertyService = propertyService;
         this.roomService = roomService;
         this.propertyManagerService = propertyManagerService;
+        this.managerAccessPolicy = managerAccessPolicy;
+        this.propertyAccessPolicy = propertyAccessPolicy;
     }
 
     @PostMapping
@@ -94,6 +106,10 @@ public class PropertyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @Valid @RequestBody UpdatePropertyRequest request) {
+        // PROPERTY_SETTINGS at MANAGE, not owner-only. Editing the property is
+        // exactly what the permission exists to grant; leaving it owner-scoped
+        // would make "view & manage" mean nothing on this screen.
+        propertyAccessPolicy.ensureCanManageSettings(user.userId(), propertyId);
         return propertyService.updateProperty(user.userId(), propertyId, request);
     }
 
@@ -109,7 +125,17 @@ public class PropertyController {
     public PropertyExitPolicyResponse getExitPolicies(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
-        propertyManagerService.ensureCanManageProperty(user.userId(), propertyId);
+        // Exit policies are the rules a stay ends under, so they are EDITED
+        // under TENANCY_RULES rather than property configuration — the owner
+        // sets those and agreement settings in one decision. Reading them is
+        // wider: ending a stay and settling a deposit both need the damage
+        // schedule and checklist.
+        managerAccessPolicy.ensureCanViewAny(
+                user.userId(),
+                propertyId,
+                ManagerResource.TENANCY_RULES,
+                ManagerResource.TENANCIES,
+                ManagerResource.DEPOSITS);
         return propertyService.getExitPolicy(propertyId);
     }
 
@@ -118,6 +144,7 @@ public class PropertyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @Valid @RequestBody UpdatePropertyExitPolicyRequest request) {
+        managerAccessPolicy.ensureCanManage(user.userId(), propertyId, ManagerResource.TENANCY_RULES);
         return propertyService.updateExitPolicies(user.userId(), propertyId, request);
     }
 
@@ -159,6 +186,54 @@ public class PropertyController {
             @PathVariable UUID managerUserId,
             @Valid @RequestBody ShiftManagerRequest request) {
         return propertyManagerService.shiftManager(user.userId(), propertyId, managerUserId, request.targetPropertyId());
+    }
+
+    /**
+     * What the CALLER may see and do here. Every authenticated user of the
+     * property can read their own map — it is what the app uses to decide which
+     * sections to render at all, so refusing it would just blank the UI.
+     */
+    @GetMapping("/{propertyId}/my-permissions")
+    public ManagerPermissionsResponse myPermissions(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return new ManagerPermissionsResponse(
+                propertyId,
+                user.userId(),
+                managerAccessPolicy.isOwner(user.userId(), propertyId),
+                managerAccessPolicy.levelsFor(user.userId(), propertyId));
+    }
+
+    /** One manager's grants. Owner-only: this is the permission screen. */
+    @GetMapping("/{propertyId}/managers/{managerUserId}/permissions")
+    public ManagerPermissionsResponse managerPermissions(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID managerUserId) {
+        managerAccessPolicy.ensureOwner(user.userId(), propertyId);
+        return new ManagerPermissionsResponse(
+                propertyId,
+                managerUserId,
+                false,
+                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+    }
+
+    /**
+     * Replaces a manager's grants. Owner-only, and deliberately a full
+     * replacement — anything omitted is revoked.
+     */
+    @PutMapping("/{propertyId}/managers/{managerUserId}/permissions")
+    public ManagerPermissionsResponse replaceManagerPermissions(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID managerUserId,
+            @Valid @RequestBody UpdateManagerPermissionsRequest request) {
+        managerAccessPolicy.replaceGrants(user.userId(), propertyId, managerUserId, request.levels());
+        return new ManagerPermissionsResponse(
+                propertyId,
+                managerUserId,
+                false,
+                managerAccessPolicy.grantsFor(propertyId, managerUserId));
     }
 
     @DeleteMapping("/{propertyId}/managers/{managerUserId}")

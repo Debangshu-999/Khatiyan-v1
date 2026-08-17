@@ -4,7 +4,13 @@ import { Bell, Building2, CreditCard, KeyRound, Megaphone, ShieldAlert, UserRoun
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useAppSelector } from "@/store/hooks";
-import type { NotificationItem } from "@/store/services/notification-api";
+import {
+  NOTIFICATION_REFETCH_OPTIONS,
+  useGetOlderNotificationsQuery,
+  useGetRecentNotificationsQuery,
+  useGetUnreadNotificationCountQuery,
+  type NotificationItem,
+} from "@/store/services/notification-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -135,6 +141,59 @@ export function usePropertyAlertScope() {
 }
 
 /**
+ * Unread count for the tab badge, counting exactly the rows the notifications
+ * screen would show.
+ *
+ * The server count is account-wide and cannot be property-scoped: the property
+ * lives in the jsonb `data.propertyId`, and scoping is a client-side choice.
+ * Counting server-side while rendering client-side scoped meant an unread alert
+ * on property B lit the badge while the owner sat on property A looking at an
+ * empty list — a badge with nothing behind it and no way to clear it.
+ *
+ * So: use the cheap server count when nothing is being filtered out, and derive
+ * from the feed itself when it is. Both feeds are already in the RTK Query
+ * cache whenever the screen is open, so the scoped path usually costs nothing.
+ */
+export function useScopedUnreadCount({ enabled = true }: { enabled?: boolean } = {}) {
+  const { activeAccount, inPropertyScope, isManagement, selectedProperty } = usePropertyAlertScope();
+  const scoped = isManagement && Boolean(selectedProperty);
+
+  const countQuery = useGetUnreadNotificationCountQuery(activeAccount, {
+    ...NOTIFICATION_REFETCH_OPTIONS,
+    skip: !enabled || scoped,
+    pollingInterval: 30_000,
+  });
+  const recentQuery = useGetRecentNotificationsQuery(activeAccount, {
+    ...NOTIFICATION_REFETCH_OPTIONS,
+    skip: !enabled || !scoped,
+    pollingInterval: 30_000,
+  });
+  const olderQuery = useGetOlderNotificationsQuery(activeAccount, {
+    ...NOTIFICATION_REFETCH_OPTIONS,
+    skip: !enabled || !scoped,
+    pollingInterval: 30_000,
+  });
+
+  if (!enabled) {
+    return 0;
+  }
+  // Management mode with nothing selected is NOT the same as "no scope". The
+  // server count spans every property, so it lit the badge with a number the
+  // owner could not act on — the feed they would open is empty until a property
+  // is chosen. Distinguishing the two is the difference between "you have one
+  // unread" and "one exists somewhere you are not looking".
+  if (isManagement && !selectedProperty) {
+    return 0;
+  }
+  if (!scoped) {
+    return countQuery.data ?? 0;
+  }
+  return [...(recentQuery.data ?? []), ...(olderQuery.data ?? [])].filter(
+    (notification) => !notification.readAt && inPropertyScope(notification),
+  ).length;
+}
+
+/**
  * Sideways-scrollable topic filter: "All" plus every category, always visible
  * (zero counts included), bleeding to the screen edges so the row reads as
  * scrollable.
@@ -206,18 +265,16 @@ function TopicBubble({
       }}
     >
       {Icon ? <Icon color={color} size={13} strokeWidth={2.3} /> : null}
-      <Text style={{ color, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }} selectable={false}>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 12, }}>
         {label}
       </Text>
       <Text
         style={{
           color: active ? colors.primary : colors.kicker,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 11,
           fontVariant: ["tabular-nums"],
-          fontWeight: "800",
         }}
-        selectable={false}
       >
         {count}
       </Text>

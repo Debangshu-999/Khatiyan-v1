@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.notice.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -11,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.notice.api.dto.CreateNoticeRequest;
+import com.khatiyan.d_modules.notice.api.dto.NoticeAttachmentResponse;
 import com.khatiyan.d_modules.notice.api.dto.NoticeResponse;
 import com.khatiyan.d_modules.notice.api.dto.UpdateNoticeRequest;
 import com.khatiyan.d_modules.notice.event.NoticePublishedEvent;
@@ -33,18 +36,27 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class NoticeService {
 
+    /** How far ahead the upcoming-notices window looks. */
+    private static final Duration UPCOMING_HORIZON = Duration.ofHours(3);
+
     private final NoticeRepository noticeRepository;
     private final PropertyModule propertyModule;
+    private final NoticeAccessPolicy noticeAccessPolicy;
+    private final NoticeAttachmentService noticeAttachmentService;
     private final TenancyModule tenancyModule;
     private final ApplicationEventPublisher eventPublisher;
 
     public NoticeService(
             NoticeRepository noticeRepository,
             PropertyModule propertyModule,
+            NoticeAccessPolicy noticeAccessPolicy,
+            NoticeAttachmentService noticeAttachmentService,
             TenancyModule tenancyModule,
             ApplicationEventPublisher eventPublisher) {
         this.noticeRepository = noticeRepository;
         this.propertyModule = propertyModule;
+        this.noticeAccessPolicy = noticeAccessPolicy;
+        this.noticeAttachmentService = noticeAttachmentService;
         this.tenancyModule = tenancyModule;
         this.eventPublisher = eventPublisher;
     }
@@ -59,7 +71,7 @@ public class NoticeService {
             UUID actorUserId,
             UUID propertyId,
             CreateNoticeRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        noticeAccessPolicy.ensureCanManageNotices(actorUserId, propertyId);
 
         Instant now = Instant.now();
         Instant visibleFrom = defaultVisibleFrom(request.visibleFrom(), now);
@@ -91,7 +103,9 @@ public class NoticeService {
                     savedNotice.getTitle()));
         }
 
-        return NoticeResponse.from(savedNotice);
+        noticeAttachmentService.attachOnPublish(savedNotice.getId(), request.attachments());
+
+        return NoticeResponse.from(savedNotice, noticeAttachmentService.attachmentsFor(savedNotice.getId()));
     }
 
     /**
@@ -100,12 +114,12 @@ public class NoticeService {
      */
     @Transactional(readOnly = true)
     public List<NoticeResponse> listPublishedNotices(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        noticeAccessPolicy.ensureCanViewNotices(actorUserId, propertyId);
 
-        return noticeRepository.findPublishedManualByPropertyId(propertyId)
+        List<Notice> notices = noticeRepository.findPublishedManualByPropertyId(propertyId)
                 .stream()
-                .map(notice -> NoticeResponse.from(notice))
                 .toList();
+        return withAttachments(notices);
     }
 
     /**
@@ -113,12 +127,20 @@ public class NoticeService {
      */
     @Transactional(readOnly = true)
     public List<NoticeResponse> listVisibleNoticesForProperty(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        noticeAccessPolicy.ensureCanViewNotices(actorUserId, propertyId);
 
-        return noticeRepository.findVisibleManualByPropertyId(propertyId, Instant.now())
+        // Everything a tenant can see right now, recurring occurrences included
+        // — the same query the tenant view uses. This used to exclude generated
+        // rows, so the one notice actually on tenants' screens was the one the
+        // owner could not find: today's occurrence was missing from "Visible"
+        // while the Recurring tab showed only the template behind it.
+        //
+        // Bounded by the visible window, so a template contributes at most its
+        // current day here rather than a row per day.
+        List<Notice> notices = noticeRepository.findVisibleByPropertyId(propertyId, Instant.now())
                 .stream()
-                .map(notice -> NoticeResponse.from(notice))
                 .toList();
+        return withAttachments(notices);
     }
 
     /**
@@ -126,16 +148,90 @@ public class NoticeService {
      */
     @Transactional(readOnly = true)
     public List<NoticeResponse> listArchivedNotices(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        noticeAccessPolicy.ensureCanViewNotices(actorUserId, propertyId);
 
-        return noticeRepository.findArchivedManualByPropertyId(propertyId)
+        List<Notice> notices = noticeRepository.findArchivedManualByPropertyId(propertyId)
                 .stream()
-                .map(notice -> NoticeResponse.from(notice))
                 .toList();
+        return withAttachments(notices);
     }
 
     /**
-     * Updates a notice that is still published.
+     * One notice, for its detail screen. Separate from the list endpoints so the
+     * screen can be opened directly and refreshed on its own rather than relying
+     * on whichever list happened to load it.
+     */
+    @Transactional(readOnly = true)
+    public NoticeResponse getNoticeDetail(UUID actorUserId, UUID noticeId) {
+        Notice notice = getNotice(noticeId);
+        noticeAccessPolicy.ensureCanViewNotices(actorUserId, notice.getPropertyId());
+
+        return NoticeResponse.from(notice, noticeAttachmentService.attachmentsFor(noticeId));
+    }
+
+    /**
+     * Notices going live within the next few hours — one-off notices scheduled
+     * ahead and today's recurring occurrences together. Owners get a window in
+     * which a notice can still be corrected or postponed before any tenant sees
+     * it; recurring occurrences are included because each day now has its own
+     * row, so editing one changes that day alone.
+     */
+    @Transactional(readOnly = true)
+    public List<NoticeResponse> listUpcomingNotices(UUID actorUserId, UUID propertyId) {
+        noticeAccessPolicy.ensureCanViewNotices(actorUserId, propertyId);
+
+        Instant now = Instant.now();
+
+        List<Notice> notices = noticeRepository
+                .findUpcomingByPropertyId(propertyId, now, now.plus(UPCOMING_HORIZON))
+                .stream()
+                .toList();
+        return withAttachments(notices);
+    }
+
+    /**
+     * Postpones a notice that has not gone live yet. The window slides whole —
+     * a lunch notice moved from 2pm to 3pm runs 3–4pm, not 3pm to the original
+     * 3pm end. For a recurring occurrence this affects that day only; tomorrow
+     * regenerates from the template at its usual time.
+     */
+    @Transactional
+    public NoticeResponse delayNotice(UUID actorUserId, UUID noticeId, Instant visibleFrom) {
+        Notice notice = getNotice(noticeId);
+        noticeAccessPolicy.ensureCanManageNotices(actorUserId, notice.getPropertyId());
+
+        Instant now = Instant.now();
+
+        if (!notice.getVisibleFrom().isAfter(now)) {
+            throw new ValidationException("This notice is already live and cannot be delayed");
+        }
+        if (!visibleFrom.isAfter(now)) {
+            throw new ValidationException("Pick a time in the future");
+        }
+        if (visibleFrom.isBefore(notice.getVisibleFrom())) {
+            throw new ValidationException("A notice can be postponed, not brought forward");
+        }
+
+        notice.delayTo(visibleFrom);
+
+        log.info(
+                "Notice delayed noticeId={} propertyId={} visibleFrom={} actorUserId={}",
+                noticeId,
+                notice.getPropertyId(),
+                visibleFrom,
+                actorUserId);
+
+        return NoticeResponse.from(notice);
+    }
+
+    /**
+     * Updates a notice that has not gone live yet.
+     *
+     * <p>Once a notice is visible its text stops being ours to rewrite: tenants
+     * have read it, and a silent edit would leave two people looking at the same
+     * notice remembering different things. The window before go-live is the
+     * whole editing window, and the same rule already governs which recurring
+     * occurrence a template edit reaches.
      */
     @Transactional
     public NoticeResponse updateNotice(
@@ -143,7 +239,9 @@ public class NoticeService {
             UUID noticeId,
             UpdateNoticeRequest request) {
         Notice notice = getNotice(noticeId);
-        propertyModule.ensureCanManageProperty(actorUserId, notice.getPropertyId());
+        noticeAccessPolicy.ensureCanManageNotices(actorUserId, notice.getPropertyId());
+
+        notice.ensureEditableAt(Instant.now());
 
         Instant visibleFrom = defaultVisibleFrom(request.visibleFrom(), notice.getVisibleFrom());
         validateVisibleWindow(visibleFrom, request.visibleUntil());
@@ -170,12 +268,19 @@ public class NoticeService {
     @Transactional
     public void archiveNotice(UUID actorUserId, UUID noticeId) {
         Notice notice = getNotice(noticeId);
-        propertyModule.ensureCanManageProperty(actorUserId, notice.getPropertyId());
+        noticeAccessPolicy.ensureCanManageNotices(actorUserId, notice.getPropertyId());
 
         Instant now = Instant.now();
 
-        if (!notice.isExpiredAt(now)) {
-            throw new ValidationException("Notice cannot be archived before its visibleUntil time");
+        // Live is the precondition, not expired. Archiving is how a notice
+        // that is already on tenants' screens gets retired early — the only
+        // exit it has, now that editing and deleting close the moment it goes
+        // live. Requiring expiry left a notice with no end date unarchivable
+        // for ever, and made the button redundant with the scheduler for the
+        // ones that did expire.
+        if (!notice.isLiveAt(now)) {
+            throw new ValidationException(
+                    "A notice that has not gone live yet cannot be archived. Delete it instead.");
         }
 
         notice.archive(now);
@@ -194,7 +299,11 @@ public class NoticeService {
     @Transactional
     public void deleteNotice(UUID actorUserId, UUID noticeId) {
         Notice notice = getNotice(noticeId);
-        propertyModule.ensureCanManageProperty(actorUserId, notice.getPropertyId());
+        noticeAccessPolicy.ensureCanManageNotices(actorUserId, notice.getPropertyId());
+        // Same window as editing, and for the same reason: once tenants have
+        // seen a notice, removing it rewrites what they were told. This had no
+        // guard at all, so an archived notice could be deleted outright.
+        notice.ensureEditableAt(Instant.now());
 
         notice.softDelete();
 
@@ -216,10 +325,10 @@ public class NoticeService {
         TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
                 .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
 
-        return noticeRepository.findVisibleByPropertyId(tenancy.propertyId(), Instant.now())
+        List<Notice> notices = noticeRepository.findVisibleByPropertyId(tenancy.propertyId(), Instant.now())
                 .stream()
-                .map(notice -> NoticeResponse.from(notice))
                 .toList();
+        return withAttachments(notices);
     }
     //------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -241,9 +350,27 @@ public class NoticeService {
         return expiredNotices.size();
     }
 
+    /**
+     * Attaches each notice's files, in one query for the whole list.
+     *
+     * <p>Cards show an attachment count, so a list that returned none always
+     * read "No attachments". Fetching per notice would be an N+1 across the
+     * page, which is what the batched lookup exists for.
+     */
+    private List<NoticeResponse> withAttachments(List<Notice> notices) {
+        if (notices.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<NoticeAttachmentResponse>> byNotice = noticeAttachmentService.attachmentsFor(
+                notices.stream().map(Notice::getId).toList());
+        return notices.stream()
+                .map(notice -> NoticeResponse.from(notice, byNotice.getOrDefault(notice.getId(), List.of())))
+                .toList();
+    }
+
     private Notice getNotice(UUID noticeId) {
         return noticeRepository.findNoticeById(noticeId)
-                .orElseThrow(() -> new NotFoundException("Notice_", noticeId));
+                .orElseThrow(() -> new NotFoundException("Notice", noticeId));
     }
 
     private Instant defaultVisibleFrom(Instant requestedVisibleFrom, Instant now) {

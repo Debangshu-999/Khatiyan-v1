@@ -14,15 +14,17 @@ import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
+import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
-import com.khatiyan.d_modules.billing.api.dto.SettleDepositWithDamagesRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
+import com.khatiyan.d_modules.billing.service.ExitSettlementService;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 
 /**
@@ -39,14 +41,17 @@ public class BillingModule {
     private final BillingCycleService billingCycleService;
     private final BillingCycleLineItemService billingCycleLineItemService;
     private final DepositManagerService depositManagerService;
+    private final ExitSettlementService exitSettlementService;
 
     public BillingModule(
             BillingCycleService billingCycleService,
             BillingCycleLineItemService billingCycleLineItemService,
-            DepositManagerService depositManagerService) {
+            DepositManagerService depositManagerService,
+            ExitSettlementService exitSettlementService) {
         this.billingCycleService = billingCycleService;
         this.billingCycleLineItemService = billingCycleLineItemService;
         this.depositManagerService = depositManagerService;
+        this.exitSettlementService = exitSettlementService;
     }
 
     public BillingCycleResponse createFirstCycle(UUID actorUserId, UUID tenancyId) {
@@ -64,8 +69,18 @@ public class BillingModule {
         return billingCycleService.getPropertyBillingSummary(actorUserId, propertyId);
     }
 
+    /** Unchecked rollup for the owner dashboard, which gates itself. */
+    public BillingDashboardSummary getPropertyBillingSummaryForDashboard(UUID propertyId) {
+        return billingCycleService.getPropertyBillingSummaryForDashboard(propertyId);
+    }
+
     public BillingMonthSummary getPropertyMonthSummary(UUID actorUserId, UUID propertyId, String month) {
         return billingCycleService.getPropertyMonthSummary(actorUserId, propertyId, month);
+    }
+
+    /** Unchecked month rollup for the owner dashboard and P&L. */
+    public BillingMonthSummary getPropertyMonthSummaryForDashboard(UUID propertyId, String month) {
+        return billingCycleService.getPropertyMonthSummaryForDashboard(propertyId, month);
     }
 
     public List<BillingCycleResponse> listPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
@@ -127,6 +142,20 @@ public class BillingModule {
         return billingCycleService.getLatestManagedTenancyCycle(actorUserId, tenancyId);
     }
 
+    /**
+     * The end date of the cycle {@code extraCycles} after the one starting on
+     * {@code currentPeriodStart}, anchored on the tenancy's billing day.
+     *
+     * <p>Exposed because cycle arithmetic belongs to billing: adding months to a
+     * cycle *end* would clamp and drift, so the caller cannot safely do this for
+     * itself. Tenancy uses it to turn "two months' notice" into a real date.
+     *
+     * @param extraCycles 0 for the current cycle's end, 1 for the next, and so on
+     */
+    public LocalDate periodEndAfterCycles(UUID tenancyId, LocalDate currentPeriodStart, int extraCycles) {
+        return billingCycleService.periodEndAfterCycles(tenancyId, currentPeriodStart, extraCycles);
+    }
+
     public BillingCycleResponse getLatestMyCycle(UUID tenantUserId) {
         return billingCycleService.getLatestMyCycle(tenantUserId);
     }
@@ -167,6 +196,13 @@ public class BillingModule {
             UUID tenancyId,
             List<CreateExtraChargeRequest> requests) {
         return billingCycleLineItemService.addExtraChargeForTenancy(actorUserId, tenancyId, requests);
+    }
+
+    public BillingCycleResponse createOneOffBill(
+            UUID actorUserId,
+            UUID tenancyId,
+            CreateOneOffBillRequest request) {
+        return billingCycleService.createOneOffBill(actorUserId, tenancyId, request);
     }
 
     public BillingCycleResponse addDiscount(
@@ -259,9 +295,9 @@ public class BillingModule {
     }
 
     /** Count of deposit accounts awaiting settlement on a property (action center). */
-    public long countPropertyDepositsPendingSettlement(UUID actorUserId, UUID propertyId) {
+    public long countPropertyDepositsPendingSettlement(UUID propertyId) {
         return depositManagerService.countByPropertyAndStatus(
-                actorUserId, propertyId, com.khatiyan.d_modules.billing.model.DepositAccountStatus.PENDING_SETTLEMENT);
+                propertyId, com.khatiyan.d_modules.billing.model.DepositAccountStatus.PENDING_SETTLEMENT);
     }
 
     public com.khatiyan.c_shared.api.PageResponse<DepositAccountResponse> listPropertyDepositAccounts(
@@ -296,14 +332,22 @@ public class BillingModule {
      * Settles a deposit with selected property damage charges + custom charges,
      * then closes the account. Used by the on-spot settlement screen.
      */
-    public DepositAccountResponse settleDepositWithDamages(
-            UUID actorUserId, UUID tenancyId, SettleDepositWithDamagesRequest request) {
-        return depositManagerService.settleWithDamages(actorUserId, tenancyId, request);
+    /** Closes a deposit marked not refundable at exit, paying out nothing. */
+    public DepositAccountResponse closeDepositUnpaid(UUID actorUserId, UUID tenancyId, String reason) {
+        return depositManagerService.closeDepositUnpaid(actorUserId, tenancyId, reason);
     }
 
-    /** Parks the deposit in PENDING_SETTLEMENT when a tenancy exit is executed. */
-    public void markDepositPendingSettlementForExit(UUID actorUserId, UUID tenancyId) {
-        depositManagerService.markPendingSettlementForExit(actorUserId, tenancyId);
+    /**
+     * Applies everything the end-tenancy screen decided — the early-exit charge,
+     * the damage assessment, the deposit's fate — as one transaction, and parks
+     * the deposit in PENDING_SETTLEMENT carrying that decision.
+     *
+     * <p>Must be called before the tenancy is marked ended, so a deduction the
+     * deposit cannot cover aborts the exit rather than stranding it half-applied.
+     */
+    public void applyExitPolicy(
+            UUID actorUserId, UUID tenancyId, UUID propertyId, ApplyExitPolicyRequest request) {
+        exitSettlementService.applyExitPolicy(actorUserId, tenancyId, propertyId, request);
     }
 
     public BillingCycleResponse recordPaymentSuccess(UUID actorUserId, UUID billingCycleId, long paidAmountPaise) {

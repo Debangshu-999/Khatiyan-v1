@@ -74,7 +74,7 @@ export function FacilitiesField({ customFacilities, facilities, onChangeCustom, 
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.label, { color: colors.inkSoft }]} selectable>
+      <Text style={[type.label, { color: colors.inkSoft }]}>
         Facilities & amenities
       </Text>
 
@@ -94,7 +94,7 @@ export function FacilitiesField({ customFacilities, facilities, onChangeCustom, 
         {total === 0 ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <Plus color={colors.primary} size={18} strokeWidth={2.4} />
-            <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+            <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
               Select facilities & amenities
             </Text>
             <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
@@ -110,12 +110,12 @@ export function FacilitiesField({ customFacilities, facilities, onChangeCustom, 
               ))}
             </View>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
                 {total} selected
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
                 <Pencil color={colors.primary} size={14} strokeWidth={2.3} />
-                <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]} selectable>
+                <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
                   Edit
                 </Text>
               </View>
@@ -154,7 +154,7 @@ function SelectedChip({ icon: Icon, label, tone }: { icon: ComponentType<LucideP
       }}
     >
       <Icon color={accent} size={13} strokeWidth={2.3} />
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
         {label}
       </Text>
     </View>
@@ -229,10 +229,10 @@ function FacilitiesPickerModal({
             }}
           >
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.accent }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.accent }]}>
                 Amenities
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "500", letterSpacing: -0.3 }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.3 }}>
                 Select facilities
               </Text>
             </View>
@@ -260,7 +260,7 @@ function FacilitiesPickerModal({
             </View>
 
             <View style={{ gap: spacing.sm }}>
-              <Text style={[type.label, { color: colors.inkSoft }]} selectable>
+              <Text style={[type.label, { color: colors.inkSoft }]}>
                 Custom facilities
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -287,7 +287,7 @@ function FacilitiesPickerModal({
                     placeholder="e.g. Rooftop lounge"
                     placeholderTextColor={colors.kicker}
                     returnKeyType="done"
-                    style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "500", minHeight: 48, paddingVertical: 0 }}
+                    style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15, minHeight: 48, paddingVertical: 0 }}
                     value={draft}
                   />
                 </View>
@@ -327,7 +327,7 @@ function FacilitiesPickerModal({
                       }}
                     >
                       <Wrench color={colors.accent} size={13} strokeWidth={2.3} />
-                      <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} selectable>
+                      <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
                         {custom}
                       </Text>
                       <X color={colors.muted} size={14} strokeWidth={2.4} />
@@ -343,7 +343,7 @@ function FacilitiesPickerModal({
               borderTopColor: colors.border,
               borderTopWidth: 1,
               flexDirection: "row",
-              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingBottom: insets.bottom + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.md,
             }}
@@ -406,7 +406,7 @@ function FacilityTile({
         </View>
       ) : null}
       <Icon color={active ? colors.primary : colors.muted} size={24} strokeWidth={2} />
-      <Text numberOfLines={2} style={[type.caption, { color: active ? colors.ink : colors.muted, fontWeight: "700", textAlign: "center" }]} selectable>
+      <Text numberOfLines={2} style={[type.caption, { color: active ? colors.ink : colors.muted, fontWeight: "700", textAlign: "center" }]}>
         {label}
       </Text>
     </AnimatedPressable>

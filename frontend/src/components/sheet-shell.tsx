@@ -26,14 +26,14 @@ export function SheetShell({ children, onClose, title }: { children: ReactNode; 
               borderTopRightRadius: 24,
               borderWidth: 1,
               maxHeight: "92%",
-              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingBottom: insets.bottom + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.sm,
             }}
           >
             <View style={{ alignSelf: "center", backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} numberOfLines={1} selectable>
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
                 {title}
               </Text>
               <AnimatedPressable

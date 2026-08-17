@@ -9,6 +9,9 @@ public record RecentActivityItem(
     RecentActivityType type,
     String title,
     String subtitle,
-    Instant occurredAt
+    Instant occurredAt,
+    // Day group, computed server-side in IST so the client never has to work
+    // out what "today" means for the owner.
+    ActivityDayBucket dayBucket
 ) {
 }

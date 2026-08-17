@@ -1,6 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Landmark } from "lucide-react-native";
+import { Landmark } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,7 +11,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonCard } from "@/components/skeleton";
 import type { DepositMovement } from "@/store/services/billing-api";
-import { useGetMyTenancyDepositQuery } from "@/store/services/billing-api";
+import { isDepositCredit, useGetMyTenancyDepositQuery } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -25,11 +25,11 @@ export default function TenancyDepositScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="DEPOSIT"
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
         title="Deposit"
         italicTail="manager."
         subtitle="Balance, settlement state and deposit movements linked to billing actions."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {depositQuery.isFetching ? (
@@ -43,7 +43,7 @@ export default function TenancyDepositScreen() {
                 <MetricTile label="Entries" value={String(deposit.movements.length)} hint="Movements" />
               </View>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   Account status
                 </Text>
                 <StatusPill label={humanizeToken(deposit.status)} tone={deposit.status === "ACTIVE" ? "success" : "neutral"} />
@@ -75,7 +75,7 @@ function MovementCard({ movement }: { movement: DepositMovement }) {
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
           <DetailKicker text={humanizeToken(movement.type)} />
-          <StatusPill label={movement.type === "CREDIT" ? "Credit" : "Debit"} tone={movement.type === "CREDIT" ? "success" : "warning"} />
+          <StatusPill label={isDepositCredit(movement.type) ? "Credit" : "Debit"} tone={isDepositCredit(movement.type) ? "success" : "warning"} />
         </View>
         <DetailLine label={movement.reason} value={formatMoney(movement.amountPaise)} strong />
         <DetailLine label="Created" value={formatDateTime(movement.createdAt)} />
@@ -85,30 +85,18 @@ function MovementCard({ movement }: { movement: DepositMovement }) {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function DetailKicker({ text }: { text: string }) {
   const { colors, type } = useTheme();
-  return <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>{text}</Text>;
+  return <Text style={[type.eyebrow, { color: colors.kicker }]}>{text}</Text>;
 }
 
 function DetailLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>{label}</Text>
-      <Text style={{ color: colors.ink, flex: 1.25, fontFamily: strong ? fonts.display : fonts.sans, fontSize: strong ? 19 : undefined, fontWeight: strong ? "500" : "800", textAlign: "right" }} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
+      <Text style={{ color: colors.ink, flex: 1.25, fontFamily: strong ? fonts.display : fonts.sans, fontSize: strong ? 19 : undefined, fontWeight: strong ? "500" : "800", textAlign: "right" }}>
         {value}
       </Text>
     </View>

@@ -18,7 +18,6 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.SettleDepositRequest;
-import com.khatiyan.d_modules.billing.api.dto.SettleDepositWithDamagesRequest;
 import com.khatiyan.d_modules.billing.model.DepositAccountStatus;
 
 import jakarta.validation.Valid;
@@ -99,11 +98,11 @@ public class DepositManagerController {
         return billingModule.settleDeposit(user.userId(), tenancyId, request.reason());
     }
 
-    @PostMapping("/tenancies/{tenancyId}/deposit/settle-with-damages")
-    public DepositAccountResponse settleDepositWithDamages(
+    @PostMapping("/tenancies/{tenancyId}/deposit/close-unpaid")
+    public DepositAccountResponse closeDepositUnpaid(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
-            @Valid @RequestBody SettleDepositWithDamagesRequest request) {
-        return billingModule.settleDepositWithDamages(user.userId(), tenancyId, request);
+            @Valid @RequestBody SettleDepositRequest request) {
+        return billingModule.closeDepositUnpaid(user.userId(), tenancyId, request.reason());
     }
 }

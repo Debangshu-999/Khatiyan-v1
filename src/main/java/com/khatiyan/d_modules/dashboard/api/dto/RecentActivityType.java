@@ -5,6 +5,9 @@ package com.khatiyan.d_modules.dashboard.api.dto;
  */
 public enum RecentActivityType {
     TENANCY_STARTED,
+    TENANCY_ENDED,
+    TENANCY_ROOM_CHANGED,
+    TENANCY_EXIT_REQUESTED,
     PAYMENT_RECORDED,
     CONCERN_RAISED,
     CONCERN_ASSIGNED,

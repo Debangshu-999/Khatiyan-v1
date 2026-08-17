@@ -11,7 +11,6 @@ import com.khatiyan.d_modules.compliance.api.dto.PropertyAgreementSettingsRespon
 import com.khatiyan.d_modules.compliance.api.dto.TenancyAgreementResponse;
 import com.khatiyan.d_modules.compliance.api.dto.UpdateAgreementCustomClausesRequest;
 import com.khatiyan.d_modules.compliance.model.AgreementClause;
-import com.khatiyan.d_modules.compliance.model.AgreementMode;
 import com.khatiyan.d_modules.compliance.service.AgreementService;
 import com.khatiyan.d_modules.compliance.service.TenancyAgreementService;
 
@@ -41,9 +40,9 @@ public class ComplianceModule {
     }
 
     public PropertyAgreementSettingsResponse updatePropertyAgreementSettings(
-            UUID actorUserId, UUID propertyId, AgreementMode mode, List<AgreementClause> defaultClauses) {
+            UUID actorUserId, UUID propertyId, List<AgreementClause> defaultClauses) {
         return PropertyAgreementSettingsResponse.from(
-                agreementService.updatePropertySettings(actorUserId, propertyId, mode, defaultClauses));
+                agreementService.updatePropertySettings(actorUserId, propertyId, defaultClauses));
     }
 
     // ---- Per-tenancy agreements ------------------------------------------

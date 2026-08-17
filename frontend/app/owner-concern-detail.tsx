@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRound, UserRoundPlus, X } from "lucide-react-native";
+import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRoundPlus, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { ImageCarousel } from "@/components/image-carousel";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
-import { ActionButton, BackButton, FormInput, IconButton, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, BackButton, FormInput, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import {
   type ConcernStatus,
   type ConcernSummary,
@@ -80,6 +82,11 @@ export default function OwnerConcernDetailScreen() {
     }
   }, [liveConcern]);
   const concern = liveConcern ?? retained;
+  // View-only managers see the concern in full; every control that changes it is
+  // absent rather than disabled — a greyed button invites a tap and explains
+  // nothing. The API refuses these too, so this only removes the dead end.
+  const { canManage } = usePropertyPermissions(concern?.propertyId);
+  const canAct = canManage("CONCERNS");
 
   // Prefill the status note once per concern (in non-property modes) so editing
   // works against the current note instead of a blank field.
@@ -154,33 +161,35 @@ export default function OwnerConcernDetailScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Concern detail"
+      <ScreenHeader
+        badge={!canAct ? <ViewOnlyChip /> : null} onBack={() => router.back()}
+        eyebrow="Concerns"
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."
         subtitle="Review the concern, keep the tenant updated, and resolve it."
       />
 
-      {loading && !concern ? <Card><Text style={[type.body, { color: colors.muted }]} selectable>Loading concern...</Text></Card> : null}
+      {loading && !concern ? <Card><Text style={[type.body, { color: colors.muted }]}>Loading concern...</Text></Card> : null}
       {!loading && !concern ? <EmptyState icon={ImageOff} eyebrow="Concern" title="Concern not found" description="Refresh the queue and open the concern again." /> : null}
 
       {concern ? (
         <>
           <ConcernMediaCarousel concern={concern} />
 
-          <ConcernDataCard concern={concern} />
-
+          {/* What the concern IS, before how it is being handled. */}
           <Card>
             <View style={{ gap: spacing.sm }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Description</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]} selectable>{concern.title}</Text>
-              <Text style={[type.body, { color: colors.muted }]} selectable>{concern.description}</Text>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Description</Text>
+              <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]}>{concern.title}</Text>
+              <Text style={[type.body, { color: colors.muted }]}>{concern.description}</Text>
             </View>
           </Card>
 
+          <ConcernDataCard concern={concern} />
+
           {concern.resolutionNote ? <NoteCard title="Resolution note" body={concern.resolutionNote} /> : null}
 
-          {mode !== "history" && concern.status !== "RESOLVED" && concern.status !== "CLOSED" ? (
+          {canAct && mode !== "history" && concern.status !== "RESOLVED" && concern.status !== "CLOSED" ? (
             <>
               <Card>
                 <View style={{ gap: spacing.md }}>
@@ -222,7 +231,7 @@ export default function OwnerConcernDetailScreen() {
             <NoteCard title="Status note" body={concern.statusNote} />
           ) : null}
 
-          {mode === "taken" && concern.status === "IN_PROGRESS" ? (
+          {canAct && mode === "taken" && concern.status === "IN_PROGRESS" ? (
             <Card>
               <View style={{ gap: spacing.md }}>
                 <FormInput label="Resolution note" multiline onChangeText={setResolutionNote} placeholder="What was done to resolve this?" value={resolutionNote} />
@@ -263,13 +272,13 @@ function AssignConcernModal({
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, maxHeight: "78%", padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Assign concern</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]} selectable>Choose a manager</Text>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>
+              <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</Text>
             </View>
             <IconButton accessibilityLabel="Close assignment" icon={X} onPress={onClose} />
           </View>
 
-          {loading ? <Text style={[type.body, { color: colors.muted }]} selectable>Loading managers...</Text> : null}
+          {loading ? <Text style={[type.body, { color: colors.muted }]}>Loading managers...</Text> : null}
           {!loading && managers.length === 0 ? (
             <EmptyState icon={UserRoundPlus} eyebrow="Managers" title="No active managers" description="Add a manager to this property before assigning concerns." />
           ) : null}
@@ -289,8 +298,8 @@ function AssignConcernModal({
                     padding: spacing.md,
                   }}
                 >
-                  <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>{manager.managerFullName}</Text>
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>{manager.managerPhone}</Text>
+                  <Text style={[type.bodyStrong, { color: colors.ink }]}>{manager.managerFullName}</Text>
+                  <Text style={[type.caption, { color: colors.muted }]}>{manager.managerPhone}</Text>
                 </AnimatedPressable>
               ))}
             </ScrollView>
@@ -303,54 +312,20 @@ function AssignConcernModal({
 
 function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
   const { colors } = useTheme();
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [expanded, setExpanded] = useState(false);
   const images = useMemo(() => concern.photos.map((photo) => photo.photoUrl).filter((url): url is string => Boolean(url)), [concern.photos]);
-  const activeImage = images[activeIndex] ?? images[0];
 
   if (!images.length) {
     return (
       <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 16, gap: spacing.sm, justifyContent: "center", minHeight: 220, padding: spacing.lg }}>
         <Images color={colors.primary} size={42} strokeWidth={1.8} />
-        <Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900", textAlign: "center" }} selectable>No images available</Text>
-        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }} selectable>Concern photos will appear here when the tenant attaches them.</Text>
+        <Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900", textAlign: "center" }}>No images available</Text>
+        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>Concern photos will appear here when the tenant attaches them.</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ backgroundColor: colors.primarySoft, borderRadius: 16, height: 260, overflow: "hidden" }}>
-      <Pressable accessibilityLabel="Open concern image" onPress={() => setExpanded(true)} style={{ flex: 1 }}>
-        <Image source={{ uri: activeImage }} style={{ height: "100%", width: "100%" }} resizeMode="cover" />
-      </Pressable>
-      {images.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ bottom: spacing.md, left: spacing.md, position: "absolute", right: spacing.md }} contentContainerStyle={{ gap: spacing.xs }}>
-          {images.map((imageUrl, index) => (
-            <Pressable
-              accessibilityLabel={`Show concern image ${index + 1}`}
-              key={`${imageUrl}-${index}`}
-              onPress={() => setActiveIndex(index)}
-              style={{ borderColor: index === activeIndex ? colors.primary : colors.surface, borderRadius: 12, borderWidth: 2, overflow: "hidden" }}
-            >
-              <Image source={{ uri: imageUrl }} style={{ height: 52, width: 68 }} resizeMode="cover" />
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      <Modal animationType="fade" onRequestClose={() => setExpanded(false)} transparent visible={expanded}>
-        <View style={{ backgroundColor: "rgba(0,0,0,0.92)", flex: 1, justifyContent: "center", padding: spacing.md }}>
-          <AnimatedPressable
-            accessibilityLabel="Close image"
-            onPress={() => setExpanded(false)}
-            style={{ alignItems: "center", backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 999, height: 44, justifyContent: "center", position: "absolute", right: spacing.lg, top: spacing.xl, width: 44, zIndex: 2 }}
-          >
-            <X color="#fff" size={22} strokeWidth={2.5} />
-          </AnimatedPressable>
-          <Image source={{ uri: activeImage }} style={{ height: "78%", width: "100%" }} resizeMode="contain" />
-          <Text style={{ color: "#fff", fontWeight: "800", textAlign: "center" }} selectable>{concern.referenceCode}</Text>
-        </View>
-      </Modal>
-    </View>
+    <ImageCarousel images={images} />
   );
 }
 
@@ -358,15 +333,7 @@ type BadgeTone = "primary" | "danger" | "success" | "warning" | "neutral";
 
 function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
   const { colors, fonts, type } = useTheme();
-  const { width } = useWindowDimensions();
-  const singleColumn = width < 390;
   const status = tonePalette(statusTone(concern.status), colors);
-  const escalation = tonePalette(escalationTone(concern.escalationLevel), colors);
-  const facts = [
-    { label: "Category", value: humanizeToken(concern.category), tone: "neutral" as BadgeTone },
-    { label: "Room", value: concern.roomNumber, tone: "primary" as BadgeTone },
-    { label: "Tenancy", value: concern.tenancyReferenceCode, tone: "neutral" as BadgeTone, wide: true },
-  ];
   const assignedTo = concern.assignedToName ?? (concern.assignedToUserId ? shortId(concern.assignedToUserId) : "Unassigned");
   const assignedBy = concern.assignedByName ?? (concern.assignedByUserId ? shortId(concern.assignedByUserId) : null);
 
@@ -374,64 +341,53 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
     <Card style={{ overflow: "hidden", padding: 0 }}>
       <View style={{ backgroundColor: status.fg, height: 5 }} />
       <View style={{ gap: spacing.md, padding: spacing.lg }}>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View style={{ alignItems: "center", backgroundColor: status.bg, borderColor: status.border, borderRadius: 18, borderWidth: 1, height: 56, justifyContent: "center", width: 56 }}>
-            <StatusIcon concern={concern} color={status.fg} />
+        {/* No icon tile. The 5px rail above already states the status in colour,
+            and a second coloured badge saying the same thing crowded the one
+            line anybody reads. The status word is the heading now. */}
+        <View style={{ gap: spacing.xxs }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>Current status</Text>
+            <Text style={[type.caption, { color: colors.muted }]}>{formatDateTime(concern.updatedAt)}</Text>
           </View>
-          <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Current status</Text>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 25, fontWeight: "700", lineHeight: 31 }} selectable>
-              {humanizeToken(concern.status)}
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
-              Updated {formatDateTime(concern.updatedAt)}
-            </Text>
-          </View>
+          <Text style={{ color: status.fg, fontFamily: fonts.display, fontSize: 27, lineHeight: 33 }}>
+            {humanizeToken(concern.status)}
+          </Text>
         </View>
 
-        <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 16, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 40, justifyContent: "center", width: 40 }}>
-              <UserRound color={colors.primary} size={20} strokeWidth={2.4} />
-            </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>Assigned to</Text>
-              <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>{assignedTo}</Text>
-            </View>
-          </View>
-          {assignedBy ? (
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
-              Assigned by {assignedBy}{concern.assignedAt ? ` · ${formatDateTime(concern.assignedAt)}` : ""}
-            </Text>
-          ) : concern.assignedAt ? (
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
-              Assigned on {formatDateTime(concern.assignedAt)}
-            </Text>
-          ) : null}
+        {/* Three deliberate rows: the tenancy reference is long enough to need
+            the full width, and the two pairs below read as comparisons. */}
+        <FactTile label="Tenancy" tone="neutral" value={concern.tenancyReferenceCode} wide />
+
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <FactTile label="Category" tone="neutral" value={humanizeToken(concern.category)} />
+          <FactTile label="Room" tone="primary" value={concern.roomNumber} />
         </View>
 
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <StatusSignal label="Escalation" palette={escalation} subtle value={humanizeToken(concern.escalationLevel)} />
+          <FactTile label="Assigned to" tone="neutral" value={assignedTo} />
+          <FactTile
+            label="Escalation"
+            tone={concern.escalationLevel === "NONE" ? "neutral" : "danger"}
+            value={humanizeToken(concern.escalationLevel)}
+          />
         </View>
+
+        {assignedBy ? (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            Assigned by {assignedBy}{concern.assignedAt ? ` · ${formatDateTime(concern.assignedAt)}` : ""}
+          </Text>
+        ) : concern.assignedAt ? (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            Assigned on {formatDateTime(concern.assignedAt)}
+          </Text>
+        ) : null}
 
         {concern.reopened ? (
           <View style={{ backgroundColor: colors.dangerSoft, borderColor: colors.danger, borderRadius: 14, borderWidth: 1, gap: spacing.xs, padding: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.danger }]} selectable>Reopened</Text>
-            <Text style={[type.body, { color: colors.ink }]} selectable>{concern.reopenReason ?? "No reopen reason provided."}</Text>
+            <Text style={[type.eyebrow, { color: colors.danger }]}>Reopened</Text>
+            <Text style={[type.body, { color: colors.ink }]}>{concern.reopenReason ?? "No reopen reason provided."}</Text>
           </View>
         ) : null}
-
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          {facts.map((fact) => (
-            <FactTile
-              key={fact.label}
-              label={fact.label}
-              tone={fact.tone}
-              value={fact.value}
-              wide={singleColumn || fact.wide}
-            />
-          ))}
-        </View>
 
         <View style={{ backgroundColor: colors.border, height: 1 }} />
 
@@ -446,43 +402,7 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
   );
 }
 
-function StatusIcon({ color, concern }: { color: string; concern: ConcernSummary }) {
-  if (concern.reopened) return <RotateCcw color={color} size={24} strokeWidth={2.4} />;
-  if (concern.status === "RESOLVED") return <CheckCircle2 color={color} size={25} strokeWidth={2.4} />;
-  if (concern.status === "UNDER_REVIEW") return <Clock3 color={color} size={25} strokeWidth={2.4} />;
-  return <ShieldAlert color={color} size={25} strokeWidth={2.4} />;
-}
 
-function StatusSignal({
-  label,
-  palette,
-  subtle,
-  value,
-}: {
-  label: string;
-  palette: { bg: string; border: string; fg: string };
-  subtle?: boolean;
-  value: string;
-}) {
-  const { colors, type } = useTheme();
-  return (
-    <View
-      style={{
-        backgroundColor: subtle ? colors.surfaceSunken : palette.bg,
-        borderColor: subtle ? colors.border : palette.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        flex: 1,
-        gap: spacing.xxs,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]} selectable>{label}</Text>
-      <Text style={[type.label, { color: subtle ? palette.fg : colors.ink }]} selectable>{value}</Text>
-    </View>
-  );
-}
 
 function FactTile({ label, tone, value, wide }: { label: string; tone: BadgeTone; value: string; wide?: boolean }) {
   const { colors, type } = useTheme();
@@ -499,8 +419,8 @@ function FactTile({ label, tone, value, wide }: { label: string; tone: BadgeTone
         width: wide ? "100%" : "48%",
       }}
     >
-      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]} selectable>{label}</Text>
-      <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]}>{label}</Text>
+      <Text style={[type.bodyStrong, { color: colors.ink }]}>
         {value}
       </Text>
     </View>
@@ -512,8 +432,8 @@ function TimelineRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
       <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 8, width: 8 }} />
-      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]} selectable>{label}</Text>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]} selectable>{value}</Text>
+      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]}>{label}</Text>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]}>{value}</Text>
     </View>
   );
 }
@@ -552,8 +472,8 @@ function NoteCard({ body, title }: { body: string; title: string }) {
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>{title}</Text>
-        <Text style={[type.body, { color: colors.ink }]} selectable>{body}</Text>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>{title}</Text>
+        <Text style={[type.body, { color: colors.ink }]}>{body}</Text>
       </View>
     </Card>
   );

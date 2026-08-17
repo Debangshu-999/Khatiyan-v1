@@ -32,23 +32,26 @@ public class NearbyPlacesSearchService {
     private final PropertyLocalPlaceService localPlaceService;
     private final LocalPlaceSubcategoryRepository subcategoryRepository;
     private final PropertyModule propertyModule;
+    private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final TenancyModule tenancyModule;
 
     public NearbyPlacesSearchService(
             PropertyLocalPlaceService localPlaceService,
             LocalPlaceSubcategoryRepository subcategoryRepository,
             PropertyModule propertyModule,
+            DiscoveryAccessPolicy discoveryAccessPolicy,
             TenancyModule tenancyModule) {
         this.localPlaceService = localPlaceService;
         this.subcategoryRepository = subcategoryRepository;
         this.propertyModule = propertyModule;
+        this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.tenancyModule = tenancyModule;
     }
 
     @Transactional(readOnly = true)
     public NearbyPlacesResponse searchManaged(
             UUID actorUserId, UUID propertyId, String query, BigDecimal latitude, BigDecimal longitude) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanViewNearbyPlaces(actorUserId, propertyId);
         return search(propertyId, query, latitude, longitude);
     }
 
@@ -56,7 +59,7 @@ public class NearbyPlacesSearchService {
     public NearbyPlacesResponse searchMine(
             UUID tenantUserId, String query, BigDecimal latitude, BigDecimal longitude) {
         TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser_", tenantUserId));
+                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser", tenantUserId));
         return search(tenancy.propertyId(), query, latitude, longitude);
     }
 

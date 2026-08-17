@@ -3,6 +3,8 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, Sc
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+// Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Bed,
   BedDouble,
@@ -15,7 +17,6 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Rows3,
   Settings2,
   Snowflake,
   Trash2,
@@ -26,6 +27,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
@@ -33,7 +35,6 @@ import { SkeletonCard } from "@/components/skeleton";
 import { RoomCarousel } from "@/features/owner/room-carousel";
 import {
   ActionButton,
-  BackButton,
   ChoiceButton,
   ConfirmDialog,
   FormInput,
@@ -41,7 +42,9 @@ import {
   formatMoneyPaise,
   humanizeToken,
   rupeesToPaise,
+  ViewOnlyChip,
 } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
   ROOM_CONDITIONINGS,
@@ -101,6 +104,9 @@ export default function OwnerRoomsScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
+  // Adding and editing rooms is ROOMS at MANAGE.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const canManageRooms = canManageResource("ROOMS");
 
   // Includes deactivated rooms so the per-floor filters can offer them.
   const roomsQuery = useListAllPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
@@ -180,7 +186,14 @@ export default function OwnerRoomsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
+      <ScreenHeader
+        badge={!canManageRooms ? <ViewOnlyChip /> : null}
+        eyebrow="Property"
+        onBack={() => router.back()}
+        title="Rooms"
+        italicTail="and beds."
+        subtitle="Floors, rooms and bed occupancy for this property."
+      />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
@@ -204,8 +217,14 @@ export default function OwnerRoomsScreen() {
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton icon={Plus} label="Add room" onPress={() => setAddOpen(true)} />
-            <ActionButton icon={Layers} label="Bulk add" onPress={() => setBulkOpen(true)} variant="secondary" />
+            <ActionButton disabled={!canManageRooms} icon={Plus} label="Add room" onPress={() => setAddOpen(true)} />
+            <ActionButton
+              disabled={!canManageRooms}
+              icon={Layers}
+              label="Bulk add"
+              onPress={() => setBulkOpen(true)}
+              variant="secondary"
+            />
           </View>
 
           {roomsQuery.isFetching && allRooms.length === 0 ? (
@@ -237,7 +256,7 @@ export default function OwnerRoomsScreen() {
                     <MetricTile label="Occupied beds" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
                   </View>
                   {visibleFloorRooms.length === 0 ? (
-                    <Text style={[type.caption, { color: colors.muted, paddingVertical: spacing.sm }]} selectable>
+                    <Text style={[type.caption, { color: colors.muted, paddingVertical: spacing.sm }]}>
                       No {roomFilter} rooms on this floor.
                     </Text>
                   ) : (
@@ -245,6 +264,7 @@ export default function OwnerRoomsScreen() {
                       rooms={visibleFloorRooms}
                       renderRoom={(room) => (
                         <RoomCard
+                          canManage={canManageRooms}
                           room={room}
                           occupants={occupantsByRoom.get(room.id) ?? []}
                           canEditMaintenance={Boolean(
@@ -392,10 +412,10 @@ function FloorFilters({
               paddingVertical: 5,
             }}
           >
-            <Text style={{ color: selected ? tone : colors.muted, fontFamily: fonts.sans, fontSize: 11.5, fontWeight: "700" }} selectable>
+            <Text style={{ color: selected ? tone : colors.muted, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
               {label}
             </Text>
-            <Text style={{ color: selected ? tone : colors.ink, fontFamily: fonts.sans, fontSize: 11.5, fontWeight: "900" }} selectable>
+            <Text style={{ color: selected ? tone : colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
               {counts[key]}
             </Text>
           </AnimatedPressable>
@@ -418,7 +438,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
         Floor
       </Text>
       <Pressable
@@ -436,11 +456,11 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
           paddingHorizontal: spacing.md,
         }}
       >
-        <Rows3 color={colors.kicker} size={18} strokeWidth={2.2} />
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable>
+        <MaterialCommunityIcons color={colors.kicker} name="stairs" size={19} />
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
           {floorLabel(active)}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {floors.length} floor{floors.length === 1 ? "" : "s"}
         </Text>
         <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
@@ -467,7 +487,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
               }}
             >
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.xs, paddingHorizontal: spacing.xs }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Choose floor
                 </Text>
                 <IconButton accessibilityLabel="Close" icon={X} onPress={() => setOpen(false)} />
@@ -495,7 +515,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                         paddingVertical: spacing.md,
                       }}
                     >
-                      <Text style={{ color: selected ? colors.primary : colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+                      <Text style={{ color: selected ? colors.primary : colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
                         {floor ? `Floor ${floor}` : "Unassigned"}
                       </Text>
                       {selected ? <Check color={colors.primary} size={18} strokeWidth={2.4} /> : null}
@@ -557,7 +577,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
         <Bed color={occupant ? colors.accent : colors.muted} size={20} strokeWidth={2.2} />
       </View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
-        <Text style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontWeight: "800" }]} selectable>
+        <Text style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontWeight: "800" }]}>
           Bed {index + 1}
         </Text>
         {daily ? <Clock color={colors.accent} size={11} strokeWidth={2.4} /> : null}
@@ -566,19 +586,18 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
         <>
           <Text
             numberOfLines={1}
-            style={{ alignSelf: "stretch", color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, fontWeight: "600", textAlign: "center" }}
-            selectable
+            style={{ alignSelf: "stretch", color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, textAlign: "center" }}
           >
             {firstName ?? "Tenant"}
           </Text>
           {daily && occupant.plannedEndDate ? (
-            <Text style={{ color: colors.accent, fontFamily: fonts.sans, fontSize: 11, fontWeight: "700", textAlign: "center" }} selectable>
+            <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 11, textAlign: "center" }}>
               Until {shortDate(occupant.plannedEndDate)}
             </Text>
           ) : null}
         </>
       ) : (
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, fontWeight: "600" }} selectable>
+        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, }}>
           Vacant
         </Text>
       )}
@@ -587,6 +606,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
 }
 
 function RoomCard({
+  canManage,
   canEditMaintenance,
   occupants,
   onDelete,
@@ -603,6 +623,7 @@ function RoomCard({
   onEditMaintenance: () => void;
   onReactivate: () => void;
   onStatus: () => void;
+  canManage: boolean;
   room: OwnerRoom;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -633,11 +654,11 @@ function RoomCard({
         <View style={{ gap: spacing.md, opacity: isDeactivated ? 0.55 : 1 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <View style={{ gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, fontWeight: "700", letterSpacing: -1 }} selectable>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -1 }}>
                   {room.roomNumber}
                 </Text>
                 <View
@@ -652,7 +673,7 @@ function RoomCard({
                   }}
                 >
                   {isAc ? <Snowflake color={colors.primary} size={13} strokeWidth={2.4} /> : null}
-                  <Text style={[type.caption, { color: isAc ? colors.primaryDeep : colors.muted, fontWeight: "800" }]} selectable>
+                  <Text style={[type.caption, { color: isAc ? colors.primaryDeep : colors.muted, fontWeight: "800" }]}>
                     {isAc ? "AC" : "Non-AC"}
                   </Text>
                 </View>
@@ -660,7 +681,7 @@ function RoomCard({
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
               <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
-                <Text style={[type.caption, { color: statusTone, fontWeight: "900" }]} selectable>
+                <Text style={[type.caption, { color: statusTone, fontWeight: "900" }]}>
                   {statusLabel}
                 </Text>
                 {isMaintenance ? (
@@ -674,7 +695,7 @@ function RoomCard({
                   </AnimatedPressable>
                 ) : null}
               </View>
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
+              <Text style={[type.caption, { color: colors.muted }]}>
                 {humanizeToken(room.roomType)}  -  {room.capacity} bed{room.capacity === 1 ? "" : "s"}
               </Text>
             </View>
@@ -694,13 +715,19 @@ function RoomCard({
 
         {isDeactivated ? (
           <View style={{ flexDirection: "row" }}>
-            <ActionButton icon={RotateCcw} label="Reactivate" onPress={onReactivate} />
+            <ActionButton disabled={!canManage} icon={RotateCcw} label="Reactivate" onPress={onReactivate} />
           </View>
         ) : (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
-            <ActionButton icon={Settings2} label="Status" onPress={onStatus} variant="secondary" />
-            <IconButton accessibilityLabel="Deactivate room" bordered icon={Trash2} onPress={onDelete} />
+            <ActionButton disabled={!canManage} icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
+            <ActionButton disabled={!canManage} icon={Settings2} label="Status" onPress={onStatus} variant="secondary" />
+            <IconButton
+              accessibilityLabel="Deactivate room"
+              bordered
+              disabled={!canManage}
+              icon={Trash2}
+              onPress={onDelete}
+            />
           </View>
         )}
       </View>
@@ -726,7 +753,7 @@ function RoomCard({
               }}
             >
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Room {room.roomNumber}  -  Maintenance
                 </Text>
                 <IconButton accessibilityLabel="Close" icon={X} onPress={() => setShowInfo(false)} />
@@ -761,10 +788,10 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ gap: 2 }}>
-      <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>
         {label}
       </Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14.5, fontWeight: "600" }} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 14.5, }}>
         {value}
       </Text>
     </View>
@@ -785,7 +812,7 @@ function ChoiceRow<T extends string>({
   const { colors, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
         {label}
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -887,15 +914,14 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              gap: spacing.md,
               maxHeight: "92%",
-              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingBottom: insets.bottom + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
               </Text>
               <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
@@ -953,7 +979,7 @@ function AddRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId
       <RoomScroll>
         <RoomFieldset form={form} setForm={setForm} />
         {error ? (
-          <Text style={[type.caption, { color: colors.danger }]} selectable>
+          <Text style={[type.caption, { color: colors.danger }]}>
             {error}
           </Text>
         ) : null}
@@ -1015,7 +1041,7 @@ function EditRoomModal({ onClose, propertyId, room }: { onClose: () => void; pro
       <RoomScroll>
         <RoomFieldset form={form} setForm={setForm} showPrefix={false} />
         {error ? (
-          <Text style={[type.caption, { color: colors.danger }]} selectable>
+          <Text style={[type.caption, { color: colors.danger }]}>
             {error}
           </Text>
         ) : null}
@@ -1149,14 +1175,14 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
     <ModalShell onClose={onClose} title="Bulk add rooms">
       <RoomScroll>
         <View style={{ gap: spacing.xs }}>
-          <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
             Method
           </Text>
           <View style={{ flexDirection: "row", gap: spacing.xs }}>
             <ChoiceButton active={mode === "range"} label="Serial range" onPress={() => setMode("range")} />
             <ChoiceButton active={mode === "custom"} label="Custom list" onPress={() => setMode("custom")} />
           </View>
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>
+          <Text style={[type.caption, { color: colors.kicker }]}>
             {mode === "range"
               ? "Generate a numbered range of identical rooms."
               : "Add a list of rooms, each with its own details."}
@@ -1180,7 +1206,7 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
             <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
             <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
             {rangeCount > 0 ? (
-              <Text style={[type.caption, { color: colors.primary }]} selectable>
+              <Text style={[type.caption, { color: colors.primary }]}>
                 Will create {rangeCount} room{rangeCount === 1 ? "" : "s"}{prefix.trim() ? ` (${prefix.trim()}${startNumber}...${prefix.trim()}${endNumber})` : ""}.
               </Text>
             ) : null}
@@ -1193,7 +1219,7 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
                 style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, gap: spacing.md, padding: spacing.md }}
               >
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
                     Room {index + 1}
                   </Text>
                   {customRooms.length > 1 ? (
@@ -1208,7 +1234,7 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
         )}
 
         {error ? (
-          <Text style={[type.caption, { color: colors.danger }]} selectable>
+          <Text style={[type.caption, { color: colors.danger }]}>
             {error}
           </Text>
         ) : null}
@@ -1283,7 +1309,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
   return (
     <ModalShell onClose={onClose} title={`Room ${room.roomNumber} status`}>
       <RoomScroll>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Occupied / partially occupied is set automatically from tenancies. You can mark a vacant room under maintenance or bring it back.
         </Text>
 
@@ -1298,17 +1324,17 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
               padding: spacing.md,
             }}
           >
-            <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]} selectable>
+            <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]}>
               Room is occupied
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               {room.occupiedCount} active occupant{room.occupiedCount === 1 ? "" : "s"}. Vacate or move them out before marking this room
               under maintenance.
             </Text>
           </View>
         ) : isMaintenance ? (
           <>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               This room is under maintenance. Take it off to make it available again. To change the reason or end date, use the info (i)
               button on the room card.
             </Text>
@@ -1332,7 +1358,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
         )}
 
         {error ? (
-          <Text style={[type.caption, { color: colors.danger }]} selectable>
+          <Text style={[type.caption, { color: colors.danger }]}>
             {error}
           </Text>
         ) : null}
@@ -1378,7 +1404,7 @@ function EditMaintenanceModal({ onClose, propertyId, room }: { onClose: () => vo
         <FormInput label="Maintenance reason" onChangeText={setReason} placeholder="e.g. Repainting, plumbing repair" value={reason} />
         <MaintenanceUntilField onChange={setUntil} value={until} />
         {error ? (
-          <Text style={[type.caption, { color: colors.danger }]} selectable>
+          <Text style={[type.caption, { color: colors.danger }]}>
             {error}
           </Text>
         ) : null}
@@ -1397,7 +1423,7 @@ function MaintenanceUntilField({ onChange, value }: { onChange: (value: Date | n
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.inkSoft }]} selectable>
+      <Text style={[type.label, { color: colors.inkSoft }]}>
         Maintenance until (optional)
       </Text>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -1417,7 +1443,7 @@ function MaintenanceUntilField({ onChange, value }: { onChange: (value: Date | n
           }}
         >
           <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
-          <Text style={{ color: value ? colors.ink : colors.muted, flex: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "600" }} selectable>
+          <Text style={{ color: value ? colors.ink : colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15, }}>
             {value ? (formatDate(value.toISOString()) ?? "No end date") : "No end date"}
           </Text>
         </AnimatedPressable>

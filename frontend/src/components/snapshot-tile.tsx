@@ -23,10 +23,18 @@ type SnapshotTileProps = {
   total?: number;
   /** Month-over-month comparison; renders a small up/down delta chip. */
   delta?: SnapshotDelta;
+  /**
+   * Colours a FALL green instead of red — for metrics where less is better.
+   *
+   * <p>The arrow still points the way the number moved; only the meaning
+   * changes. Fewer tenancies ending than last month is good news, and painting
+   * it red because the line went down tells the owner the opposite.
+   */
+  lowerIsBetter?: boolean;
   tone?: SnapshotTone;
 };
 
-export function SnapshotTile({ count, delta, icon: Icon, label, tone = "default", total, value }: SnapshotTileProps) {
+export function SnapshotTile({ count, delta, icon: Icon, label, lowerIsBetter, tone = "default", total, value }: SnapshotTileProps) {
   const { colors, fonts, type } = useTheme();
   const accent = tone === "danger" ? colors.danger : tone === "primary" ? colors.primary : colors.primary;
   const accentSoft = tone === "danger" ? colors.dangerSoft : colors.primarySoft;
@@ -51,54 +59,50 @@ export function SnapshotTile({ count, delta, icon: Icon, label, tone = "default"
         paddingVertical: spacing.md,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: accentSoft,
-          borderRadius: 12,
-          height: 40,
-          justifyContent: "center",
-          width: 40,
-        }}
-      >
-        <Icon color={accent} size={20} strokeWidth={2.2} />
+      {/* Glyph only. The tile is already a bounded surface; a tinted square
+          inside it reads as a second, competing container. */}
+      <View style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}>
+        <Icon color={colors.ink} size={20} strokeWidth={2.2} />
       </View>
 
-      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1}>
         {label}
       </Text>
 
       {isFraction ? (
-        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], fontWeight: "600", letterSpacing: -0.5 }} selectable>
+        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], letterSpacing: -0.5 }}>
           <Text style={{ color: currentColor }}>{count}</Text>
           <Text style={{ color: colors.ink }}>/{total}</Text>
         </Text>
       ) : (
         <Text
-          style={{ color: valueColor, fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], fontWeight: "600", letterSpacing: -0.5, textAlign: "center" }}
+          style={{ color: valueColor, fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], letterSpacing: -0.5, textAlign: "center" }}
           numberOfLines={1}
-          selectable
         >
           {value}
         </Text>
       )}
 
-      {delta ? <DeltaChip current={delta.current} previous={delta.previous} /> : null}
+      {delta ? (
+        <DeltaChip current={delta.current} lowerIsBetter={lowerIsBetter} previous={delta.previous} />
+      ) : null}
     </View>
   );
 }
 
-function DeltaChip({ current, previous }: SnapshotDelta) {
+function DeltaChip({ current, lowerIsBetter, previous }: SnapshotDelta & { lowerIsBetter?: boolean }) {
   const { colors, fonts } = useTheme();
   const percent = deltaPercent(current, previous);
   const direction = percent > 0 ? "up" : percent < 0 ? "down" : "flat";
-  const color = direction === "up" ? colors.successText : direction === "down" ? colors.danger : colors.muted;
+  // The arrow follows the number; the colour follows whether that is good.
+  const good = lowerIsBetter ? direction === "down" : direction === "up";
+  const color = direction === "flat" ? colors.muted : good ? colors.successText : colors.danger;
   const Icon = direction === "up" ? ArrowUpRight : direction === "down" ? ArrowDownRight : Minus;
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
       <Icon color={color} size={13} strokeWidth={2.6} />
-      <Text style={{ color, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800" }} selectable>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11, }}>
         {Math.abs(percent)}% vs last month
       </Text>
     </View>

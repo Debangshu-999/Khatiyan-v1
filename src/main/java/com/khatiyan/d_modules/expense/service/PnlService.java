@@ -45,14 +45,16 @@ public class PnlService {
 
     @Transactional(readOnly = true)
     public PnlStatementResponse statement(UUID actorUserId, UUID propertyId, LocalDate month) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUsePnl(actorUserId, propertyId);
         YearMonth yearMonth = YearMonth.from(month);
         LocalDate monthStart = yearMonth.atDay(1);
 
-        // Income from billing, split by category (actual, no projection) so the
-        // rent / other-bill lines sum to the billed total.
-        BillingMonthSummary billing = billingModule.getPropertyMonthSummary(
-                actorUserId, propertyId, yearMonth.toString());
+        // Income from billing, split by category. For the current month the rent
+        // figure includes cycles not yet generated, so this is the month's
+        // finances rather than a snapshot of what the scheduler has run — and the
+        // rent / other-bill lines still sum to the billed total.
+        BillingMonthSummary billing = billingModule.getPropertyMonthSummaryForDashboard(
+                propertyId, yearMonth.toString());
         int rentCount = billing.rentCycleCount();
         long rentPaise = billing.rentBilledPaise();
         int oneOffCount = billing.oneOffCount();
@@ -151,15 +153,15 @@ public class PnlService {
 
     @Transactional(readOnly = true)
     public PnlTrendResponse trend(UUID actorUserId, UUID propertyId, LocalDate month, int months) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUsePnl(actorUserId, propertyId);
         int window = Math.min(Math.max(months, 1), MAX_TREND_MONTHS);
         YearMonth end = YearMonth.from(month);
 
         List<PnlTrendPoint> points = new ArrayList<>();
         for (int i = window - 1; i >= 0; i--) {
             YearMonth ym = end.minusMonths(i);
-            BillingMonthSummary billing = billingModule.getPropertyMonthSummary(
-                    actorUserId, propertyId, ym.toString());
+            BillingMonthSummary billing = billingModule.getPropertyMonthSummaryForDashboard(
+                    propertyId, ym.toString());
             long income = billing.rentBilledPaise() + billing.oneOffBilledPaise()
                     + incomeService.monthlyTotalPaise(propertyId, ym);
             long expense = expenseService.monthlyTotalPaise(propertyId, ym);

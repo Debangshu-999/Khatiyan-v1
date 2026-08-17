@@ -154,7 +154,7 @@ export function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
       }}
     >
       <Icon color={tone} size={13} strokeWidth={2.4} />
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]} selectable>
+      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
         {status.label}
       </Text>
     </View>
@@ -176,7 +176,7 @@ export function InfoBlock({ label, strong = false, value }: { label: string; str
         padding: spacing.sm,
       }}
     >
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
+      <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
       <Text
@@ -188,7 +188,6 @@ export function InfoBlock({ label, strong = false, value }: { label: string; str
           lineHeight: strong ? 23 : 18,
         }}
         numberOfLines={1}
-        selectable
       >
         {value}
       </Text>
@@ -223,15 +222,15 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
 
           <View style={{ flex: 1, gap: spacing.xxs }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
                 {cycle.referenceCode}
               </Text>
               <PaymentStatusBadge cycle={cycle} />
             </View>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
               {tenantName}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
             </Text>
           </View>
@@ -273,38 +272,38 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
 
         <View style={{ flex: 1, gap: spacing.xs }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
               {cycle.referenceCode}
             </Text>
             <BillStatusPill cycle={cycle} />
           </View>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
             {tenantName}
           </Text>
 
           <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", marginTop: spacing.xxs }}>
             <View style={{ gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Total payable
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600", letterSpacing: -0.3 }} numberOfLines={1} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.3 }} numberOfLines={1}>
                 {formatMoney(cycle.totalAmountPaise)}
               </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 3 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Due date
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
                 <CalendarDays color={cycle.status === "OVERDUE" ? colors.danger : colors.muted} size={14} strokeWidth={2.3} />
-                <Text style={{ color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+                <Text style={{ color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 14, }}>
                   {formatDate(cycle.rentDueDate)}
                 </Text>
               </View>
             </View>
           </View>
 
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>
+          <Text style={[type.caption, { color: colors.kicker }]}>
             {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
           </Text>
         </View>

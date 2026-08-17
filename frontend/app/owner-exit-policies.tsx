@@ -2,19 +2,21 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { DoorOpen, Plus, X } from "lucide-react-native";
+import { Check, DoorOpen, Info, Plus, Trash2 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { rupeesLabel } from "@/features/compliance/clause-values";
-import { ActionButton, BackButton, FormInput } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
   useGetPropertyExitPoliciesQuery,
@@ -29,7 +31,7 @@ import { useTheme } from "@/theme/use-theme";
 // without an agreement) and are read into agreements by the compliance module.
 export default function OwnerExitPoliciesScreen() {
   const router = useGuardedRouter();
-  const { colors } = useTheme();
+  const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -37,17 +39,26 @@ export default function OwnerExitPoliciesScreen() {
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
   const propertyId = property?.id ?? "";
 
+  // Exit policies and the tenancy agreement share one permission: both are the
+  // rules a stay runs under. View-only keeps the screen fully legible and
+  // disables the controls rather than removing them — on a settings screen the
+  // shape of what is configurable is itself the information.
+  const { canManage } = usePropertyPermissions(propertyId);
+  const readOnly = !canManage("TENANCY_RULES");
   const policiesQuery = useGetPropertyExitPoliciesQuery(propertyId, { skip: !propertyId });
   const [savePolicies, saveState] = useUpdatePropertyExitPoliciesMutation();
 
   // Editable draft, seeded from the server copy once it arrives.
   const [damageCharges, setDamageCharges] = useState<PropertyDamageCharge[] | null>(null);
   const [checklist, setChecklist] = useState<string[] | null>(null);
+  const [prematureExit, setPrematureExit] = useState<string | null>(null);
+  const [prematureInfoOpen, setPrematureInfoOpen] = useState(false);
 
   useEffect(() => {
     if (policiesQuery.data && damageCharges === null && checklist === null) {
       setDamageCharges(policiesQuery.data.damageCharges);
       setChecklist(policiesQuery.data.exitChecklist);
+      setPrematureExit(policiesQuery.data.prematureExitPolicy ?? "");
     }
   }, [checklist, damageCharges, policiesQuery.data]);
 
@@ -58,7 +69,11 @@ export default function OwnerExitPoliciesScreen() {
     try {
       await savePolicies({
         propertyId,
-        payload: { damageCharges, exitChecklist: checklist },
+        payload: {
+          damageCharges,
+          exitChecklist: checklist,
+          prematureExitPolicy: prematureExit?.trim() ? prematureExit.trim() : null,
+        },
       }).unwrap();
       toast.success("Exit policies saved.");
     } catch {
@@ -72,10 +87,12 @@ export default function OwnerExitPoliciesScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: spacing.xxxl + spacing.lg, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
       >
-        <BackButton onPress={() => router.back()} />
         <ScreenHeader
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
+        badge={readOnly ? <ViewOnlyChip /> : null}
           title="Exit"
           italicTail="policies."
           subtitle={
@@ -101,37 +118,77 @@ export default function OwnerExitPoliciesScreen() {
           <>
             <Section eyebrow="Deposit settlement" title="Damage charges">
               <Card>
-                <DamageChargesEditor charges={damageCharges} onChange={setDamageCharges} />
+                <DamageChargesEditor charges={damageCharges} onChange={setDamageCharges} readOnly={readOnly} />
+              </Card>
+            </Section>
+
+            <Section
+              eyebrow="Leaving without notice"
+              title="Premature exit"
+              trailing={
+                <AnimatedPressable
+                  accessibilityLabel="About the premature exit policy"
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => setPrematureInfoOpen(true)}
+                >
+                  <Info color={colors.muted} size={16} strokeWidth={2.2} />
+                </AnimatedPressable>
+              }
+            >
+              <Card>
+                {readOnly ? (
+                  <Text style={[type.body, { color: colors.ink, lineHeight: 20 }]}>
+                    {prematureExit?.trim() || "No premature exit policy is set."}
+                  </Text>
+                ) : (
+                  <FormInput
+                    label="What an early departure costs"
+                    multiline
+                    onChangeText={setPrematureExit}
+                    placeholder="e.g. One month's rent, taken from the deposit."
+                    value={prematureExit ?? ""}
+                  />
+                )}
+                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  Your words, shown in the agreement.
+                </Text>
               </Card>
             </Section>
 
             <Section eyebrow="Before settlement" title="Move-out checklist">
               <Card>
-                <ChecklistEditor checklist={checklist} onChange={setChecklist} />
+                <ChecklistEditor checklist={checklist} onChange={setChecklist} readOnly={readOnly} />
               </Card>
             </Section>
           </>
         )}
       </ScreenScrollView>
 
+      {prematureInfoOpen ? (
+        <ConfirmDialog
+          acknowledgeOnly
+          bullets={[
+            "Applies only to open-ended agreements.",
+            "A fixed term uses its own early-exit rule instead.",
+            "Nothing is charged automatically — a person applies it when ending the tenancy.",
+          ]}
+          confirmLabel="Got it"
+          message="What a tenant owes for leaving before serving notice."
+          onCancel={() => setPrematureInfoOpen(false)}
+          onConfirm={() => setPrematureInfoOpen(false)}
+          title="Premature exit"
+        />
+      ) : null}
+
       {ready ? (
-        <View
-          style={{
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
-            flexDirection: "row",
-            paddingBottom: Math.max(insets.bottom, spacing.md),
-            paddingHorizontal: spacing.lg,
-            paddingTop: spacing.md,
-          }}
-        >
+        <PinnedFooter>
           <ActionButton
-            disabled={saveState.isLoading}
-            label={saveState.isLoading ? "Saving…" : "Save exit policies"}
+            disabled={readOnly || saveState.isLoading}
+            label={saveState.isLoading ? "Saving…" : readOnly ? "View only" : "Save exit policies"}
             onPress={() => void save()}
           />
-        </View>
+        </PinnedFooter>
       ) : null}
     </View>
   );
@@ -140,9 +197,11 @@ export default function OwnerExitPoliciesScreen() {
 function DamageChargesEditor({
   charges,
   onChange,
+  readOnly,
 }: {
   charges: PropertyDamageCharge[];
   onChange: (next: PropertyDamageCharge[]) => void;
+  readOnly: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
   const [name, setName] = useState("");
@@ -161,7 +220,7 @@ function DamageChargesEditor({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
         A flat charge per item for considerable damage. At settlement you pick which items apply.
       </Text>
       {charges.map((item, index) => (
@@ -179,10 +238,10 @@ function DamageChargesEditor({
             paddingVertical: spacing.sm,
           }}
         >
-          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 13, fontWeight: "700" }} selectable>
+          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13, }}>
             {item.name}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontVariant: ["tabular-nums"] }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontVariant: ["tabular-nums"] }]}>
             {rupeesLabel(item.chargePaise)}
           </Text>
           <AnimatedPressable
@@ -190,19 +249,27 @@ function DamageChargesEditor({
             onPress={() => onChange(charges.filter((_, i) => i !== index))}
             style={{ padding: 2 }}
           >
-            <X color={colors.danger} size={15} strokeWidth={2.4} />
+            <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
           </AnimatedPressable>
         </View>
       ))}
 
       <FormInput label="Item" onChangeText={setName} placeholder="e.g. Mattress, Study chair, Door lock" value={name} />
       <FormInput keyboardType="number-pad" label="Damage charge" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <ActionButton icon={Plus} label="Add item" onPress={addItem} variant="secondary" />
+      <ActionButton disabled={readOnly} icon={Plus} label="Add item" onPress={addItem} variant="secondary" />
     </View>
   );
 }
 
-function ChecklistEditor({ checklist, onChange }: { checklist: string[]; onChange: (next: string[]) => void }) {
+function ChecklistEditor({
+  checklist,
+  onChange,
+  readOnly,
+}: {
+  checklist: string[];
+  onChange: (next: string[]) => void;
+  readOnly: boolean;
+}) {
   const { colors, fonts, type } = useTheme();
   const [draft, setDraft] = useState("");
 
@@ -217,37 +284,63 @@ function ChecklistEditor({ checklist, onChange }: { checklist: string[]; onChang
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
-        The owner verifies these before settling the deposit when a tenancy ends.
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        Verified before the deposit is settled.
       </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {checklist.map((entry, index) => (
+
+      {/* A list, not chips. These are things to tick off one by one at move-out,
+          and a wrapped row of pills reads as tags — unordered, decorative, and
+          impossible to scan against the item in front of you. */}
+      {checklist.length === 0 ? (
+        <Text style={[type.caption, { color: colors.kicker }]}>
+          No items yet.
+        </Text>
+      ) : (
+        checklist.map((entry, index) => (
           <View
             key={`${entry}-${index}`}
             style={{
               alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderRadius: 999,
+              borderBottomColor: colors.border,
+              borderBottomWidth: index === checklist.length - 1 ? 0 : 1,
               flexDirection: "row",
-              gap: spacing.xs,
-              paddingHorizontal: spacing.md,
-              paddingVertical: 7,
+              gap: spacing.sm,
+              paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 13, fontWeight: "700" }} selectable>
+            <View
+              style={{
+                alignItems: "center",
+                borderColor: colors.borderStrong,
+                borderCurve: "continuous",
+                borderRadius: 6,
+                borderWidth: 1.5,
+                height: 22,
+                justifyContent: "center",
+                width: 22,
+              }}
+            >
+              <Check color={colors.kicker} size={13} strokeWidth={3} />
+            </View>
+            <Text selectable style={[type.body, { color: colors.ink, flex: 1 }]}>
               {entry}
             </Text>
-            <AnimatedPressable
-              accessibilityLabel={`Remove ${entry}`}
-              onPress={() => onChange(checklist.filter((_, i) => i !== index))}
-            >
-              <X color={colors.primary} size={14} strokeWidth={2.6} />
-            </AnimatedPressable>
+            {readOnly ? null : (
+              <AnimatedPressable
+                accessibilityLabel={`Remove ${entry}`}
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={() => onChange(checklist.filter((_, i) => i !== index))}
+              >
+                <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+              </AnimatedPressable>
+            )}
           </View>
-        ))}
-      </View>
+        ))
+      )}
+
       <FormInput label="Add a checklist item" onChangeText={setDraft} placeholder="e.g. Keys returned" value={draft} />
-      <ActionButton icon={Plus} label="Add to checklist" onPress={addEntry} variant="secondary" />
+      <ActionButton disabled={readOnly} icon={Plus} label="Add to checklist" onPress={addEntry} variant="secondary" />
     </View>
   );
 }

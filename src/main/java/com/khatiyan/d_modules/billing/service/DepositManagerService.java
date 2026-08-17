@@ -21,7 +21,6 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.DepositMovementResponse;
-import com.khatiyan.d_modules.billing.api.dto.SettleDepositWithDamagesRequest;
 import com.khatiyan.d_modules.billing.event.DepositPayoutEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.DepositAccount;
@@ -57,6 +56,7 @@ public class DepositManagerService {
     private final DepositMovementRepository depositMovementRepository;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
+    private final BillingAccessPolicy billingAccessPolicy;
     private final AuthModule authModule;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -65,12 +65,14 @@ public class DepositManagerService {
             DepositMovementRepository depositMovementRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
+            BillingAccessPolicy billingAccessPolicy,
             AuthModule authModule,
             ApplicationEventPublisher eventPublisher) {
         this.depositAccountRepository = depositAccountRepository;
         this.depositMovementRepository = depositMovementRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
+        this.billingAccessPolicy = billingAccessPolicy;
         this.authModule = authModule;
         this.eventPublisher = eventPublisher;
     }
@@ -165,7 +167,7 @@ public class DepositManagerService {
     @Transactional(readOnly = true)
     public DepositAccountResponse getForManagedTenancy(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanViewDeposits(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         return toResponse(account);
@@ -185,7 +187,7 @@ public class DepositManagerService {
             DepositAccountStatus status,
             int page,
             int size) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewDeposits(actorUserId, propertyId);
 
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
 
@@ -206,8 +208,9 @@ public class DepositManagerService {
      * action center to surface deposits awaiting settlement.
      */
     @Transactional(readOnly = true)
-    public long countByPropertyAndStatus(UUID actorUserId, UUID propertyId, DepositAccountStatus status) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+    public long countByPropertyAndStatus(UUID propertyId, DepositAccountStatus status) {
+        // No deposit check: this feeds the dashboard action centre, which shows
+        // its counts to every manager and gates only the row's destination.
         return depositAccountRepository.findByPropertyId(propertyId).stream()
                 .filter(account -> account.getStatus() == status)
                 .count();
@@ -245,7 +248,7 @@ public class DepositManagerService {
             long amountPaise,
             String reason) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
         validateNonNegativeAmount(amountPaise);
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
@@ -306,7 +309,7 @@ public class DepositManagerService {
             UUID tenancyId,
             UUID billingCycleLineItemId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
 
         Optional<DepositMovement> existingMovement = depositMovementRepository
                 .findByBillingCycleLineItemId(billingCycleLineItemId);
@@ -337,7 +340,7 @@ public class DepositManagerService {
             UUID tenancyId,
             CreateDepositCorrectionRequest request) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         ensureActive(account);
@@ -368,7 +371,7 @@ public class DepositManagerService {
             UUID tenancyId,
             CreateDepositCorrectionRequest request) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         ensureActive(account);
@@ -407,7 +410,9 @@ public class DepositManagerService {
         validateNonNegativeAmount(amountPaise);
 
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        // Authorization belongs to the caller: tenancy has already checked
+        // EXIT_REQUESTS or TENANCIES. Re-checking on a billing resource here
+        // would refuse a move-out the manager is allowed to run.
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         ensureActive(account);
@@ -434,38 +439,47 @@ public class DepositManagerService {
     }
 
     /**
-     * Settles the remaining deposit balance at tenancy exit/refund time.
+     * Pays out the remaining deposit balance and closes the account.
+     *
+     * <p>Executes a decision already made — it does not make one. Payability was
+     * settled at end-tenancy, with both parties present and the balance final;
+     * revisiting it here, weeks later and from one side only, is exactly the
+     * thing this design removes. Nothing on this path can change an amount.
      */
     @Transactional
     public DepositAccountResponse settleDeposit(UUID actorUserId, UUID tenancyId, String reason) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
-
-        // The deposit secures the stay; refunding it while the tenant still lives
-        // there would leave the tenancy unsecured. Exit execution parks it in
-        // PENDING_SETTLEMENT — settlement is only for ended tenancies.
-        if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
-            throw new ValidationException("Deposit can be settled only after the tenancy has ended");
-        }
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
+        ensureTenancyEnded(tenancy);
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
+        ensureDecidedAtExit(account, true,
+                "This deposit was marked not refundable at exit — close the account instead");
+
         List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
         long settlementAmountPaise = calculateBalance(movements);
 
-        if (settlementAmountPaise <= 0) {
-            throw new ValidationException("Deposit account has no balance to settle");
-        }
-
+        // A zero balance is a valid settlement, not an error. Once the exit
+        // decided this deposit was refundable, the charges applied there can
+        // legitimately consume all of it — the tenant is owed nothing, and the
+        // account still has to close. Refusing here left it stuck in
+        // PENDING_SETTLEMENT with no action that could clear it: settle was
+        // blocked by this guard, and close-unpaid is barred for a refundable
+        // deposit.
         account.settle(Instant.now());
 
-        DepositMovement movement = DepositMovement.settlement(
-                account.getId(),
-                reason,
-                settlementAmountPaise,
-                actorUserId);
+        if (settlementAmountPaise > 0) {
+            DepositMovement movement = DepositMovement.settlement(
+                    account.getId(),
+                    reason,
+                    settlementAmountPaise,
+                    actorUserId);
 
-        depositMovementRepository.save(movement);
-        publishPayout(movement, account, tenancy, settlementAmountPaise, reason);
+            depositMovementRepository.save(movement);
+            // Only a real payout raises the event — it creates an expense row,
+            // and a zero-rupee expense is noise in the owner's ledger.
+            publishPayout(movement, account, tenancy, settlementAmountPaise, reason);
+        }
 
         log.info(
                 "Deposit settled depositAccountId={} tenancyId={} actorUserId={} settlementAmount={}",
@@ -478,122 +492,140 @@ public class DepositManagerService {
     }
 
     /**
-     * Marks the deposit account as awaiting settlement when a tenancy exit is
-     * executed. Settlement is now an explicit owner step (settle now or later via
-     * the settlement screen / action center), so exit execution no longer
-     * auto-refunds the deposit — it just parks the account in PENDING_SETTLEMENT.
+     * Closes a deposit that was marked not refundable at exit, paying out nothing.
+     *
+     * <p>The balance stays on the ledger rather than being zeroed: the record of
+     * what was held, and of the decision not to return it, is the only thing that
+     * can answer the question later.
      */
     @Transactional
-    public void markPendingSettlementForExit(UUID actorUserId, UUID tenancyId) {
+    public DepositAccountResponse closeDepositUnpaid(UUID actorUserId, UUID tenancyId, String reason) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
-
-        if (tenancy.billingType() != TenancyBillingType.MONTHLY) {
-            return;
-        }
-
-        Optional<DepositAccount> optionalAccount = depositAccountRepository.findByTenancyId(tenancyId);
-        if (optionalAccount.isEmpty()) {
-            log.info(
-                    "Deposit pending-settlement skipped because no deposit account exists tenancyId={} actorUserId={}",
-                    tenancyId,
-                    actorUserId);
-            return;
-        }
-
-        DepositAccount account = optionalAccount.get();
-        if (account.getStatus() != DepositAccountStatus.ACTIVE) {
-            log.info(
-                    "Deposit account already past active for exit execution depositAccountId={} tenancyId={} status={}",
-                    account.getId(),
-                    tenancyId,
-                    account.getStatus());
-            return;
-        }
-
-        account.markPendingSettlement();
-
-        log.info(
-                "Deposit account marked pending settlement after exit execution depositAccountId={} tenancyId={} actorUserId={}",
-                account.getId(),
-                tenancyId,
-                actorUserId);
-    }
-
-    /**
-     * Settles a deposit at exit: the selected property damage-charge items are
-     * totalled (priced from the property's authoritative schedule) into a single
-     * deduction, any custom charges are deducted, then the remaining balance is
-     * refunded and the account closed. Works from ACTIVE or PENDING_SETTLEMENT.
-     */
-    @Transactional
-    public DepositAccountResponse settleWithDamages(
-            UUID actorUserId, UUID tenancyId, SettleDepositWithDamagesRequest request) {
-        TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
-
-        if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
-            throw new ValidationException("Deposit can be settled only after the tenancy has ended");
-        }
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
+        ensureTenancyEnded(tenancy);
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
-        if (account.isSettled()) {
-            throw new ValidationException("Deposit account is already settled");
-        }
-
-        List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
-
-        // Damage deduction — one totalled movement, priced from the property.
-        long damageTotalPaise = resolveDamageTotal(tenancy.propertyId(), request.damageItemNames());
-        if (damageTotalPaise > 0) {
-            ensureBalanceCanApplyMovement(movements, DepositMovementType.DEDUCTION, damageTotalPaise);
-            DepositMovement movement = DepositMovement.correctionDeduction(
-                    account.getId(), "Damage deduction", damageTotalPaise, actorUserId);
-            depositMovementRepository.save(movement);
-            movements.add(movement);
-        }
-
-        // Any additional custom charges.
-        if (request.customCharges() != null) {
-            for (SettleDepositWithDamagesRequest.CustomChargeInput custom : request.customCharges()) {
-                if (custom.amountPaise() == null || custom.amountPaise() <= 0) {
-                    continue;
-                }
-                ensureBalanceCanApplyMovement(movements, DepositMovementType.DEDUCTION, custom.amountPaise());
-                DepositMovement movement = DepositMovement.correctionDeduction(
-                        account.getId(), custom.reason().trim(), custom.amountPaise(), actorUserId);
-                depositMovementRepository.save(movement);
-                movements.add(movement);
-            }
-        }
-
-        long remainingPaise = calculateBalance(movements);
-        String settleReason = request.reason() != null && !request.reason().isBlank()
-                ? request.reason().trim()
-                : "Deposit settled at exit";
+        ensureDecidedAtExit(account, false,
+                "This deposit is refundable — settle it instead of closing it unpaid");
 
         account.settle(Instant.now());
-        if (remainingPaise > 0) {
-            DepositMovement settlement = DepositMovement.settlement(
-                    account.getId(), settleReason, remainingPaise, actorUserId);
-            depositMovementRepository.save(settlement);
-            publishPayout(settlement, account, tenancy, remainingPaise, settleReason);
-        }
 
         log.info(
-                "Deposit settled with damages depositAccountId={} tenancyId={} actorUserId={} damageTotal={} refunded={}",
+                "Deposit closed unpaid depositAccountId={} tenancyId={} actorUserId={} reason={}",
                 account.getId(),
                 tenancyId,
                 actorUserId,
-                damageTotalPaise,
-                remainingPaise);
+                reason);
 
         return toResponse(account);
     }
 
+    // The deposit secures the stay; releasing it while the tenant still lives
+    // there would leave the tenancy unsecured.
+    private void ensureTenancyEnded(TenancyResponse tenancy) {
+        if (tenancy.status() != TenancyStatus.EXITED && tenancy.status() != TenancyStatus.EVICTED) {
+            throw new ValidationException("Deposit can be settled only after the tenancy has ended");
+        }
+    }
+
+    // Static and package-private: it reads nothing but the account, so it is
+    // testable on its own rather than through the whole service graph.
+    static void ensureDecidedAtExit(DepositAccount account, boolean expectedPayable, String wrongPathMessage) {
+        if (account.isSettled()) {
+            throw new ValidationException("Deposit account is already settled");
+        }
+
+        Boolean payable = account.getPayableAtExit();
+        if (payable == null) {
+            // Pre-dates the exit flow, or the tenancy ended without one. Guessing
+            // either way moves someone's money on an assumption.
+            throw new ValidationException(
+                    "No payability decision was recorded when this tenancy ended, so this deposit "
+                            + "cannot be settled automatically");
+        }
+        if (payable != expectedPayable) {
+            throw new ValidationException(wrongPathMessage);
+        }
+    }
+
+    /** One deduction the actor chose to take from the deposit at end-tenancy. */
+    public record ExitDeduction(String reason, long amountPaise) {
+    }
+
+    /**
+     * Applies the end-tenancy deposit decisions in one transaction: the actor's
+     * ordered deductions, the payability decision, then PENDING_SETTLEMENT.
+     *
+     * <p>Deliberately does <em>not</em> settle or close the account. Settlement is
+     * a later, separate step that only executes the decision recorded here — so
+     * this method's job is to leave the balance final and the decision stamped.
+     *
+     * <p>Deductions are validated against a <b>running</b> balance: each one is
+     * checked against what the earlier ones left, not against the opening balance.
+     * Two deductions that are each individually affordable can be unaffordable
+     * together, and that is the version of the bug that only shows up in
+     * production, on a real deposit, after the money has moved.
+     *
+     * <p>A forfeited deposit cannot absorb anything. If the balance is not being
+     * returned to the tenant, deducting from it is double-charging them.
+     */
+    @Transactional
+    public void applyExitDeductions(
+            UUID actorUserId,
+            UUID tenancyId,
+            List<ExitDeduction> deductions,
+            boolean payable) {
+        // Authorization belongs to the caller: tenancy has already checked that
+        // this actor may end the stay. Re-checking deposit permissions here would
+        // refuse a move-out the manager is allowed to run.
+        DepositAccount account = getAccountByTenancyId(tenancyId);
+        if (account.getStatus() != DepositAccountStatus.ACTIVE) {
+            throw new ValidationException("Deposit account is no longer active for this tenancy");
+        }
+
+        if (!payable && !deductions.isEmpty()) {
+            throw new ValidationException(
+                    "A deposit that is not being refunded cannot also be deducted from — "
+                            + "charge these to a one-off bill instead");
+        }
+
+        List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
+        for (ExitDeduction deduction : deductions) {
+            long remainingPaise = calculateBalance(movements);
+            if (deduction.amountPaise() > remainingPaise) {
+                throw new ValidationException(
+                        "\"" + deduction.reason() + "\" is " + rupees(deduction.amountPaise())
+                                + " but only " + rupees(remainingPaise)
+                                + " is left in the deposit. Charge the excess to a one-off bill.");
+            }
+
+            DepositMovement movement = DepositMovement.correctionDeduction(
+                    account.getId(), deduction.reason(), deduction.amountPaise(), actorUserId);
+            depositMovementRepository.save(movement);
+            movements.add(movement);
+        }
+
+        account.markPendingSettlement(payable);
+
+        log.info(
+                "Deposit exit policy applied depositAccountId={} tenancyId={} actorUserId={} deductions={} payable={}",
+                account.getId(),
+                tenancyId,
+                actorUserId,
+                deductions.size(),
+                payable);
+    }
+
+    private static String rupees(long paise) {
+        return "₹" + java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN"))
+                .format(paise / 100);
+    }
+
     // Sums the property's authoritative charge for each selected damaged item;
     // unknown names are ignored so a stale client selection can't invent charges.
-    private long resolveDamageTotal(UUID propertyId, List<String> damageItemNames) {
+    // Package-private so ExitSettlementService prices damage the same way this
+    // service does, rather than growing a second copy of the pricing rule.
+    long resolveDamageTotal(UUID propertyId, List<String> damageItemNames) {
         if (damageItemNames == null || damageItemNames.isEmpty()) {
             return 0L;
         }

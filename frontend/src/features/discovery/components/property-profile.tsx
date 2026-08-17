@@ -1,13 +1,15 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
-import { BlurView } from "expo-blur";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
+import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-import { formatMoneyPaise, humanizeToken } from "../discovery-format";
+import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
+import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
+import { EnquireAction } from "./enquire-action";
 import { PropertyMediaCarousel } from "./property-media-carousel";
 
 type PropertyProfileProps = {
@@ -15,8 +17,6 @@ type PropertyProfileProps = {
   onBack: () => void;
 };
 
-const COLLAPSED_FACILITY_ROWS = 3;
-const FACILITIES_PER_ROW = 2;
 
 export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
   const { colors } = useTheme();
@@ -45,10 +45,10 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
       {/* Header: name + address + open-in-map */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
-          <Text style={{ color: colors.text, fontSize: 26, fontWeight: "900", lineHeight: 31 }} selectable>
+          <Text style={{ color: colors.text, fontSize: 26, fontWeight: "900", lineHeight: 31 }}>
             {property.name}
           </Text>
-          <Text style={{ color: colors.muted, lineHeight: 21 }} selectable>
+          <Text style={{ color: colors.muted, lineHeight: 21 }}>
             {addressLine}
             {property.pincode ? ` - ${property.pincode}` : ""}
           </Text>
@@ -75,13 +75,17 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
         <PropertyMediaCarousel imageUrls={imageUrls} propertyName={property.name} onBack={onBack} />
       </View>
 
+      {/* Directly under the name and photos, above the detail. The profile is
+          long, and the one action it offers should not be at the bottom of it. */}
+      <EnquireAction propertyId={property.propertyId} propertyName={property.name} />
+
       {/* Remaining information */}
       <View style={{ gap: spacing.md }}>
-          <Text style={{ color: colors.muted, lineHeight: 22 }} selectable>
+          <Text style={{ color: colors.muted, lineHeight: 22 }}>
             {property.headline || `${humanizeToken(property.type)} property in ${property.city}`}
           </Text>
 
-          <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }} selectable>
+          <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>
             {property.description || "This property profile has not added a detailed description yet."}
           </Text>
 
@@ -93,8 +97,18 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
                   { label: "Rent starts from", value: formatMoneyPaise(property.startingRoomRentPaise) },
                 ],
                 [
-                  { label: "Deposit", value: formatMoneyPaise(property.standardDepositPaise) },
+                  { label: "Deposit", value: formatDepositPaise(property.standardDepositPaise) },
                   { label: "Stay type", value: property.dailyRentingAvailable ? "Monthly + daily" : "Monthly only" },
+                ],
+                // How hard a place is to leave is part of choosing it. Buried
+                // until after move-in, it cannot inform the one decision it
+                // should.
+                [
+                  { label: "Notice period", value: NOTICE_PERIOD_LABELS[property.noticePeriod] },
+                  {
+                    label: "Rent grace",
+                    value: property.rentGraceDays > 0 ? `${property.rentGraceDays} days` : "None",
+                  },
                 ],
                 ...(property.dailyRentingAvailable
                   ? [
@@ -106,7 +120,7 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
                   : []),
               ]}
             />
-            <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }} selectable>
+            <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
               {property.dailyRentingAvailable
                 ? "Daily renting is available for short stays."
                 : "Daily renting is not available for this property."}
@@ -117,7 +131,7 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
             {facilities.length > 0 ? (
               <FacilityOverviewGrid facilities={facilities} />
             ) : (
-              <Text style={{ color: colors.muted, lineHeight: 21 }} selectable>
+              <Text style={{ color: colors.muted, lineHeight: 21 }}>
                 Facilities have not been listed yet.
               </Text>
             )}
@@ -161,7 +175,7 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
             {property.showOwnerContact && property.ownerPhone ? (
               <ContactCard name={property.ownerName || "Property owner"} phone={property.ownerPhone} />
             ) : (
-              <Text style={{ color: colors.muted, lineHeight: 21 }} selectable>
+              <Text style={{ color: colors.muted, lineHeight: 21 }}>
                 Owner contact is not publicly visible for this listing.
               </Text>
             )}
@@ -207,10 +221,10 @@ function ContactCard({ name, phone }: { name: string; phone: string }) {
         <MaterialCommunityIcons color={colors.primary} name="account-tie-outline" size={24} />
       </View>
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: "900" }} selectable>
+        <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: "900" }}>
           {name}
         </Text>
-        <Text style={{ color: colors.muted, fontSize: 14, fontWeight: "700" }} selectable>
+        <Text style={{ color: colors.muted, fontSize: 14, fontWeight: "700" }}>
           {phone}
         </Text>
       </View>
@@ -233,184 +247,7 @@ function ContactCard({ name, phone }: { name: string; phone: string }) {
   );
 }
 
-function FacilityOverviewGrid({ facilities }: { facilities: string[] }) {
-  const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const collapsedLimit = COLLAPSED_FACILITY_ROWS * FACILITIES_PER_ROW;
-  const canCollapse = facilities.length > collapsedLimit;
-  const visibleFacilities = expanded || !canCollapse ? facilities : facilities.slice(0, collapsedLimit);
-  const rows = useMemo(() => chunkPairs(visibleFacilities), [visibleFacilities]);
 
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <View
-        style={{
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
-          overflow: "hidden",
-        }}
-      >
-        {rows.map((row, rowIndex) => (
-          <View
-            key={row.map((item) => item).join("-")}
-            style={{
-              borderBottomColor: colors.border,
-              borderBottomWidth: rowIndex === rows.length - 1 ? 0 : 1,
-              flexDirection: "row",
-              minHeight: 86,
-            }}
-          >
-            {row.map((facility, columnIndex) => (
-              <FacilityOverviewCell
-                facility={facility}
-                key={facility}
-                showDivider={columnIndex === 0 && row.length > 1}
-              />
-            ))}
-            {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
-          </View>
-        ))}
-
-        {canCollapse && !expanded ? (
-          <Pressable
-            accessibilityLabel="Expand facilities"
-            accessibilityRole="button"
-            onPress={() => setExpanded(true)}
-            style={{
-              bottom: 0,
-              left: 0,
-              position: "absolute",
-              right: 0,
-            }}
-          >
-            <BlurView
-              intensity={70}
-              tint="default"
-              style={{
-                alignItems: "center",
-                borderTopColor: colors.border,
-                borderTopWidth: 1,
-                justifyContent: "center",
-                minHeight: 58,
-                overflow: "hidden",
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
-              }}
-            >
-              <View
-                pointerEvents="none"
-                style={{
-                  backgroundColor: colors.surface,
-                  bottom: 0,
-                  left: 0,
-                  opacity: 0.9,
-                  position: "absolute",
-                  right: 0,
-                  top: 0,
-                }}
-              />
-              <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "900" }}>
-                {facilities.length - visibleFacilities.length} more facilities. Tap to expand
-              </Text>
-            </BlurView>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {canCollapse && expanded ? (
-        <Pressable accessibilityLabel="Collapse facilities" accessibilityRole="button" onPress={() => setExpanded(false)}>
-          <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "900", textAlign: "center" }} selectable>
-            Show fewer facilities
-          </Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-function FacilityOverviewCell({ facility, showDivider }: { facility: string; showDivider: boolean }) {
-  const { colors } = useTheme();
-  const iconName = iconForFacility(facility);
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        borderRightColor: colors.border,
-        borderRightWidth: showDivider ? 1 : 0,
-        flex: 1,
-        flexDirection: "row",
-        gap: spacing.sm,
-        minWidth: 0,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.md,
-      }}
-    >
-      <MaterialCommunityIcons color={colors.muted} name={iconName} size={25} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
-          numberOfLines={2}
-          style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 19 }}
-          selectable
-        >
-          {humanizeToken(facility)}
-        </Text>
-        <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2 }} selectable>
-          Available
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function chunkPairs(items: string[]) {
-  const rows: string[][] = [];
-  for (let index = 0; index < items.length; index += 2) {
-    rows.push(items.slice(index, index + 2));
-  }
-  return rows;
-}
-
-function iconForFacility(facility: string): keyof typeof MaterialCommunityIcons.glyphMap {
-  switch (facility) {
-    case "WIFI":
-      return "wifi";
-    case "MESS":
-    case "COMMON_KITCHEN":
-      return "silverware-fork-knife";
-    case "PARKING":
-      return "parking";
-    case "GYM":
-      return "dumbbell";
-    case "CCTV":
-      return "cctv";
-    case "SECURITY":
-      return "shield-check-outline";
-    case "DRINKING_WATER":
-      return "cup-water";
-    case "HOT_WATER":
-      return "shower-head";
-    case "REFRIGERATOR":
-      return "fridge-outline";
-    case "WASHING_MACHINE":
-    case "LAUNDRY_SERVICE":
-      return "washing-machine";
-    case "HOUSEKEEPING":
-    case "ROOM_CLEANING":
-      return "broom";
-    case "POWER_BACKUP":
-      return "power-plug-battery-outline";
-    case "LIFT":
-      return "elevator";
-    case "AIR_CONDITIONING":
-      return "air-conditioner";
-    case "STUDY_AREA":
-      return "book-open-page-variant-outline";
-    default:
-      return "check-circle-outline";
-  }
-}
 
 function ProfileSection({ children, title }: { children: ReactNode; title: string }) {
   const { colors } = useTheme();
@@ -425,7 +262,7 @@ function ProfileSection({ children, title }: { children: ReactNode; title: strin
         padding: spacing.md,
       }}
     >
-      <Text style={{ color: colors.text, fontSize: 18, fontWeight: "900" }} selectable>
+      <Text style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>
         {title}
       </Text>
       {children}
@@ -475,13 +312,11 @@ function DetailCell({ item, showDivider }: { item: DetailItem; showDivider: bool
     >
       <Text
         style={{ color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.9, textTransform: "uppercase" }}
-        selectable
       >
         {item.label}
       </Text>
       <Text
         style={{ color: colors.text, fontSize: 15, fontVariant: ["tabular-nums"], fontWeight: "800", lineHeight: 20 }}
-        selectable
       >
         {item.value}
       </Text>

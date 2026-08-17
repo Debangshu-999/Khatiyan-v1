@@ -1,21 +1,26 @@
 package com.khatiyan.d_modules.property.api.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
 import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.SharingType;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
@@ -93,15 +98,15 @@ public record CreatePropertyRequest(
     Long rentLateFeePerDayPaise,
 
     @PositiveOrZero
-    @Max(30)
+    @Max(10)
     Integer rentGraceDays,
 
     @PositiveOrZero
     Long standardDepositPaise,
 
-    @PositiveOrZero
-    @Max(365)
-    Integer noticePeriodDays,
+    // Null takes the server default of one month. No range check is needed --
+    // the enum has no invalid members, which is why it replaced a raw integer.
+    NoticePeriod noticePeriod,
 
     @Size(max = 160)
     String discoveryHeadline,
@@ -111,6 +116,26 @@ public record CreatePropertyRequest(
 
     @URL
     @Size(max = 600)
-    String discoveryProfileImageUrl
+    String discoveryProfileImageUrl,
+
+    /**
+     * The listing gallery, cover first. Uploaded by the client before this call,
+     * so registration and its images succeed or fail together.
+     */
+    @NotEmpty
+    @NotEmpty
+    @Size(max = 10)
+    @Valid
+    List<DiscoveryImage> discoveryImages
 ) {
+
+    public record DiscoveryImage(
+            @NotBlank
+            @Size(max = 600)
+            String url,
+
+            @Size(max = 255)
+            String publicId
+    ) {
+    }
 }

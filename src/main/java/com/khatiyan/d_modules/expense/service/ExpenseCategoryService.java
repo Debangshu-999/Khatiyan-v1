@@ -31,7 +31,7 @@ public class ExpenseCategoryService {
 
     @Transactional
     public List<ExpenseCategoryResponse> listCategories(UUID actorUserId, UUID propertyId) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ensureSeeded(propertyId);
         return categoryRepository.findByPropertyIdAndActiveTrueOrderByNameAsc(propertyId).stream()
                 .map(ExpenseCategoryResponse::from)
@@ -40,7 +40,7 @@ public class ExpenseCategoryService {
 
     @Transactional
     public ExpenseCategoryResponse createCategory(UUID actorUserId, UUID propertyId, UpsertExpenseCategoryRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ensureSeeded(propertyId);
         if (categoryRepository.existsByPropertyIdAndNormalizedName(propertyId, normalize(request.name()))) {
             throw new ValidationException("A category with this name already exists");
@@ -51,7 +51,7 @@ public class ExpenseCategoryService {
     @Transactional
     public ExpenseCategoryResponse renameCategory(
             UUID actorUserId, UUID propertyId, UUID categoryId, UpsertExpenseCategoryRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ExpenseCategory category = category(propertyId, categoryId);
         String normalized = normalize(request.name());
         if (!normalized.equals(category.getNormalizedName())
@@ -64,7 +64,7 @@ public class ExpenseCategoryService {
 
     @Transactional
     public void deactivateCategory(UUID actorUserId, UUID propertyId, UUID categoryId) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         category(propertyId, categoryId).deactivate();
     }
 

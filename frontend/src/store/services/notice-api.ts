@@ -5,6 +5,30 @@ export type NoticeStatus = "PUBLISHED" | "ARCHIVED" | "DELETED";
 export type RecurringNoticeFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
 export type RecurringNoticeStatus = "ACTIVE" | "PAUSED" | "DELETED";
 
+export type NoticeAttachmentKind = "IMAGE" | "DOCUMENT";
+
+/** A file on a notice, once it is in storage. */
+export type NoticeAttachment = {
+  id: string;
+  kind: NoticeAttachmentKind;
+  url: string;
+  publicId: string | null;
+  fileName: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sortOrder: number;
+};
+
+/** An uploaded file being attached — the handle, never the bytes. */
+export type NewNoticeAttachment = {
+  kind: NoticeAttachmentKind;
+  url: string;
+  publicId: string | null;
+  fileName: string;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+};
+
 export type NoticeSummary = {
   id: string;
   propertyId: string;
@@ -17,9 +41,33 @@ export type NoticeSummary = {
   visibleUntil: string | null;
   publishedAt: string;
   archivedAt: string | null;
+  /** Set when this notice is one day's occurrence of a recurring template. */
+  recurringNoticeId: string | null;
+  occurrenceDate: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Empty on list endpoints, which do not render attachments. */
+  attachments: NoticeAttachment[];
 };
+
+/**
+ * Whether a notice can still be changed or removed at all.
+ *
+ * <p>Mirrors the server's rule exactly: published, and not yet live. Going live
+ * is the point of no return — tenants have seen it and may have acted on it, so
+ * rewriting or deleting it afterwards would rewrite what they were told.
+ * Retiring it is what archiving is for.
+ *
+ * <p>Lives beside the type so every screen asks the same question. The lists
+ * and the detail screen each had their own idea of when editing was allowed,
+ * which is how buttons ended up offering saves the server refused.
+ */
+export function canEditNotice(notice: Pick<NoticeSummary, "status" | "visibleFrom"> | null | undefined) {
+  if (!notice || notice.status !== "PUBLISHED") {
+    return false;
+  }
+  return new Date(notice.visibleFrom).getTime() > Date.now();
+}
 
 export type CreateNoticePayload = {
   title: string;
@@ -27,11 +75,26 @@ export type CreateNoticePayload = {
   priority: NoticePriority;
   visibleFrom?: string | null;
   visibleUntil?: string | null;
+  attachments?: NewNoticeAttachment[];
 };
+
+/** Mirrors java.time.DayOfWeek, which is what the API serialises. */
+export type DayOfWeekName =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
 
 export type CreateRecurringNoticePayload = {
   notice: CreateNoticePayload;
   frequency: RecurringNoticeFrequency;
+  /** Required for WEEKLY, empty otherwise. */
+  daysOfWeek?: DayOfWeekName[];
+  /** Required for MONTHLY, empty otherwise. Days 1-31. */
+  daysOfMonth?: number[];
   startTime: string;
   endTime: string;
   activeFrom?: string | null;
@@ -46,6 +109,8 @@ export type RecurringNoticeSummary = {
   body: string;
   priority: NoticePriority;
   frequency: RecurringNoticeFrequency;
+  daysOfWeek: DayOfWeekName[];
+  daysOfMonth: number[];
   startTime: string;
   endTime: string;
   activeFrom: string | null;
@@ -55,6 +120,8 @@ export type RecurringNoticeSummary = {
   status: RecurringNoticeStatus;
   createdAt: string;
   updatedAt: string;
+  /** Files copied onto every day this template generates. */
+  attachments: NoticeAttachment[];
 };
 
 export type PropertyBoardItem = {
@@ -106,6 +173,22 @@ export const noticeApi = api.injectEndpoints({
       query: (propertyId) => `/api/v1/properties/${propertyId}/notices/archived`,
       providesTags: ["Notice"],
     }),
+    getNotice: builder.query<NoticeSummary, string>({
+      query: (noticeId) => `/api/v1/notices/${noticeId}`,
+      providesTags: ["Notice"],
+    }),
+    listUpcomingNotices: builder.query<NoticeSummary[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/notices/upcoming`,
+      providesTags: ["Notice"],
+    }),
+    delayNotice: builder.mutation<NoticeSummary, { noticeId: string; visibleFrom: string }>({
+      query: ({ noticeId, visibleFrom }) => ({
+        body: { visibleFrom },
+        method: "PATCH",
+        url: `/api/v1/notices/${noticeId}/delay`,
+      }),
+      invalidatesTags: ["Notice", "Notification"],
+    }),
     archiveNotice: builder.mutation<NoticeSummary, string>({
       query: (noticeId) => ({ method: "PATCH", url: `/api/v1/notices/${noticeId}/archive` }),
       invalidatesTags: ["Notice", "Notification"],
@@ -146,22 +229,56 @@ export const noticeApi = api.injectEndpoints({
       query: () => "/api/v1/property-board/me/items",
       providesTags: ["Notice"],
     }),
+
+    // Attachments on a notice that already exists. Each mutation returns the
+    // whole ordered list, because removing one renumbers the rest.
+    listNoticeAttachments: builder.query<NoticeAttachment[], string>({
+      query: (noticeId) => `/api/v1/notices/${noticeId}/attachments`,
+      providesTags: ["Notice"],
+    }),
+    addNoticeAttachments: builder.mutation<
+      NoticeAttachment[],
+      { noticeId: string; attachments: NewNoticeAttachment[] }
+    >({
+      query: ({ noticeId, attachments }) => ({
+        body: { attachments },
+        method: "POST",
+        url: `/api/v1/notices/${noticeId}/attachments`,
+      }),
+      invalidatesTags: ["Notice"],
+    }),
+    removeNoticeAttachment: builder.mutation<
+      NoticeAttachment[],
+      { noticeId: string; attachmentId: string }
+    >({
+      query: ({ noticeId, attachmentId }) => ({
+        method: "DELETE",
+        url: `/api/v1/notices/${noticeId}/attachments/${attachmentId}`,
+      }),
+      invalidatesTags: ["Notice"],
+    }),
   }),
 });
 
 export const {
+  useAddNoticeAttachmentsMutation,
   useArchiveNoticeMutation,
   useCreateRecurringNoticeMutation,
+  useDelayNoticeMutation,
   useDeleteNoticeMutation,
   useDeleteRecurringNoticeMutation,
+  useGetNoticeQuery,
   useListArchivedNoticesQuery,
   useListMyPropertyBoardItemsQuery,
+  useListNoticeAttachmentsQuery,
   useListMyVisibleNoticesQuery,
   useListPropertyBoardItemsQuery,
   useListPublishedNoticesQuery,
   useListRecurringNoticesQuery,
+  useListUpcomingNoticesQuery,
   useListVisiblePropertyNoticesQuery,
   usePublishNoticeMutation,
+  useRemoveNoticeAttachmentMutation,
   useUpdateNoticeMutation,
   useUpdateRecurringNoticeMutation,
 } = noticeApi;

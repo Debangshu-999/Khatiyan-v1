@@ -87,6 +87,23 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
         """)
     List<Tenancy> findActiveEndingBetween(LocalDate startDate, LocalDate endDate);
 
+    /**
+     * Active fixed-term tenancies whose agreement ends on a given date.
+     *
+     * <p>Drives the run-up reminders. Only tenancies still running are returned —
+     * one already on notice knows perfectly well it is ending, and telling it
+     * again would be noise.
+     */
+    @Query("""
+        SELECT tenancy
+        FROM Tenancy tenancy
+        WHERE tenancy.active = true
+          AND tenancy.status = com.khatiyan.d_modules.tenancy.model.TenancyStatus.ACTIVE
+          AND tenancy.agreementEndDate = :agreementEndDate
+        ORDER BY tenancy.createdAt ASC
+        """)
+    List<Tenancy> findActiveWithAgreementEndingOn(LocalDate agreementEndDate);
+
     @Query("""
         SELECT COUNT(t) > 0 FROM Tenancy t
         WHERE t.userId = :userId AND t.propertyId = :propertyId AND t.active = true

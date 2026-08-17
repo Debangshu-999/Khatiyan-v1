@@ -45,6 +45,6 @@ public class AgreementController {
             @PathVariable UUID propertyId,
             @Valid @RequestBody UpdatePropertyAgreementSettingsRequest request) {
         return complianceModule.updatePropertyAgreementSettings(
-                user.userId(), propertyId, request.mode(), request.defaultClauses());
+                user.userId(), propertyId, request.defaultClauses());
     }
 }

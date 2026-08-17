@@ -64,7 +64,7 @@ public class PropertyService {
      */
     Property getOwnedActiveProperty(UUID ownerId, UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         if (!property.getOwnerId().equals(ownerId)) {
             throw new ForbiddenException("You do not own this property");
@@ -104,7 +104,7 @@ public class PropertyService {
                 request.rentLateFeePerDayPaise(),
                 request.rentGraceDays(),
                 request.standardDepositPaise(),
-                request.noticePeriodDays());
+                request.noticePeriod());
 
         Property saved = propertyRepository.save(property);
         log.info(
@@ -119,9 +119,20 @@ public class PropertyService {
                 ownerId,
                 request.discoveryHeadline(),
                 request.discoveryDescription(),
-                request.discoveryProfileImageUrl()));
+                request.discoveryProfileImageUrl(),
+                toImageRefs(request.discoveryImages())));
 
         return PropertyResponse.from(saved);
+    }
+
+    /** Null-safe translation from the request shape to the event's. */
+    private List<PropertyCreatedEvent.ImageRef> toImageRefs(List<CreatePropertyRequest.DiscoveryImage> images) {
+        if (images == null || images.isEmpty()) {
+            return List.of();
+        }
+        return images.stream()
+                .map(image -> new PropertyCreatedEvent.ImageRef(image.url(), image.publicId()))
+                .toList();
     }
 
     /**
@@ -182,7 +193,7 @@ public class PropertyService {
     @Transactional(readOnly = true)
     public PropertyResponse getActiveProperty(UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         return PropertyResponse.from(property);
     }
@@ -194,7 +205,7 @@ public class PropertyService {
     @Transactional(readOnly = true)
     public PropertyBillingPolicyResponse getBillingPolicy(UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         return PropertyBillingPolicyResponse.from(property);
     }
@@ -206,19 +217,25 @@ public class PropertyService {
     @Transactional(readOnly = true)
     public PropertyExitPolicyResponse getExitPolicy(UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         return PropertyExitPolicyResponse.from(property);
     }
 
     /**
-     * Replaces a property's exit policies. Owner-scoped, mirroring the rest of
-     * property configuration.
+     * Replaces a property's exit policies.
+     *
+     * <p>
+     * Unlike the rest of property configuration this is NOT owner-scoped: exit
+     * policies are governed by {@code TENANCY_RULES}, so a manager granted that
+     * at MANAGE may edit them. The caller has already authorized; this only
+     * loads the property.
      */
     @Transactional
     public PropertyExitPolicyResponse updateExitPolicies(
-            UUID ownerId, UUID propertyId, UpdatePropertyExitPolicyRequest request) {
-        Property property = getOwnedActiveProperty(ownerId, propertyId);
+            UUID actorUserId, UUID propertyId, UpdatePropertyExitPolicyRequest request) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         List<PropertyDamageCharge> damageCharges = request.damageCharges() == null
                 ? List.of()
@@ -226,12 +243,12 @@ public class PropertyService {
                         .map(input -> PropertyDamageCharge.of(input.name(), input.chargePaise()))
                         .toList();
 
-        property.updateExitPolicies(damageCharges, request.exitChecklist());
+        property.updateExitPolicies(damageCharges, request.exitChecklist(), request.prematureExitPolicy());
 
         log.info(
-                "Property exit policies updated propertyId={} ownerId={} damageCharges={} checklistItems={}",
+                "Property exit policies updated propertyId={} actorUserId={} damageCharges={} checklistItems={}",
                 propertyId,
-                ownerId,
+                actorUserId,
                 damageCharges.size(),
                 property.getExitChecklist().size());
 
@@ -242,8 +259,11 @@ public class PropertyService {
      * Updates editable details on an owner-owned property.
      */
     @Transactional
-    public PropertyResponse updateProperty(UUID ownerId, UUID propertyId, UpdatePropertyRequest request) {
-        Property property = getOwnedActiveProperty(ownerId, propertyId);
+    public PropertyResponse updateProperty(UUID actorUserId, UUID propertyId, UpdatePropertyRequest request) {
+        // NOT owner-scoped: a manager holding PROPERTY_SETTINGS at MANAGE may
+        // edit the property. The caller has already authorized; this only loads.
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         property.updateDetails(
                 request.name(),
@@ -269,12 +289,12 @@ public class PropertyService {
                 request.rentLateFeePerDayPaise(),
                 request.rentGraceDays(),
                 request.standardDepositPaise(),
-                request.noticePeriodDays());
+                request.noticePeriod());
 
         log.info(
-                "Property updated propertyId={} ownerId={} name={} city={}",
+                "Property updated propertyId={} actorUserId={} name={} city={}",
                 propertyId,
-                ownerId,
+                actorUserId,
                 property.getName(),
                 property.getCity());
 
@@ -296,7 +316,7 @@ public class PropertyService {
     @Transactional
     public void markDiscoveryProfileCreated(UUID propertyId) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
-                .orElseThrow(() -> new NotFoundException("Property_", propertyId));
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
 
         property.markDiscoveryProfileCreated();
         propertyRepository.save(property);

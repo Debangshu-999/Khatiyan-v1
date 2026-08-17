@@ -43,35 +43,27 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
     <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {place.name}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {place.subcategoryNames.join(" · ") || "No categories"}
           </Text>
         </View>
-        {/* Recommended + distance stack in a fixed top-right column, so the
-            RECOMMENDED badge no longer rides on the name (uneven across cards). */}
+        {/* Distance only. Recommended moved down to the action row, where it
+            reads as a property OF the place rather than a label over its name. */}
         <View style={{ alignItems: "flex-end", gap: 6 }}>
-          {place.ownerRecommended ? (
-            <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 999, flexDirection: "row", gap: 3, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-              <Star color={colors.accent} fill={colors.accent} size={10} strokeWidth={2} />
-              <Text style={{ color: colors.accent, fontFamily: fonts.sans, fontSize: 10, fontWeight: "900", letterSpacing: 0.5 }}>
-                RECOMMENDED
-              </Text>
-            </View>
-          ) : null}
           {place.distanceKm != null ? (
             <View style={{ alignItems: "center", backgroundColor: colors.jadeSoft, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
               <Navigation color={colors.jade} fill={colors.jade} size={10} strokeWidth={2} />
-              <Text style={{ color: colors.jade, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
                 {place.distanceKm < 1 ? `${Math.round(place.distanceKm * 1000)} m away` : `${place.distanceKm.toFixed(1)} km away`}
               </Text>
             </View>
           ) : manage ? (
             <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
               <MapPin color={colors.muted} size={10} strokeWidth={2.4} />
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 11, }}>
                 {pinned ? "Pinned" : "Not pinned"}
               </Text>
             </View>
@@ -82,7 +74,7 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
       {place.addressText ? (
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
           <MapPin color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-          <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]} numberOfLines={2} selectable>
+          <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]} numberOfLines={2}>
             {place.addressText}
           </Text>
         </View>
@@ -91,7 +83,7 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
       {place.description ? (
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
           <Info color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-          <Text style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 18 }]} numberOfLines={3} selectable>
+          <Text style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 18 }]} numberOfLines={3}>
             {place.description}
           </Text>
         </View>
@@ -111,9 +103,29 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
             <CardButton icon={<MaterialCommunityIcons color={colors.primary} name="directions" size={17} />} label="Directions" onPress={openDirections} tint={colors.primary} />
           </>
         ) : null}
-        <View style={{ flex: 1 }} />
         {onEdit ? <CardButton icon={<Pencil color={colors.primary} size={13} strokeWidth={2.4} />} label="Edit" onPress={onEdit} tint={colors.primary} /> : null}
         {onDelete ? <CardButton icon={<Trash2 color={colors.danger} size={13} strokeWidth={2.4} />} label="Remove" onPress={onDelete} tint={colors.danger} /> : null}
+        {/* Last in the row in BOTH modes, so it trails Directions when viewing
+            and Remove when managing. It is a state of the place, not an action,
+            hence a plain chip rather than a CardButton. */}
+        {place.ownerRecommended ? (
+          <View
+            style={{
+              alignItems: "center",
+              borderColor: colors.border,
+              borderRadius: 10,
+              borderWidth: 1,
+              flexDirection: "row",
+              gap: spacing.xs,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 6,
+            }}
+          >
+            <Star color={colors.ink} fill={colors.ink} size={12} strokeWidth={2} />
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12 }}>Recommended</Text>
+          </View>
+        ) : null}
+        <View style={{ flex: 1 }} />
       </View>
     </View>
   );
@@ -130,7 +142,7 @@ function CardButton({ disabled, icon, label, onPress, tint }: { disabled?: boole
       style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, opacity: disabled ? 0.5 : 1, paddingHorizontal: spacing.sm, paddingVertical: 6 }}
     >
       {icon}
-      <Text style={{ color: tint, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }}>{label}</Text>
+      <Text style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12, }}>{label}</Text>
     </AnimatedPressable>
   );
 }

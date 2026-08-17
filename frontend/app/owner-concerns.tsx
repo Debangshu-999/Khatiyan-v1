@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertCircle, Activity, Clock3, Eye, Image as ImageIcon, X } from "lucide-react-native";
+import { AlertCircle, Activity, Clock3, Eye, Image as ImageIcon, X, Lock } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,8 +11,9 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { TabSwitcher } from "@/components/tab-switcher";
 import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, BackButton, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   type ConcernSummary,
@@ -22,12 +23,27 @@ import {
   useListUndertakenConcernsQuery,
 } from "@/store/services/concern-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
+import { useToast } from "@/components/toast";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PropertyTab = "available" | "escalated";
 type MyTab = "review" | "progress" | "reopened" | "history";
 type QueueTab = "property" | "mine";
+
+const CONCERNS_PER_PAGE = 8;
+
+/** Clamps the page so shrinking a list cannot strand the reader past its end. */
+function pageOf(items: ConcernSummary[], page: number) {
+  const totalPages = Math.max(1, Math.ceil(items.length / CONCERNS_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  return {
+    items: items.slice(safePage * CONCERNS_PER_PAGE, (safePage + 1) * CONCERNS_PER_PAGE),
+    page: safePage,
+    totalPages,
+  };
+}
 
 function myTabHeadingText(tab: MyTab) {
   if (tab === "review") return "Concerns under review";
@@ -58,7 +74,15 @@ export default function OwnerConcernsScreen() {
     { page: 0, propertyId: selectedProperty?.id ?? "", size: 200 },
     { skip: !selectedProperty },
   );
-  const undertakenQuery = useListUndertakenConcernsQuery(undefined, { skip: !selectedProperty });
+  // "My concerns" is a working queue — you only get items in it by taking a
+  // concern up, which is a MANAGE action. For a view-only manager it can never
+  // be anything but empty, so the call is skipped rather than fetched to render
+  // an emptiness that looks like a bug.
+  const { canManage } = usePropertyPermissions(selectedProperty?.id);
+  const canWorkConcerns = canManage("CONCERNS");
+  const undertakenQuery = useListUndertakenConcernsQuery(undefined, {
+    skip: !selectedProperty || !canWorkConcerns,
+  });
 
   const propertyAvailableRaw = useMemo(
     () => (availableQuery.data ?? []).filter((concern) => !concern.reopened && concern.escalationLevel === "NONE"),
@@ -87,6 +111,20 @@ export default function OwnerConcernsScreen() {
   const myRawConcerns = myTab === "review" ? myInReview : myTab === "progress" ? myInProgress : myTab === "reopened" ? myReopened : myHistoryRaw;
   const myVisibleConcerns = sortLatest(myRawConcerns);
   const myLoading = myTab === "history" ? historyQuery.isFetching : undertakenQuery.isFetching;
+
+  // Both queue endpoints return the whole list, so the paging is client-side.
+  // A busy property accumulates open concerns faster than anyone works through
+  // them, and an unbounded stack is what made this screen scroll forever.
+  const [propertyPage, setPropertyPage] = useState(0);
+  const [myPage, setMyPage] = useState(0);
+
+  // Switching tab has to reset the page, or moving from a long queue to a short
+  // one lands on a page that no longer exists and looks empty.
+  useEffect(() => setPropertyPage(0), [propertyTab]);
+  useEffect(() => setMyPage(0), [myTab]);
+
+  const propertyPaged = pageOf(propertyConcerns, propertyPage);
+  const myPaged = pageOf(myVisibleConcerns, myPage);
   const resolvedThisWeek = useMemo(() => {
     const weekStart = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return (historyQuery.data?.items ?? []).filter((concern) => concern.status === "RESOLVED" && new Date(concern.resolvedAt ?? concern.updatedAt).getTime() >= weekStart).length;
@@ -101,7 +139,8 @@ export default function OwnerConcernsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
+      <ScreenHeader
+        badge={!canWorkConcerns ? <ViewOnlyChip /> : null} onBack={() => router.back()}
         eyebrow="Owner concern"
         title="Concern"
         italicTail="queue."
@@ -115,7 +154,7 @@ export default function OwnerConcernsScreen() {
       {selectedProperty ? (
         <>
           <View style={{ gap: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Concern overview
             </Text>
             <Card>
@@ -139,17 +178,36 @@ export default function OwnerConcernsScreen() {
           {activeAccount === "owner" ? (
             <Card>
               <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Owner monitor</Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern monitor</Text>
+                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
                   Track active concern progress
                 </Text>
-                <Text style={[type.body, { color: colors.muted }]} selectable>
+                <Text style={[type.body, { color: colors.muted }]}>
                   Under review, in progress, reopened, and resolved-window concerns only.
                 </Text>
                 <ActionButton
                   icon={Activity}
                   label="Open monitor"
                   onPress={() => router.push({ pathname: "/owner-concern-monitor", params: { propertyId: selectedProperty.id } })}
+                  variant="secondary"
+                />
+
+                {/* History sits with the monitor rather than under the queues:
+                    both are ways of looking BACK at concerns, where the queues
+                    below are the ones still needing work. */}
+                <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xs }} />
+
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern history</Text>
+                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
+                  View past concerns
+                </Text>
+                <Text style={[type.body, { color: colors.muted }]}>
+                  Resolved and closed concerns for this property, regardless of who handled them.
+                </Text>
+                <ActionButton
+                  icon={Clock3}
+                  label={`${historyQuery.data?.totalElements ?? 0} history items`}
+                  onPress={() => setPropertyHistoryOpen(true)}
                   variant="secondary"
                 />
               </View>
@@ -167,14 +225,35 @@ export default function OwnerConcernsScreen() {
                 <TabHeading count={propertyConcerns.length} text={propertyTab === "available" ? "Available concerns" : "Escalated concerns"} />
                 <QueueWindow loading={propertyLoading}>
                   {propertyConcerns.length > 0 ? (
-                    propertyConcerns.map((concern) => (
+                    propertyPaged.items.map((concern) => (
                       <ConcernCard actionLabel="Review" concern={concern} key={concern.id} onPress={() => openConcern(concern, "property")} />
                     ))
                   ) : (
                     <EmptyState icon={AlertCircle} eyebrow="Property" title="No property concerns" description="Available and escalated tenant concerns will appear here." />
                   )}
+                  {propertyConcerns.length > 0 ? (
+                    <PaginationBar
+                      hasNext={propertyPaged.page + 1 < propertyPaged.totalPages}
+                      hasPrevious={propertyPaged.page > 0}
+                      onNext={() => setPropertyPage(propertyPaged.page + 1)}
+                      onPrevious={() => setPropertyPage(Math.max(0, propertyPaged.page - 1))}
+                      page={propertyPaged.page}
+                      totalElements={propertyConcerns.length}
+                      totalPages={propertyPaged.totalPages}
+                    />
+                  ) : null}
                 </QueueWindow>
               </View>
+            ) : !canWorkConcerns ? (
+              // The tab still opens — hiding it would read as a bug. What it
+              // shows is why it is empty, since a view-only manager can never
+              // take a concern up and so can never have a personal queue.
+              <EmptyState
+                icon={Lock}
+                eyebrow="View-only access"
+                title="You cannot take up concerns"
+                description="Your access to concerns is view-only, so nothing can be assigned to you here. Ask the property owner if you need to work on them."
+              />
             ) : (
               <View style={{ gap: spacing.md }}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
@@ -186,7 +265,7 @@ export default function OwnerConcernsScreen() {
                 <TabHeading count={myVisibleConcerns.length} text={myTabHeadingText(myTab)} />
                 <QueueWindow loading={myLoading}>
                   {myVisibleConcerns.length > 0 ? (
-                    myVisibleConcerns.map((concern) => (
+                    myPaged.items.map((concern) => (
                       <ConcernCard
                         actionLabel="View"
                         concern={concern}
@@ -197,25 +276,22 @@ export default function OwnerConcernsScreen() {
                   ) : (
                     <EmptyState icon={Clock3} eyebrow="My concerns" title="No concerns in this queue" description="Concerns you take up will appear here." />
                   )}
+                  {myVisibleConcerns.length > 0 ? (
+                    <PaginationBar
+                      hasNext={myPaged.page + 1 < myPaged.totalPages}
+                      hasPrevious={myPaged.page > 0}
+                      onNext={() => setMyPage(myPaged.page + 1)}
+                      onPrevious={() => setMyPage(Math.max(0, myPaged.page - 1))}
+                      page={myPaged.page}
+                      totalElements={myVisibleConcerns.length}
+                      totalPages={myPaged.totalPages}
+                    />
+                  ) : null}
                 </QueueWindow>
               </View>
             )}
           </Section>
 
-          {queueTab === "property" ? (
-            <Card>
-              <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Property history</Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]} selectable>
-                  View property concern history
-                </Text>
-                <Text style={[type.body, { color: colors.muted }]} selectable>
-                  Resolved and closed concerns for this property, regardless of who handled them.
-                </Text>
-                <ActionButton icon={Clock3} label={`${historyQuery.data?.totalElements ?? 0} history items`} onPress={() => setPropertyHistoryOpen(true)} variant="secondary" />
-              </View>
-            </Card>
-          ) : null}
         </>
       ) : null}
 
@@ -231,58 +307,18 @@ export default function OwnerConcernsScreen() {
 }
 
 function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void; tab: QueueTab }) {
-  const { colors, fonts, isDark } = useTheme();
-  const tabs: { label: string; value: QueueTab }[] = [
-    { label: "Property", value: "property" },
-    { label: "My concerns", value: "mine" },
-  ];
-
   return (
-    <View
-      style={{
-        backgroundColor: colors.surfaceSunken,
-        borderCurve: "continuous",
-        borderRadius: 16,
-        flexDirection: "row",
-        padding: 5,
-      }}
-    >
-      {tabs.map((item) => {
-        const selected = tab === item.value;
-        return (
-          <AnimatedPressable
-            accessibilityRole="button"
-            key={item.value}
-            onPress={() => onChange(item.value)}
-            style={{
-              alignItems: "center",
-              backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.borderStrong : "transparent",
-              borderCurve: "continuous",
-              borderRadius: 13,
-              borderWidth: 1,
-              flex: 1,
-              justifyContent: "center",
-              minHeight: 46,
-            }}
-          >
-            <Text
-              style={{
-                color: selected ? colors.ink : colors.muted,
-                fontFamily: fonts.sans,
-                fontSize: 14,
-                fontWeight: selected ? "900" : "700",
-              }}
-              selectable
-            >
-              {item.label}
-            </Text>
-          </AnimatedPressable>
-        );
-      })}
-    </View>
+    <TabSwitcher
+      active={tab}
+      onChange={onChange}
+      options={[
+        { label: "Property", value: "property" },
+        { label: "My concerns", value: "mine" },
+      ]}
+    />
   );
 }
+
 
 function TabChip({
   active,
@@ -348,7 +384,7 @@ function TabChip({
           }}
         />
       ) : null}
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
       <View
@@ -362,7 +398,7 @@ function TabChip({
           paddingVertical: 1,
         }}
       >
-        <Text style={{ color: active ? colors.onPrimary : colors.muted, fontFamily: fonts.sans, fontSize: 11, fontWeight: "800" }} selectable>
+        <Text style={{ color: active ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11, }}>
           {count}
         </Text>
       </View>
@@ -373,26 +409,21 @@ function TabChip({
 function TabHeading({ count, text }: { count: number; text: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted, fontWeight: "800", letterSpacing: 0.3 }]} selectable>
+    <Text style={[type.caption, { color: colors.muted, fontWeight: "800", letterSpacing: 0.3 }]}>
       {text} · {count}
     </Text>
   );
 }
 
+/**
+ * The queue body. A plain stack now — it used to be a bordered, max-height
+ * ScrollView, which put a scrolling page inside a scrolling page and made the
+ * cards read as contents of a box rather than as the list itself.
+ */
 function QueueWindow({ children, loading }: { children: React.ReactNode; loading: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ borderColor: colors.border, borderRadius: 18, borderWidth: 1, maxHeight: 520, overflow: "hidden" }}>
-      {loading ? (
-        <SkeletonCard />
-      ) : (
-        <ScrollView contentContainerStyle={{ gap: spacing.md, padding: spacing.md }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-          {children}
-        </ScrollView>
-      )}
-    </View>
-  );
+  return <View style={{ gap: spacing.md }}>{loading ? <SkeletonCard /> : children}</View>;
 }
+
 
 function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
   const { colors, type } = useTheme();
@@ -404,26 +435,26 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
     <Card>
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
             {concern.referenceCode}
           </Text>
-          <Text style={[type.caption, { color: showEscalation ? colors.danger : colors.muted, fontWeight: "900" }]} selectable>
+          <Text style={[type.caption, { color: showEscalation ? colors.danger : colors.muted, fontWeight: "900" }]}>
             {showEscalation ? humanizeToken(concern.escalationLevel) : humanizeToken(concern.status)}
           </Text>
         </View>
-        <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1} selectable>{concern.title}</Text>
-        <Text style={[type.body, { color: colors.muted }]} numberOfLines={2} selectable>{concern.description}</Text>
+        <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</Text>
+        <Text style={[type.body, { color: colors.muted }]} numberOfLines={2}>{concern.description}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>{humanizeToken(concern.category)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>Room {concern.roomNumber}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>{formatDateTime(concern.createdAt)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>{photoCount ? `${photoCount} image${photoCount === 1 ? "" : "s"}` : "No images"}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>{humanizeToken(concern.category)}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>Room {concern.roomNumber}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>{formatDateTime(concern.createdAt)}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>{photoCount ? `${photoCount} image${photoCount === 1 ? "" : "s"}` : "No images"}</Text>
         </View>
         {concern.statusNote ? (
-          <Text style={[type.caption, { color: colors.primary }]} numberOfLines={1} selectable>Note: {concern.statusNote}</Text>
+          <Text style={[type.caption, { color: colors.primary }]} numberOfLines={1}>Note: {concern.statusNote}</Text>
         ) : null}
         {concern.reopened ? (
-          <Text style={[type.caption, { color: colors.danger }]} numberOfLines={1} selectable>Reopened: {concern.reopenReason ?? "No reason provided"}</Text>
+          <Text style={[type.caption, { color: colors.danger }]} numberOfLines={1}>Reopened: {concern.reopenReason ?? "No reason provided"}</Text>
         ) : null}
         <ActionButton icon={actionLabel === "View" ? Eye : Clock3} label={actionLabel} onPress={onPress} variant="secondary" />
       </View>
@@ -447,12 +478,23 @@ function HistoryModal({
   const sorted = useMemo(() => sortLatest(pageData?.items ?? []), [pageData]);
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, maxHeight: "86%", padding: spacing.lg }}>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "88%",
+            padding: spacing.lg,
+          }}
+        >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Property history</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>Resolved concerns</Text>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</Text>
             </View>
             <IconButton accessibilityLabel="Close property history" icon={X} onPress={onClose} />
           </View>

@@ -3,11 +3,13 @@ import { useFocusEffect } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Text, View } from "react-native";
 import { ArchiveRestore, Bell, BellOff, ChevronRight } from "lucide-react-native";
+import { useGetNudgeUnreadCountQuery, NUDGE_REFETCH_OPTIONS } from "@/store/services/nudge-api";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
+import { BackButton } from "@/features/owner/owner-ui";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
 import {
@@ -106,6 +108,17 @@ export default function NotificationsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
+      {/* Notifications left the tab bar and now open from the bell on Home, so
+          they need a way back the way every other pushed screen has one.
+
+          Nudges sit on the far right of that row rather than in a tab below.
+          One pill serves both roles — management lands on the send list, a
+          tenant on their own received nudges — so neither side needs a second
+          entry point invented for it. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <BackButton onPress={() => router.back()} />
+        <NudgesPill isManagement={isManagement} />
+      </View>
       <ScreenHeader
         title="Notifications,"
         italicTail="one queue."
@@ -136,12 +149,10 @@ export default function NotificationsScreen() {
               <Text
                 style={{
                   color: colors.primary,
-                  fontFamily: fonts.sans,
+                  fontFamily: fonts.sansBold,
                   fontSize: 11,
-                  fontWeight: "700",
                   letterSpacing: 0.4,
                 }}
-                selectable
               >
                 Mark read
               </Text>
@@ -219,7 +230,7 @@ export default function NotificationsScreen() {
               }}
             >
               <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   On record
                 </Text>
                 <Text
@@ -227,14 +238,12 @@ export default function NotificationsScreen() {
                     color: colors.ink,
                     fontFamily: fonts.display,
                     fontSize: 17,
-                    fontWeight: "500",
                     letterSpacing: -0.2,
                   }}
-                  selectable
                 >
                   Older notifications
                 </Text>
-                <Text style={[type.caption, { color: colors.muted }]} selectable>
+                <Text style={[type.caption, { color: colors.muted }]}>
                   {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
                 </Text>
               </View>
@@ -244,5 +253,74 @@ export default function NotificationsScreen() {
         </View>
       ) : null}
     </ScreenScrollView>
+  );
+}
+
+/**
+ * The way into nudges, from the row the back button already occupies.
+ *
+ * <p>The badge is tenant-only: on the management side this opens the send list,
+ * where an unread count would be counting the reader's own messages back at
+ * them. The count endpoint is tenant-scoped too, so the query is skipped rather
+ * than answered with a 403.
+ */
+function NudgesPill({ isManagement }: { isManagement: boolean }) {
+  const router = useGuardedRouter();
+  const { colors, fonts } = useTheme();
+  const unreadQuery = useGetNudgeUnreadCountQuery(undefined, {
+    ...NUDGE_REFETCH_OPTIONS,
+    skip: isManagement,
+  });
+  const unread = isManagement ? 0 : unreadQuery.data ?? 0;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={isManagement ? "Nudge a tenant" : "Open your nudges"}
+      accessibilityRole="button"
+      onPress={() => router.push(isManagement ? "/owner-nudges" : "/nudges")}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: 3,
+        // Same height and the same negative bottom margin as BackButton. That
+        // margin shortens the back chip's layout box while it still paints full
+        // height, so a plain centred sibling sits visibly high; matching both
+        // numbers puts the two centres in the same place.
+        height: 30,
+        marginBottom: -spacing.sm,
+        paddingHorizontal: spacing.sm,
+      }}
+    >
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12 }}>
+        Nudges
+      </Text>
+      {unread > 0 ? (
+        <View
+          style={{
+            backgroundColor: colors.primary,
+            borderRadius: 999,
+            minWidth: 17,
+            paddingHorizontal: 5,
+            paddingVertical: 1,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.onPrimary,
+              fontFamily: fonts.sansBold,
+              fontSize: 10,
+              textAlign: "center",
+            }}
+          >
+            {unread > 9 ? "9+" : unread}
+          </Text>
+        </View>
+      ) : null}
+      <ChevronRight color={colors.muted} size={14} strokeWidth={2.4} />
+    </AnimatedPressable>
   );
 }

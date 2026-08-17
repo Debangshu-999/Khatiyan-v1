@@ -122,8 +122,22 @@ public class Property extends BaseEntity {
     @Column(name = "standard_deposit_paise", nullable = false)
     private long standardDepositPaise;
 
-    @Column(name = "notice_period_days", nullable = false)
-    private int noticePeriodDays;
+    /**
+     * Longest rent grace a property may set.
+     *
+     * <p>Was 30, which let the payment window span a whole cycle. That window is
+     * also when an exit request may be raised, so a grace that wide breaks the
+     * assumption that requests arrive near a cycle start.
+     */
+    public static final int MAX_RENT_GRACE_DAYS = 10;
+
+    /**
+     * How much notice a tenant must give. An enum rather than a day count —
+     * see {@link NoticePeriod} for why the distinction matters.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notice_period", nullable = false, length = 20)
+    private NoticePeriod noticePeriod;
 
     @Column(name = "discovery_profile_created", nullable = false)
     private boolean discoveryProfileCreated;
@@ -181,6 +195,14 @@ public class Property extends BaseEntity {
     @OrderColumn(name = "display_order")
     private List<PropertyDamageCharge> damageCharges = new ArrayList<>();
 
+    /**
+     * What leaving early costs on an indefinite agreement, in the owner's own
+     * words. Applied by a person at end-tenancy — deliberately not modelled, so
+     * each property can price a departure the way it actually does.
+     */
+    @Column(name = "premature_exit_policy", length = 2000)
+    private String prematureExitPolicy;
+
     @ElementCollection
     @CollectionTable(
             name = "property_exit_checklist_items",
@@ -200,7 +222,7 @@ public class Property extends BaseEntity {
                      Set<String> customFacilities, Long dailyGuestAcRatePaise,
                      Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                      Integer rentGraceDays,
-                     Long standardDepositPaise, Integer noticePeriodDays) {
+                     Long standardDepositPaise, NoticePeriod noticePeriod) {
         this.id = UUID.randomUUID();
         this.referenceCode = referenceCode;
         this.ownerId = ownerId;
@@ -226,7 +248,7 @@ public class Property extends BaseEntity {
         updateRentLateFee(rentLateFeePerDayPaise);
         updateBillingPolicy(rentGraceDays);
         updateDepositPolicy(standardDepositPaise);
-        updateExitPolicy(noticePeriodDays);
+        updateExitPolicy(noticePeriod);
         replaceFacilities(facilities, customFacilities);
         this.exitChecklist.addAll(DEFAULT_EXIT_CHECKLIST);
     }
@@ -241,7 +263,7 @@ public class Property extends BaseEntity {
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
                                   Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                                   Integer rentGraceDays, Long standardDepositPaise,
-                                  Integer noticePeriodDays) {
+                                  NoticePeriod noticePeriod) {
         return create(
                 "PROP-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
                 ownerId,
@@ -268,7 +290,7 @@ public class Property extends BaseEntity {
                 rentLateFeePerDayPaise,
                 rentGraceDays,
                 standardDepositPaise,
-                noticePeriodDays);
+                noticePeriod);
     }
 
     public static Property create(String referenceCode, UUID ownerId, String name, String address, String area, String city,
@@ -281,7 +303,7 @@ public class Property extends BaseEntity {
                                   Set<String> customFacilities, Long dailyGuestAcRatePaise,
                                   Long dailyGuestNonAcRatePaise, Long rentLateFeePerDayPaise,
                                   Integer rentGraceDays, Long standardDepositPaise,
-                                  Integer noticePeriodDays) {
+                                  NoticePeriod noticePeriod) {
         return new Property(
                 referenceCode,
                 ownerId,
@@ -308,7 +330,7 @@ public class Property extends BaseEntity {
                 rentLateFeePerDayPaise,
                 rentGraceDays,
                 standardDepositPaise,
-                noticePeriodDays);
+                noticePeriod);
     }
 
     public void updateDetails(String name, String address, String area, String city, String state, String pincode,
@@ -321,7 +343,7 @@ public class Property extends BaseEntity {
                               Long dailyGuestAcRatePaise, Long dailyGuestNonAcRatePaise,
                               Long rentLateFeePerDayPaise,
                               Integer rentGraceDays, Long standardDepositPaise,
-                              Integer noticePeriodDays) {
+                              NoticePeriod noticePeriod) {
         this.name = name;
         this.address = address;
         this.area = normalizeArea(area);
@@ -342,7 +364,7 @@ public class Property extends BaseEntity {
         updateRentLateFee(rentLateFeePerDayPaise);
         updateBillingPolicy(rentGraceDays);
         updateDepositPolicy(standardDepositPaise);
-        updateExitPolicy(noticePeriodDays);
+        updateExitPolicy(noticePeriod);
         replaceFacilities(facilities, customFacilities);
     }
 
@@ -476,8 +498,8 @@ public class Property extends BaseEntity {
             return;
         }
 
-        if (rentGraceDays < 0 || rentGraceDays > 30) {
-            throw new ValidationException("Rent grace days must be between 0 and 30");
+        if (rentGraceDays < 0 || rentGraceDays > MAX_RENT_GRACE_DAYS) {
+            throw new ValidationException("Rent grace days must be between 0 and " + MAX_RENT_GRACE_DAYS);
         }
 
         this.rentGraceDays = rentGraceDays;
@@ -496,17 +518,22 @@ public class Property extends BaseEntity {
         this.standardDepositPaise = standardDepositPaise;
     }
 
-    private void updateExitPolicy(Integer noticePeriodDays) {
-        if (noticePeriodDays == null) {
-            this.noticePeriodDays = 30;
-            return;
-        }
-
-        if (noticePeriodDays < 0 || noticePeriodDays > 365) {
-            throw new ValidationException("Notice period days must be between 0 and 365");
-        }
-
-        this.noticePeriodDays = noticePeriodDays;
+    /**
+     * Floor of five days on the notice period.
+     *
+     * <p>Zero was accepted and meant "leave today", which no real property
+     * offers — and it makes the notice-driven exit date meaningless. Five is
+     * deliberately below the fifteen most properties use, so the rule is a
+     * backstop rather than a policy the app imposes.
+     */
+    /**
+     * Sets the notice period, defaulting to one month.
+     *
+     * <p>There is no range check left to write: the enum has no invalid members,
+     * which is most of the reason it replaced a free-form integer.
+     */
+    private void updateExitPolicy(NoticePeriod noticePeriod) {
+        this.noticePeriod = noticePeriod != null ? noticePeriod : NoticePeriod.ONE_MONTH;
     }
 
     /**
@@ -514,6 +541,14 @@ public class Property extends BaseEntity {
      * move-out checklist. A null list clears that policy; damage charges are
      * pre-validated as {@link PropertyDamageCharge} instances by the caller.
      */
+    public void updateExitPolicies(
+            List<PropertyDamageCharge> damageCharges,
+            List<String> exitChecklist,
+            String prematureExitPolicy) {
+        this.prematureExitPolicy = clean(prematureExitPolicy);
+        updateExitPolicies(damageCharges, exitChecklist);
+    }
+
     public void updateExitPolicies(List<PropertyDamageCharge> damageCharges, List<String> exitChecklist) {
         this.damageCharges.clear();
         if (damageCharges != null) {
@@ -578,5 +613,12 @@ public class Property extends BaseEntity {
         }
 
         return normalized;
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

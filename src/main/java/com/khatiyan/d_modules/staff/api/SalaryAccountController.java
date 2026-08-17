@@ -21,6 +21,7 @@ import com.khatiyan.d_modules.staff.api.dto.CreateSalaryAdjustmentRequest;
 import com.khatiyan.d_modules.staff.api.dto.RecordSalaryPaymentRequest;
 import com.khatiyan.d_modules.staff.api.dto.SalaryAccountDetailResponse;
 import com.khatiyan.d_modules.staff.api.dto.SalaryAccountResponse;
+import com.khatiyan.d_modules.staff.api.dto.SalaryPayslipResponse;
 import com.khatiyan.d_modules.staff.api.dto.UpdateSalaryAdjustmentRequest;
 import com.khatiyan.d_modules.staff.service.SalaryAccountService;
 
@@ -44,6 +45,23 @@ public class SalaryAccountController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return salaryAccountService.listActiveAccounts(user.userId(), propertyId);
+    }
+
+    /** Every salary payment at this property — the Salary tab's history card. */
+    @GetMapping("/salary-payments")
+    public List<SalaryPayslipResponse> listPropertyPayslips(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return salaryAccountService.listPropertyPayslips(user.userId(), propertyId);
+    }
+
+    /** One employee's payslips. Empty when they have never been paid. */
+    @GetMapping("/salary-accounts/{accountReferenceCode}/payslips")
+    public List<SalaryPayslipResponse> listPayslips(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable String accountReferenceCode) {
+        return salaryAccountService.listPayslips(user.userId(), propertyId, accountReferenceCode);
     }
 
     @PostMapping("/members/{staffReferenceCode}/salary-account")

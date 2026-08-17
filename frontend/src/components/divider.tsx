@@ -21,7 +21,7 @@ export function Divider({ align = "left", label, style }: DividerProps) {
   return (
     <View style={[{ alignItems: "center", flexDirection: "row", gap: spacing.sm }, style]}>
       {align === "center" ? <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} /> : null}
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
       <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />

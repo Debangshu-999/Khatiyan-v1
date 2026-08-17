@@ -86,6 +86,9 @@ export type ConcernQueueSummary = {
 
 export type RecentActivityType =
   | "TENANCY_STARTED"
+  | "TENANCY_ENDED"
+  | "TENANCY_ROOM_CHANGED"
+  | "TENANCY_EXIT_REQUESTED"
   | "PAYMENT_RECORDED"
   | "CONCERN_RAISED"
   | "CONCERN_ASSIGNED"
@@ -102,11 +105,17 @@ export type RecentActivityType =
   | "MANAGER_ADDED"
   | "MANAGER_REMOVED";
 
+// Day group, computed server-side in IST — the device clock is not necessarily
+// in the owner's zone, so the client must not work "today" out for itself.
+// Only three: the feed is a rolling 7-day window, so nothing older reaches here.
+export type ActivityDayBucket = "TODAY" | "YESTERDAY" | "EARLIER_THIS_WEEK";
+
 export type RecentActivityItem = {
   type: RecentActivityType;
   title: string;
-  subtitle: string;
+  subtitle: string | null;
   occurredAt: string;
+  dayBucket: ActivityDayBucket;
 };
 
 export type OwnerDashboard = {

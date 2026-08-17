@@ -14,5 +14,13 @@ public enum NotificationCategory {
     PROPERTY,
     PAYMENT,
     EXPENSE,
+    /**
+     * A one-way message management sent to a single tenant. Delivered as push
+     * only — the message itself lives in the nudge module and is read from the
+     * tenant's own nudges screen, never from the notification queue.
+     */
+    NUDGE,
+    /** A prospective tenant asking about a property, and the reply to it. */
+    ENQUIRY,
     SYSTEM
 }

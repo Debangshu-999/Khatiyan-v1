@@ -28,7 +28,6 @@ import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
-import com.khatiyan.d_modules.tenancy.api.dto.EarlyExitPenaltyPreview;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
@@ -37,7 +36,6 @@ import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
-import com.khatiyan.d_modules.tenancy.model.EarlyExitPenaltyType;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
@@ -52,6 +50,7 @@ public class TenancyService {
     private final TenancyRepository tenancyRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PropertyModule propertyModule;
+    private final TenancyAccessPolicy tenancyAccessPolicy;
     private final AuthModule authModule;
     private final BillingModule billingModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
@@ -60,12 +59,14 @@ public class TenancyService {
             TenancyRepository tenancyRepository,
             ApplicationEventPublisher eventPublisher,
             PropertyModule propertyModule,
+            TenancyAccessPolicy tenancyAccessPolicy,
             AuthModule authModule,
             @Lazy BillingModule billingModule,
             ReferenceCodeGenerator referenceCodeGenerator) {
         this.tenancyRepository = tenancyRepository;
         this.eventPublisher = eventPublisher;
         this.propertyModule = propertyModule;
+        this.tenancyAccessPolicy = tenancyAccessPolicy;
         this.authModule = authModule;
         this.billingModule = billingModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
@@ -82,7 +83,7 @@ public class TenancyService {
 
     private Tenancy getActiveTenancy(UUID tenancyId) {
         Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy_", tenancyId));
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
 
         if (!tenancy.isCurrentlyActive()) {
             throw new ValidationException("Tenancy is not active");
@@ -128,7 +129,7 @@ public class TenancyService {
             boolean holdForAcceptance,
             boolean idCheckConfirmed) {
 
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
         TenancyBillingType resolvedBillingType = billingType != null ? billingType : TenancyBillingType.MONTHLY;
 
         String provisionName = (tenantName != null && !tenantName.isBlank())
@@ -145,7 +146,7 @@ public class TenancyService {
         }
 
         UserSummaryResponse tenantUser = authModule.findById(tenantId)
-                .orElseThrow(() -> new NotFoundException("User_", tenantId));
+                .orElseThrow(() -> new NotFoundException("User", tenantId));
         if (tenantUser.activeTenant()) {
             throw new ValidationException("User already has an active tenancy");
         }
@@ -225,12 +226,21 @@ public class TenancyService {
      * tenant. Used by the onboarding wizard's first step.
      */
     @Transactional(readOnly = true)
-    public TenantLookupResponse lookupTenant(String tenantPhone) {
+    public TenantLookupResponse lookupTenant(String tenantPhone, UUID propertyId) {
         return authModule.findByPhone(tenantPhone)
                 .map(user -> {
                     if (user.role() != com.khatiyan.a_auth.model.UserRole.USER) {
                         return new TenantLookupResponse(true, user.fullName(), false, false,
                                 "This phone belongs to a non-tenant account.");
+                    }
+                    // Managers hold the USER role, so the check above does not
+                    // catch them. Without this the wizard says "a new tenancy
+                    // will be added" and only fails at creation, after every
+                    // field has been filled in.
+                    if (propertyId != null
+                            && propertyModule.findActiveManagerUserIds(propertyId).contains(user.id())) {
+                        return new TenantLookupResponse(true, user.fullName(), false, false,
+                                "This person manages this property and cannot also be a tenant here.");
                     }
                     if (user.activeTenant()) {
                         return new TenantLookupResponse(true, user.fullName(), true, false,
@@ -261,6 +271,18 @@ public class TenancyService {
             LocalDate startDate,
             LocalDate plannedEndDate,
             boolean idCheckConfirmed) {
+        // Every monthly stay is agreement-backed, so this path — which creates a
+        // tenancy with no agreement at all — is closed to them. Enforced here
+        // rather than only in the client because the endpoint is reachable
+        // directly, and a monthly tenancy without an agreement has no validity
+        // clause, no early-exit rule and nothing for end-tenancy to apply.
+        //
+        // Daily stays keep this path: they carry no agreement by design.
+        if (billingType == null || billingType == TenancyBillingType.MONTHLY) {
+            throw new ValidationException(
+                    "Monthly tenancies must be onboarded with an agreement");
+        }
+
         boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
 
         Tenancy tenancy = create(
@@ -325,48 +347,22 @@ public class TenancyService {
     }
 
     /**
-     * Stamps lock-in / early-exit terms from the accepted agreement onto the
-     * tenancy (called by compliance right after acceptance). The penalty type is
-     * passed as a String so compliance never imports the tenancy model enum.
+     * Stamps the accepted agreement's terms onto the tenancy.
+     *
+     * <p>Null months means indefinite. A fixed term derives its end date here,
+     * so the tenancy carries its last day from the moment it starts.
      */
     @Transactional
-    public void stampAgreementExitTerms(
-            UUID tenancyId, LocalDate lockInEndDate, String penaltyType, Long penaltyFixedPaise) {
+    public void stampAgreementTerms(UUID tenancyId, Integer validityMonths, String earlyExitRule) {
         Tenancy tenancy = tenancyRepository.findById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
-
-        EarlyExitPenaltyType resolvedType = "FIXED".equalsIgnoreCase(penaltyType)
-                ? EarlyExitPenaltyType.FIXED
-                : EarlyExitPenaltyType.REMAINING_TERM;
-        tenancy.stampAgreementExitTerms(lockInEndDate, resolvedType, penaltyFixedPaise);
+        tenancy.stampAgreementTerms(validityMonths, earlyExitRule);
 
         log.info(
-                "Agreement exit terms stamped tenancyId={} lockInEndDate={} penaltyType={} fixedPaise={}",
+                "Agreement terms stamped tenancyId={} validityMonths={} agreementEndDate={}",
                 tenancyId,
-                lockInEndDate,
-                resolvedType,
-                penaltyFixedPaise);
-    }
-
-    /**
-     * Previews the early-exit penalty an agreement tenant would owe for a chosen
-     * checkout date, for the tenant's own active tenancy.
-     */
-    @Transactional(readOnly = true)
-    public EarlyExitPenaltyPreview previewEarlyExitPenalty(UUID tenantUserId, LocalDate checkoutDate) {
-        Tenancy tenancy = tenancyRepository.findByUserIdAndActiveTrue(tenantUserId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
-        if (checkoutDate == null) {
-            throw new ValidationException("Checkout date is required");
-        }
-
-        return new EarlyExitPenaltyPreview(
-                tenancy.getId(),
-                checkoutDate,
-                tenancy.getLockInEndDate(),
-                tenancy.isWithinLockIn(checkoutDate),
-                tenancy.getEarlyExitPenaltyType(),
-                tenancy.earlyExitPenaltyPaise(checkoutDate));
+                validityMonths,
+                tenancy.getAgreementEndDate());
     }
 
     /**
@@ -497,7 +493,7 @@ public class TenancyService {
     @Transactional
     public void end(UUID actorUserId, UUID tenancyId, LocalDate endDate, String reason) {
         Tenancy tenancy = getActiveTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.getPropertyId());
+        tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
         billingModule.ensureLatestCyclePaidForExit(actorUserId, tenancyId);
 
         tenancy.end(endDate, reason);
@@ -531,7 +527,7 @@ public class TenancyService {
             Long rentAmountPaise,
             Long depositAmountPaise) {
         Tenancy tenancy = getActiveTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.getPropertyId());
+        tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
 
         try {
             tenancy.updateSetupTerms(rentAmountPaise, depositAmountPaise);
@@ -559,7 +555,7 @@ public class TenancyService {
         Tenancy tenancy = getActiveTenancy(tenancyId);
         UUID propertyId = tenancy.getPropertyId();
         UUID oldRoomId = tenancy.getRoomId();
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, propertyId);
 
         if (oldRoomId.equals(newRoomId)) {
             throw new ValidationException("New room must be different from the current room");
@@ -643,6 +639,17 @@ public class TenancyService {
                 tenancy.getEndDate());
     }
 
+    /**
+     * Puts a tenancy back to ACTIVE after an approved exit was withdrawn.
+     */
+    @Transactional
+    public void revertNotice(UUID tenancyId) {
+        Tenancy tenancy = getActiveTenancy(tenancyId);
+        tenancy.revertNotice();
+
+        log.info("Tenancy notice reverted tenancyId={} userId={}", tenancy.getId(), tenancy.getUserId());
+    }
+
     @Transactional
     public void markOnPrematureNotice(UUID tenancyId) {
         Tenancy tenancy = getActiveTenancy(tenancyId);
@@ -682,10 +689,10 @@ public class TenancyService {
     @Transactional(readOnly = true)
     public TenantActiveTenancyResponse getTenantActiveTenancyProfile(UUID userId) {
         Tenancy tenancy = findActiveByUserId(userId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancy_", userId));
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", userId));
 
         UserSummaryResponse user = authModule.findById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         PropertyResponse property = propertyModule.getActiveProperty(tenancy.getPropertyId());
         RoomResponse room = propertyModule.getActiveRoom(tenancy.getPropertyId(), tenancy.getRoomId());
@@ -700,7 +707,7 @@ public class TenancyService {
     @Transactional(readOnly = true)
     public List<RoomResponse> listActivePropertyRoomsForTenant(UUID userId) {
         Tenancy tenancy = findActiveByUserId(userId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancy_", userId));
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", userId));
 
         return propertyModule.listActiveRoomsForProperty(tenancy.getPropertyId());
     }
@@ -734,7 +741,7 @@ public class TenancyService {
 
     @Transactional(readOnly = true)
     public List<Tenancy> findByPropertyId(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        tenancyAccessPolicy.ensureCanViewStays(actorUserId, propertyId);
         return tenancyRepository.findByPropertyId(propertyId);
     }
 
@@ -771,7 +778,7 @@ public class TenancyService {
             String query,
             int page,
             int size) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        tenancyAccessPolicy.ensureCanViewStays(actorUserId, propertyId);
 
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
         List<Tenancy> tenancies = active

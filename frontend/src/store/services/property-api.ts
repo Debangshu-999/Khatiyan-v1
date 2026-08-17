@@ -59,6 +59,50 @@ export const PREFERRED_TENANT_OPTIONS: PreferredTenantType[] = ["ANYONE", "STUDE
 export const MEAL_TYPES: MealType[] = ["BREAKFAST", "LUNCH", "DINNER"];
 export const BATHROOM_TYPES: BathroomType[] = ["ATTACHED", "COMMON"];
 
+/**
+ * How much notice a tenant must give before leaving.
+ *
+ * An enum rather than a day count: one month from 15 Jan is 15 Feb, but *30
+ * days* from 15 Jan is 14 Feb, and a billing cycle is a calendar month anchored
+ * on the tenant's move-in day. The day-count answer lands a day off the cycle
+ * boundary, which is why the server stopped storing one.
+ */
+export type NoticePeriod =
+  | "FIVE_DAYS"
+  | "FIFTEEN_DAYS"
+  | "ONE_MONTH"
+  | "TWO_MONTHS"
+  | "THREE_MONTHS";
+
+export const NOTICE_PERIOD_OPTIONS: NoticePeriod[] = [
+  "FIVE_DAYS",
+  "FIFTEEN_DAYS",
+  "ONE_MONTH",
+  "TWO_MONTHS",
+  "THREE_MONTHS",
+];
+
+export const NOTICE_PERIOD_LABELS: Record<NoticePeriod, string> = {
+  FIVE_DAYS: "5 days",
+  FIFTEEN_DAYS: "15 days",
+  ONE_MONTH: "1 month",
+  TWO_MONTHS: "2 months",
+  THREE_MONTHS: "3 months",
+};
+
+/** Shown under the picker so an owner knows the bounds without trial and error. */
+export const NOTICE_PERIOD_RANGE_HINT = "Min 5 days, max 3 months.";
+
+/**
+ * Rent grace ceiling, mirroring Property.MAX_RENT_GRACE_DAYS on the server.
+ *
+ * Was 30, which let the payment window span an entire cycle — the same window an
+ * exit request may be raised in.
+ */
+export const MIN_RENT_GRACE_DAYS = 0;
+export const MAX_RENT_GRACE_DAYS = 10;
+export const RENT_GRACE_RANGE_HINT = `Min ${MIN_RENT_GRACE_DAYS}, max ${MAX_RENT_GRACE_DAYS} days.`;
+
 export type OwnerProperty = {
   id: string;
   referenceCode: string;
@@ -87,6 +131,12 @@ export type OwnerProperty = {
   billingCollectionTiming: BillingCollectionTiming;
   rentGraceDays: number;
   standardDepositPaise: number;
+  noticePeriod: NoticePeriod;
+  /**
+   * Derived, and ZERO for the whole-month options — they are counted in billing
+   * cycles, not days. Render `noticePeriod` via NOTICE_PERIOD_LABELS instead;
+   * this exists only for the sub-month options that genuinely mean days.
+   */
   noticePeriodDays: number;
   discoveryProfileCreated: boolean;
   active: boolean;
@@ -152,13 +202,19 @@ export type UpdatePropertyPayload = {
   rentLateFeePerDayPaise?: number | null;
   rentGraceDays: number;
   standardDepositPaise: number;
-  noticePeriodDays: number;
+  /** Null leaves it to the server's default of one month. */
+  noticePeriod: NoticePeriod | null;
 };
 
 export type CreatePropertyPayload = UpdatePropertyPayload & {
   discoveryDescription?: string | null;
   discoveryHeadline?: string | null;
   discoveryProfileImageUrl?: string | null;
+  /**
+   * The listing gallery, cover first. Uploaded before this call, so a failed
+   * upload aborts registration rather than leaving a property with no pictures.
+   */
+  discoveryImages?: { url: string; publicId: string | null }[];
 };
 
 export type CreateRoomPayload = {
@@ -214,6 +270,47 @@ export type PropertyDamageCharge = { name: string; chargePaise: number };
 export type PropertyExitPolicy = {
   damageCharges: PropertyDamageCharge[];
   exitChecklist: string[];
+  /**
+   * What leaving before serving notice costs, in the owner's words. Null when
+   * none is written. Only reaches an agreement on an INDEFINITE term — a fixed
+   * term prices early departure through its own validity rule instead.
+   */
+  prematureExitPolicy: string | null;
+};
+
+
+// ---- Manager permissions ----
+
+// Mirrors the backend ManagerResource enum. Only the resources whose module has
+// had its checks converted are actually enforced — see MANAGEABLE_RESOURCES in
+// app/owner-manager-permissions.tsx, which is the list the owner can edit.
+export type ManagerResource =
+  | "TENANCIES"
+  | "TENANCY_CREATE"
+  | "TENANCY_RULES"
+  | "EXIT_REQUESTS"
+  | "ROOM_CHANGES"
+  | "BILLING_CYCLES"
+  | "DEPOSITS"
+  | "EXPENSES"
+  | "PNL"
+  | "ROOMS"
+  | "PROPERTY_SETTINGS"
+  | "PROPERTY_BOARD"
+  | "NEARBY_PLACES"
+  | "NOTICES"
+  | "CONCERNS"
+  | "VACANCY_FINDER";
+
+export type ManagerAccessLevel = "NONE" | "VIEW" | "MANAGE";
+
+export type ManagerPermissions = {
+  propertyId: string;
+  managerUserId: string;
+  // True for the property owner, whose access is total and not grantable.
+  owner: boolean;
+  // Always complete — every resource is present, NONE included.
+  levels: Record<ManagerResource, ManagerAccessLevel>;
 };
 
 export const propertyApi = api.injectEndpoints({
@@ -310,6 +407,31 @@ export const propertyApi = api.injectEndpoints({
       invalidatesTags: ["Property", "Tenancy", "Notification"],
     }),
 
+    /** What the CALLER may do here. Drives which sections the app renders. */
+    getMyPropertyPermissions: builder.query<ManagerPermissions, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/my-permissions`,
+      providesTags: ["Property"],
+    }),
+
+    getManagerPermissions: builder.query<ManagerPermissions, { propertyId: string; managerUserId: string }>({
+      query: ({ managerUserId, propertyId }) =>
+        `/api/v1/properties/${propertyId}/managers/${managerUserId}/permissions`,
+      providesTags: ["Property"],
+    }),
+
+    /** Full replacement — anything omitted is revoked. */
+    replaceManagerPermissions: builder.mutation<
+      ManagerPermissions,
+      { propertyId: string; managerUserId: string; levels: Record<ManagerResource, ManagerAccessLevel> }
+    >({
+      query: ({ levels, managerUserId, propertyId }) => ({
+        body: { levels },
+        method: "PUT",
+        url: `/api/v1/properties/${propertyId}/managers/${managerUserId}/permissions`,
+      }),
+      invalidatesTags: ["Property", "Staff"],
+    }),
+
     listPropertyManagers: builder.query<PropertyManager[], string>({
       query: (propertyId) => `/api/v1/properties/${propertyId}/managers`,
       providesTags: ["Property"],
@@ -369,7 +491,10 @@ export const {
   useUpdatePropertyExitPoliciesMutation,
   useLazyLookupManagerQuery,
   useListAllPropertyRoomsQuery,
+  useGetManagerPermissionsQuery,
+  useGetMyPropertyPermissionsQuery,
   useListPropertyManagersQuery,
+  useReplaceManagerPermissionsMutation,
   useListPropertyRoomsQuery,
   useMarkRoomStatusMutation,
   useReactivateRoomMutation,

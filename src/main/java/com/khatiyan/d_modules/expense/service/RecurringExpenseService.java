@@ -52,7 +52,7 @@ public class RecurringExpenseService {
 
     @Transactional(readOnly = true)
     public List<RecurringExpenseResponse> list(UUID actorUserId, UUID propertyId) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         Map<UUID, String> names = categoryNames(propertyId);
         List<RecurringExpenseResponse> items = new ArrayList<>();
         // Projected staff salary IS a recurring expense — it's just derived from
@@ -75,7 +75,7 @@ public class RecurringExpenseService {
 
     @Transactional
     public RecurringExpenseResponse create(UUID actorUserId, UUID propertyId, CreateRecurringExpenseRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         RecurringExpense recurring = recurringRepository.save(RecurringExpense.create(
                 propertyId, category.getId(), request.paidTo(), request.amountPaise(),
@@ -86,7 +86,7 @@ public class RecurringExpenseService {
     @Transactional
     public RecurringExpenseResponse update(
             UUID actorUserId, UUID propertyId, UUID id, UpdateRecurringExpenseRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         RecurringExpense recurring = recurring(propertyId, id);
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         recurring.update(category.getId(), request.paidTo(), request.amountPaise(),
@@ -96,7 +96,7 @@ public class RecurringExpenseService {
 
     @Transactional
     public void deactivate(UUID actorUserId, UUID propertyId, UUID id) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         recurring(propertyId, id).deactivate();
     }
 

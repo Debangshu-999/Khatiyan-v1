@@ -7,8 +7,11 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { useGetManagedTenancyDepositQuery } from "@/store/services/billing-api";
+import { useAppSelector } from "@/store/hooks";
+import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -49,6 +52,23 @@ export default function OwnerActiveTenancyDetailScreen() {
   // amount and show UNPAID.
   // Daily stays are billed per night and never carry a security deposit, so the
   // deposit ledger does not apply to them.
+  // Read from the tenancy record rather than threaded through as more route
+  // params: whether a stay is fixed-term, and the date it ends, are exactly the
+  // fields a stale param would get wrong — and the caller had neither.
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const tenanciesQuery = useListPropertyTenanciesQuery(
+    { includePast: true, propertyId: selectedPropertyId ?? "" },
+    { skip: !selectedPropertyId },
+  );
+  const tenancy = tenanciesQuery.data?.find((item) => item.id === tenancyId) ?? null;
+
+  // Only a fixed term has an end date to state. An indefinite stay runs until
+  // somebody gives notice, so both fields stay blank rather than inventing a
+  // date from a notice period that has not been served.
+  const fixedTerm = Boolean(tenancy?.fixedTerm);
+  const agreedEndDate = fixedTerm ? tenancy?.endDate ?? tenancy?.agreementEndDate ?? null : null;
+  const stayStartDate = tenancy?.startDate ?? (stringParam(params.startDate) || null);
+
   const depositEligible = billingType !== "DAILY";
   const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || !depositEligible });
   const depositAccount = depositQuery.data;
@@ -84,7 +104,12 @@ export default function OwnerActiveTenancyDetailScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
-        eyebrow="Active tenancy"
+        // Nested under the tenancy workspace, so the eyebrow names the parent
+        // and carries the inline arrow — the same shape as the agreement screen
+        // reached from the same list. It had an eyebrow but no `onBack`, which
+        // is what left it with no back control at all.
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
         title="Tenant"
         italicTail="profile."
         subtitle="Stay, rent and contact details for this tenant."
@@ -96,10 +121,10 @@ export default function OwnerActiveTenancyDetailScreen() {
       <View style={{ alignItems: "center", gap: spacing.md }}>
         <InitialsAvatar name={tenantName} />
         <View style={{ alignItems: "center", gap: spacing.xxs }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 20, fontWeight: "900" }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, }}>
             {tenantName}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
             {params.referenceCode ?? "-"} {roomLabel !== "-" ? `(${roomLabel})` : ""}
           </Text>
         </View>
@@ -110,17 +135,25 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle title="Rent details" />
+        <SectionTitle eyebrow="Stay" title="Rent details" />
         <Card style={{ padding: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label="Start date" value={formatDate(stringParam(params.startDate))} />
             <ProfileInfoBox label="Room" value={roomLabel} />
           </View>
+          {/* Blank for an indefinite agreement, on purpose — see above. */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ProfileInfoBox label="End date" value={fixedTerm ? formatDate(agreedEndDate) : "-"} />
+            <ProfileInfoBox label="Stay duration" value={fixedTerm ? formatDuration(stayStartDate, agreedEndDate) : "-"} />
+          </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label={billingType === "DAILY" ? "Daily rent" : "Monthly rent"} value={formatMoney(billingAmount)} />
             <ProfileInfoBox
               accent={!depositEligible || firstCyclePaid ? "default" : "danger"}
-              label="Security money"
+              // Names what it opens. The box is a doorway into the deposit
+              // ledger, not a standalone figure — and every other screen calls
+              // that the deposit account.
+              label="Deposit account"
               value={securityValue}
               {...(depositEligible
                 ? { onPress: openDepositManager }
@@ -134,7 +167,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle title="Tenant details" />
+        <SectionTitle eyebrow="Identity" title="Tenant details" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
@@ -149,7 +182,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle title="Tenancy details" />
+        <SectionTitle eyebrow="Agreement" title="Tenancy details" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
           <ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />
           <ReadonlyField label="Billing type" value={humanizeToken(billingType)} />
@@ -189,18 +222,20 @@ function InitialsAvatar({ name }: { name: string }) {
   const { colors, fonts } = useTheme();
   return (
     <View
+      // No fill, and the same 40px initials as the owner profile. The tinted
+      // disc made the tenant avatar read as a placeholder next to the owner's.
       style={{
         alignItems: "center",
-        backgroundColor: colors.surfaceRaised,
         borderColor: colors.border,
         borderRadius: 54,
         borderWidth: 1,
         height: 108,
         justifyContent: "center",
+        overflow: "hidden",
         width: 108,
       }}
     >
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 32, fontWeight: "900" }} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 40, letterSpacing: 0.5 }}>
         {initialsFor(name)}
       </Text>
     </View>
@@ -235,20 +270,23 @@ function ProfileActionButton({
       }}
     >
       <Icon color={primary ? colors.onPrimary : colors.surface} size={16} strokeWidth={2.2} />
-      <Text style={{ color: primary ? colors.onPrimary : colors.surface, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+      <Text style={{ color: primary ? colors.onPrimary : colors.surface, fontFamily: fonts.sansBold, fontSize: 14, }}>
         {label}
       </Text>
     </AnimatedPressable>
   );
 }
 
-function SectionTitle({ title }: { title: string }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <Text style={{ color: colors.terracotta, fontFamily: fonts.sans, fontSize: 17, fontWeight: "900" }} selectable>
-      {title}
-    </Text>
-  );
+/**
+ * Section heading for this screen.
+ *
+ * <p>Delegates to the shared {@link Section}, exactly as the owner profile
+ * does. This screen kept drawing a lone terracotta line of bold sans after the
+ * owner side had moved on, which left the two profiles — the same kind of
+ * screen, reached from the same app — looking like different products.
+ */
+function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return <Section eyebrow={eyebrow} title={title} />;
 }
 
 function ProfileInfoBox({
@@ -278,16 +316,15 @@ function ProfileInfoBox({
   const body = (
     <>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "700" }]} selectable={!onPress}>
+        <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "700" }]}>
           {label}
         </Text>
         {onPress ? <ChevronRight color={colors.primary} size={15} strokeWidth={2.2} /> : null}
       </View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <Text
-          style={{ color: valueColor, flexShrink: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }}
+          style={{ color: valueColor, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 15, }}
           numberOfLines={1}
-          selectable={!onPress}
         >
           {value}
         </Text>
@@ -313,11 +350,11 @@ function ReadonlyField({ label, mono, value }: { label: string; mono?: boolean; 
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "900", letterSpacing: 0.2 }]} selectable>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "900", letterSpacing: 0.2 }]}>
         {label}
       </Text>
       <View style={{ backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 46, paddingHorizontal: spacing.md }}>
-        <Text style={{ color: colors.ink, fontFamily: mono ? fonts.mono : fonts.sans, fontSize: 15, fontWeight: "700" }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: mono ? fonts.mono : fonts.sans, fontSize: 15, fontWeight: "700" }}>
           {value}
         </Text>
       </View>
@@ -366,6 +403,51 @@ function formatMoney(value?: number | null) {
     return "Not set";
   }
   return `₹${Math.round(value / 100).toLocaleString("en-IN")}`;
+}
+
+/**
+ * Span between two dates, as someone would say it: "6 months", "1 year 2 months",
+ * "3 months 12 days".
+ *
+ * <p>Calendar months, not 30-day blocks — a stay from the 5th of one month to
+ * the 5th of the next is one month whatever its length, and dividing by 30
+ * would report it as "1 month 1 day" for the long ones.
+ */
+function formatDuration(start?: string | null, end?: string | null) {
+  if (!start || !end) {
+    return "-";
+  }
+  const from = new Date(`${start}T00:00:00`);
+  const to = new Date(`${end}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+    return "-";
+  }
+
+  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  // Borrow a month when the day-of-month has not come round yet, then count the
+  // leftover days from that borrowed anniversary.
+  const anniversary = new Date(from);
+  anniversary.setMonth(from.getMonth() + months);
+  if (anniversary > to) {
+    months -= 1;
+    anniversary.setMonth(anniversary.getMonth() - 1);
+  }
+  const days = Math.round((to.getTime() - anniversary.getTime()) / 86_400_000);
+
+  const parts: string[] = [];
+  const years = Math.floor(months / 12);
+  const monthsLeft = months % 12;
+  if (years > 0) {
+    parts.push(`${years} year${years === 1 ? "" : "s"}`);
+  }
+  if (monthsLeft > 0) {
+    parts.push(`${monthsLeft} month${monthsLeft === 1 ? "" : "s"}`);
+  }
+  // Days only matter when they are not drowned out by a year of context.
+  if (days > 0 && years === 0) {
+    parts.push(`${days} day${days === 1 ? "" : "s"}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "0 days";
 }
 
 function formatDate(value?: string | null) {

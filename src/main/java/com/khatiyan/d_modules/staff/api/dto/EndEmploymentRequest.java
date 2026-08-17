@@ -19,6 +19,18 @@ public record EndEmploymentRequest(
     @PositiveOrZero long additionalAmountPaise,
     SalaryPaymentMethod paymentMethod,
     LocalDate paidOn,
-    @Size(max = 500) String settlementNotes
+    @Size(max = 500) String settlementNotes,
+
+    /**
+     * When the employment ends. Null or today means now — deactivate and settle.
+     * A future date only schedules it: the worker stays active and is paid until
+     * that day, and nothing is settled yet because nothing has finished.
+     */
+    LocalDate endDate
 ) {
+
+    /** A future end date is a plan; anything else takes effect immediately. */
+    public boolean isScheduled() {
+        return endDate != null && endDate.isAfter(LocalDate.now());
+    }
 }

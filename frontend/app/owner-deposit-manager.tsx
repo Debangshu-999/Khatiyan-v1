@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, BackHandler, Modal, Text, View } from "react-native";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, Check, ChevronDown, ChevronRight, History, Landmark, Minus, Plus, Trash2, Wallet, X } from "lucide-react-native";
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, DoorOpen, History, Landmark, Minus, Plus, Wallet } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
@@ -14,24 +14,30 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonScreen } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
   ActionButton,
+  ConfirmDialog,
   FormInput,
+  NoticeBar,
   formatMoneyPaise,
   humanizeToken,
   rupeesToPaise,
   shortId,
+  ViewOnlyChip,
 } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
+import { isDepositCredit } from "@/store/services/billing-api";
 import type { DepositAccount, DepositMovement } from "@/store/services/billing-api";
 import {
   useAddDepositCorrectionMutation,
   useDeductDepositCorrectionMutation,
   useGetManagedTenancyDepositQuery,
-  useSettleDepositWithDamagesMutation,
+  useListPropertyDepositsQuery,
+  useCloseDepositUnpaidMutation,
+  useSettleManagedDepositMutation,
 } from "@/store/services/billing-api";
-import { useGetPropertyExitPoliciesQuery, type PropertyDamageCharge } from "@/store/services/property-api";
 import type { TenancyStatus, TenancySummary } from "@/store/services/tenancy-api";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
@@ -43,13 +49,18 @@ const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_N
 
 export default function OwnerDepositManagerScreen() {
   const router = useGuardedRouter();
-  const { settle: settleParam, tenancyId: tenancyIdParam } = useLocalSearchParams<{ settle?: string; tenancyId?: string }>();
+  const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
   const { colors, type } = useTheme();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
   const propertyId = property?.id ?? "";
+
+  // VIEW sees the ledger and every movement; MANAGE adds corrections and
+  // settlement.
+  const { canManage: canManageResource } = usePropertyPermissions(propertyId);
+  const canManageDeposits = canManageResource("DEPOSITS");
 
   const tenanciesQuery = useListPropertyTenanciesQuery({ includePast: true, propertyId }, { skip: !propertyId });
   const tenancies = useMemo(() => tenanciesQuery.data ?? [], [tenanciesQuery.data]);
@@ -68,23 +79,46 @@ export default function OwnerDepositManagerScreen() {
 
   const depositQuery = useGetManagedTenancyDepositQuery(selectedTenancyId ?? "", { skip: !selectedTenancyId });
   const deposit = depositQuery.data;
-  const exitPoliciesQuery = useGetPropertyExitPoliciesQuery(propertyId, { skip: !propertyId });
-  const damageCharges = exitPoliciesQuery.data?.damageCharges ?? [];
+
+  // Deposits waiting to be settled. The action centre already counts these; the
+  // screen that settles them showed no sign they existed, so the badge sent you
+  // somewhere that looked empty.
+  const pendingQuery = useListPropertyDepositsQuery(
+    { propertyId, size: 50, status: "PENDING_SETTLEMENT" },
+    { skip: !propertyId || Boolean(selectedTenancyId) },
+  );
+  const pendingDeposits = pendingQuery.data?.items ?? [];
+  const pendingTotalPaise = pendingDeposits.reduce((sum, account) => sum + account.currentBalancePaise, 0);
 
   const [correctionMode, setCorrectionMode] = useState<CorrectionMode | null>(null);
   const [addCorrection, addState] = useAddDepositCorrectionMutation();
   const [deductCorrection, deductState] = useDeductDepositCorrectionMutation();
-  const [settleWithDamages, settleState] = useSettleDepositWithDamagesMutation();
+  const [settleDeposit, settleState] = useSettleManagedDepositMutation();
+  const [closeUnpaid, closeState] = useCloseDepositUnpaidMutation();
 
-  // Landed here from the end-tenancy screen's "settle now": open settlement
-  // straight away once the pending deposit has loaded (once).
-  const autoOpenedRef = useRef(false);
-  useEffect(() => {
-    if (settleParam === "1" && deposit?.status === "PENDING_SETTLEMENT" && !autoOpenedRef.current) {
-      autoOpenedRef.current = true;
-      setSettleModalOpen(true);
+  // Opening an account swaps this screen's content rather than pushing a
+  // route, so "back" has two meanings here. Both the header arrow and the
+  // device button run this: close the account first, leave only when nothing
+  // is open. Without the hardware handler the phone button unmounted the whole
+  // screen and landed on home.
+  const goBack = useCallback(() => {
+    if (selectedTenancyId) {
+      setSelectedTenancyId(null);
+      return true;
     }
-  }, [deposit?.status, settleParam]);
+    router.back();
+    return true;
+  }, [router, selectedTenancyId]);
+
+  // Focus-scoped, not a plain effect. Expo Router keeps screens mounted, so an
+  // unscoped listener stays registered after you navigate away and then eats
+  // the back press on whatever screen you are actually looking at.
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener("hardwareBackPress", goBack);
+      return () => subscription.remove();
+    }, [goBack]),
+  );
 
   function chooseTenancy(tenancyId: string) {
     setSelectedTenancyId(tenancyId);
@@ -104,22 +138,24 @@ export default function OwnerDepositManagerScreen() {
     setCorrectionMode(null);
   }
 
-  async function submitSettlement(
-    damageItemNames: string[],
-    customCharges: { reason: string; amountPaise: number }[],
-  ) {
-    if (!selectedTenancyId) {
+  // Executes the decision recorded at end-tenancy — it never makes one. Which
+  // of the two actions is even offered is chosen by payableAtExit, so there is
+  // no path here that can contradict what was agreed at move-out.
+  const payable = deposit?.payableAtExit ?? null;
+
+  async function submitSettlement() {
+    if (!selectedTenancyId || payable == null) {
       return;
     }
     try {
-      await settleWithDamages({
-        customCharges,
-        damageItemNames,
-        reason: "Deposit settled at exit",
-        tenancyId: selectedTenancyId,
-      }).unwrap();
+      if (payable) {
+        await settleDeposit({ reason: "Deposit settled at exit", tenancyId: selectedTenancyId }).unwrap();
+        toast.success("Deposit settled.");
+      } else {
+        await closeUnpaid({ reason: "Deposit forfeited at exit", tenancyId: selectedTenancyId }).unwrap();
+        toast.success("Deposit account closed.");
+      }
       setSettleModalOpen(false);
-      toast.success("Deposit settled.");
     } catch (error) {
       toast.error(settleErrorMessage(error));
     }
@@ -128,11 +164,16 @@ export default function OwnerDepositManagerScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="DEPOSIT MANAGER"
+        badge={!canManageDeposits ? <ViewOnlyChip /> : null}
+        eyebrow={selectedTenancy ? "Deposit manager" : "Owner tool"}
+        onBack={goBack}
         title="Deposit"
-        italicTail="manager."
-        subtitle="Pick an active tenancy to review its deposit ledger, add or deduct amounts, and settle on exit."
-        trailing={<BackButton onPress={() => router.back()} />}
+        italicTail={selectedTenancy ? "account." : "manager."}
+        subtitle={
+          selectedTenancy
+            ? undefined
+            : "Pick an active tenancy to review its deposit ledger, add or deduct amounts, and settle on exit."
+        }
       />
 
       {!property ? (
@@ -153,7 +194,27 @@ export default function OwnerDepositManagerScreen() {
             selectedTenancy={selectedTenancy}
           />
 
-          {selectedTenancy ? (
+          {/* Only while nothing is open: the screen is either "choose someone"
+              or "work on this account", never both. */}
+          {!selectedTenancy && pendingDeposits.length > 0 ? (
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={() => chooseTenancy(pendingDeposits[0].tenancyId)}
+            >
+              <NoticeBar
+                icon={AlertTriangle}
+                message={
+                  pendingDeposits.length === 1
+                    ? `1 deposit · ${formatMoneyPaise(pendingTotalPaise)} held`
+                    : `${pendingDeposits.length} deposits · ${formatMoneyPaise(pendingTotalPaise)} held`
+                }
+                title="Needs settlement"
+                tone="warning"
+              />
+            </AnimatedPressable>
+          ) : null}
+
+          {selectedTenancy && !pickerOpen ? (
             selectedTenancy.billingType === "DAILY" ? (
               <EmptyState
                 icon={Wallet}
@@ -165,7 +226,8 @@ export default function OwnerDepositManagerScreen() {
               <SkeletonScreen header={false} tiles={2} rows={2} />
             ) : deposit ? (
               <DepositDetail
-                busy={addState.isLoading || deductState.isLoading || settleState.isLoading}
+                busy={addState.isLoading || deductState.isLoading || settleState.isLoading || closeState.isLoading}
+                canManage={canManageDeposits}
                 deposit={deposit}
                 onDeduct={() => setCorrectionMode("deduct")}
                 onAdd={() => setCorrectionMode("add")}
@@ -179,15 +241,11 @@ export default function OwnerDepositManagerScreen() {
                 description="A deposit account opens automatically once this tenant's first monthly cycle is paid."
               />
             )
-          ) : (
-            <Card tone="sunken">
-              <Text style={[type.body, { color: colors.muted }]} selectable>
-                Select a tenancy above to see its deposit balance and ledger.
-              </Text>
-            </Card>
-          )}
+          ) : null}
 
-          <HistoryEntryCard onPress={() => router.push("/owner-deposit-history")} />
+          {!selectedTenancy ? (
+            <HistoryEntryCard onPress={() => router.push("/owner-deposit-history")} />
+          ) : null}
         </>
       )}
 
@@ -200,14 +258,33 @@ export default function OwnerDepositManagerScreen() {
         />
       ) : null}
 
-      {settleModalOpen && deposit && selectedTenancy ? (
-        <SettlementModal
-          balancePaise={deposit.currentBalancePaise}
-          busy={settleState.isLoading}
-          damageCharges={damageCharges}
+      {settleModalOpen && deposit && selectedTenancy && payable != null ? (
+        <ConfirmDialog
+          bullets={
+            payable
+              ? [
+                  `${formatMoneyPaise(deposit.currentBalancePaise)} is refunded to ${
+                    selectedTenancy.tenantName?.trim() || "the tenant"
+                  }.`,
+                  "The deposit account closes and the ledger is final.",
+                ]
+              : [
+                  "Nothing is paid out — this deposit was marked not refundable at exit.",
+                  `The ${formatMoneyPaise(deposit.currentBalancePaise)} balance stays on the ledger as a record.`,
+                  "The deposit account closes and the ledger is final.",
+                ]
+          }
+          confirmLabel={payable ? "Continue" : "Close account"}
+          destructive={!payable}
+          footnote="Decided when the tenancy ended. Amounts cannot be changed here."
+          message={
+            payable
+              ? "This pays out the remaining balance and closes the account."
+              : "This closes the account without paying anything out."
+          }
           onCancel={() => setSettleModalOpen(false)}
-          onSubmit={submitSettlement}
-          tenantName={selectedTenancy.tenantName?.trim() || "the tenant"}
+          onConfirm={submitSettlement}
+          title={payable ? "Settle deposit" : "Close deposit account"}
         />
       ) : null}
     </ScreenScrollView>
@@ -238,15 +315,16 @@ function TenancyPicker({
       : "No active monthly tenancies on this property.";
 
   return (
-    <Card>
+    <View style={{ gap: spacing.sm }}>
       <AnimatedPressable
         accessibilityRole="button"
         onPress={activeTenancies.length > 0 ? onToggle : undefined}
         style={{
           alignItems: "center",
           backgroundColor: selectedTenancy ? colors.surfaceRaised : colors.primarySoft,
-          borderColor: selectedTenancy ? colors.border : colors.primary,
-          borderRadius: 14,
+          // Ink in both states, matching the home property picker.
+          borderColor: colors.ink,
+          borderRadius: 18,
           borderWidth: 1,
           flexDirection: "row",
           gap: spacing.md,
@@ -266,16 +344,19 @@ function TenancyPicker({
             width: 42,
           }}
         >
-          <Wallet color={colors.primary} size={20} strokeWidth={2.2} />
+          <DoorOpen color={colors.primary} size={20} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: selectedTenancy ? colors.kicker : colors.primary }]} selectable>
+          <Text style={[type.eyebrow, { color: selectedTenancy ? colors.kicker : colors.primary }]}>
             Active tenancy
           </Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, fontWeight: "500" }} selectable>
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+          >
             {title}
           </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted }]} selectable>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
             {subtitle}
           </Text>
         </View>
@@ -297,8 +378,10 @@ function TenancyPicker({
                 onPress={() => onSelect(tenancy.id)}
                 style={{
                   alignItems: "center",
-                  backgroundColor: selected ? colors.primarySoft : colors.surface,
-                  borderColor: selected ? colors.primary : colors.border,
+                  // Same filled-ink selection as the home property picker this
+                  // control was built to mirror.
+                  backgroundColor: selected ? colors.ink : colors.surface,
+                  borderColor: selected ? colors.ink : colors.border,
                   borderRadius: 12,
                   borderWidth: 1,
                   flexDirection: "row",
@@ -307,85 +390,193 @@ function TenancyPicker({
                 }}
               >
                 <View style={{ flex: 1, gap: spacing.xxs }}>
-                  <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+                  <Text style={[type.bodyStrong, { color: selected ? colors.surface : colors.ink }]}>
                     {tenancy.tenantName ?? "Unnamed tenant"}
                   </Text>
-                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text
+                    numberOfLines={1}
+                    style={[type.caption, { color: selected ? colors.surface : colors.muted, opacity: selected ? 0.75 : 1 }]}
+                  >
                     {tenancy.referenceCode} · {humanizeToken(tenancy.status)}
                   </Text>
                 </View>
+                {/* The pill keeps its own surface, so it stays legible on the
+                    ink row without needing an inverted variant. */}
                 <StatusPill label={humanizeToken(tenancy.billingType)} tone="neutral" />
               </AnimatedPressable>
             );
           })}
         </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
+/**
+ * One open deposit account.
+ *
+ * <p>Status is read from the DEPOSIT, never the tenancy. The two diverge the
+ * moment a stay ends — the tenancy is EXITED while the deposit sits
+ * PENDING_SETTLEMENT — and the list card used to show the tenancy's, so an
+ * account waiting to be settled still read "Active".
+ *
+ * <p>Shown once. It used to appear beside the balance, as a section label and
+ * as a pill; three copies of one fact is three chances to disagree.
+ */
 function DepositDetail({
   busy,
+  canManage,
   deposit,
   onAdd,
   onDeduct,
   onSettle,
 }: {
   busy: boolean;
+  canManage: boolean;
   deposit: DepositAccount;
   onAdd: () => void;
   onDeduct: () => void;
   onSettle: () => void;
 }) {
   const { colors, type } = useTheme();
-  const active = deposit.status === "ACTIVE";
   const pending = deposit.status === "PENDING_SETTLEMENT";
-  const statusTone = active ? "success" : pending ? "warning" : "neutral";
+  const settled = deposit.status === "SETTLED";
+  const payable = deposit.payableAtExit;
 
   return (
-    <>
+    <View style={{ gap: spacing.md }}>
+      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "flex-end" }}>
+        <StatusPill label={humanizeToken(deposit.status)} tone={pending ? "warning" : settled ? "neutral" : "success"} />
+      </View>
+
+      {/* The decision made at end-tenancy, restated where it is about to be
+          executed — settlement cannot revisit it, so the actor needs to see what
+          they are carrying out rather than choosing. */}
+      {pending ? (
+        <NoticeBar
+          icon={Clock}
+          message={
+            payable == null
+              ? "No payability decision was recorded when this tenancy ended, so this deposit cannot be settled here."
+              : payable
+                ? `Decided refundable at exit. ${formatMoneyPaise(deposit.currentBalancePaise)} to return.`
+                : "Decided not refundable at exit. Nothing is paid out."
+          }
+          title="Awaiting settlement"
+          tone="warning"
+        />
+      ) : null}
+
       <Card>
-        <View style={{ gap: spacing.md }}>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Balance" value={formatMoneyPaise(deposit.currentBalancePaise)} hint={humanizeToken(deposit.status)} tone="primary" />
-            <MetricTile label="Entries" value={String(deposit.movements.length)} hint="Movements" />
-          </View>
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-              Account status
+        <View style={{ flexDirection: "row" }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text selectable style={[type.metric, { color: colors.ink, fontSize: 24, lineHeight: 29 }]}>
+              {formatMoneyPaise(deposit.currentBalancePaise)}
             </Text>
-            <StatusPill label={humanizeToken(deposit.status)} tone={statusTone} />
+            <Text style={[type.caption, { color: colors.muted }]}>
+              Balance
+            </Text>
           </View>
-
-          {active ? (
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <ActionButton disabled={busy} icon={Plus} label="Add" onPress={onAdd} variant="primary" />
-              <ActionButton disabled={busy} icon={Minus} label="Deduct" onPress={onDeduct} variant="secondary" />
-            </View>
-          ) : null}
-
-          {pending ? (
-            <View style={{ gap: spacing.xs }}>
-              <ActionButton disabled={busy} label="Settle deposit" onPress={onSettle} variant="danger" />
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
-                Assess damage, add any charges, then refund the remaining balance to close this account.
-              </Text>
-            </View>
-          ) : null}
+          <View style={{ alignItems: "flex-end", flex: 1, gap: 2 }}>
+            <Text style={[type.metric, { color: colors.ink, fontSize: 24, lineHeight: 29 }]}>
+              {deposit.movements.length}
+            </Text>
+            <Text style={[type.caption, { color: colors.muted }]}>
+              Movements
+            </Text>
+          </View>
         </View>
+
+        {!settled ? (
+          <>
+            <Divider />
+            {pending ? (
+              <ActionButton
+                disabled={busy || !canManage || payable == null}
+                label={payable === false ? "Close account" : "Settle deposit"}
+                onPress={onSettle}
+                variant="danger"
+              />
+            ) : (
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <ActionButton disabled={busy || !canManage} icon={Plus} label="Add" onPress={onAdd} variant="secondary" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ActionButton disabled={busy || !canManage} icon={Minus} label="Deduct" onPress={onDeduct} variant="secondary" />
+                </View>
+              </View>
+            )}
+          </>
+        ) : null}
       </Card>
 
-      {deposit.movements.length > 0 ? (
-        deposit.movements.map((movement) => <MovementCard key={movement.id} movement={movement} />)
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        Movements
+      </Text>
+      {deposit.movements.length === 0 ? (
+        <Text style={[type.caption, { color: colors.kicker }]}>
+          No movements yet.
+        </Text>
       ) : (
-        <EmptyState
-          icon={Landmark}
-          eyebrow="No movements"
-          title="No deposit actions yet"
-          description="Credits, deductions and settlement actions appear here as the deposit ledger changes."
-        />
+        <View style={{ gap: spacing.sm }}>
+          {deposit.movements.map((movement) => (
+            <MovementRow key={movement.id} movement={movement} />
+          ))}
+        </View>
       )}
-    </>
+    </View>
+  );
+}
+
+/**
+ * One ledger line: what it was, when, and which way the money went.
+ *
+ * <p>No type pill. The sign and colour already say it, and the pill this
+ * replaces was comparing against values the API never sends — so every row
+ * rendered as a debit, credits included.
+ */
+function MovementRow({ movement }: { movement: DepositMovement }) {
+  const { colors, type } = useTheme();
+  const credit = isDepositCredit(movement.type);
+
+  return (
+    <View
+      style={{
+        borderColor: colors.borderStrong,
+        borderRadius: 0,
+        borderWidth: 1,
+        flexDirection: "row",
+      }}
+    >
+      {/* The direction of the money, read before any text. Inside the border so
+          the rule is part of the row rather than a stripe beside it. */}
+      <View style={{ backgroundColor: credit ? colors.jade : colors.danger, width: 5 }} />
+      <View
+        style={{
+          alignItems: "center",
+          flex: 1,
+          flexDirection: "row",
+          gap: spacing.sm,
+          justifyContent: "space-between",
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+        }}
+      >
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text selectable style={[type.body, { color: colors.ink }]}>
+            {movement.reason}
+          </Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>
+            {formatDateTime(movement.createdAt)}
+          </Text>
+        </View>
+        <Text selectable style={[type.bodyStrong, { color: credit ? colors.jade : colors.danger }]}>
+          {credit ? "+ " : "− "}
+          {formatMoneyPaise(movement.amountPaise)}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -410,20 +601,21 @@ function HistoryEntryCard({ onPress }: { onPress: () => void }) {
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          borderColor: colors.ink,
+          borderWidth: 1,
           borderRadius: 12,
           height: 44,
           justifyContent: "center",
           width: 44,
         }}
       >
-        <History color={colors.primary} size={20} strokeWidth={2.2} />
+        <History color={colors.ink} size={20} strokeWidth={2.2} />
       </View>
       <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600", letterSpacing: -0.3 }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.3 }}>
           Deposit manager history
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Search past and present deposit accounts, filter by status and open any ledger.
         </Text>
       </View>
@@ -491,10 +683,10 @@ function CorrectionModal({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {isAdd ? "Add to deposit" : "Deduct from deposit"}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} selectable>
+          <Text style={[type.caption, { color: colors.muted }]}>
             Current balance {formatMoneyPaise(balancePaise)}
           </Text>
 
@@ -502,7 +694,7 @@ function CorrectionModal({
           <FormInput label="Reason" maxLength={300} multiline onChangeText={setReason} placeholder={isAdd ? "Top-up reason" : "Deduction reason"} value={reason} />
 
           {error ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               {error}
             </Text>
           ) : null}
@@ -517,258 +709,17 @@ function CorrectionModal({
   );
 }
 
-function MovementCard({ movement }: { movement: DepositMovement }) {
-  const { colors, fonts, type } = useTheme();
-  const credit = movement.type === "CREDIT";
-
-  return (
-    <Card tone="sunken">
-      <View style={{ gap: spacing.sm }}>
-        <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-            {humanizeToken(movement.type)}
-          </Text>
-          <StatusPill label={credit ? "Credit" : "Debit"} tone={credit ? "success" : "warning"} />
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-          <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
-            {movement.reason}
-          </Text>
-          <Text style={{ color: colors.ink, flex: 1.1, fontFamily: fonts.display, fontSize: 18, fontWeight: "500", textAlign: "right" }} selectable>
-            {formatMoneyPaise(movement.amountPaise)}
-          </Text>
-        </View>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
-          {formatDateTime(movement.createdAt)}
-          {movement.billingCycleId ? ` · Billing ${shortId(movement.billingCycleId)}` : ""}
-        </Text>
-      </View>
-    </Card>
-  );
-}
-
-// On-spot settlement: pick damaged items (priced from the property schedule),
-// add any custom charges, and refund the remaining balance to close the account.
-function SettlementModal({
-  balancePaise,
-  busy,
-  damageCharges,
-  onCancel,
-  onSubmit,
-  tenantName,
-}: {
-  balancePaise: number;
-  busy: boolean;
-  damageCharges: PropertyDamageCharge[];
-  onCancel: () => void;
-  onSubmit: (damageItemNames: string[], customCharges: { reason: string; amountPaise: number }[]) => Promise<void>;
-  tenantName: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [customRows, setCustomRows] = useState<{ reason: string; amount: string }[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const selectedNames = damageCharges.filter((item) => selected[item.name]).map((item) => item.name);
-  const damageTotal = damageCharges.filter((item) => selected[item.name]).reduce((sum, item) => sum + item.chargePaise, 0);
-  const customCharges = customRows
-    .map((row) => ({ amountPaise: rupeesToPaise(row.amount) ?? 0, reason: row.reason.trim() }))
-    .filter((row) => row.amountPaise > 0 && row.reason.length > 0);
-  const customTotal = customCharges.reduce((sum, row) => sum + row.amountPaise, 0);
-  const refund = balancePaise - damageTotal - customTotal;
-
-  function submit() {
-    for (const row of customRows) {
-      const amount = rupeesToPaise(row.amount) ?? 0;
-      if (amount > 0 && !row.reason.trim()) {
-        setError("Give every custom charge a short reason.");
-        return;
-      }
-    }
-    if (refund < 0) {
-      setError("Charges exceed the deposit balance. Reduce them or bill the difference separately.");
-      return;
-    }
-    setError(null);
-    void onSubmit(selectedNames, customCharges);
-  }
-
-  return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              borderWidth: 1,
-              maxHeight: "92%",
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.lg,
-            }}
-          >
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} numberOfLines={1} selectable>
-                  Settle deposit
-                </Text>
-                <Text style={[type.caption, { color: colors.muted }]} selectable>
-                  Refunding to {tenantName}
-                </Text>
-              </View>
-              <AnimatedPressable
-                accessibilityLabel="Close"
-                onPress={onCancel}
-                style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 40, justifyContent: "center", width: 40 }}
-              >
-                <X color={colors.ink} size={18} strokeWidth={2.2} />
-              </AnimatedPressable>
-            </View>
-
-            <ScrollView
-              contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              style={{ flexShrink: 1 }}
-            >
-              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                <SummaryLine label="Deposit balance" value={formatMoneyPaise(balancePaise)} />
-                {damageTotal > 0 ? <SummaryLine label="Damage" value={`− ${formatMoneyPaise(damageTotal)}`} /> : null}
-                {customTotal > 0 ? <SummaryLine label="Custom charges" value={`− ${formatMoneyPaise(customTotal)}`} /> : null}
-                <View style={{ backgroundColor: colors.border, height: 1, marginVertical: 2 }} />
-                <SummaryLine label="Refund" strong value={formatMoneyPaise(Math.max(refund, 0))} />
-              </View>
-
-              <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                  Damage charges
-                </Text>
-                {damageCharges.length === 0 ? (
-                  <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
-                    No damage schedule configured. Add items under the property's exit policies.
-                  </Text>
-                ) : (
-                  damageCharges.map((item) => (
-                    <AnimatedPressable
-                      key={item.name}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: Boolean(selected[item.name]) }}
-                      onPress={() => setSelected((current) => ({ ...current, [item.name]: !current[item.name] }))}
-                      style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingVertical: spacing.xs }}
-                    >
-                      <View
-                        style={{
-                          alignItems: "center",
-                          backgroundColor: selected[item.name] ? colors.primary : "transparent",
-                          borderColor: selected[item.name] ? colors.primary : colors.borderStrong,
-                          borderRadius: 6,
-                          borderWidth: 1.5,
-                          height: 22,
-                          justifyContent: "center",
-                          width: 22,
-                        }}
-                      >
-                        {selected[item.name] ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
-                      </View>
-                      <Text style={[type.body, { color: colors.ink, flex: 1 }]} selectable={false}>
-                        {item.name}
-                      </Text>
-                      <Text style={[type.caption, { color: colors.muted, fontVariant: ["tabular-nums"] }]} selectable={false}>
-                        {formatMoneyPaise(item.chargePaise)}
-                      </Text>
-                    </AnimatedPressable>
-                  ))
-                )}
-              </View>
-
-              <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                  Custom charges
-                </Text>
-                {customRows.map((row, index) => (
-                  <View key={`custom-${index}`} style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <View style={{ flex: 1.4 }}>
-                      <FormInput
-                        label="Reason"
-                        onChangeText={(text) => setCustomRows((rows) => rows.map((r, i) => (i === index ? { ...r, reason: text } : r)))}
-                        placeholder="e.g. Repainting"
-                        value={row.reason}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <FormInput
-                        keyboardType="decimal-pad"
-                        label="Amount"
-                        onChangeText={(text) => setCustomRows((rows) => rows.map((r, i) => (i === index ? { ...r, amount: text } : r)))}
-                        placeholder="0"
-                        prefix="₹"
-                        value={row.amount}
-                      />
-                    </View>
-                    <AnimatedPressable
-                      accessibilityLabel="Remove charge"
-                      onPress={() => setCustomRows((rows) => rows.filter((_, i) => i !== index))}
-                      style={{ alignItems: "center", justifyContent: "flex-end", paddingBottom: spacing.sm }}
-                    >
-                      <Trash2 color={colors.danger} size={18} strokeWidth={2.2} />
-                    </AnimatedPressable>
-                  </View>
-                ))}
-                <ActionButton
-                  icon={Plus}
-                  label="Add custom charge"
-                  onPress={() => setCustomRows((rows) => [...rows, { amount: "", reason: "" }])}
-                  variant="secondary"
-                />
-              </View>
-
-              {error ? (
-                <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
-                  {error}
-                </Text>
-              ) : null}
-
-              <ActionButton
-                disabled={busy}
-                label={busy ? "Settling…" : `Settle & refund ${formatMoneyPaise(Math.max(refund, 0))}`}
-                onPress={submit}
-                variant="danger"
-              />
-            </ScrollView>
-            <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 function SummaryLine({ label, strong, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-      <Text style={[strong ? type.bodyStrong : type.caption, { color: strong ? colors.ink : colors.muted }]} selectable>
+      <Text style={[strong ? type.bodyStrong : type.caption, { color: strong ? colors.ink : colors.muted }]}>
         {label}
       </Text>
-      <Text style={[strong ? type.bodyStrong : type.caption, { color: strong ? colors.ink : colors.muted, fontVariant: ["tabular-nums"] }]} selectable>
+      <Text style={[strong ? type.bodyStrong : type.caption, { color: strong ? colors.ink : colors.muted, fontVariant: ["tabular-nums"] }]}>
         {value}
       </Text>
     </View>
-  );
-}
-
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
   );
 }
 

@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.staff.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,4 +21,7 @@ public interface StaffMemberRepository extends JpaRepository<StaffMember, UUID> 
     List<StaffMember> findByPropertyIdOrderByFullNameAsc(UUID propertyId);
 
     Optional<StaffMember> findByIdAndPropertyId(UUID id, UUID propertyId);
+
+    /** Still active, but their scheduled last working day has arrived or passed. */
+    List<StaffMember> findByActiveTrueAndEmploymentEndDateLessThanEqual(LocalDate onOrBefore);
 }

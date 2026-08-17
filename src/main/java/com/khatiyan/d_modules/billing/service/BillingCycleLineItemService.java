@@ -28,7 +28,6 @@ import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
 import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
-import com.khatiyan.d_modules.property.PropertyModule;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,19 +45,19 @@ public class BillingCycleLineItemService {
 
     private final BillingCycleRepository billingCycleRepository;
     private final BillingCycleLineItemRepository lineItemRepository;
-    private final PropertyModule propertyModule;
+    private final BillingAccessPolicy billingAccessPolicy;
     private final DepositManagerService depositManagerService;
     private final ApplicationEventPublisher eventPublisher;
 
     public BillingCycleLineItemService(
             BillingCycleRepository billingCycleRepository,
             BillingCycleLineItemRepository lineItemRepository,
-            PropertyModule propertyModule,
+            BillingAccessPolicy billingAccessPolicy,
             DepositManagerService depositManagerService,
             ApplicationEventPublisher eventPublisher) {
         this.billingCycleRepository = billingCycleRepository;
         this.lineItemRepository = lineItemRepository;
-        this.propertyModule = propertyModule;
+        this.billingAccessPolicy = billingAccessPolicy;
         this.depositManagerService = depositManagerService;
         this.eventPublisher = eventPublisher;
     }
@@ -70,7 +69,7 @@ public class BillingCycleLineItemService {
     @Transactional(readOnly = true)
     public List<BillingCycleLineItemResponse> listManagedTenancyLineItems(UUID actorUserId, UUID tenancyId) {
         BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, cycle.getPropertyId());
 
         return lineItemRepository.findByTenancyId(tenancyId)
                 .stream()
@@ -497,7 +496,7 @@ public class BillingCycleLineItemService {
         BillingCycle cycle = billingCycleRepository.findById(billingCycleId)
                 .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
 
-        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, cycle.getPropertyId());
         return cycle;
     }
 
@@ -511,7 +510,7 @@ public class BillingCycleLineItemService {
                 .findFirst()
                 .orElseThrow(() -> new NotFoundException("BillingCycle for tenancy", tenancyId));
 
-        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, cycle.getPropertyId());
         return cycle;
     }
 

@@ -2,6 +2,7 @@ package com.khatiyan.a_auth.model;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -123,8 +124,26 @@ public class User extends BaseEntity {
         this.fullName = fullName;
         this.profileCompleted = true;
     }
+    /**
+     * Sets the recovery address, dropping verification only when it changes.
+     *
+     * <p>Verification asserts control of an address at a moment in time, so a
+     * genuinely different address must be proved again — including one that was
+     * verified before and is being returned to, since addresses get reassigned
+     * and this one is the PIN-reset channel.
+     *
+     * <p>But re-saving the address already on file proves nothing new and must
+     * not cost the verification. This used to clear the flag unconditionally,
+     * so opening the field and saving without editing — or correcting nothing
+     * more than the capitalisation — silently unverified an address that had
+     * not changed at all. Comparison is on the normalised form for that reason.
+     */
     public void updateRecoveryEmail(String email) {
-        this.email = normalizeEmail(email);
+        String normalized = normalizeEmail(email);
+        if (Objects.equals(this.email, normalized)) {
+            return;
+        }
+        this.email = normalized;
         this.emailVerified = false;
     }
 

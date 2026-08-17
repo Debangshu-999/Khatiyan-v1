@@ -7,10 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.d_modules.compliance.model.AgreementClause;
-import com.khatiyan.d_modules.compliance.model.AgreementMode;
 import com.khatiyan.d_modules.compliance.model.PropertyAgreementSettings;
 import com.khatiyan.d_modules.compliance.repository.PropertyAgreementSettingsRepository;
-import com.khatiyan.d_modules.property.PropertyModule;
 
 /**
  * Authoring side of tenancy agreements: the per-property default clause set and
@@ -21,13 +19,13 @@ import com.khatiyan.d_modules.property.PropertyModule;
 public class AgreementService {
 
     private final PropertyAgreementSettingsRepository propertySettingsRepository;
-    private final PropertyModule propertyModule;
+    private final ComplianceAccessPolicy complianceAccessPolicy;
 
     public AgreementService(
             PropertyAgreementSettingsRepository propertySettingsRepository,
-            PropertyModule propertyModule) {
+            ComplianceAccessPolicy complianceAccessPolicy) {
         this.propertySettingsRepository = propertySettingsRepository;
-        this.propertyModule = propertyModule;
+        this.complianceAccessPolicy = complianceAccessPolicy;
     }
 
     /**
@@ -36,21 +34,23 @@ public class AgreementService {
      */
     @Transactional
     public PropertyAgreementSettings getOrSeedPropertySettings(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        // VIEW, even though this seeds on first access: the seed is starter
+        // defaults so the screen is never blank, not a policy the actor chose.
+        complianceAccessPolicy.ensureCanViewRules(actorUserId, propertyId);
         return propertySettingsRepository.findByPropertyId(propertyId)
             .orElseGet(() -> propertySettingsRepository.save(
-                PropertyAgreementSettings.create(propertyId, AgreementMode.OFF, AgreementDefaults.starterClauses())));
+                PropertyAgreementSettings.create(propertyId, AgreementDefaults.starterClauses())));
     }
 
     @Transactional
     public PropertyAgreementSettings updatePropertySettings(
-            UUID actorUserId, UUID propertyId, AgreementMode mode, List<AgreementClause> defaultClauses) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+            UUID actorUserId, UUID propertyId, List<AgreementClause> defaultClauses) {
+        complianceAccessPolicy.ensureCanManageRules(actorUserId, propertyId);
         PropertyAgreementSettings settings = propertySettingsRepository.findByPropertyId(propertyId).orElse(null);
         if (settings == null) {
-            settings = PropertyAgreementSettings.create(propertyId, mode, defaultClauses);
+            settings = PropertyAgreementSettings.create(propertyId, defaultClauses);
         } else {
-            settings.update(mode, defaultClauses);
+            settings.update(defaultClauses);
         }
         return propertySettingsRepository.save(settings);
     }

@@ -61,6 +61,7 @@ public class ConcernService {
     private final ConcernRepository concernRepository;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
+    private final ConcernAccessPolicy concernAccessPolicy;
     private final AuthModule authModule;
     private final ApplicationEventPublisher eventPublisher;
     private final ReferenceCodeGenerator referenceCodeGenerator;
@@ -70,12 +71,14 @@ public class ConcernService {
             ConcernRepository concernRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
+            ConcernAccessPolicy concernAccessPolicy,
             AuthModule authModule,
             ApplicationEventPublisher eventPublisher,
             ReferenceCodeGenerator referenceCodeGenerator) {
         this.concernRepository = concernRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
+        this.concernAccessPolicy = concernAccessPolicy;
         this.authModule = authModule;
         this.eventPublisher = eventPublisher;
         this.referenceCodeGenerator = referenceCodeGenerator;
@@ -83,7 +86,7 @@ public class ConcernService {
 
     private Concern getConcern(UUID concernId) {
         return concernRepository.findConcernById(concernId)
-                .orElseThrow(() -> new NotFoundException("Concern_", concernId));
+                .orElseThrow(() -> new NotFoundException("Concern", concernId));
     }
 
     private void ensureTenantRaisedConcern(UUID tenantUserId, Concern concern) {
@@ -282,7 +285,7 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listAvailableConcerns(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
 
         return toResponses(concernRepository.findOpenByPropertyId(propertyId));
     }
@@ -298,7 +301,7 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public ConcernDashboardSummary getPropertyConcernSummary(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
 
         Instant now = Instant.now();
         Instant todayStart = LocalDate.now(DASHBOARD_ZONE).atStartOfDay(DASHBOARD_ZONE).toInstant();
@@ -344,7 +347,7 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listPropertyConcernHistory(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
 
         return toResponses(concernRepository.findHistoryByPropertyId(propertyId));
     }
@@ -359,14 +362,14 @@ public class ConcernService {
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listEscalatedConcerns(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
 
         return toResponses(concernRepository.findEscalatedByPropertyId(propertyId));
     }
 
     @Transactional(readOnly = true)
     public List<ConcernResponse> listActiveAssignedConcerns(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
 
         return toResponses(concernRepository.findActiveAssignedByPropertyId(propertyId));
     }
@@ -384,8 +387,10 @@ public class ConcernService {
     @Transactional
     public ConcernResponse assignConcern(UUID actorUserId, UUID concernId, AssignConcernRequest request) {
         Concern concern = getConcern(concernId);
-        propertyModule.ensureCanManageProperty(actorUserId, concern.getPropertyId());
-        propertyModule.ensureCanManageProperty(request.assignedToUserId(), concern.getPropertyId());
+        concernAccessPolicy.ensureCanManage(actorUserId, concern.getPropertyId());
+        // The assignee, not the actor: a concern handed to someone who cannot
+        // work concerns is an item nobody can clear.
+        concernAccessPolicy.ensureAssigneeCanWorkConcerns(request.assignedToUserId(), concern.getPropertyId());
 
         try {
             concern.assignTo(request.assignedToUserId(), actorUserId, Instant.now());
@@ -417,7 +422,7 @@ public class ConcernService {
     @Transactional
     public ConcernResponse updateConcernStatus(UUID actorUserId, UUID concernId, UpdateConcernStatusRequest request) {
         Concern concern = getConcern(concernId);
-        propertyModule.ensureCanManageProperty(actorUserId, concern.getPropertyId());
+        concernAccessPolicy.ensureCanManage(actorUserId, concern.getPropertyId());
 
         try {
             switch (request.status()) {
@@ -463,7 +468,7 @@ public class ConcernService {
     @Transactional
     public ConcernResponse resolveConcern(UUID actorUserId, UUID concernId, ResolveConcernRequest request) {
         Concern concern = getConcern(concernId);
-        propertyModule.ensureCanManageProperty(actorUserId, concern.getPropertyId());
+        concernAccessPolicy.ensureCanManage(actorUserId, concern.getPropertyId());
 
         try {
             concern.resolve(actorUserId, request.resolutionNote().trim(), Instant.now());

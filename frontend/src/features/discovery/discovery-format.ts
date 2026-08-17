@@ -26,6 +26,24 @@ export function humanizeToken(value: string) {
   return value
     .toLowerCase()
     .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    // Acronyms would otherwise come back title-cased — "PG" as "Pg", "AC" as
+    // "Ac" — which reads as a typo in the middle of an otherwise tidy label.
+    .map((part) => (ACRONYMS.has(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
     .join(" ");
+}
+
+const ACRONYMS = new Set(["ac", "pg"]);
+
+/**
+ * A deposit amount as a person would say it.
+ *
+ * <p>Zero is a real answer — plenty of PGs take none — but "₹0" reads as a
+ * missing value or a bug. Saying so in words is the difference between "we ask
+ * for nothing" and "we forgot to fill this in".
+ */
+export function formatDepositPaise(paise: number | null | undefined) {
+  if (paise == null || paise <= 0) {
+    return "No deposit";
+  }
+  return formatMoneyPaise(paise);
 }

@@ -78,7 +78,7 @@ function ChartLegend({ color, label, line = false }: { color: string; label: str
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
       <View style={{ backgroundColor: color, borderRadius: line ? 999 : 2, height: line ? 3 : 10, width: line ? 14 : 10 }} />
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
         {label}
       </Text>
     </View>

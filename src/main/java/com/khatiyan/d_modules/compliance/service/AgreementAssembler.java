@@ -28,12 +28,21 @@ import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
  *       {@code EXIT_PREREQUISITES} (the property's exit policies), all owned by
  *       the property module;</li>
  *   <li><b>Compliance settings</b> — the property's default clause set
- *       (lock-in, permitted deductions) plus custom prose clauses.</li>
+ *       (validity, permitted deductions) plus custom prose clauses.</li>
  * </ol>
  *
- * <p>System rules are never editable inside an agreement — uniformity comes
- * from deriving them here at assembly time instead of copying editable values.
- * Only custom prose clauses may vary per tenancy (via {@code customOverrides}).
+ * <p>System rules are not editable inside an agreement — uniformity comes from
+ * deriving them here at assembly time instead of copying editable values.
+ *
+ * <p>Two exceptions, both applied before assembly by
+ * {@code TenancyAgreementService#withTenancyOverrides}: {@code VALIDITY} and
+ * {@code ALLOWED_DEDUCTIONS} may be varied per tenancy at onboarding, because a
+ * term and what a deposit covers are genuinely negotiated per tenant. Those
+ * arrive here already folded into a COPY of the property's defaults, so this
+ * class still sees one clause set and the stored property template is never
+ * touched. Everything else stays uniform across the property.
+ *
+ * <p>Custom prose clauses may also vary per tenancy (via {@code customOverrides}).
  */
 @Component
 public class AgreementAssembler {
@@ -74,12 +83,38 @@ public class AgreementAssembler {
                         : "No security deposit is collected for this tenancy.",
                 Map.of("amountPaise", depositAmountPaise), order++));
 
-        clauses.add(AgreementClause.system(SystemClauseType.NOTICE_PERIOD, "Notice period",
-                "Either party may end this tenancy by giving " + property.noticePeriodDays() + " days' notice.",
-                Map.of("days", property.noticePeriodDays()), order++));
+        // Omitted entirely on a fixed term. Notice exists to warn of a departure
+        // nobody knew about; a fixed term's last day was agreed on day one, so
+        // the system ignores notice for it. Printing the clause anyway would have
+        // the agreement promise something the behaviour contradicts — in the one
+        // document that is meant to record what both sides actually agreed.
+        //
+        // Reads the enum's own label, so it says "one month's notice" rather than
+        // "30 days'" — one month from 15 Jan is 15 Feb, 30 days is 14 Feb, and
+        // the agreement must not promise the wrong one.
+        if (!hasFixedTerm(propertyDefaultClauses)) {
+            clauses.add(AgreementClause.system(SystemClauseType.NOTICE_PERIOD, "Notice period",
+                    "Either party may end this tenancy by giving notice of " + property.noticePeriod().label() + ".",
+                    Map.of("noticePeriod", property.noticePeriod().name()), order++));
+        }
+
+        // The mirror image of the notice clause above: notice and a premature-exit
+        // charge both belong to an open-ended stay, and neither applies to a
+        // fixed term, whose last day was agreed on day one and whose early
+        // departure is priced by the VALIDITY clause instead.
+        if (!hasFixedTerm(propertyDefaultClauses)
+                && property.prematureExitPolicy() != null
+                && !property.prematureExitPolicy().isBlank()) {
+            clauses.add(AgreementClause.system(SystemClauseType.PREMATURE_EXIT, "Leaving without notice",
+                    property.prematureExitPolicy().trim(),
+                    Map.of("policy", property.prematureExitPolicy().trim()), order++));
+        }
 
         clauses.add(AgreementClause.system(SystemClauseType.GRACE_DAYS, "Rent grace period",
-                "Rent carries a grace period of " + billingPolicy.rentGraceDays() + " days after the cycle due date.",
+                billingPolicy.rentGraceDays() > 0
+                        ? "Rent carries a grace period of " + billingPolicy.rentGraceDays()
+                                + " days after the cycle due date."
+                        : "Rent is due on the cycle due date, with no grace period.",
                 Map.of("days", billingPolicy.rentGraceDays()), order++));
 
         long lateFeePerDayPaise = billingPolicy.rentLateFeePerDayPaise() != null
@@ -127,6 +162,30 @@ public class AgreementAssembler {
         }
 
         return clauses;
+    }
+
+    /**
+     * Whether the property's clause set carries a fixed agreement term.
+     *
+     * <p>Read off the VALIDITY clause rather than passed in, so the assembler
+     * stays a pure function of the clause sources it already receives. LOCK_IN is
+     * accepted too — agreements signed before the rename keep the old name.
+     */
+    private static boolean hasFixedTerm(List<AgreementClause> propertyDefaultClauses) {
+        return nonNull(propertyDefaultClauses).stream()
+                .filter(clause -> clause.getKind() == ClauseKind.SYSTEM)
+                .filter(clause -> clause.getSystemType() == SystemClauseType.VALIDITY
+                        || clause.getSystemType() == SystemClauseType.LOCK_IN)
+                .anyMatch(clause -> {
+                    Map<String, Object> value = clause.getValue();
+                    if (value == null) {
+                        return false;
+                    }
+                    Object months = value.containsKey("validityMonths")
+                            ? value.get("validityMonths")
+                            : value.get("months");
+                    return months instanceof Number number && number.intValue() > 0;
+                });
     }
 
     private static List<Map<String, Object>> damageItems(PropertyExitPolicyResponse exitPolicy) {

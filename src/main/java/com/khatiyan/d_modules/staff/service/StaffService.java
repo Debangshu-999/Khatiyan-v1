@@ -283,6 +283,17 @@ public class StaffService {
         ensureOwner(actorUserId, propertyId);
         StaffMember member = member(staffReferenceCode, propertyId);
         String reason = requiredText(request.reason(), "Exit reason");
+
+        // Scheduling only writes the date down. Settling now would close a
+        // salary account for months the worker has not finished working, and
+        // they are still owed pay until the day arrives.
+        if (request.isScheduled()) {
+            member.scheduleEnd(request.endDate(), reason, optionalText(request.review()));
+            log.info("Staff member end scheduled propertyId={} staffReferenceCode={} endDate={} actorUserId={}",
+                    propertyId, staffReferenceCode, request.endDate(), actorUserId);
+            return;
+        }
+
         salaryAccountService.settleStaffAccount(
                 member.getId(),
                 request.additionalAmountPaise(),
@@ -375,6 +386,18 @@ public class StaffService {
         ensureOwner(actorUserId, propertyId);
         ManagerEmploymentResponse manager = propertyModule.getManagerEmploymentByReference(propertyId, managerReferenceCode);
         String reason = requiredText(request.reason(), "Exit reason");
+
+        // As with staff: a scheduled end records the date and nothing else. The
+        // manager keeps their access and their pay until the day comes.
+        if (request.isScheduled()) {
+            propertyModule.scheduleManagerEnd(
+                    actorUserId, propertyId, manager.managerUserId(), request.endDate(), reason,
+                    optionalText(request.review()));
+            log.info("Manager end scheduled propertyId={} managerReferenceCode={} endDate={} actorUserId={}",
+                    propertyId, managerReferenceCode, request.endDate(), actorUserId);
+            return;
+        }
+
         salaryAccountService.settleManagerAccount(
                 manager.id(),
                 request.additionalAmountPaise(),
@@ -385,6 +408,35 @@ public class StaffService {
         propertyModule.endManagerEmployment(actorUserId, propertyId, manager.managerUserId(), reason, optionalText(request.review()));
         log.info("Manager employment ended propertyId={} managerReferenceCode={} actorUserId={}",
                 propertyId, managerReferenceCode, actorUserId);
+    }
+
+    /**
+     * Closes every scheduled end that has come due, staff and managers alike.
+     *
+     * <p>Deliberately does not settle. Settling records a salary payment and
+     * demands a payment method — this app never moves money without the owner
+     * saying so, and nobody is present at 00:45 to say it. The account stays
+     * open for them to settle from payroll, which is also what happens when an
+     * immediate end is taken with nothing extra to pay.
+     *
+     * @return how many employments were ended
+     */
+    @Transactional
+    public int endDueScheduledEmployments(LocalDate today) {
+        List<StaffMember> due = staffMemberRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today);
+        for (StaffMember member : due) {
+            member.endScheduled();
+            log.info("Scheduled staff end actioned propertyId={} staffMemberId={} endDate={}",
+                    member.getPropertyId(), member.getId(), member.getEmploymentEndDate());
+            // No actor: the sweep is acting on a decision the owner already made
+            // when they scheduled it, and there is no user in the request.
+            eventPublisher.publishEvent(new StaffMemberEndedEvent(
+                    member.getPropertyId(),
+                    member.getFullName(),
+                    categoryName(member.getCategoryId()),
+                    null));
+        }
+        return due.size() + propertyModule.endDueScheduledManagerAssignments(today);
     }
 
     @Transactional(readOnly = true)
@@ -414,7 +466,8 @@ public class StaffService {
                     member.getEmploymentReview(),
                     summary == null ? null : summary.settledOn(),
                     summary == null ? 0 : summary.settlementAmountPaise(),
-                    summary == null ? 0 : summary.totalPaidPaise()));
+                    summary == null ? 0 : summary.totalPaidPaise(),
+                    summary == null ? null : summary.salaryAccountReferenceCode()));
         }
         for (ManagerEmploymentResponse manager : propertyModule.listEndedManagerEmployment(propertyId)) {
             SalaryAccountService.SettledAccountSummary summary = salaryAccountService.managerAccountSummary(manager.id()).orElse(null);
@@ -432,7 +485,8 @@ public class StaffService {
                     manager.employmentReview(),
                     summary == null ? null : summary.settledOn(),
                     summary == null ? 0 : summary.settlementAmountPaise(),
-                    summary == null ? 0 : summary.totalPaidPaise()));
+                    summary == null ? 0 : summary.totalPaidPaise(),
+                    summary == null ? null : summary.salaryAccountReferenceCode()));
         }
         history.sort(Comparator.comparing(
                 EmployeeHistoryResponse::employmentEndDate,

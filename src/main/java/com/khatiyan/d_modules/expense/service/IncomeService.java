@@ -40,7 +40,7 @@ public class IncomeService {
 
     @Transactional
     public IncomeResponse createManual(UUID actorUserId, UUID propertyId, CreateIncomeRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         IncomeEntry income = incomeRepository.save(IncomeEntry.manual(
                 propertyId, request.source(), request.receivedFrom(), request.amountPaise(),
                 request.receivedDate(), request.description(), actorUserId));
@@ -49,7 +49,7 @@ public class IncomeService {
 
     @Transactional
     public IncomeResponse reverse(UUID actorUserId, UUID propertyId, UUID incomeId, ReverseIncomeRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         IncomeEntry original = incomeRepository.findByIdAndPropertyId(incomeId, propertyId)
                 .orElseThrow(() -> new NotFoundException("IncomeEntry", incomeId));
         if (original.getEntryType() == IncomeEntryType.REVERSAL) {
@@ -66,7 +66,7 @@ public class IncomeService {
     @Transactional(readOnly = true)
     public PageResponse<IncomeResponse> listIncome(
             UUID actorUserId, UUID propertyId, LocalDate month, int page, int size) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         YearMonth yearMonth = YearMonth.from(month);
         List<IncomeEntry> entries = incomeRepository.findForPeriod(
                 propertyId, yearMonth.atDay(1), yearMonth.plusMonths(1).atDay(1));

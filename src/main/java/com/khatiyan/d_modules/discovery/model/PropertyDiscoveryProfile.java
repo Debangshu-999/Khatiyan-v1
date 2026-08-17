@@ -74,6 +74,18 @@ public class PropertyDiscoveryProfile extends BaseEntity {
         return new PropertyDiscoveryProfile(propertyId, headline, description, profileImageUrl);
     }
 
+    /**
+     * Mirrors the gallery's cover onto the profile.
+     *
+     * <p>The gallery in {@code discovery.property_images} is the source of truth
+     * for a property's pictures, but every existing read path — cards, detail,
+     * the management profile — still reads this single column. Keeping it in
+     * step with the cover means adding a gallery changed no reader.
+     */
+    public void syncCoverImage(String coverImageUrl) {
+        this.profileImageUrl = normalizeNullable(coverImageUrl, MAX_URL_LENGTH, "Profile image URL");
+    }
+
     public void update(String headline, String description, String profileImageUrl,
                        Boolean showOwnerContact, Boolean showManagerContact) {
         this.headline = normalizeRequired(headline, MAX_HEADLINE_LENGTH, "Headline");

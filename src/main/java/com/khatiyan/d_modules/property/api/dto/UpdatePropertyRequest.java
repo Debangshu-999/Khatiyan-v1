@@ -5,6 +5,7 @@ import java.util.Set;
 
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyFacility;
@@ -15,6 +16,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -92,14 +94,13 @@ public record UpdatePropertyRequest(
     Long rentLateFeePerDayPaise,
 
     @PositiveOrZero
-    @Max(30)
+    @Max(10)
     Integer rentGraceDays,
 
     @PositiveOrZero
     Long standardDepositPaise,
 
-    @PositiveOrZero
-    @Max(365)
-    Integer noticePeriodDays
+    // Null takes the server default of one month; the enum admits no bad values.
+    NoticePeriod noticePeriod
 ) {
 }

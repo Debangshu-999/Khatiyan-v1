@@ -9,7 +9,6 @@ import { authReducer } from "@/store/slices/auth-slice";
 import { locationReducer } from "@/store/slices/location-slice";
 import { ownerPinsReducer } from "@/store/slices/owner-pins-slice";
 import { ownerWorkspaceReducer } from "@/store/slices/owner-workspace-slice";
-import { paymentCheckoutReducer } from "@/store/slices/payment-checkout-slice";
 
 export const store = configureStore({
   reducer: {
@@ -19,7 +18,6 @@ export const store = configureStore({
     location: locationReducer,
     ownerPins: ownerPinsReducer,
     ownerWorkspace: ownerWorkspaceReducer,
-    paymentCheckout: paymentCheckoutReducer,
     [api.reducerPath]: api.reducer,
   },
   // The dev-only immutable/serializable checks deep-scan store state on every

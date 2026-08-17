@@ -11,6 +11,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
 import type { ConcernCategory } from "@/store/services/concern-api";
+import { uploadAssets } from "@/features/uploads/upload-asset";
 import { useCreateConcernMutation } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -31,10 +32,21 @@ const CONCERN_CATEGORIES = [
 
 const MAX_LOCAL_PHOTOS = 4;
 
+/**
+ * A photo already in storage.
+ *
+ * <p>Uploaded as it is picked rather than at submit. Batching the uploads into
+ * the create call put the bytes inside the request, which on a slow connection
+ * times the whole thing out — and the person loses the concern, not just the
+ * photos. Abandoning the form now leaks the assets; the orphan sweep reclaims
+ * them, which is the cheaper failure.
+ */
 type LocalConcernPhoto = {
   id: string;
   name: string;
+  /** Remote URL, used for the thumbnail too. */
   uri: string;
+  publicId: string;
 };
 
 export default function CreateConcernScreen() {
@@ -46,6 +58,11 @@ export default function CreateConcernScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalConcernPhoto[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
+  // Uploads run before the mutation, and are the slow half — the button has to
+  // cover both or it sits idle while photos are in flight.
+  const busy = uploading || createState.isLoading;
   // This screen only surfaces error feedback; success navigates to /concerns.
   const setError = (value: string | null) => {
     if (value) {
@@ -53,17 +70,44 @@ export default function CreateConcernScreen() {
     }
   };
 
-  const addPhotoAssets = (assets: ImagePicker.ImagePickerAsset[]) => {
-    setPhotos((current) => {
-      const remaining = MAX_LOCAL_PHOTOS - current.length;
-      const nextPhotos = assets.slice(0, remaining).map((asset, index) => ({
-        id: `${Date.now()}-${index}-${asset.assetId ?? asset.uri}`,
-        name: asset.fileName ?? `Photo ${current.length + index + 1}`,
-        uri: asset.uri,
-      }));
+  const addPhotoAssets = async (assets: ImagePicker.ImagePickerAsset[]) => {
+    const remaining = MAX_LOCAL_PHOTOS - photos.length;
+    const accepted = assets.slice(0, remaining);
+    if (accepted.length === 0) {
+      return;
+    }
 
-      return [...current, ...nextPhotos];
-    });
+    try {
+      setUploading(true);
+      const uploaded = await uploadAssets(
+        accepted.map((asset, index) => ({
+          mimeType: asset.mimeType,
+          name: asset.fileName ?? `Photo ${photos.length + index + 1}`,
+          size: asset.fileSize,
+          uri: asset.uri,
+        })),
+        "CONCERN_PHOTO",
+        (completed, total) => setUploadProgress({ completed, total }),
+      );
+      setPhotos((current) => [
+        ...current,
+        ...uploaded.map((asset, index) => ({
+          id: asset.publicId,
+          name: accepted[index]?.fileName ?? `Photo ${current.length + index + 1}`,
+          publicId: asset.publicId,
+          uri: asset.url,
+        })),
+      ].slice(0, MAX_LOCAL_PHOTOS));
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error && uploadError.message
+          ? uploadError.message
+          : "Could not upload the photo. Try again.",
+      );
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
   };
 
   const pickFromDevice = async () => {
@@ -87,7 +131,7 @@ export default function CreateConcernScreen() {
     });
 
     if (!result.canceled) {
-      addPhotoAssets(result.assets);
+      await addPhotoAssets(result.assets);
       setError(null);
     }
   };
@@ -112,7 +156,7 @@ export default function CreateConcernScreen() {
     });
 
     if (!result.canceled) {
-      addPhotoAssets(result.assets);
+      await addPhotoAssets(result.assets);
       setError(null);
     }
   };
@@ -132,14 +176,25 @@ export default function CreateConcernScreen() {
     }
 
     try {
+      // The photos are already in storage; only their handles travel with the
+      // concern, so this request stays small however many were attached.
       await createConcern({
         category,
         description: trimmedDescription,
+        photos: photos.map((photo, index) => ({
+          displayOrder: index,
+          photoPublicId: photo.publicId,
+          photoUrl: photo.uri,
+        })),
         title: trimmedTitle,
       }).unwrap();
       router.replace({ pathname: "/concerns", params: { createdConcern: "1" } });
-    } catch {
-      setError("Could not raise this concern. Please try again.");
+    } catch (createError) {
+      setError(
+        createError instanceof Error && createError.message
+          ? createError.message
+          : "Could not raise this concern. Please try again.",
+      );
     }
   };
 
@@ -197,6 +252,7 @@ export default function CreateConcernScreen() {
             onPickFromDevice={pickFromDevice}
             onRemovePhoto={(photoId) => setPhotos((current) => current.filter((photo) => photo.id !== photoId))}
             photos={photos}
+            uploadProgress={uploadProgress}
           />
 
           <FormField
@@ -214,6 +270,7 @@ export default function CreateConcernScreen() {
 
           <AnimatedPressable
             accessibilityRole="button"
+            disabled={busy}
             onPress={submitConcern}
             style={{
               alignItems: "center",
@@ -221,14 +278,14 @@ export default function CreateConcernScreen() {
               borderRadius: 14,
               justifyContent: "center",
               minHeight: 52,
-              opacity: createState.isLoading ? 0.75 : 1,
+              opacity: busy ? 0.75 : 1,
               padding: spacing.md,
             }}
           >
-            {createState.isLoading ? (
+            {busy ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
                 Create concern
               </Text>
             )}
@@ -244,13 +301,15 @@ function PhotoAttachmentSection({
   onPickFromDevice,
   onRemovePhoto,
   photos,
+  uploadProgress,
 }: {
   onOpenCamera: () => void;
   onPickFromDevice: () => void;
   onRemovePhoto: (photoId: string) => void;
   photos: LocalConcernPhoto[];
+  uploadProgress: { completed: number; total: number } | null;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
 
   return (
     <View
@@ -269,20 +328,21 @@ function PhotoAttachmentSection({
             <View
               style={{
                 alignItems: "center",
-                backgroundColor: colors.primarySoft,
+                borderColor: colors.ink,
+                borderWidth: 1,
                 borderRadius: 10,
                 height: 34,
                 justifyContent: "center",
                 width: 34,
               }}
             >
-              <ImagePlus color={colors.primary} size={17} strokeWidth={2.3} />
+              <ImagePlus color={colors.ink} size={17} strokeWidth={2.3} />
             </View>
-            <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.primary }]}>
               Photos
             </Text>
           </View>
-          <Text style={[type.body, { color: colors.kicker, fontSize: 12 }]} selectable>
+          <Text style={[type.body, { color: colors.kicker, fontSize: 12 }]}>
             {photos.length}/{MAX_LOCAL_PHOTOS}
           </Text>
         </View>
@@ -298,6 +358,23 @@ function PhotoAttachmentSection({
         <PhotoActionButton icon={ImagePlus} label="Device" onPress={onPickFromDevice} />
         <PhotoActionButton icon={Camera} label="Camera" onPress={onOpenCamera} />
       </View>
+
+      {uploadProgress ? (
+        <View style={{ gap: 6, paddingTop: spacing.xs }}>
+          <Text style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
+            Uploading {Math.min(uploadProgress.completed + 1, uploadProgress.total)} of {uploadProgress.total}…
+          </Text>
+          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 4, overflow: "hidden" }}>
+            <View
+              style={{
+                backgroundColor: colors.ink,
+                height: 4,
+                width: `${Math.round((uploadProgress.completed / Math.max(uploadProgress.total, 1)) * 100)}%`,
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
 
       {photos.length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -317,7 +394,7 @@ function PhotoAttachmentSection({
                 style={{ backgroundColor: colors.neutralSoft, height: 72, width: "100%" }}
               />
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", padding: 6 }}>
-                <Text numberOfLines={1} style={[type.body, { color: colors.muted, flex: 1, fontSize: 10 }]} selectable>
+                <Text numberOfLines={1} style={[type.body, { color: colors.muted, flex: 1, fontSize: 10 }]}>
                   {photo.name}
                 </Text>
                 <AnimatedPressable
@@ -369,16 +446,17 @@ function PhotoActionButton({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          borderColor: colors.ink,
+          borderWidth: 1,
           borderRadius: 9,
           height: 30,
           justifyContent: "center",
           width: 30,
         }}
       >
-        <Icon color={colors.primary} size={15} strokeWidth={2.3} />
+        <Icon color={colors.ink} size={15} strokeWidth={2.3} />
       </View>
-      <Text style={[type.eyebrow, { color: colors.inkSoft, flex: 1, fontSize: 10.5 }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.inkSoft, flex: 1, fontSize: 10.5 }]}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -400,7 +478,7 @@ function OptionGroup<T extends string>({
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -421,7 +499,7 @@ function OptionGroup<T extends string>({
                 paddingVertical: spacing.sm,
               }}
             >
-              <Text style={[type.eyebrow, { color: active ? colors.primary : colors.inkSoft, fontSize: 10 }]} selectable>
+              <Text style={[type.eyebrow, { color: active ? colors.primary : colors.inkSoft, fontSize: 10 }]}>
                 {humanizeToken(option)}
               </Text>
             </AnimatedPressable>
@@ -452,10 +530,10 @@ function FormField({
   return (
     <View style={{ gap: spacing.xs }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {label}
         </Text>
-        <Text style={[type.body, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]} selectable>
+        <Text style={[type.body, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]}>
           {value.length}/{maxLength}
         </Text>
       </View>

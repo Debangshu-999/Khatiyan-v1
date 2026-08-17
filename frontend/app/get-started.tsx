@@ -53,28 +53,25 @@ export default function GetStartedScreen() {
                 <Text
                   style={{
                     color: colors.ink,
-                    fontFamily: fonts.display,
+                    fontFamily: fonts.brand,
                     fontSize: 32,
                     fontWeight: "800",
                     letterSpacing: -0.8,
                     lineHeight: 38,
                     textAlign: "center",
                   }}
-                  selectable
                 >
                   Welcome to Khatiyan
                 </Text>
                 <Text
                   style={{
                     color: colors.muted,
-                    fontFamily: fonts.sans,
+                    fontFamily: fonts.sansMedium,
                     fontSize: 14.5,
-                    fontWeight: "500",
                     lineHeight: 22,
                     maxWidth: 300,
                     textAlign: "center",
                   }}
-                  selectable
                 >
                   Manage your stay, property, payments, notices and support from one calm workspace.
                 </Text>
@@ -99,13 +96,13 @@ export default function GetStartedScreen() {
                   start={{ x: 0, y: 0 }}
                   style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "center", minHeight: 58 }}
                 >
-                  <Text style={{ color: "#FFFFFF", fontFamily: fonts.sans, fontSize: 16, fontWeight: "900" }}>Get Started</Text>
+                  <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 16, }}>Get Started</Text>
                   <ArrowRight color="#FFFFFF" size={18} strokeWidth={2.5} />
                 </LinearGradient>
               </AnimatedPressable>
 
               <AnimatedPressable accessibilityRole="button" onPress={continueToAuth} style={{ alignItems: "center", paddingVertical: spacing.sm }}>
-                <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 13.5, fontWeight: "600" }} selectable>
+                <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13.5, }}>
                   Already have an account? <Text style={{ color: colors.primary, fontWeight: "900" }}>Sign in</Text>
                 </Text>
               </AnimatedPressable>

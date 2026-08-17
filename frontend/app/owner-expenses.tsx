@@ -4,11 +4,12 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, T
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
-import { CalendarClock, ChevronLeft, ChevronRight, Plus, Repeat2, Undo2, Wallet, X } from "lucide-react-native";
+import { CalendarClock, Plus, Repeat2, Undo2, Wallet, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
 import { MoneyText } from "@/components/money-text";
 import { ProgressBar } from "@/components/progress-bar";
@@ -22,6 +23,7 @@ import { useToast } from "@/components/toast";
 import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
+import { MonthSelector } from "@/components/month-selector";
 import { useAppSelector } from "@/store/hooks";
 import {
   useCreateExpenseCategoryMutation,
@@ -74,13 +76,6 @@ export default function OwnerExpensesScreen() {
   const expensesPage = expensesQuery.data;
   const categories = useMemo(() => (categoriesQuery.data ?? []).filter((category) => category.active), [categoriesQuery.data]);
 
-  function changeMonth(delta: number) {
-    setMonth((current) => shiftMonth(current, delta));
-    setPage(0);
-  }
-
-  const atCurrentMonth = month >= firstOfMonth();
-
   return (
     <>
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
@@ -100,7 +95,7 @@ export default function OwnerExpensesScreen() {
           />
         ) : (
           <>
-            <MonthSelector atCurrentMonth={atCurrentMonth} label={monthLabel(month)} onNext={() => changeMonth(1)} onPrevious={() => changeMonth(-1)} />
+            <MonthSelector onChange={(picked) => setMonth(`${picked}-01`)} value={month.slice(0, 7)} />
 
             {budgetQuery.isLoading && !budget ? (
               <SkeletonScreen tiles={3} rows={0} />
@@ -183,33 +178,7 @@ export default function OwnerExpensesScreen() {
   );
 }
 
-function MonthSelector({ atCurrentMonth, label, onNext, onPrevious }: { atCurrentMonth: boolean; label: string; onNext: () => void; onPrevious: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
-      <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={onPrevious} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
-        {label}
-      </Text>
-      <RoundIconButton disabled={atCurrentMonth} icon={ChevronRight} label="Next month" onPress={onNext} />
-    </View>
-  );
-}
 
-function RoundIconButton({ disabled = false, icon: Icon, label, onPress }: { disabled?: boolean; icon: typeof ChevronLeft; label: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, height: 40, justifyContent: "center", opacity: disabled ? 0.4 : 1, width: 40 }}
-    >
-      <Icon color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<ReturnType<typeof useGetBudgetOverviewQuery>["data"]>; onRaise: () => void; onSetBudget: () => void }) {
   const { colors, fonts, type } = useTheme();
@@ -224,31 +193,31 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
           <View style={{ gap: 2 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               {hasBudget ? "Monthly budget" : "No budget set"}
             </Text>
             {hasBudget && effective != null ? (
               <MoneyText animate paise={effective} size={30} />
             ) : (
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, fontWeight: "500", letterSpacing: -0.5 }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -0.5 }}>
                 —
               </Text>
             )}
             {budget.raisedThisMonthPaise > 0 ? (
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
+              <Text style={[type.caption, { color: colors.muted }]}>
                 Incl. {formatMoneyPaise(budget.raisedThisMonthPaise)} raised this month
               </Text>
             ) : null}
           </View>
           <View style={{ alignItems: "flex-end", gap: 4 }}>
             <StatusPill label={statusLabel(statusKey)} tone={budgetStatusTone(statusKey)} />
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               {over ? "Over by" : "Remaining"}
             </Text>
             {hasBudget ? (
               <MoneyText color={over ? colors.danger : colors.jade} paise={Math.abs(budget.remainingPaise ?? 0)} size={20} weight="700" />
             ) : (
-              <Text style={{ color: colors.muted, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
+              <Text style={{ color: colors.muted, fontFamily: fonts.display, fontSize: 20, }}>
                 —
               </Text>
             )}
@@ -257,7 +226,7 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
 
         {hasBudget ? <ProgressBar color={over ? colors.danger : colors.jade} ratio={ratio} /> : null}
 
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {hasBudget ? `${formatMoneyPaise(budget.spentPaise)} spent of ${formatMoneyPaise(effective)}` : "Set a monthly budget to track spending and savings."}
         </Text>
 
@@ -280,26 +249,26 @@ function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: bool
         {loading ? (
           <ActivityIndicator color={colors.primary} />
         ) : totals.length === 0 ? (
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             No spending recorded for this month yet.
           </Text>
         ) : (
           <View style={{ gap: spacing.md }}>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Total spend
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
                 {formatMoneyPaise(totalSpentPaise)}
               </Text>
             </View>
             {totals.map((item) => (
               <View key={item.categoryId ?? item.categoryName} style={{ gap: spacing.xs }}>
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1} selectable>
+                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
                     {item.categoryName}
                   </Text>
-                  <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: "800" }} selectable>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"], }}>
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
                 </View>
@@ -343,19 +312,19 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "flex-start", columnGap: spacing.sm, flexDirection: "row", justifyContent: "space-between" }}>
           <View style={{ flexShrink: 1, gap: 2 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
               Savings by month
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
               {monthShort(points[0]?.month)} – {monthShort(latest?.month)}
             </Text>
           </View>
           {hasBudget && latest ? (
             <View style={{ alignItems: "flex-end", gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Latest
               </Text>
-              <Text numberOfLines={1} style={{ color: latest.savingsPaise >= 0 ? colors.jade : colors.danger, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+              <Text numberOfLines={1} style={{ color: latest.savingsPaise >= 0 ? colors.jade : colors.danger, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
                 {formatMoneyPaise(latest.savingsPaise)}
               </Text>
             </View>
@@ -363,7 +332,7 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
         </View>
 
         {!hasBudget ? (
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             Set a monthly budget to chart savings across months.
           </Text>
         ) : (
@@ -385,7 +354,7 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
           </View>
         )}
 
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Savings = budget − spend (incl. projected salary). A point below the line means that month went over budget.
         </Text>
       </View>
@@ -414,14 +383,14 @@ function StatusValueTile({ color, hint, label, value }: { color: string; hint?: 
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 12, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
         {label}
       </Text>
-      <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} style={{ color, fontFamily: fonts.display, fontSize: 19, fontVariant: ["tabular-nums"], fontWeight: "500", letterSpacing: -0.5, lineHeight: 23 }} selectable>
+      <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} style={{ color, fontFamily: fonts.display, fontSize: 19, fontVariant: ["tabular-nums"], letterSpacing: -0.5, lineHeight: 23 }}>
         {value}
       </Text>
       {hint ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {hint}
         </Text>
       ) : null}
@@ -457,7 +426,7 @@ function ChartLegend({ color, label, line = false }: { color: string; label: str
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
       <View style={line ? { backgroundColor: color, height: 2, width: 14 } : { backgroundColor: color, borderRadius: 3, height: 10, width: 10 }} />
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]} selectable>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
     </View>
@@ -497,7 +466,7 @@ function BudgetSpendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ gap: spacing.sm }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Budget vs spent
           </Text>
           <View style={{ alignItems: "center", columnGap: spacing.md, flexDirection: "row", flexWrap: "wrap", rowGap: spacing.xs }}>
@@ -507,7 +476,7 @@ function BudgetSpendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
           </View>
         </View>
         {!hasBudget ? (
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             Set a monthly budget to compare spend against it.
           </Text>
         ) : (
@@ -555,10 +524,10 @@ function RaisedTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "center", columnGap: spacing.sm, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]} numberOfLines={1} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]} numberOfLines={1}>
             Raised per month
           </Text>
-          <Text numberOfLines={1} style={{ color: colors.warningText, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+          <Text numberOfLines={1} style={{ color: colors.warningText, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
             {formatMoneyPaise(totalRaised)}
           </Text>
         </View>
@@ -592,10 +561,10 @@ function ExpenseRow({ expense, onReverse }: { expense: Expense; onReverse: () =>
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: spacing.sm, opacity: expense.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {expense.paidTo}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {expense.categoryName} · {formatDate(expense.incurredDate)}
           </Text>
         </View>
@@ -606,7 +575,7 @@ function ExpenseRow({ expense, onReverse }: { expense: Expense; onReverse: () =>
           <EntryBadge entryType={expense.entryType} />
           {expense.reversed ? (
             <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-              <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+              <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, }}>
                 Reversed
               </Text>
             </View>
@@ -619,14 +588,14 @@ function ExpenseRow({ expense, onReverse }: { expense: Expense; onReverse: () =>
             style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, paddingHorizontal: spacing.sm, paddingVertical: 6 }}
           >
             <Undo2 color={colors.danger} size={14} strokeWidth={2.4} />
-            <Text style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12, fontWeight: "800" }} selectable>
+            <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 12, }}>
               Reverse
             </Text>
           </AnimatedPressable>
         ) : null}
       </View>
       {expense.description ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {expense.description}
         </Text>
       ) : null}
@@ -645,7 +614,7 @@ function EntryBadge({ entryType }: { entryType: ExpenseEntryType }) {
   const tone = map[entryType];
   return (
     <View style={{ backgroundColor: tone.bg, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-      <Text style={{ color: tone.fg, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+      <Text style={{ color: tone.fg, fontFamily: fonts.sansBold, fontSize: 11, }}>
         {tone.label}
       </Text>
     </View>
@@ -661,7 +630,7 @@ function ToolBox({ icon: Icon, label, onPress }: { icon: typeof Plus; label: str
       style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 96, paddingHorizontal: spacing.xs, paddingVertical: spacing.md }}
     >
       <Icon color={colors.primary} size={30} strokeWidth={2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", textAlign: "center" }} numberOfLines={2} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, textAlign: "center" }} numberOfLines={2}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -682,7 +651,7 @@ function InlineError({ message }: { message: string | null }) {
   const { colors, type } = useTheme();
   if (!message) return null;
   return (
-    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]} selectable>
+    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
       {message}
     </Text>
   );
@@ -876,7 +845,7 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: { id:
         <BodyNote>Templates are posted automatically each month on their day. Salary is projected from current staff and managed by the system.</BodyNote>
         {recurringQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
         {items.length === 0 && !recurringQuery.isLoading ? (
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             No recurring expenses yet.
           </Text>
         ) : null}
@@ -884,19 +853,22 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: { id:
           {items.map((item) => (
             <View key={item.id} style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
                   {item.paidTo}
                 </Text>
-                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
-                  {item.categoryName} · {formatMoneyPaise(item.amountPaise)} · {item.system ? "projected monthly" : `day ${item.dayOfMonth}`}
-                </Text>
+                {/* Three segments and a status pill competing for one row: the
+                    last one ("projected monthly") was the one that got clipped.
+                    Scrolls rather than ellipsises, per the app's overflow rule. */}
+                <MarqueeText style={[type.caption, { color: colors.muted }]}>
+                  {`${item.categoryName} · ${formatMoneyPaise(item.amountPaise)} · ${item.system ? "projected monthly" : `day ${item.dayOfMonth}`}`}
+                </MarqueeText>
               </View>
               {item.system ? (
                 <StatusPill label="System recurring" tone="accent" />
               ) : (
                 <>
                   <AnimatedPressable accessibilityLabel="Edit" onPress={() => setEditing(item)} style={{ paddingHorizontal: spacing.xs, paddingVertical: 4 }}>
-                    <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]} selectable>
+                    <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
                       Edit
                     </Text>
                   </AnimatedPressable>
@@ -991,7 +963,7 @@ function ExpenseDateField({ label, onChange, value }: { label: string; onChange:
         onPress={() => setOpen(true)}
         style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: spacing.md }}
       >
-        <Text style={[type.body, { color: value ? colors.ink : colors.muted }]} selectable>
+        <Text style={[type.body, { color: value ? colors.ink : colors.muted }]}>
           {value ? formatDate(value) : "Select date"}
         </Text>
       </AnimatedPressable>
@@ -1003,7 +975,7 @@ function ExpenseDateField({ label, onChange, value }: { label: string; onChange:
 function FieldLabel({ children }: { children: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} selectable>
+    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
       {children}
     </Text>
   );
@@ -1012,7 +984,7 @@ function FieldLabel({ children }: { children: string }) {
 function BodyNote({ children }: { children: ReactNode }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted }]} selectable>
+    <Text style={[type.caption, { color: colors.muted }]}>
       {children}
     </Text>
   );
@@ -1058,11 +1030,6 @@ function firstOfMonth() {
   return `${istIsoToday().slice(0, 7)}-01`;
 }
 
-function shiftMonth(iso: string, delta: number) {
-  const [year, month] = iso.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-  return `${toLocalIso(date).slice(0, 7)}-01`;
-}
 
 function defaultIncurredDate(month: string) {
   // If viewing the current month, default to today (in IST, matching the server);

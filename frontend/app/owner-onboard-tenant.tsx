@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, Platform, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, BackHandler, Platform, Text, TextInput, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ArrowLeft, CalendarDays, Check, ChevronRight, KeyRound, Trash2, X } from "lucide-react-native";
@@ -11,7 +11,9 @@ import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { deductionCategories, validityMonths } from "@/features/compliance/clause-values";
 import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
   useGetPropertyAgreementSettingsQuery,
@@ -31,10 +33,25 @@ import {
   type OwnerProperty,
   type OwnerRoom,
 } from "@/store/services/property-api";
+import { ChoiceButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type Step = "phone" | "type" | "details" | "review" | "agreement" | "done";
+
+/**
+ * Where Back goes from each step.
+ *
+ * <p>"phone" has no previous step, so Back leaves the flow; "done" has nothing
+ * to go back to — the tenancy already exists and stepping back into the form
+ * would invite a second submission.
+ */
+const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
+  agreement: "review",
+  details: "type",
+  review: "details",
+  type: "phone",
+};
 type BillingKind = "MONTHLY" | "DAILY";
 
 function dateToStr(d: Date) {
@@ -97,6 +114,21 @@ export default function OwnerOnboardTenantScreen() {
   };
 
   const [step, setStep] = useState<Step>("phone");
+  const previousStep = PREVIOUS_STEP[step] ?? null;
+
+  // The device back button walks the wizard too. Without this it unmounted the
+  // whole screen from step 4, losing everything typed — the hardware button
+  // knows nothing about steps unless told.
+  useEffect(() => {
+    if (!previousStep) {
+      return;
+    }
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setStep(previousStep);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [previousStep]);
   const [billingType, setBillingType] = useState<BillingKind | null>(null);
   const [phone, setPhone] = useState("");
   const [lookup, setLookup] = useState<TenantLookup | null>(null);
@@ -111,7 +143,6 @@ export default function OwnerOnboardTenantScreen() {
   const [result, setResult] = useState<TenancyOnboardingResult | null>(null);
   // Agreement path: SELECTIVE properties opt in per tenancy; ALL_MONTHLY always
   // goes through the agreement step. Custom clauses are editable on that step.
-  const [withAgreementChoice, setWithAgreementChoice] = useState(false);
   // The owner's declaration. Khatiyan verifies nothing — this records that they
   // did, which is where the legal duty actually sits.
   const [idCheckConfirmed, setIdCheckConfirmed] = useState(false);
@@ -142,9 +173,17 @@ export default function OwnerOnboardTenantScreen() {
   const agreementSettingsQuery = useGetPropertyAgreementSettingsQuery(selectedProperty?.id ?? "", {
     skip: !selectedProperty || step === "phone",
   });
-  const agreementMode = agreementSettingsQuery.data?.mode ?? "OFF";
-  const withAgreement =
-    billingType === "MONTHLY" && (agreementMode === "ALL_MONTHLY" || (agreementMode === "SELECTIVE" && withAgreementChoice));
+
+  // Writing clause prose is a TENANCY_RULES power. A manager may well hold
+  // TENANCY_CREATE without it, so they onboard on the property's stored terms
+  // and cannot alter them here. The server drops submitted prose regardless.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const clausesReadOnly = !canManageResource("TENANCY_RULES");
+
+  // Every monthly tenancy is agreement-backed. There is no opt-out any more:
+  // the agreement is the two-way handshake that makes a tenancy record mean
+  // anything, and without it an owner can fabricate a stay end to end.
+  const withAgreement = billingType === "MONTHLY";
 
   const previewQuery = usePreviewTenancyAgreementQuery(
     {
@@ -166,6 +205,40 @@ export default function OwnerOnboardTenantScreen() {
       );
     }
   }, [customDrafts, previewQuery.data, step]);
+
+  // The property's own clauses supply both the starting term and the ceiling on
+  // permitted deductions: onboarding may narrow what the deposit covers, never
+  // widen it past what the property's agreement already claims.
+  const previewValidityClause = useMemo(
+    () =>
+      (previewQuery.data ?? []).find(
+        (clause) => clause.systemType === "VALIDITY" || clause.systemType === "LOCK_IN",
+      ) ?? null,
+    [previewQuery.data],
+  );
+  const previewDeductionClause = useMemo(
+    () => (previewQuery.data ?? []).find((clause) => clause.systemType === "ALLOWED_DEDUCTIONS") ?? null,
+    [previewQuery.data],
+  );
+  const allowedDeductions = useMemo(
+    () => (previewDeductionClause ? deductionCategories(previewDeductionClause) : []),
+    [previewDeductionClause],
+  );
+
+  // Null until the preview lands, then seeded from it. Kept separate from the
+  // property's stored clauses so editing here never writes back to the template.
+  const [termMonths, setTermMonths] = useState<number | null>(null);
+  const [fixedTerm, setFixedTerm] = useState(false);
+  const [chosenDeductions, setChosenDeductions] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (step === "agreement" && previewQuery.data && chosenDeductions === null) {
+      const months = previewValidityClause ? validityMonths(previewValidityClause) : null;
+      setFixedTerm(months != null);
+      setTermMonths(months);
+      setChosenDeductions(allowedDeductions);
+    }
+  }, [allowedDeductions, chosenDeductions, previewQuery.data, previewValidityClause, step]);
 
   // Daily renting is available when the property has at least one nightly rate
   // configured; the rate that applies depends on the chosen room's AC type.
@@ -199,7 +272,7 @@ export default function OwnerOnboardTenantScreen() {
     }
 
     try {
-      const res = await triggerLookup(phone.trim()).unwrap();
+      const res = await triggerLookup({ phone: phone.trim(), propertyId: selectedPropertyId ?? undefined }).unwrap();
       setLookup(res);
       if (res.canOnboard && res.exists && res.fullName) {
         setTenantName(res.fullName);
@@ -319,6 +392,8 @@ export default function OwnerOnboardTenantScreen() {
     try {
       const res = await onboardWithAgreement({
         customClauses: drafts.map((clause) => ({ body: clause.body.trim(), heading: clause.heading.trim() })),
+        permittedDeductions: chosenDeductions ?? undefined,
+        term: { months: fixedTerm ? termMonths ?? 11 : null },
         depositAmountPaise: Math.round(Number(deposit || "0") * 100),
         propertyId: selectedProperty.id,
         rentAmountPaise: Math.round(Number(rent) * 100),
@@ -338,16 +413,29 @@ export default function OwnerOnboardTenantScreen() {
   return (
     <ScreenScrollView>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <HeaderButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <HeaderButton
+          icon={ArrowLeft}
+          label="Back"
+          onPress={() => {
+            // Steps back through the wizard. It used to call router.back(),
+            // which left the screen entirely and threw away everything typed —
+            // the same thing the X does, so one of the two buttons was a trap.
+            if (previousStep) {
+              setStep(previousStep);
+            } else {
+              router.back();
+            }
+          }}
+        />
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {step === "done" ? "Complete" : `Onboard / ${step}`}
         </Text>
         <HeaderButton icon={X} onPress={() => router.back()} />
       </View>
 
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 28, fontWeight: "500" }} selectable>
+      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 28, }}>
         {step === "done" ? "Tenancy" : "Onboard"}
-        <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }} selectable>
+        <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }}>
           {step === "done" ? " created." : " tenant."}
         </Text>
       </Text>
@@ -363,17 +451,16 @@ export default function OwnerOnboardTenantScreen() {
             <View style={{ gap: spacing.sm }}>
               <Divider />
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-                <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+                <Text style={[type.bodyStrong, { color: colors.ink }]}>
                   {lookup.exists ? lookup.fullName ?? "Existing user" : "New user"}
                 </Text>
                 <Text
                   style={[type.eyebrow, { color: lookup.canOnboard ? colors.primary : colors.danger, textAlign: "right" }]}
-                  selectable
                 >
                   {lookup.canOnboard ? "Eligible" : "Blocked"}
                 </Text>
               </View>
-              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]} selectable>
+              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
                 {lookup.message}
               </Text>
 
@@ -391,7 +478,7 @@ export default function OwnerOnboardTenantScreen() {
 
       {step === "type" ? (
         <Card>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Tenancy type
           </Text>
           {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -405,7 +492,7 @@ export default function OwnerOnboardTenantScreen() {
           ) : null}
           {selectedProperty ? (
             <>
-              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]} selectable>
+              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
                 Choose the kind of stay to start for this tenant.
               </Text>
               <SelectRow
@@ -433,7 +520,7 @@ export default function OwnerOnboardTenantScreen() {
       {step === "details" ? (
         <>
           <Card>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Property
             </Text>
             {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -464,7 +551,7 @@ export default function OwnerOnboardTenantScreen() {
 
           {selectedProperty ? (
             <Card>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
               </Text>
               {roomsQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -506,7 +593,7 @@ export default function OwnerOnboardTenantScreen() {
                       padding: spacing.md,
                     }}
                   >
-                    <Text style={[type.bodyStrong, { color: dailyRatePaise != null ? colors.ink : colors.danger }]} selectable>
+                    <Text style={[type.bodyStrong, { color: dailyRatePaise != null ? colors.ink : colors.danger }]}>
                       {dailyRatePaise != null ? `${rupees(dailyRatePaise)} / night` : "Not configured for this room type"}
                     </Text>
                   </View>
@@ -537,7 +624,7 @@ export default function OwnerOnboardTenantScreen() {
                   }}
                 >
                   <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
-                  <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} selectable>
+                  <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
                     {formatDateLong(startDate)}
                   </Text>
                 </AnimatedPressable>
@@ -579,7 +666,7 @@ export default function OwnerOnboardTenantScreen() {
                       }}
                     >
                       <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
-                      <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} selectable>
+                      <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
                         {formatDateLong(plannedEndDate)}
                       </Text>
                     </AnimatedPressable>
@@ -605,7 +692,7 @@ export default function OwnerOnboardTenantScreen() {
                     <PrimaryButton label="Done" muted onPress={() => setShowEndPicker(false)} />
                   ) : null}
 
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted }]}>
                     {nights > 0
                       ? `${nights} night${nights === 1 ? "" : "s"}${dailyRatePaise != null ? ` · ${rupees(dailyRatePaise * nights)} total` : ""}`
                       : "Choose a checkout date after the start date."}
@@ -621,7 +708,7 @@ export default function OwnerOnboardTenantScreen() {
 
       {step === "review" ? (
         <Card>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Review before creating
           </Text>
           <OverviewBox
@@ -646,33 +733,16 @@ export default function OwnerOnboardTenantScreen() {
                   ]),
             ]}
           />
-          {!isDaily && agreementMode === "ALL_MONTHLY" ? (
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
-              This property requires an accepted agreement for every monthly tenancy. The tenancy stays pending until
-              the tenant accepts.
+          {!isDaily ? (
+            <Text style={[type.caption, { color: colors.muted }]}>
+              Every monthly tenancy needs an accepted agreement. The tenancy stays pending until the
+              tenant accepts.
             </Text>
           ) : null}
           <IdCheckDeclaration checked={idCheckConfirmed} onToggle={() => setIdCheckConfirmed((value) => !value)} />
 
-          {!isDaily && agreementMode === "SELECTIVE" ? (
-            <>
-              {/* Per-tenancy choice: the two buttons ARE the choice. */}
-              <PrimaryButton
-                label="Continue to agreement"
-                onPress={() => {
-                  if (idCheckMissing()) return;
-                  setWithAgreementChoice(true);
-                  setStep("agreement");
-                }}
-              />
-              <PrimaryButton
-                label="Continue without agreement"
-                muted
-                onPress={handleConfirm}
-                busy={onboardState.isLoading}
-              />
-            </>
-          ) : withAgreement ? (
+          {withAgreement ? (
+
             <PrimaryButton
               label="Continue to agreement"
               onPress={() => {
@@ -690,12 +760,12 @@ export default function OwnerOnboardTenantScreen() {
       {step === "agreement" ? (
         <>
           <Card>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Tenancy agreement
             </Text>
-            <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]} selectable>
-              These are the exact terms the tenant will accept. System rules are locked for uniformity — only the
-              custom clauses below can be tailored for this tenancy.
+            <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
+              These are the exact terms this tenant will accept. The term, permitted deductions and custom clauses
+              below apply to this tenancy only — they do not change the property's standard agreement.
             </Text>
             {previewQuery.isFetching && !previewQuery.data ? <ActivityIndicator color={colors.primary} /> : null}
             {previewQuery.data ? (
@@ -704,26 +774,115 @@ export default function OwnerOnboardTenantScreen() {
           </Card>
 
           <Card>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-              House rules & other terms (editable)
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+              Agreement term
             </Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <ChoiceButton
+                active={!fixedTerm}
+                label="Indefinite"
+                onPress={() => {
+                  setFixedTerm(false);
+                  setTermMonths(null);
+                }}
+              />
+              <ChoiceButton
+                active={fixedTerm}
+                label="Fixed term"
+                onPress={() => {
+                  setFixedTerm(true);
+                  setTermMonths((current) => current ?? 11);
+                }}
+              />
+            </View>
+            {fixedTerm ? (
+              <>
+                <Field label="Length (months)">
+                  <Input
+                    keyboardType="number-pad"
+                    onChangeText={(text) => {
+                      const parsed = Number(text.replace(/[^0-9]/g, ""));
+                      setTermMonths(parsed > 0 ? Math.min(parsed, 12) : null);
+                    }}
+                    placeholder="11"
+                    value={termMonths != null ? String(termMonths) : ""}
+                  />
+                </Field>
+                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  Min 1, max 12 months. A fixed term ends the tenancy on its last day.
+                </Text>
+              </>
+            ) : (
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                Runs until the tenancy ends. The notice period applies to exits.
+              </Text>
+            )}
+          </Card>
+
+          {allowedDeductions.length > 0 ? (
+            <Card>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                Permitted deductions
+              </Text>
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                What this tenant's deposit may be used for. You can narrow the property's list, but not add to it.
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                {allowedDeductions.map((category) => {
+                  const on = (chosenDeductions ?? []).includes(category);
+                  return (
+                    <ChoiceButton
+                      active={on}
+                      key={category}
+                      label={category.toLowerCase().replace(/_/g, " ")}
+                      onPress={() =>
+                        setChosenDeductions((current) =>
+                          on
+                            ? (current ?? []).filter((item) => item !== category)
+                            : [...(current ?? []), category],
+                        )
+                      }
+                    />
+                  );
+                })}
+              </View>
+              {(chosenDeductions ?? []).length === 0 ? (
+                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  Nothing selected — the deposit is returned in full, less any charges agreed at exit.
+                </Text>
+              ) : null}
+            </Card>
+          ) : null}
+
+          <Card>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+              {clausesReadOnly ? "House rules & other terms" : "House rules & other terms (editable)"}
+            </Text>
+            {clausesReadOnly ? (
+              <Text style={[type.caption, { color: colors.inkSoft }]}>
+                These are the property's standard terms. Only someone with access to tenancy rules can change them.
+              </Text>
+            ) : null}
             {(customDrafts ?? []).map((clause, index) => (
               <View key={`draft-${index}`} style={{ gap: spacing.sm }}>
                 {index > 0 ? <Divider /> : null}
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                  <Text style={[type.eyebrow, { color: colors.kicker }]}>
                     Clause {index + 1}
                   </Text>
-                  <AnimatedPressable
-                    accessibilityLabel={`Remove clause ${index + 1}`}
-                    onPress={() => setCustomDrafts((current) => (current ?? []).filter((_, i) => i !== index))}
-                    style={{ padding: 4 }}
-                  >
-                    <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
-                  </AnimatedPressable>
+                  {clausesReadOnly ? null : (
+                    <AnimatedPressable
+                      accessibilityLabel={`Remove clause ${index + 1}`}
+                      onPress={() => setCustomDrafts((current) => (current ?? []).filter((_, i) => i !== index))}
+                      style={{ padding: 4 }}
+                    >
+                      <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+                    </AnimatedPressable>
+                  )}
                 </View>
                 <Field label="Clause Heading">
                   <Input
+                    editable={!clausesReadOnly}
                     value={clause.heading}
                     onChangeText={(text) =>
                       setCustomDrafts((current) => (current ?? []).map((item, i) => (i === index ? { ...item, heading: text } : item)))
@@ -733,6 +892,7 @@ export default function OwnerOnboardTenantScreen() {
                 </Field>
                 <Field label="Clause Body">
                   <Input
+                    editable={!clausesReadOnly}
                     multiline
                     value={clause.body}
                     onChangeText={(text) =>
@@ -744,6 +904,7 @@ export default function OwnerOnboardTenantScreen() {
               </View>
             ))}
             <PrimaryButton
+              disabled={clausesReadOnly}
               label="Add clause"
               muted
               onPress={() => setCustomDrafts((current) => [...(current ?? []), { body: "", heading: "" }])}
@@ -776,7 +937,7 @@ export default function OwnerOnboardTenantScreen() {
             >
               <Check color={colors.successText} size={28} strokeWidth={2.4} />
             </View>
-            <Text style={[type.bodyStrong, { color: colors.ink, textAlign: "center" }]} selectable>
+            <Text style={[type.bodyStrong, { color: colors.ink, textAlign: "center" }]}>
               {result.tenancy.status === "PENDING_ACCEPTANCE"
                 ? "Tenancy created — awaiting acceptance"
                 : result.tenantAccountCreated
@@ -784,7 +945,7 @@ export default function OwnerOnboardTenantScreen() {
                   : "Tenancy created"}
             </Text>
             {result.tenancy.status === "PENDING_ACCEPTANCE" ? (
-              <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
                 The bed is reserved. The tenancy and billing start once the tenant accepts the agreement in their app
                 — pending tenancies auto-cancel after 3 days.
               </Text>
@@ -808,7 +969,7 @@ export default function OwnerOnboardTenantScreen() {
             ]}
           />
           {result.tenantAccountCreated ? (
-            <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
+            <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
               The tenant can now sign up with this phone number to set their PIN.
             </Text>
           ) : null}
@@ -824,7 +985,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   const { colors, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
       {children}
@@ -834,6 +995,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Input({ prefix, ...props }: React.ComponentProps<typeof TextInput> & { prefix?: string }) {
   const { colors, fonts } = useTheme();
+  // A locked field has to LOOK locked — editable={false} alone still reads as a
+  // field you can type into, which invites a tap that does nothing.
+  const locked = props.editable === false;
   if (prefix) {
     // Adornment (e.g. ₹) rendered inside the field: the container owns the
     // border and the input goes borderless beside the prefix.
@@ -849,7 +1013,7 @@ function Input({ prefix, ...props }: React.ComponentProps<typeof TextInput> & { 
           paddingLeft: spacing.md,
         }}
       >
-        <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable={false}>
+        <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 15, }}>
           {prefix}
         </Text>
         <AppTextInput
@@ -880,9 +1044,10 @@ function Input({ prefix, ...props }: React.ComponentProps<typeof TextInput> & { 
         borderColor: colors.border,
         borderRadius: 10,
         borderWidth: 1,
-        color: colors.ink,
+        color: locked ? colors.inkSoft : colors.ink,
         fontFamily: fonts.sans,
         fontSize: 15,
+        opacity: locked ? 0.7 : 1,
         padding: spacing.md,
       }}
     />
@@ -920,10 +1085,10 @@ function SelectRow({
       }}
     >
       <View style={{ flex: 1 }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+        <Text style={[type.bodyStrong, { color: colors.ink }]}>
           {title}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {subtitle}
         </Text>
       </View>
@@ -960,7 +1125,7 @@ function OverviewRow({ label, value, mono }: OverviewRowData) {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between", padding: spacing.md }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
         {label}
       </Text>
       <Text
@@ -968,7 +1133,6 @@ function OverviewRow({ label, value, mono }: OverviewRowData) {
           type.body,
           { color: colors.ink, flex: 1, fontFamily: mono ? fonts.mono : fonts.sans, fontWeight: "800", textAlign: "right" },
         ]}
-        selectable
       >
         {value}
       </Text>
@@ -1020,10 +1184,10 @@ function IdCheckDeclaration({ checked, onToggle }: { checked: boolean; onToggle:
       </View>
 
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14, }}>
           I have collected and checked this tenant&apos;s ID proof and photograph
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Most states require landlords to verify tenant ID and notify the local police. Keep a copy for your own
           records — Khatiyan does not store ID documents.
         </Text>
@@ -1036,32 +1200,38 @@ function PrimaryButton({
   label,
   onPress,
   busy,
+  disabled,
   muted,
 }: {
   label: string;
   onPress: () => void;
   busy?: boolean;
+  disabled?: boolean;
   muted?: boolean;
 }) {
   const { colors, fonts } = useTheme();
+  const foreground = disabled ? colors.muted : muted ? colors.primary : colors.onPrimary;
   return (
     <AnimatedPressable
-      onPress={busy ? undefined : onPress}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      disabled={disabled}
+      onPress={busy || disabled ? undefined : onPress}
       style={{
         alignItems: "center",
-        backgroundColor: muted ? "transparent" : colors.primary,
+        backgroundColor: disabled && !muted ? colors.surfaceRaised : muted ? "transparent" : colors.primary,
         borderColor: muted ? colors.border : "transparent",
         borderRadius: 12,
         borderWidth: muted ? 1 : 0,
         justifyContent: "center",
         minHeight: 50,
+        opacity: disabled ? 0.65 : 1,
         paddingHorizontal: spacing.lg,
       }}
     >
       {busy ? (
         <ActivityIndicator color={muted ? colors.primary : colors.onPrimary} />
       ) : (
-        <Text style={{ color: muted ? colors.primary : colors.onPrimary, fontFamily: fonts.sans, fontSize: 14, fontWeight: "700" }} selectable>
+        <Text style={{ color: foreground, fontFamily: fonts.sansBold, fontSize: 14, }}>
           {label}
         </Text>
       )}
@@ -1097,7 +1267,7 @@ function HeaderButton({
     >
       <Icon color={colors.ink} size={16} strokeWidth={2.2} />
       {label ? (
-        <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, }}>
           {label}
         </Text>
       ) : null}

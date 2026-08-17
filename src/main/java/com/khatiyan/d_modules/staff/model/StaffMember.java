@@ -6,6 +6,7 @@ import java.time.YearMonth;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.employment.IdentityVerificationStatus;
 import com.khatiyan.c_shared.employment.SalaryStructure;
 
@@ -130,8 +131,42 @@ public class StaffMember extends BaseEntity {
         this.active = false;
     }
 
-    // A future end date deactivates the worker immediately but is recorded as
-    // today's date — the directory has no concept of a scheduled future end.
+    /**
+     * Records a leaving date in the future without deactivating.
+     *
+     * <p>The worker keeps working until that day. A sweep ends them on it;
+     * until then they stay in the directory, are still paid, and the end can be
+     * called off by editing the record.
+     */
+    public void scheduleEnd(LocalDate endDate, String employmentEndReason, String employmentReview) {
+        if (endDate == null || !endDate.isAfter(LocalDate.now())) {
+            throw new ValidationException("A scheduled end date must be in the future.");
+        }
+        if (employmentStartDate != null && endDate.isBefore(employmentStartDate)) {
+            throw new ValidationException("Employment cannot end before it starts.");
+        }
+        this.employmentEndDate = endDate;
+        this.employmentEndReason = employmentEndReason;
+        this.employmentReview = employmentReview;
+        // active stays true — this is a plan, not a departure.
+    }
+
+    /**
+     * Closes a scheduled end that has come due.
+     *
+     * <p>Keeps the date that was scheduled rather than stamping today: if the
+     * sweep misses a run, the record should still say the day they actually
+     * left. The reason and review were captured when it was scheduled.
+     */
+    public void endScheduled() {
+        this.active = false;
+    }
+
+    /** True once a scheduled end has come due, for the sweep that will action it. */
+    public boolean isEndDue(LocalDate today) {
+        return active && employmentEndDate != null && !employmentEndDate.isAfter(today);
+    }
+
     private static LocalDate clampEndToToday(LocalDate endDate) {
         if (endDate == null) {
             return null;

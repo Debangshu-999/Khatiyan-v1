@@ -49,6 +49,17 @@ public class DepositAccount extends BaseEntity {
     @Column(name = "settled_at")
     private Instant settledAt;
 
+    /**
+     * Whether the remaining balance is refundable, as decided at end-tenancy.
+     *
+     * <p>Null means no decision has been recorded — the tenancy is still running,
+     * or the account predates the exit flow. Settlement treats null as "not
+     * decided" and refuses to guess, because guessing wrong either pockets a
+     * tenant's money or pays out a forfeited deposit.
+     */
+    @Column(name = "payable_at_exit")
+    private Boolean payableAtExit;
+
     private DepositAccount(
             UUID tenancyId,
             UUID tenantUserId,
@@ -68,12 +79,18 @@ public class DepositAccount extends BaseEntity {
     }
 
     /**
-     * Marks the account as awaiting settlement once its tenancy has ended and the
-     * owner chose to settle later. Only an active account can enter this state.
+     * Marks the account as awaiting settlement once its tenancy has ended,
+     * carrying the payability decision made on the end-tenancy screen. Only an
+     * active account can enter this state.
+     *
+     * <p>The decision is stamped here rather than asked for again at settlement:
+     * end-tenancy is the one moment both parties are present and the balance is
+     * final. Settlement reads this and executes it.
      */
-    public void markPendingSettlement() {
+    public void markPendingSettlement(boolean payable) {
         ensureActive();
         this.status = DepositAccountStatus.PENDING_SETTLEMENT;
+        this.payableAtExit = payable;
     }
 
     public void settle(Instant settledAt) {

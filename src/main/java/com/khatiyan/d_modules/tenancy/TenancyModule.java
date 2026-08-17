@@ -151,9 +151,14 @@ public class TenancyModule {
      * tenancy. Penalty type is a String so compliance stays clear of the tenancy
      * model enum.
      */
-    public void stampAgreementExitTerms(
-            UUID tenancyId, LocalDate lockInEndDate, String penaltyType, Long penaltyFixedPaise) {
-        tenancyService.stampAgreementExitTerms(tenancyId, lockInEndDate, penaltyType, penaltyFixedPaise);
+    /**
+     * Stamps the accepted agreement's terms onto the tenancy.
+     *
+     * <p>Null {@code validityMonths} means indefinite; a value gives the fixed
+     * term whose end date the tenancy derives and carries from day one.
+     */
+    public void stampAgreementTerms(UUID tenancyId, Integer validityMonths, String earlyExitRule) {
+        tenancyService.stampAgreementTerms(tenancyId, validityMonths, earlyExitRule);
     }
 
     /** Cancels a pending tenancy because the tenant declined the agreement. */

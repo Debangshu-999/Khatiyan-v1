@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.property;
 
 import java.util.Collection;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +18,10 @@ import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomActivityResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
+import com.khatiyan.d_modules.property.api.dto.ManagerPermissionsResponse;
+import com.khatiyan.d_modules.property.model.ManagerAccessLevel;
+import com.khatiyan.d_modules.property.model.ManagerResource;
+import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyService;
 import com.khatiyan.d_modules.property.service.RoomService;
 
@@ -33,14 +38,17 @@ public class PropertyModule {
     private final RoomService roomService;
     private final PropertyService propertyService;
     private final PropertyManagerService propertyManagerService;
+    private final ManagerAccessPolicy managerAccessPolicy;
 
     public PropertyModule(
             RoomService roomService,
             PropertyService propertyService,
-            PropertyManagerService propertyManagerService) {
+            PropertyManagerService propertyManagerService,
+            ManagerAccessPolicy managerAccessPolicy) {
         this.roomService = roomService;
         this.propertyService = propertyService;
         this.propertyManagerService = propertyManagerService;
+        this.managerAccessPolicy = managerAccessPolicy;
     }
 
     public PropertyResponse getActiveProperty(UUID propertyId) {
@@ -155,6 +163,17 @@ public class PropertyModule {
         propertyManagerService.endManagerEmployment(ownerId, propertyId, managerUserId, reason, review);
     }
 
+    /** Ends every manager assignment whose scheduled last day has arrived. */
+    public int endDueScheduledManagerAssignments(LocalDate today) {
+        return propertyManagerService.endDueScheduledAssignments(today);
+    }
+
+    /** Records a future leaving date; the assignment stays live until then. */
+    public void scheduleManagerEnd(
+            UUID ownerId, UUID propertyId, UUID managerUserId, LocalDate endDate, String reason, String review) {
+        propertyManagerService.scheduleManagerEnd(ownerId, propertyId, managerUserId, endDate, reason, review);
+    }
+
     public List<ManagerEmploymentResponse> listEndedManagerEmployment(UUID propertyId) {
         return propertyManagerService.listEndedManagerEmployment(propertyId);
     }
@@ -173,6 +192,69 @@ public class PropertyModule {
 
     public void handleTenancyEnded(UUID propertyId, UUID roomId) {
         roomService.handleTenancyEnded(propertyId, roomId);
+    }
+
+    /** Holds a bed on the target room of an approved room change. */
+    // ----- Manager permissions -----
+
+    /** What this actor may do on this property, resource by resource. */
+    public ManagerPermissionsResponse permissionsFor(UUID actorUserId, UUID propertyId) {
+        return new ManagerPermissionsResponse(
+                propertyId,
+                actorUserId,
+                // Owner iff they hold MANAGE without any grant existing — the policy
+                // owns that rule, so it is asked rather than re-derived here.
+                managerAccessPolicy.isOwner(actorUserId, propertyId),
+                managerAccessPolicy.levelsFor(actorUserId, propertyId));
+    }
+
+    /** The grants an owner has given one manager, for the permission screen. */
+    public ManagerPermissionsResponse managerGrants(UUID ownerUserId, UUID propertyId, UUID managerUserId) {
+        managerAccessPolicy.ensureOwner(ownerUserId, propertyId);
+        return new ManagerPermissionsResponse(
+                propertyId,
+                managerUserId,
+                false,
+                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+    }
+
+    public ManagerPermissionsResponse replaceManagerGrants(
+            UUID ownerUserId,
+            UUID propertyId,
+            UUID managerUserId,
+            Map<ManagerResource, ManagerAccessLevel> levels) {
+        managerAccessPolicy.replaceGrants(ownerUserId, propertyId, managerUserId, levels);
+        return new ManagerPermissionsResponse(
+                propertyId,
+                managerUserId,
+                false,
+                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+    }
+
+    public ManagerAccessLevel accessLevel(UUID actorUserId, UUID propertyId, ManagerResource resource) {
+        return managerAccessPolicy.levelFor(actorUserId, propertyId, resource);
+    }
+
+    public void ensureCanView(UUID actorUserId, UUID propertyId, ManagerResource resource) {
+        managerAccessPolicy.ensureCanView(actorUserId, propertyId, resource);
+    }
+
+    /** Passes if the actor can view ANY of the resources. Reads only. */
+    public void ensureCanViewAny(UUID actorUserId, UUID propertyId, ManagerResource... resources) {
+        managerAccessPolicy.ensureCanViewAny(actorUserId, propertyId, resources);
+    }
+
+    public void ensureCanManage(UUID actorUserId, UUID propertyId, ManagerResource resource) {
+        managerAccessPolicy.ensureCanManage(actorUserId, propertyId, resource);
+    }
+
+    public void reserveRoomSlot(UUID propertyId, UUID roomId) {
+        roomService.reserveSlot(propertyId, roomId);
+    }
+
+    /** Releases a bed held for a room change that executed or can no longer run. */
+    public void releaseRoomSlotReservation(UUID propertyId, UUID roomId) {
+        roomService.releaseReservedSlot(propertyId, roomId);
     }
 
     public void handleTenancyRoomTransferred(UUID propertyId, UUID oldRoomId, UUID newRoomId) {

@@ -69,6 +69,9 @@ public class BillingCycle extends BaseEntity {
     private Integer cycleNumber;
 
     @Column(name = "period_start_date", nullable = false)
+    /** Mirrors Property.MAX_RENT_GRACE_DAYS; each cycle stores the policy it ran under. */
+    public static final int MAX_RENT_GRACE_DAYS = 10;
+
     private LocalDate periodStartDate;
 
     @Column(name = "period_end_date", nullable = false)
@@ -139,8 +142,8 @@ public class BillingCycle extends BaseEntity {
         if (billingCollectionTiming == null) {
             throw new ValidationException("Billing collection timing is required");
         }
-        if (rentGraceDays < 0 || rentGraceDays > 30) {
-            throw new ValidationException("Rent grace days must be between 0 and 30");
+        if (rentGraceDays < 0 || rentGraceDays > MAX_RENT_GRACE_DAYS) {
+            throw new ValidationException("Rent grace days must be between 0 and " + MAX_RENT_GRACE_DAYS);
         }
 
         this.id = UUID.randomUUID();
@@ -287,13 +290,18 @@ public class BillingCycle extends BaseEntity {
     /**
      * Whether this cycle counts as money billed.
      *
-     * <p>An UPCOMING cycle has not been charged to anyone yet — it is a draft the
-     * owner may still change — and a CANCELLED one never will be. Counting either
-     * as revenue overstates income, so every aggregate goes through this instead
-     * of testing statuses ad hoc.
+     * <p>Only CANCELLED is excluded. An UPCOMING cycle is a real bill: it has been
+     * generated, it carries an amount, and the owner can see it — it simply is not
+     * payable yet. Leaving it out made the owner's money views disagree with each
+     * other, because the month summary's projection added that same rent back in
+     * as "expected", while P&amp;L read the actual figure and saw nothing. For the
+     * ~10 days a cycle sits UPCOMING, P&amp;L reported the month as a loss.
+     *
+     * <p>Every aggregate goes through this rather than testing statuses ad hoc, so
+     * changing it here changes them together — which is the point.
      */
     public boolean countsAsBilled() {
-        return status != BillingCycleStatus.UPCOMING && status != BillingCycleStatus.CANCELLED;
+        return status != BillingCycleStatus.CANCELLED;
     }
 
     /**

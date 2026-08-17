@@ -221,7 +221,16 @@ public class NotificationService {
 
         List<NotificationRecipient> recipients = userIds.stream()
                 .distinct()
-                .map(userId -> NotificationRecipient.create(savedNotification, userId, audience))
+                .map(userId -> {
+                    NotificationRecipient recipient = NotificationRecipient.create(savedNotification, userId, audience);
+                    // Push-only rows are archived before they are ever seen: the
+                    // feed queries all filter on archivedAt, so this is what
+                    // keeps them out of the queue while still producing a push.
+                    if (!resolvedDeliveryMode.isInAppVisible()) {
+                        recipient.archive(now);
+                    }
+                    return recipient;
+                })
                 .toList();
 
         List<NotificationRecipient> savedRecipients = notificationRecipientRepository.saveAll(recipients);
@@ -419,7 +428,7 @@ public class NotificationService {
 
         NotificationDeviceToken saved = notificationDeviceTokenRepository
                 .findByProviderAndProviderToken(request.provider(), request.providerToken())
-                .orElseThrow(() -> new NotFoundException("NotificationDeviceToken_", request.providerToken()));
+                .orElseThrow(() -> new NotFoundException("NotificationDeviceToken", request.providerToken()));
 
         log.info(
                 "Notification device registered tokenId={} userId={} provider={} platform={}",
@@ -448,7 +457,7 @@ public class NotificationService {
     @Transactional
     public void deactivateDevice(UUID userId, UUID tokenId) {
         NotificationDeviceToken token = notificationDeviceTokenRepository.findById(tokenId)
-                .orElseThrow(() -> new NotFoundException("NotificationDeviceToken_", tokenId));
+                .orElseThrow(() -> new NotFoundException("NotificationDeviceToken", tokenId));
 
         if (!token.getUserId().equals(userId)) {
             throw new ForbiddenException("You cannot manage this notification device");
@@ -489,6 +498,6 @@ public class NotificationService {
 
     private NotificationRecipient getUserRecipient(UUID userId, UUID recipientId) {
         return notificationRecipientRepository.findRecipientForUser(recipientId, userId)
-                .orElseThrow(() -> new NotFoundException("NotificationRecipient_", recipientId));
+                .orElseThrow(() -> new NotFoundException("NotificationRecipient", recipientId));
     }
 }

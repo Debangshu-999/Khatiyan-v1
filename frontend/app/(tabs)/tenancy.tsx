@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
-  Banknote,
   CalendarDays,
   DoorOpen,
   FileSignature,
@@ -31,6 +30,7 @@ import {
   useListMyExitRequestsQuery,
   useListMyRoomChangeRequestsQuery,
   useListMyTenanciesQuery,
+  tenancyStatusLabel,
   type TenantActiveTenancy,
   type TenancyExitRequest,
   type TenancyRoomChangeRequest,
@@ -86,13 +86,6 @@ export default function TenancyScreen() {
   );
   const latestCurrentTenancyRequest = currentTenancyRequests[0];
 
-  function handlePayCycle(cycle: BillingCycle) {
-    router.push({
-      pathname: "/payment-method",
-      params: { amountPaise: String(cycle.totalAmountPaise), billingCycleId: cycle.id },
-    });
-  }
-
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
       <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -142,7 +135,7 @@ export default function TenancyScreen() {
               <View style={{ flex: 1, gap: spacing.sm }}>
                 <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1, gap: spacing.xs }}>
-                    <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                    <Text style={[type.eyebrow, { color: colors.kicker }]}>
                       Current tenancy
                     </Text>
                     <Text
@@ -150,10 +143,8 @@ export default function TenancyScreen() {
                         color: colors.ink,
                         fontFamily: fonts.display,
                         fontSize: 24,
-                        fontWeight: "500",
                         lineHeight: 29,
                       }}
-                      selectable
                     >
                       {activeTenancy.property.name}
                     </Text>
@@ -188,8 +179,6 @@ export default function TenancyScreen() {
                         key={cycle.id}
                         cycle={cycle}
                         onPress={() => router.push({ pathname: "/tenancy-billing-cycle", params: { cycleId: cycle.id, tenancyId: activeTenancy.tenancy.id } })}
-                        onPay={() => handlePayCycle(cycle)}
-                        payBusy={false}
                       />
                     ))}
                   </>
@@ -202,8 +191,6 @@ export default function TenancyScreen() {
                         key={cycle.id}
                         cycle={cycle}
                         onPress={() => router.push({ pathname: "/tenancy-billing-cycle", params: { cycleId: cycle.id, tenancyId: activeTenancy.tenancy.id } })}
-                        onPay={() => handlePayCycle(cycle)}
-                        payBusy={false}
                       />
                     ))}
                   </>
@@ -261,9 +248,9 @@ export default function TenancyScreen() {
               meta="Exit"
               title="Exit tenancy"
               description={
-                activeTenancy.tenancy.agreementBacked
-                  ? "Request an early exit. You'll see the lock-in penalty before you confirm."
-                  : "Request normal notice or premature exit. The property team reviews billing and deposit impact."
+                activeTenancy.tenancy.fixedTerm
+                  ? "Your agreement runs to a fixed date. Leaving earlier is reviewed as an early exit."
+                  : "Serve your notice period and pick your last day. The property team reviews it."
               }
               onPress={() => router.push("/tenancy-exit-request")}
             />
@@ -317,7 +304,9 @@ export default function TenancyScreen() {
         <Section eyebrow="Past stays" title="Tenancies">
           {tenanciesQuery.data.slice(0, 3).map((tenancy) => (
             <Card key={tenancy.id}>
-              <DetailLine label={tenancy.referenceCode} value={`${humanizeToken(tenancy.status)} · ${formatDate(tenancy.startDate)}${tenancy.endDate ? ` to ${formatDate(tenancy.endDate)}` : ""}`} />
+              {/* The tenant's own view of their stay — the one place the
+                  premature/normal distinction must never surface. */}
+              <DetailLine label={tenancy.referenceCode} value={`${tenancyStatusLabel(tenancy.status)} · ${formatDate(tenancy.startDate)}${tenancy.endDate ? ` to ${formatDate(tenancy.endDate)}` : ""}`} />
             </Card>
           ))}
         </Section>
@@ -345,7 +334,7 @@ function TenancyOverviewCard({
             {/* Pill lives on the eyebrow row (plenty of width there) so long
                 statuses like ON PREMATURE NOTICE never squash the title. */}
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Current tenancy
               </Text>
               <StatusPill
@@ -358,15 +347,13 @@ function TenancyOverviewCard({
                 color: colors.ink,
                 fontFamily: fonts.display,
                 fontSize: 26,
-                fontWeight: "500",
                 letterSpacing: -0.3,
                 lineHeight: 31,
               }}
-              selectable
             >
               {activeTenancy.property.name}
             </Text>
-            <Text style={[type.body, { color: colors.muted }]} selectable>
+            <Text style={[type.body, { color: colors.muted }]}>
               Room {activeTenancy.room.roomNumber}
               {activeTenancy.room.floor ? ` · ${formatFloor(activeTenancy.room.floor)}` : ""}
             </Text>
@@ -397,7 +384,7 @@ function TenancyOverviewCard({
           />
         </View>
 
-        {activeTenancy.tenancy.agreementBacked ? (
+        {true ? (
           <AnimatedPressable
             accessibilityRole="button"
             onPress={onViewAgreement}
@@ -412,10 +399,10 @@ function TenancyOverviewCard({
             }}
           >
             <FileSignature color={colors.primary} size={16} strokeWidth={2.2} />
-            <Text style={{ color: colors.primary, flex: 1, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable={false}>
+            <Text style={{ color: colors.primary, flex: 1, fontFamily: fonts.sansBold, fontSize: 13, }}>
               Under agreement
             </Text>
-            <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" }} selectable={false}>
+            <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13, textDecorationLine: "underline" }}>
               View agreement
             </Text>
           </AnimatedPressable>
@@ -449,10 +436,10 @@ function TenancyStat({
       }}
     >
       <Icon color={colors.primary} size={17} strokeWidth={2.3} />
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
-      <Text style={[type.body, { color: colors.ink, fontWeight: "900" }]} selectable>
+      <Text style={[type.body, { color: colors.ink, fontWeight: "900" }]}>
         {value}
       </Text>
     </View>
@@ -464,7 +451,7 @@ function TenancyInfoRow({ label, mono, value }: { label: string; mono?: boolean;
 
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between", padding: spacing.md }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
         {label}
       </Text>
       <Text
@@ -478,7 +465,6 @@ function TenancyInfoRow({ label, mono, value }: { label: string; mono?: boolean;
             textAlign: "right",
           },
         ]}
-        selectable
       >
         {value}
       </Text>
@@ -494,24 +480,14 @@ function ThinDivider() {
 function BillGroupLabel({ text }: { text: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+    <Text style={[type.eyebrow, { color: colors.kicker }]}>
       {text}
     </Text>
   );
 }
 
-function BillingCycleCard({
-  cycle,
-  onPay,
-  onPress,
-  payBusy,
-}: {
-  cycle: BillingCycle;
-  onPay: () => void;
-  onPress: () => void;
-  payBusy: boolean;
-}) {
-  const { colors, fonts, type } = useTheme();
+function BillingCycleCard({ cycle, onPress }: { cycle: BillingCycle; onPress: () => void }) {
+  const { colors, type } = useTheme();
   const payable = cycle.status !== "PAID" && cycle.status !== "CANCELLED" && cycle.totalAmountPaise > 0;
 
   return (
@@ -527,39 +503,15 @@ function BillingCycleCard({
           description="View rent, deposit, discounts, extra charges and settlement actions for this bill."
           onPress={onPress}
         />
-        {payable ? (
-          <AnimatedPressable
-            accessibilityRole="button"
-            accessibilityLabel="Pay this bill"
-            onPress={onPay}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.primary,
-              borderRadius: 14,
-              flexDirection: "row",
-              gap: spacing.sm,
-              justifyContent: "center",
-              minHeight: 50,
-              opacity: payBusy ? 0.75 : 1,
-              padding: spacing.md,
-            }}
-          >
-            {payBusy ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <>
-                <Banknote color={colors.onPrimary} size={18} strokeWidth={2.3} />
-                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 15, fontWeight: "900" }} selectable>
-                  Pay {formatMoney(cycle.totalAmountPaise)}
-                </Text>
-              </>
-            )}
-          </AnimatedPressable>
-        ) : (
-          <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
-            {cycle.status === "PAID" ? "This bill is already paid." : "This bill is not payable right now."}
-          </Text>
-        )}
+        {/* Rent is settled directly with the owner — the app records payments,
+            it does not collect them. */}
+        <Text style={[type.body, { color: colors.muted, textAlign: "center" }]}>
+          {payable
+            ? "Pay your owner directly. They'll mark this bill paid once it's received."
+            : cycle.status === "PAID"
+              ? "This bill is already paid."
+              : "Nothing to pay on this bill."}
+        </Text>
       </View>
     </Card>
   );
@@ -606,14 +558,15 @@ function IconBox({ icon: Icon }: { icon: typeof KeyRound }) {
     <View
       style={{
         alignItems: "center",
-        backgroundColor: colors.primarySoft,
+        borderColor: colors.ink,
+        borderWidth: 1,
         borderRadius: 14,
         height: 44,
         justifyContent: "center",
         width: 44,
       }}
     >
-      <Icon color={colors.primary} size={21} strokeWidth={2.4} />
+      <Icon color={colors.ink} size={21} strokeWidth={2.4} />
     </View>
   );
 }
@@ -635,7 +588,7 @@ function DetailKicker({ text }: { text: string }) {
   const { colors, type } = useTheme();
 
   return (
-    <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+    <Text style={[type.eyebrow, { color: colors.kicker }]}>
       {text}
     </Text>
   );
@@ -646,10 +599,10 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
         {label}
       </Text>
-      <Text style={[type.body, { color: colors.ink, flex: 1.25, fontWeight: "800", textAlign: "right" }]} selectable>
+      <Text style={[type.body, { color: colors.ink, flex: 1.25, fontWeight: "800", textAlign: "right" }]}>
         {value}
       </Text>
     </View>

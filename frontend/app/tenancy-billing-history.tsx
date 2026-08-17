@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, ReceiptText } from "lucide-react-native";
+import { ReceiptText } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -39,11 +39,11 @@ export default function TenancyBillingHistoryScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="BILLING"
+        eyebrow="Billing"
+        onBack={() => router.back()}
         title="Past"
         italicTail="bills."
         subtitle="Rent cycles and other bills you've settled — filter by type and open any for its line items."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       <FilterBar active={filter} onSelect={setFilter} />
@@ -85,7 +85,7 @@ function FilterBar({ active, onSelect }: { active: BillFilter; onSelect: (value:
               paddingVertical: spacing.sm - 2,
             }}
           >
-            <Text style={{ color: on ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+            <Text style={{ color: on ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
               {entry.label}
             </Text>
           </AnimatedPressable>
@@ -122,21 +122,13 @@ function CycleHistoryCard({ cycle, onPress }: { cycle: BillingCycle; onPress: ()
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable accessibilityLabel="Go back" onPress={onPress} style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}>
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function DetailLine({ label, value }: { label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>{label}</Text>
-      <Text style={[type.body, { color: colors.ink, flex: 1.25, fontWeight: "800", textAlign: "right" }]} selectable>{value}</Text>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
+      <Text style={[type.body, { color: colors.ink, flex: 1.25, fontWeight: "800", textAlign: "right" }]}>{value}</Text>
     </View>
   );
 }

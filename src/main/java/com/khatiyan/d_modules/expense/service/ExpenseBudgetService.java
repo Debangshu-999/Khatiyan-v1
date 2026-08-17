@@ -58,7 +58,7 @@ public class ExpenseBudgetService {
 
     @Transactional(readOnly = true)
     public ExpenseBudgetOverviewResponse getOverview(UUID actorUserId, UUID propertyId, LocalDate month) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         return buildOverview(propertyId, monthStart(month));
     }
 
@@ -75,7 +75,7 @@ public class ExpenseBudgetService {
     @Transactional
     public ExpenseBudgetOverviewResponse setDefaultBudget(
             UUID actorUserId, UUID propertyId, LocalDate month, SetDefaultBudgetRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         Long previousDefault = settingsRepository.findByPropertyId(propertyId)
                 .map(ExpenseBudgetSettings::getDefaultMonthlyBudgetPaise)
                 .orElse(null);
@@ -94,7 +94,7 @@ public class ExpenseBudgetService {
     /** Records a one-off raise for a month — tracked separately from the default. */
     @Transactional
     public ExpenseBudgetOverviewResponse raiseBudget(UUID actorUserId, UUID propertyId, RaiseBudgetRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         LocalDate month = monthStart(request.month());
         raiseRepository.save(ExpenseBudgetRaise.create(
                 propertyId, month, request.amountPaise(), request.reason(), actorUserId));
@@ -116,7 +116,7 @@ public class ExpenseBudgetService {
      */
     @Transactional(readOnly = true)
     public ExpenseBudgetTrendResponse getTrend(UUID actorUserId, UUID propertyId, LocalDate month, int months) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         int window = months < 1 ? 6 : Math.min(months, 12);
         YearMonth end = YearMonth.from(month);
         Long defaultBudget = settingsRepository.findByPropertyId(propertyId)

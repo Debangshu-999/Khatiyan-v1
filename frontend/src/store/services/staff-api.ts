@@ -60,6 +60,24 @@ export type ManagerEmployment = {
   active: boolean;
 };
 
+/**
+ * One salary payment, flat. Unlike `SalaryPayment` — which is nested inside a
+ * month inside an account, so the reader already knows who and when — a payslip
+ * is read as a standalone list and carries its own month and holder.
+ */
+export type SalaryPayslip = {
+  id: string;
+  salaryAccountReferenceCode: string;
+  holderName: string;
+  payrollMonth: string;
+  amountPaise: number;
+  paidOn: string;
+  recordedAt: string;
+  paymentMethod: SalaryPaymentMethod;
+  referenceText: string | null;
+  notes: string | null;
+};
+
 export type SalaryAdjustment = {
   id: string;
   adjustmentType: SalaryAdjustmentType;
@@ -150,6 +168,11 @@ export type EndEmploymentPayload = {
   paymentMethod?: SalaryPaymentMethod | null;
   paidOn?: string | null;
   settlementNotes?: string;
+  /**
+   * When the employment ends. Omitted or today ends it now and settles; a future
+   * date only schedules it — the person stays active and paid until that day.
+   */
+  endDate?: string | null;
 };
 
 export type EmployeeHistoryItem = {
@@ -167,6 +190,7 @@ export type EmployeeHistoryItem = {
   settledOn: string | null;
   settlementAmountPaise: number;
   totalPaidPaise: number;
+  salaryAccountReferenceCode: string | null;
 };
 
 export const staffApi = api.injectEndpoints({
@@ -177,15 +201,15 @@ export const staffApi = api.injectEndpoints({
     }),
     createStaffCategory: builder.mutation<StaffCategory, { propertyId: string; name: string }>({
       query: ({ propertyId, name }) => ({ body: { name }, method: "POST", url: `/api/v1/properties/${propertyId}/staff/categories` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     updateStaffCategory: builder.mutation<StaffCategory, { propertyId: string; categoryId: string; name: string }>({
       query: ({ propertyId, categoryId, name }) => ({ body: { name }, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     deactivateStaffCategory: builder.mutation<void, { propertyId: string; categoryId: string }>({
       query: ({ propertyId, categoryId }) => ({ method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     listStaffMembers: builder.query<StaffMember[], { propertyId: string; includeInactive?: boolean }>({
       query: ({ propertyId, includeInactive = false }) => ({ params: { includeInactive }, url: `/api/v1/properties/${propertyId}/staff/members` }),
@@ -193,11 +217,11 @@ export const staffApi = api.injectEndpoints({
     }),
     createStaffMember: builder.mutation<StaffMember, { propertyId: string; payload: CreateStaffMemberPayload }>({
       query: ({ propertyId, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/members` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     updateStaffMember: builder.mutation<StaffMember, { propertyId: string; staffReferenceCode: string; payload: UpdateStaffMemberPayload }>({
       query: ({ propertyId, staffReferenceCode, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     staffTerminationPreview: builder.query<TerminationPreview, { propertyId: string; staffReferenceCode: string }>({
       query: ({ propertyId, staffReferenceCode }) => `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/termination-preview`,
@@ -225,7 +249,16 @@ export const staffApi = api.injectEndpoints({
     }),
     updateManagerEmployment: builder.mutation<ManagerEmployment, { propertyId: string; managerReferenceCode: string; payload: UpdateManagerEmploymentPayload }>({
       query: ({ propertyId, managerReferenceCode, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
+    }),
+    listPropertyPayslips: builder.query<SalaryPayslip[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/staff/salary-payments`,
+      providesTags: ["Staff"],
+    }),
+    listEmployeePayslips: builder.query<SalaryPayslip[], { propertyId: string; accountReferenceCode: string }>({
+      query: ({ accountReferenceCode, propertyId }) =>
+        `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/payslips`,
+      providesTags: ["Staff"],
     }),
     listSalaryAccounts: builder.query<SalaryAccount[], string>({
       query: (propertyId) => `/api/v1/properties/${propertyId}/staff/salary-accounts`,
@@ -237,11 +270,11 @@ export const staffApi = api.injectEndpoints({
     }),
     openStaffSalaryAccount: builder.mutation<SalaryAccountDetail, { propertyId: string; staffReferenceCode: string }>({
       query: ({ propertyId, staffReferenceCode }) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/salary-account` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     openManagerSalaryAccount: builder.mutation<SalaryAccountDetail, { propertyId: string; managerReferenceCode: string }>({
       query: ({ propertyId, managerReferenceCode }) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}/salary-account` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     getSalaryAccount: builder.query<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string }>({
       query: ({ propertyId, accountReferenceCode }) => `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}`,
@@ -249,23 +282,23 @@ export const staffApi = api.injectEndpoints({
     }),
     openSalaryMonth: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string }>({
       query: ({ propertyId, accountReferenceCode }) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     addSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string } }>({
       query: ({ propertyId, accountReferenceCode, payrollMonth, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     updateSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string } }>({
       query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     removeSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string }>({
       query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId }) => ({ method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     recordSalaryPayment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { amountPaise: number; paidOn: string; paymentMethod: SalaryPaymentMethod; referenceText?: string; notes?: string } }>({
       query: ({ propertyId, accountReferenceCode, payrollMonth, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/payments` }),
-      invalidatesTags: ["Staff"],
+      invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
 
     // Manager self-service (read-only).
@@ -298,6 +331,8 @@ export const {
   useLazyGetSalaryAccountQuery,
   useListEmployeeHistoryQuery,
   useListManagerEmploymentQuery,
+  useListEmployeePayslipsQuery,
+  useListPropertyPayslipsQuery,
   useListSalaryAccountsQuery,
   useListStaffCategoriesQuery,
   useListStaffDirectoryQuery,

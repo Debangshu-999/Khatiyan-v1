@@ -92,7 +92,7 @@ export default function AccountSelectScreen() {
       </View>
 
       <Card tone="sunken">
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           You can switch account mode later from Account settings.
         </Text>
       </Card>
@@ -121,14 +121,15 @@ function AccountChoiceCard({ account, onPress }: { account: AccountType; onPress
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          borderColor: colors.ink,
+          borderWidth: 1,
           borderRadius: 16,
           height: 56,
           justifyContent: "center",
           width: 56,
         }}
       >
-        <Icon color={colors.primary} size={25} strokeWidth={2.2} />
+        <Icon color={colors.ink} size={25} strokeWidth={2.2} />
       </View>
       <View style={{ flex: 1, gap: spacing.xs }}>
         <Text
@@ -136,14 +137,12 @@ function AccountChoiceCard({ account, onPress }: { account: AccountType; onPress
             color: colors.ink,
             fontFamily: fonts.display,
             fontSize: 24,
-            fontWeight: "500",
             lineHeight: 30,
           }}
-          selectable
         >
           {accountLabel(account)}
         </Text>
-        <Text style={[type.body, { color: colors.muted }]} selectable>
+        <Text style={[type.body, { color: colors.muted }]}>
           {accountDescription(account)}
         </Text>
       </View>

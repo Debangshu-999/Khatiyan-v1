@@ -8,7 +8,8 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { NearbyPlacesView } from "@/features/discovery/components/nearby-places-view";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { BackButton } from "@/features/owner/owner-ui";
+import { ViewOnlyChip } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 
 export default function OwnerNearbyPlacesScreen() {
@@ -16,12 +17,15 @@ export default function OwnerNearbyPlacesScreen() {
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
+  const { canManage: canManageResource } = usePropertyPermissions(property?.id);
+  const canManagePlaces = canManageResource("NEARBY_PLACES");
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
       <ScreenHeader
-        eyebrow="Discovery"
+        onBack={() => router.back()}
+        badge={!canManagePlaces ? <ViewOnlyChip /> : null}
+        eyebrow="Property"
         title="Nearby"
         italicTail="places."
         subtitle={
@@ -42,6 +46,10 @@ export default function OwnerNearbyPlacesScreen() {
         <>
           <NearbyPlacesView mode="admin" propertyId={property.id} />
 
+          {/* Hidden, not greyed: the whole card exists to open a management
+              screen, so at view-only there is nothing behind it to see. The
+              places themselves are still listed above. */}
+          {canManagePlaces ? (
           <Section eyebrow="Manage" title="Curate">
             <ActionCard
               meta="Owner tools"
@@ -51,6 +59,7 @@ export default function OwnerNearbyPlacesScreen() {
               tone="primary"
             />
           </Section>
+          ) : null}
         </>
       )}
     </ScreenScrollView>

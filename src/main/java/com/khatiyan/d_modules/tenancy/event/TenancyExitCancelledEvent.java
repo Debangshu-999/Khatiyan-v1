@@ -9,6 +9,8 @@ import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestType;
  */
 public record TenancyExitCancelledEvent(
         UUID requestId,
+        /** Short code for display. Notifications must never print a UUID. */
+        String requestReferenceCode,
         UUID tenancyId,
         UUID tenantUserId,
         UUID propertyId,

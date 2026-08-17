@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   AlertCircle,
@@ -46,6 +46,10 @@ import {
   UserPlus,
   Users,
   Wallet,
+  Activity,
+  MessageSquare,
+  Radar,
+  Waves,
   Wrench,
   X,
   type LucideProps,
@@ -60,6 +64,7 @@ import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { TabSwitcher } from "@/components/tab-switcher";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
 import { TrendBarChart } from "@/components/trend-bar-chart";
@@ -72,19 +77,28 @@ import { useGetProfileQuery } from "@/store/services/auth-api";
 import type { ConcernSummary } from "@/store/services/concern-api";
 import { useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import { useSearchDiscoveryPropertiesQuery } from "@/store/services/discovery-api";
+import { useGetOpenEnquiryCountQuery } from "@/store/services/enquiry-api";
 import type { NoticeSummary, PropertyBoardItem } from "@/store/services/notice-api";
-import { useListMyPropertyBoardItemsQuery, useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
+import {
+  useListMyPropertyBoardItemsQuery,
+  useListMyVisibleNoticesQuery,
+  useListUpcomingNoticesQuery,
+} from "@/store/services/notice-api";
 import { useGetPropertyMonthSummaryQuery, type BillingMonthSummary } from "@/store/services/billing-api";
 import { useGetBudgetOverviewQuery } from "@/store/services/expense-api";
 import {
   useGetOwnerDashboardQuery,
   type OwnerDashboard,
+  type ActivityDayBucket,
+  type RecentActivityType,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
-import { useListPayoutAccountsQuery } from "@/store/services/payout-api";
 import { PnlTrendChart } from "@/features/owner/pnl-trend-chart";
 import { useGetPnlStatementQuery, useGetPnlTrendQuery, type PnlStatement } from "@/store/services/pnl-api";
 import { findOwnerModule } from "@/features/owner/owner-modules";
+import { useScopedUnreadCount } from "@/features/notifications/alert-filters";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
+import { useRouteGate } from "@/features/owner/route-gates";
 import { workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { type OwnerProperty } from "@/store/services/property-api";
 import { useListManagerEmploymentQuery, useListStaffCategoriesQuery, useListStaffMembersQuery } from "@/store/services/staff-api";
@@ -131,6 +145,8 @@ export default function HomeScreen() {
     skip: !isWorkspace || !selectedWorkspaceProperty,
   });
   const headerRecentActivity = headerDashboardQuery.data?.recentActivity ?? [];
+  const headerAttentionCount = attentionCount(headerDashboardQuery.data);
+  const awaitingPropertyChoice = isWorkspace && !selectedWorkspaceProperty;
 
   const subtitle = isWorkspace
     ? `Manage rooms, tenancies, billing, concerns and the property board for the properties you ${isManagerAccount ? "manage" : "own"}.`
@@ -147,17 +163,6 @@ export default function HomeScreen() {
       : user
         ? humanizeToken(user.role)
         : "";
-  const accountMenuLabel = activeAccount ? `${accountLabel(activeAccount)} account` : markerLabel ? `${markerLabel} account` : "Account";
-
-  async function handleLogout() {
-    dispatch(clearActiveAccount());
-    dispatch(setPinnedOwnerModules([]));
-    void saveActiveAccount(null);
-    dispatch(clearSession());
-    dispatch(api.util.resetApiState());
-    await clearStoredSession();
-    router.replace("/auth");
-  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
@@ -172,14 +177,12 @@ export default function HomeScreen() {
                 color: colors.ink,
                 fontFamily: fonts.display,
                 fontSize: 30,
-                fontWeight: "500",
                 letterSpacing: -0.4,
                 lineHeight: 36,
               }}
-              selectable
             >
               {greeting},{" "}
-              <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }} selectable>
+              <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }}>
                 {firstName}.
               </Text>
             </Text>
@@ -187,15 +190,33 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={{ alignItems: "flex-end", gap: spacing.sm }}>
-          <HomeProfileMenu
-            accountLabel={accountMenuLabel}
-            imageUri={profileQuery.data?.profilePhotoUrl ?? null}
-            name={user?.fullName?.trim() || "Khatiyan user"}
-            onLogout={() => void handleLogout()}
-            onOpenProfile={() => router.push("/account")}
-            onOpenSettings={() => router.push("/account-settings")}
+          {/* The profile chip that used to sit here opened a dropdown of
+              Profile / Settings / Logout — all of which the Profile tab now
+              holds, so the menu was a second route to one screen. The bell takes
+              the slot because an alert is a glance, not a destination. */}
+          {/* All three are per-property in workspace mode, so until one is
+              chosen they have nothing to show and are inert. Greyed rather than
+              hidden: three icons appearing the moment a property is picked reads
+              as the UI changing shape, where a dimmed icon reads as "not yet". A
+              tenant has no property selector, so their bell is never blocked. */}
+          <HomeAlertsButton
+            disabled={awaitingPropertyChoice}
+            onPress={() => router.push("/notifications")}
           />
-          {isWorkspace ? <LatestEventsButton activity={headerRecentActivity} /> : null}
+          {isWorkspace ? (
+            <>
+              <LatestEventsButton
+                activity={headerRecentActivity}
+                disabled={awaitingPropertyChoice}
+                propertyName={selectedWorkspaceProperty?.name ?? null}
+              />
+              <HomeAttentionButton
+                count={headerAttentionCount}
+                disabled={awaitingPropertyChoice}
+                onPress={() => router.push("/owner-action-center")}
+              />
+            </>
+          ) : null}
         </View>
       </View>
 
@@ -235,14 +256,13 @@ function HomeLocationBar({ location, onRefresh }: { location: DeviceLocationStat
         <Navigation color={colors.primary} fill={colors.primary} size={16} strokeWidth={2} />
         <Text
           numberOfLines={1}
-          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sans, fontSize: 20, fontWeight: "800", letterSpacing: 0 }}
-          selectable
+          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 20, letterSpacing: 0 }}
         >
           {locationTitle(location)}
         </Text>
         {busy ? <ActivityIndicator color={colors.muted} size="small" /> : <RefreshCw color={colors.muted} size={14} strokeWidth={2.4} />}
       </View>
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
         {locationAddress(location)}
       </Text>
     </AnimatedPressable>
@@ -274,126 +294,154 @@ function WorkspaceMarker({ label }: { label: string }) {
   const { colors, type } = useTheme();
 
   return (
-    <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]} selectable>
+    <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]}>
       {label}
     </Text>
   );
 }
 
-function HomeProfileMenu({
-  accountLabel,
-  imageUri,
-  name,
-  onLogout,
-  onOpenProfile,
-  onOpenSettings,
-}: {
-  accountLabel: string;
-  imageUri: string | null;
-  name: string;
-  onLogout: () => void;
-  onOpenProfile: () => void;
-  onOpenSettings: () => void;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const [open, setOpen] = useState(false);
-  const initials = initialsFor(name);
-
-  function closeAndRun(action: () => void) {
-    setOpen(false);
-    action();
+/**
+ * Total open items the action centre groups — the badge on the header icon.
+ *
+ * <p>
+ * Shared so the icon and the action centre itself cannot disagree: they were
+ * two copies of the same sum, and a new attention type added to one would have
+ * silently skipped the other. A budget at or over its limit counts as one item.
+ */
+function attentionCount(dashboard: OwnerDashboard | undefined): number {
+  if (!dashboard) {
+    return 0;
   }
-
+  const { attention, budget } = dashboard;
   return (
-    <View style={{ alignItems: "flex-end", position: "relative", zIndex: 40 }}>
-      <AnimatedPressable
-        accessibilityLabel="Open account menu"
-        accessibilityRole="button"
-        onPress={() => setOpen((current) => !current)}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: 999,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: 6,
-          height: 40,
-          paddingLeft: 4,
-          paddingRight: 10,
-        }}
-      >
-        <View style={{ alignItems: "center", borderRadius: 16, height: 32, justifyContent: "center", overflow: "hidden", width: 32 }}>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={{ height: 32, width: 32 }} />
-          ) : (
-            <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, height: 32, justifyContent: "center", width: 32 }}>
-              <Text style={{ color: colors.primary, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900" }} selectable>
-                {initials}
-              </Text>
-            </View>
-          )}
-        </View>
-        {open ? <ChevronUp color={colors.muted} size={16} strokeWidth={2.4} /> : <ChevronDown color={colors.muted} size={14} strokeWidth={2.4} />}
-      </AnimatedPressable>
-
-      {open ? (
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.borderStrong,
-            borderRadius: 14,
-            borderWidth: 1,
-            gap: 2,
-            padding: spacing.xs,
-            position: "absolute",
-            right: 0,
-            top: 48,
-            width: 182,
-            zIndex: 50,
-          }}
-        >
-          <View style={{ borderBottomColor: colors.border, borderBottomWidth: 1, gap: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
-            <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]} numberOfLines={1} selectable>
-              {accountLabel}
-            </Text>
-            <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]} numberOfLines={1} selectable>
-              {name}
-            </Text>
-          </View>
-          <MenuAction icon={UserRound} label="Profile" onPress={() => closeAndRun(onOpenProfile)} />
-          <MenuAction icon={Settings} label="Settings" onPress={() => closeAndRun(onOpenSettings)} />
-          <MenuAction danger icon={LogOut} label="Logout" onPress={() => closeAndRun(onLogout)} />
-        </View>
-      ) : null}
-    </View>
+    attention.paymentsOverdue +
+    attention.concernsUnattended24h +
+    attention.escalatedConcerns +
+    attention.pendingExitRequests +
+    attention.pendingRoomChangeRequests +
+    attention.upcomingExits +
+    attention.exitsPastDue +
+    attention.tenantsOnNotice +
+    // Nullish-guarded: a cached / pre-upgrade dashboard response lacks these.
+    (attention.pendingDepositSettlements ?? 0) +
+    (budget?.level === "APPROACHING" || budget?.level === "EXCEEDED" ? 1 : 0)
   );
 }
 
-function MenuAction({
-  danger,
-  icon: Icon,
-  label,
+function HomeAttentionButton({
+  count,
+  disabled,
   onPress,
 }: {
-  danger?: boolean;
-  icon: ComponentType<LucideProps>;
-  label: string;
+  count: number;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { colors, fonts } = useTheme();
-  const tone = danger ? colors.danger : colors.ink;
+
   return (
     <AnimatedPressable
+      accessibilityLabel={count > 0 ? `Action centre, ${count} pending` : "Action centre"}
       accessibilityRole="button"
-      onPress={onPress}
-      style={{ alignItems: "center", borderRadius: 10, flexDirection: "row", gap: spacing.sm, minHeight: 38, paddingHorizontal: spacing.sm }}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      disabled={disabled}
+      hitSlop={10}
+      style={{ alignItems: "center", height: 32, justifyContent: "center", opacity: disabled ? 0.4 : 1, width: 32 }}
+      onPress={disabled ? undefined : onPress}
     >
-      <Icon color={tone} size={16} strokeWidth={2.2} />
-      <Text style={{ color: tone, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
-        {label}
-      </Text>
+      <ClipboardList color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
+      {count > 0 && !disabled ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.danger,
+            borderColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            height: 16,
+            justifyContent: "center",
+            minWidth: 16,
+            paddingHorizontal: 3,
+            position: "absolute",
+            right: -2,
+            top: -1,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.onPrimary,
+              fontFamily: fonts.sansBold,
+              fontSize: 10,
+              fontVariant: ["tabular-nums"],
+              lineHeight: 13,
+            }}
+          >
+            {count > 99 ? "99+" : count}
+          </Text>
+        </View>
+      ) : null}
+    </AnimatedPressable>
+  );
+}
+
+function HomeAlertsButton({ disabled, onPress }: { disabled?: boolean; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const auth = useAppSelector((state) => state.auth);
+  const unreadCount = useScopedUnreadCount({ enabled: Boolean(auth.accessToken) });
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+      accessibilityRole="button"
+      onPress={disabled ? undefined : onPress}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      disabled={disabled}
+      hitSlop={10}
+      // No chip around it: the bordered circle sat proud of the icon and clipped
+      // into the status-bar inset. The icon carries its own badge instead, with
+      // hitSlop keeping the tap target honest.
+      style={{
+        alignItems: "center",
+        height: 32,
+        justifyContent: "center",
+        marginTop: 6,
+        opacity: disabled ? 0.4 : 1,
+        width: 32,
+      }}
+    >
+      <Bell color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
+      {/* The count, not a dot: a bare dot says "something, sometime" and cannot
+          be told apart from one you already read. */}
+      {unreadCount > 0 && !disabled ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.danger,
+            borderColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            height: 16,
+            justifyContent: "center",
+            minWidth: 16,
+            paddingHorizontal: 3,
+            position: "absolute",
+            right: -2,
+            top: -1,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.onPrimary,
+              fontFamily: fonts.sansBold,
+              fontSize: 10,
+              fontVariant: ["tabular-nums"],
+              lineHeight: 13,
+            }}
+          >
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </Text>
+        </View>
+      ) : null}
     </AnimatedPressable>
   );
 }
@@ -454,10 +502,10 @@ function GradientCtaCard({
             <Icon color={colors.onPrimary} size={24} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: 3 }}>
-            <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900", letterSpacing: 1, opacity: 0.82, textTransform: "uppercase" }} selectable>
+            <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1, opacity: 0.82, textTransform: "uppercase" }}>
               {kicker}
             </Text>
-            <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 20, fontWeight: "600", letterSpacing: -0.3 }} selectable>
+            <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
               {title}
             </Text>
           </View>
@@ -465,7 +513,7 @@ function GradientCtaCard({
             <ChevronRight color={colors.onPrimary} size={19} strokeWidth={2.6} />
           </View>
         </View>
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, opacity: 0.85 }} selectable>
+        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
           {description}
         </Text>
       </LinearGradient>
@@ -487,14 +535,36 @@ function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owne
 
 // Header button for the dashboard's latest events. Opens a modal that closes on
 // an outside tap, and shows a blinking dot when a new event arrives.
-function LatestEventsButton({ activity }: { activity: RecentActivityItem[] }) {
+function LatestEventsButton({
+  activity,
+  disabled,
+  propertyName,
+}: {
+  activity: RecentActivityItem[];
+  disabled?: boolean;
+  // Null until a property is chosen. The feed is per-property, so without one
+  // there is nothing to show — and an empty feed would wrongly read as
+  // "nothing has happened" rather than "nothing is selected".
+  propertyName: string | null;
+}) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   const [hasNew, setHasNew] = useState(false);
   const latestKey = activity.length ? `${activity[0].type}-${activity[0].occurredAt}` : "";
   const seenKeyRef = useRef<string | null>(null);
+  const seenPropertyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // Switching property swaps the whole feed, which looks exactly like a new
+    // event arriving. Treat the incoming property's events as already seen so
+    // the dot means "something happened", never "you changed property".
+    if (seenPropertyRef.current !== propertyName) {
+      seenPropertyRef.current = propertyName;
+      seenKeyRef.current = latestKey;
+      setHasNew(false);
+      return;
+    }
+
     if (seenKeyRef.current === null) {
       // First load - treat existing events as already seen so it doesn't blink.
       seenKeyRef.current = latestKey;
@@ -503,7 +573,7 @@ function LatestEventsButton({ activity }: { activity: RecentActivityItem[] }) {
     if (latestKey && latestKey !== seenKeyRef.current) {
       setHasNew(true);
     }
-  }, [latestKey]);
+  }, [latestKey, propertyName]);
 
   function openModal() {
     seenKeyRef.current = latestKey;
@@ -516,23 +586,24 @@ function LatestEventsButton({ activity }: { activity: RecentActivityItem[] }) {
       <AnimatedPressable
         accessibilityLabel="Latest events"
         accessibilityRole="button"
-        onPress={openModal}
+        onPress={disabled ? undefined : openModal}
+        accessibilityState={{ disabled: Boolean(disabled) }}
+        disabled={disabled}
+        hitSlop={10}
         style={{
           alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: 14,
-          borderWidth: 1,
-          height: 40,
+          height: 32,
           justifyContent: "center",
-          width: 40,
+          opacity: disabled ? 0.4 : 1,
+          width: 32,
         }}
       >
-        <MaterialIcons name="dynamic-feed" color={colors.muted} size={22} />
-        {hasNew ? <BlinkingDot /> : null}
+        <Radar color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
+        {hasNew && !disabled ? <BlinkingDot /> : null}
       </AnimatedPressable>
-      {open ? <LatestEventsModal activity={activity} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <LatestEventsModal activity={activity} onClose={() => setOpen(false)} propertyName={propertyName} />
+      ) : null}
     </>
   );
 }
@@ -569,29 +640,153 @@ function BlinkingDot() {
   );
 }
 
-function LatestEventsModal({ activity, onClose }: { activity: RecentActivityItem[]; onClose: () => void }) {
+const ACTIVITY_BUCKET_LABEL: Record<ActivityDayBucket, string> = {
+  TODAY: "Today",
+  YESTERDAY: "Yesterday",
+  EARLIER_THIS_WEEK: "Earlier this week",
+};
+
+// The feed is a rolling 7-day window, so these three cover everything that can
+// arrive. All three always render — an empty day is information too.
+const ACTIVITY_BUCKET_ORDER: ActivityDayBucket[] = ["TODAY", "YESTERDAY", "EARLIER_THIS_WEEK"];
+
+/** Shared floor for an open-but-empty day, so every one is the same size. */
+const EMPTY_DAY_MIN_HEIGHT = 140;
+
+const ACTIVITY_BUCKET_EMPTY: Record<ActivityDayBucket, string> = {
+  TODAY: "Nothing so far today.",
+  YESTERDAY: "Nothing happened yesterday.",
+  EARLIER_THIS_WEEK: "Nothing earlier this week.",
+};
+
+// Filter categories. Grouped by the part of the business an owner thinks in,
+// not by the enum's spelling — "did something happen with my tenants" rather
+// than "was it TENANCY_STARTED or TENANCY_ROOM_CHANGED".
+type ActivityCategory = "all" | "tenancy" | "billing" | "concern" | "notice" | "room" | "staff";
+
+const ACTIVITY_CATEGORY: Record<RecentActivityType, Exclude<ActivityCategory, "all">> = {
+  TENANCY_STARTED: "tenancy",
+  TENANCY_ENDED: "tenancy",
+  TENANCY_ROOM_CHANGED: "tenancy",
+  TENANCY_EXIT_REQUESTED: "tenancy",
+  PAYMENT_RECORDED: "billing",
+  CONCERN_RAISED: "concern",
+  CONCERN_ASSIGNED: "concern",
+  CONCERN_TAKEN_UP: "concern",
+  CONCERN_ESCALATED: "concern",
+  CONCERN_RESOLVED: "concern",
+  NOTICE_PUBLISHED: "notice",
+  ROOM_MAINTENANCE_STARTED: "room",
+  ROOM_MAINTENANCE_ENDED: "room",
+  ROOM_DEACTIVATED: "room",
+  ROOM_REACTIVATED: "room",
+  STAFF_ADDED: "staff",
+  STAFF_REMOVED: "staff",
+  MANAGER_ADDED: "staff",
+  MANAGER_REMOVED: "staff",
+};
+
+const ACTIVITY_CATEGORY_LABEL: Record<ActivityCategory, string> = {
+  all: "All",
+  tenancy: "Tenancy",
+  billing: "Billing",
+  concern: "Concerns",
+  notice: "Notices",
+  room: "Rooms",
+  staff: "Staff",
+};
+
+const ACTIVITY_CATEGORY_ORDER: ActivityCategory[] = ["all", "tenancy", "billing", "concern", "notice", "room", "staff"];
+
+function activityCategoryOf(item: RecentActivityItem): Exclude<ActivityCategory, "all"> {
+  // Falls back rather than crashing if the server adds a type this build has
+  // never heard of.
+  return ACTIVITY_CATEGORY[item.type] ?? "tenancy";
+}
+
+// Every bucket, always, empty or not — the sections are the structure of the
+// screen rather than a consequence of the data.
+function groupActivityByDay(activity: RecentActivityItem[]): { bucket: ActivityDayBucket; items: RecentActivityItem[] }[] {
+  return ACTIVITY_BUCKET_ORDER.map((bucket) => ({
+    bucket,
+    // Falls back rather than dropping a row if an older server build omits the
+    // bucket entirely.
+    items: activity.filter((item) => (item.dayBucket ?? "EARLIER_THIS_WEEK") === bucket),
+  }));
+}
+
+function LatestEventsModal({
+  activity,
+  onClose,
+  propertyName,
+}: {
+  activity: RecentActivityItem[];
+  onClose: () => void;
+  propertyName: string | null;
+}) {
   const { colors, fonts, type } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [category, setCategory] = useState<ActivityCategory>("all");
+  // Today opens, the rest stay shut. Three expanded headings with two of them
+  // empty was most of what the sheet showed; the counts alone answer "did
+  // anything happen yesterday" without spending the space.
+  const [openBuckets, setOpenBuckets] = useState<ActivityDayBucket[]>(["TODAY"]);
+
+
+  function toggleBucket(bucket: ActivityDayBucket) {
+    setOpenBuckets((current) =>
+      current.includes(bucket) ? current.filter((entry) => entry !== bucket) : [...current, bucket],
+    );
+  }
+
+  const visible = useMemo(
+    () => (category === "all" ? activity : activity.filter((item) => activityCategoryOf(item) === category)),
+    [activity, category],
+  );
+  const groups = useMemo(() => groupActivityByDay(visible), [visible]);
+
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-      <Pressable onPress={onClose} style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <Pressable
-          onPress={() => {}}
+    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        {/* Full screen width, edge to edge: this is a feed, and side gutters
+            cost it room without making it easier to read. */}
+        <View
           style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 22,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "82%",
-            padding: spacing.lg,
+            backgroundColor: colors.background,
+            borderTopLeftRadius: 26,
+            borderTopRightRadius: 26,
+            // Fixed, not min/max: a sheet that grows as sections expand jumps
+            // under the thumb. It holds its size and the list scrolls instead.
+            height: "85%",
+            paddingBottom: insets.bottom + spacing.md,
           }}
         >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+          {/* Grab handle so the sheet reads as something you pull, not a dialog. */}
+          <View style={{ alignItems: "center", paddingBottom: spacing.xs, paddingTop: spacing.sm }}>
+            <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, width: 38 }} />
+          </View>
+
+          <View
+            style={{
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              justifyContent: "space-between",
+              paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.sm,
+            }}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                Recent activity
+              {/* Names the property, because the feed only ever covers one and a
+                  reader with several needs to know which they are looking at.
+                  Allowed to wrap rather than truncate — a half-shown property
+                  name is worse than a two-line eyebrow. */}
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                {propertyName ? `Activity in ${propertyName}` : "Activity"}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>
+              <Text
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, lineHeight: 29 }}
+              >
                 Latest events
               </Text>
             </View>
@@ -599,25 +794,284 @@ function LatestEventsModal({ activity, onClose }: { activity: RecentActivityItem
               accessibilityLabel="Close latest events"
               accessibilityRole="button"
               onPress={onClose}
-              style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: 999,
+                borderWidth: 1,
+                height: 36,
+                justifyContent: "center",
+                width: 36,
+              }}
             >
               <X color={colors.ink} size={18} strokeWidth={2.2} />
             </AnimatedPressable>
           </View>
-          {activity.length === 0 ? (
-            <Text style={[type.body, { color: colors.muted }]} selectable>
-              No recent activity yet. New tenancies, payments, resolved concerns and published notices will appear here.
-            </Text>
+
+          {!propertyName ? (
+            <ActivityNoPropertyState />
           ) : (
-            <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator>
-              {activity.map((item, index) => (
-                <ActivityRow item={item} key={`${item.type}-${item.occurredAt}-${index}`} />
-              ))}
-            </ScrollView>
+          <>
+          {/* Always present, including on an empty feed: the chips tell the owner
+              what this screen will eventually carry. */}
+          {/* flexShrink:0 is the fix — flexGrow:0 alone stopped it expanding but
+              left it shrinkable, so the column compressed the strip and clipped
+              the chips' descenders. */}
+          <ScrollView
+            contentContainerStyle={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, flexShrink: 0 }}
+          >
+            {ACTIVITY_CATEGORY_ORDER.map((item) => (
+              <ActivityFilterChip
+                active={category === item}
+                count={item === "all" ? activity.length : activity.filter((row) => activityCategoryOf(row) === item).length}
+                key={item}
+                label={ACTIVITY_CATEGORY_LABEL[item]}
+                onPress={() => setCategory(item)}
+              />
+            ))}
+          </ScrollView>
+
+          <ScrollView
+            contentContainerStyle={{
+              // flexGrow lets the spacer below actually push: without it the
+              // container hugs its content and there is nothing to push into.
+              flexGrow: 1,
+              paddingBottom: spacing.lg,
+              paddingHorizontal: spacing.lg,
+              paddingTop: spacing.sm,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* One flat stack, no wrapper. The leftover height belongs to
+                whichever section is OPEN and EMPTY — that section's placeholder
+                flexes and everything after it lands at the foot. When nothing is
+                open, nothing flexes and all three sit flush together, which is
+                what a wrapper keyed on "does Today have items" got wrong: it
+                opened a gap under a collapsed Today. */}
+            {groups.map((group, index) => (
+              <ActivityDaySection
+                bucket={group.bucket}
+                first={index === 0}
+                items={group.items}
+                key={group.bucket}
+                onToggle={() => toggleBucket(group.bucket)}
+                open={openBuckets.includes(group.bucket)}
+              />
+            ))}
+
+          </ScrollView>
+
+          <ActivityEmptyHint />
+          </>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
+  );
+}
+
+/**
+ * One day, collapsed to a header until asked for.
+ *
+ * <p>The count sits on the right and is the whole answer most of the time —
+ * there is no dashed "nothing happened" box any more, because a box saying
+ * nothing happened takes as much room as something happening.
+ */
+function ActivityDaySection({
+  bucket,
+  first,
+  items,
+  onToggle,
+  open,
+}: {
+  bucket: ActivityDayBucket;
+  /** Only the first box draws a top border, so stacked edges stay 1px. */
+  first: boolean;
+  items: RecentActivityItem[];
+  onToggle: () => void;
+  open: boolean;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    // Every OPEN section grows; collapsed ones keep their header height and get
+    // pushed down. flexGrow rather than flex: `flex: 1` sets flexBasis to 0,
+    // which discards content height and would squeeze a long section into the
+    // same share as a short one. flexGrow keeps each section's natural height
+    // and splits only the SURPLUS, equally — the same rule whether a section is
+    // empty or holding rows.
+    <View style={open ? { flexGrow: 1 } : undefined}>
+      {/* A box, not a rule-and-label. The left edge carries the signal: a bold
+          ink rail when the day has something in it, a hairline when it does not,
+          so a glance down the sheet shows which days are worth opening. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={onToggle}
+        style={{
+          alignItems: "center",
+          borderColor: colors.border,
+          borderLeftColor: items.length ? colors.ink : colors.border,
+          borderLeftWidth: items.length ? 4 : 1,
+          borderTopWidth: first ? 1 : 0,
+          borderBottomWidth: 1,
+          borderRightWidth: 1,
+          flexDirection: "row",
+          gap: spacing.sm,
+          // Clipped so the wash below stays inside the header's edges.
+          overflow: "hidden",
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.md,
+        }}
+      >
+        {/* The item cards below are flat white. A surfaceSunken-to-surface ramp
+            was invisible against them, so this starts at borderStrong — a real
+            grey — and lightens across. The header reads as the seam between
+            days rather than as one more row in the list. */}
+        <LinearGradient
+          colors={[colors.borderStrong, colors.surfaceSunken]}
+          end={{ x: 1, y: 1 }}
+          pointerEvents="none"
+          start={{ x: 0, y: 0 }}
+          style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
+        />
+        <Text style={[type.eyebrow, { color: items.length ? colors.ink : colors.kicker, flex: 1 }]}>
+          {ACTIVITY_BUCKET_LABEL[bucket]}
+        </Text>
+        <Text style={[type.caption, { color: items.length ? colors.ink : colors.kicker, fontWeight: "700" }]}>
+          {items.length}
+        </Text>
+        {open ? (
+          <ChevronDown color={colors.muted} size={17} strokeWidth={2.4} />
+        ) : (
+          <ChevronRight color={colors.muted} size={17} strokeWidth={2.4} />
+        )}
+      </Pressable>
+
+      {open ? (
+        items.length ? (
+          // Padding on BOTH sides: with every section open, the last card of one
+          // day sat flush against the next day's header, so the two read as one
+          // block. The gap is what separates a section's contents from the seam
+          // that follows it.
+          <View style={{ gap: spacing.sm, paddingBottom: spacing.md, paddingTop: spacing.sm }}>
+            {items.map((item, index) => (
+              <ActivityRow item={item} key={`${item.type}-${item.occurredAt}-${index}`} />
+            ))}
+          </View>
+        ) : (
+          // Centred in the space the list would have filled, so an open-but-empty
+          // day reads as calm rather than broken.
+          // Every empty day gets the same floor, so Today and Yesterday do not
+          // read as different-sized holes when both are empty. Today additionally
+          // flexes, which only widens the gap it already owns — the text stays
+          // centred in whatever that gap turns out to be.
+          <View style={{ flexGrow: 1, justifyContent: "center", minHeight: EMPTY_DAY_MIN_HEIGHT }}>
+            <View style={{ alignItems: "center" }}>
+              <Text style={[type.body, { color: colors.muted }]}>Nothing so far</Text>
+            </View>
+          </View>
+        )
+      ) : null}
+    </View>
+  );
+}
+
+function ActivityFilterChip({
+  active,
+  count,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      tapLockMs={0}
+      style={{
+        backgroundColor: active ? colors.ink : "transparent",
+        borderColor: active ? colors.ink : colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      {/* Explicit lineHeight and no font padding: Inter sits taller than the
+          system face this chip was measured against, and without both the
+          descenders clip against the 7px vertical padding. The Bold FILE gives
+          the weight — fontWeight on the Regular file makes Android synthesise
+          its own bold on top. */}
+      <Text
+        style={{
+          color: active ? colors.surface : count === 0 ? colors.kicker : colors.inkSoft,
+          fontFamily: fonts.sansBold,
+          fontSize: 12.5,
+          includeFontPadding: false,
+          lineHeight: 17,
+        }}
+      >
+        {count > 0 ? `${label} · ${count}` : label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+// Distinct from an empty feed on purpose. "No property selected" and "nothing
+// has happened at this property" look identical if both render an empty list,
+// and only one of them is the owner's problem to fix.
+function ActivityNoPropertyState() {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.xl }}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: 999,
+          height: 62,
+          justifyContent: "center",
+          width: 62,
+        }}
+      >
+        <Building2 color={colors.kicker} size={26} strokeWidth={2} />
+      </View>
+      <Text
+        style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
+      >
+        Choose a property first
+      </Text>
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 19, textAlign: "center" }]}>
+        Activity is tracked per property. Pick the active property on Home and its last 7 days of events will appear
+        here.
+      </Text>
+    </View>
+  );
+}
+
+// Shown under the (empty) day sections rather than replacing them, so the shape
+// of the screen stays the same whether or not anything has happened. Not
+// apologetic: starting empty is the design, so it says what will arrive.
+function ActivityEmptyHint() {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+      <Waves color={colors.kicker} size={22} strokeWidth={2} />
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 19, textAlign: "center" }]}>
+        Property events for last 7 days will appear here
+      </Text>
+    </View>
   );
 }
 
@@ -672,7 +1126,7 @@ function TenantHome({
           <IconBadge icon={Building2} />
           <View style={{ flex: 1, gap: spacing.sm }}>
             <View style={{ gap: spacing.xs }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Current property
               </Text>
               <Text
@@ -680,10 +1134,8 @@ function TenantHome({
                   color: colors.ink,
                   fontFamily: fonts.display,
                   fontSize: 24,
-                  fontWeight: "500",
                   lineHeight: 29,
                 }}
-                selectable
               >
                 {property.name}
               </Text>
@@ -792,16 +1244,68 @@ type OwnerRoute =
   | "/owner-property"
   | "/owner-rooms"
   | "/owner-notices"
+  | "/owner-upcoming-notices"
   | "/owner-concerns"
   | "/owner-vacancy-finder"
   | "/owner-staff"
   | "/owner-expenses"
-  | "/owner-pnl"
-  | { pathname: "/owner-service-placeholder"; params: { service: string; title: string } };
+  | "/owner-enquiries"
+  | "/owner-pnl";
+
+/**
+ * The Enquiries tool, split out only so it can carry its own unanswered count.
+ *
+ * <p>Every other badge on this screen rides in on the dashboard's `attention`
+ * payload. Enquiries do not, and adding them there would mean a dashboard
+ * change for one number — so it asks for its own, which is a cached call the
+ * enquiries screen shares.
+ */
+function EnquiriesToolBox({
+  onNavigate,
+  propertyId,
+}: {
+  onNavigate: (route: OwnerRoute) => void;
+  propertyId: string | null;
+}) {
+  const openCountQuery = useGetOpenEnquiryCountQuery(propertyId ?? "", { skip: !propertyId });
+
+  return (
+    <HomeToolBox
+      badge={openCountQuery.data ?? 0}
+      icon={MessageSquare}
+      label="Enquiries"
+      onPress={() => onNavigate("/owner-enquiries")}
+    />
+  );
+}
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
 
+
 type OwnerTab = "workspace" | "dashboard";
+
+/**
+ * Faded ground for the property selector card.
+ *
+ * <p>Bundled rather than hotlinked: the home screen should not need a
+ * third-party host to finish drawing itself, and a bundled file cannot be
+ * pulled, rate-limited or blocked for hotlinking later.
+ *
+ * <p>A photograph rather than line work, chosen for legibility. Drawn art at
+ * this scale puts strokes and window grids at roughly x-height, which fights
+ * the address line sitting on top of it; a photograph reads as a soft tone.
+ *
+ * <p>An aerial of a neighbourhood rather than a facade, chosen for the crop.
+ * The card is about 4:1, so it can only ever show a 4:1 strip — and a strip
+ * that wide cut from a portrait facade shot is roughly one balcony, which
+ * reads as an unrecognisable smear however it is positioned. Here the
+ * buildings are small in frame and the source is already 16:9, so the same
+ * strip holds dozens of whole roofs and still looks like housing.
+ *
+ * <p>Pexels licence — free for commercial use, no attribution required.
+ * https://www.pexels.com/photo/aerial-view-of-urban-residential-complex-30353894/
+ */
+const PROPERTY_CARD_ART = require("../../assets/workspace/property-card.jpg");
 
 function OwnerHome({
   account,
@@ -820,7 +1324,21 @@ function OwnerHome({
   const [tab, setTab] = useState<OwnerTab>("workspace");
   const workspaceRole: "Owner" | "Manager" = account === "manager" ? "Manager" : "Owner";
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
-  const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const routeGate = useRouteGate(selectedProperty?.id);
+  const navigate = useCallback(
+    (href: OwnerRoute) => {
+      if (typeof href !== "string") {
+        onNavigate(href);
+        return;
+      }
+      routeGate(href, () => onNavigate(href));
+    },
+    [onNavigate, routeGate],
+  );
+  const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", {
+    refetchOnMountOrArgChange: true,
+    skip: !selectedProperty,
+  });
   const dashboard = dashboardQuery.data;
   const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
     { propertyId: selectedProperty?.id ?? "" },
@@ -863,7 +1381,7 @@ function OwnerHome({
   return (
     <FadeInUp style={{ gap: spacing.lg }}>
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {account === "manager" ? (properties.length > 1 ? "Managed properties" : "Managed property") : "Property selector"}
         </Text>
         <OwnerPropertyPicker
@@ -886,17 +1404,22 @@ function OwnerHome({
         </View>
       ) : null}
 
-      {selectedProperty && dashboardQuery.isFetching && !dashboard ? (
+      {/* Opening the selector puts the screen back into the state it loads in
+          with nothing chosen: the picker and nothing under it. The workspace
+          below belongs to the property being replaced, so leaving it on screen
+          while the list is open means scrolling past a whole dashboard for the
+          property you are in the middle of switching away from. */}
+      {selectedProperty && !selectorOpen && dashboardQuery.isFetching && !dashboard ? (
         <SkeletonCard />
       ) : null}
 
-      {selectedProperty && dashboard ? (
+      {selectedProperty && !selectorOpen && dashboard ? (
         <>
           <OwnerTabBar onChange={setTab} tab={tab} />
           {tab === "dashboard" ? (
-            <DashboardTab dashboard={dashboard} monthSummary={monthSummaryQuery.data} onNavigate={onNavigate} />
+            <DashboardTab dashboard={dashboard} monthSummary={monthSummaryQuery.data} onNavigate={navigate} />
           ) : (
-            <WorkspaceTab dashboard={dashboard} onNavigate={onNavigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
+            <WorkspaceTab dashboard={dashboard} onNavigate={navigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
           )}
         </>
       ) : null}
@@ -904,44 +1427,21 @@ function OwnerHome({
   );
 }
 
+type SnapshotKey = "collection" | "property" | "tenancy" | "cycle" | "pnl";
+
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
-  const { colors, fonts, isDark } = useTheme();
-  const tabs: { label: string; value: OwnerTab }[] = [
-    { label: "Workspace", value: "workspace" },
-    { label: "Dashboard", value: "dashboard" },
-  ];
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderCurve: "continuous", borderRadius: 16, flexDirection: "row", padding: 5 }}>
-      {tabs.map((item) => {
-        const selected = tab === item.value;
-        return (
-          <AnimatedPressable
-            accessibilityRole="button"
-            key={item.value}
-            onPress={() => onChange(item.value)}
-            style={{
-              alignItems: "center",
-              backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.borderStrong : "transparent",
-              borderCurve: "continuous",
-              borderRadius: 13,
-              borderWidth: 1,
-              flex: 1,
-              justifyContent: "center",
-              minHeight: 46,
-            }}
-          >
-            <Text style={{ color: selected ? colors.ink : colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: selected ? "900" : "700" }} selectable>
-              {item.label}
-            </Text>
-          </AnimatedPressable>
-        );
-      })}
-    </View>
+    <TabSwitcher
+      active={tab}
+      onChange={onChange}
+      options={[
+        { label: "Workspace", value: "workspace" },
+        { label: "Dashboard", value: "dashboard" },
+      ]}
+    />
   );
 }
 
-type SnapshotKey = "collection" | "property" | "tenancy" | "cycle" | "pnl";
 
 const SNAPSHOT_META: Record<SnapshotKey, { eyebrow: string; title: string }> = {
   collection: { eyebrow: "Money this month", title: "Collection snapshot" },
@@ -966,7 +1466,17 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
     <>
       <Section eyebrow="Dashboard" title="Snapshots">
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <DashboardSnapshotBox active={openSnapshot === "collection"} icon={Banknote} label="Collection" onPress={() => toggle("collection")} tone="primary" value={compactMoneyPaise(money.collectedThisMonthPaise)} />
+          {/* Collected OVER billed, like the Property box's occupied/total. On its
+              own the collected figure reads as ₹0 for most of the month — true,
+              but it hides whether that is nothing owed or nothing paid yet. */}
+          <DashboardSnapshotBox
+            active={openSnapshot === "collection"}
+            icon={Banknote}
+            label="Collection"
+            onPress={() => toggle("collection")}
+            tone="primary"
+            value={`${compactMoneyPaise(money.collectedThisMonthPaise)}/${compactMoneyPaise(money.billedThisMonthPaise).replace("₹", "")}`}
+          />
           <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
           <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.rentCycleCount) : "-"} />
@@ -1022,14 +1532,18 @@ function DashboardSnapshotBox({
       }}
     >
       <Icon color={accent} size={24} strokeWidth={2.2} />
+      {/* Shrinks rather than truncates: these are money figures, and a ratio like
+          ₹1.2L/5.1L is far wider than the 3/11 these tiles were sized for.
+          Half a rupee value is worse than a slightly smaller one. */}
       <Text
-        style={{ color: tone === "danger" ? colors.danger : colors.ink, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], fontWeight: "700", letterSpacing: -0.3 }}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        style={{ color: tone === "danger" ? colors.danger : colors.ink, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], letterSpacing: -0.3 }}
         numberOfLines={1}
-        selectable
       >
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "center" }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "center" }]} numberOfLines={1}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -1164,7 +1678,7 @@ function PnlSnapshotDetail({ onNavigate, propertyId, statement }: { onNavigate: 
       </View>
       <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
         <View style={{ backgroundColor: statement.billUncollectedPaise > 0 ? colors.warningText : colors.jade, borderRadius: 999, height: 8, width: 8 }} />
-        <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]} selectable>
+        <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
           {statement.billUncollectedPaise > 0
             ? `Collection pending · ${formatMoneyPaise(statement.billUncollectedPaise)} yet to be collected`
             : "All bills collected"}
@@ -1190,12 +1704,20 @@ function signedCompactPaise(paise: number) {
   return `${paise < 0 ? "−" : ""}${compactMoneyPaise(Math.abs(paise))}`;
 }
 
-function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
+function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; propertyId: string | null }) {
   const { colors, fonts, type } = useTheme();
   const dispatch = useAppDispatch();
   const router = useGuardedRouter();
   const user = useAppSelector((state) => state.auth.user);
-  const modules = pinnedKeys.map((key) => findOwnerModule(key)).filter((module): module is NonNullable<typeof module> => Boolean(module));
+  const { canView, owner: isOwner } = usePropertyPermissions(propertyId);
+  // A pin survives a permission change AND a module being removed, so both are
+  // filtered here — otherwise a stale pin stays on Home as a shortcut into a
+  // 403, or into a route that no longer exists.
+  const modules = pinnedKeys
+    .map((key) => findOwnerModule(key))
+    .filter((module): module is NonNullable<typeof module> => Boolean(module))
+    .filter((module) => !module.ownerOnly || isOwner)
+    .filter((module) => !module.resources?.length || module.resources.some((resource) => canView(resource)));
 
   function unpin(key: string) {
     const next = pinnedKeys.filter((pinnedKey) => pinnedKey !== key);
@@ -1207,11 +1729,11 @@ function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         Frequently accessed
       </Text>
       {modules.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+        <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
           Pin owner services with the pin button on the workspace screen to keep them one tap away here.
         </Text>
       ) : (
@@ -1219,76 +1741,82 @@ function FrequentlyVisited({ pinnedKeys }: { pinnedKeys: string[] }) {
           {modules.map((module) => {
             const Icon = module.icon;
             return (
-              <AnimatedPressable
-                accessibilityRole="button"
+              // The unpin control is a SIBLING of the tile, not a child of it.
+              // Nested, both render as <button> on web — invalid HTML, and a
+              // button inside a button is not reachable by keyboard or
+              // announced by a screen reader, so unpinning was mouse-only. This
+              // wrapper carries the grid sizing so the tile can still fill it.
+              <View
                 key={module.key}
-                onPress={() => router.push(module.route as never)}
-                style={{
-                  alignItems: "center",
-                  aspectRatio: 1,
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderCurve: "continuous",
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  flexBasis: "30%",
-                  flexGrow: 1,
-                  gap: spacing.xs,
-                  justifyContent: "center",
-                  maxWidth: "32%",
-                  minHeight: 104,
-                  padding: spacing.sm,
-                }}
+                style={{ flexBasis: "30%", flexGrow: 1, maxWidth: "32%", position: "relative" }}
               >
+                <AnimatedPressable
+                  accessibilityRole="button"
+                  onPress={() => router.push(module.route as never)}
+                  style={{
+                    alignItems: "center",
+                    aspectRatio: 1,
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderCurve: "continuous",
+                    borderRadius: 16,
+                    borderWidth: 1,
+                    gap: spacing.xs,
+                    justifyContent: "center",
+                    minHeight: 104,
+                    padding: spacing.sm,
+                    width: "100%",
+                  }}
+                >
+                  {/* Bare icon, same treatment as the Tools grid but smaller for
+                      the tighter tile. The tinted chip it sat in made every pin
+                      read as a status badge rather than a shortcut. */}
+                  <Icon color={colors.primary} size={34} strokeWidth={1.8} />
+                  <Text
+                    style={{
+                      color: colors.ink,
+                      fontFamily: fonts.sansBold,
+                      fontSize: 12,
+                      lineHeight: 15,
+                      textAlign: "center",
+                    }}
+                    numberOfLines={2}
+                  >
+                    {module.title}
+                  </Text>
+                </AnimatedPressable>
+
+                {/* Last sibling and raised, so it paints over the tile on both
+                    platforms. No stopPropagation needed any more — a tap here
+                    never reaches the tile because it is no longer inside it. */}
                 <AnimatedPressable
                   accessibilityLabel={`Unpin ${module.title}`}
                   accessibilityRole="button"
                   hitSlop={8}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                    unpin(module.key);
-                  }}
+                  onPress={() => unpin(module.key)}
                   style={{
                     alignItems: "center",
-                    height: 26,
+                    height: 30,
                     justifyContent: "center",
                     position: "absolute",
-                    right: spacing.xs,
-                    top: spacing.xs,
-                    width: 26,
+                    right: 2,
+                    top: 2,
+                    width: 30,
+                    zIndex: 2,
                   }}
                 >
-                  <Pin color={colors.primary} size={14} strokeWidth={2.6} />
+                  {/* Filled and leaning, matching the workspace cards:
+                      everything here is pinned by definition, so the mark shows
+                      the state that unpinning would leave.
+
+                      The tilt sits on a wrapping View, not on the icon: a
+                      lucide glyph fills its own viewBox and the SVG clips to
+                      it, so rotating the SVG shears the pin's tip off. */}
+                  <View style={{ transform: [{ rotate: "32deg" }] }}>
+                    <Pin color={colors.primary} fill={colors.primary} size={15} strokeWidth={2} />
+                  </View>
                 </AnimatedPressable>
-                <View
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.primarySoft,
-                    borderColor: colors.border,
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    height: 44,
-                    justifyContent: "center",
-                    width: 44,
-                  }}
-                >
-                  <Icon color={colors.primary} size={21} strokeWidth={2.2} />
-                </View>
-                <Text
-                  style={{
-                    color: colors.ink,
-                    fontFamily: fonts.sans,
-                    fontSize: 12,
-                    fontWeight: "900",
-                    lineHeight: 15,
-                    textAlign: "center",
-                  }}
-                  numberOfLines={2}
-                  selectable
-                >
-                  {module.title}
-                </Text>
-              </AnimatedPressable>
+              </View>
             );
           })}
         </View>
@@ -1308,60 +1836,58 @@ function WorkspaceTab({
   pinnedKeys: string[];
   workspaceRole: "Owner" | "Manager";
 }) {
-  const { attention, budget, today } = dashboard;
-  // Payout banks belong to the owner, not the property — a manager has none to
-  // set up, so the missing-bank item never counts for them.
-  const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
-  const payoutQuery = useListPayoutAccountsQuery(undefined, { skip: workspaceRole !== "Owner" || !hasSession });
-  const payoutMissing = workspaceRole === "Owner" && payoutQuery.isSuccess && (payoutQuery.data?.length ?? 0) === 0;
-  // Total open items the action center groups - drives its attention badge. A
-  // budget that is approaching or exceeded counts as one more item.
-  const actionCenterCount =
-    (payoutMissing ? 1 : 0) +
-    attention.paymentsOverdue +
-    attention.concernsUnattended24h +
-    attention.escalatedConcerns +
-    attention.pendingExitRequests +
-    attention.pendingRoomChangeRequests +
-    attention.upcomingExits +
-    attention.exitsPastDue +
-    attention.tenantsOnNotice +
-    // Nullish-guarded: a cached / pre-upgrade dashboard response lacks these.
-    (attention.pendingDepositSettlements ?? 0) +
-    (budget?.level === "APPROACHING" || budget?.level === "EXCEEDED" ? 1 : 0);
+  const { colors } = useTheme();
+  const { attention, today } = dashboard;
+  const actionCenterCount = attentionCount(dashboard);
   return (
     <>
       <Section eyebrow={`${workspaceRole} actions`} title="Workspace">
-        <FrequentlyVisited pinnedKeys={pinnedKeys} />
+        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} />
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </Section>
 
       <Section eyebrow="Quick access" title="Tools">
+        {/* Every tool stays on screen whatever the manager holds. Tapping a
+            blocked one refuses with a toast that names it, via the shared route
+            gate — unlike a workspace MODULE, which is removed outright. The
+            difference is deliberate: a missing module is a section they were
+            never given, while a missing tool from a fixed four-square grid just
+            looks broken, and leaves the survivors stretched across the row. */}
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HomeToolBox badge={actionCenterCount} icon={ClipboardList} label="Action center" onPress={() => onNavigate("/owner-action-center")} />
             <HomeToolBox icon={Search} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
+            <HomeToolBox icon={Wallet} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HomeToolBox icon={Wallet} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
             <HomeToolBox
               badge={attention.pendingDepositSettlements ?? 0}
               icon={Landmark}
               label="Deposit manager"
               onPress={() => onNavigate("/owner-deposit-manager")}
             />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <HomeToolBox icon={TrendingUp} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
+          </View>
+          {/* An odd fifth tool. It keeps its half-width against a spacer rather
+              than stretching across the row — a lone full-width tile among
+              four half-width ones reads as a layout bug, not a feature. */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <EnquiriesToolBox onNavigate={onNavigate} propertyId={dashboard.property?.propertyId ?? null} />
             <View style={{ flex: 1 }} />
           </View>
         </View>
       </Section>
 
+      {/* Shown to managers too. Consistent with the billing ruling: dashboard
+          figures stay visible to everyone and only the way IN to a module is
+          gated. Staff is the exception below, because it is owner-only outright
+          rather than permission-gated. */}
       <Section eyebrow="Today" title="Live digest">
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <DigestTile
+              // Money in, so green — the one tile on this grid that is good
+              // news rather than a queue.
+              accentColor={colors.jade}
               hint={formatMoneyPaise(today.paymentsMadeTodayPaise)}
               highlight={today.paymentsMadeToday > 0}
               icon={Banknote}
@@ -1390,16 +1916,17 @@ function WorkspaceTab({
             <DigestTile
               hint="Ending today"
               highlight={today.tenanciesEndingToday > 0}
-              icon={DoorOpen}
+              icon={LogOut}
               label="Move-outs"
               onPress={() => onNavigate("/owner-exit-requests")}
               value={String(today.tenanciesEndingToday)}
             />
           </View>
         </View>
-        {workspaceRole === "Owner" ? (
-          <StaffManagementCard onOpen={() => onNavigate("/owner-staff")} propertyId={dashboard.property.propertyId} />
-        ) : null}
+        <UpcomingNoticesCard
+          onOpen={() => onNavigate("/owner-upcoming-notices")}
+          propertyId={dashboard.property.propertyId}
+        />
         <ExpenseTrackerCard onOpen={() => onNavigate("/owner-expenses")} propertyId={dashboard.property.propertyId} />
       </Section>
 
@@ -1442,13 +1969,13 @@ function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; ic
             top: spacing.sm,
           }}
         >
-          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontWeight: "900" }} selectable>
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, }}>
             {badge}
           </Text>
         </View>
       ) : null}
       <Icon color={colors.primary} size={48} strokeWidth={1.8} />
-      <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "900", lineHeight: 15, textAlign: "center" }}>
+      <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}>
         {label}
       </MarqueeText>
     </AnimatedPressable>
@@ -1457,49 +1984,39 @@ function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; ic
 
 // Owner-only quick view of the staff team, sitting full-width (two tiles wide)
 // under the live digest. Figures are estimated from current staff/manager pay terms.
-function StaffManagementCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
-  const { colors, fonts, type } = useTheme();
-  const members = useListStaffMembersQuery({ propertyId }, { skip: !propertyId }).data ?? [];
-  const managers = useListManagerEmploymentQuery(propertyId, { skip: !propertyId }).data ?? [];
-  const categories = useListStaffCategoriesQuery(propertyId, { skip: !propertyId }).data ?? [];
 
-  const days = daysInCurrentMonth();
-  // Daily staff are paid only for their selected working days; managers have no
-  // weekday pattern yet, so they bill every day of the month.
-  const memberPayoutPaise = members.reduce(
-    (sum, member) => sum + (member.salaryStructure === "MONTHLY" ? member.salaryRatePaise : workingDaysInCurrentMonth(member.workingDaysMask) * member.salaryRatePaise),
-    0,
-  );
-  const managerPayoutPaise = managers.reduce(
-    (sum, manager) => sum + (manager.salaryStructure === "MONTHLY" ? manager.salaryRatePaise : days * manager.salaryRatePaise),
-    0,
-  );
-  const payoutPaise = memberPayoutPaise + managerPayoutPaise;
-  const totalStaff = members.length + managers.length;
-  const totalCategories = categories.length + 1; // managers form their own category
+function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
+  const { colors, fonts, type } = useTheme();
+  const upcoming =
+    useListUpcomingNoticesQuery(propertyId, { pollingInterval: 60_000, skip: !propertyId }).data ?? [];
+
+  const recurringCount = upcoming.filter((notice) => notice.recurringNoticeId !== null).length;
+  const scheduledCount = upcoming.length - recurringCount;
+  const next = upcoming[0] ?? null;
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-              <Users color={colors.primary} size={22} strokeWidth={2.2} />
+            <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }}>
+              <Megaphone color={colors.ink} size={22} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                Team
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "600" }} selectable>
-                Staff management
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
+                Upcoming notices
               </Text>
             </View>
             <ChevronRight color={colors.muted} size={20} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <StaffMetricBox hint="Incl. managers" label="Team" value={String(totalStaff)} />
-            <StaffMetricBox hint="Est. this month" label="Payout" value={compactMoneyPaise(payoutPaise)} />
-            <StaffMetricBox hint="Incl. managers" label="Categories" value={String(totalCategories)} />
+            <StaffMetricBox hint="Next 3 hrs" label="Going live" value={String(upcoming.length)} />
+            <StaffMetricBox hint="One-off" label="Scheduled" value={String(scheduledCount)} />
+            <StaffMetricBox
+              hint={next ? formatUpcomingTime(next.visibleFrom) : "Nothing due"}
+              label="Recurring"
+              value={String(recurringCount)}
+            />
           </View>
         </View>
       </Card>
@@ -1507,9 +2024,14 @@ function StaffManagementCard({ onOpen, propertyId }: { onOpen: () => void; prope
   );
 }
 
-// Money-out counterpart to the staff card: this month's spend against the
-// budget, opening the expense tracker. Reads the same budget overview the tool
-// itself uses, so figures (incl. projected salary) always agree with it.
+function formatUpcomingTime(visibleFrom: string) {
+  return new Date(visibleFrom).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
   const budget = useGetBudgetOverviewQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId }).data;
@@ -1527,14 +2049,11 @@ function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; proper
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-              <Wallet color={colors.accent} size={22} strokeWidth={2.2} />
+            <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }}>
+              <Wallet color={colors.ink} size={22} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                Money out
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "600" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
                 Expense tracker
               </Text>
             </View>
@@ -1572,7 +2091,7 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
         {label}
       </Text>
       {/* Serif numerals (money) keep the ledger look; word statuses use the sans
@@ -1585,7 +2104,6 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
         adjustsFontSizeToFit
         minimumFontScale={0.7}
         numberOfLines={1}
-        selectable
         style={{
           color: valueColor ?? colors.ink,
           fontFamily: valueSans ? fonts.sans : fonts.display,
@@ -1599,7 +2117,7 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
       >
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1} selectable>
+      <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>
         {hint}
       </Text>
     </View>
@@ -1675,10 +2193,8 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
             item.type === "ROOM_REACTIVATED"
           ? "jade"
           : "primary";
-  const iconBg =
-    tone === "danger" ? colors.dangerSoft : tone === "accent" ? colors.accentSoft : tone === "jade" ? colors.jadeSoft : colors.primarySoft;
-  const iconColor =
-    tone === "danger" ? colors.danger : tone === "accent" ? colors.accent : tone === "jade" ? colors.jade : colors.primary;
+  const toneColor =
+    tone === "danger" ? colors.danger : tone === "accent" ? colors.accent : tone === "jade" ? colors.jade : colors.ink;
 
   const subtitleColor = { color: colors.muted, lineHeight: 18 } as const;
 
@@ -1691,28 +2207,35 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
         borderCurve: "continuous",
         borderRadius: 16,
         borderWidth: 1,
+        elevation: 2,
         padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
         <View
           style={{
             alignItems: "center",
-            backgroundColor: iconBg,
+            borderColor: colors.ink,
+            borderCurve: "continuous",
             borderRadius: 12,
+            borderWidth: 1,
             height: 38,
             justifyContent: "center",
             width: 38,
           }}
         >
-          <Icon color={iconColor} size={18} strokeWidth={2.2} />
+          <Icon color={colors.ink} size={18} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} numberOfLines={1} selectable>
+            <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} numberOfLines={1}>
               {item.title}
             </Text>
-            <Text style={[type.caption, { color: colors.kicker }]} selectable>
+            <Text style={[type.caption, { color: colors.kicker }]}>
               {formatRelativeTime(item.occurredAt)}
             </Text>
           </View>
@@ -1728,13 +2251,13 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
           >
             {item.subtitle}
           </Text>
-          <Text style={[type.caption, subtitleColor]} numberOfLines={expanded ? undefined : COLLAPSED_ACTIVITY_LINES} selectable>
+          <Text style={[type.caption, subtitleColor]} numberOfLines={expanded ? undefined : COLLAPSED_ACTIVITY_LINES}>
             {item.subtitle}
           </Text>
 
           {canExpand ? (
             <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginTop: 1 }}>
-              <Text style={[type.caption, { color: colors.primary, fontWeight: "700" }]} selectable>
+              <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
                 {expanded ? "Show less" : "Show more"}
               </Text>
               {expanded ? (
@@ -1775,6 +2298,7 @@ function formatRelativeTime(value: string) {
 }
 
 function DigestTile({
+  accentColor,
   hint,
   highlight,
   icon: Icon,
@@ -1782,6 +2306,12 @@ function DigestTile({
   onPress,
   value,
 }: {
+  /**
+   * Tints the line under the count. Only Payments uses it — money in reads
+   * green — and it deliberately does not spread to the other three, which are
+   * queues rather than good news.
+   */
+  accentColor?: string;
   hint: string;
   highlight: boolean;
   icon: ComponentType<LucideProps>;
@@ -1790,7 +2320,8 @@ function DigestTile({
   value: string;
 }) {
   const { colors, fonts, isDark, type } = useTheme();
-  const accent = highlight ? colors.primary : colors.muted;
+  const tone = accentColor ?? colors.primary;
+  const accent = highlight ? tone : colors.muted;
 
   return (
     <AnimatedPressable
@@ -1810,53 +2341,38 @@ function DigestTile({
         paddingVertical: spacing.md,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: highlight ? colors.primarySoft : colors.surfaceSunken,
-          borderColor: highlight ? colors.primarySoft : colors.border,
-          borderCurve: "continuous",
-          borderRadius: 13,
-          borderWidth: 1,
-          height: 42,
-          justifyContent: "center",
-          width: 42,
-        }}
-      >
-        <Icon color={highlight ? colors.primary : colors.muted} size={20} strokeWidth={2.25} />
-      </View>
-      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1} selectable>
+      {/* No chip: the tile already has its own surface, so a second filled
+          shape inside it read as a control rather than a label. Colour alone
+          carries the highlight. */}
+      {/* The icon keeps the shared highlight colour whatever the tile is. Only
+          the figures take a tile's own tone — the icon is what makes the four
+          tiles read as one grid. */}
+      <Icon color={highlight ? colors.primary : colors.muted} size={26} strokeWidth={2.1} />
+      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1}>
         {label}
       </Text>
       <Text
         style={{
-          color: highlight ? colors.primary : colors.ink,
+          // The count is always ink. Colouring it on activity made the number
+          // itself look like a status, when the number IS the fact — the icon
+          // and the line beneath it already carry whether anything happened.
+          color: colors.ink,
           fontFamily: fonts.display,
           fontSize: 25,
           fontVariant: ["tabular-nums"],
-          fontWeight: "600",
           letterSpacing: -0.5,
           lineHeight: 30,
           textAlign: "center",
         }}
         numberOfLines={1}
-        selectable
       >
         {value}
       </Text>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-        <View
-          style={{
-            backgroundColor: highlight ? colors.primary : colors.border,
-            borderRadius: 999,
-            height: 6,
-            width: 6,
-          }}
-        />
-        <Text style={[type.caption, { color: accent, textAlign: "center" }]} numberOfLines={1} selectable>
-          {hint}
-        </Text>
-      </View>
+      {/* No dot. It restated what the hint's own colour already says, and four
+          of them across a row read as status lights on a device. */}
+      <Text style={[type.caption, { color: accent, textAlign: "center" }]} numberOfLines={1}>
+        {hint}
+      </Text>
     </AnimatedPressable>
   );
 }
@@ -1871,13 +2387,13 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
     <Card>
       <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
         <View style={{ gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Occupancy rate
           </Text>
-          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, fontWeight: "600", letterSpacing: -0.5, lineHeight: 38 }} selectable>
+          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
             {rate}%
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
             {occupancy.occupiedBeds} of {occupancy.totalBeds} beds occupied
           </Text>
         </View>
@@ -1890,7 +2406,7 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
             paddingVertical: 4,
           }}
         >
-          <Text style={[type.eyebrow, { color: tone }]} selectable>
+          <Text style={[type.eyebrow, { color: tone }]}>
             {label}
           </Text>
         </View>
@@ -1927,13 +2443,13 @@ function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
     <Card>
       <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
         <View style={{ gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             {awaiting ? "Collectable this month" : "Collection rate"}
           </Text>
-          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, fontWeight: "600", letterSpacing: -0.5, lineHeight: 38 }} selectable>
+          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
             {awaiting ? formatMoneyPaise(collectable) : `${rate}%`}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
             {awaiting
               ? "Yet to be collected"
               : `${formatMoneyPaise(collected)} of ${formatMoneyPaise(collectable)} collected`}
@@ -1948,7 +2464,7 @@ function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
             paddingVertical: 4,
           }}
         >
-          <Text style={[type.eyebrow, { color: tone }]} selectable>
+          <Text style={[type.eyebrow, { color: tone }]}>
             {label}
           </Text>
         </View>
@@ -2082,32 +2598,71 @@ function OwnerPropertyPicker({
         style={{
           alignItems: "center",
           backgroundColor: selectedProperty ? colors.surfaceRaised : colors.primarySoft,
-          borderColor: selectedProperty ? colors.border : colors.primary,
+          // Ink in both states. This card decides what every other screen in
+          // the workspace is about, and a hairline let it sit at the same
+          // weight as the tiles under it. The unselected state keeps its soft
+          // primary fill, so "nothing chosen yet" still reads without the
+          // border having to carry it.
+          borderColor: colors.ink,
           borderCurve: "continuous",
           borderRadius: 18,
-          borderWidth: 1,
+          // 2px, not a hairline. This is the hero control of the screen and a
+          // 1px ink edge read as a thin outline rather than a deliberate frame.
+          borderWidth: 2,
           flexDirection: "row",
           gap: spacing.md,
           minHeight: 72,
+          // Clips the photograph to the card's rounded corners.
+          overflow: "hidden",
           padding: spacing.md,
         }}
       >
+        {/* Absolutely positioned so it takes no part in the row layout, and
+            first in the tree so every label paints over it. Faded hard: this is
+            a ground, not a picture — it should register as texture and never
+            compete with the property name sitting on top of it. */}
+        {/* Four insets on the image itself, and no percentage anywhere — the
+            same idiom as the auth hero band, which is the one full-bleed photo
+            in the app already proven on a device.
+
+            Percentage sizing is what broke this twice: `width: "100%"` on an
+            absolutely positioned image resolves against a parent whose own size
+            is still being derived, so native laid the photo out at its natural
+            size in the top-left corner and left the card showing below and to
+            the right. Insets give the layout a definite box up front, and
+            `cover` then fills it.
+
+            Dark mode takes less of it: a photograph lightens a dark surface
+            instead of darkening a light one. */}
+        <Image
+          resizeMode="cover"
+          source={PROPERTY_CARD_ART}
+          style={{ bottom: 0, left: 0, opacity: isDark ? 0.1 : 0.16, position: "absolute", right: 0, top: 0 }}
+        />
+        {/* Outlined container, ink glyph, no fill — a tinted tile inside an
+            ink-bordered card is a box in a box, and a blue glyph on a blue
+            ground was the least legible thing on the card. */}
         <View
           style={{
             alignItems: "center",
-            backgroundColor: selectedProperty ? colors.primarySoft : colors.surface,
-            borderColor: colors.border,
+            borderColor: colors.ink,
+            borderCurve: "continuous",
             borderRadius: 12,
-            borderWidth: 1,
+            // Lighter than the card that holds it, so the frame stays the
+            // outer edge and the tile does not compete with it.
+            borderWidth: 1.5,
             height: 42,
             justifyContent: "center",
             width: 42,
           }}
         >
-          <Building2 color={colors.primary} size={20} strokeWidth={2.2} />
+          <Building2 color={colors.ink} size={20} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: selectedProperty ? colors.kicker : colors.primary }]} selectable>
+          {/* Ink, not the usual kicker grey. These two lines now sit on a
+              photograph, and a light grey that reads fine on flat white
+              dissolves into the building behind it. */}
+          <Text style={[type.eyebrow, { color: selectedProperty ? colors.inkSoft : colors.primary }]}>
             {eyebrowLabel}
           </Text>
           <Text
@@ -2116,20 +2671,18 @@ function OwnerPropertyPicker({
               color: colors.ink,
               fontFamily: fonts.display,
               fontSize: 20,
-              fontWeight: "500",
               lineHeight: 25,
             }}
-            selectable
           >
             {selectorTitle}
           </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, fontSize: 11 }]}>
             {selectorSubtitle}
           </Text>
         </View>
         {hasMultipleProperties ? (
           <ChevronDown
-            color={colors.primary}
+            color={colors.muted}
             size={20}
             strokeWidth={2.2}
             style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }}
@@ -2140,45 +2693,59 @@ function OwnerPropertyPicker({
       {open && hasMultipleProperties ? (
         <View
           style={{
-            backgroundColor: colors.surfaceRaised,
-            borderColor: colors.border,
+            backgroundColor: colors.surface,
+            // Matches the bar it drops out of — a hairline panel under an ink
+            // bar reads as two unrelated controls stacked by accident.
+            borderColor: colors.ink,
             borderCurve: "continuous",
             borderRadius: 16,
-            borderWidth: 1,
-            gap: spacing.xs,
+            borderWidth: 2,
+            // No padding, and clip the children: this is what lets a selected
+            // row fill the panel corner to corner. Padded rows with their own
+            // borders and radii made every option a card floating inside a
+            // card, which is the part that read as cluttered.
             overflow: "hidden",
-            padding: spacing.xs,
           }}
         >
-          {properties.map((property) => {
+          {properties.map((property, index) => {
             const selected = property.id === selectedProperty?.id;
 
             return (
               <AnimatedPressable
                 key={property.id}
                 accessibilityRole="button"
+                accessibilityState={{ selected }}
                 onPress={() => onSelect(property.id)}
                 style={{
                   alignItems: "center",
-                  backgroundColor: selected ? colors.primarySoft : colors.surface,
-                  borderColor: selected ? colors.primary : colors.border,
-                  borderCurve: "continuous",
-                  borderRadius: 12,
-                  borderWidth: 1,
+                  // Selection is a filled ink row, as in every other picker in
+                  // the app. The tinted fill plus a tick said the same thing
+                  // twice and still read as the weaker state of the two.
+                  backgroundColor: selected ? colors.ink : "transparent",
+                  // Options are separated by a rule, not boxed individually.
+                  borderTopColor: colors.border,
+                  borderTopWidth: index === 0 ? 0 : 1,
                   flexDirection: "row",
                   gap: spacing.md,
                   padding: spacing.md,
                 }}
               >
                 <View style={{ flex: 1, gap: spacing.xxs }}>
-                  <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+                  <Text style={[type.bodyStrong, { color: selected ? colors.surface : colors.ink }]}>
                     {property.name}
                   </Text>
-                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      type.caption,
+                      // Dimmed by opacity rather than a grey token: the row's
+                      // ground flips with the theme, a fixed grey does not.
+                      { color: selected ? colors.surface : colors.muted, fontSize: 11, opacity: selected ? 0.75 : 1 },
+                    ]}
+                  >
                     {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
                   </Text>
                 </View>
-                {selected ? <Check color={colors.primary} size={18} strokeWidth={2.4} /> : null}
               </AnimatedPressable>
             );
           })}
@@ -2232,14 +2799,14 @@ function CurrentLocationCard({
           <LocateFixed color={isLoading ? colors.kicker : colors.primary} size={20} strokeWidth={2.3} />
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
             {label}
           </Text>
-          <Text numberOfLines={2} style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+          <Text numberOfLines={2} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
             {locationText}
           </Text>
           {detailParts.length > 0 && locationText !== detailParts.join(", ") ? (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]} selectable>
+            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
               {detailParts.join(", ")}
             </Text>
           ) : null}
@@ -2273,14 +2840,15 @@ function IconBadge({ icon: Icon }: { icon: ComponentType<LucideProps> }) {
     <View
       style={{
         alignItems: "center",
-        backgroundColor: colors.primarySoft,
+        borderColor: colors.ink,
+        borderWidth: 1,
         borderRadius: 14,
         height: 44,
         justifyContent: "center",
         width: 44,
       }}
     >
-      <Icon color={colors.primary} size={21} strokeWidth={2.4} />
+      <Icon color={colors.ink} size={21} strokeWidth={2.4} />
     </View>
   );
 }
@@ -2291,7 +2859,7 @@ function InfoLine({ icon: Icon, text }: { icon: ComponentType<LucideProps>; text
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
       <Icon color={colors.kicker} size={15} strokeWidth={2.2} />
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
         {text}
       </Text>
     </View>
@@ -2329,7 +2897,7 @@ function AddressInfoLine({ address }: { address: string }) {
     <View style={{ gap: spacing.xs }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <MapPin color={colors.kicker} size={15} strokeWidth={2.2} />
-        <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+        <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
           {address}
         </Text>
         <AnimatedPressable
@@ -2361,7 +2929,7 @@ function AddressInfoLine({ address }: { address: string }) {
             paddingVertical: 5,
           }}
         >
-          <Text style={[type.eyebrow, { color: "#1F7A3A", fontSize: 10 }]} selectable>
+          <Text style={[type.eyebrow, { color: "#1F7A3A", fontSize: 10 }]}>
             Copied to clipboard
           </Text>
         </View>
@@ -2402,13 +2970,13 @@ function BoardPreviewCard({
             <ClipboardList color={hasItems ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: spacing.xs }}>
-            <Text style={[type.eyebrow, { color: hasItems ? colors.primary : colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: hasItems ? colors.primary : colors.kicker }]}>
               {hasItems ? `${itemCount} board item${itemCount === 1 ? "" : "s"}` : "Property board"}
             </Text>
-            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]} selectable>
+            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
               Property board
             </Text>
-            <Text style={[type.body, { color: colors.muted }]} selectable>
+            <Text style={[type.body, { color: colors.muted }]}>
               {hasItems
                 ? "A quick preview of property rules, timings and shared information."
                 : "Rules, timings and property information will appear here after the property team publishes them."}
@@ -2429,19 +2997,19 @@ function BoardPreviewCard({
                   padding: spacing.md,
                 }}
               >
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   {item.categoryName}
                 </Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]} selectable>
+                <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
                   {item.title}
                 </Text>
-                <Text numberOfLines={2} style={[type.body, { color: colors.muted }]} selectable>
+                <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
                   {item.body}
                 </Text>
               </View>
             ))}
 
-            <Text style={[type.eyebrow, { color: colors.primary, textAlign: "center" }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.primary, textAlign: "center" }]}>
               Tap to expand
             </Text>
           </View>
@@ -2483,13 +3051,13 @@ function NoticePreviewCard({
             <Megaphone color={hasNotices ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: spacing.xs }}>
-            <Text style={[type.eyebrow, { color: hasNotices ? colors.primary : colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: hasNotices ? colors.primary : colors.kicker }]}>
               {hasNotices ? `${noticeCount} notice${noticeCount === 1 ? "" : "s"}` : "Notice board"}
             </Text>
-            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]} selectable>
+            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
               Notice board
             </Text>
-            <Text style={[type.body, { color: colors.muted }]} selectable>
+            <Text style={[type.body, { color: colors.muted }]}>
               {hasNotices
                 ? "A quick preview of property announcements visible right now."
                 : "Published notices for your property will appear here when they are visible to tenants."}
@@ -2513,20 +3081,20 @@ function NoticePreviewCard({
                     padding: spacing.md,
                   }}
                 >
-                  <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker }]} selectable>
+                  <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker }]}>
                     {humanizeToken(notice.priority)}
                   </Text>
-                  <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]} selectable>
+                  <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
                     {notice.title}
                   </Text>
-                  <Text numberOfLines={2} style={[type.body, { color: colors.muted }]} selectable>
+                  <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
                     {notice.body}
                   </Text>
                 </View>
               );
             })}
 
-            <Text style={[type.eyebrow, { color: colors.primary, textAlign: "center" }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.primary, textAlign: "center" }]}>
               Tap to expand
             </Text>
           </View>
@@ -2573,13 +3141,13 @@ function SummaryRow({
           <Icon color={urgent ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker }]} selectable>
+          <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker }]}>
             {kicker}
           </Text>
-          <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]} selectable>
+          <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
             {title}
           </Text>
-          <Text numberOfLines={2} style={[type.body, { color: colors.muted }]} selectable>
+          <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
             {body}
           </Text>
         </View>
@@ -2610,7 +3178,7 @@ function ModuleChip({ icon: Icon, label, onPress }: { icon: ComponentType<Lucide
       }}
     >
       <Icon color={colors.primary} size={14} strokeWidth={2.2} />
-      <Text style={[type.eyebrow, { color: colors.inkSoft, fontSize: 10.5 }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.inkSoft, fontSize: 10.5 }]}>
         {label}
       </Text>
     </Wrapper>

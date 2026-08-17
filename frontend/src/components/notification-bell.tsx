@@ -61,11 +61,9 @@ export function NotificationBell() {
           <Text
             style={{
               color: colors.onPrimary,
-              fontFamily: fonts.sans,
+              fontFamily: fonts.sansBold,
               fontSize: 10,
-              fontWeight: "800",
             }}
-            selectable={false}
           >
             {unreadCount > 99 ? "99+" : unreadCount}
           </Text>

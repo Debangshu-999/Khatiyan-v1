@@ -13,7 +13,7 @@ import {
 import { AppTextInput } from "@/components/app-text-input";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRound, X } from "lucide-react-native";
+import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRound, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -28,6 +28,7 @@ import {
   useReopenConcernMutation,
 } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
+import { BackButton } from "@/features/owner/owner-ui";
 import { useTheme } from "@/theme/use-theme";
 
 // Tenant-side concern detail — read-only mirror of the owner concern detail:
@@ -91,7 +92,7 @@ export default function ConcernDetailScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader onBack={() => router.back()}
-        eyebrow="Concern detail"
+        eyebrow="Concerns"
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."
         subtitle="Track the status, updates and resolution of your concern."
@@ -99,7 +100,7 @@ export default function ConcernDetailScreen() {
 
       {loading && !concern ? (
         <Card>
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             Loading concern...
           </Text>
         </Card>
@@ -121,13 +122,13 @@ export default function ConcernDetailScreen() {
 
           <Card>
             <View style={{ gap: spacing.sm }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Description
               </Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]} selectable>
+              <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]}>
                 {concern.title}
               </Text>
-              <Text style={[type.body, { color: colors.muted }]} selectable>
+              <Text style={[type.body, { color: colors.muted }]}>
                 {concern.description}
               </Text>
             </View>
@@ -163,7 +164,7 @@ export default function ConcernDetailScreen() {
               }}
             >
               <RotateCcw color={colors.primary} size={16} strokeWidth={2.2} />
-              <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.primary }]}>
                 Reopen concern
               </Text>
             </AnimatedPressable>
@@ -203,10 +204,10 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
     return (
       <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 16, gap: spacing.sm, justifyContent: "center", minHeight: 180, padding: spacing.lg }}>
         <Images color={colors.primary} size={38} strokeWidth={1.8} />
-        <Text style={{ color: colors.primary, fontSize: 17, fontWeight: "900", textAlign: "center" }} selectable>
+        <Text style={{ color: colors.primary, fontSize: 17, fontWeight: "900", textAlign: "center" }}>
           No images attached
         </Text>
-        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }} selectable>
+        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>
           Photos you attach while raising a concern appear here.
         </Text>
       </View>
@@ -247,7 +248,7 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
             <X color="#fff" size={22} strokeWidth={2.5} />
           </AnimatedPressable>
           <Image source={{ uri: activeImage }} style={{ height: "78%", width: "100%" }} resizeMode="contain" />
-          <Text style={{ color: "#fff", fontWeight: "800", textAlign: "center" }} selectable>
+          <Text style={{ color: "#fff", fontWeight: "800", textAlign: "center" }}>
             {concern.referenceCode}
           </Text>
         </View>
@@ -277,13 +278,13 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
             <StatusIcon concern={concern} color={status.fg} />
           </View>
           <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Current status
             </Text>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 25, fontWeight: "700", lineHeight: 31 }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 25, lineHeight: 31 }}>
               {humanizeToken(concern.status)}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               Updated {formatDateTime(concern.updatedAt)}
             </Text>
           </View>
@@ -295,16 +296,16 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
               <UserRound color={colors.primary} size={20} strokeWidth={2.4} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
                 Assigned to
               </Text>
-              <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+              <Text style={[type.bodyStrong, { color: colors.ink }]}>
                 {assignedTo}
               </Text>
             </View>
           </View>
           {concern.assignedAt ? (
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               Assigned on {formatDateTime(concern.assignedAt)}
             </Text>
           ) : null}
@@ -316,10 +317,10 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
 
         {concern.reopened ? (
           <View style={{ backgroundColor: colors.dangerSoft, borderColor: colors.danger, borderRadius: 14, borderWidth: 1, gap: spacing.xs, padding: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.danger }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.danger }]}>
               Reopened
             </Text>
-            <Text style={[type.body, { color: colors.ink }]} selectable>
+            <Text style={[type.body, { color: colors.ink }]}>
               {concern.reopenReason ?? "No reopen reason provided."}
             </Text>
           </View>
@@ -379,10 +380,10 @@ function StatusSignal({
         paddingVertical: spacing.sm,
       }}
     >
-      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]} selectable>
+      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]}>
         {label}
       </Text>
-      <Text style={[type.label, { color: subtle ? palette.fg : colors.ink }]} selectable>
+      <Text style={[type.label, { color: subtle ? palette.fg : colors.ink }]}>
         {value}
       </Text>
     </View>
@@ -403,10 +404,10 @@ function FactTile({ label, value, wide }: { label: string; value: string; wide?:
         width: wide ? "100%" : "48%",
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]}>
         {label}
       </Text>
-      <Text style={[type.bodyStrong, { color: colors.ink }]} selectable>
+      <Text style={[type.bodyStrong, { color: colors.ink }]}>
         {value}
       </Text>
     </View>
@@ -418,10 +419,10 @@ function TimelineRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
       <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 8, width: 8 }} />
-      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]}>
         {label}
       </Text>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]} selectable>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]}>
         {value}
       </Text>
     </View>
@@ -433,10 +434,10 @@ function NoteCard({ body, title, tone }: { body: string; title: string; tone?: "
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: tone === "success" ? colors.successText : colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: tone === "success" ? colors.successText : colors.kicker }]}>
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.ink }]} selectable>
+        <Text style={[type.body, { color: colors.ink }]}>
           {body}
         </Text>
       </View>
@@ -489,7 +490,7 @@ function ReopenConcernModal({
           >
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text style={[type.eyebrow, { color: colors.primary }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.primary }]}>
                   Reopen concern
                 </Text>
                 <Text
@@ -497,14 +498,12 @@ function ReopenConcernModal({
                     color: colors.ink,
                     fontFamily: fonts.display,
                     fontSize: 24,
-                    fontWeight: "500",
                     lineHeight: 29,
                   }}
-                  selectable
                 >
                   {concern.title}
                 </Text>
-                <Text style={[type.body, { color: colors.muted }]} selectable>
+                <Text style={[type.body, { color: colors.muted }]}>
                   Tell the property team why this resolution still needs work.
                 </Text>
               </View>
@@ -526,7 +525,7 @@ function ReopenConcernModal({
             </View>
 
             <View style={{ gap: spacing.xs }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Reason
               </Text>
               <AppTextInput
@@ -552,7 +551,7 @@ function ReopenConcernModal({
             </View>
 
             {error ? (
-              <Text style={[type.body, { color: colors.danger, fontWeight: "700" }]} selectable>
+              <Text style={[type.body, { color: colors.danger, fontWeight: "700" }]}>
                 {error}
               </Text>
             ) : null}
@@ -573,7 +572,7 @@ function ReopenConcernModal({
               {loading ? (
                 <ActivityIndicator color={colors.onPrimary} />
               ) : (
-                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
                   Reopen concern
                 </Text>
               )}
@@ -585,31 +584,6 @@ function ReopenConcernModal({
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        alignSelf: "flex-start",
-        borderColor: colors.border,
-        borderRadius: 10,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        height: 36,
-        paddingHorizontal: spacing.sm,
-      }}
-    >
-      <ArrowLeft color={colors.ink} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
-        Back
-      </Text>
-    </AnimatedPressable>
-  );
-}
 
 function tonePalette(tone: BadgeTone, colors: ReturnType<typeof useTheme>["colors"]) {
   const palette: Record<BadgeTone, { bg: string; border: string; fg: string }> = {

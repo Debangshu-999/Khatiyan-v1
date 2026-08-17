@@ -49,6 +49,12 @@ public class Room extends BaseEntity {
     @Column(name = "occupied_count", nullable = false)
     private int occupiedCount;
 
+    // Beds held for an approved room change that has not transferred yet. Held
+    // beds are NOT occupied — nobody lives in them — but they are not available
+    // either, or the move they were approved for would fail on transfer day.
+    @Column(name = "reserved_count", nullable = false)
+    private int reservedCount;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "room_type", nullable = false, length = 20)
     private RoomType roomType;
@@ -87,6 +93,7 @@ public class Room extends BaseEntity {
         this.floor = floor;
         this.capacity = capacity;
         this.occupiedCount = 0;
+        this.reservedCount = 0;
         this.roomType = roomType;
         this.conditioning = conditioning;
         this.baseRentPaise = baseRent.paise();
@@ -127,7 +134,7 @@ public class Room extends BaseEntity {
 
         this.roomNumber = roomNumber;
         this.floor = floor;
-        if (capacity < occupiedCount) {
+        if (capacity < getCommittedCount()) {
             throw new ValidationException("Room capacity cannot be less than current occupancy");
         }
 
@@ -143,11 +150,16 @@ public class Room extends BaseEntity {
     }
 
     public int getAvailableVacancies() {
-        return capacity - occupiedCount;
+        return capacity - occupiedCount - reservedCount;
+    }
+
+    /** Beds that are spoken for, whether lived in or held for a pending move. */
+    public int getCommittedCount() {
+        return occupiedCount + reservedCount;
     }
 
     public boolean hasVacancy() {
-        return active && status != RoomStatus.MAINTENANCE && occupiedCount < capacity;
+        return active && status != RoomStatus.MAINTENANCE && getCommittedCount() < capacity;
     }
 
     public boolean isEmpty() {
@@ -159,12 +171,39 @@ public class Room extends BaseEntity {
             throw new ValidationException("Room is under maintenance");
         }
 
-        if (occupiedCount >= capacity) {
+        // Counts reservations: a held bed belongs to an approved move and must
+        // not be handed to a new tenancy.
+        if (getCommittedCount() >= capacity) {
             throw new ValidationException("Room has no available vacancy");
         }
 
         this.occupiedCount++;
         refreshOccupancyStatus();
+    }
+
+    /**
+     * Holds a bed for an approved room change. Released either when the move
+     * executes (the bed then becomes occupied through the normal tenancy path)
+     * or when the request can no longer execute.
+     */
+    public void reserveOneSlot() {
+        if (status == RoomStatus.MAINTENANCE) {
+            throw new ValidationException("Room is under maintenance");
+        }
+
+        if (getCommittedCount() >= capacity) {
+            throw new ValidationException("Room has no available vacancy");
+        }
+
+        this.reservedCount++;
+    }
+
+    public void releaseReservedSlot() {
+        if (reservedCount <= 0) {
+            throw new ValidationException("Room has no reserved slot to release");
+        }
+
+        this.reservedCount--;
     }
 
     public void vacateOneSlot() {
@@ -179,6 +218,10 @@ public class Room extends BaseEntity {
     public void markMaintenance(String reason, Instant maintenanceUntil, UUID markedByUserId, Instant markedAt) {
         if (!isEmpty()) {
             throw new ValidationException("Room has active occupancy");
+        }
+
+        if (reservedCount > 0) {
+            throw new ValidationException("Room has a bed reserved for an approved room change");
         }
 
         if (reason == null || reason.isBlank()) {

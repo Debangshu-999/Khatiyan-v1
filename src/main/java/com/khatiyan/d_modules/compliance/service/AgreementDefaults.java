@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.compliance.service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,11 +20,32 @@ final class AgreementDefaults {
     private AgreementDefaults() {
     }
 
+    /**
+     * The validity clause's value.
+     *
+     * <p>{@code validityMonths} null means indefinite. {@code earlyExitRule} is
+     * the owner's own words for what leaving before the term ends costs —
+     * applied by a person at end-tenancy, never computed. A map is used because
+     * clauses are stored as JSONB, which also means a missing key reads as null
+     * rather than failing, so both are always written.
+     */
+    static Map<String, Object> agreementValidityValue(Integer validityMonths, String earlyExitRule) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("validityMonths", validityMonths);
+        value.put("earlyExitRule", earlyExitRule == null ? "" : earlyExitRule);
+        return value;
+    }
+
     static List<AgreementClause> starterClauses() {
         return List.of(
-            AgreementClause.system(SystemClauseType.LOCK_IN, "Minimum stay (lock-in)",
-                "No minimum lock-in: either party may end the tenancy with the required notice.",
-                Map.<String, Object>of("months", 0, "penaltyType", "REMAINING_TERM", "penaltyFixedPaise", 0), 0),
+            // Indefinite by default, which is the right shape for most PG stays:
+            // the agreement ends when the tenant does. An owner who wants a fixed
+            // term sets the months, and the tenancy then carries that end date
+            // from day one.
+            AgreementClause.system(SystemClauseType.VALIDITY, "Agreement validity",
+                "This agreement runs until the tenancy ends. Either party may end it with the"
+                    + " required notice.",
+                agreementValidityValue(null, ""), 0),
             AgreementClause.system(SystemClauseType.ALLOWED_DEDUCTIONS, "Permitted deductions",
                 "At move-out the deposit may be used only for verified damage, unpaid dues and cleaning.",
                 Map.<String, Object>of("categories", List.of("DAMAGE", "UNPAID_DUES", "CLEANING")), 1),

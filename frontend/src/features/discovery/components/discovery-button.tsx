@@ -38,7 +38,6 @@ export function DiscoveryButton({ label, onPress, muted = false, disabled = fals
           fontWeight: "900",
           ...textStyle,
         }}
-        selectable
       >
         {label}
       </Text>

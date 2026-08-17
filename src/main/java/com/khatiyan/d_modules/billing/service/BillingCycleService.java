@@ -23,6 +23,7 @@ import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
+import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -34,6 +35,7 @@ import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
+import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.billing.model.BillingCycle;
 import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
@@ -55,6 +57,7 @@ import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -77,6 +80,7 @@ public class BillingCycleService {
     private final BillingMonthlyReportRepository monthlyReportRepository;
     private final TenancyModule tenancyModule;
     private final PropertyModule propertyModule;
+    private final BillingAccessPolicy billingAccessPolicy;
     private final AuthModule authModule;
     private final DepositManagerService depositManagerService;
     private final ApplicationEventPublisher eventPublisher;
@@ -96,6 +100,7 @@ public class BillingCycleService {
             BillingMonthlyReportRepository monthlyReportRepository,
             TenancyModule tenancyModule,
             PropertyModule propertyModule,
+            BillingAccessPolicy billingAccessPolicy,
             AuthModule authModule,
             DepositManagerService depositManagerService,
             ApplicationEventPublisher eventPublisher,
@@ -109,6 +114,7 @@ public class BillingCycleService {
         this.monthlyReportRepository = monthlyReportRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
+        this.billingAccessPolicy = billingAccessPolicy;
         this.authModule = authModule;
         this.depositManagerService = depositManagerService;
         this.eventPublisher = eventPublisher;
@@ -122,7 +128,7 @@ public class BillingCycleService {
     public BillingCycleResponse createFirstCycle(UUID actorUserId, UUID tenancyId) {
         Instant generationCutoff = Instant.now();
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, tenancy.propertyId());
 
         if (billingCycleRepository.existsByTenancyIdAndCycleNumber(tenancyId, 1)) {
             throw new ValidationException("First billing cycle already exists");
@@ -173,8 +179,21 @@ public class BillingCycleService {
      */
     @Transactional(readOnly = true)
     public BillingDashboardSummary getPropertyBillingSummary(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
+        return getPropertyBillingSummaryForDashboard(propertyId);
+    }
 
+    /**
+     * The same rollup with NO billing check, for the owner dashboard.
+     *
+     * <p>
+     * The dashboard shows collection and billing figures to every manager and
+     * gates only the button into Billing, so it authorizes the actor for the
+     * dashboard itself and then reads this. Never call it from a billing
+     * endpoint.
+     */
+    @Transactional(readOnly = true)
+    public BillingDashboardSummary getPropertyBillingSummaryForDashboard(UUID propertyId) {
         LocalDate today = LocalDate.now(DASHBOARD_ZONE);
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate nextMonthStart = monthStart.plusMonths(1);
@@ -231,8 +250,13 @@ public class BillingCycleService {
      */
     @Transactional(readOnly = true)
     public BillingMonthSummary getPropertyMonthSummary(UUID actorUserId, UUID propertyId, String month) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
+        return getPropertyMonthSummaryForDashboard(propertyId, month);
+    }
 
+    /** The month rollup with NO billing check — dashboard and P&amp;L only. */
+    @Transactional(readOnly = true)
+    public BillingMonthSummary getPropertyMonthSummaryForDashboard(UUID propertyId, String month) {
         LocalDate parsed = parseMonthStart(month);
         LocalDate monthStart = parsed != null ? parsed : LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1);
         LocalDate nextMonth = monthStart.plusMonths(1);
@@ -255,7 +279,9 @@ public class BillingCycleService {
         long discountPaise = cycles.stream().filter(BillingCycle::countsAsBilled)
                 .mapToLong(BillingCycle::getDiscountAmountPaise).sum();
 
-        // Actual split by category (no projection) for the P&L income summary.
+        // Split by category. For the CURRENT month the rent line gains the
+        // still-ungenerated cycles below, so P&L reflects the month rather than
+        // whichever cycles a scheduler has happened to materialise so far.
         int rentCycleCount = (int) cycles.stream()
                 .filter(c -> c.countsAsBilled() && c.getCategory() == BillingCycleCategory.RENT_CYCLE).count();
         long rentBilledPaise = cycles.stream()
@@ -279,8 +305,12 @@ public class BillingCycleService {
         // billed ("total") figure adds the rent still to be generated. Past months
         // stay purely actual.
         if (monthStart.equals(LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1))) {
+            // Whose RENT is already on the books. A one-off bill is not rent, so
+            // it must not stand in for the rent cycle here — treating it as one
+            // stopped that tenancy's rent from being projected and understated
+            // the month.
             Set<UUID> billedTenancyIds = cycles.stream()
-                    .filter(BillingCycle::countsAsBilled)
+                    .filter(cycle -> cycle.countsAsBilled() && cycle.getCategory() == BillingCycleCategory.RENT_CYCLE)
                     .map(BillingCycle::getTenancyId)
                     .collect(Collectors.toSet());
             List<TenancyResponse> expectedTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
@@ -295,6 +325,16 @@ public class BillingCycleService {
                     .sum();
             activeCount = expectedTenancies.size();
             billedPaise = billedPaise + projectedExtraPaise;
+
+            // The rent line carries the projection too. Without this, P&L and the
+            // "Cycles" snapshot described only the generated cycles while
+            // billedPaise beside them described the whole month — so early in the
+            // month P&L reported a loss for rent it was going to bill anyway.
+            // Whether a scheduler has created the row yet is not a financial fact.
+            rentCycleCount = rentCycleCount + (int) expectedTenancies.stream()
+                    .filter(t -> !billedTenancyIds.contains(t.id()))
+                    .count();
+            rentBilledPaise = rentBilledPaise + projectedExtraPaise;
         }
 
         boolean hasData = !cycles.isEmpty() || activeCount > 0;
@@ -336,7 +376,7 @@ public class BillingCycleService {
             UUID propertyId,
             String query,
             String month) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
 
         LocalDate parsed = parseMonthStart(month);
         LocalDate monthStart = parsed != null ? parsed : LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1);
@@ -349,8 +389,9 @@ public class BillingCycleService {
                         && cycle.getPeriodStartDate().isBefore(nextMonth))
                 .toList();
         Map<UUID, String> tenancyReferenceCodes = tenancyReferenceCodes(cycles);
+        Map<UUID, String> tenantPhones = tenantPhones(cycles);
         List<BillingCycle> filteredCycles = cycles.stream()
-                .filter(cycle -> matchesCycleSearch(cycle, normalizedQuery, tenancyReferenceCodes))
+                .filter(cycle -> matchesCycleSearch(cycle, normalizedQuery, tenancyReferenceCodes, tenantPhones))
                 .sorted(Comparator.comparing(BillingCycle::getPeriodStartDate).reversed())
                 .toList();
 
@@ -365,7 +406,7 @@ public class BillingCycleService {
      */
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> listAllPropertyCycles(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
 
         List<BillingCycle> cycles = billingCycleRepository.findByPropertyId(propertyId)
                 .stream()
@@ -390,7 +431,7 @@ public class BillingCycleService {
             String month,
             int page,
             int size) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
 
         LocalDate currentMonthStart = LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1);
         LocalDate parsedMonth = parseMonthStart(month);
@@ -403,8 +444,14 @@ public class BillingCycleService {
             return PageResponse.of(List.of(), page, size);
         }
 
+        // RENT_CYCLE only. A one-off bill is dated today, so counting it as the
+        // tenancy's "latest cycle" put that date inside the current month and
+        // silently dropped the tenant from this list — raising a one-off made it
+        // look as though their rent cycle had already been generated when it had
+        // not. Matches findLatestByTenancyId, which the generator uses.
         Map<UUID, BillingCycle> latestCycleByTenancyId = billingCycleRepository.findByPropertyId(propertyId)
                 .stream()
+                .filter(cycle -> cycle.getCategory() == BillingCycleCategory.RENT_CYCLE)
                 .collect(Collectors.toMap(
                         BillingCycle::getTenancyId,
                         cycle -> cycle,
@@ -441,7 +488,13 @@ public class BillingCycleService {
                             latest.getPeriodEndDate(),
                             latest.getStatus(),
                             latest.getBaseAmountPaise(),
-                            latest.getPeriodStartDate().plusMonths(1),
+                            // Same anchored derivation the generator uses. Chaining
+                            // here would predict a date the generator then refuses
+                            // to produce — the owner would see 28 Mar in Upcoming
+                            // and 31 Mar once the cycle actually existed.
+                            MonthlyCycleDates.nextStartAfter(
+                                    latest.getPeriodStartDate(),
+                                    MonthlyCycleDates.anchorDayOf(tenancy.startDate())),
                             tenancy.endDate());
                 })
                 .sorted(Comparator.comparing(UpcomingBillingCycleResponse::nextCycleStartDate)
@@ -459,7 +512,10 @@ public class BillingCycleService {
             UUID actorUserId,
             UUID propertyId,
             String month) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        // MANAGE, not VIEW: exporting the month's whole ledger is a different
+        // act from reading the figures on screen. A view-only manager can see
+        // the numbers without being able to take the book away.
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, propertyId);
 
         LocalDate parsedReportMonth = parseMonthStart(month);
         LocalDate reportMonth = parsedReportMonth == null
@@ -527,7 +583,7 @@ public class BillingCycleService {
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> listManagedTenancyCycles(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, tenancy.propertyId());
 
         return toResponses(billingCycleRepository.findByTenancyId(tenancyId));
     }
@@ -538,10 +594,37 @@ public class BillingCycleService {
     @Transactional(readOnly = true)
     public BillingCycleResponse getLatestManagedTenancyCycle(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, tenancy.propertyId());
 
         BillingCycle cycle = getLatestCycle(tenancyId);
         return toResponse(cycle);
+    }
+
+    /**
+     * The end date of the cycle {@code extraCycles} after the one starting on
+     * {@code currentPeriodStart}.
+     *
+     * <p>Walks forward one anchored start at a time rather than adding months to
+     * the end date, because a cycle end is not a stable thing to do arithmetic
+     * on: 27 Mar plus a month is 27 Apr, but the cycle actually starting 31 Mar
+     * ends 29 Apr. Only the anchor is stable, so only the anchor is stepped.
+     *
+     * <p>Used by tenancy to turn a whole-month notice period into a checkout date
+     * that lands exactly on a cycle boundary, with no partial cycle to price.
+     *
+     * @param extraCycles 0 for the current cycle's own end, 1 for the next, …
+     */
+    @Transactional(readOnly = true)
+    public LocalDate periodEndAfterCycles(UUID tenancyId, LocalDate currentPeriodStart, int extraCycles) {
+        TenancyResponse tenancy = getTenancy(tenancyId);
+        int anchorDay = MonthlyCycleDates.anchorDayOf(tenancy.startDate());
+
+        LocalDate periodStart = currentPeriodStart;
+        for (int step = 0; step < Math.max(0, extraCycles); step++) {
+            periodStart = MonthlyCycleDates.nextStartAfter(periodStart, anchorDay);
+        }
+
+        return MonthlyCycleDates.endOfCycleStartingOn(periodStart, anchorDay);
     }
 
     /**
@@ -682,6 +765,19 @@ public class BillingCycleService {
                 actorUserId,
                 saved.getMethod());
 
+        // Published after the cycle is marked paid, so any listener that reads
+        // the cycle back sees it settled rather than mid-transition.
+        eventPublisher.publishEvent(new BillingCyclePaidManuallyEvent(
+                saved.getId(),
+                cycle.getId(),
+                cycle.getTenancyId(),
+                cycle.getTenantUserId(),
+                cycle.getPropertyId(),
+                cycle.getTenantNameSnapshot(),
+                saved.getAmountPaise(),
+                saved.getMethod(),
+                actorUserId));
+
         return ManualPaymentResponse.from(saved);
     }
 
@@ -690,7 +786,7 @@ public class BillingCycleService {
      */
     @Transactional(readOnly = true)
     public List<ManualPaymentResponse> listManualPayments(UUID actorUserId, UUID billingCycleId) {
-        getManagedCycle(actorUserId, billingCycleId);
+        getViewableCycle(actorUserId, billingCycleId);
 
         return manualPaymentRepository.findByBillingCycleId(billingCycleId)
                 .stream()
@@ -709,12 +805,14 @@ public class BillingCycleService {
     private boolean matchesCycleSearch(
             BillingCycle cycle,
             String normalizedQuery,
-            Map<UUID, String> tenancyReferenceCodes) {
+            Map<UUID, String> tenancyReferenceCodes,
+            Map<UUID, String> tenantPhones) {
         if (normalizedQuery == null) {
             return true;
         }
 
         return contains(cycle.getTenantNameSnapshot(), normalizedQuery)
+                || contains(tenantPhones.get(cycle.getTenancyId()), normalizedQuery)
                 || contains(tenancyReferenceCodes.get(cycle.getTenancyId()), normalizedQuery)
                 || contains(cycle.getReferenceCode(), normalizedQuery);
     }
@@ -747,8 +845,9 @@ public class BillingCycleService {
             LocalDate reportMonth,
             List<BillingCycle> allCycles) {
         // Filtered once, at the source: the report's totals, its cycle count and
-        // its per-cycle rows must all describe the same set of bills. A draft or
-        // a cancelled bill is not money anyone was asked for.
+        // its per-cycle rows must all describe the same set of bills. Only a
+        // cancelled bill is excluded — an upcoming one is money already owed for
+        // the month, just not yet payable.
         List<BillingCycle> cycles = allCycles.stream()
                 .filter(BillingCycle::countsAsBilled)
                 .toList();
@@ -927,7 +1026,9 @@ public class BillingCycleService {
     @Transactional(readOnly = true)
     public BillingCycleResponse ensureLatestCyclePaidForExit(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        // Authorization belongs to the caller: tenancy has already checked
+        // EXIT_REQUESTS or TENANCIES. Re-checking on a billing resource here
+        // would refuse a move-out the manager is allowed to run.
 
         // Every bill — rent cycles and one-off penalty bills alike — must be paid.
         if (billingCycleRepository.existsByTenancyIdAndStatusIn(
@@ -980,6 +1081,18 @@ public class BillingCycleService {
         return generatedCount;
     }
 
+    /**
+     * Whether the tenancy is serving notice, on either exit route.
+     *
+     * <p>Both states are still active and still billable up to the checkout date
+     * — {@code isCurrentlyActive()} counts them — so the gate has to name them
+     * explicitly rather than lean on activeness.
+     */
+    private boolean isOnNotice(TenancyResponse tenancy) {
+        return tenancy.status() == TenancyStatus.ON_NOTICE
+                || tenancy.status() == TenancyStatus.ON_PREMATURE_NOTICE;
+    }
+
     private boolean generateDueMonthlyCycle(LocalDate today, TenancyResponse tenancy) {
         Instant generationCutoff = Instant.now();
         Optional<BillingCycle> latestCycle = findLatestCycle(tenancy.id());
@@ -992,12 +1105,38 @@ public class BillingCycleService {
         }
 
         BillingCycle latest = latestCycle.get();
-        LocalDate nextPeriodStart = latest.getPeriodStartDate().plusMonths(1);
+        // Anchored to the tenancy's start day, never chained off the previous
+        // start. Chaining clamps once in February and never recovers, silently
+        // turning a 31st tenancy into a 28th one for good.
+        int anchorDay = MonthlyCycleDates.anchorDayOf(tenancy.startDate());
+        LocalDate nextPeriodStart = MonthlyCycleDates.nextStartAfter(latest.getPeriodStartDate(), anchorDay);
         int nextCycleNumber = latest.getCycleNumber() + 1;
         // Generated ahead of its start date so the owner has a real bill to
         // attach charges to. It is created UPCOMING and stays unpayable until
         // the activation job opens its window.
         if (nextPeriodStart.isAfter(today.plusDays(upcomingCycleLeadDays))) {
+            return false;
+        }
+
+        // A tenant on notice stops being billed past their last day. Generation
+        // runs *ahead* of the period start, so this fires before the bill exists
+        // — nothing is created and then withdrawn.
+        //
+        // The comparison is against the cycle's start, not its end: a cycle
+        // opening after checkout covers time the tenant will not be here. One
+        // that opens before it is still owed, even if it runs past the date.
+        //
+        // This is also what makes an approved exit reversible. Withdrawal clears
+        // ON_NOTICE and the skip leaves no trace to undo; because the gate only
+        // suppresses cycles whose start is still in the future, the next daily
+        // run backfills any whose start has since passed.
+        LocalDate checkoutDate = tenancy.plannedEndDate() != null ? tenancy.plannedEndDate() : tenancy.endDate();
+        if (isOnNotice(tenancy) && checkoutDate != null && nextPeriodStart.isAfter(checkoutDate)) {
+            log.info(
+                    "Skipping cycle generation past checkout tenancyId={} nextPeriodStart={} checkoutDate={}",
+                    tenancy.id(),
+                    nextPeriodStart,
+                    checkoutDate);
             return false;
         }
 
@@ -1259,7 +1398,9 @@ public class BillingCycleService {
             UUID tenancyId,
             Long approvedTotalAmountPaise) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        // Authorization belongs to the caller: tenancy has already checked
+        // EXIT_REQUESTS or TENANCIES. Re-checking on a billing resource here
+        // would refuse a move-out the manager is allowed to run.
 
         BillingCycle cycle = getLatestCycle(tenancyId);
         if (approvedTotalAmountPaise == null) {
@@ -1316,6 +1457,65 @@ public class BillingCycleService {
     }
 
     /**
+     * Raises an owner-entered one-off bill against a tenancy, due today.
+     *
+     * <p>
+     * The escape hatch for the immutability rule: a live rent cycle is frozen,
+     * so a charge that cannot wait for the next cycle has to be a bill of its
+     * own. It is created UNPAID (never UPCOMING) — there is no lead time to
+     * respect, because there is no cycle it belongs to.
+     */
+    @Transactional
+    public BillingCycleResponse createOneOffBill(
+            UUID actorUserId,
+            UUID tenancyId,
+            CreateOneOffBillRequest request) {
+        TenancyResponse tenancy = getTenancy(tenancyId);
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, tenancy.propertyId());
+
+        String reason = request.reason() == null ? "" : request.reason().trim();
+        if (reason.isEmpty()) {
+            throw new ValidationException("Reason is required");
+        }
+        if (request.amountPaise() <= 0) {
+            throw new ValidationException("Amount must be greater than zero");
+        }
+
+        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
+                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
+
+        BillingCycle bill = billingCycleRepository.save(BillingCycle.createOneOff(
+                tenancy.id(),
+                referenceCodeGenerator.nextCode("BIL"),
+                tenancy.userId(),
+                tenant.fullName(),
+                tenancy.propertyId(),
+                tenancy.roomId(),
+                tenancy.billingType(),
+                LocalDate.now(DASHBOARD_ZONE)));
+
+        lineItemRepository.save(BillingCycleLineItem.extraChargeAddedToBill(
+                bill,
+                reason,
+                null,
+                request.amountPaise(),
+                actorUserId,
+                1));
+        calculateCycle(bill);
+        lineItemRepository.flush();
+        BillingCycle saved = billingCycleRepository.saveAndFlush(bill);
+
+        log.info(
+                "One-off bill raised billingCycleId={} tenancyId={} actorUserId={} amountPaise={}",
+                saved.getId(),
+                tenancyId,
+                actorUserId,
+                request.amountPaise());
+
+        return toResponse(saved);
+    }
+
+    /**
      * Charges an approved early-exit penalty. If the tenant's current cycle is
      * still open the penalty is rolled into it; if that cycle is already paid a
      * new one-off penalty bill is raised, due immediately. Called from exit
@@ -1329,7 +1529,9 @@ public class BillingCycleService {
         }
 
         TenancyResponse tenancy = getTenancy(tenancyId);
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.propertyId());
+        // Authorization belongs to the caller: tenancy has already checked
+        // EXIT_REQUESTS or TENANCIES. Re-checking on a billing resource here
+        // would refuse a move-out the manager is allowed to run.
 
         // The penalty is a SYSTEM charge (not an owner-added extra charge).
         if (!latest.isPaid() && !latest.isCancelled()) {
@@ -1400,7 +1602,12 @@ public class BillingCycleService {
             LocalDate periodStart) {
         if (tenancy.billingType() == TenancyBillingType.MONTHLY) {
             PropertyBillingPolicyResponse billingPolicy = propertyModule.getBillingPolicy(tenancy.propertyId());
-            LocalDate periodEnd = periodStart.plusMonths(1).minusDays(1);
+            // Derived from the next anchored start, not from periodStart plus a
+            // month. The two agree only while the anchor never recovers; once it
+            // does, the old form ends 28 Feb on 27 Mar while the next cycle opens
+            // on 31 Mar — three unbilled days a year on every 29th-31st tenancy.
+            int anchorDay = MonthlyCycleDates.anchorDayOf(tenancy.startDate());
+            LocalDate periodEnd = MonthlyCycleDates.endOfCycleStartingOn(periodStart, anchorDay);
             LocalDate dueDate = calculateMonthlyDueDate(periodStart, billingPolicy.rentGraceDays());
 
             // Generated ahead of its window, so it starts mutable: this is the
@@ -1560,13 +1767,26 @@ public class BillingCycleService {
     }
 
     /**
+     * Loads a billing cycle the actor may READ. Payment history is a read, so it
+     * must not go through {@link #getManagedCycle} — a view-only manager is
+     * meant to see what was collected.
+     */
+    private BillingCycle getViewableCycle(UUID actorUserId, UUID billingCycleId) {
+        BillingCycle cycle = billingCycleRepository.findById(billingCycleId)
+                .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
+
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, cycle.getPropertyId());
+        return cycle;
+    }
+
+    /**
      * Loads a billing cycle and verifies the actor can manage its property.
      */
     private BillingCycle getManagedCycle(UUID actorUserId, UUID billingCycleId) {
         BillingCycle cycle = billingCycleRepository.findById(billingCycleId)
                 .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
 
-        propertyModule.ensureCanManageProperty(actorUserId, cycle.getPropertyId());
+        billingAccessPolicy.ensureCanManageBilling(actorUserId, cycle.getPropertyId());
         return cycle;
     }
 
@@ -1647,6 +1867,31 @@ public class BillingCycleService {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().referenceCode()));
     }
 
+    /**
+     * Tenant phone per tenancy, for search. Owners reach for a phone number more
+     * readily than a reference code — it is what they have in their own contacts.
+     * Comes off the same {@code findByIds} lookup the reference codes use, so it
+     * costs no extra query. Tenancies with no linked user contribute nothing.
+     */
+    private Map<UUID, String> tenantPhones(List<BillingCycle> cycles) {
+        if (cycles.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<UUID> tenancyIds = cycles.stream()
+                .map(BillingCycle::getTenancyId)
+                .collect(Collectors.toSet());
+
+        Map<UUID, String> phones = new HashMap<>();
+        tenancyModule.findByIds(tenancyIds).forEach((tenancyId, tenancy) -> {
+            if (tenancy.tenantPhone() != null) {
+                phones.put(tenancyId, tenancy.tenantPhone());
+            }
+        });
+
+        return phones;
+    }
+
     private Map<RoomDisplayKey, String> roomNumbers(List<BillingCycle> cycles) {
         Map<UUID, Set<UUID>> roomIdsByProperty = cycles.stream()
                 .collect(Collectors.groupingBy(
@@ -1685,8 +1930,9 @@ public class BillingCycleService {
      * Converts the property's current billing policy into the cycle due date.
      */
     private LocalDate calculateMonthlyDueDate(LocalDate periodStartDate, int rentGraceDays) {
-        if (rentGraceDays < 0 || rentGraceDays > 30) {
-            throw new ValidationException("Rent grace days must be between 0 and 30");
+        if (rentGraceDays < 0 || rentGraceDays > BillingCycle.MAX_RENT_GRACE_DAYS) {
+            throw new ValidationException(
+                    "Rent grace days must be between 0 and " + BillingCycle.MAX_RENT_GRACE_DAYS);
         }
 
         return periodStartDate.plusDays(rentGraceDays);

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
+import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -52,6 +53,37 @@ public class BillingCycleNotificationEventListener {
                 NotificationCategory.PAYMENT,
                 NotificationPriority.NORMAL,
                 NotificationSubtype.BILLING_CYCLE_GENERATED,
+                event.billingCycleId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    /**
+     * The tenant's receipt. Someone recorded their payment on their behalf, so
+     * this is the only confirmation they get that the bill is settled — without
+     * it a tenant who paid cash has no evidence in the app that it landed.
+     */
+    @ApplicationModuleListener
+    public void onPaidManually(BillingCyclePaidManuallyEvent event) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("billingCycleId", event.billingCycleId().toString());
+        data.put("manualPaymentId", event.manualPaymentId().toString());
+        data.put("tenancyId", event.tenancyId().toString());
+        data.put("propertyId", event.propertyId().toString());
+        data.put("amountPaise", Long.toString(event.amountPaise()));
+        if (event.method() != null) {
+            data.put("method", event.method().name());
+        }
+
+        String method = event.method() == null ? "" : " by " + event.method().name().toLowerCase().replace('_', ' ');
+
+        notificationModule.notifyUser(
+                event.tenantUserId(),
+                "Payment recorded",
+                "Your bill has been marked paid" + method + ".",
+                NotificationCategory.PAYMENT,
+                NotificationPriority.NORMAL,
+                NotificationSubtype.PAYMENT_SUCCEEDED,
                 event.billingCycleId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);

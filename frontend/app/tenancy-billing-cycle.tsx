@@ -1,6 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, ReceiptText } from "lucide-react-native";
+import { ReceiptText } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -25,11 +25,11 @@ export default function TenancyBillingCycleScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="BILLING"
+        eyebrow="Billing"
+        onBack={() => router.back()}
         title="Line"
         italicTail="items."
         subtitle="Bill breakdown for rent, deposit, charges, discounts and settlement actions."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {cyclesQuery.isFetching ? (
@@ -91,26 +91,6 @@ function LineItemCard({ item }: { item: BillingCycleLineItem }) {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        borderColor: colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 42,
-        justifyContent: "center",
-        width: 42,
-      }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function DetailKicker({ text }: { text: string }) {
   const { colors, type } = useTheme();
@@ -124,14 +104,14 @@ function DetailKicker({ text }: { text: string }) {
 
 function DetailText({ text }: { text: string }) {
   const { colors, type } = useTheme();
-  return <Text style={[type.body, { color: colors.muted }]} selectable>{text}</Text>;
+  return <Text style={[type.body, { color: colors.muted }]}>{text}</Text>;
 }
 
 function DetailLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>{label}</Text>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
       <Text
         style={{
           color: colors.ink,
@@ -141,7 +121,6 @@ function DetailLine({ label, strong = false, value }: { label: string; strong?: 
           fontWeight: strong ? "500" : "800",
           textAlign: "right",
         }}
-        selectable
       >
         {value}
       </Text>

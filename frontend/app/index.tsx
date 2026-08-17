@@ -54,15 +54,13 @@ export default function IndexRoute() {
               fontFamily: fonts.display,
               fontSize: 32,
               fontStyle: "italic",
-              fontWeight: "500",
               letterSpacing: -1,
             }}
-            selectable
           >
             K
           </Text>
         </View>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           Khatiyan · खतियान
         </Text>
         <ActivityIndicator color={colors.primary} />

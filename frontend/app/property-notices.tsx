@@ -1,6 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, Bell, Megaphone } from "lucide-react-native";
+import { Bell, Megaphone } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -24,11 +24,11 @@ export default function PropertyNoticesScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Property notices"
+        eyebrow="Property"
+        onBack={() => router.back()}
         title="Notices,"
         italicTail="published."
         subtitle="Active announcements for your current property, including notices generated from recurring schedules."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       <Section eyebrow="Visible now" title="Published notices">
@@ -49,28 +49,6 @@ export default function PropertyNoticesScreen() {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 44,
-        justifyContent: "center",
-        width: 44,
-      }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function NoticeCard({ notice }: { notice: NoticeSummary }) {
   const { colors, type } = useTheme();
@@ -95,15 +73,15 @@ function NoticeCard({ notice }: { notice: NoticeSummary }) {
         </View>
         <View style={{ flex: 1, gap: spacing.xs }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker, flex: 1 }]} selectable>
+            <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker, flex: 1 }]}>
               {formatDate(notice.publishedAt)}
             </Text>
             <StatusPill label={humanizeToken(notice.priority)} tone={urgent ? "primary" : "neutral"} />
           </View>
-          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]} selectable>
+          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
             {notice.title}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             {notice.body}
           </Text>
         </View>

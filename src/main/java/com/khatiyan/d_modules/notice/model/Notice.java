@@ -1,6 +1,8 @@
 package com.khatiyan.d_modules.notice.model;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -66,6 +68,18 @@ public class Notice extends BaseEntity {
     @Column(name = "archived_at")
     private Instant archivedAt;
 
+    /**
+     * Set only on rows the scheduler materialised from a recurring template.
+     * Null means an ordinary one-off notice — which is exactly how owner-facing
+     * notice lists tell the two apart.
+     */
+    @Column(name = "generated_from_recurring_notice_id")
+    private UUID generatedFromRecurringNoticeId;
+
+    /** The day this occurrence belongs to, in the generation zone (IST). */
+    @Column(name = "occurrence_date")
+    private LocalDate occurrenceDate;
+
     private Notice(
             UUID propertyId,
             UUID createdByUserId,
@@ -74,7 +88,9 @@ public class Notice extends BaseEntity {
             NoticePriority priority,
             Instant visibleFrom,
             Instant visibleUntil,
-            Instant publishedAt) {
+            Instant publishedAt,
+            UUID generatedFromRecurringNoticeId,
+            LocalDate occurrenceDate) {
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
         this.createdByUserId = createdByUserId;
@@ -85,6 +101,8 @@ public class Notice extends BaseEntity {
         this.visibleFrom = visibleFrom;
         this.visibleUntil = visibleUntil;
         this.publishedAt = publishedAt;
+        this.generatedFromRecurringNoticeId = generatedFromRecurringNoticeId;
+        this.occurrenceDate = occurrenceDate;
     }
 
     public static Notice publish(
@@ -104,19 +122,58 @@ public class Notice extends BaseEntity {
                 priority,
                 visibleFrom,
                 visibleUntil,
-                now);
+                now,
+                null,
+                null);
     }
 
     /**
-     * Refreshes the visible window for a recurring notice's managed row so it
-     * shows during the given slot. Keeps the row PUBLISHED.
+     * Materialises one day's notice from a recurring template. Each day gets its
+     * own row, so an owner editing today's occurrence — retitling it, attaching
+     * today's menu — leaves tomorrow's untouched.
      */
-    public void republishForWindow(Instant visibleFrom, Instant visibleUntil, Instant now) {
-        this.status = NoticeStatus.PUBLISHED;
-        this.archivedAt = null;
-        this.visibleFrom = visibleFrom;
-        this.visibleUntil = visibleUntil;
-        this.publishedAt = now;
+    public static Notice publishOccurrence(
+            UUID recurringNoticeId,
+            LocalDate occurrenceDate,
+            UUID propertyId,
+            UUID createdByUserId,
+            String title,
+            String body,
+            NoticePriority priority,
+            Instant visibleFrom,
+            Instant visibleUntil,
+            Instant now) {
+        return new Notice(
+                propertyId,
+                createdByUserId,
+                title,
+                body,
+                priority,
+                visibleFrom,
+                visibleUntil,
+                now,
+                recurringNoticeId,
+                occurrenceDate);
+    }
+
+    public boolean isRecurringOccurrence() {
+        return generatedFromRecurringNoticeId != null;
+    }
+
+    /**
+     * Postpones a notice that has not gone live yet, sliding the end of its
+     * window by the same amount so the notice stays visible for as long as it
+     * was originally meant to. A notice with no end keeps having none.
+     */
+    public void delayTo(Instant newVisibleFrom) {
+        ensureEditable();
+
+        if (visibleUntil != null) {
+            Duration originalWindow = Duration.between(visibleFrom, visibleUntil);
+            this.visibleUntil = newVisibleFrom.plus(originalWindow);
+        }
+
+        this.visibleFrom = newVisibleFrom;
     }
 
     public void updateDetails(
@@ -125,7 +182,7 @@ public class Notice extends BaseEntity {
             NoticePriority priority,
             Instant visibleFrom,
             Instant visibleUntil) {
-        ensurePublished();
+        ensureEditable();
         this.title = title;
         this.body = body;
         this.priority = priority;
@@ -159,9 +216,52 @@ public class Notice extends BaseEntity {
         return visibleUntil != null && visibleUntil.isBefore(now);
     }
 
-    private void ensurePublished() {
+    /**
+     * Guards every change to a notice, including the things hanging off it.
+     *
+     * <p>Public because attachments are a separate entity with their own
+     * service, so it could add and remove files on an archived notice without
+     * this class ever being asked. The text fields were protected and the
+     * attachments were not, which meant an archived notice could still be
+     * edited — just not through the fields anyone was watching.
+     *
+     * <p>Archived is called out by name. "Only published notices can be
+     * updated" leaves the reader working out which of the two non-published
+     * states theirs is in, and why.
+     */
+    public void ensureEditable() {
+        if (status == NoticeStatus.ARCHIVED) {
+            throw new ValidationException("Archived notices cannot be edited");
+        }
         if (status != NoticeStatus.PUBLISHED) {
             throw new ValidationException("Only published notices can be updated");
+        }
+    }
+
+    /** True once the notice's window has opened and tenants can see it. */
+    public boolean isLiveAt(Instant now) {
+        return !visibleFrom.isAfter(now);
+    }
+
+    /**
+     * The full rule for changing or removing a notice: it must still be
+     * published, and it must not have gone live yet.
+     *
+     * <p>Going live is the point of no return. Tenants have seen it, and may
+     * have acted on it, so rewriting or deleting it afterwards would rewrite
+     * what they were told. Retiring it is what archiving is for.
+     *
+     * <p>This lives on the entity because four different callers need the same
+     * answer — the text fields, the delay, the delete, and the attachments —
+     * and each one that reimplemented it got a slightly different rule. The
+     * attachment paths had no rule at all, which is how files could be pulled
+     * off a notice whose title could not be changed.
+     */
+    public void ensureEditableAt(Instant now) {
+        ensureEditable();
+
+        if (isLiveAt(now)) {
+            throw new ValidationException("This notice is already live and can no longer be edited");
         }
     }
 

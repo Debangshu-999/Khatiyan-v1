@@ -121,7 +121,7 @@ public class FirebaseAuthService {
     public TokenResponse setPin(String idToken, String pin) {
         VerifiedFirebasePhone verifiedPhone = firebasePhoneAuthService.verifyPhoneToken(idToken);
         User user = userRepository.findByPhoneAndActiveTrue(verifiedPhone.phone())
-                .orElseThrow(() -> new NotFoundException("User_", verifiedPhone.phone()));
+                .orElseThrow(() -> new NotFoundException("User", verifiedPhone.phone()));
 
         if (user.hasPin()) {
             throw new ValidationException("PIN is already set");

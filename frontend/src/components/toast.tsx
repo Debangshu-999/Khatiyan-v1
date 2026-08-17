@@ -164,8 +164,7 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
           <Icon color={palette.accent} size={17} strokeWidth={2.4} />
         </View>
         <Text
-          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sans, fontSize: 13.5, fontWeight: "600", lineHeight: 19 }}
-          selectable
+          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansMedium, fontSize: 13.5, lineHeight: 19 }}
         >
           {toast.message}
         </Text>

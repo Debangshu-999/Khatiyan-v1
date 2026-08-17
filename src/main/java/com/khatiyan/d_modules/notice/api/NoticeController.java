@@ -18,8 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.notice.api.dto.CreateNoticeRequest;
+import com.khatiyan.d_modules.notice.api.dto.DelayNoticeRequest;
+import com.khatiyan.d_modules.notice.api.dto.AddNoticeAttachmentsRequest;
+import com.khatiyan.d_modules.notice.api.dto.NoticeAttachmentResponse;
 import com.khatiyan.d_modules.notice.api.dto.NoticeResponse;
 import com.khatiyan.d_modules.notice.api.dto.UpdateNoticeRequest;
+import com.khatiyan.d_modules.notice.service.NoticeAttachmentService;
 import com.khatiyan.d_modules.notice.service.NoticeService;
 
 import jakarta.validation.Valid;
@@ -36,9 +40,11 @@ import jakarta.validation.Valid;
 public class NoticeController {
 
     private final NoticeService noticeService;
+    private final NoticeAttachmentService noticeAttachmentService;
 
-    public NoticeController(NoticeService noticeService) {
+    public NoticeController(NoticeService noticeService, NoticeAttachmentService noticeAttachmentService) {
         this.noticeService = noticeService;
+        this.noticeAttachmentService = noticeAttachmentService;
     }
 
     // Admin side notice endpoints
@@ -77,12 +83,64 @@ public class NoticeController {
         return noticeService.listArchivedNotices(user.userId(), propertyId);
     }
 
+    /**
+     * Attachments on an existing notice.
+     *
+     * <p>Every mutation returns the whole ordered list, because removing one
+     * renumbers the rest — a response carrying a single row would leave the
+     * client's copy wrong.
+     */
+    @GetMapping("/notices/{noticeId}/attachments")
+    public List<NoticeAttachmentResponse> listNoticeAttachments(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID noticeId) {
+        return noticeAttachmentService.listAttachments(user.userId(), noticeId);
+    }
+
+    @PostMapping("/notices/{noticeId}/attachments")
+    public List<NoticeAttachmentResponse> addNoticeAttachments(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID noticeId,
+            @Valid @RequestBody AddNoticeAttachmentsRequest request) {
+        return noticeAttachmentService.addAttachments(user.userId(), noticeId, request.attachments());
+    }
+
+    @DeleteMapping("/notices/{noticeId}/attachments/{attachmentId}")
+    public List<NoticeAttachmentResponse> removeNoticeAttachment(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID noticeId,
+            @PathVariable UUID attachmentId) {
+        return noticeAttachmentService.removeAttachment(user.userId(), noticeId, attachmentId);
+    }
+
+    @GetMapping("/notices/{noticeId}")
+    public NoticeResponse getNotice(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID noticeId) {
+        return noticeService.getNoticeDetail(user.userId(), noticeId);
+    }
+
+    @GetMapping("/properties/{propertyId}/notices/upcoming")
+    public List<NoticeResponse> listUpcomingNotices(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return noticeService.listUpcomingNotices(user.userId(), propertyId);
+    }
+
     @PatchMapping("/notices/{noticeId}")
     public NoticeResponse updateNotice(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID noticeId,
             @Valid @RequestBody UpdateNoticeRequest request) {
         return noticeService.updateNotice(user.userId(), noticeId, request);
+    }
+
+    @PatchMapping("/notices/{noticeId}/delay")
+    public NoticeResponse delayNotice(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID noticeId,
+            @Valid @RequestBody DelayNoticeRequest request) {
+        return noticeService.delayNotice(user.userId(), noticeId, request.visibleFrom());
     }
 
     @PatchMapping("/notices/{noticeId}/archive")

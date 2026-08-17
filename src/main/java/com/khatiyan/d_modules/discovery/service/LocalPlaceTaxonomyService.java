@@ -28,16 +28,19 @@ public class LocalPlaceTaxonomyService {
     private final LocalPlaceCategoryRepository categoryRepository;
     private final LocalPlaceSubcategoryRepository subcategoryRepository;
     private final PropertyModule propertyModule;
+    private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final TenancyModule tenancyModule;
 
     public LocalPlaceTaxonomyService(
             LocalPlaceCategoryRepository categoryRepository,
             LocalPlaceSubcategoryRepository subcategoryRepository,
             PropertyModule propertyModule,
+            DiscoveryAccessPolicy discoveryAccessPolicy,
             TenancyModule tenancyModule) {
         this.categoryRepository = categoryRepository;
         this.subcategoryRepository = subcategoryRepository;
         this.propertyModule = propertyModule;
+        this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.tenancyModule = tenancyModule;
     }
 
@@ -45,7 +48,7 @@ public class LocalPlaceTaxonomyService {
     @Transactional(readOnly = true)
     public List<LocalPlaceCategoryResponse> listMyTaxonomy(UUID tenantUserId) {
         TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
-                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser_", tenantUserId));
+                .orElseThrow(() -> new NotFoundException("ActiveTenancyForUser", tenantUserId));
         return listTaxonomy(tenancy.propertyId());
     }
 
@@ -71,7 +74,7 @@ public class LocalPlaceTaxonomyService {
     @Transactional
     public LocalPlaceCategoryResponse createCustomCategory(
             UUID actorUserId, UUID propertyId, CreateCustomCategoryRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageNearbyPlaces(actorUserId, propertyId);
         String name = request.name() == null ? "" : request.name().trim();
         if (name.isBlank()) {
             throw new ValidationException("Category name is required");
@@ -84,9 +87,9 @@ public class LocalPlaceTaxonomyService {
     @Transactional
     public LocalPlaceSubcategoryResponse createCustom(
             UUID actorUserId, UUID propertyId, CreateCustomSubcategoryRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        discoveryAccessPolicy.ensureCanManageNearbyPlaces(actorUserId, propertyId);
         categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new NotFoundException("LocalPlaceCategory_", request.categoryId()));
+                .orElseThrow(() -> new NotFoundException("LocalPlaceCategory", request.categoryId()));
 
         String name = request.name() == null ? "" : request.name().trim();
         if (name.isBlank()) {

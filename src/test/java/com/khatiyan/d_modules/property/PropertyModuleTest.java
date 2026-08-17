@@ -19,6 +19,7 @@ import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.model.BathroomType;
+import com.khatiyan.d_modules.property.model.NoticePeriod;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
 import com.khatiyan.d_modules.property.model.PropertyType;
@@ -26,6 +27,7 @@ import com.khatiyan.d_modules.property.model.RoomConditioning;
 import com.khatiyan.d_modules.property.model.RoomStatus;
 import com.khatiyan.d_modules.property.model.RoomType;
 import com.khatiyan.d_modules.property.model.SharingType;
+import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.service.PropertyService;
 import com.khatiyan.d_modules.property.service.RoomService;
@@ -42,11 +44,14 @@ class PropertyModuleTest {
     @Mock
     private PropertyManagerService propertyManagerService;
 
+    @Mock
+    private ManagerAccessPolicy managerAccessPolicy;
+
     private PropertyModule propertyModule;
 
     @BeforeEach
     void setUp() {
-        propertyModule = new PropertyModule(roomService, propertyService, propertyManagerService);
+        propertyModule = new PropertyModule(roomService, propertyService, propertyManagerService, managerAccessPolicy);
     }
 
     @Test
@@ -124,7 +129,9 @@ class PropertyModuleTest {
                 BillingCollectionTiming.CYCLE_START,
                 3,
                 10_000_00,
-                30,
+                NoticePeriod.ONE_MONTH,
+                0,
+                null,
                 true,
                 true);
     }
@@ -136,6 +143,7 @@ class PropertyModuleTest {
                 "101",
                 "1",
                 2,
+                0,
                 0,
                 2,
                 RoomType.DOUBLE,

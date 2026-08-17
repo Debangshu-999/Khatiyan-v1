@@ -1,9 +1,11 @@
 package com.khatiyan.d_modules.notice.api.dto;
 
 import java.time.Instant;
+import java.util.List;
 
 import com.khatiyan.d_modules.notice.model.NoticePriority;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -26,6 +28,14 @@ public record CreateNoticeRequest(
 
     Instant visibleFrom,
 
-    Instant visibleUntil
+    Instant visibleUntil,
+
+    /**
+     * Files already uploaded to storage. The bytes never pass through here —
+     * only the handles — so publishing stays fast however many were attached.
+     */
+    @Size(max = 10)
+    @Valid
+    List<NoticeAttachmentRequest> attachments
 ) {
 }

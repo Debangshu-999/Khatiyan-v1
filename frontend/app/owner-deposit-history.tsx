@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, Landmark } from "lucide-react-native";
+import { Landmark } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,6 +11,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { StatusPill } from "@/components/status-pill";
+import { humanizeToken } from "@/features/owner/owner-ui";
 import { SkeletonCard } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ChoiceButton, formatMoneyPaise, shortId } from "@/features/owner/owner-ui";
@@ -72,11 +73,11 @@ export default function OwnerDepositHistoryScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="DEPOSIT MANAGER"
+        eyebrow="Deposit manager"
+        onBack={() => router.back()}
         title="Deposit"
         italicTail="history."
         subtitle={property ? `Past and present deposit accounts for ${property.name}.` : "Past and present deposit accounts."}
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {!property ? (
@@ -135,7 +136,7 @@ export default function OwnerDepositHistoryScreen() {
           ) : null}
 
           {depositsQuery.isError ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               Could not load deposit history. Pull to retry.
             </Text>
           ) : null}
@@ -147,7 +148,6 @@ export default function OwnerDepositHistoryScreen() {
 
 function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: () => void }) {
   const { colors, type } = useTheme();
-  const settled = account.status === "SETTLED";
 
   return (
     <AnimatedPressable
@@ -165,27 +165,21 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
       }}
     >
       <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1} selectable>
+        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
           {account.tenantName ?? `Tenancy ${shortId(account.tenancyId)}`}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1} selectable>
+        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
           {account.tenancyReferenceCode ?? shortId(account.id)} · {formatMoneyPaise(account.currentBalancePaise)}
         </Text>
       </View>
-      <StatusPill label={settled ? "Settled" : "Active"} tone={settled ? "neutral" : "success"} />
+      {/* The account's own status, all three of them. Collapsing everything
+          non-settled to "Active" made a deposit awaiting settlement read as a
+          live one — the same account then said PENDING_SETTLEMENT when opened. */}
+      <StatusPill
+        label={humanizeToken(account.status)}
+        tone={account.status === "SETTLED" ? "neutral" : account.status === "PENDING_SETTLEMENT" ? "warning" : "success"}
+      />
     </AnimatedPressable>
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Go back"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}

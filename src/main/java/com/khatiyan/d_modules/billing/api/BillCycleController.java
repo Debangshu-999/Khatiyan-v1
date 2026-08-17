@@ -28,6 +28,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordPaymentSuccessRequest;
@@ -169,6 +170,19 @@ public class BillCycleController {
             @PathVariable UUID tenancyId,
             @Valid @RequestBody List<@Valid CreateExtraChargeRequest> requests) {
         return billingModule.addExtraChargeForTenancy(user.userId(), tenancyId, requests);
+    }
+
+    /**
+     * Raises a standalone bill against a tenancy, due today — the way to charge
+     * something that a frozen live cycle can no longer absorb.
+     */
+    @PostMapping("/tenancies/{tenancyId}/one-off-bills")
+    public ResponseEntity<BillingCycleResponse> createOneOffBill(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID tenancyId,
+            @Valid @RequestBody CreateOneOffBillRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(billingModule.createOneOffBill(user.userId(), tenancyId, request));
     }
 
     @PostMapping("/tenancies/{tenancyId}/discounts")

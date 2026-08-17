@@ -58,12 +58,19 @@ export const concernApi = api.injectEndpoints({
   endpoints: (builder) => ({
     createConcern: builder.mutation<
       ConcernSummary,
-      { category: ConcernCategory; description: string; title: string }
+      {
+        category: ConcernCategory;
+        description: string;
+        title: string;
+        // Already uploaded by the caller. This used to be hardcoded to [] here,
+        // which silently discarded every photo the picker collected.
+        photos?: { photoUrl: string; photoPublicId: string | null; displayOrder: number }[];
+      }
     >({
-      query: (body) => ({
+      query: ({ photos = [], ...body }) => ({
         url: "/api/v1/concerns",
         method: "POST",
-        body: { ...body, photos: [] },
+        body: { ...body, photos },
       }),
       invalidatesTags: ["Concern", "Notification"],
     }),

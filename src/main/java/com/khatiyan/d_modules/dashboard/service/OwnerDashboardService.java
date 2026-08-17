@@ -21,11 +21,10 @@ import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
-import com.khatiyan.d_modules.concerns.api.dto.ConcernResponse;
-import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterProperty;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterResponse;
 import com.khatiyan.d_modules.dashboard.api.dto.AttentionSummary;
@@ -42,15 +41,10 @@ import com.khatiyan.d_modules.dashboard.api.dto.TodayDigest;
 import com.khatiyan.d_modules.expense.ExpenseModule;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
 import com.khatiyan.d_modules.notice.NoticeModule;
-import com.khatiyan.d_modules.notice.api.dto.NoticeResponse;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
-import com.khatiyan.d_modules.property.api.dto.RoomActivityResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
-import com.khatiyan.d_modules.property.model.RoomActivityType;
 import com.khatiyan.d_modules.staff.StaffModule;
-import com.khatiyan.d_modules.staff.api.dto.EmployeeActivityItem;
-import com.khatiyan.d_modules.staff.api.dto.EmployeeActivityType;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -88,6 +82,7 @@ public class OwnerDashboardService {
     private final ExpenseModule expenseModule;
 
     private final int upcomingExitDays;
+    private final ActivityEventService activityEventService;
     private final int recentActivityLimit;
 
     public OwnerDashboardService(
@@ -100,6 +95,7 @@ public class OwnerDashboardService {
             StaffModule staffModule,
             ExpenseModule expenseModule,
             @Value("${app.dashboard.upcoming-exit-days:7}") int upcomingExitDays,
+            ActivityEventService activityEventService,
             @Value("${app.dashboard.recent-activity-limit:10}") int recentActivityLimit) {
         this.propertyModule = propertyModule;
         this.tenancyModule = tenancyModule;
@@ -110,6 +106,7 @@ public class OwnerDashboardService {
         this.staffModule = staffModule;
         this.expenseModule = expenseModule;
         this.upcomingExitDays = upcomingExitDays;
+        this.activityEventService = activityEventService;
         this.recentActivityLimit = recentActivityLimit;
     }
 
@@ -131,7 +128,7 @@ public class OwnerDashboardService {
                 tenancyModule.listPropertyExitRequests(actorUserId, propertyId);
         List<TenancyRoomChangeRequestResponse> roomChangeRequests =
                 tenancyModule.listPropertyRoomChangeRequests(actorUserId, propertyId);
-        BillingDashboardSummary billing = billingModule.getPropertyBillingSummary(actorUserId, propertyId);
+        BillingDashboardSummary billing = billingModule.getPropertyBillingSummaryForDashboard(propertyId);
         ConcernDashboardSummary concern = concernModule.getPropertyConcernSummary(actorUserId, propertyId);
         // Full cycle history (not a single month) so the six-month trend, the
         // prior-month money delta and recent activity all see every month's data.
@@ -147,13 +144,15 @@ public class OwnerDashboardService {
         TenancySnapshot tenancy = buildTenancy(activeTenancies, inactiveTenancies, allTenancies, exitRequests, today);
         MoneySnapshot money = buildMoney(billing, cycles, activeTenancies, prevMonthStart, monthStart);
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
-        long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(actorUserId, propertyId);
+        long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
         AttentionSummary attention = buildAttention(
                 billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements);
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
         List<MonthlyTrendPoint> monthlyTrends = buildMonthlyTrends(allTenancies, cycles, occupancy.totalBeds(), today);
-        List<RecentActivityItem> recentActivity = buildRecentActivity(actorUserId, propertyId, activeTenancies, cycles);
+        // Straight read: the feed is only what listeners have recorded. Nothing is
+        // derived from current state any more, which is what let history rewrite itself.
+        List<RecentActivityItem> recentActivity = activityEventService.listRecent(propertyId, recentActivityLimit);
 
         log.info("Action center built propertyId={} actorUserId={}", propertyId, actorUserId);
 
@@ -334,192 +333,6 @@ public class OwnerDashboardService {
         return date != null && !date.isBefore(monthStart) && date.isBefore(nextMonthStart);
     }
 
-    /**
-     * Builds a newest-first recent-activity feed by composing read-only facade
-     * data: new tenancies, recorded payments, resolved concerns, and published
-     * notices.
-     */
-    private List<RecentActivityItem> buildRecentActivity(
-            UUID actorUserId,
-            UUID propertyId,
-            List<TenancyResponse> activeTenancies,
-            List<BillingCycleResponse> cycles) {
-        List<RecentActivityItem> items = new ArrayList<>();
-
-        for (TenancyResponse tenancy : activeTenancies) {
-            if (tenancy.createdAt() != null) {
-                items.add(new RecentActivityItem(
-                        RecentActivityType.TENANCY_STARTED,
-                        "Tenancy " + tenancy.referenceCode(),
-                        "Started " + tenancy.startDate(),
-                        tenancy.createdAt()));
-            }
-        }
-
-        for (BillingCycleResponse cycle : cycles) {
-            if (cycle.status() == BillingCycleStatus.PAID && cycle.paidAt() != null) {
-                String who = cycle.tenantNameSnapshot() != null && !cycle.tenantNameSnapshot().isBlank()
-                        ? cycle.tenantNameSnapshot()
-                        : cycle.referenceCode();
-                items.add(new RecentActivityItem(
-                        RecentActivityType.PAYMENT_RECORDED,
-                        who,
-                        "Paid ₹" + (cycle.totalAmountPaise() / 100) + " · " + cycle.referenceCode(),
-                        cycle.paidAt()));
-            }
-        }
-
-        for (ConcernResponse concern : concernModule.listPropertyConcernHistory(actorUserId, propertyId)) {
-            if (concern.resolvedAt() != null) {
-                String resolverName = userName(concern.resolvedByUserId());
-                items.add(new RecentActivityItem(
-                        RecentActivityType.CONCERN_RESOLVED,
-                        concern.title(),
-                        "Resolved by " + resolverName + " - " + concern.referenceCode(),
-                        concern.resolvedAt()));
-            }
-        }
-
-        for (ConcernResponse concern : concernModule.listActiveAssignedConcerns(actorUserId, propertyId)) {
-            if (concern.status() != ConcernStatus.UNDER_REVIEW) {
-                continue;
-            }
-
-            Instant occurredAt = concern.assignedAt() != null ? concern.assignedAt() : concern.updatedAt();
-            if (occurredAt == null) {
-                continue;
-            }
-
-            UUID assignedByUserId = concern.assignedByUserId();
-            UUID assignedToUserId = concern.assignedToUserId();
-            boolean selfTaken = assignedByUserId == null
-                    || assignedToUserId == null
-                    || assignedByUserId.equals(assignedToUserId);
-
-            String assigneeName = userName(assignedToUserId);
-            String subtitle = selfTaken
-                    ? "Taken up by " + assigneeName + " - " + concern.referenceCode()
-                    : "Assigned to " + assigneeName + " by " + userName(assignedByUserId) + " - "
-                            + concern.referenceCode();
-
-            items.add(new RecentActivityItem(
-                    selfTaken ? RecentActivityType.CONCERN_TAKEN_UP : RecentActivityType.CONCERN_ASSIGNED,
-                    concern.title(),
-                    subtitle,
-                    occurredAt));
-        }
-
-        Instant now = Instant.now();
-        for (NoticeResponse notice : noticeModule.listPublishedNotices(actorUserId, propertyId)) {
-            Instant occurredAt = notice.publishedAt() != null ? notice.publishedAt() : notice.createdAt();
-            if (occurredAt == null) {
-                continue;
-            }
-            items.add(new RecentActivityItem(
-                    RecentActivityType.NOTICE_PUBLISHED,
-                    notice.title(),
-                    noticeActivitySubtitle(notice, now),
-                    occurredAt));
-        }
-
-        // Each room lifecycle action is its own independent entry — putting a
-        // room on and off maintenance, and deactivating / reactivating it, all
-        // show as separate rows pulled from the room activity log.
-        for (RoomActivityResponse activity : propertyModule.listRecentRoomActivities(actorUserId, propertyId, recentActivityLimit)) {
-            items.add(new RecentActivityItem(
-                    roomActivityType(activity.type()),
-                    "Room " + activity.roomNumber(),
-                    roomActivitySubtitle(activity),
-                    activity.occurredAt()));
-        }
-
-        // Staff / manager added + removed, derived from current employee state.
-        for (EmployeeActivityItem activity : staffModule.listRecentEmployeeActivity(propertyId)) {
-            if (activity.occurredAt() == null) {
-                continue;
-            }
-            items.add(new RecentActivityItem(
-                    employeeActivityType(activity.type()),
-                    activity.name(),
-                    employeeActivitySubtitle(activity),
-                    activity.occurredAt()));
-        }
-
-        return items.stream()
-                .sorted(Comparator.comparing(RecentActivityItem::occurredAt).reversed())
-                .limit(recentActivityLimit)
-                .toList();
-    }
-
-    private RecentActivityType roomActivityType(RoomActivityType type) {
-        return switch (type) {
-            case MAINTENANCE_STARTED -> RecentActivityType.ROOM_MAINTENANCE_STARTED;
-            case MAINTENANCE_ENDED -> RecentActivityType.ROOM_MAINTENANCE_ENDED;
-            case DEACTIVATED -> RecentActivityType.ROOM_DEACTIVATED;
-            case REACTIVATED -> RecentActivityType.ROOM_REACTIVATED;
-        };
-    }
-
-    private String roomActivitySubtitle(RoomActivityResponse activity) {
-        String who = activity.actorName() != null && !activity.actorName().isBlank()
-                ? activity.actorName()
-                : "management";
-        return switch (activity.type()) {
-            case MAINTENANCE_STARTED -> activity.reason() != null && !activity.reason().isBlank()
-                    ? "Under maintenance · " + activity.reason() + " — by " + who
-                    : "Put under maintenance — by " + who;
-            case MAINTENANCE_ENDED -> "Taken off maintenance — by " + who;
-            case DEACTIVATED -> "Deactivated — by " + who;
-            case REACTIVATED -> "Reactivated — by " + who;
-        };
-    }
-
-    private RecentActivityType employeeActivityType(EmployeeActivityType type) {
-        return switch (type) {
-            case STAFF_ADDED -> RecentActivityType.STAFF_ADDED;
-            case STAFF_REMOVED -> RecentActivityType.STAFF_REMOVED;
-            case MANAGER_ADDED -> RecentActivityType.MANAGER_ADDED;
-            case MANAGER_REMOVED -> RecentActivityType.MANAGER_REMOVED;
-        };
-    }
-
-    private String employeeActivitySubtitle(EmployeeActivityItem activity) {
-        return switch (activity.type()) {
-            case STAFF_ADDED -> "Staff added · " + activity.categoryName();
-            case STAFF_REMOVED -> "Staff left · " + activity.categoryName();
-            case MANAGER_ADDED -> "Manager added";
-            case MANAGER_REMOVED -> "Manager removed";
-        };
-    }
-
-    /**
-     * Describes where a notice sits in its visibility lifecycle. The notice row
-     * exists (status PUBLISHED), but it is only live to tenants inside its
-     * {@code visibleFrom..visibleUntil} window, so the feed should not claim it
-     * is "published" before that window opens.
-     */
-    private String noticeActivitySubtitle(NoticeResponse notice, Instant now) {
-        Instant visibleFrom = notice.visibleFrom();
-        Instant visibleUntil = notice.visibleUntil();
-
-        if (visibleFrom != null && visibleFrom.isAfter(now)) {
-            return "Notice created · not live yet";
-        }
-        if (visibleUntil != null && visibleUntil.isBefore(now)) {
-            return "Notice created · window ended";
-        }
-        return "Notice live";
-    }
-
-    private String userName(UUID userId) {
-        if (userId == null) {
-            return "Unknown";
-        }
-        return authModule.findById(userId)
-                .map(user -> user.fullName())
-                .filter(name -> name != null && !name.isBlank())
-                .orElse("Unknown");
-    }
 
     private OccupancySnapshot buildOccupancy(List<RoomResponse> rooms, List<TenancyResponse> activeTenancies) {
         long totalBeds = rooms.stream().mapToLong(RoomResponse::capacity).sum();
@@ -552,9 +365,14 @@ public class OwnerDashboardService {
         // whose cycle has not generated yet, so billed and pending reflect what is
         // collectable rather than only what has already been billed. (Same rule as the
         // billing screen's month summary.)
+        // Whose RENT is already on the books. Category matters: a one-off bill is
+        // not rent, so counting it here suppressed that tenancy's rent projection
+        // — three one-off bills were enough to zero the projection for the whole
+        // property. Same rule as BillingCycleService.getPropertyMonthSummary.
         Set<UUID> billedTenancyIds = new HashSet<>();
         for (BillingCycleResponse cycle : cycles) {
             if (cycle.status() != BillingCycleStatus.CANCELLED
+                    && cycle.category() == BillingCycleCategory.RENT_CYCLE
                     && isWithinMonth(cycle.periodStartDate(), monthStart, nextMonthStart)) {
                 billedTenancyIds.add(cycle.tenancyId());
             }

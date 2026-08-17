@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.property.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +23,9 @@ public interface PropertyManagerRepository extends JpaRepository<PropertyManager
 
     /** All active manager assignments across every property — for scheduled payroll jobs. */
     List<PropertyManager> findByActiveTrue();
+
+    /** Still active, but their scheduled last working day has arrived or passed. */
+    List<PropertyManager> findByActiveTrueAndEmploymentEndDateLessThanEqual(LocalDate onOrBefore);
 
     List<PropertyManager> findByPropertyIdAndActiveFalse(UUID propertyId);
 

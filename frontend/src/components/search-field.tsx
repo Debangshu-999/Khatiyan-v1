@@ -50,7 +50,7 @@ export function SearchField({
         onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
-        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 15, fontWeight: "500" }}
+        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15, }}
         value={value}
       />
       {value.length > 0 ? (

@@ -109,14 +109,15 @@ export function NotificationOptInPrompt() {
             <View
               style={{
                 alignItems: "center",
-                backgroundColor: colors.primarySoft,
+                borderColor: colors.ink,
+                borderWidth: 1,
                 borderRadius: 12,
                 height: 44,
                 justifyContent: "center",
                 width: 44,
               }}
             >
-              <BellRing color={colors.primary} size={20} strokeWidth={2} />
+              <BellRing color={colors.ink} size={20} strokeWidth={2} />
             </View>
             <View style={{ flex: 1, gap: spacing.xs }}>
               <Text
@@ -124,13 +125,11 @@ export function NotificationOptInPrompt() {
                   color: colors.ink,
                   fontFamily: fonts.display,
                   fontSize: 24,
-                  fontWeight: "500",
                 }}
-                selectable
               >
                 Enable alerts
               </Text>
-              <Text style={[type.body, { color: colors.muted }]} selectable>
+              <Text style={[type.body, { color: colors.muted }]}>
                 Get bill, concern, notice and tenancy updates on this device.
               </Text>
             </View>
@@ -152,7 +151,7 @@ export function NotificationOptInPrompt() {
           </View>
 
           {message ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               {message}
             </Text>
           ) : null}
@@ -170,7 +169,7 @@ export function NotificationOptInPrompt() {
                 minHeight: 48,
               }}
             >
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontWeight: "700" }} selectable>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, }}>
                 Later
               </Text>
             </AnimatedPressable>
@@ -185,7 +184,7 @@ export function NotificationOptInPrompt() {
                 minHeight: 48,
               }}
             >
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, }}>
                 {registerDeviceState.isLoading ? "Enabling..." : "Enable"}
               </Text>
             </AnimatedPressable>

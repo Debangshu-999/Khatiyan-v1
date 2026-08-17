@@ -61,12 +61,10 @@ export function IconButton({
       <Text
         style={{
           color: textColor,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansBold,
           fontSize: 14,
-          fontWeight: "700",
           letterSpacing: 0.2,
         }}
-        selectable
       >
         {label}
       </Text>

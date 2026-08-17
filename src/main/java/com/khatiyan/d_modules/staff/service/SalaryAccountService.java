@@ -4,8 +4,12 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,7 @@ import com.khatiyan.d_modules.staff.api.dto.SalaryHolderType;
 import com.khatiyan.d_modules.staff.api.dto.SalaryMonthResponse;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentDueItem;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentResponse;
+import com.khatiyan.d_modules.staff.api.dto.SalaryPayslipResponse;
 import com.khatiyan.d_modules.staff.api.dto.TerminationPreviewResponse;
 import com.khatiyan.d_modules.staff.api.dto.UpdateSalaryAdjustmentRequest;
 import com.khatiyan.d_modules.staff.model.SalaryAccount;
@@ -111,6 +116,82 @@ public class SalaryAccountService {
         return salaryAccountRepository.findByPropertyIdAndActiveTrueOrderByCreatedAtDesc(propertyId)
                 .stream()
                 .map(this::toAccountResponse)
+                .toList();
+    }
+
+    /**
+     * One employee's payslips — every payment ever made on their salary account,
+     * newest first. Empty when they have never been paid, which the caller shows
+     * as an empty state rather than an error: an unpaid employee is a normal
+     * state, not a missing record.
+     */
+    public List<SalaryPayslipResponse> listPayslips(
+            UUID actorUserId,
+            UUID propertyId,
+            String accountReferenceCode) {
+        ensureOwner(actorUserId, propertyId);
+
+        SalaryAccount account = account(propertyId, accountReferenceCode);
+        HolderTerms holder = holderTerms(account);
+        Map<UUID, LocalDate> monthDates = salaryMonthRepository
+                .findBySalaryAccountIdOrderByPayrollMonthDesc(account.getId())
+                .stream()
+                .collect(Collectors.toMap(SalaryMonth::getId, SalaryMonth::getPayrollMonth));
+
+        return salaryPaymentRepository.findBySalaryAccountId(account.getId())
+                .stream()
+                .map(payment -> SalaryPayslipResponse.from(
+                        payment,
+                        account.getReferenceCode(),
+                        holder.fullName(),
+                        monthDates.get(payment.getSalaryMonthId())))
+                .toList();
+    }
+
+    /**
+     * Every salary payment across a property, for the salary history card.
+     *
+     * <p>Holder names are resolved per account rather than per payment — one
+     * employee usually has many payments, and {@code holderTerms} reaches into
+     * the staff and manager modules each time it is called.
+     */
+    public List<SalaryPayslipResponse> listPropertyPayslips(UUID actorUserId, UUID propertyId) {
+        ensureOwner(actorUserId, propertyId);
+
+        List<SalaryPayment> payments = salaryPaymentRepository.findByPropertyId(propertyId);
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, SalaryMonth> monthsById = salaryMonthRepository
+                .findAllById(payments.stream().map(SalaryPayment::getSalaryMonthId).collect(Collectors.toSet()))
+                .stream()
+                .collect(Collectors.toMap(SalaryMonth::getId, month -> month));
+
+        Map<UUID, SalaryAccount> accountsById = salaryAccountRepository
+                .findAllById(monthsById.values().stream().map(SalaryMonth::getSalaryAccountId).collect(Collectors.toSet()))
+                .stream()
+                .collect(Collectors.toMap(SalaryAccount::getId, account -> account));
+
+        Map<UUID, String> holderNames = new HashMap<>();
+
+        return payments.stream()
+                .map(payment -> {
+                    SalaryMonth month = monthsById.get(payment.getSalaryMonthId());
+                    SalaryAccount account = month == null ? null : accountsById.get(month.getSalaryAccountId());
+                    if (account == null) {
+                        return null;
+                    }
+                    String holderName = holderNames.computeIfAbsent(
+                            account.getId(),
+                            ignored -> holderTerms(account).fullName());
+                    return SalaryPayslipResponse.from(
+                            payment,
+                            account.getReferenceCode(),
+                            holderName,
+                            month.getPayrollMonth());
+                })
+                .filter(Objects::nonNull)
                 .toList();
     }
 
@@ -230,10 +311,23 @@ public class SalaryAccountService {
     private SettledAccountSummary summarize(SalaryAccount account) {
         long paid = salaryMonthRepository.findBySalaryAccountIdOrderByPayrollMonthDesc(account.getId())
                 .stream().mapToLong(SalaryMonth::getPaidAmountPaise).sum();
-        return new SettledAccountSummary(account.getSettledOn(), account.getSettlementAmountPaise(), paid);
+        return new SettledAccountSummary(
+                account.getReferenceCode(),
+                account.getSettledOn(),
+                account.getSettlementAmountPaise(),
+                paid);
     }
 
-    public record SettledAccountSummary(LocalDate settledOn, long settlementAmountPaise, long totalPaidPaise) {
+    /**
+     * The account's reference code rides along so a history row can ask for that
+     * employee's payslips. The staff/manager reference code is a different
+     * identifier and the payslip endpoint does not accept it.
+     */
+    public record SettledAccountSummary(
+            String salaryAccountReferenceCode,
+            LocalDate settledOn,
+            long settlementAmountPaise,
+            long totalPaidPaise) {
     }
 
     // --- Scheduled jobs: monthly salary-month roll-over + payment reminders. ---

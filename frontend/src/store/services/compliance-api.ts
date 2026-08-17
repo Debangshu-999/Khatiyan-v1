@@ -1,7 +1,6 @@
 import { api } from "@/store/api";
 import type { TenancySummary } from "@/store/services/tenancy-api";
 
-export type AgreementMode = "OFF" | "SELECTIVE" | "ALL_MONTHLY";
 export type AgreementStatus = "DRAFT" | "PENDING_ACCEPTANCE" | "ACCEPTED" | "CANCELLED";
 export type ClauseKind = "SYSTEM" | "CUSTOM";
 
@@ -9,13 +8,18 @@ export type SystemClauseType =
   | "RENT"
   | "SECURITY_DEPOSIT"
   | "NOTICE_PERIOD"
+  | "VALIDITY"
+  // Legacy name for VALIDITY. Agreements signed before the rename are frozen and
+  // keep it forever, so every reader must still accept it.
   | "LOCK_IN"
   | "GRACE_DAYS"
   | "LATE_FEE"
   | "CLEANING_FEE"
   | "ALLOWED_DEDUCTIONS"
   | "DAMAGE_CATALOG"
-  | "EXIT_PREREQUISITES";
+  | "EXIT_PREREQUISITES"
+  // Derived from the property's exit policies, and only for an indefinite term.
+  | "PREMATURE_EXIT";
 
 export type AgreementClause = {
   kind: ClauseKind;
@@ -28,7 +32,6 @@ export type AgreementClause = {
 
 export type PropertyAgreementSettings = {
   propertyId: string;
-  mode: AgreementMode;
   defaultClauses: AgreementClause[];
 };
 
@@ -58,6 +61,17 @@ export type OnboardWithAgreementPayload = {
   startDate: string;
   idCheckConfirmed: boolean;
   customClauses?: CustomClauseInput[] | null;
+  /**
+   * This tenancy's agreement term. Omit to use the property default; send
+   * `{ months: null }` for indefinite. The nesting is what distinguishes
+   * "not specified" from "no fixed term".
+   */
+  term?: { months: number | null };
+  /**
+   * Deduction categories for this tenancy — a narrowing of the property's set.
+   * Omit to use the property default.
+   */
+  permittedDeductions?: string[];
 };
 
 export type OnboardWithAgreementResult = {
@@ -77,6 +91,7 @@ export const PROPERTY_DERIVED_CLAUSE_TYPES: SystemClauseType[] = [
   "LATE_FEE",
   "DAMAGE_CATALOG",
   "EXIT_PREREQUISITES",
+  "PREMATURE_EXIT",
 ];
 
 export const complianceApi = api.injectEndpoints({
@@ -88,10 +103,10 @@ export const complianceApi = api.injectEndpoints({
 
     updatePropertyAgreementSettings: builder.mutation<
       PropertyAgreementSettings,
-      { propertyId: string; mode: AgreementMode; defaultClauses: AgreementClause[] }
+      { propertyId: string; defaultClauses: AgreementClause[] }
     >({
-      query: ({ defaultClauses, mode, propertyId }) => ({
-        body: { defaultClauses, mode },
+      query: ({ defaultClauses, propertyId }) => ({
+        body: { defaultClauses },
         method: "PUT",
         url: `/api/v1/compliance/properties/${propertyId}/agreement-settings`,
       }),

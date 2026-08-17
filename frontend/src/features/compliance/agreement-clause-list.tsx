@@ -43,7 +43,7 @@ function ClauseGroup({ clauses, locked, title }: { clauses: AgreementClause[]; l
         ) : (
           <ScrollText color={colors.kicker} size={12} strokeWidth={2.4} />
         )}
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {title}
         </Text>
       </View>
@@ -52,7 +52,7 @@ function ClauseGroup({ clauses, locked, title }: { clauses: AgreementClause[]; l
           <View key={`${clause.heading}-${index}`}>
             {index > 0 ? <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: spacing.md, opacity: 0.7 }} /> : null}
             <View style={{ gap: 3, padding: spacing.md }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 13.5, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5, }}>
                 {clause.heading}
               </Text>
               <ClauseBody clause={clause} />
@@ -74,7 +74,7 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
     const labels = deductionCategories(clause).map(deductionLabel);
     if (labels.length > 0) {
       return (
-        <Text style={bodyStyle} selectable>
+        <Text style={bodyStyle}>
           At move-out the deposit may be used only for{" "}
           {labels.map((label, index) => (
             <Text key={`${label}-${index}`}>
@@ -93,7 +93,7 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
     if (checklist.length > 0) {
       return (
         <View style={{ gap: 4 }}>
-          <Text style={bodyStyle} selectable>
+          <Text style={bodyStyle}>
             Before the deposit is settled:
           </Text>
           {checklist.map((entry, index) => (
@@ -109,7 +109,7 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
     if (items.length > 0) {
       return (
         <View style={{ gap: 4 }}>
-          <Text style={bodyStyle} selectable>
+          <Text style={bodyStyle}>
             Damage beyond normal wear is charged per this schedule:
           </Text>
           {items.map((item, index) => (
@@ -121,7 +121,7 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
   }
 
   return (
-    <Text style={bodyStyle} selectable>
+    <Text style={bodyStyle}>
       {clause.body}
     </Text>
   );
@@ -132,7 +132,7 @@ function BulletRow({ text }: { text: string }) {
   return (
     <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, paddingLeft: spacing.xs }}>
       <Text style={[type.body, { color: colors.kicker, fontSize: 13, lineHeight: 19 }]}>{"•"}</Text>
-      <Text style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 }]}>
         {text}
       </Text>
     </View>

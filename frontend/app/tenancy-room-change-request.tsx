@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { useRouter } from "expo-router";
-import { ArrowLeft, BedDouble } from "lucide-react-native";
+import { BedDouble } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -103,11 +103,11 @@ export default function TenancyRoomChangeRequestScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="REQUEST"
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
         title="Room change"
         italicTail="request."
         subtitle="Select a floor, choose an available room and share why you want to move."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {activeTenancyQuery.isFetching || roomsQuery.isFetching ? (
@@ -130,7 +130,7 @@ export default function TenancyRoomChangeRequestScreen() {
         <Card>
           <View style={{ gap: spacing.lg }}>
             <Card tone="sunken">
-              <Text style={[type.body, { color: colors.muted }]} selectable>
+              <Text style={[type.body, { color: colors.muted }]}>
                 Current room: {activeTenancyQuery.data.room.roomNumber}
                 {activeTenancyQuery.data.room.floor ? ` · ${formatFloor(activeTenancyQuery.data.room.floor)}` : ""}
               </Text>
@@ -187,7 +187,7 @@ export default function TenancyRoomChangeRequestScreen() {
               {createRoomChangeState.isLoading ? (
                 <ActivityIndicator color={colors.onPrimary} />
               ) : (
-                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 15, fontWeight: "800" }} selectable>
+                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
                   Submit room change request
                 </Text>
               )}
@@ -199,18 +199,6 @@ export default function TenancyRoomChangeRequestScreen() {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back to tenancy"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function SelectionGroup({
   label,
@@ -227,7 +215,7 @@ function SelectionGroup({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {label}
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -247,7 +235,7 @@ function SelectionGroup({
                 paddingVertical: spacing.sm,
               }}
             >
-              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "900" }} selectable>
+              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
                 {option === UNASSIGNED_FLOOR ? option : formatFloor(option)}
               </Text>
             </AnimatedPressable>
@@ -273,7 +261,7 @@ function RoomSelectionGroup({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
         Rooms available on this floor
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -295,10 +283,10 @@ function RoomSelectionGroup({
                 padding: spacing.sm,
               }}
             >
-              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "500" }} selectable>
+              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
                 {room.roomNumber}
               </Text>
-              <Text style={[type.caption, { color: current ? colors.danger : available ? colors.primary : colors.kicker, fontWeight: "800" }]} selectable>
+              <Text style={[type.caption, { color: current ? colors.danger : available ? colors.primary : colors.kicker, fontWeight: "800" }]}>
                 {current ? "Current" : `${room.availableVacancies}/${room.capacity} free`}
               </Text>
             </AnimatedPressable>
@@ -324,11 +312,11 @@ function RoomDetailsCard({ room, state }: { room: TenantRoomSummary; state: Retu
         <DetailLine label="Conditioning" value={humanizeToken(room.conditioning)} />
         <DetailLine label="Status" value={humanizeToken(room.status)} />
         <View style={{ borderColor: statusColor, borderRadius: 14, borderWidth: 1, padding: spacing.md }}>
-          <Text style={[type.eyebrow, { color: statusColor, textAlign: "center" }]} selectable>
+          <Text style={[type.eyebrow, { color: statusColor, textAlign: "center" }]}>
             {state?.label ?? "Select a room"}
           </Text>
           {state?.message ? (
-            <Text style={[type.caption, { color: colors.muted, marginTop: spacing.xs, textAlign: "center" }]} selectable>
+            <Text style={[type.caption, { color: colors.muted, marginTop: spacing.xs, textAlign: "center" }]}>
               {state.message}
             </Text>
           ) : null}
@@ -344,13 +332,13 @@ function CycleRuleCard({ cycleEndDate, loading }: { cycleEndDate: string | null;
   return (
     <Card tone="sunken">
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           Execution rule
         </Text>
-        <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
+        <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
           Effective on {loading ? "current cycle end" : cycleEndDate ? formatDate(cycleEndDate) : "current billing cycle end"}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           The request can be raised and approved anytime, but the room change executes on the last day of the current billing cycle before the next cycle is generated.
         </Text>
       </View>
@@ -363,10 +351,10 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 
   return (
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
         {label}
       </Text>
-      <Text style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800", textAlign: "right" }]} selectable>
+      <Text style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800", textAlign: "right" }]}>
         {value}
       </Text>
     </View>
@@ -393,11 +381,11 @@ function FormField({
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           {label}
         </Text>
         {maxLength ? (
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>
+          <Text style={[type.caption, { color: colors.kicker }]}>
             {value.length}/{maxLength}
           </Text>
         ) : null}

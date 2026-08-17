@@ -1,18 +1,29 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ArrowLeft, CalendarDays, Check, FileText, Info, IndianRupee, KeyRound, Repeat2, X } from "lucide-react-native";
+import { CalendarDays, Check, Clock, FileClock, FileText, History, Info, IndianRupee, Repeat2, UserRound, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
+import { RequestTimelineSheet } from "@/features/tenancy/request-timeline-sheet";
+import { roomChangeTimelineEntries } from "@/features/tenancy/request-chain";
+import {
+  matchesRequestSearch,
+  splitByActivity,
+  splitByAttention,
+  type RequestFilter,
+} from "@/features/tenancy/request-activity";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { FilterBubbles } from "@/components/filter-bubbles";
 import { SkeletonCard } from "@/components/skeleton";
-import { ConfirmDialog } from "@/features/owner/owner-ui";
+import { ActionButton, BackButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import {
@@ -34,6 +45,12 @@ export default function OwnerRoomChangeRequestsScreen() {
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
 
+  // Deciding a request is ROOM_CHANGES at MANAGE. Without this the buttons were
+  // live for a view-only manager and only the API refused — a 403 after
+  // the tap, where the control should never have invited one.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const canManageRoomChanges = canManageResource("ROOM_CHANGES");
+
   const requestsQuery = useListPropertyRoomChangeRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const roomLabels = useMemo(() => {
@@ -47,10 +64,31 @@ export default function OwnerRoomChangeRequestsScreen() {
   const [selected, setSelected] = useState<TenancyRoomChangeRequest | null>(null);
   const [mode, setMode] = useState<ReviewMode | null>(null);
   const [pastOpen, setPastOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [activePage, setActivePage] = useState(0);
+  /**
+   * Null until the owner picks one, so the default can depend on data that
+   * had not arrived when the screen mounted. A `useState("unattended")`
+   * would strand someone on an empty queue whenever nothing needs them.
+   */
+  const [attention, setAttention] = useState<RequestFilter | null>(null);
 
   const requests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
-  const activeRequests = requests.filter((request) => request.status === "REQUESTED");
-  const pastRequests = requests.filter((request) => request.status !== "REQUESTED");
+  // Same rule as exits: active means "not yet expired". A room change expires
+  // the moment it is decided — there is no withdrawal window — so in practice
+  // this matches the old "still REQUESTED" test, but it now comes from the
+  // server's own expiry rather than a status the client interprets.
+  const searched = requests.filter((request) => matchesRequestSearch(request, search));
+  const { active: liveRequests, history: expiredRequests } = splitByActivity(searched);
+  // Waiting on a decision vs decided-but-still-open. The queue opens on the
+  // former because that is the only half the owner has to act on.
+  const { attended, unattended } = splitByAttention(liveRequests);
+  // Opens on what needs answering, unless nothing does — then All, so the
+  // screen never opens on an empty list while requests sit one tap away.
+  const filter = attention ?? (unattended.length > 0 ? "unattended" : "all");
+  const activeRequests =
+    filter === "unattended" ? unattended : filter === "attended" ? attended : liveRequests;
+  const activePaged = paginateArray(activeRequests, activePage, ACTIVE_PAGE_SIZE);
 
   function openReview(request: TenancyRoomChangeRequest, reviewMode: ReviewMode) {
     setSelected(request);
@@ -63,8 +101,11 @@ export default function OwnerRoomChangeRequestsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
+      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+        <BackButton onPress={() => router.back()} />
+        {!canManageRoomChanges ? <ViewOnlyChip /> : null}
+      </View>
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
@@ -77,54 +118,119 @@ export default function OwnerRoomChangeRequestsScreen() {
 
       {selectedProperty ? (
         <>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Active" value={String(activeRequests.length)} hint="Awaiting review" tone={activeRequests.length > 0 ? "primary" : "default"} />
-            <SummaryTile label="Total" value={String(requests.length)} hint="Room-change requests" />
-          </View>
+          {/* Summary and history as one card, matching the exit screen and the
+              concern workspace it borrows from. */}
+          <Card>
+            <View style={{ gap: spacing.md }}>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <SummaryTile label="Active" value={String(activeRequests.length)} hint="Still open" tone={activeRequests.length > 0 ? "primary" : "default"} />
+                <SummaryTile label="Total" value={String(requests.length)} hint={`${expiredRequests.length} expired`} />
+              </View>
 
-          <Section eyebrow="Active" title={`${activeRequests.length} active request${activeRequests.length === 1 ? "" : "s"}`}>
+              <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xs }} />
+
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
+              <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Room change request history</Text>
+              <Text style={[type.body, { color: colors.muted }]}>
+                Requests that have expired and can no longer be acted on.
+              </Text>
+              <ActionButton
+                icon={FileClock}
+                label={`${expiredRequests.length} past request${expiredRequests.length === 1 ? "" : "s"}`}
+                onPress={() => setPastOpen(true)}
+                variant="outline"
+              />
+            </View>
+          </Card>
+
+          <Section
+            eyebrow="Active"
+            title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}
+            trailing={
+              <FilterBubbles
+                onChange={(next) => {
+                  setAttention(next);
+                  setActivePage(0);
+                }}
+                options={[
+                  { count: unattended.length, label: "Needs action", value: "unattended" as const },
+                  { count: attended.length, label: "Decided", value: "attended" as const },
+                  { count: liveRequests.length, label: "All", value: "all" as const },
+                ]}
+                value={filter}
+              />
+            }
+          >
+            <AppTextInput
+              autoCapitalize="characters"
+              onChangeText={(next) => {
+                setSearch(next);
+                setActivePage(0);
+              }}
+              placeholder="Search by code, e.g. TRC-2026-000155"
+              placeholderTextColor={colors.kicker}
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: 14,
+                borderWidth: 1,
+                color: colors.ink,
+                minHeight: 48,
+                paddingHorizontal: spacing.md,
+              }}
+              value={search}
+            />
+
             {requestsQuery.isFetching && requests.length === 0 ? (
               <SkeletonCard />
             ) : activeRequests.length === 0 ? (
               <EmptyState
                 icon={Repeat2}
-                eyebrow="All clear"
-                title="No active room-change requests"
-                description="Tenant room-change requests awaiting your review will appear here."
+                eyebrow={filter === "unattended" ? "All clear" : "Nothing decided"}
+                title={filter === "unattended" ? "Nothing waiting on you" : "No decided requests"}
+                description={
+                  filter === "unattended"
+                    ? "Requests you have not answered yet appear here."
+                    : "Requests you have decided stay here until they expire."
+                }
               />
             ) : (
               <View style={{ gap: spacing.sm }}>
-                {activeRequests.map((request) => (
+                {activePaged.pageItems.map((request) => (
                   <RoomChangeCard
                     key={request.id}
                     request={request}
                     currentRoomLabel={roomLabels[request.currentRoomId]}
                     targetRoomLabel={roomLabels[request.targetRoomId]}
+                    canManage={canManageRoomChanges}
                     onApprove={() => openReview(request, "approve")}
                     onReject={() => openReview(request, "reject")}
                   />
                 ))}
+                {activeRequests.length > 0 ? (
+                  <PaginationBar
+                    hasNext={activePaged.hasNext}
+                    hasPrevious={activePaged.hasPrevious}
+                    onNext={() => setActivePage(activePaged.page + 1)}
+                    onPrevious={() => setActivePage(Math.max(0, activePaged.page - 1))}
+                    page={activePaged.page}
+                    totalElements={activeRequests.length}
+                    totalPages={activePaged.totalPages}
+                  />
+                ) : null}
               </View>
             )}
           </Section>
-
-          <Card>
-            <View style={{ gap: spacing.sm }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Past requests</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]} selectable>Reviewed room-change requests</Text>
-              <Text style={[type.body, { color: colors.muted }]} selectable>Approved, executed, rejected and cancelled room-change requests for this property.</Text>
-              <ActionButton label={`${pastRequests.length} past request${pastRequests.length === 1 ? "" : "s"}`} onPress={() => setPastOpen(true)} variant="secondary" />
-            </View>
-          </Card>
         </>
       ) : null}
 
       {selected && mode ? <RoomChangeReviewModal mode={mode} onClose={closeReview} request={selected} /> : null}
-      {pastOpen ? <PastRoomChangeRequestsModal onClose={() => setPastOpen(false)} requests={pastRequests} roomLabels={roomLabels} /> : null}
+      {pastOpen ? <PastRoomChangeRequestsModal onClose={() => setPastOpen(false)} requests={expiredRequests} roomLabels={roomLabels} /> : null}
     </ScreenScrollView>
   );
 }
 
+const ACTIVE_PAGE_SIZE = 5;
 const PAST_PAGE_SIZE = 8;
 
 function paginateArray<T>(items: T[], page: number, size: number) {
@@ -149,13 +255,24 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
   const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, maxHeight: "86%", padding: spacing.lg }}>
+    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      {/* Full width, matching the exit history. These cards carry a timeline
+          button and a rail behind it; an inset sheet squeezed both. */}
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            gap: spacing.md,
+            maxHeight: "92%",
+            padding: spacing.lg,
+          }}
+        >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>Past requests</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, fontWeight: "600" }} selectable>Reviewed moves</Text>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</Text>
             </View>
             <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
           </View>
@@ -195,12 +312,14 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
 }
 
 function RoomChangeCard({
+  canManage = true,
   currentRoomLabel,
   onApprove,
   onReject,
   request,
   targetRoomLabel,
 }: {
+  canManage?: boolean;
   currentRoomLabel?: string;
   onApprove: () => void;
   onReject: () => void;
@@ -210,6 +329,7 @@ function RoomChangeCard({
   const { colors, fonts, type } = useTheme();
   const pending = request.status === "REQUESTED";
   const [info, setInfo] = useState<{ label: string; value: string } | null>(null);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   return (
     <>
@@ -219,29 +339,61 @@ function RoomChangeCard({
             <View
               style={{
                 alignItems: "center",
-                backgroundColor: colors.primarySoft,
+                borderColor: colors.ink,
+                borderWidth: 1,
                 borderRadius: 12,
                 height: 42,
                 justifyContent: "center",
                 width: 42,
               }}
             >
-              <Repeat2 color={colors.primary} size={20} strokeWidth={2.2} />
+              <Repeat2 color={colors.ink} size={20} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: spacing.sm }}>
               <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ flex: 1, gap: spacing.xs }}>
-                  <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-                    Room change
+                  {/* Who, then the move, then the code — the same order as the
+                      exit card. It used to lead with room ids and identify the
+                      tenancy by a truncated UUID nobody can look up. */}
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+                  >
+                    {request.tenantName ?? "Tenant"}
                   </Text>
-                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, fontWeight: "500", lineHeight: 25 }} selectable>
-                    {(currentRoomLabel ?? shortId(request.currentRoomId)) + " → " + (targetRoomLabel ?? shortId(request.targetRoomId))}
+                  <Text style={[type.caption, { color: colors.muted }]}>
+                    {(currentRoomLabel ?? "Current room") + " → " + (targetRoomLabel ?? "New room")}
                   </Text>
+                  <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+                    {request.referenceCode}
+                  </Text>
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                    <CalendarDays color={colors.kicker} size={13} strokeWidth={2.1} />
+                    <Text style={[type.caption, { color: colors.muted }]}>
+                      {formatDate(request.effectiveTransferDate)}
+                    </Text>
+                  </View>
                 </View>
-                <StatusText status={request.status} />
+                <StatusBadge status={request.status} />
               </View>
-              <InfoLine icon={CalendarDays} label="Transfer" value={formatDate(request.effectiveTransferDate)} />
-              <InfoLine icon={KeyRound} label="Tenancy" value={shortId(request.tenancyId)} />
+              {request.decidedByName && request.decidedAt ? (
+                <>
+                  {/* Who and when, on their own rows. They used to share one
+                      line separated by a dot, which read as a single fact and
+                      made the timestamp easy to mistake for part of the name. */}
+                  <InfoLine
+                    icon={UserRound}
+                    label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
+                    value={request.decidedByName}
+                  />
+                  <InfoLine
+                    icon={Clock}
+                    label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
+                    value={formatDateTime(request.decidedAt)}
+                  />
+                </>
+              ) : null}
+
               <InfoLine icon={IndianRupee} label="New rent" value={formatMoney(request.requestedRoomRentAmountPaise)} />
               {request.executedRentAmountPaise != null ? (
                 <InfoLine icon={IndianRupee} label="Executed rent" value={formatMoney(request.executedRentAmountPaise)} />
@@ -257,13 +409,32 @@ function RoomChangeCard({
 
           {pending ? (
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <ActionButton label="Approve" onPress={onApprove} />
-              <ActionButton label="Reject" onPress={onReject} variant="danger" />
+              <ActionButton disabled={!canManage} label="Approve" onPress={onApprove} />
+              <ActionButton disabled={!canManage} label="Reject" onPress={onReject} variant="danger" />
             </View>
           ) : null}
+
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton
+              icon={History}
+              label="View timeline"
+              onPress={() => setShowTimeline(true)}
+              variant="outline"
+            />
+          </View>
         </View>
       </Card>
       {info ? <InfoPopover onClose={() => setInfo(null)} title={info.label} value={info.value} /> : null}
+      {showTimeline ? (
+        <RequestTimelineSheet
+          entries={roomChangeTimelineEntries(request)}
+          onClose={() => setShowTimeline(false)}
+          referenceCode={request.referenceCode}
+          roomLabel={currentRoomLabel}
+          tenantName={request.tenantName}
+          viewer="MANAGEMENT"
+        />
+      ) : null}
     </>
   );
 }
@@ -344,10 +515,10 @@ function RoomChangeReviewModal({
           >
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.lg }}>
               <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   Room change
                 </Text>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600" }} selectable>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {title}
                 </Text>
               </View>
@@ -362,18 +533,21 @@ function RoomChangeReviewModal({
             >
               <FormInput multiline label={mode === "reject" ? "Rejection note" : "Note (optional)"} onChangeText={setNotes} placeholder="Optional note for the tenant" value={notes} />
               {error ? (
-                <Text style={[type.caption, { color: colors.danger }]} selectable>
+                <Text style={[type.caption, { color: colors.danger }]}>
                   {error}
                 </Text>
               ) : null}
             </ScrollView>
 
+            {/* A plain bordered footer, NOT PinnedFooter — that one paints a
+                gradient fade for full screens and expects scroll clearance this
+                sheet never adds, so the fade read as a stray shadow and the last
+                input clipped under the button. */}
             <View
               style={{
                 borderTopColor: colors.border,
                 borderTopWidth: 1,
                 flexDirection: "row",
-                paddingBottom: Math.max(insets.bottom, spacing.lg),
                 paddingHorizontal: spacing.lg,
                 paddingTop: spacing.md,
               }}
@@ -385,6 +559,9 @@ function RoomChangeReviewModal({
                 variant={mode === "approve" ? "primary" : "danger"}
               />
             </View>
+            {/* The gesture bar sits under the sheet on edge-to-edge Android and
+                on iOS, so without this the button is half-covered. */}
+            <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -406,31 +583,17 @@ function RoomChangeReviewModal({
   );
 }
 
-function StatusText({ status }: { status: TenancyRoomChangeRequest["status"] }) {
-  const { colors, type } = useTheme();
-  const tone =
-    status === "APPROVED" || status === "EXECUTED"
-      ? colors.successText
-      : status === "REJECTED" || status === "CANCELLED"
-        ? colors.danger
-        : colors.primary;
-
-  return (
-    <Text style={[type.caption, { color: tone, fontWeight: "900" }]} selectable>
-      {humanizeToken(status)}
-    </Text>
-  );
-}
-
 function InfoLine({ icon: Icon, label, value }: { icon: typeof CalendarDays; label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
       <Icon color={colors.kicker} size={14} strokeWidth={2.1} />
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
-        {label}
-      </Text>
-      <Text style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700", textAlign: "right" }]} selectable>
+      {label ? (
+        <Text style={[type.caption, { color: colors.muted }]}>
+          {label}
+        </Text>
+      ) : null}
+      <Text style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700", textAlign: "right" }]}>
         {value}
       </Text>
     </View>
@@ -442,7 +605,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
       <Icon color={colors.kicker} size={14} strokeWidth={2.1} />
-      <Text style={[type.caption, { color: colors.muted, flex: 1 }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
         {label}
       </Text>
       <AnimatedPressable
@@ -452,14 +615,12 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
         hitSlop={8}
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
-          borderRadius: 999,
           height: 26,
           justifyContent: "center",
           width: 26,
         }}
       >
-        <Info color={colors.primary} size={15} strokeWidth={2.3} />
+        <Info color={colors.ink} size={15} strokeWidth={2.3} />
       </AnimatedPressable>
     </View>
   );
@@ -487,12 +648,12 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
               {title}
             </Text>
             <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
           </View>
-          <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]} selectable>
+          <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
             {value}
           </Text>
         </Pressable>
@@ -506,19 +667,22 @@ function SummaryTile({ hint, label, tone = "default", value }: { hint: string; l
   const accent = tone === "primary" ? colors.primary : colors.ink;
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
+      <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
-      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable>
+      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, }}>
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.kicker }]} selectable>
+      <Text style={[type.caption, { color: colors.kicker }]}>
         {hint}
       </Text>
     </View>
   );
 }
 
+// LOCAL VARIANT — deliberately NOT the shared FormInput in
+// `@/features/owner/owner-ui`. It differs (no prefix/error affordances), so editing the shared
+// one does NOT change this screen. Unify before adding behaviour to either.
 function FormInput({
   label,
   multiline,
@@ -535,7 +699,7 @@ function FormInput({
   const { colors, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
         {label}
       </Text>
       <AppTextInput
@@ -560,83 +724,9 @@ function FormInput({
   );
 }
 
-function ActionButton({
-  disabled,
-  icon: Icon,
-  label,
-  onPress,
-  variant = "primary",
-}: {
-  disabled?: boolean;
-  icon?: typeof Check;
-  label: string;
-  onPress: () => void;
-  variant?: "primary" | "secondary" | "danger";
-}) {
-  const { colors, fonts } = useTheme();
-  const primary = variant === "primary";
-  const danger = variant === "danger";
-  const foreground = disabled ? colors.muted : danger ? colors.danger : primary ? colors.onPrimary : colors.primary;
-  const backgroundColor = disabled
-    ? colors.neutralSoft
-    : primary
-      ? colors.primary
-      : danger
-        ? colors.surface
-        : colors.primarySoft;
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor,
-        borderColor: danger ? colors.border : "transparent",
-        borderRadius: 14,
-        borderWidth: 1,
-        flex: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        justifyContent: "center",
-        minHeight: 48,
-        opacity: disabled ? 0.65 : 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      {Icon ? <Icon color={foreground} size={16} strokeWidth={2.2} /> : null}
-      <Text style={{ color: foreground, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
-        {label}
-      </Text>
-    </AnimatedPressable>
-  );
-}
-
-function IconButton({ accessibilityLabel, icon: Icon, onPress }: { accessibilityLabel: string; icon: typeof X; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable accessibilityLabel={accessibilityLabel} onPress={onPress} style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}>
-      <Icon color={colors.ink} size={18} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
-
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back"
-      onPress={onPress}
-      style={{ alignItems: "center", alignSelf: "flex-start", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, height: 36, paddingHorizontal: spacing.sm }}
-    >
-      <ArrowLeft color={colors.ink} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
-        Back
-      </Text>
-    </AnimatedPressable>
-  );
-}
+// LOCAL VARIANT — deliberately NOT the shared ActionButton in
+// `@/features/owner/owner-ui`. It differs (13px label, no danger variant, no haptics), so editing the shared
+// one does NOT change this screen. Unify before adding behaviour to either.
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {
   if (selectedPropertyId) {
@@ -672,4 +762,38 @@ function formatMoney(value: number) {
 
 function shortId(value: string) {
   return value.slice(0, 8).toUpperCase();
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  }).format(new Date(value));
+}
+
+/**
+ * Status with the screen's own icon beside it.
+ *
+ * <p>The word used to appear twice on a card — once here and once as the label
+ * of the checkout-date field. The icon carries the "which kind of request" job
+ * the eyebrow used to do, so the header is one line shorter as well.
+ */
+function StatusBadge({ status }: { status: string }) {
+  const { colors, type } = useTheme();
+  const tone =
+    status === "APPROVED" || status === "EXECUTED"
+      ? colors.successText
+      : status === "REJECTED" || status === "CANCELLED" || status === "EXPIRED"
+        ? colors.danger
+        : colors.primary;
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
+      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
+        {status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
+      </Text>
+    </View>
+  );
 }

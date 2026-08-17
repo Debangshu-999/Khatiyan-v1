@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { Animated, Easing, Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
+import type { ComponentType, ReactNode } from "react";
+import { Animated, Easing, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -13,7 +12,6 @@ import {
   Banknote,
   CalendarClock,
   CalendarDays,
-  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -21,9 +19,8 @@ import {
   Eye,
   FileDown,
   History,
-  ImagePlus,
+  Info,
   IndianRupee,
-  Landmark,
   MoreHorizontal,
   Percent,
   Plus,
@@ -32,6 +29,7 @@ import {
   TimerReset,
   Users,
   X,
+  type LucideProps,
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -40,8 +38,13 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { StatusPill as Pill } from "@/components/status-pill";
+import { MonthSelector } from "@/components/month-selector";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { TabSwitcher } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
+import { SingleImageField } from "@/features/uploads/single-image-field";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
+import { BackButton, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { Section } from "@/components/section";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -56,6 +59,7 @@ import {
   useLazyExportPropertyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
   useListUpcomingPropertyCyclesQuery,
+  useListManualPaymentsQuery,
   useRecordManualPaymentMutation,
 } from "@/store/services/billing-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
@@ -66,9 +70,11 @@ type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
 type CycleView = "cycles" | "other";
 type PaymentHistoryStatus = "ON_TIME" | "OVERDUE" | "UNPAID";
 type ReportActionMode = "actions" | "month-picker";
-type SummaryFilter = "all" | "cycles" | "other" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount" | "manual";
+type SummaryFilter = "all" | "cycles" | "other" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount";
 
-const CYCLE_LIST_MAX_HEIGHT = 440;
+// Both controls in a bill card's action row are locked to this, so the circle
+// can never render larger than the button beside it.
+const BILL_ACTION_ROW_HEIGHT = 48;
 const CYCLE_PAGE_SIZE = 8;
 
 // Client-side pager: a single month's cycles are bounded, and the summary tiles
@@ -97,8 +103,6 @@ function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): Bil
     case "overdue":
       return cycles.filter((cycle) => cycle.status === "OVERDUE");
     case "paid":
-    case "manual":
-      return cycles.filter((cycle) => cycle.status === "PAID");
     case "unpaid":
       return cycles.filter((cycle) => cycle.status === "UNPAID");
     case "outstanding":
@@ -123,8 +127,6 @@ function summaryFilterTitle(filter: SummaryFilter): string {
       return "Overdue cycles";
     case "paid":
       return "Paid cycles";
-    case "manual":
-      return "Manually paid cycles";
     case "unpaid":
       return "Unpaid cycles";
     case "outstanding":
@@ -174,6 +176,11 @@ export default function OwnerBillingScreen() {
   // Search applies to both bill lists (rent cycles and other bills).
   const cycleSearchQuery = searchQuery;
 
+  // VIEW sees every figure and every bill; MANAGE adds recording payment,
+  // one-off bills and line-item edits.
+  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const canManageBilling = canManageResource("BILLING_CYCLES");
+
   const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
     { month: summaryMonth, propertyId: selectedProperty?.id ?? "" },
     { skip: !selectedProperty },
@@ -196,13 +203,15 @@ export default function OwnerBillingScreen() {
   // The gap is how many are still pending generation, used to explain an empty or
   // short cycle list instead of a misleading "no cycles" message.
   const monthSummary = monthSummaryQuery.data;
+  // Cycles that exist already — including UPCOMING ones, which are generated
+  // ahead of their due date. Counting only paid/unpaid/overdue told the owner a
+  // cycle was still pending when it was already sitting in the list above.
+  // Suppressed while searching: the list is filtered then, so the projection
+  // (which is property-wide) has nothing to subtract against.
+  const createdRentCycleCount = rentCycles.filter((cycle) => cycle.status !== "CANCELLED").length;
   const notGeneratedCount =
-    monthSummary && summaryMonth === currentMonth()
-      ? Math.max(
-          0,
-          monthSummary.activeCycleCount
-            - (monthSummary.paidCycleCount + monthSummary.unpaidCycleCount + monthSummary.overdueCount),
-        )
+    monthSummary && summaryMonth === currentMonth() && !cycleSearchQuery
+      ? Math.max(0, monthSummary.activeCycleCount - createdRentCycleCount)
       : 0;
 
   function openAction(cycle: BillingCycle, mode: ActionMode) {
@@ -218,6 +227,14 @@ export default function OwnerBillingScreen() {
 
   async function downloadMonthlyReport() {
     if (!selectedProperty) {
+      return;
+    }
+
+    // Exporting the whole month's ledger is a manage-level act, not a read: a
+    // view-only manager can look at the figures on screen without being able to
+    // take the book away.
+    if (!canManageBilling) {
+      toast.error("Downloading the monthly report is not available to you. Ask the property owner for access.");
       return;
     }
 
@@ -276,8 +293,9 @@ export default function OwnerBillingScreen() {
   }
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Owner billing"
+      <BackButton onPress={() => router.back()} />
+      <ScreenHeader
+        badge={!canManageBilling ? <ViewOnlyChip /> : null}
         title="Billing"
         italicTail="control."
         subtitle={selectedProperty ? `Billing workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
@@ -294,17 +312,22 @@ export default function OwnerBillingScreen() {
 
       {selectedProperty ? (
         <>
-          <MonthDropdown
-            active={summaryMonth}
-            label="Billing month"
-            onChange={handleSummaryMonthChange}
-          />
+          <MonthSelector onChange={handleSummaryMonthChange} value={summaryMonth} />
 
           <ActiveSummarySection
             loading={monthSummaryQuery.isFetching}
             month={summaryMonth}
             onOpenFilter={setSummaryFilter}
+            oneOffCount={oneOffCycles.length}
+            rentCycleCount={rentCycles.length}
             summary={monthSummaryQuery.data}
+          />
+
+          <BillToolsGrid
+            reportBusy={exportState.isFetching}
+            onOpenPaymentHistory={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-payment-history" })}
+            onOpenReport={() => setReportActionMode("actions")}
+            onOpenTenantBills={() => router.push("/owner-tenant-bills")}
           />
 
           <SegmentedControl
@@ -319,20 +342,20 @@ export default function OwnerBillingScreen() {
           <CycleSearchCard
             onClear={clearSearch}
             onSearch={runSearch}
-            placeholder="Search tenant, bill ID or tenancy reference"
+            placeholder="Search tenant name, phone or tenancy reference"
             value={searchDraft}
             onChange={setSearchDraft}
           />
 
           <BillingCyclesSection
             cycles={listedCycles}
+            fallbackLateFeePerDayPaise={selectedProperty.rentLateFeePerDayPaise}
             month={summaryMonth}
             noun={cycleView === "cycles" ? "billing cycle" : "other bill"}
             notGeneratedCount={cycleView === "cycles" ? notGeneratedCount : 0}
-            onAction={(cycle) => openAction(cycle, "menu")}
-            onDownloadReceipt={downloadCycleReceipt}
+            canManage={canManageBilling}
+            onAction={openAction}
             onPageChange={setPage}
-            onViewReceipt={setReceiptCycle}
             page={page}
             query={visibleQuery}
           />
@@ -344,37 +367,19 @@ export default function OwnerBillingScreen() {
               propertyId={selectedProperty.id}
             />
           ) : null}
-
-          <BillNavCard
-            description="Paid, late and unpaid bills for the selected month."
-            icon={History}
-            onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-payment-history" })}
-            title="Payment history"
-          />
-          <BillNavCard
-            description="Pick a tenant to see all their bills — current and past."
-            icon={Users}
-            onPress={() => router.push("/owner-tenant-bills")}
-            title="Tenant bills"
-          />
-          <BillNavCard
-            description="Banks where rent collected in the app is deposited."
-            icon={Landmark}
-            onPress={() => router.push("/owner-payout-setup")}
-            title="Bank accounts"
-          />
-
-          <ReportDownloadCard
-            busy={exportState.isFetching}
-            month={reportMonth}
-            onOpenActions={() => setReportActionMode("actions")}
-            onOpenMonthPicker={() => setReportActionMode("month-picker")}
-          />
         </>
       ) : null}
 
       {selectedCycle && actionMode ? (
-        <BillingActionModal cycle={selectedCycle} mode={actionMode} onClose={closeAction} onSelectMode={setActionMode} />
+        <BillingActionModal
+          canManage={canManageBilling}
+          cycle={selectedCycle}
+          mode={actionMode}
+          onClose={closeAction}
+          onDownloadReceipt={downloadCycleReceipt}
+          onSelectMode={setActionMode}
+          onViewReceipt={setReceiptCycle}
+        />
       ) : null}
       {reportActionMode ? (
         <MonthlyReportModal
@@ -411,11 +416,19 @@ function ActiveSummarySection({
   loading,
   month,
   onOpenFilter,
+  oneOffCount,
+  rentCycleCount,
   summary,
 }: {
   loading: boolean;
   month: string;
   onOpenFilter: (filter: SummaryFilter) => void;
+  // Counted from the same rows the drill-down lists, not from the summary. The
+  // summary's counts run through countsAsBilled(), which drops UPCOMING so that
+  // money totals stay honest — correct for rupees, wrong for "how many bills",
+  // and it showed 0 while two cycles sat in the list below.
+  oneOffCount: number;
+  rentCycleCount: number;
   summary?: BillingMonthSummary;
 }) {
   const { colors, type } = useTheme();
@@ -423,7 +436,7 @@ function ActiveSummarySection({
   return (
     <View style={{ gap: spacing.sm }}>
       {!summary && loading ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           Loading summary...
         </Text>
       ) : null}
@@ -439,101 +452,27 @@ function ActiveSummarySection({
 
       {summary && summary.hasData ? (
         <View style={{ gap: spacing.sm }}>
+          {/* Collected against billed is the number the month is judged on, so
+              it leads at full width. Everything below is a breakdown of it. */}
+          <SummaryTile
+            label="Collectable amount"
+            large
+            leadValue={formatMoney(summary.collectedPaise)}
+            value={`/${formatMoney(summary.billedPaise)}`}
+            hint="Collected / billed"
+            onPress={() => onOpenFilter("collectable")}
+          />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Billing cycles" value={String(summary.rentCycleCount)} hint="Rent cycles" onPress={() => onOpenFilter("cycles")} />
-            <SummaryTile label="Overdue" value={String(summary.overdueCount)} hint={formatMoney(summary.overduePaise)} tone="danger" onPress={() => onOpenFilter("overdue")} />
-            <SummaryTile label="Other bills" value={String(summary.oneOffCount)} hint="Penalties" onPress={() => onOpenFilter("other")} />
+            <SummaryTile label="Billing cycles" value={String(rentCycleCount)} hint="Rent cycles" onPress={() => onOpenFilter("cycles")} />
+            <SummaryTile label="Overdue" value={String(summary.overdueCount)} hint={formatMoney(summary.overduePaise)} onPress={() => onOpenFilter("overdue")} />
+            <SummaryTile label="Other bills" value={String(oneOffCount)} hint="Bills raised" onPress={() => onOpenFilter("other")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Paid" value={String(summary.paidCycleCount)} hint="Incl. manual" tone="success" onPress={() => onOpenFilter("paid")} />
+            <SummaryTile label="Paid" value={String(summary.paidCycleCount)} hint="Cycles settled" onPress={() => onOpenFilter("paid")} />
             <SummaryTile label="Unpaid" value={String(summary.unpaidCycleCount)} hint="Awaiting payment" onPress={() => onOpenFilter("unpaid")} />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile
-              label="Collectable rent"
-              value={`${formatMoney(summary.collectedPaise)}/${formatMoney(summary.billedPaise)}`}
-              hint="Collected / billed"
-              tone="success"
-              onPress={() => onOpenFilter("collectable")}
-            />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SummaryTile label="Discount given" value={formatMoney(summary.totalDiscountPaise)} hint="This month" onPress={() => onOpenFilter("discount")} />
-            <SummaryTile label="Manually paid" value={formatMoney(summary.manuallyPaidPaise)} hint={`${summary.manuallyPaidCycleCount} cycle(s)`} onPress={() => onOpenFilter("manual")} />
           </View>
         </View>
-      ) : null}
-    </View>
-  );
-}
-
-function MonthDropdown({ active, label, onChange }: { active: string; label: string; onChange: (value: string) => void }) {
-  const { colors, fonts, type } = useTheme();
-  const [open, setOpen] = useState(false);
-  const options = useMemo(() => reportMonthOptions(), []);
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
-        {label}
-      </Text>
-      <AnimatedPressable
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          minHeight: 46,
-          paddingHorizontal: spacing.md,
-        }}
-      >
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <CalendarDays color={colors.kicker} size={18} strokeWidth={2.2} />
-          <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
-            {monthLabel(active)}
-          </Text>
-        </View>
-        <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
-      </AnimatedPressable>
-
-      {open ? (
-        <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible>
-          <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-            <View
-              style={{
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: 22,
-                borderWidth: 1,
-                gap: spacing.sm,
-                padding: spacing.lg,
-              }}
-            >
-              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
-                  Choose month
-                </Text>
-                <IconButton accessibilityLabel="Close month picker" icon={X} onPress={() => setOpen(false)} />
-              </View>
-              {options.map((option) => (
-                <ChoiceButton
-                  active={option.value === active}
-                  key={option.value}
-                  label={option.label}
-                  onPress={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                />
-              ))}
-            </View>
-          </View>
-        </Modal>
       ) : null}
     </View>
   );
@@ -602,40 +541,61 @@ function PaymentHistorySection({
 function PendingGenerationNote({ count }: { count: number }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} selectable>
-      {count} more cycle{count === 1 ? "" : "s"} will be generated on {count === 1 ? "its" : "their"} due date
-      {count === 1 ? "" : "s"} this month.
+    <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+      {count} more cycle{count === 1 ? "" : "s"} will appear here shortly before {count === 1 ? "its" : "their"} due
+      date{count === 1 ? "" : "s"} this month.
     </Text>
   );
 }
 
 function BillingCyclesSection({
   cycles,
+  fallbackLateFeePerDayPaise,
   month,
   noun = "billing cycle",
+  canManage,
   notGeneratedCount,
   onAction,
-  onDownloadReceipt,
   onPageChange,
-  onViewReceipt,
   page,
   query,
 }: {
   cycles: BillingCycle[];
+  fallbackLateFeePerDayPaise?: number | null;
   month: string;
   noun?: string;
   notGeneratedCount: number;
-  onAction: (cycle: BillingCycle) => void;
-  onDownloadReceipt: (cycle: BillingCycle) => void;
+  // False for a view-only manager: mutating controls are greyed and disabled
+  // rather than removed, so the manager can see the action exists and is simply
+  // not theirs.
+  canManage: boolean;
+  onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
   onPageChange: (page: number) => void;
-  onViewReceipt: (cycle: BillingCycle) => void;
   page: number;
   query: string;
 }) {
+  const { colors } = useTheme();
   const paged = paginateArray(cycles, page, CYCLE_PAGE_SIZE);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
-    <Section eyebrow={monthLabel(month)} title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}>
+    <Section
+      eyebrow={monthLabel(month)}
+      title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}
+      trailing={
+        <AnimatedPressable
+          accessibilityLabel="How billing cycles work"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={() => setRulesOpen(true)}
+          style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
+          tapLockMs={0}
+        >
+          <Info color={colors.kicker} size={17} strokeWidth={2.4} />
+        </AnimatedPressable>
+      }
+    >
+      {rulesOpen ? <BillingRulesModal onClose={() => setRulesOpen(false)} /> : null}
       {cycles.length === 0 ? (
         <EmptyState
           icon={ReceiptText}
@@ -645,14 +605,19 @@ function BillingCyclesSection({
             query
               ? "No cycle matched that tenant name or tenancy ID for this billing month."
               : notGeneratedCount > 0
-                ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each is created automatically on its tenancy's due date this month.`
+                ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each appears automatically a few days before its due date, so you can adjust it before it goes live.`
                 : "No billing cycles started in this month."
           }
         />
       ) : (
         <View style={{ gap: spacing.md }}>
           <CycleListFrame>
-            <CycleCardList cycles={paged.pageItems} onAction={onAction} onDownloadReceipt={onDownloadReceipt} onViewReceipt={onViewReceipt} />
+            <CycleCardList
+              canManage={canManage}
+              cycles={paged.pageItems}
+              fallbackLateFeePerDayPaise={fallbackLateFeePerDayPaise}
+              onAction={onAction}
+            />
           </CycleListFrame>
           {notGeneratedCount > 0 ? <PendingGenerationNote count={notGeneratedCount} /> : null}
           {paged.totalElements > 0 ? (
@@ -698,15 +663,15 @@ function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
 
           <View style={{ flex: 1, gap: spacing.xxs }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
                 {cycle.referenceCode}
               </Text>
               <PaymentStatusBadge cycle={cycle} />
             </View>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
               {tenantName}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
             </Text>
           </View>
@@ -753,7 +718,7 @@ function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
       }}
     >
       <Icon color={tone} size={13} strokeWidth={2.4} />
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]} selectable>
+      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
         {status.label}
       </Text>
     </View>
@@ -775,7 +740,7 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
         padding: spacing.sm,
       }}
     >
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
+      <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
       <Text
@@ -787,13 +752,15 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
           lineHeight: strong ? 23 : 18,
         }}
         numberOfLines={1}
-        selectable
       >
         {value}
       </Text>
     </View>
   );
 }
+// Holds exactly the paginated page of bills — no inner scroller. A scroll view
+// nested in the screen's own scroll view meant two competing gestures and a
+// list that could never be seen whole; pagination already bounds the height.
 function CycleListFrame({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   return (
@@ -803,18 +770,83 @@ function CycleListFrame({ children }: { children: ReactNode }) {
         borderColor: colors.border,
         borderRadius: 18,
         borderWidth: 1,
-        maxHeight: CYCLE_LIST_MAX_HEIGHT,
-        overflow: "hidden",
+        gap: spacing.sm,
+        padding: spacing.md,
       }}
     >
-      <ScrollView
-        contentContainerStyle={{ gap: spacing.sm, padding: spacing.md }}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-      >
-        {children}
-      </ScrollView>
+      {children}
     </View>
+  );
+}
+
+// Square tiles, three to a row, matching the pinned-module grid on Home.
+function BillToolsGrid({
+  onOpenPaymentHistory,
+  onOpenReport,
+  onOpenTenantBills,
+  reportBusy,
+}: {
+  onOpenPaymentHistory: () => void;
+  onOpenReport: () => void;
+  onOpenTenantBills: () => void;
+  reportBusy: boolean;
+}) {
+  const tools: { icon: ComponentType<LucideProps>; key: string; label: string; onPress: () => void }[] = [
+    { icon: History, key: "history", label: "Payment history", onPress: onOpenPaymentHistory },
+    { icon: Users, key: "tenant-bills", label: "Tenant bills", onPress: onOpenTenantBills },
+    { icon: FileDown, key: "report", label: reportBusy ? "Preparing…" : "Monthly report", onPress: onOpenReport },
+  ];
+
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      {tools.map((tool) => (
+        <BillToolTile icon={tool.icon} key={tool.key} label={tool.label} onPress={tool.onPress} />
+      ))}
+    </View>
+  );
+}
+
+// Matches HomeToolBox (home Quick access) and TenancyToolBox: a large bare icon
+// IS the tile's visual, not a small glyph inside a soft box. Billing previously
+// copied the pinned-modules grid instead, so these three read differently from
+// every other tool row in the app.
+function BillToolTile({
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: 16,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.xs,
+        justifyContent: "center",
+        minHeight: 112,
+        paddingHorizontal: spacing.xs,
+        paddingVertical: spacing.md,
+      }}
+    >
+      <Icon color={colors.primary} size={48} strokeWidth={1.8} />
+      <Text
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
+        numberOfLines={2}
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
   );
 }
 
@@ -850,79 +882,13 @@ function HistorySummaryMetric({
         padding: spacing.sm,
       }}
     >
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
+      <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
-      <Text style={{ color, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+      <Text style={{ color, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], }}>
         {value}
       </Text>
     </View>
-  );
-}
-
-function ReportDownloadCard({
-  busy,
-  month,
-  onOpenActions,
-  onOpenMonthPicker,
-}: {
-  busy: boolean;
-  month: string;
-  onOpenActions: () => void;
-  onOpenMonthPicker: () => void;
-}) {
-  const { colors, type } = useTheme();
-  return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-          Monthly report
-        </Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <ActionButton icon={CalendarDays} label={monthLabel(month)} onPress={onOpenMonthPicker} variant="secondary" />
-          <ActionButton disabled={busy} icon={MoreHorizontal} label={busy ? "Loading" : "Actions" } onPress={onOpenActions} />
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-// Lightweight highlighted CTA that replaces the old upcoming-cycles card: a
-// pill of bold accent text with a gently nudging arrow to pull the eye, sitting
-// directly under the billing cycles list. Once every tenancy is billed for the
-// month there is nothing upcoming — the arrow animation stops and it turns into
-// a quiet "No upcoming cycles this month" status.
-function BillNavCard({ description, icon: Icon, onPress, title }: { description: string; icon: typeof History; onPress: () => void; title: string }) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.borderStrong,
-          borderCurve: "continuous",
-          borderRadius: 18,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.md,
-          padding: spacing.lg,
-        }}
-      >
-        <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-          <Icon color={colors.primary} size={20} strokeWidth={2.2} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, fontWeight: "600" }} selectable>
-            {title}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]} selectable>
-            {description}
-          </Text>
-        </View>
-        <ArrowRight color={colors.kicker} size={20} strokeWidth={2.2} />
-      </View>
-    </AnimatedPressable>
   );
 }
 
@@ -971,7 +937,7 @@ function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onP
       }}
     >
       <CalendarClock color={tint} size={16} strokeWidth={2.4} />
-      <Text style={{ color: tint, fontFamily: fonts.sans, fontSize: 14, fontWeight: hasUpcoming ? "900" : "700", letterSpacing: 0.3 }} selectable>
+      <Text style={{ color: tint, fontFamily: fonts.sans, fontSize: 14, fontWeight: hasUpcoming ? "900" : "700", letterSpacing: 0.3 }}>
         {hasUpcoming ? "View upcoming cycles" : "All cycles generated"}
       </Text>
       {hasUpcoming ? (
@@ -1023,10 +989,10 @@ function MonthlyReportModal({
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Monthly report
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                 {mode === "month-picker" ? "Choose month" : "Report actions"}
               </Text>
             </View>
@@ -1047,10 +1013,10 @@ function MonthlyReportModal({
                 }}
               >
                 <View>
-                  <Text style={[type.caption, { color: colors.muted }]} selectable>
+                  <Text style={[type.caption, { color: colors.muted }]}>
                     Selected month
                   </Text>
-                  <Text style={[type.body, { color: colors.ink, fontWeight: "900" }]} selectable>
+                  <Text style={[type.body, { color: colors.ink, fontWeight: "900" }]}>
                     {monthLabel(month)}
                   </Text>
                 </View>
@@ -1126,110 +1092,28 @@ function CycleSearchCard({
   );
 }
 
-function CycleTable({
-  cycles,
-  expandedCycleId,
-  onAction,
-  onDownloadReceipt,
-  onViewReceipt,
-  onToggleLineItems,
-  readOnly = false,
-}: {
-  cycles: BillingCycle[];
-  expandedCycleId: string | null;
-  onAction?: (cycle: BillingCycle) => void;
-  onDownloadReceipt?: (cycle: BillingCycle) => void;
-  onViewReceipt?: (cycle: BillingCycle) => void;
-  onToggleLineItems: (cycle: BillingCycle) => void;
-  readOnly?: boolean;
-}) {
-  const { colors, type } = useTheme();
-  return (
-    <Card>
-      <View style={{ gap: spacing.sm }}>
-        <View style={{ flexDirection: "row", gap: spacing.sm, paddingBottom: spacing.xs }}>
-          <Text style={[type.caption, { color: colors.muted, flex: 1.2, fontWeight: "800" }]}>Cycle</Text>
-          <Text style={[type.caption, { color: colors.muted, flex: 0.9, fontWeight: "800" }]}>Status</Text>
-          <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "800" }]}>Due</Text>
-          <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "800", textAlign: "right" }]}>Total</Text>
-        </View>
-        {cycles.map((cycle) => (
-          <View
-            key={cycle.id}
-            style={{
-              borderColor: colors.border,
-              borderTopWidth: 1,
-              gap: spacing.sm,
-              paddingTop: spacing.sm,
-            }}
-          >
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <View style={{ flex: 1.2 }}>
-                <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]} selectable>
-                  {cycle.referenceCode}
-                </Text>
-                <Text style={[type.caption, { color: colors.muted }]} selectable>
-                  {cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`}
-                </Text>
-                <Text style={[type.caption, { color: colors.kicker }]} selectable>
-                  {billTitle(cycle)} · Tenancy {shortId(cycle.tenancyId)}
-                </Text>
-              </View>
-              <StatusText cycle={cycle} />
-              <Text style={[type.caption, { color: colors.ink, flex: 1 }]} selectable>
-                {formatDate(cycle.rentDueDate)}
-              </Text>
-              <Text style={[type.body, { color: colors.primary, flex: 1, fontWeight: "900", textAlign: "right" }]} selectable>
-                {formatMoney(cycle.totalAmountPaise)}
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              <ActionButton
-                icon={expandedCycleId === cycle.id ? ChevronUp : ChevronDown}
-                label="Line items"
-                onPress={() => onToggleLineItems(cycle)}
-                variant="secondary"
-              />
-              {!readOnly && onAction ? (
-                <ActionButton icon={MoreHorizontal} label="Actions" onPress={() => onAction(cycle)} variant="secondary" />
-              ) : null}
-              {!readOnly && onViewReceipt ? (
-                <ActionButton icon={Eye} label="View receipt" onPress={() => onViewReceipt(cycle)} variant="secondary" />
-              ) : null}
-              {!readOnly && onDownloadReceipt ? (
-                <ActionButton icon={FileDown} label="Download" onPress={() => onDownloadReceipt(cycle)} variant="secondary" />
-              ) : null}
-            </View>
-            {expandedCycleId === cycle.id ? <LineItemTable items={cycle.lineItems} /> : null}
-          </View>
-        ))}
-      </View>
-    </Card>
-  );
-}
-
 function CycleCardList({
+  canManage = true,
   cycles,
+  fallbackLateFeePerDayPaise,
   onAction,
-  onDownloadReceipt,
-  onViewReceipt,
   readOnly = false,
 }: {
+  canManage?: boolean;
   cycles: BillingCycle[];
-  onAction?: (cycle: BillingCycle) => void;
-  onDownloadReceipt?: (cycle: BillingCycle) => void;
-  onViewReceipt?: (cycle: BillingCycle) => void;
+  fallbackLateFeePerDayPaise?: number | null;
+  onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
   readOnly?: boolean;
 }) {
   return (
     <View style={{ gap: spacing.sm }}>
       {cycles.map((cycle) => (
         <BillingCycleCard
+          canManage={canManage}
           cycle={cycle}
+          fallbackLateFeePerDayPaise={fallbackLateFeePerDayPaise}
           key={cycle.id}
           onAction={onAction}
-          onDownloadReceipt={onDownloadReceipt}
-          onViewReceipt={onViewReceipt}
           readOnly={readOnly}
         />
       ))}
@@ -1238,20 +1122,27 @@ function CycleCardList({
 }
 
 function BillingCycleCard({
+  canManage = true,
   cycle,
+  fallbackLateFeePerDayPaise,
   onAction,
-  onDownloadReceipt,
-  onViewReceipt,
   readOnly,
 }: {
+  canManage?: boolean;
   cycle: BillingCycle;
-  onAction?: (cycle: BillingCycle) => void;
-  onDownloadReceipt?: (cycle: BillingCycle) => void;
-  onViewReceipt?: (cycle: BillingCycle) => void;
+  // The property's current rate, used while the cycle is UPCOMING and has no
+  // stamped rate of its own.
+  fallbackLateFeePerDayPaise?: number | null;
+  onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
   readOnly: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
-  const mutable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
+  const [windowInfoOpen, setWindowInfoOpen] = useState(false);
+  // Two different questions, and they do NOT have the same answer. A cycle is
+  // payable once its window opens (UNPAID/OVERDUE); a rent cycle is editable
+  // only BEFORE that, while it is still UPCOMING — see the backend's
+  // ensureCycleStillEditable, which rejects charges on a live rent cycle.
+  const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const tenantName = cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`;
 
   return (
@@ -1266,19 +1157,31 @@ function BillingCycleCard({
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: mutable ? colors.primarySoft : colors.surfaceSunken,
-            borderColor: colors.border,
-            borderRadius: 14,
-            borderWidth: 1,
-            height: 44,
-            justifyContent: "center",
-            width: 44,
-          }}
-        >
-          <ReceiptText color={mutable ? colors.primary : colors.kicker} size={20} strokeWidth={2.2} />
+        <View style={{ alignItems: "center", gap: spacing.xs }}>
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: payable ? colors.primarySoft : colors.surfaceSunken,
+              borderColor: colors.border,
+              borderRadius: 14,
+              borderWidth: 1,
+              height: 44,
+              justifyContent: "center",
+              width: 44,
+            }}
+          >
+            <ReceiptText color={payable ? colors.primary : colors.kicker} size={20} strokeWidth={2.2} />
+          </View>
+          <AnimatedPressable
+            accessibilityLabel={`Payment window for ${cycle.referenceCode}`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={() => setWindowInfoOpen(true)}
+            style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+            tapLockMs={0}
+          >
+            <Info color={colors.kicker} size={16} strokeWidth={2.4} />
+          </AnimatedPressable>
         </View>
 
         <View style={{ flex: 1, gap: spacing.xs }}>
@@ -1286,30 +1189,29 @@ function BillingCycleCard({
               tenant name gets the full card width beneath, wrapping cleanly at
               word boundaries (surname to the next line) — never clipped. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]} selectable>
+            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
               {cycle.referenceCode}
             </Text>
             <StatusPill cycle={cycle} />
           </View>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600", lineHeight: 25 }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
             {tenantName}
           </Text>
 
           <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", marginTop: spacing.xxs }}>
             <View style={{ gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Total payable
               </Text>
               <Text
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600", letterSpacing: -0.3 }}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.3 }}
                 numberOfLines={1}
-                selectable
               >
                 {formatMoney(cycle.totalAmountPaise)}
               </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 3 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Due date
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
@@ -1317,11 +1219,9 @@ function BillingCycleCard({
                 <Text
                   style={{
                     color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft,
-                    fontFamily: fonts.sans,
+                    fontFamily: fonts.sansBold,
                     fontSize: 14,
-                    fontWeight: "700",
                   }}
-                  selectable
                 >
                   {formatDate(cycle.rentDueDate)}
                 </Text>
@@ -1329,28 +1229,44 @@ function BillingCycleCard({
             </View>
           </View>
 
-          <Text style={[type.caption, { color: colors.kicker }]} selectable>
+          <Text style={[type.caption, { color: colors.kicker }]}>
             {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
           </Text>
         </View>
       </View>
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {!readOnly && onAction ? (
-          <ActionButton icon={MoreHorizontal} label="Actions" onPress={() => onAction(cycle)} variant="secondary" />
-        ) : null}
-        {onViewReceipt ? (
-          <ActionButton icon={Eye} label="View receipt" onPress={() => onViewReceipt(cycle)} variant="secondary" />
-        ) : null}
-        {!readOnly && onDownloadReceipt ? (
-          <ActionButton icon={FileDown} label="Download" onPress={() => onDownloadReceipt(cycle)} variant="secondary" />
-        ) : null}
-      </View>
+      {/* Recording the payment is the thing an owner does on a bill constantly;
+          receipts, discounts and extra charges are occasional. So it gets the
+          wide button and everything else lives behind the overflow dots. */}
+      {!readOnly && onAction ? (
+        // Fixed row height with both children stretched, so the pill and the
+        // circle are the same height by construction rather than by two
+        // separately-guessed numbers. ActionButton's flex:1 eats the rest of
+        // the width, so the pair spans the card edge to edge.
+        <View style={{ flexDirection: "row", gap: spacing.sm, height: BILL_ACTION_ROW_HEIGHT }}>
+          <ActionButton
+            disabled={!payable || !canManage}
+            fill
+            icon={Banknote}
+            label={markPaidLabel(cycle)}
+            onPress={() => onAction(cycle, "manual-payment")}
+          />
+          <OverflowDotsButton accessibilityLabel="More bill actions" onPress={() => onAction(cycle, "menu")} />
+        </View>
+      ) : null}
 
-      {readOnly && !onViewReceipt ? (
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+      {readOnly ? (
+        <Text style={[type.caption, { color: colors.muted }]}>
           Open the billing screen to manage receipts and cycle actions.
         </Text>
+      ) : null}
+
+      {windowInfoOpen ? (
+        <CycleWindowModal
+          cycle={cycle}
+          fallbackLateFeePerDayPaise={fallbackLateFeePerDayPaise}
+          onClose={() => setWindowInfoOpen(false)}
+        />
       ) : null}
     </View>
   );
@@ -1401,10 +1317,10 @@ function SummaryCyclesModal({
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {cycles.length} cycle{cycles.length === 1 ? "" : "s"}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
               </Text>
             </View>
@@ -1418,7 +1334,7 @@ function SummaryCyclesModal({
               title={notGeneratedCount > 0 ? "Cycles not generated yet" : "No matching cycles"}
               description={
                 notGeneratedCount > 0
-                  ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each is created automatically on its tenancy's due date this month.`
+                  ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each appears automatically a few days before its due date, so you can adjust it before it goes live.`
                   : "There are no billing cycles in this category for the selected period."
               }
             />
@@ -1440,7 +1356,7 @@ function LineItemTable({ items }: { items: BillingCycleLineItem[] }) {
   const { colors, type } = useTheme();
   if (items.length === 0) {
     return (
-      <Text style={[type.caption, { color: colors.muted }]} selectable>
+      <Text style={[type.caption, { color: colors.muted }]}>
         No line items available.
       </Text>
     );
@@ -1451,14 +1367,14 @@ function LineItemTable({ items }: { items: BillingCycleLineItem[] }) {
       {items.map((item) => (
         <View key={item.id} style={{ flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]} selectable>
+            <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]}>
               {item.label}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} selectable>
+            <Text style={[type.caption, { color: colors.muted }]}>
               {humanizeToken(item.type)} · {humanizeToken(item.settlementAction)}
             </Text>
           </View>
-          <Text style={[type.caption, { color: colors.ink, fontWeight: "900" }]} selectable>
+          <Text style={[type.caption, { color: colors.ink, fontWeight: "900" }]}>
             {formatMoney(item.amountPaise)}
           </Text>
         </View>
@@ -1482,22 +1398,28 @@ function StatusText({ cycle }: { cycle: BillingCycle }) {
           : colors.primary;
 
   return (
-    <Text style={[type.caption, { color: tone, flex: 0.9, fontWeight: "900" }]} selectable>
+    <Text style={[type.caption, { color: tone, flex: 0.9, fontWeight: "900" }]}>
       {statusDisplay.label}
     </Text>
   );
 }
 
 function BillingActionModal({
+  canManage,
   cycle,
   mode,
   onClose,
+  onDownloadReceipt,
   onSelectMode,
+  onViewReceipt,
 }: {
+  canManage: boolean;
   cycle: BillingCycle;
   mode: ActionMode;
   onClose: () => void;
+  onDownloadReceipt: (cycle: BillingCycle) => void;
   onSelectMode: (mode: ActionMode) => void;
+  onViewReceipt: (cycle: BillingCycle) => void;
 }) {
   const { colors, fonts, type } = useTheme();
   const [method, setMethod] = useState<ManualPaymentMethod>("CASH");
@@ -1515,14 +1437,15 @@ function BillingActionModal({
   const [addDiscount, discountState] = useAddTenancyDiscountMutation();
   const [addExtraCharges, extraChargeState] = useAddTenancyExtraChargesMutation();
   const busy = manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading;
-  const mutable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
+  const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
+  const editable = isCycleEditable(cycle);
 
   const title = useMemo(() => {
     if (mode === "menu") {
       return "Cycle actions";
     }
     if (mode === "manual-payment") {
-      return "Mark manually paid";
+      return "Mark paid";
     }
     if (mode === "discount") {
       return "Add discount";
@@ -1541,7 +1464,7 @@ function BillingActionModal({
     if (mode === "manual-payment") {
       setConfirm({
         message: `Mark ${cycle.referenceCode} as paid for ${formatMoney(cycle.totalAmountPaise)} via ${humanizeToken(method)}?`,
-        title: "Mark manually paid?",
+        title: "Mark this bill paid?",
       });
       return;
     }
@@ -1662,10 +1585,10 @@ function BillingActionModal({
                 />
               ) : null}
               <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   {cycle.referenceCode}
                 </Text>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontWeight: "600" }} selectable>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {title}
                 </Text>
               </View>
@@ -1676,12 +1599,35 @@ function BillingActionModal({
           <ScrollView contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
           {mode === "menu" ? (
             <View style={{ gap: spacing.sm }}>
-              <ActionButton disabled={!mutable} icon={Banknote} label="Mark manually paid" onPress={() => onSelectMode("manual-payment")} />
-              <ActionButton disabled={!mutable} icon={Percent} label="Add discount" onPress={() => onSelectMode("discount")} variant="secondary" />
-              <ActionButton disabled={!mutable} icon={Plus} label="Add extra charge" onPress={() => onSelectMode("extra-charge")} variant="secondary" />
-              {!mutable ? (
-                <Text style={[type.caption, { color: colors.muted }]} selectable>
-                  Paid or cancelled cycles cannot be edited.
+              <ActionButton disabled={!editable || !canManage} icon={Percent} label="Add discount" onPress={() => onSelectMode("discount")} variant="secondary" />
+              <ActionButton disabled={!editable || !canManage} icon={Plus} label="Add extra charge" onPress={() => onSelectMode("extra-charge")} variant="secondary" />
+              {/* Receipt actions stay available on paid and cancelled bills —
+                  those are exactly the ones an owner comes back to print. */}
+              <ActionButton
+                icon={Eye}
+                label="View receipt"
+                onPress={() => {
+                  onClose();
+                  onViewReceipt(cycle);
+                }}
+                variant="secondary"
+              />
+              <ActionButton
+                icon={FileDown}
+                label="Download receipt"
+                onPress={() => {
+                  onClose();
+                  onDownloadReceipt(cycle);
+                }}
+                variant="secondary"
+              />
+              {!payable || !editable ? (
+                <Text style={[type.caption, { color: colors.muted }]}>
+                  {cycle.status === "UPCOMING"
+                    ? "This bill isn't payable until its due window opens. You can still change it until then."
+                    : cycle.status === "PAID" || cycle.status === "CANCELLED"
+                      ? "Paid or cancelled bills cannot be edited."
+                      : "This bill is live, so its charges are frozen. Add anything new to the upcoming cycle."}
                 </Text>
               ) : null}
             </View>
@@ -1689,8 +1635,9 @@ function BillingActionModal({
 
           {mode === "manual-payment" ? (
             <>
-              <Text style={[type.caption, { color: colors.muted }]} selectable>
-                This marks the full cycle amount {formatMoney(cycle.totalAmountPaise)} as manually collected.
+              <Text style={[type.caption, { color: colors.muted }]}>
+                Records the full bill amount {formatMoney(cycle.totalAmountPaise)} as received. Rent is collected
+                outside the app, so this is what marks it settled.
               </Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
                 {manualPaymentMethods.map((item) => (
@@ -1698,7 +1645,13 @@ function BillingActionModal({
                 ))}
               </View>
               <FormInput label="Reference" onChangeText={setReferenceText} placeholder="UPI ref, cheque no, cash note" value={referenceText} />
-              <ProofImageField onChange={setProofImageUrl} uri={proofImageUrl} />
+              <SingleImageField
+                attachedLabel="Proof attached"
+                label="Payment proof (optional)"
+                onChange={setProofImageUrl}
+                target="PAYMENT_PROOF"
+                url={proofImageUrl}
+              />
               <FormInput label="Note" onChangeText={setNote} placeholder="Optional note" value={note} />
             </>
           ) : null}
@@ -1723,7 +1676,7 @@ function BillingActionModal({
               <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setChargeAmount} placeholder="0" prefix="₹" value={chargeAmount} />
               <FormInput label="Description" onChangeText={setChargeDescription} placeholder="Optional description" value={chargeDescription} />
               <View style={{ gap: spacing.xs }}>
-                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
                   Settlement
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -1735,7 +1688,7 @@ function BillingActionModal({
           ) : null}
 
           {error ? (
-            <Text style={[type.caption, { color: colors.danger }]} selectable>
+            <Text style={[type.caption, { color: colors.danger }]}>
               {error}
             </Text>
           ) : null}
@@ -1792,10 +1745,10 @@ function ConfirmDialog({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, fontWeight: "600" }} selectable>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]} selectable>
+          <Text style={[type.body, { color: colors.muted }]}>
             {message}
           </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -1813,7 +1766,7 @@ function ConfirmDialog({
                 paddingVertical: spacing.md,
               }}
             >
-              <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14, }}>
                 Cancel
               </Text>
             </AnimatedPressable>
@@ -1829,7 +1782,7 @@ function ConfirmDialog({
                 paddingVertical: spacing.md,
               }}
             >
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 14, fontWeight: "800" }} selectable>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 14, }}>
                 {confirmLabel}
               </Text>
             </AnimatedPressable>
@@ -1853,83 +1806,11 @@ function DiscountPreview({ percent, totalPaise }: { percent: string; totalPaise:
   const netPaise = totalPaise - discountPaise;
 
   return (
-    <Text style={[type.caption, { color: valid ? colors.primary : colors.danger }]} selectable>
+    <Text style={[type.caption, { color: valid ? colors.primary : colors.danger }]}>
       {valid
         ? `Amounts to ${formatMoney(discountPaise)} off · new total ${formatMoney(netPaise)}`
         : "Enter a percentage between 0 and 100."}
     </Text>
-  );
-}
-
-function ProofImageField({ onChange, uri }: { onChange: (value: string) => void; uri: string }) {
-  const { colors, type } = useTheme();
-  const [error, setError] = useState<string | null>(null);
-
-  async function pickFromLibrary() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("Allow photo library access to attach a proof image.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.75 });
-    if (!result.canceled && result.assets[0]) {
-      onChange(result.assets[0].uri);
-      setError(null);
-    }
-  }
-
-  async function capturePhoto() {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      setError("Allow camera access to capture a proof image.");
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.75 });
-    if (!result.canceled && result.assets[0]) {
-      onChange(result.assets[0].uri);
-      setError(null);
-    }
-  }
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
-        Payment proof (optional)
-      </Text>
-
-      {uri ? (
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.border,
-            borderRadius: 12,
-            borderWidth: 1,
-            flexDirection: "row",
-            gap: spacing.sm,
-            padding: spacing.sm,
-          }}
-        >
-          <Image source={{ uri }} style={{ borderRadius: 8, height: 48, width: 48 }} resizeMode="cover" />
-          <Text style={[type.caption, { color: colors.muted, flex: 1 }]} numberOfLines={1}>
-            Image attached
-          </Text>
-          <IconButton accessibilityLabel="Remove proof image" icon={X} onPress={() => onChange("")} />
-        </View>
-      ) : null}
-
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <ActionButton icon={ImagePlus} label={uri ? "Replace" : "Choose image"} onPress={pickFromLibrary} variant="secondary" />
-        <ActionButton icon={Camera} label="Camera" onPress={capturePhoto} variant="secondary" />
-      </View>
-
-      {error ? (
-        <Text style={[type.caption, { color: colors.danger }]} selectable>
-          {error}
-        </Text>
-      ) : null}
-    </View>
   );
 }
 
@@ -1942,82 +1823,56 @@ function SegmentedControl({
   onChange: (value: CycleView) => void;
   options: { label: string; value: CycleView }[];
 }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 16, flexDirection: "row", padding: 4 }}>
-      {options.map((option) => {
-        const selected = option.value === active;
-        return (
-          <AnimatedPressable
-            accessibilityRole="button"
-            key={option.value}
-            onPress={() => onChange(option.value)}
-            style={{
-              alignItems: "center",
-              backgroundColor: selected ? colors.surface : "transparent",
-              borderColor: selected ? colors.border : "transparent",
-              borderRadius: 13,
-              borderWidth: 1,
-              flex: 1,
-              minHeight: 44,
-              justifyContent: "center",
-              paddingHorizontal: spacing.sm,
-            }}
-          >
-            <Text
-              style={{
-                color: selected ? colors.ink : colors.muted,
-                fontFamily: fonts.sans,
-                fontSize: 13,
-                fontWeight: selected ? "900" : "700",
-                textAlign: "center",
-              }}
-              selectable
-            >
-              {option.label}
-            </Text>
-          </AnimatedPressable>
-        );
-      })}
-    </View>
-  );
+  return <TabSwitcher active={active} onChange={onChange} options={options} />;
 }
+
 
 function SummaryTile({
   hint,
   label,
+  large,
+  leadValue,
   onPress,
-  tone = "default",
   value,
 }: {
   hint: string;
   label: string;
+  /** Full width and a bigger figure — for the one number that leads the month. */
+  large?: boolean;
+  /** Shown muted before `value`. The collected half of "collected / billed":
+   *  it is the part already banked, so the eye should land on what is still
+   *  outstanding rather than on money that is no longer a task. */
+  leadValue?: string;
   onPress?: () => void;
-  tone?: "danger" | "default" | "success";
   value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const accent = tone === "danger" ? colors.danger : tone === "success" ? colors.successText : colors.primary;
+  const { colors, type } = useTheme();
   const style = {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 14,
     borderWidth: 1,
-    flex: 1,
+    flex: large ? undefined : 1,
     gap: spacing.xs,
-    padding: spacing.md,
+    padding: large ? spacing.lg : spacing.md,
   } as const;
+  // Figures are ink. Colouring them by tone made every tile shout at once —
+  // red, green and blue side by side reads as five warnings rather than a
+  // breakdown. Meaning lives in the label, emphasis in the size.
+  const fontSize = large ? 30 : 20;
   const content = (
     <>
-      <Text style={[type.caption, { color: colors.muted }]} selectable={!onPress}>
-        {label}
-      </Text>
-      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }} selectable={!onPress}>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        numberOfLines={1}
+        style={[type.metric, { color: colors.ink, fontSize, lineHeight: fontSize + 4 }]}
+      >
+        {leadValue ? <Text style={{ color: colors.muted }}>{leadValue}</Text> : null}
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.kicker }]} selectable={!onPress}>
-        {hint}
-      </Text>
+      <Text style={[type.caption, { color: colors.muted }]}>{hint}</Text>
     </>
   );
 
@@ -2032,6 +1887,9 @@ function SummaryTile({
   return <View style={style}>{content}</View>;
 }
 
+// LOCAL VARIANT — deliberately NOT the shared FormInput in
+// `@/features/owner/owner-ui`. It differs (no prefix/error affordances), so editing the shared
+// one does NOT change this screen. Unify before adding behaviour to either.
 function FormInput({
   keyboardType,
   label,
@@ -2050,7 +1908,7 @@ function FormInput({
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]} selectable>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
         {label}
       </Text>
       {prefix ? (
@@ -2067,7 +1925,7 @@ function FormInput({
             paddingLeft: spacing.md,
           }}
         >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 15, fontWeight: "700" }} selectable={false}>
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 15, }}>
             {prefix}
           </Text>
           <AppTextInput
@@ -2107,21 +1965,28 @@ function ChoiceButton({ active, label, onPress }: { active: boolean; label: stri
         paddingVertical: spacing.sm,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontWeight: "800" }} selectable>
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, }}>
         {label}
       </Text>
     </AnimatedPressable>
   );
 }
 
+// LOCAL VARIANT — deliberately NOT the shared ActionButton in
+// `@/features/owner/owner-ui`. It differs (opt-in `fill` instead of always flex:1, 13px label, no danger variant), so editing the shared
+// one does NOT change this screen. Unify before adding behaviour to either.
 function ActionButton({
   disabled,
+  fill,
   icon: Icon,
   label,
   onPress,
   variant = "primary",
 }: {
   disabled?: boolean;
+  // Grow to fill the row. Off by default because most buttons in this file sit
+  // in content-width rows; the bill action row wants the opposite.
+  fill?: boolean;
   icon: typeof Search;
   label: string;
   onPress: () => void;
@@ -2139,6 +2004,7 @@ function ActionButton({
         alignItems: "center",
         backgroundColor: disabled ? colors.neutralSoft : primary ? colors.primary : colors.primarySoft,
         borderRadius: 14,
+        flex: fill ? 1 : undefined,
         flexDirection: "row",
         gap: spacing.xs,
         justifyContent: "center",
@@ -2148,37 +2014,272 @@ function ActionButton({
       }}
     >
       <Icon color={foreground} size={16} strokeWidth={2.2} />
-      <Text style={{ color: foreground, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color: foreground, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
     </AnimatedPressable>
   );
 }
 
-function IconButton({ accessibilityLabel, icon: Icon, onPress }: { accessibilityLabel: string; icon: typeof X; onPress: () => void }) {
+// How the cycle lifecycle works, for an owner who has just watched a bill
+// appear on its own and wants to know what they can still change.
+function BillingRulesModal({ onClose }: { onClose: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  const rules: { body: string; title: string }[] = [
+    {
+      title: "Bills appear before they are due",
+      body: "A cycle is created about 10 days ahead of its due date and sits as UPCOMING. It is visible to you but not yet payable by the tenant.",
+    },
+    {
+      title: "UPCOMING is your window to change it",
+      body: "Discounts and extra charges can only be added while a rent cycle is UPCOMING. That is the whole reason it appears early.",
+    },
+    {
+      title: "Going live locks the amount",
+      body: "On its start date the cycle turns UNPAID and the total freezes. It cannot be edited or reversed after that — the tenant owes exactly what they were shown.",
+    },
+    {
+      title: "Anything later goes on the next cycle",
+      body: "Once a bill is live, a charge you meant to add has to go on the upcoming cycle instead, or on a one-off bill if it cannot wait.",
+    },
+    {
+      title: "Due date already includes grace",
+      body: "The due date is the period start plus the property's grace days — grace is inside it, not added on top of it.",
+    },
+    {
+      title: "Late fees use the rate at go-live",
+      body: "The daily late-fee rate is stamped onto the cycle when it goes live. Changing the property rate afterwards applies from the next cycle, never to a bill already running.",
+    },
+    {
+      title: "You record the payment",
+      body: "Rent is collected outside the app. Use Mark paid on the bill once the tenant has paid you, and the receipt keeps the method and reference.",
+    },
+  ];
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "85%",
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                Billing
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+                How cycles work
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close billing rules" icon={X} onPress={onClose} />
+          </View>
+
+          <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+            {rules.map((rule, index) => (
+              <View
+                key={rule.title}
+                style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: 4, padding: spacing.md }}
+              >
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                  <View
+                    style={{
+                      alignItems: "center",
+                      borderColor: colors.ink,
+                      borderWidth: 1,
+                      borderRadius: 999,
+                      height: 22,
+                      justifyContent: "center",
+                      width: 22,
+                    }}
+                  >
+                    <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11, }}>
+                      {index + 1}
+                    </Text>
+                  </View>
+                  <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14, }}>
+                    {rule.title}
+                  </Text>
+                </View>
+                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  {rule.body}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={onClose}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.ink,
+              borderCurve: "continuous",
+              borderRadius: 14,
+              justifyContent: "center",
+              marginTop: spacing.sm,
+              minHeight: 46,
+            }}
+          >
+            <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
+          </AnimatedPressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Explains when this bill has to be paid and what being late costs.
+//
+// The pay window runs from the period start to the due date, because the due
+// date IS start + grace days (BillingCycleService.calculateMonthlyDueDate) —
+// the grace is already inside it, not added on top.
+function CycleWindowModal({
+  cycle,
+  fallbackLateFeePerDayPaise,
+  onClose,
+}: {
+  cycle: BillingCycle;
+  fallbackLateFeePerDayPaise?: number | null;
+  onClose: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  // Null while UPCOMING — and the API omits nulls, so this can be undefined.
+  const stampedRate = cycle.lateFeePerDayPaise;
+  const rate = stampedRate != null ? stampedRate : fallbackLateFeePerDayPaise;
+  const rateIsProvisional = stampedRate == null;
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <AnimatedPressable
+        accessibilityLabel="Close"
+        onPress={onClose}
+        style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
+        tapLockMs={0}
+      >
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderCurve: "continuous",
+            borderRadius: 20,
+            borderWidth: 1,
+            gap: spacing.md,
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                {cycle.referenceCode}
+              </Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
+                Payment window
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close payment window" icon={X} onPress={onClose} />
+          </View>
+
+          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+            <ReceiptLine label="Billing period" value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`} />
+            <ReceiptLine label="Pay between" strong value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.rentDueDate)}`} />
+            <ReceiptLine
+              label="Grace"
+              value={cycle.rentGraceDays === 0 ? "None — due on the start date" : `${cycle.rentGraceDays} day${cycle.rentGraceDays === 1 ? "" : "s"} (already in the due date)`}
+            />
+          </View>
+
+          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+              If paid late
+            </Text>
+            {rate != null && rate > 0 ? (
+              <>
+                <ReceiptLine label="Late fee" strong value={`${formatMoney(rate)} per day`} />
+                <Text style={[type.caption, { color: colors.muted }]}>
+                  Charged from the day after {formatDate(cycle.rentDueDate)}.
+                  {rateIsProvisional
+                    ? " The rate is locked in when this cycle goes live, so a change made before then still applies to it."
+                    : " This rate was locked in when the cycle went live — changing it now applies from the next cycle, not this one."}
+                </Text>
+              </>
+            ) : (
+              <Text style={[type.caption, { color: colors.muted }]}>
+                No late fee is set for this property, so paying after {formatDate(cycle.rentDueDate)} costs nothing
+                extra. You can set a daily rate in property billing settings.
+              </Text>
+            )}
+          </View>
+
+          {cycle.lateFeeAmountPaise > 0 ? (
+            <Text style={[type.caption, { color: colors.muted }]}>
+              This bill already carries {formatMoney(cycle.lateFeeAmountPaise)} of late fee carried over from an
+              earlier cycle.
+            </Text>
+          ) : null}
+        </View>
+      </AnimatedPressable>
+    </Modal>
+  );
+}
+
+// An UPCOMING bill keeps the "Mark paid" wording, greyed — the action is real,
+// it just isn't open yet. Only a settled bill states its outcome instead.
+function markPaidLabel(cycle: BillingCycle): string {
+  if (cycle.status === "PAID") {
+    return "Paid";
+  }
+  if (cycle.status === "CANCELLED") {
+    return "Cancelled";
+  }
+  return "Mark paid";
+}
+
+// Whether the backend will accept a discount or extra charge on this bill.
+// Mirrors BillingCycleLineItemService.ensureCycleStillEditable: a rent cycle
+// freezes the moment its payment window opens, so only UPCOMING can be changed;
+// one-off bills stay editable until they are settled.
+function isCycleEditable(cycle: BillingCycle): boolean {
+  if (cycle.status === "PAID" || cycle.status === "CANCELLED") {
+    return false;
+  }
+  return cycle.category === "ONE_OFF" || cycle.status === "UPCOMING";
+}
+
+// Circular overflow control pinned to the action row's height, so its diameter
+// always equals the Mark-paid button's height instead of drifting past it.
+function OverflowDotsButton({ accessibilityLabel, onPress }: { accessibilityLabel: string; onPress: () => void }) {
   const { colors } = useTheme();
   return (
-    <AnimatedPressable accessibilityLabel={accessibilityLabel} onPress={onPress} style={{ alignItems: "center", borderRadius: 18, height: 36, justifyContent: "center", width: 36 }}>
-      <Icon color={colors.ink} size={18} strokeWidth={2.2} />
+    <AnimatedPressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
+        borderWidth: 1,
+        height: BILL_ACTION_ROW_HEIGHT,
+        justifyContent: "center",
+        width: BILL_ACTION_ROW_HEIGHT,
+      }}
+    >
+      <MoreHorizontal color={colors.ink} size={18} strokeWidth={2.4} />
     </AnimatedPressable>
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: spacing.xs, height: 36, paddingHorizontal: spacing.sm, width: 86 }}
-    >
-      <ArrowLeft color={colors.ink} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: "700" }} selectable>
-        Back
-      </Text>
-    </AnimatedPressable>
-  );
-}
 
 async function downloadTextFile(fileName: string, content: string, mimeType: string) {
   if (Platform.OS === "web" && typeof document !== "undefined") {
@@ -2303,10 +2404,10 @@ function ReceiptModal({
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Receipt{propertyName ? ` · ${propertyName}` : ""}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600" }} selectable>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {cycle.referenceCode}
               </Text>
             </View>
@@ -2322,7 +2423,7 @@ function ReceiptModal({
               </View>
 
               <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   Charges
                 </Text>
                 {receiptAmounts(cycle).map((row) => (
@@ -2335,7 +2436,7 @@ function ReceiptModal({
 
               {cycle.lineItems.length ? (
                 <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                  <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+                  <Text style={[type.eyebrow, { color: colors.kicker }]}>
                     Line items
                   </Text>
                   {cycle.lineItems.map((item) => (
@@ -2343,6 +2444,8 @@ function ReceiptModal({
                   ))}
                 </View>
               ) : null}
+
+              <ManualPaymentsSection billingCycleId={cycle.id} />
             </View>
           </ScrollView>
 
@@ -2360,14 +2463,48 @@ function ReceiptModal({
   );
 }
 
+// How the money actually arrived. Every payment in the app is collected by the
+// owner off-platform and recorded here, so this is the whole payment record —
+// method, reference and when it was logged.
+function ManualPaymentsSection({ billingCycleId }: { billingCycleId: string }) {
+  const { colors, type } = useTheme();
+  const paymentsQuery = useListManualPaymentsQuery(billingCycleId);
+  const payments = paymentsQuery.data ?? [];
+
+  if (paymentsQuery.isLoading) {
+    return null;
+  }
+
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        Payments recorded
+      </Text>
+      {payments.length === 0 ? (
+        <Text style={[type.body, { color: colors.muted }]}>
+          No payment recorded yet. Use &ldquo;Mark paid&rdquo; on the bill once the tenant has paid you.
+        </Text>
+      ) : (
+        payments.map((payment) => (
+          <View key={payment.id} style={{ gap: 2, paddingVertical: spacing.xs }}>
+            <ReceiptLine label={`${humanizeToken(payment.method)} · ${formatDate(payment.collectedAt)}`} value={formatMoney(payment.amountPaise)} />
+            {payment.referenceText ? <ReceiptLine label="Reference" value={payment.referenceText} /> : null}
+            {payment.note ? <ReceiptLine label="Note" value={payment.note} /> : null}
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
 function ReceiptLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-      <Text style={[type.caption, { color: strong ? colors.ink : colors.muted, flex: 1, fontWeight: strong ? "800" : "400" }]} selectable>
+      <Text style={[type.caption, { color: strong ? colors.ink : colors.muted, flex: 1, fontWeight: strong ? "800" : "400" }]}>
         {label}
       </Text>
-      <Text style={[type.caption, { color: strong ? colors.primary : colors.ink, fontWeight: strong ? "900" : "700", textAlign: "right" }]} selectable>
+      <Text style={[type.caption, { color: strong ? colors.primary : colors.ink, fontWeight: strong ? "900" : "700", textAlign: "right" }]}>
         {value}
       </Text>
     </View>

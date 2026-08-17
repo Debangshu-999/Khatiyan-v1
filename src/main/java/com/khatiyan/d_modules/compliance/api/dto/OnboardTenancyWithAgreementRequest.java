@@ -7,6 +7,8 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -47,6 +49,33 @@ public record OnboardTenancyWithAgreementRequest(
     boolean idCheckConfirmed,
 
     @Valid
-    List<CustomClauseInput> customClauses
+    List<CustomClauseInput> customClauses,
+
+    /**
+     * This tenancy's agreement term, overriding the property default.
+     *
+     * <p>Null means "use the property's default". Present with a null
+     * {@code months} means indefinite — which is why this is a nested record
+     * rather than a bare Integer: a bare null could not tell "not specified"
+     * apart from "no fixed term", and those produce different agreements.
+     */
+    @Valid
+    AgreementTermInput term,
+
+    /**
+     * The deduction categories permitted for this tenancy.
+     *
+     * <p>Null uses the property's default set. A value must be a SUBSET of it:
+     * onboarding may narrow what the deposit can be used for, never widen it.
+     * Widening here would let a tenancy quietly grant powers the property's own
+     * agreement never claimed.
+     */
+    List<@Size(max = 40) String> permittedDeductions
 ) {
+
+    public record AgreementTermInput(
+            @Min(value = 1, message = "A fixed term must be at least 1 month")
+            @Max(value = 12, message = "A fixed term cannot exceed 12 months")
+            Integer months) {
+    }
 }

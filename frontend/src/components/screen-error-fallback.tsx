@@ -32,7 +32,8 @@ export function ScreenErrorFallback({ error, retry }: ErrorBoundaryProps) {
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.dangerSoft,
+          borderColor: colors.ink,
+          borderWidth: 1,
           borderCurve: "continuous",
           borderRadius: 18,
           height: 56,
@@ -40,24 +41,23 @@ export function ScreenErrorFallback({ error, retry }: ErrorBoundaryProps) {
           width: 56,
         }}
       >
-        <TriangleAlert color={colors.danger} size={26} strokeWidth={2.2} />
+        <TriangleAlert color={colors.ink} size={26} strokeWidth={2.2} />
       </View>
 
       <Text
-        style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "600", textAlign: "center" }}
-        selectable
+        style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}
       >
         This screen ran into a problem
       </Text>
 
-      <Text style={[type.body, { color: colors.muted, textAlign: "center" }]} selectable>
+      <Text style={[type.body, { color: colors.muted, textAlign: "center" }]}>
         Nothing you did caused this and no data was lost. Try again, or go back and reopen the screen.
       </Text>
 
       {/* Kept visible on purpose: while the app is in development this is the
           only place the message surfaces without a terminal attached. */}
       {__DEV__ && error?.message ? (
-        <Text style={[type.caption, { color: colors.danger, textAlign: "center" }]} selectable>
+        <Text style={[type.caption, { color: colors.danger, textAlign: "center" }]}>
           {error.message}
         </Text>
       ) : null}

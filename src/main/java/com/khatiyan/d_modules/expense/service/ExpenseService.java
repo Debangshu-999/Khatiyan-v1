@@ -63,7 +63,7 @@ public class ExpenseService {
 
     @Transactional
     public ExpenseResponse createManual(UUID actorUserId, UUID propertyId, CreateExpenseRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         Expense expense = expenseRepository.save(Expense.manual(
                 propertyId, category.getId(), request.paidTo(), request.amountPaise(),
@@ -73,7 +73,7 @@ public class ExpenseService {
 
     @Transactional
     public ExpenseResponse reverse(UUID actorUserId, UUID propertyId, UUID expenseId, ReverseExpenseRequest request) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         Expense original = expenseRepository.findByIdAndPropertyId(expenseId, propertyId)
                 .orElseThrow(() -> new NotFoundException("Expense", expenseId));
         if (original.getEntryType() == ExpenseEntryType.REVERSAL) {
@@ -93,7 +93,7 @@ public class ExpenseService {
     @Transactional(readOnly = true)
     public PageResponse<ExpenseResponse> listExpenses(
             UUID actorUserId, UUID propertyId, LocalDate month, int page, int size) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         YearMonth yearMonth = YearMonth.from(month);
         List<Expense> expenses = expenseRepository.findForPeriod(
                 propertyId, yearMonth.atDay(1), yearMonth.plusMonths(1).atDay(1));
@@ -113,7 +113,7 @@ public class ExpenseService {
 
     @Transactional(readOnly = true)
     public ExpenseMonthSummaryResponse monthlySummary(UUID actorUserId, UUID propertyId, LocalDate month) {
-        financeAccessPolicy.ensureCanManageFinances(actorUserId, propertyId);
+        financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         YearMonth yearMonth = YearMonth.from(month);
         LocalDate start = yearMonth.atDay(1);
         List<Expense> expenses = expenseRepository.findForPeriod(

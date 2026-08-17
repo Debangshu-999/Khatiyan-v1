@@ -69,10 +69,10 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
   return (
     <View style={{ gap: spacing.md }}>
       <Card tone="sunken">
-        <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
           Before your tenancy begins
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13.5, lineHeight: 20 }]} selectable>
+        <Text style={[type.body, { color: colors.muted, fontSize: 13.5, lineHeight: 20 }]}>
           {propertyName} requires you to read and accept these terms. Your tenancy — and its billing — starts only
           after you accept. If something looks wrong, contact the owner before accepting, or decline to cancel.
         </Text>
@@ -103,7 +103,7 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
           >
             {consented ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
           </View>
-          <Text style={[type.body, { color: colors.ink, flex: 1, fontSize: 13.5, lineHeight: 20 }]} selectable={false}>
+          <Text style={[type.body, { color: colors.ink, flex: 1, fontSize: 13.5, lineHeight: 20 }]}>
             I have read and agree to all the terms above, and I understand they govern my tenancy.
           </Text>
         </AnimatedPressable>

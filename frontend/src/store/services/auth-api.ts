@@ -35,7 +35,12 @@ export const authApi = api.injectEndpoints({
       query: () => "/api/v1/auth/me",
       providesTags: ["Profile"],
     }),
-    updateProfile: builder.mutation<AuthUser, { fullName: string }>({
+    // The photo fields are tri-state on the server: omitted leaves the photo
+    // alone, "" clears it, a URL replaces it. Renaming must not send them.
+    updateProfile: builder.mutation<
+      AuthUser,
+      { fullName: string; profilePhotoPublicId?: string | null; profilePhotoUrl?: string | null }
+    >({
       query: (body) => ({ url: "/api/v1/auth/me", method: "PATCH", body }),
       invalidatesTags: ["Profile"],
     }),

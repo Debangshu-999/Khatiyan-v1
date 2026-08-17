@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -51,6 +52,7 @@ public class AuthService {
     private final LoginRateLimitProperties loginRateLimitProperties;
     private final LoginAttemptService loginAttemptService;
     private final EmailVerificationLinkSender emailVerificationLinkSender;
+    private final RecoveryEmailChangeNotifier recoveryEmailChangeNotifier;
 
     public AuthService(
             UserRepository userRepository,
@@ -62,7 +64,8 @@ public class AuthService {
             RateLimitService rateLimitService,
             LoginRateLimitProperties loginRateLimitProperties,
             LoginAttemptService loginAttemptService,
-            EmailVerificationLinkSender emailVerificationLinkSender) {
+            EmailVerificationLinkSender emailVerificationLinkSender,
+            RecoveryEmailChangeNotifier recoveryEmailChangeNotifier) {
         this.userRepository = userRepository;
         this.otpService = otpService;
         this.pinService = pinService;
@@ -73,6 +76,7 @@ public class AuthService {
         this.loginRateLimitProperties = loginRateLimitProperties;
         this.loginAttemptService = loginAttemptService;
         this.emailVerificationLinkSender = emailVerificationLinkSender;
+        this.recoveryEmailChangeNotifier = recoveryEmailChangeNotifier;
     }
 
     private TokenResponse tokenFor(User user) {
@@ -87,12 +91,12 @@ public class AuthService {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
 
         return userRepository.findByPhoneAndActiveTrue(normalizedPhone)
-                .orElseThrow(() -> new NotFoundException("User_", normalizedPhone));
+                .orElseThrow(() -> new NotFoundException("User", normalizedPhone));
     }
 
     private User findActiveByEmail(String email) {
         return userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizeEmail(email))
-                .orElseThrow(() -> new NotFoundException("User_", email));
+                .orElseThrow(() -> new NotFoundException("User", email));
     }
 
     private String normalizeEmail(String email) {
@@ -183,7 +187,39 @@ public class AuthService {
      */
     @Transactional
     public void requestPinSetupOTP(String phone, OtpDeliveryChannel channel, String requestIpAddress) {
-        User user = findActiveByPhone(phone);
+        String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        Optional<User> found = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
+
+        // Deliberately silent in both refusal cases, and deliberately NOT a
+        // 404 or a "you already have a PIN" error.
+        //
+        // A caller who gets a different answer per number can walk a range and
+        // learn which ones hold accounts, and which of those are still waiting
+        // to be set up — an unclaimed account is exactly what an attacker wants
+        // to find. Every outcome here returns 202, so the response says nothing
+        // about the number. The person who really owns it learns the difference
+        // from the SMS arriving or not.
+        //
+        // The has-PIN case also stops a real bug: without it, anyone could make
+        // us text a setup code to an account that is already set up, and the
+        // holder would only discover the dead end after typing the code, since
+        // setPIN refuses them at the end.
+        if (found.isEmpty()) {
+            log.info("PIN setup OTP skipped: no active account for that number");
+            return;
+        }
+
+        User user = found.get();
+        if (user.hasPin()) {
+            // Told plainly, unlike the not-found case. The two bits are not
+            // worth the same: "this number is waiting to be set up" is what an
+            // attacker wants, because an unclaimed account is the one worth
+            // social-engineering an OTP out of. "This number is already set up"
+            // buys them nothing and saves a real person from waiting on an SMS
+            // that is never coming.
+            log.info("PIN setup OTP refused userId={} reason=pin-already-set", user.getId());
+            throw new ValidationException("This number is already set up.");
+        }
 
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, channel);
     }
@@ -193,8 +229,29 @@ public class AuthService {
      */
     @Transactional
     public void requestPINResetOTP(String phone, OtpDeliveryChannel channel, String requestIpAddress) {
-        User user = findActiveByPhone(phone);
-        ensurePinResetAllowed(user, Instant.now());
+        String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        Optional<User> found = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
+
+        // Same uniform-response rule as requestPinSetupOTP: every outcome is a
+        // silent 202, so the answer never reveals whether a number holds an
+        // account. Reset has the identical shape — an unregistered number and a
+        // registered one must be indistinguishable to the caller.
+        //
+        // The lock case is silent too. It looks like useful feedback, but only a
+        // real account can ever be locked, so returning it would hand back the
+        // exact bit the rest of this is hiding. Someone genuinely locked out
+        // already knows they have been failing sign-in.
+        if (found.isEmpty()) {
+            log.info("PIN reset OTP skipped: no active account for that number");
+            return;
+        }
+
+        User user = found.get();
+        user.releaseExpiredLoginLock(Instant.now());
+        if (user.isLoginTemporarilyLocked(Instant.now())) {
+            log.info("PIN reset OTP skipped userId={} reason=login-locked", user.getId());
+            return;
+        }
 
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.PIN_RESET, channel);
     }
@@ -216,8 +273,21 @@ public class AuthService {
         if (existing.isPresent() && !existing.get().getId().equals(userId)) {
             throw new ValidationException("A user with this email address already exists");
         }
+        String previousEmail = user.getEmail();
         user.updateRecoveryEmail(normalizedEmail);
-        return new EmailRecoveryStatusResponse(user.getEmail(), false);
+
+        // Only on a real change. Re-saving the address already on file is a
+        // no-op, and mailing "your recovery email changed" when it did not is
+        // how people learn to ignore the one warning that matters.
+        if (!Objects.equals(previousEmail, user.getEmail())) {
+            recoveryEmailChangeNotifier.notifyChanged(previousEmail, user.getEmail());
+        }
+
+        // Read the flag back rather than assuming it was cleared. Re-saving the
+        // address already on file leaves verification intact, and a hardcoded
+        // false told the screen otherwise — so a no-op save still looked like it
+        // had lost the verification even once the model stopped doing that.
+        return new EmailRecoveryStatusResponse(user.getEmail(), user.isEmailVerified());
     }
     @Transactional
     public void requestEmailVerification(UUID userId) {
@@ -244,9 +314,50 @@ public class AuthService {
     }
 
     @Transactional
+
+    /**
+     * Caps email OTP requests BEFORE the account lookup.
+     *
+     * <p>
+     * The rate limit inside {@code OtpService.issue} only bites once a user is
+     * found, so an address with no account was checked for free — and since
+     * these paths now return silently for unknown addresses, that meant an
+     * unlimited probe against arbitrary emails at no cost. Limiting first also
+     * keeps the uniform response honest: a known and an unknown address hit the
+     * same wall at the same count, so the limit itself leaks nothing.
+     */
+    private void checkEmailOtpRateLimit(String normalizedEmail, String requestIpAddress) {
+        int windowSeconds = (int) Duration.ofMinutes(15).toSeconds();
+
+        rateLimitService.consumeOrThrow(
+                "rl:auth:email-otp:" + normalizedEmail,
+                3,
+                windowSeconds,
+                "Too many requests for this email. Please try again later.");
+
+        if (requestIpAddress != null && !requestIpAddress.isBlank()) {
+            rateLimitService.consumeOrThrow(
+                    "rl:auth:email-otp:ip:" + requestIpAddress,
+                    20,
+                    windowSeconds,
+                    "Too many requests from this device. Please try again later.");
+        }
+    }
+
     public void requestEmailLoginOTP(String email, String requestIpAddress) {
-        User user = findActiveByEmail(email);
-        ensureVerifiedEmail(user);
+        checkEmailOtpRateLimit(normalizeEmail(email), requestIpAddress);
+
+        // Silent on both misses, same rule as the phone paths: a distinct answer
+        // per address lets a caller test a list and learn which ones hold
+        // accounts. An unverified address is skipped for the same reason — that
+        // it exists but is unverified is still a fact about the account.
+        Optional<User> found = userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizeEmail(email));
+        if (found.isEmpty() || !found.get().isEmailVerified()) {
+            log.info("Email login OTP skipped: no active account with that verified email");
+            return;
+        }
+
+        User user = found.get();
         otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.EMAIL_LOGIN, OtpDeliveryChannel.EMAIL);
     }
 
@@ -261,9 +372,21 @@ public class AuthService {
 
     @Transactional
     public void requestPINResetOTPByEmail(String email, String requestIpAddress) {
-        User user = findActiveByEmail(email);
-        ensureVerifiedEmail(user);
-        ensurePinResetAllowed(user, Instant.now());
+        checkEmailOtpRateLimit(normalizeEmail(email), requestIpAddress);
+
+        Optional<User> found = userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizeEmail(email));
+        if (found.isEmpty() || !found.get().isEmailVerified()) {
+            log.info("Email PIN reset OTP skipped: no active account with that verified email");
+            return;
+        }
+
+        User user = found.get();
+        user.releaseExpiredLoginLock(Instant.now());
+        if (user.isLoginTemporarilyLocked(Instant.now())) {
+            log.info("Email PIN reset OTP skipped userId={} reason=login-locked", user.getId());
+            return;
+        }
+
         otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.PIN_RESET, OtpDeliveryChannel.EMAIL);
     }
 
@@ -434,7 +557,7 @@ public class AuthService {
     @Transactional
     public TokenResponse changePIN(UUID userId, String currentPin, String otp, String newPin) {
         User user = findActiveUserById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         if (!user.hasPin() || !pinService.matches(currentPin, user.getPinHash())) {
             throw new ValidationException("Current PIN is incorrect");
@@ -558,7 +681,7 @@ public class AuthService {
     @Transactional
     public void markActiveTenant(UUID userId) {
         User user = findActiveUserById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         user.markActiveTenant();
 
@@ -571,7 +694,7 @@ public class AuthService {
     @Transactional
     public void clearActiveTenant(UUID userId) {
         User user = findActiveUserById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         user.clearActiveTenant();
 
@@ -616,19 +739,44 @@ public class AuthService {
     }
 
     /**
-     * Updates editable profile details for an active authenticated user.
+     * Updates editable profile details for an active authenticated user:
+     * renames them, and optionally sets or clears their photo.
+     *
+     * <p>The photo is tri-state on purpose. Null leaves it untouched, so the
+     * rename-only screen cannot wipe a photo it never asked about; blank clears
+     * it; a URL replaces it. Collapsing null and blank would make every rename
+     * a silent photo deletion.
+     *
+     * <p>The URL is expected to be a stored one — the client uploads through the
+     * {@code PROFILE_PHOTO} target first. Nothing here can tell a device URI
+     * from a real one, which is why the upload happens before the save rather
+     * than being inferred afterwards.
      */
     @Transactional
-    public UserSummaryResponse updateProfile(UUID userId, String fullName) {
+    public UserSummaryResponse updateProfile(
+            UUID userId, String fullName, String profilePhotoUrl, String profilePhotoPublicId) {
         User user = findActiveUserById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         user.updateProfile(fullName.trim());
 
+        if (profilePhotoUrl != null) {
+            if (profilePhotoUrl.isBlank()) {
+                user.clearProfilePhoto();
+            } else {
+                user.updateProfilePhoto(
+                        profilePhotoUrl.trim(),
+                        profilePhotoPublicId == null || profilePhotoPublicId.isBlank()
+                                ? null
+                                : profilePhotoPublicId.trim());
+            }
+        }
+
         log.info(
-                "User profile updated userId={} role={}",
+                "User profile updated userId={} role={} photoChanged={}",
                 user.getId(),
-                user.getRole());
+                user.getRole(),
+                profilePhotoUrl != null);
 
         return UserSummaryResponse.from(user);
     }
@@ -639,7 +787,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public UserSummaryResponse getProfile(UUID userId) {
         User user = findActiveUserById(userId)
-                .orElseThrow(() -> new NotFoundException("User_", userId));
+                .orElseThrow(() -> new NotFoundException("User", userId));
 
         return UserSummaryResponse.from(user);
     }

@@ -1,5 +1,6 @@
 import { api } from "@/store/api";
 import type { BathroomType, MealType, PgFor, PreferredTenantType, RoomType } from "@/store/services/property-api";
+import type { NoticePeriod } from "@/store/services/property-api";
 
 export type PageResponse<T> = {
   items: T[];
@@ -37,6 +38,9 @@ export type PropertyDiscoveryCard = {
   customFacilities: string[];
   standardDepositPaise: number;
   startingRoomRentPaise: number | null;
+  /** Exit terms, shown before anyone commits rather than after move-in. */
+  noticePeriod: NoticePeriod;
+  rentGraceDays: number;
   dailyRentingAvailable: boolean;
   dailyGuestAcRatePaise: number | null;
   dailyGuestNonAcRatePaise: number | null;
@@ -105,7 +109,7 @@ export type PropertyLocalPlace = {
   subcategoryNames: string[];
   description: string | null;
   phone: string | null;
-  addressText: string;
+  addressText: string | null;
   latitude: number | null;
   longitude: number | null;
   distanceKm: number | null;
@@ -194,6 +198,21 @@ export type UpdateOwnerDiscoveryProfilePayload = {
   profileImageUrl?: string | null;
   showOwnerContact?: boolean | null;
   showManagerContact?: boolean | null;
+};
+
+/** One image in a property's discovery gallery. `cover` is the listing thumbnail. */
+export type PropertyImage = {
+  id: string;
+  url: string;
+  publicId: string | null;
+  sortOrder: number;
+  cover: boolean;
+};
+
+/** An image already uploaded to storage, ready to attach to a property. */
+export type NewPropertyImage = {
+  url: string;
+  publicId: string | null;
 };
 
 export const discoveryApi = api.injectEndpoints({
@@ -358,10 +377,40 @@ export const discoveryApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Discovery"],
     }),
+
+    // The listing gallery. Every mutation returns the whole ordered list because
+    // removing or promoting an image renumbers the rest.
+    listPropertyImages: builder.query<PropertyImage[], string>({
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/images` }),
+      providesTags: ["Discovery"],
+    }),
+    addPropertyImages: builder.mutation<PropertyImage[], { propertyId: string; images: NewPropertyImage[] }>({
+      query: ({ propertyId, images }) => ({
+        body: { images },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/images`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    removePropertyImage: builder.mutation<PropertyImage[], { propertyId: string; imageId: string }>({
+      query: ({ propertyId, imageId }) => ({
+        method: "DELETE",
+        url: `/api/v1/properties/${propertyId}/images/${imageId}`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+    makePropertyImageCover: builder.mutation<PropertyImage[], { propertyId: string; imageId: string }>({
+      query: ({ propertyId, imageId }) => ({
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/images/${imageId}/cover`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
   }),
 });
 
 export const {
+  useAddPropertyImagesMutation,
   useCreateLocalPlaceCategoryMutation,
   useCreateLocalPlaceMutation,
   useCreateLocalPlaceSubcategoryMutation,
@@ -372,6 +421,9 @@ export const {
   useListLocationCitiesQuery,
   useListLocalPlaceTaxonomyQuery,
   useListManagedLocalPlacesQuery,
+  useListPropertyImagesQuery,
+  useMakePropertyImageCoverMutation,
+  useRemovePropertyImageMutation,
   useListMyLocalPlacesQuery,
   useListMyLocalPlaceTaxonomyQuery,
   usePublishOwnerDiscoveryProfileMutation,

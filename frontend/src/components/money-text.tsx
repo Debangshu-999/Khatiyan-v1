@@ -50,10 +50,9 @@ export function MoneyText({
         fontWeight: weight,
         letterSpacing: -0.3,
       }}
-      selectable
     >
       {negative ? "−" : ""}
-      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: Math.round(size * 0.72), fontWeight: "600" }} selectable>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: Math.round(size * 0.72), }}>
         {"₹"}
       </Text>
       {figure}

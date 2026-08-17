@@ -33,16 +33,19 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 public class PropertyBoardService {
 
     private final PropertyModule propertyModule;
+    private final PropertyBoardAccessPolicy propertyBoardAccessPolicy;
     private final TenancyModule tenancyModule;
     private final PropertyBoardCategoryRepository categoryRepository;
     private final PropertyBoardItemRepository itemRepository;
 
     public PropertyBoardService(
             PropertyModule propertyModule,
+            PropertyBoardAccessPolicy propertyBoardAccessPolicy,
             TenancyModule tenancyModule,
             PropertyBoardCategoryRepository categoryRepository,
             PropertyBoardItemRepository itemRepository) {
         this.propertyModule = propertyModule;
+        this.propertyBoardAccessPolicy = propertyBoardAccessPolicy;
         this.tenancyModule = tenancyModule;
         this.categoryRepository = categoryRepository;
         this.itemRepository = itemRepository;
@@ -58,7 +61,7 @@ public class PropertyBoardService {
             UUID actorUserId,
             UUID propertyId,
             CreatePropertyBoardCategoryRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, propertyId);
         ensureSlugAvailable(propertyId, request.slug());
 
         PropertyBoardCategory category = PropertyBoardCategory.create(
@@ -76,7 +79,7 @@ public class PropertyBoardService {
      */
     @Transactional(readOnly = true)
     public List<PropertyBoardCategoryResponse> listActiveCategories(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        propertyBoardAccessPolicy.ensureCanViewBoard(actorUserId, propertyId);
 
         return categoryRepository.findActiveByPropertyId(propertyId)
                 .stream()
@@ -93,7 +96,7 @@ public class PropertyBoardService {
             UUID categoryId,
             UpdatePropertyBoardCategoryRequest request) {
         PropertyBoardCategory category = getCategory(categoryId);
-        propertyModule.ensureCanManageProperty(actorUserId, category.getPropertyId());
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, category.getPropertyId());
 
         if (!category.getSlug().equals(request.slug())) {
             ensureSlugAvailable(category.getPropertyId(), request.slug());
@@ -109,7 +112,7 @@ public class PropertyBoardService {
     @Transactional
     public void deactivateCategory(UUID actorUserId, UUID categoryId) {
         PropertyBoardCategory category = getCategory(categoryId);
-        propertyModule.ensureCanManageProperty(actorUserId, category.getPropertyId());
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, category.getPropertyId());
         category.deactivate();
     }
     //----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -124,7 +127,7 @@ public class PropertyBoardService {
             UUID actorUserId,
             UUID propertyId,
             CreatePropertyBoardItemRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, propertyId);
         PropertyBoardCategory category = getActiveCategoryForProperty(propertyId, request.categoryId());
 
         PropertyBoardItem item = PropertyBoardItem.create(
@@ -143,7 +146,7 @@ public class PropertyBoardService {
      */
     @Transactional(readOnly = true)
     public List<PropertyBoardItemResponse> listActiveItems(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        propertyBoardAccessPolicy.ensureCanViewBoard(actorUserId, propertyId);
 
         return itemRepository.findActiveByPropertyId(propertyId)
                 .stream()
@@ -159,7 +162,7 @@ public class PropertyBoardService {
             UUID actorUserId,
             UUID propertyId,
             UUID categoryId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        propertyBoardAccessPolicy.ensureCanViewBoard(actorUserId, propertyId);
         getActiveCategoryForProperty(propertyId, categoryId);
 
         return itemRepository.findActiveByPropertyIdAndCategoryId(propertyId, categoryId)
@@ -191,7 +194,7 @@ public class PropertyBoardService {
             UUID itemId,
             UpdatePropertyBoardItemRequest request) {
         PropertyBoardItem item = getItem(itemId);
-        propertyModule.ensureCanManageProperty(actorUserId, item.getPropertyId());
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, item.getPropertyId());
         PropertyBoardCategory category = getActiveCategoryForProperty(
                 item.getPropertyId(),
                 request.categoryId());
@@ -211,18 +214,18 @@ public class PropertyBoardService {
     @Transactional
     public void deactivateItem(UUID actorUserId, UUID itemId) {
         PropertyBoardItem item = getItem(itemId);
-        propertyModule.ensureCanManageProperty(actorUserId, item.getPropertyId());
+        propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, item.getPropertyId());
         item.deactivate();
     }
 
     private PropertyBoardCategory getCategory(UUID categoryId) {
         return categoryRepository.findCategoryById(categoryId)
-                .orElseThrow(() -> new NotFoundException("PropertyBoardCategory_", categoryId));
+                .orElseThrow(() -> new NotFoundException("PropertyBoardCategory", categoryId));
     }
 
     private PropertyBoardItem getItem(UUID itemId) {
         return itemRepository.findBoardItemById(itemId)
-                .orElseThrow(() -> new NotFoundException("PropertyBoardItem_", itemId));
+                .orElseThrow(() -> new NotFoundException("PropertyBoardItem", itemId));
     }
 
     private PropertyBoardCategory getActiveCategoryForProperty(UUID propertyId, UUID categoryId) {

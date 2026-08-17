@@ -75,9 +75,15 @@ temp/
 
 #Misc
 docs/
+# Matches at any depth, so frontend/CLAUDE.md is covered too.
 CLAUDE.md
+AGENTS.md
+PROJECT_PLAN.md
 issues.txt
 src.zip
 LICENSE
+
+# TypeScript compiler trace output
+frontend/tsc-trace/
 # Local service secrets
 .secrets/

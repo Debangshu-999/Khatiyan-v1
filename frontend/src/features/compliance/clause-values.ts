@@ -6,7 +6,6 @@ import type { AgreementClause } from "@/store/services/compliance-api";
 export type DamageCatalogItem = { name: string; chargePaise: number };
 
 // How an early exit inside the lock-in is charged.
-export type LockInPenaltyType = "REMAINING_TERM" | "FIXED";
 
 // The three standard deduction types; owners can add free-text custom ones,
 // so a category is any string and the labels map only covers the presets.
@@ -26,17 +25,23 @@ export function rupeesLabel(paise: number) {
   return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(paise / 100))}`;
 }
 
-export function lockInMonths(clause: AgreementClause): number {
-  return Number(clause.value?.months ?? 0) || 0;
+/** Months of validity, or null for an indefinite agreement. */
+export function validityMonths(clause: AgreementClause): number | null {
+  // Legacy clauses carry "months". A signed agreement is frozen, so the old key
+  // survives in it forever and every reader has to know both.
+  const raw = clause.value?.validityMonths ?? clause.value?.months;
+  const months = Number(raw ?? 0) || 0;
+  return months > 0 ? months : null;
 }
 
-export function lockInPenaltyType(clause: AgreementClause): LockInPenaltyType {
-  return clause.value?.penaltyType === "FIXED" ? "FIXED" : "REMAINING_TERM";
+/** The owner's own words for what leaving early costs. Never computed. */
+export function earlyExitRule(clause: AgreementClause): string {
+  const raw = clause.value?.earlyExitRule;
+  return typeof raw === "string" ? raw : "";
 }
 
-export function lockInPenaltyFixedPaise(clause: AgreementClause): number {
-  return Number(clause.value?.penaltyFixedPaise ?? 0) || 0;
-}
+/** The longest term worth agreeing. Mirrors the server's CHECK constraint. */
+export const MAX_VALIDITY_MONTHS = 12;
 
 export function deductionCategories(clause: AgreementClause): string[] {
   const raw = clause.value?.categories;
@@ -63,25 +68,27 @@ export function exitPrerequisites(clause: AgreementClause): string[] {
 
 // Body text is what tenants read in the agreement, so every value edit
 // regenerates it — value and prose can never drift apart.
-export function withLockIn(
+export function withValidity(
   clause: AgreementClause,
-  months: number,
-  penaltyType: LockInPenaltyType,
-  penaltyFixedPaise: number,
+  months: number | null,
+  rule: string,
 ): AgreementClause {
-  const penaltyPhrase =
-    penaltyType === "FIXED"
-      ? `a fixed early-exit penalty of ${rupeesLabel(penaltyFixedPaise)}`
-      : "rent for the remaining lock-in period as an early-exit penalty";
+  const body =
+    months != null
+      ? `This agreement runs for ${months} month${months === 1 ? "" : "s"} from the start of the`
+        + ` tenancy, and the tenancy ends with it.`
+        + (rule.trim() ? ` If the tenancy ends earlier: ${rule.trim()}` : "")
+      : "This agreement runs until the tenancy ends. Either party may end it with the required"
+        + " notice.";
+
   return {
     ...clause,
-    body:
-      months > 0
-        ? `Minimum stay (lock-in) of ${months} month${months === 1 ? "" : "s"}; ending the tenancy earlier incurs ${penaltyPhrase}.`
-        : "No minimum lock-in: either party may end the tenancy with the required notice.",
-    value: { months, penaltyFixedPaise, penaltyType },
+    body,
+    heading: "Agreement validity",
+    value: { earlyExitRule: rule, validityMonths: months },
   };
 }
+
 
 export function withDeductionCategories(clause: AgreementClause, categories: string[]): AgreementClause {
   const labels = categories.map(deductionLabel);

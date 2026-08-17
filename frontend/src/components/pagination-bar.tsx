@@ -33,10 +33,10 @@ export function PaginationBar({
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
       <PagerButton disabled={!hasPrevious} icon={ChevronLeft} label="Prev" onPress={onPrevious} />
       <View style={{ alignItems: "center", gap: 1 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
           Page {currentPage} of {Math.max(totalPages, 1)}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]} selectable>
+        <Text style={[type.caption, { color: colors.muted }]}>
           {totalElements} total
         </Text>
       </View>
@@ -81,7 +81,7 @@ function PagerButton({
       }}
     >
       {iconTrailing ? null : <Icon color={color} size={17} strokeWidth={2.4} />}
-      <Text style={{ color, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
       {iconTrailing ? <Icon color={color} size={17} strokeWidth={2.4} /> : null}

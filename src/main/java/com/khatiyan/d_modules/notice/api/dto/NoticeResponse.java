@@ -1,6 +1,8 @@
 package com.khatiyan.d_modules.notice.api.dto;
 
 import java.time.Instant;
+import java.util.List;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.notice.model.Notice;
@@ -22,10 +24,20 @@ public record NoticeResponse(
     Instant visibleUntil,
     Instant publishedAt,
     Instant archivedAt,
+    /** Set when this notice is one day's occurrence of a recurring template. */
+    UUID recurringNoticeId,
+    LocalDate occurrenceDate,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    /** Files on this notice, in the order they were attached. */
+    List<NoticeAttachmentResponse> attachments
 ) {
+    /** For paths with no attachments to hand — lists that do not render them. */
     public static NoticeResponse from(Notice notice) {
+        return from(notice, List.of());
+    }
+
+    public static NoticeResponse from(Notice notice, List<NoticeAttachmentResponse> attachments) {
         return new NoticeResponse(
             notice.getId(),
             notice.getPropertyId(),
@@ -38,8 +50,11 @@ public record NoticeResponse(
             notice.getVisibleUntil(),
             notice.getPublishedAt(),
             notice.getArchivedAt(),
+            notice.getGeneratedFromRecurringNoticeId(),
+            notice.getOccurrenceDate(),
             notice.getCreatedAt(),
-            notice.getUpdatedAt()
+            notice.getUpdatedAt(),
+            attachments == null ? List.of() : attachments
         );
     }
 }

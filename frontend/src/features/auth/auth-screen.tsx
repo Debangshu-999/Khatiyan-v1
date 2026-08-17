@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { Text, View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Server } from "lucide-react-native";
 
+import { Info, X } from "lucide-react-native";
+
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { saveSession } from "@/auth/session-storage";
 import { FadeInView } from "@/components/fade-in-view";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -24,6 +26,7 @@ import {
 import { EmailLoginStep } from "@/features/auth/steps/email-login-step";
 import { LoginStep } from "@/features/auth/steps/login-step";
 import { ResetOtpStep } from "@/features/auth/steps/reset-otp-step";
+import { ActivateStep } from "@/features/auth/steps/activate-step";
 import { ResetPinStep } from "@/features/auth/steps/reset-pin-step";
 import { ResetRequestStep } from "@/features/auth/steps/reset-request-step";
 import { SetupOtpStep } from "@/features/auth/steps/setup-otp-step";
@@ -43,7 +46,7 @@ import {
   useVerifyOtpMutation,
   type TokenResponse,
 } from "@/store/services/auth-api";
-import { resetApiBaseUrl, setApiBaseUrl, setThemeMode } from "@/store/slices/app-config-slice";
+import { setThemeMode } from "@/store/slices/app-config-slice";
 import { clearActiveAccount } from "@/store/slices/account-slice";
 import { setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
@@ -71,7 +74,6 @@ export function AuthScreen() {
   const toast = useToast();
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
-  const apiBaseUrl = useAppSelector((state) => state.appConfig.apiBaseUrl);
   const auth = useAppSelector((state) => state.auth);
 
   const [mode, setMode] = useState<AuthMode>("login");
@@ -80,6 +82,11 @@ export function AuthScreen() {
   const [loginEmail, setLoginEmail] = useState("");
   const [emailLoginOtpRequested, setEmailLoginOtpRequested] = useState(false);
   const [signupPhone, setSignupPhone] = useState("");
+  // setupOtp/setupPin are shared by signup and activation, so the "edit phone"
+  // pencil has to know which door the person came through — sending an
+  // activating tenant to Create account strands them on a form that will refuse
+  // them, because their account already exists.
+  const [setupOrigin, setSetupOrigin] = useState<"signup" | "activate">("signup");
   const [signupEmail, setSignupEmail] = useState("");
   const [resetPhone, setResetPhone] = useState("");
   const [fullName, setFullName] = useState("");
@@ -89,7 +96,6 @@ export function AuthScreen() {
   const [confirmPin, setConfirmPin] = useState("");
   const [otpRequestedAt, setOtpRequestedAt] = useState<number | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
-  const [showDev, setShowDev] = useState(false);
 
   const [loginWithPin, loginState] = useLoginWithPinMutation();
   const [registerUser, registerUserState] = useRegisterUserMutation();
@@ -161,27 +167,53 @@ export function AuthScreen() {
     ? Math.max(0, 30 - Math.floor((currentTimeMs - otpRequestedAt) / 1000))
     : 0;
 
+  /**
+   * Establishes the session after any successful authentication.
+   *
+   * <p>
+   * Everything here runs AFTER the server has already accepted the credentials,
+   * so nothing in it may report an authentication failure. It used to: the
+   * caller wrapped this and the network call in one try, and
+   * {@code errorMessage} ends by returning {@code error.message} for a plain
+   * Error — so a storage hiccup or a missing field surfaced as a raw JS
+   * TypeError in the login toast, on a login that had in fact succeeded.
+   * Retrying then "worked", because the transient failure did not recur.
+   *
+   * <p>
+   * Two rules follow. The session is written before anything that can throw, so
+   * a later failure cannot leave the person authenticated-but-not-persisted.
+   * And the cosmetic extras are best-effort: a theme that would not load is not
+   * a reason to bounce someone back to the login screen.
+   */
   async function persistTokenSession(response: TokenResponse) {
-    const firstName = response.user.fullName?.trim().split(/\s+/)[0];
+    const firstName = response.user?.fullName?.trim().split(/\s+/)[0];
     // Fired here so the toast survives the redirect and greets the user on Home.
     toast.success(firstName ? `Welcome back, ${firstName}!` : "Welcome back!");
+
     const session = {
       accessToken: response.accessToken,
       user: response.user,
     };
-    dispatch(clearActiveAccount());
-    dispatch(setPinnedOwnerModules([]));
-    await saveActiveAccount(null);
-    const savedThemeMode = await loadThemeModeForUser(response.user.id);
-    dispatch(setThemeMode(savedThemeMode ?? "light"));
+
     dispatch(setSession(session));
     await saveSession(session);
+
+    try {
+      dispatch(clearActiveAccount());
+      dispatch(setPinnedOwnerModules([]));
+      await saveActiveAccount(null);
+      const savedThemeMode = response.user?.id ? await loadThemeModeForUser(response.user.id) : undefined;
+      dispatch(setThemeMode(savedThemeMode ?? "light"));
+    } catch (error) {
+      console.warn("Post-login setup failed; continuing with the session", error);
+    }
+
     router.replace("/account-select");
   }
 
   function validatePhone(value: string) {
     if (!isValidPhone(value)) {
-      setMessage("Enter a valid 10 digit phone number, e.g. 9876543210.");
+      setMessage("Enter a valid 10 digit phone number.");
       return false;
     }
     return true;
@@ -246,9 +278,49 @@ export function AuthScreen() {
       setOtp("");
       setNewPin("");
       setConfirmPin("");
+      setSetupOrigin("signup");
       startOtpCooldown();
       setStep("setupOtp");
       setMessage("Account created. Setup OTP requested.");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }
+
+  /**
+   * Activation for an account an owner created.
+   *
+   * <p>
+   * Onboarding a tenant or assigning a manager provisions a user with a phone
+   * but NO PIN and an unverified phone. Signing up is refused (the account
+   * exists) and signing in is refused too — and worse, the login error is the
+   * deliberately vague "Invalid phone or PIN", so the person is told their
+   * credentials are wrong when the truth is they never had any. That message is
+   * intentionally vague and should stay that way (it stops anyone probing which
+   * numbers hold accounts), so the way out has to be an explicit door rather
+   * than a better error.
+   *
+   * <p>
+   * No new endpoint is needed: a LOGIN-purpose OTP followed by {@code pin/set}
+   * is exactly what the signup flow does after registering, and {@code setPIN}
+   * already refuses anyone who has a PIN. So this reuses the existing
+   * setupOtp → setupPin steps and simply skips registration.
+   */
+  async function handleActivateAccount() {
+    setMessage(null);
+    if (!validatePhone(signupPhone)) {
+      return;
+    }
+
+    try {
+      await requestOtp({ phone: signupPhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
+      setOtp("");
+      setNewPin("");
+      setConfirmPin("");
+      setSetupOrigin("activate");
+      startOtpCooldown();
+      setStep("setupOtp");
+      setMessage("If that number is waiting to be set up, we've sent it a code.");
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -316,7 +388,7 @@ export function AuthScreen() {
       setOtp("");
       startOtpCooldown();
       setStep("resetOtp");
-      setMessage("PIN reset OTP requested.");
+      setMessage("If that number has an account, we've sent it a reset code.");
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -367,6 +439,7 @@ export function AuthScreen() {
       await requestEmailLogin({ email: loginEmail.trim() }).unwrap();
       setOtp("");
       setEmailLoginOtpRequested(true);
+      startOtpCooldown();
       toast.show("Email OTP sent. Check your verified email.", "info");
     } catch (error) {
       setMessage(errorMessage(error));
@@ -400,6 +473,25 @@ export function AuthScreen() {
     resetTransientState();
   }
 
+  /** Opens the provisioned-account door. Seeds the number already typed. */
+  function goToActivate() {
+    setMode("login");
+    setStep("activate");
+    resetTransientState();
+    // signupPhone is what setupOtp/setupPin read, so activation binds to it too
+    // rather than adding a fourth phone field that means the same thing.
+    setSignupPhone(loginPhone);
+  }
+
+  /** Pencil target for activation. Keeps the number so they can correct it. */
+  function backToActivate() {
+    setStep("activate");
+    setOtp("");
+    setNewPin("");
+    setConfirmPin("");
+    setOtpRequestedAt(null);
+  }
+
   function goToSignup() {
     setMode("signup");
     setStep("entry");
@@ -407,6 +499,7 @@ export function AuthScreen() {
   }
 
   const heroCopy = authHeroCopy(step, mode, { resetPhone, signupPhone });
+  const [activateInfoOpen, setActivateInfoOpen] = useState(false);
 
   return (
     <ScreenScrollView
@@ -424,6 +517,49 @@ export function AuthScreen() {
     >
       {/* Full-bleed brand band running edge-to-edge under the status bar. */}
       <AuthHero copy={heroCopy} />
+
+      {activateInfoOpen ? (
+        <Modal animationType="fade" onRequestClose={() => setActivateInfoOpen(false)} transparent visible>
+          <Pressable
+            onPress={() => setActivateInfoOpen(false)}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.overlay,
+              flex: 1,
+              justifyContent: "center",
+              padding: spacing.lg,
+            }}
+          >
+            <Pressable
+              onPress={(event) => event.stopPropagation()}
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: 18,
+                borderWidth: 1,
+                gap: spacing.sm,
+                padding: spacing.lg,
+                width: "100%",
+              }}
+            >
+              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>Why set a PIN?</Text>
+                <Pressable accessibilityLabel="Close" hitSlop={8} onPress={() => setActivateInfoOpen(false)}>
+                  <X color={colors.ink} size={18} strokeWidth={2.2} />
+                </Pressable>
+              </View>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15, lineHeight: 22 }}>
+                If your property owner added you as a tenant or a manager, your account already exists — it just has no
+                PIN yet.
+              </Text>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15, lineHeight: 22 }}>
+                That is why signing up says the account is taken, and signing in says the details are wrong. Confirm the
+                number they registered and we will text you a code to set one.
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
 
       {/* Content sheet: overlaps the band with rounded corners and fills the
           rest of the screen. Fields flow from the top; each step pins its
@@ -444,11 +580,37 @@ export function AuthScreen() {
         <View style={{ flexGrow: 1, gap: spacing.md }}>
           {/* Step heading inside the sheet (Swiggy-style "Enter your number"). */}
           <View style={{ gap: 4 }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, fontWeight: "800", letterSpacing: -0.5 }} selectable>
-              {heroCopy.title}
-            </Text>
+            {/* Display face, not the serif: a step heading inside the sheet is a
+                working label, not a brand moment. The serif stays on the wordmark
+                and the screen headers. */}
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.5 }}>
+                {heroCopy.title}
+              </Text>
+              {/* Only the provisioned door needs explaining, and only to someone
+                  confused about why the other two doors refused them. Beside the
+                  heading, not above the field, so the form stays a form. */}
+              {step === "activate" ? (
+                <AnimatedPressable
+                  accessibilityLabel="Why am I setting a PIN?"
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={() => setActivateInfoOpen(true)}
+                  style={{
+                    alignItems: "center",
+                    height: 28,
+                    justifyContent: "center",
+                    width: 28,
+                  }}
+                >
+                  {/* A couple of px down: the display face sits high in its line
+                      box, so an optically centred icon has to follow it. */}
+                  <Info color={colors.kicker} size={17} strokeWidth={2.2} style={{ marginTop: 3 }} />
+                </AnimatedPressable>
+              ) : null}
+            </View>
             {heroCopy.subtitle ? (
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 14, fontWeight: "500", lineHeight: 20 }} selectable>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 14, lineHeight: 20 }}>
                 {heroCopy.subtitle}
               </Text>
             ) : null}
@@ -469,6 +631,7 @@ export function AuthScreen() {
                 setNewPin("");
                 setConfirmPin("");
               }}
+              onActivateAccount={() => goToActivate()}
               onEmailLogin={() => {
                 setStep("emailLogin");
                 setOtp("");
@@ -492,6 +655,19 @@ export function AuthScreen() {
             />
           ) : null}
 
+          {step === "activate" ? (
+            <ActivateStep
+              phone={signupPhone}
+              onPhoneChange={setSignupPhone}
+              busy={busy}
+              onSendCode={() => void handleActivateAccount()}
+              onBackToLogin={goToLogin}
+            />
+          ) : null}
+
+          {/* `busy` here is the step's OWN call, not the screen-wide flag: that
+              one ORs every mutation, so resending a code spun the sign-in
+              button as well. */}
           {step === "emailLogin" ? (
             <EmailLoginStep
               email={loginEmail}
@@ -499,7 +675,9 @@ export function AuthScreen() {
               otp={otp}
               onOtpChange={setOtp}
               otpRequested={emailLoginOtpRequested}
-              busy={busy}
+              cooldownSeconds={otpCooldownSeconds}
+              resendBusy={requestEmailLoginState.isLoading}
+              busy={emailLoginOtpRequested ? confirmEmailLoginState.isLoading : requestEmailLoginState.isLoading}
               onRequestOtp={() => void handleEmailLoginRequest()}
               onConfirm={() => void handleEmailLoginConfirm()}
               onBackToLogin={goToLogin}
@@ -516,7 +694,8 @@ export function AuthScreen() {
               verifyBusy={verifyOtpState.isLoading}
               onResendOtp={() => void handleRequestSetupOtp()}
               onVerifyOtp={() => void handleVerifySetupOtp()}
-              onEditPhone={goToSignup}
+              onEditPhone={setupOrigin === "activate" ? backToActivate : goToSignup}
+              activating={setupOrigin === "activate"}
             />
           ) : null}
 
@@ -572,31 +751,6 @@ export function AuthScreen() {
         </View>
       </FadeInView>
 
-      <View style={{ alignItems: "center", marginTop: spacing.sm }}>
-        <LinkButton label={showDev ? "Hide developer options" : "Developer options"} onPress={() => setShowDev((value) => !value)} center muted />
-      </View>
-
-      {showDev ? (
-        <AuthCard tone="sunken">
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Server color={colors.kicker} size={16} strokeWidth={2.2} />
-            <Text style={[type.eyebrow, { color: colors.kicker }]} selectable>
-              Developer / backend
-            </Text>
-          </View>
-          <Text style={[type.body, { color: colors.muted, fontSize: 13 }]} selectable>
-            Auto-detected from the Expo dev server. Override only if your backend runs elsewhere.
-          </Text>
-          <AuthTextField
-            label="API base URL"
-            value={apiBaseUrl}
-            onChangeText={(value) => dispatch(setApiBaseUrl(value))}
-            placeholder="http://192.168.1.10:8080"
-            icon={Server}
-          />
-          <PrimaryButton label="Use detected URL" onPress={() => dispatch(resetApiBaseUrl())} muted />
-        </AuthCard>
-      ) : null}
       </View>
     </ScreenScrollView>
   );

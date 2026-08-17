@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useRouteGate } from "@/features/owner/route-gates";
 import { Animated, Easing, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Landmark, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
+import { AlertCircle, AlertTriangle, Banknote, Check, ChevronRight, DoorOpen, KeyRound, Repeat2, Wallet, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -13,7 +14,6 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { BackButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
-import { useListPayoutAccountsQuery } from "@/store/services/payout-api";
 import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -24,7 +24,6 @@ type ActionRoute =
   | "/owner-deposit-history"
   | "/owner-exit-requests"
   | "/owner-expenses"
-  | "/owner-payout-setup"
   | "/owner-room-change-requests"
   | "/owner-tenancy";
 type ActionSource = "billing" | "concern" | "tenancy" | "budget";
@@ -56,24 +55,11 @@ const TONE_RANK: Record<ActionTone, number> = { danger: 0, warning: 1, primary: 
 export default function OwnerActionCenterScreen() {
   const router = useGuardedRouter();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const routeGate = useRouteGate(selectedPropertyId);
   const dashboardQuery = useGetOwnerDashboardQuery(selectedPropertyId ?? "", { skip: !selectedPropertyId });
   const dashboard = dashboardQuery.data;
 
-  // Payout banks belong to the owner, not the property — a manager has none to
-  // set up, so the nudge is owner-only.
-  // Gated on the token too: before the session hydrates the call 403s, and a
-  // cached failure would nag the owner to set up a bank they already have.
-  const isOwnerAccount = useAppSelector((state) => state.account.activeAccount) === "owner";
-  const hasSession = useAppSelector((state) => Boolean(state.auth.accessToken));
-  const payoutQuery = useListPayoutAccountsQuery(undefined, { skip: !isOwnerAccount || !hasSession });
-  // Optional-chained rather than trusting isSuccess to imply data: a body that
-  // parses to null would otherwise crash the whole screen for a nudge.
-  const payoutMissing = isOwnerAccount && payoutQuery.isSuccess && (payoutQuery.data?.length ?? 0) === 0;
-
-  const actionItems = useMemo(
-    () => (dashboard ? buildActionItems(dashboard, payoutMissing) : []),
-    [dashboard, payoutMissing],
-  );
+  const actionItems = useMemo(() => (dashboard ? buildActionItems(dashboard) : []), [dashboard]);
   const [filter, setFilter] = useState<ActionFilter>("all");
 
   const filters = FILTERS.map((entry) => ({
@@ -136,7 +122,7 @@ export default function OwnerActionCenterScreen() {
             <View style={{ gap: spacing.sm }}>
               {visibleItems.map((item) => (
                 <MovingBorder active={item.emphasize} fill={false} key={item.key}>
-                  <ActionRow item={item} onPress={() => router.push(item.route)} />
+                  <ActionRow item={item} onPress={() => routeGate(item.route, () => router.push(item.route))} />
                 </MovingBorder>
               ))}
             </View>
@@ -147,23 +133,9 @@ export default function OwnerActionCenterScreen() {
   );
 }
 
-function buildActionItems(dashboard: OwnerDashboard, payoutMissing: boolean): ActionItem[] {
+function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
   const attention = dashboard.attention;
   const items: ActionItem[] = [];
-
-  if (payoutMissing) {
-    items.push({
-      badge: "Set up",
-      detail: "Rent can't be collected online until a bank is added",
-      emphasize: false,
-      icon: Landmark,
-      key: "payout-account",
-      label: "No bank account added",
-      route: "/owner-payout-setup",
-      source: "billing",
-      tone: "warning",
-    });
-  }
 
   if (attention.paymentsOverdue > 0) {
     items.push({ badge: String(attention.paymentsOverdue), detail: "Awaiting collection", emphasize: true, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", tone: "danger" });
@@ -273,7 +245,7 @@ function FilterPill({ active, count, label, onPress }: { active: boolean; count:
         paddingVertical: spacing.sm - 2,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: "800" }} selectable>
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
       {count > 0 ? (
@@ -288,7 +260,7 @@ function FilterPill({ active, count, label, onPress }: { active: boolean; count:
             paddingHorizontal: 5,
           }}
         >
-          <Text style={{ color: active ? colors.primary : colors.onPrimary, fontFamily: fonts.sans, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "900" }} selectable>
+          <Text style={{ color: active ? colors.primary : colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
             {count}
           </Text>
         </View>
@@ -310,7 +282,7 @@ function ActionRow({ item, onPress }: { item: ActionItem; onPress: () => void })
       onPress={onPress}
       title={item.label}
       trailing={
-        <Text numberOfLines={1} style={{ color: palette.accent, fontFamily: fonts.display, fontSize: 16, fontVariant: ["tabular-nums"], fontWeight: "700" }} selectable>
+        <Text numberOfLines={1} style={{ color: palette.accent, fontFamily: fonts.display, fontSize: 16, fontVariant: ["tabular-nums"], }}>
           {item.badge}
         </Text>
       }

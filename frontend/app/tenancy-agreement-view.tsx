@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, FileSignature } from "lucide-react-native";
+import { FileSignature } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -24,11 +24,11 @@ export default function TenancyAgreementViewScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="TENANCY"
+        eyebrow="Tenancy"
+        onBack={() => router.back()}
         title="Your"
         italicTail="agreement."
         subtitle="The terms you accepted for this tenancy."
-        trailing={<BackButton onPress={() => router.back()} />}
       />
 
       {agreementQuery.isFetching && !agreement ? (
@@ -47,7 +47,7 @@ export default function TenancyAgreementViewScreen() {
         <>
           {agreement.acceptedAt ? (
             <Card tone="sunken">
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]} selectable>
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
                 Accepted on{" "}
                 <Text style={{ color: colors.ink, fontWeight: "800" }}>{formatDate(agreement.acceptedAt)}</Text>. This is
                 the frozen copy of what you agreed to.
@@ -63,18 +63,6 @@ export default function TenancyAgreementViewScreen() {
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Back"
-      onPress={onPress}
-      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
-    >
-      <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}
 
 function formatDate(iso: string) {
   const parsed = new Date(iso);

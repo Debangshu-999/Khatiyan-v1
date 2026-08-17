@@ -1,22 +1,36 @@
 package com.khatiyan.d_modules.tenancy.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
+import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeApprovedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeExecutedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRejectedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRequestedEvent;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
+import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
@@ -35,24 +49,33 @@ public class TenancyRoomChangeRequestService {
             TenancyRoomChangeRequestStatus.REQUESTED,
             TenancyRoomChangeRequestStatus.APPROVED);
 
+    private final AuthModule authModule;
+    private final ReferenceCodeGenerator referenceCodeGenerator;
     private final TenancyRoomChangeRequestRepository roomChangeRequestRepository;
     private final TenancyRepository tenancyRepository;
     private final PropertyModule propertyModule;
+    private final TenancyAccessPolicy tenancyAccessPolicy;
     private final BillingModule billingModule;
     private final TenancyService tenancyService;
     @SuppressWarnings("unused")
     private final ApplicationEventPublisher eventPublisher;
 
     public TenancyRoomChangeRequestService(
+            AuthModule authModule,
+            ReferenceCodeGenerator referenceCodeGenerator,
             TenancyRoomChangeRequestRepository roomChangeRequestRepository,
             TenancyRepository tenancyRepository,
             PropertyModule propertyModule,
-            BillingModule billingModule,
+            TenancyAccessPolicy tenancyAccessPolicy,
+            @Lazy BillingModule billingModule,
             TenancyService tenancyService,
             ApplicationEventPublisher eventPublisher) {
+        this.authModule = authModule;
+        this.referenceCodeGenerator = referenceCodeGenerator;
         this.roomChangeRequestRepository = roomChangeRequestRepository;
         this.tenancyRepository = tenancyRepository;
         this.propertyModule = propertyModule;
+        this.tenancyAccessPolicy = tenancyAccessPolicy;
         this.billingModule = billingModule;
         this.tenancyService = tenancyService;
         this.eventPublisher = eventPublisher;
@@ -75,6 +98,7 @@ public class TenancyRoomChangeRequestService {
         validateTargetRoom(tenancy, targetRoom);
 
         TenancyRoomChangeRequest request = TenancyRoomChangeRequest.request(
+                referenceCodeGenerator.nextCode("TRC"),
                 tenancy.getId(),
                 tenancy.getUserId(),
                 tenancy.getPropertyId(),
@@ -93,6 +117,15 @@ public class TenancyRoomChangeRequestService {
                 tenancy.getRoomId(),
                 targetRoom.id(),
                 cycle.periodEndDate());
+        eventPublisher.publishEvent(new TenancyRoomChangeRequestedEvent(
+                saved.getId(),
+                saved.getReferenceCode(),
+                saved.getTenancyId(),
+                saved.getTenantUserId(),
+                saved.getPropertyId(),
+                saved.getCurrentRoomId(),
+                saved.getTargetRoomId(),
+                saved.getEffectiveTransferDate()));
 
         return TenancyRoomChangeRequestResponse.from(saved);
     }
@@ -100,11 +133,27 @@ public class TenancyRoomChangeRequestService {
     @Transactional
     public TenancyRoomChangeRequestResponse approve(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
-        propertyModule.ensureCanManageProperty(actorUserId, request.getPropertyId());
+        tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
         ensureTargetStillAvailable(request);
 
         request.approve(actorUserId, adminNotes);
-        log.info("Tenancy room change approved requestId={} actorUserId={}", requestId, actorUserId);
+        // Hold the bed for the gap between approval and the transfer date.
+        // Without this the bed stays available, another tenancy can take it, and
+        // the scheduler's re-check then fails the approved move on transfer day.
+        propertyModule.reserveRoomSlot(request.getPropertyId(), request.getTargetRoomId());
+        log.info(
+                "Tenancy room change approved and target bed reserved requestId={} actorUserId={} targetRoomId={}",
+                requestId,
+                actorUserId,
+                request.getTargetRoomId());
+        eventPublisher.publishEvent(new TenancyRoomChangeApprovedEvent(
+                request.getId(),
+                request.getReferenceCode(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getTargetRoomId(),
+                request.getEffectiveTransferDate()));
 
         return TenancyRoomChangeRequestResponse.from(request);
     }
@@ -112,10 +161,17 @@ public class TenancyRoomChangeRequestService {
     @Transactional
     public TenancyRoomChangeRequestResponse reject(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
-        propertyModule.ensureCanManageProperty(actorUserId, request.getPropertyId());
+        tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
 
         request.reject(actorUserId, adminNotes);
         log.info("Tenancy room change rejected requestId={} actorUserId={}", requestId, actorUserId);
+        eventPublisher.publishEvent(new TenancyRoomChangeRejectedEvent(
+                request.getId(),
+                request.getReferenceCode(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getAdminNotes()));
 
         return TenancyRoomChangeRequestResponse.from(request);
     }
@@ -144,6 +200,36 @@ public class TenancyRoomChangeRequestService {
                 PageRequest.of(0, resolvedLimit));
     }
 
+    /**
+     * Finds room change requests left unreviewed past the review window.
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findStaleRequestIds(Instant now, int limit) {
+        int resolvedLimit = limit > 0 ? limit : 50;
+        Instant cutoff = now.minus(Duration.ofDays(TenancyExitRequest.REVIEW_WINDOW_DAYS));
+
+        return roomChangeRequestRepository.findStaleForExpiryIds(
+                TenancyRoomChangeRequestStatus.REQUESTED,
+                cutoff,
+                PageRequest.of(0, resolvedLimit));
+    }
+
+    /**
+     * Expires one unreviewed room change request.
+     *
+     * <p>Only REQUESTED requests are touched, so no reserved bed is released by
+     * this sweep — an approved room change holds a bed and must be closed
+     * deliberately.
+     */
+    @Transactional
+    public void expireStaleRequest(UUID requestId) {
+        TenancyRoomChangeRequest request = getRequest(requestId);
+        request.expire();
+
+        log.info("Room change request expired unreviewed requestId={} tenancyId={}",
+                requestId, request.getTenancyId());
+    }
+
     @Transactional
     public TenancyRoomChangeRequestResponse executeDueApprovedRequest(UUID requestId) {
         TenancyRoomChangeRequest request = getRequest(requestId);
@@ -157,38 +243,50 @@ public class TenancyRoomChangeRequestService {
 
     @Transactional(readOnly = true)
     public List<TenancyRoomChangeRequestResponse> listMine(UUID tenantUserId) {
-        return roomChangeRequestRepository.findByTenantUserId(tenantUserId)
-                .stream()
-                .map(TenancyRoomChangeRequestResponse::from)
-                .toList();
+        return withNames(roomChangeRequestRepository.findByTenantUserId(tenantUserId));
     }
 
     @Transactional(readOnly = true)
     public List<TenancyRoomChangeRequestResponse> listForTenancy(UUID actorUserId, UUID tenancyId) {
         Tenancy tenancy = tenancyRepository.findById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
-        propertyModule.ensureCanManageProperty(actorUserId, tenancy.getPropertyId());
+        tenancyAccessPolicy.ensureCanViewRoomChanges(actorUserId, tenancy.getPropertyId());
 
-        return roomChangeRequestRepository.findByTenancyId(tenancyId)
-                .stream()
-                .map(TenancyRoomChangeRequestResponse::from)
-                .toList();
+        return withNames(roomChangeRequestRepository.findByTenancyId(tenancyId));
     }
 
     @Transactional(readOnly = true)
     public List<TenancyRoomChangeRequestResponse> listForProperty(UUID actorUserId, UUID propertyId) {
-        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        tenancyAccessPolicy.ensureCanViewRoomChanges(actorUserId, propertyId);
 
-        return roomChangeRequestRepository.findByPropertyId(propertyId)
-                .stream()
-                .map(TenancyRoomChangeRequestResponse::from)
-                .toList();
+        return withNames(roomChangeRequestRepository.findByPropertyId(propertyId));
+    }
+
+    /**
+     * Closes any open room change for a tenancy that has ended and gives back the
+     * bed an approved one was holding. Without this the hold would outlive the
+     * tenancy and quietly cost the property a bed forever.
+     */
+    @Transactional
+    public void closeOpenRequestsForEndedTenancy(UUID tenancyId) {
+        for (TenancyRoomChangeRequest request : roomChangeRequestRepository.findByTenancyId(tenancyId)) {
+            if (!request.cancelBecauseTenancyEnded()) {
+                continue;
+            }
+
+            propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
+            log.info(
+                    "Room change cancelled and reserved bed released because tenancy ended requestId={} tenancyId={} targetRoomId={}",
+                    request.getId(),
+                    tenancyId,
+                    request.getTargetRoomId());
+        }
     }
 
     private TenancyRoomChangeRequestResponse executeApprovedRequest(
             UUID actorUserId,
             TenancyRoomChangeRequest request) {
-        propertyModule.ensureCanManageProperty(actorUserId, request.getPropertyId());
+        tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
 
         if (request.getStatus() != TenancyRoomChangeRequestStatus.APPROVED) {
             throw new ValidationException("Only approved room change requests can be executed");
@@ -199,6 +297,12 @@ public class TenancyRoomChangeRequestService {
         }
 
         ensureNextCycleHasNotBeenGenerated(actorUserId, request);
+        // Release our own hold BEFORE the transfer: the transfer publishes
+        // TenancyRoomTransferredEvent, whose listener occupies a bed on the
+        // target, and occupyOneSlot counts reservations. Holding both would make
+        // the room look one bed over capacity and reject the very move the
+        // reservation was taken for.
+        propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
         ensureTargetStillAvailable(request);
         Tenancy tenancy = tenancyService.transferRoom(
                 actorUserId,
@@ -212,6 +316,14 @@ public class TenancyRoomChangeRequestService {
 
         request.markExecuted(rentAmountPaise);
         log.info("Tenancy room change executed requestId={} actorUserId={}", request.getId(), actorUserId);
+        eventPublisher.publishEvent(new TenancyRoomChangeExecutedEvent(
+                request.getId(),
+                request.getReferenceCode(),
+                request.getTenancyId(),
+                request.getTenantUserId(),
+                request.getPropertyId(),
+                request.getTargetRoomId(),
+                rentAmountPaise));
 
         return TenancyRoomChangeRequestResponse.from(request);
     }
@@ -268,5 +380,26 @@ public class TenancyRoomChangeRequestService {
         if (roomChangeRequestRepository.findOpenByTenancyId(tenancyId, OPEN_STATUSES).isPresent()) {
             throw new ValidationException("Tenancy already has an open room change request");
         }
+    }
+
+    /**
+     * Maps requests to responses with tenant and decider names attached, in one
+     * batch lookup rather than a query per row.
+     */
+    private List<TenancyRoomChangeRequestResponse> withNames(List<TenancyRoomChangeRequest> requests) {
+        Set<UUID> userIds = new HashSet<>();
+        for (TenancyRoomChangeRequest request : requests) {
+            userIds.add(request.getTenantUserId());
+            if (request.getDecidedByUserId() != null) {
+                userIds.add(request.getDecidedByUserId());
+            }
+        }
+
+        Map<UUID, String> names = authModule.findByIds(userIds).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
+
+        return requests.stream()
+                .map(request -> TenancyRoomChangeRequestResponse.from(request, names))
+                .toList();
     }
 }
