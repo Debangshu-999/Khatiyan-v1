@@ -1,5 +1,6 @@
-import { Linking, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { openDialer } from "@/lib/dial";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ChevronRight, Info, MessageCircle, Phone, Settings } from "lucide-react-native";
 
@@ -8,6 +9,9 @@ import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { useGetManagedTenancyDepositQuery } from "@/store/services/billing-api";
 import { useAppSelector } from "@/store/hooks";
@@ -37,6 +41,8 @@ export default function OwnerActiveTenancyDetailScreen() {
   }>();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
+  // Both refusals here happen on tap, with nothing on screen to correct.
+  const opErrors = useFormErrors<never>();
   const tenantName = stringParam(params.tenantName) || "Unnamed tenant";
   const tenantPhone = stringParam(params.tenantPhone);
   const roomLabel = stringParam(params.roomLabel) || "-";
@@ -83,7 +89,7 @@ export default function OwnerActiveTenancyDetailScreen() {
 
   function openDepositManager() {
     if (!tenancyId) {
-      toast.error("This tenancy has no deposit ledger yet.");
+      opErrors.failFromServer("This tenancy has no deposit ledger yet.");
       return;
     }
     router.push({ params: { tenancyId }, pathname: "/owner-deposit-manager" });
@@ -91,10 +97,10 @@ export default function OwnerActiveTenancyDetailScreen() {
 
   async function handleCall() {
     if (!tenantPhone) {
-      toast.error("No phone number available for this tenant.");
+      opErrors.failFromServer("No phone number available for this tenant.");
       return;
     }
-    await Linking.openURL(`tel:${tenantPhone}`);
+    openDialer(tenantPhone);
   }
 
   function handleChat() {
@@ -135,7 +141,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle eyebrow="Stay" title="Rent details" />
+        <SectionTitle title="Rent details" />
         <Card style={{ padding: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label="Start date" value={formatDate(stringParam(params.startDate))} />
@@ -167,7 +173,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle eyebrow="Identity" title="Tenant details" />
+        <SectionTitle title="Tenant details" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
@@ -182,7 +188,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle eyebrow="Agreement" title="Tenancy details" />
+        <SectionTitle title="Tenancy details" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
           <ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />
           <ReadonlyField label="Billing type" value={humanizeToken(billingType)} />
@@ -191,6 +197,7 @@ export default function OwnerActiveTenancyDetailScreen() {
           <ReadonlyField label="Internal tenancy ID" value={shortId(stringParam(params.tenancyId))} mono />
         </Card>
       </View>
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -285,8 +292,8 @@ function ProfileActionButton({
  * owner side had moved on, which left the two profiles — the same kind of
  * screen, reached from the same app — looking like different products.
  */
-function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return <Section eyebrow={eyebrow} title={title} />;
+function SectionTitle({ title }: { title: string }) {
+  return <Section title={title} />;
 }
 
 function ProfileInfoBox({

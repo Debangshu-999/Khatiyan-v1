@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.khatiyan.a_auth.api.dto.EmailRecoveryStatusResponse;
 import com.khatiyan.a_auth.api.dto.OtpVerifyResponse;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
+import com.khatiyan.a_auth.api.dto.UserSessionResponse;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.event.PinChangedEvent;
 import com.khatiyan.a_auth.event.UserRegisteredEvent;
@@ -51,6 +53,9 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final LoginRateLimitProperties loginRateLimitProperties;
     private final LoginAttemptService loginAttemptService;
+    private final PhoneLoginLockService phoneLoginLockService;
+    private final UserSessionService userSessionService;
+    private final DeviceDescriptor deviceDescriptor;
     private final EmailVerificationLinkSender emailVerificationLinkSender;
     private final RecoveryEmailChangeNotifier recoveryEmailChangeNotifier;
 
@@ -64,6 +69,9 @@ public class AuthService {
             RateLimitService rateLimitService,
             LoginRateLimitProperties loginRateLimitProperties,
             LoginAttemptService loginAttemptService,
+            PhoneLoginLockService phoneLoginLockService,
+            UserSessionService userSessionService,
+            DeviceDescriptor deviceDescriptor,
             EmailVerificationLinkSender emailVerificationLinkSender,
             RecoveryEmailChangeNotifier recoveryEmailChangeNotifier) {
         this.userRepository = userRepository;
@@ -75,13 +83,69 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.loginRateLimitProperties = loginRateLimitProperties;
         this.loginAttemptService = loginAttemptService;
+        this.phoneLoginLockService = phoneLoginLockService;
+        this.userSessionService = userSessionService;
+        this.deviceDescriptor = deviceDescriptor;
         this.emailVerificationLinkSender = emailVerificationLinkSender;
         this.recoveryEmailChangeNotifier = recoveryEmailChangeNotifier;
     }
 
+    /** Where this account is signed in, current session flagged. */
+    @Transactional(readOnly = true)
+    public List<UserSessionResponse> listSessions(UUID userId, UUID callerSessionId) {
+        return userSessionService.listLive(userId, Instant.now()).stream()
+                .map(session -> UserSessionResponse.from(session, callerSessionId))
+                .toList();
+    }
+
+    /** Signs one other device out. */
+    @Transactional
+    public void revokeSession(UUID userId, UUID sessionRowId, UUID callerSessionId) {
+        userSessionService.revoke(userId, sessionRowId, callerSessionId, Instant.now());
+    }
+
     private TokenResponse tokenFor(User user) {
+        return tokenFor(user, null);
+    }
+
+    /**
+     * @param signOutSessionId a device the person picked to sign out, from the
+     *     list they were shown when they hit the cap. Null on an ordinary
+     *     sign-in. Safe to honour because their credentials were verified
+     *     moments ago, on this same request.
+     */
+    private TokenResponse tokenFor(User user, UUID signOutSessionId) {
+        Instant issuedAt = Instant.now();
+
+        if (signOutSessionId != null) {
+            userSessionService.revokeForSignIn(user.getId(), signOutSessionId, issuedAt);
+        }
+
+        // Re-checked even after a revoke: the chosen device might already have
+        // been signed out from somewhere else while the picker was open, in
+        // which case nothing was freed and the cap still applies.
+        //
+        // Paths that set a PIN bump credentialVersion, which revokes every
+        // session before reaching here — so only PIN login and e-mail login can
+        // actually be over the cap.
+        userSessionService.ensureCapacity(user.getId(), issuedAt);
+
+        JwtService.IssuedToken issued = jwtService.issue(user);
+
+        // Recorded here rather than in each sign-in path: PIN, OTP, e-mail link,
+        // Firebase and PIN reset all mint tokens through this one method, and a
+        // session missed by any of them would be a device the owner cannot see
+        // and cannot sign out.
+        userSessionService.open(
+                user.getId(),
+                issued.sessionId(),
+                deviceDescriptor.label(),
+                deviceDescriptor.platform(),
+                issuedAt,
+                issued.expiresAt());
+
         return new TokenResponse(
-                jwtService.issue(user),
+                issued.token(),
                 "Bearer",
                 jwtService.accessTokenExpirySeconds(),
                 UserSummaryResponse.from(user));
@@ -362,12 +426,12 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenResponse loginWithEmailOTP(String email, String otp) {
+    public TokenResponse loginWithEmailOTP(String email, String otp, UUID signOutSessionId) {
         User user = findActiveByEmail(email);
         ensureVerifiedEmail(user);
         otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.EMAIL_LOGIN, otp);
         user.recordSuccessfulLogin(Instant.now());
-        return tokenFor(user);
+        return tokenFor(user, signOutSessionId);
     }
 
     @Transactional
@@ -464,8 +528,18 @@ public class AuthService {
      * Authenticates an active user by phone and PIN, returning a JWT on success.
      */
     @Transactional(noRollbackFor = ValidationException.class)
-    public TokenResponse loginWithPIN(String phone, String pin, String ipAddress) {
+    public TokenResponse loginWithPIN(String phone, String pin, String ipAddress, UUID signOutSessionId) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+
+        // Ahead of everything else, and phone-scoped rather than user-scoped:
+        // this is the rung the progressive lock used to occupy for registered
+        // numbers only. See PhoneLoginLockService for why that was readable.
+        try {
+            phoneLoginLockService.ensureNotLocked(normalizedPhone);
+        } catch (ValidationException exception) {
+            loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.TEMPORARY_RATE_LIMITED);
+            throw exception;
+        }
 
         try {
             checkLoginRateLimits(normalizedPhone);
@@ -483,6 +557,7 @@ public class AuthService {
 
         Optional<User> maybeUser = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
         if (maybeUser.isEmpty()) {
+            phoneLoginLockService.recordFailure(normalizedPhone);
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.USER_NOT_FOUND);
             throw new ValidationException("Invalid phone or PIN");
         }
@@ -491,8 +566,13 @@ public class AuthService {
         Instant now = Instant.now();
         user.releaseExpiredLoginLock(now);
         if (user.isLoginTemporarilyLocked(now)) {
+            // Worded exactly like the durable rate-limit refusal, which an
+            // UNREGISTERED number can also trigger. A message only a real
+            // account could produce is an account-existence oracle: probe a
+            // number with wrong PINs and watch whether the wording ever
+            // changes. It must not.
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.ACCOUNT_LOCKED);
-            throw new ValidationException("Account is temporarily locked. Try again later.");
+            throw new ValidationException("Too many login attempts for this phone. Try again later.");
         }
 
         if (!user.hasPin() || !pinService.matches(pin, user.getPinHash())) {
@@ -501,6 +581,7 @@ public class AuthService {
                     loginRateLimitProperties.progressiveLockFailedAttempts(),
                     loginRateLimitProperties.lockDurationForFailedAttempt(nextFailedAttempts),
                     now);
+            phoneLoginLockService.recordFailure(normalizedPhone);
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.INVALID_PIN);
 
             if (user.isLoginTemporarilyLocked(now)) {
@@ -512,18 +593,14 @@ public class AuthService {
                         user.getLoginLockedUntil());
             }
 
-            if (user.getFailedLoginAttempts() > loginRateLimitProperties.progressiveLockFailedAttempts()) {
-                throw new ValidationException(
-                        "Invalid phone or PIN. Account risk detected. Consider resetting your PIN before more failed attempts.");
-            }
-
             throw new ValidationException("Invalid phone or PIN");
         }
 
         user.recordSuccessfulLogin(now);
+        phoneLoginLockService.clear(normalizedPhone);
         loginAttemptService.recordSuccess(normalizedPhone, ipAddress);
 
-        return tokenFor(user);
+        return tokenFor(user, signOutSessionId);
     }
 
     /**

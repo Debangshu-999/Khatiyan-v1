@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -33,6 +33,7 @@ import {
   MapPin,
   Megaphone,
   Navigation,
+  PiggyBank,
   Pin,
   Receipt,
   RefreshCw,
@@ -59,10 +60,13 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { FilterPillRow } from "@/components/filter-bubbles";
+import { GradientCtaCard } from "@/components/gradient-cta-card";
 import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SheetShell } from "@/components/sheet-shell";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
@@ -82,16 +86,18 @@ import {
   useListMyVisibleNoticesQuery,
   useListUpcomingNoticesQuery,
 } from "@/store/services/notice-api";
-import { useGetPropertyMonthSummaryQuery, type BillingMonthSummary } from "@/store/services/billing-api";
-import { useGetBudgetOverviewQuery } from "@/store/services/expense-api";
 import {
   useGetOwnerDashboardQuery,
+  type BudgetAttentionLevel,
   type OwnerDashboard,
   type ActivityDayBucket,
   type RecentActivityType,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
-import { PnlTrendChart } from "@/features/owner/pnl-trend-chart";
+import { ActionButton } from "@/features/owner/owner-ui";
+import { DualBarChart } from "@/components/dual-bar-chart";
+import { PnlTrendChart, monthShort } from "@/features/owner/pnl-trend-chart";
+import { useGetBudgetOverviewQuery, useGetBudgetTrendQuery, type ExpenseBudgetOverview } from "@/store/services/expense-api";
 import { useGetPnlStatementQuery, useGetPnlTrendQuery, type PnlStatement } from "@/store/services/pnl-api";
 import { findOwnerModule } from "@/features/owner/owner-modules";
 import { useScopedUnreadCount } from "@/features/notifications/alert-filters";
@@ -463,62 +469,6 @@ function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<
   );
 }
 
-// The primary "open workspace" call-to-action - a gradient hero so it reads as
-// the headline action rather than just another card in the stack.
-// Gradient hero CTA used for the workspace card and each dashboard snapshot's
-// "open this area" link, so navigation affordances share one bold look.
-function GradientCtaCard({
-  description,
-  icon: Icon,
-  kicker,
-  onPress,
-  title,
-}: {
-  description: string;
-  icon: ComponentType<LucideProps>;
-  kicker: string;
-  onPress: () => void;
-  title: string;
-}) {
-  const { colors, fonts, isDark } = useTheme();
-  return (
-    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
-      <LinearGradient
-        colors={[colors.primary, colors.primaryDeep] as const}
-        end={{ x: 1, y: 1 }}
-        start={{ x: 0, y: 0 }}
-        style={{
-          borderCurve: "continuous",
-          borderRadius: 20,
-          gap: spacing.sm,
-          overflow: "hidden",
-          padding: spacing.lg,
-        }}
-      >
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-          <View style={{ alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.18)", borderCurve: "continuous", borderRadius: 14, height: 48, justifyContent: "center", width: 48 }}>
-            <Icon color={colors.onPrimary} size={24} strokeWidth={2.2} />
-          </View>
-          <View style={{ flex: 1, gap: 3 }}>
-            <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1, opacity: 0.82, textTransform: "uppercase" }}>
-              {kicker}
-            </Text>
-            <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
-              {title}
-            </Text>
-          </View>
-          <View style={{ alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.18)", borderRadius: 999, height: 34, justifyContent: "center", width: 34 }}>
-            <ChevronRight color={colors.onPrimary} size={19} strokeWidth={2.6} />
-          </View>
-        </View>
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
-          {description}
-        </Text>
-      </LinearGradient>
-    </AnimatedPressable>
-  );
-}
-
 function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owner" | "Manager" }) {
   return (
     <GradientCtaCard
@@ -813,25 +763,21 @@ function LatestEventsModal({
           <>
           {/* Always present, including on an empty feed: the chips tell the owner
               what this screen will eventually carry. */}
-          {/* flexShrink:0 is the fix — flexGrow:0 alone stopped it expanding but
-              left it shrinkable, so the column compressed the strip and clipped
-              the chips' descenders. */}
-          <ScrollView
-            contentContainerStyle={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0, flexShrink: 0 }}
-          >
-            {ACTIVITY_CATEGORY_ORDER.map((item) => (
-              <ActivityFilterChip
-                active={category === item}
-                count={item === "all" ? activity.length : activity.filter((row) => activityCategoryOf(row) === item).length}
-                key={item}
-                label={ACTIVITY_CATEGORY_LABEL[item]}
-                onPress={() => setCategory(item)}
-              />
-            ))}
-          </ScrollView>
+          {/* No counts on the pills. Each day header already reports how many
+              rows it holds UNDER THE CURRENT FILTER — `groups` is built from the
+              filtered list — so a count on the pill was the same number said
+              twice, and the two disagreed the moment a day was collapsed. */}
+          <View style={{ paddingVertical: spacing.sm }}>
+            <FilterPillRow
+              inset
+              onChange={setCategory}
+              options={ACTIVITY_CATEGORY_ORDER.map((item) => ({
+                label: ACTIVITY_CATEGORY_LABEL[item],
+                value: item,
+              }))}
+              value={category}
+            />
+          </View>
 
           <ScrollView
             contentContainerStyle={{
@@ -850,10 +796,9 @@ function LatestEventsModal({
                 open, nothing flexes and all three sit flush together, which is
                 what a wrapper keyed on "does Today have items" got wrong: it
                 opened a gap under a collapsed Today. */}
-            {groups.map((group, index) => (
+            {groups.map((group) => (
               <ActivityDaySection
                 bucket={group.bucket}
-                first={index === 0}
                 items={group.items}
                 key={group.bucket}
                 onToggle={() => toggleBucket(group.bucket)}
@@ -881,14 +826,11 @@ function LatestEventsModal({
  */
 function ActivityDaySection({
   bucket,
-  first,
   items,
   onToggle,
   open,
 }: {
   bucket: ActivityDayBucket;
-  /** Only the first box draws a top border, so stacked edges stay 1px. */
-  first: boolean;
   items: RecentActivityItem[];
   onToggle: () => void;
   open: boolean;
@@ -902,41 +844,36 @@ function ActivityDaySection({
     // same share as a short one. flexGrow keeps each section's natural height
     // and splits only the SURPLUS, equally — the same rule whether a section is
     // empty or holding rows.
-    <View style={open ? { flexGrow: 1 } : undefined}>
-      {/* A box, not a rule-and-label. The left edge carries the signal: a bold
-          ink rail when the day has something in it, a hairline when it does not,
-          so a glance down the sheet shows which days are worth opening. */}
+    <View style={open ? { flexGrow: 1, marginBottom: spacing.sm } : { marginBottom: spacing.sm }}>
+      {/* The notice-board shape: a hairline card with a thick rule along the
+          bottom. Replaces a grey gradient wash and a left ink rail — the wash
+          read as a disabled row against the flat white cards below it, and the
+          rail said only "this day has something in it", which the count beside
+          it already said. */}
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         onPress={onToggle}
         style={{
           alignItems: "center",
-          borderColor: colors.border,
-          borderLeftColor: items.length ? colors.ink : colors.border,
-          borderLeftWidth: items.length ? 4 : 1,
-          borderTopWidth: first ? 1 : 0,
-          borderBottomWidth: 1,
-          borderRightWidth: 1,
+          backgroundColor: colors.surface,
+          // The same grey as the hairline around it, just heavier — the card
+          // gains a weighted base without the rule becoming a colour with
+          // something to say. A tone per day was tried and read as three
+          // statuses rather than three dates.
+          borderBottomColor: colors.borderStrong,
+          // Thick enough to be the thing you see first, matching NoticeBar.
+          borderBottomWidth: 5,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 16,
+          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
-          // Clipped so the wash below stays inside the header's edges.
-          overflow: "hidden",
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.md,
         }}
       >
-        {/* The item cards below are flat white. A surfaceSunken-to-surface ramp
-            was invisible against them, so this starts at borderStrong — a real
-            grey — and lightens across. The header reads as the seam between
-            days rather than as one more row in the list. */}
-        <LinearGradient
-          colors={[colors.borderStrong, colors.surfaceSunken]}
-          end={{ x: 1, y: 1 }}
-          pointerEvents="none"
-          start={{ x: 0, y: 0 }}
-          style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
-        />
         <Text style={[type.eyebrow, { color: items.length ? colors.ink : colors.kicker, flex: 1 }]}>
           {ACTIVITY_BUCKET_LABEL[bucket]}
         </Text>
@@ -976,53 +913,6 @@ function ActivityDaySection({
         )
       ) : null}
     </View>
-  );
-}
-
-function ActivityFilterChip({
-  active,
-  count,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      tapLockMs={0}
-      style={{
-        backgroundColor: active ? colors.ink : "transparent",
-        borderColor: active ? colors.ink : colors.border,
-        borderRadius: 999,
-        borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      {/* Explicit lineHeight and no font padding: Inter sits taller than the
-          system face this chip was measured against, and without both the
-          descenders clip against the 7px vertical padding. The Bold FILE gives
-          the weight — fontWeight on the Regular file makes Android synthesise
-          its own bold on top. */}
-      <Text
-        style={{
-          color: active ? colors.surface : count === 0 ? colors.kicker : colors.inkSoft,
-          fontFamily: fonts.sansBold,
-          fontSize: 12.5,
-          includeFontPadding: false,
-          lineHeight: 17,
-        }}
-      >
-        {count > 0 ? `${label} · ${count}` : label}
-      </Text>
-    </AnimatedPressable>
   );
 }
 
@@ -1103,7 +993,6 @@ function TenantHome({
     return (
       <EmptyState
         icon={Home}
-        eyebrow="Tenant workspace"
         title="No active stay loaded"
         description="Your tenant dashboard appears once your active tenancy profile is available."
       />
@@ -1157,7 +1046,7 @@ function TenantHome({
         <MetricTile label="Status" value={tenancyStatusLabel(tenancy.status)} hint={noticeHint(tenancy)} />
       </View>
 
-      <Section eyebrow="Always-on info" title="Property board">
+      <Section title="Property board">
         {boardQuery.isFetching ? (
           <SkeletonCard />
         ) : boardItems.length > 0 ? (
@@ -1171,7 +1060,7 @@ function TenantHome({
         )}
       </Section>
 
-      <Section eyebrow="Latest announcements" title="Notice board">
+      <Section title="Notice board">
         {noticesQuery.isFetching ? (
           <SkeletonCard />
         ) : notices.length > 0 ? (
@@ -1185,7 +1074,7 @@ function TenantHome({
         )}
       </Section>
 
-      <Section eyebrow="Current summary" title="Concerns">
+      <Section title="Concerns">
         <Card>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
@@ -1218,7 +1107,7 @@ function TenantHome({
         />
       </Section>
 
-      <Section eyebrow="Quick actions" title="Go to">
+      <Section title="Go to">
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           <ModuleChip icon={KeyRound} label="Tenancy" onPress={() => onNavigate("/tenancy")} />
           <ModuleChip icon={FileText} label="Notices" onPress={() => onNavigate("/property-notices")} />
@@ -1294,7 +1183,7 @@ function OwnerHome({
   const [tab, setTab] = useState<OwnerTab>("workspace");
   const workspaceRole: "Owner" | "Manager" = account === "manager" ? "Manager" : "Owner";
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
-  const routeGate = useRouteGate(selectedProperty?.id);
+  const { dialog: routeGateDialog, gate: routeGate } = useRouteGate(selectedProperty?.id);
   const navigate = useCallback(
     (href: OwnerRoute) => {
       if (typeof href !== "string") {
@@ -1310,10 +1199,6 @@ function OwnerHome({
     skip: !selectedProperty,
   });
   const dashboard = dashboardQuery.data;
-  const monthSummaryQuery = useGetPropertyMonthSummaryQuery(
-    { propertyId: selectedProperty?.id ?? "" },
-    { skip: !selectedProperty },
-  );
 
   useEffect(() => {
     if (properties.length === 1 && selectedPropertyId !== properties[0].id) {
@@ -1337,7 +1222,6 @@ function OwnerHome({
     return (
       <EmptyState
         icon={Building2}
-        eyebrow={`${workspaceRole} workspace`}
         title={account === "manager" ? "No assigned properties" : "No property yet"}
         description={
           account === "manager"
@@ -1367,10 +1251,14 @@ function OwnerHome({
         />
       </View>
 
-      {!selectedProperty ? (
+      {!selectedProperty || selectorOpen ? (
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <MetricTile label="Properties" value={String(properties.length)} hint="In your portfolio" tone="primary" />
-          <MetricTile label="Selected" value="None" hint="Choose one above" />
+          <MetricTile
+            hint={selectedProperty ? "Pick another to switch" : "Choose one above"}
+            label="Selected"
+            value={selectedProperty ? selectedProperty.name : "None"}
+          />
         </View>
       ) : null}
 
@@ -1387,17 +1275,18 @@ function OwnerHome({
         <>
           <OwnerTabBar onChange={setTab} tab={tab} />
           {tab === "dashboard" ? (
-            <DashboardTab dashboard={dashboard} monthSummary={monthSummaryQuery.data} onNavigate={navigate} />
+            <DashboardTab dashboard={dashboard} onNavigate={navigate} />
           ) : (
             <WorkspaceTab dashboard={dashboard} onNavigate={navigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
           )}
         </>
       ) : null}
+      {routeGateDialog}
     </FadeInUp>
   );
 }
 
-type SnapshotKey = "collection" | "property" | "tenancy" | "cycle" | "pnl";
+type SnapshotKey = "collection" | "property" | "tenancy" | "expense" | "pnl";
 
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
   return (
@@ -1413,16 +1302,23 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
 }
 
 
-const SNAPSHOT_META: Record<SnapshotKey, { eyebrow: string; title: string }> = {
-  collection: { eyebrow: "Money this month", title: "Collection snapshot" },
-  property: { eyebrow: "Portfolio", title: "Property snapshot" },
-  tenancy: { eyebrow: "Tenancy", title: "Tenancy snapshot" },
-  cycle: { eyebrow: "Billing cycles", title: "Billing snapshot" },
-  pnl: { eyebrow: "Profit & loss", title: "P&L snapshot" },
+const SNAPSHOT_META: Record<SnapshotKey, { title: string }> = {
+  collection: { title: "Collection snapshot" },
+  property: { title: "Property snapshot" },
+  tenancy: { title: "Tenancy snapshot" },
+  expense: { title: "Expense snapshot" },
+  pnl: { title: "P&L snapshot" },
 };
 
-function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: OwnerDashboard; monthSummary?: BillingMonthSummary; onNavigate: (href: OwnerRoute) => void }) {
-  const { money, occupancy, tenancy } = dashboard;
+function DashboardTab({
+  dashboard,
+  onNavigate,
+}: {
+  dashboard: OwnerDashboard;
+  onNavigate: (href: OwnerRoute) => void;
+}) {
+  const { colors, type } = useTheme();
+  const { budget, money, occupancy, tenancy } = dashboard;
   const [openSnapshot, setOpenSnapshot] = useState<SnapshotKey | null>(null);
   const toggle = (key: SnapshotKey) => setOpenSnapshot((current) => (current === key ? null : key));
 
@@ -1434,7 +1330,10 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
 
   return (
     <>
-      <Section eyebrow="Dashboard" title="Snapshots">
+      <Section title="Snapshots">
+        <Text style={[type.caption, { color: colors.muted, marginTop: -spacing.xs }]}>
+          Tap a snapshot to see its details
+        </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           {/* Collected OVER billed, like the Property box's occupied/total. On its
               own the collected figure reads as ₹0 for most of the month — true,
@@ -1449,13 +1348,33 @@ function DashboardTab({ dashboard, monthSummary, onNavigate }: { dashboard: Owne
           />
           <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
-          <DashboardSnapshotBox active={openSnapshot === "cycle"} icon={ClipboardList} label="Cycles" onPress={() => toggle("cycle")} tone={monthSummary && monthSummary.overdueCount > 0 ? "danger" : "primary"} value={monthSummary ? String(monthSummary.rentCycleCount) : "-"} />
+          {/* Spent OVER budget, the same shape as Collection. Spend alone says
+              nothing: ₹40,000 is a good month or a disaster depending entirely
+              on the number it is being measured against. */}
+          <DashboardSnapshotBox
+            active={openSnapshot === "expense"}
+            icon={Wallet}
+            label="Expense"
+            onPress={() => toggle("expense")}
+            tone={budget.level === "EXCEEDED" ? "danger" : "primary"}
+            value={
+              budget.effectiveBudgetPaise > 0
+                ? `${compactMoneyPaise(budget.spentPaise)}/${compactMoneyPaise(budget.effectiveBudgetPaise).replace("₹", "")}`
+                : compactMoneyPaise(budget.spentPaise)
+            }
+          />
           <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} tone={pnlStatement && pnlStatement.netPaise < 0 ? "danger" : "primary"} value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"} />
         </View>
       </Section>
 
+      {/* A sheet, not an expanding section. Opened in place the detail landed
+          below the fold on most phones, so tapping a box looked like it had done
+          nothing; a sheet rising over the page is both the answer to "did that
+          work?" and the transition, and it costs no scroll plumbing. */}
       {openSnapshot ? (
-        <SnapshotDetail dashboard={dashboard} key={openSnapshot} monthSummary={monthSummary} onNavigate={onNavigate} pnlStatement={pnlStatement} snapshot={openSnapshot} />
+        <SheetShell dismissOnDrag onClose={() => setOpenSnapshot(null)} title={SNAPSHOT_META[openSnapshot].title}>
+          <SnapshotDetail dashboard={dashboard} key={openSnapshot} onNavigate={onNavigate} snapshot={openSnapshot} />
+        </SheetShell>
       ) : null}
     </>
   );
@@ -1478,7 +1397,6 @@ function DashboardSnapshotBox({
 }) {
   const { colors, fonts, type } = useTheme();
   const accent = tone === "danger" ? colors.danger : colors.primary;
-  const accentSoft = tone === "danger" ? colors.dangerSoft : colors.primarySoft;
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -1487,11 +1405,18 @@ function DashboardSnapshotBox({
       style={{
         alignItems: "center",
         aspectRatio: 1,
-        backgroundColor: active ? accentSoft : colors.surface,
-        borderColor: active ? accent : colors.border,
+        // Selection is the foot of the card turning green, never a wash of
+        // colour behind it: these boxes carry a money figure, and tinting the
+        // paper under a number is the one thing that makes it harder to read.
+        // The bar is there at rest too, so selecting changes its colour rather
+        // than adding a stripe and shifting every tile by 3px.
+        backgroundColor: colors.surface,
+        borderBottomColor: active ? colors.jade : colors.borderStrong,
+        borderBottomWidth: 4,
+        borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: 16,
-        borderWidth: active ? 1.5 : 1,
+        borderWidth: 1,
         flexBasis: "30%",
         flexGrow: 1,
         gap: spacing.xs,
@@ -1524,15 +1449,11 @@ function DashboardSnapshotBox({
 // (toggled by its box). Full summary cards, metric tiles and trend graphs.
 function SnapshotDetail({
   dashboard,
-  monthSummary,
   onNavigate,
-  pnlStatement,
   snapshot,
 }: {
   dashboard: OwnerDashboard;
-  monthSummary?: BillingMonthSummary;
   onNavigate: (href: OwnerRoute) => void;
-  pnlStatement?: PnlStatement;
   snapshot: SnapshotKey;
 }) {
   const { colors, type } = useTheme();
@@ -1541,98 +1462,288 @@ function SnapshotDetail({
   // rupee ceiling (see TrendBarChart "money" mode), not a 0..100% rate.
   const collectionMoneyTrend = monthlyTrends.map((point) => ({ label: point.label, value: Math.round(point.collectedPaise / 100) }));
   const occupancyTrend = monthlyTrends.map((point) => ({ label: point.label, value: point.occupancyRate }));
-  const meta = SNAPSHOT_META[snapshot];
-
+  const tenancyFlowTrend = monthlyTrends.map((point) => ({
+    label: point.label,
+    primary: point.startedCount,
+    secondary: point.endedCount,
+  }));
+  // No heading of its own: the sheet it opens in is already titled, and that
+  // sheet's entrance is the animation this used to do with FadeInUp.
   return (
-    <FadeInUp>
-      <Section eyebrow={meta.eyebrow} title={meta.title}>
-        <View style={{ gap: spacing.sm }}>
-            {snapshot === "collection" ? (
-              <>
-                <BillingSnapshotCard money={money} />
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
-                  <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
-                  <SnapshotTile icon={AlertTriangle} label="Overdue" value={formatMoneyPaise(money.overduePaise)} tone={money.overdueCount > 0 ? "danger" : "default"} />
-                </View>
-                <TrendBarChart data={collectionMoneyTrend} mode="money" title="Collected" />
-                <GradientCtaCard icon={Banknote} kicker="Billing" title="Open billing collection" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
-              </>
-            ) : null}
+    <View style={{ gap: spacing.sm }}>
+      {snapshot === "collection" ? (
+        <>
+          <BillingSnapshotCard money={money} />
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
+            <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
+            <SnapshotTile icon={AlertTriangle} label="Overdue" value={formatMoneyPaise(money.overduePaise)} tone={money.overdueCount > 0 ? "danger" : "default"} />
+          </View>
+          <TrendBarChart data={collectionMoneyTrend} mode="money" title="Collected" />
+          <GradientCtaCard icon={Banknote} kicker="Billing" title="Open billing collection" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
+        </>
+      ) : null}
 
-            {snapshot === "property" ? (
-              <>
-                <PropertySnapshotCard occupancy={occupancy} />
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={DoorOpen} label="Rooms" value={String(occupancy.roomCount)} tone="primary" />
-                  <SnapshotTile icon={DoorClosed} label="Room unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={BedDouble} label="Occupied beds" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
-                  <SnapshotTile icon={BedSingle} label="Vacant beds" count={occupancy.vacantBeds} total={occupancy.totalBeds} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
-                </View>
-                <TrendBarChart data={occupancyTrend} title="Occupancy rate" />
-                <GradientCtaCard icon={DoorOpen} kicker="Rooms" title="Room management" description="Floors, rooms, beds, rent and occupancy. Create single or in bulk." onPress={() => onNavigate("/owner-rooms")} />
-              </>
-            ) : null}
+      {snapshot === "property" ? (
+        <>
+          <PropertySnapshotCard occupancy={occupancy} />
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={DoorOpen} label="Rooms" value={String(occupancy.roomCount)} tone="primary" />
+            <SnapshotTile icon={DoorClosed} label="Room unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={BedDouble} label="Occupied beds" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
+            <SnapshotTile icon={BedSingle} label="Vacant beds" count={occupancy.vacantBeds} total={occupancy.totalBeds} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
+          </View>
+          <TrendBarChart data={occupancyTrend} title="Occupancy rate" />
+          <GradientCtaCard icon={DoorOpen} kicker="Rooms" title="Room management" description="Floors, rooms, beds, rent and occupancy. Create single or in bulk." onPress={() => onNavigate("/owner-rooms")} />
+        </>
+      ) : null}
 
-            {snapshot === "tenancy" ? (
-              <>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={Users} label="Active tenants" value={String(tenancy.activeTenants)} tone="primary" delta={{ current: tenancy.activeTenants, previous: tenancy.activeTenantsPrevMonth }} />
-                  <SnapshotTile icon={Bell} label="On notice" value={String(tenancy.onNotice)} tone={tenancy.onNotice > 0 ? "danger" : "default"} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={UserPlus} label="Started" value={String(tenancy.startedThisMonth)} tone={tenancy.startedThisMonth > 0 ? "primary" : "default"} delta={{ current: tenancy.startedThisMonth, previous: tenancy.startedPrevMonth }} />
-                  <SnapshotTile icon={UserMinus} label="Ended" value={String(tenancy.endedThisMonth)} delta={{ current: tenancy.endedThisMonth, previous: tenancy.endedPrevMonth }} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <SnapshotTile icon={DoorOpen} label="Upcoming exits" value={String(tenancy.upcomingExits)} tone={tenancy.upcomingExits > 0 ? "danger" : "default"} />
-                  <View style={{ flex: 1 }} />
-                </View>
-                <GradientCtaCard icon={Users} kicker="Tenancy" title="Open tenancy workspace" description="Active stays, onboarding, exit and room-change requests." onPress={() => onNavigate("/owner-tenancy")} />
-              </>
-            ) : null}
+      {snapshot === "tenancy" ? (
+        <>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={Users} label="Active tenants" value={String(tenancy.activeTenants)} tone="primary" delta={{ current: tenancy.activeTenants, previous: tenancy.activeTenantsPrevMonth }} />
+            <SnapshotTile icon={Bell} label="On notice" value={String(tenancy.onNotice)} tone={tenancy.onNotice > 0 ? "danger" : "default"} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SnapshotTile icon={UserPlus} label="Started" value={String(tenancy.startedThisMonth)} tone={tenancy.startedThisMonth > 0 ? "primary" : "default"} delta={{ current: tenancy.startedThisMonth, previous: tenancy.startedPrevMonth }} />
+            <SnapshotTile icon={UserMinus} label="Ended" value={String(tenancy.endedThisMonth)} delta={{ current: tenancy.endedThisMonth, previous: tenancy.endedPrevMonth }} />
+          </View>
+          {/* Arrivals against departures, which is the only reading that says
+              whether the property is filling or emptying. The two tiles above
+              give this month; six months say whether it is a trend. */}
+          <DualBarChart
+            data={tenancyFlowTrend}
+            primaryColor={colors.jade}
+            primaryLabel="Started"
+            secondaryColor={colors.danger}
+            secondaryLabel="Ended"
+            title="Started & ended"
+          />
+          <GradientCtaCard icon={Users} kicker="Tenancy" title="Open tenancy workspace" description="Active stays, onboarding, exit and room-change requests." onPress={() => onNavigate("/owner-tenancy")} />
+        </>
+      ) : null}
 
-            {snapshot === "cycle" ? (
-              <>
-                {monthSummary ? (
-                  <>
-                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                      <SnapshotTile icon={ClipboardList} label="Billing cycles" value={String(monthSummary.rentCycleCount)} tone="primary" />
-                      <SnapshotTile icon={Receipt} label="Other bills" value={String(monthSummary.oneOffCount)} tone={monthSummary.oneOffCount > 0 ? "primary" : "default"} />
-                    </View>
-                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                      <SnapshotTile icon={AlertTriangle} label="Overdue" value={String(monthSummary.overdueCount)} tone={monthSummary.overdueCount > 0 ? "danger" : "default"} />
-                      <SnapshotTile icon={Check} label="Paid" count={monthSummary.paidCycleCount} total={monthSummary.rentCycleCount + monthSummary.oneOffCount} />
-                    </View>
-                  </>
-                ) : (
-                  <SkeletonCard />
-                )}
-                <GradientCtaCard icon={ClipboardList} kicker="Billing" title="Open billing" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
-              </>
-            ) : null}
+      {snapshot === "expense" ? (
+        <ExpenseSnapshotDetail budget={dashboard.budget} onNavigate={onNavigate} propertyId={dashboard.property.propertyId} />
+      ) : null}
 
-            {snapshot === "pnl" ? (
-              <PnlSnapshotDetail onNavigate={onNavigate} propertyId={dashboard.property.propertyId} statement={pnlStatement} />
-            ) : null}
-        </View>
-      </Section>
-    </FadeInUp>
+      {snapshot === "pnl" ? (
+        <PnlSnapshotDetail onNavigate={onNavigate} propertyId={dashboard.property.propertyId} />
+      ) : null}
+    </View>
   );
 }
 
-function PnlSnapshotDetail({ onNavigate, propertyId, statement }: { onNavigate: (href: OwnerRoute) => void; propertyId: string; statement?: PnlStatement }) {
+/**
+ * A snapshot whose figures never arrived.
+ *
+ * <p>Worth its own state because the alternative is a skeleton that never
+ * resolves: a request that failed leaves `data` undefined forever, and a
+ * loading shimmer with no end looks identical to a slow network right up until
+ * the reader gives up on the app rather than on the request.
+ */
+function SnapshotLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <EmptyState
+      action={<ActionButton compact label="Try again" onPress={onRetry} variant="secondary" />}
+      compact
+      description="These figures could not be fetched. Check your connection and try again."
+      icon={AlertCircle}
+      title="Could not load"
+    />
+  );
+}
+
+/**
+ * The expense snapshot: where the month's spend stands against its budget, then
+ * six months of spend against what was saved, then what the budget had to be
+ * raised by to get there.
+ *
+ * <p>Both charts only load when this snapshot is opened, because the component
+ * only mounts then.
+ */
+function ExpenseSnapshotDetail({
+  budget,
+  onNavigate,
+  propertyId,
+}: {
+  budget: OwnerDashboard["budget"];
+  onNavigate: (href: OwnerRoute) => void;
+  propertyId: string;
+}) {
+  const { colors } = useTheme();
+  const month = istMonthStart();
+  const overviewQuery = useGetBudgetOverviewQuery({ month, propertyId }, { skip: !propertyId });
+  const trend = useGetBudgetTrendQuery({ month, months: 6, propertyId }, { skip: !propertyId }).data;
+
+  const overview = overviewQuery.data;
+  if (!overview) {
+    return overviewQuery.isError ? (
+      <SnapshotLoadError onRetry={() => void overviewQuery.refetch()} />
+    ) : (
+      <SkeletonCard />
+    );
+  }
+
+  const points = trend?.points ?? [];
+  const overspent = budget.level === "EXCEEDED";
+
+  return (
+    <>
+      <BudgetSnapshotCard level={budget.level} overview={overview} />
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SnapshotTile
+          icon={Wallet}
+          label="Budget"
+          tone="primary"
+          value={overview.effectiveBudgetPaise != null ? formatMoneyPaise(overview.effectiveBudgetPaise) : "Not set"}
+        />
+        <SnapshotTile icon={Receipt} label="Spent" tone={overspent ? "danger" : "default"} value={formatMoneyPaise(overview.spentPaise)} />
+      </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <SnapshotTile
+          icon={TrendingUp}
+          label="Raised"
+          tone={overview.raisedThisMonthPaise > 0 ? "primary" : "default"}
+          value={formatMoneyPaise(overview.raisedThisMonthPaise)}
+        />
+        {/* Savings is clamped at zero on the overview, so an overspent month
+            shows what it went over by instead of a savings figure of ₹0 that
+            reads as "broke even". */}
+        <SnapshotTile
+          icon={PiggyBank}
+          label={overspent ? "Over by" : "Savings"}
+          tone={overspent ? "danger" : "default"}
+          value={formatMoneyPaise(overspent ? budget.overPaise : overview.savingsPaise)}
+        />
+      </View>
+      {points.length > 0 ? (
+        <>
+          <DualBarChart
+            data={points.map((point) => ({
+              label: monthShort(point.month),
+              // The line each month is being judged against, so it is drawn
+              // ACROSS the bars rather than as a third bar beside them.
+              line: point.effectiveBudgetPaise,
+              primary: point.spentPaise,
+              secondary: point.savingsPaise,
+            }))}
+            lineColor={colors.primary}
+            lineLabel="Budget"
+            mode="money"
+            primaryColor={colors.danger}
+            primaryLabel="Spent"
+            secondaryColor={colors.jade}
+            secondaryLabel="Savings"
+            title="Spent & savings"
+          />
+          <TrendBarChart
+            data={points.map((point) => ({ label: monthShort(point.month), value: Math.round(point.raisedPaise / 100) }))}
+            mode="money"
+            title="Budget raised"
+          />
+        </>
+      ) : null}
+      <GradientCtaCard
+        description="Spending by category, budget and raises, recurring costs and reversals."
+        icon={Wallet}
+        kicker="Expenses"
+        onPress={() => onNavigate("/owner-expenses")}
+        title="Open expenses"
+      />
+    </>
+  );
+}
+
+/**
+ * How much of the month's budget has gone, as a headline percentage and a
+ * verdict — the expense answer to the collection card.
+ */
+function BudgetSnapshotCard({ level, overview }: { level: BudgetAttentionLevel; overview: ExpenseBudgetOverview }) {
+  const { colors, fonts, type } = useTheme();
+  const effective = overview.effectiveBudgetPaise ?? 0;
+  // With no budget there is nothing to be a percentage OF, so the card shows
+  // the spend itself rather than a 0% that means nothing.
+  const unset = effective <= 0;
+  const rate = unset ? 0 : Math.round((overview.spentPaise / effective) * 100);
+  const tone = unset
+    ? colors.primary
+    : level === "EXCEEDED"
+      ? colors.danger
+      : level === "APPROACHING"
+        ? colors.warningText
+        : colors.successText;
+  const verdict = unset
+    ? "No budget"
+    : level === "EXCEEDED"
+      ? "Over budget"
+      : level === "APPROACHING"
+        ? "Close to limit"
+        : "On track";
+
+  return (
+    <Card>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>
+            {unset ? "Spent this month" : "Budget used"}
+          </Text>
+          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
+            {unset ? formatMoneyPaise(overview.spentPaise) : `${rate}%`}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+            {unset
+              ? "No budget set for this month"
+              : `${formatMoneyPaise(overview.spentPaise)} of ${formatMoneyPaise(effective)} spent`}
+          </Text>
+        </View>
+        <View
+          style={{
+            alignSelf: "flex-start",
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={[type.eyebrow, { color: tone }]}>{verdict}</Text>
+        </View>
+      </View>
+
+      {/* The percentage as a length. Overspend fills the track rather than
+          running past it: the bar is how much of the budget is gone, and once
+          it is all gone there is no more bar to draw — the figure above and the
+          red verdict beside it carry the by-how-much. */}
+      {unset ? null : (
+        <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 8, marginTop: spacing.sm, overflow: "hidden", width: "100%" }}>
+          <View style={{ backgroundColor: tone, borderRadius: 999, height: "100%", width: `${Math.min(100, Math.max(rate, 0))}%` }} />
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function PnlSnapshotDetail({ onNavigate, propertyId }: { onNavigate: (href: OwnerRoute) => void; propertyId: string }) {
   const { colors, type } = useTheme();
-  // Trend only loads when this snapshot is expanded (the component mounts then).
+  // The same cache entry the P&L box reads, so this costs no extra request —
+  // but subscribing here rather than taking the figure as a prop means the
+  // sheet can see that the fetch FAILED, which a bare `statement` cannot.
+  const statementQuery = useGetPnlStatementQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId });
+  // Trend only loads when this snapshot is opened (the component mounts then).
   const trend = useGetPnlTrendQuery({ month: istMonthStart(), months: 6, propertyId }, { skip: !propertyId }).data;
 
+  const statement = statementQuery.data;
   if (!statement) {
-    return <SkeletonCard />;
+    return statementQuery.isError ? (
+      <SnapshotLoadError onRetry={() => void statementQuery.refetch()} />
+    ) : (
+      <SkeletonCard />
+    );
   }
 
   const profit = statement.netPaise >= 0;
@@ -1811,12 +1922,12 @@ function WorkspaceTab({
   const actionCenterCount = attentionCount(dashboard);
   return (
     <>
-      <Section eyebrow={`${workspaceRole} actions`} title="Workspace">
+      <Section title="Workspace">
         <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} />
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </Section>
 
-      <Section eyebrow="Quick access" title="Tools">
+      <Section title="Tools">
         {/* Every tool stays on screen whatever the manager holds. Tapping a
             blocked one refuses with a toast that names it, via the shared route
             gate — unlike a workspace MODULE, which is removed outright. The
@@ -1844,7 +1955,7 @@ function WorkspaceTab({
           figures stay visible to everyone and only the way IN to a module is
           gated. Staff is the exception below, because it is owner-only outright
           rather than permission-gated. */}
-      <Section eyebrow="Today" title="Live digest">
+      <Section title="Live digest">
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <DigestTile
@@ -2467,7 +2578,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
         }}
       />
 
-      <Section eyebrow="Discovery" title="Find your next stay">
+      <Section title="Find your next stay">
         <ActionCard
           meta="Search"
           title="Browse properties"
@@ -2490,14 +2601,13 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
         ) : (
           <EmptyState
             icon={Search}
-            eyebrow="No active stay"
             title="Start with discovery"
             description="Listed properties near your location will appear here. If nothing is nearby, open discovery and choose a city or area."
           />
         )}
       </Section>
 
-      <Section eyebrow="Account" title="Before move-in">
+      <Section title="Before move-in">
         <ActionCard
           meta="Profile"
           title="Keep your account ready"
@@ -2512,7 +2622,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
         />
       </Section>
 
-      <Section eyebrow="Workspace" title="What unlocks after tenancy">
+      <Section title="What unlocks after tenancy">
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           <ModuleChip icon={Building2} label="Property" />
           <ModuleChip icon={KeyRound} label="Tenancy" />
@@ -2560,24 +2670,33 @@ function OwnerPropertyPicker({
         onPress={hasMultipleProperties ? onToggle : undefined}
         style={{
           alignItems: "center",
-          backgroundColor: selectedProperty ? colors.surfaceRaised : colors.primarySoft,
-          // Ink in both states. This card decides what every other screen in
-          // the workspace is about, and a hairline let it sit at the same
-          // weight as the tiles under it. The unselected state keeps its soft
-          // primary fill, so "nothing chosen yet" still reads without the
-          // border having to carry it.
-          borderColor: colors.ink,
+          // One neutral ground in both states. The blue wash on "nothing
+          // chosen" made an empty selector the most saturated thing on Home,
+          // and it clashed with the photograph it sat behind. The prompt state
+          // is carried by the border and the eyebrow instead.
+          backgroundColor: colors.surfaceRaised,
+          // A hairline, not a 2px ink frame. The heavy black edge made this the
+          // loudest thing on Home — a black box before it was a property — and
+          // it fought the photograph inside it. The card earns its prominence
+          // from its height, the image and the display-size name; the border
+          // only has to close the shape.
+          borderColor: selectedProperty ? colors.borderStrong : colors.primary,
           borderCurve: "continuous",
           borderRadius: 18,
-          // 2px, not a hairline. This is the hero control of the screen and a
-          // 1px ink edge read as a thin outline rather than a deliberate frame.
-          borderWidth: 2,
+          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.md,
           minHeight: 72,
           // Clips the photograph to the card's rounded corners.
           overflow: "hidden",
           padding: spacing.md,
+          // Lifted instead of outlined. A soft shadow separates it from the
+          // page the way the ink border used to, without the weight.
+          elevation: 2,
+          shadowColor: colors.shadow,
+          shadowOffset: { height: 2, width: 0 },
+          shadowOpacity: 1,
+          shadowRadius: 6,
         }}
       >
         {/* Absolutely positioned so it takes no part in the row layout, and
@@ -2611,9 +2730,9 @@ function OwnerPropertyPicker({
             borderColor: colors.ink,
             borderCurve: "continuous",
             borderRadius: 12,
-            // Lighter than the card that holds it, so the frame stays the
-            // outer edge and the tile does not compete with it.
-            borderWidth: 1.5,
+            // Matches the card's hairline. At 1.5 against a 1px card the tile
+            // read as the heavier of the two, which inverts the hierarchy.
+            borderWidth: 1,
             height: 42,
             justifyContent: "center",
             width: 42,
@@ -2657,12 +2776,11 @@ function OwnerPropertyPicker({
         <View
           style={{
             backgroundColor: colors.surface,
-            // Matches the bar it drops out of — a hairline panel under an ink
-            // bar reads as two unrelated controls stacked by accident.
-            borderColor: colors.ink,
+            // Matches the card it drops out of, which is now a hairline too.
+            borderColor: colors.borderStrong,
             borderCurve: "continuous",
             borderRadius: 16,
-            borderWidth: 2,
+            borderWidth: 1,
             // No padding, and clip the children: this is what lets a selected
             // row fill the panel corner to corner. Padded rows with their own
             // borders and radii made every option a card floating inside a
@@ -2681,10 +2799,18 @@ function OwnerPropertyPicker({
                 onPress={() => onSelect(property.id)}
                 style={{
                   alignItems: "center",
-                  // Selection is a filled ink row, as in every other picker in
-                  // the app. The tinted fill plus a tick said the same thing
-                  // twice and still read as the weaker state of the two.
-                  backgroundColor: selected ? colors.ink : "transparent",
+                  // A soft wash and a tick, not a slab of black. The filled ink
+                  // row turned the open list into a black band and forced every
+                  // label on it to invert; the wash marks the row without
+                  // repainting it.
+                  //
+                  // Terracotta rather than the blue it replaced: blue is this
+                  // app's ACTION colour — buttons, links, the submit at the
+                  // bottom of every form — so a blue row read as something to
+                  // press rather than something already chosen. The warm tone
+                  // also sits with the building photograph on the card above
+                  // instead of fighting it.
+                  backgroundColor: selected ? colors.terracottaSoft : "transparent",
                   // Options are separated by a rule, not boxed individually.
                   borderTopColor: colors.border,
                   borderTopWidth: index === 0 ? 0 : 1,
@@ -2694,17 +2820,12 @@ function OwnerPropertyPicker({
                 }}
               >
                 <View style={{ flex: 1, gap: spacing.xxs }}>
-                  <Text style={[type.bodyStrong, { color: selected ? colors.surface : colors.ink }]}>
+                  <Text style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink }]}>
                     {property.name}
                   </Text>
                   <Text
                     numberOfLines={1}
-                    style={[
-                      type.caption,
-                      // Dimmed by opacity rather than a grey token: the row's
-                      // ground flips with the theme, a fixed grey does not.
-                      { color: selected ? colors.surface : colors.muted, fontSize: 11, opacity: selected ? 0.75 : 1 },
-                    ]}
+                    style={[type.caption, { color: colors.muted, fontSize: 11 }]}
                   >
                     {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
                   </Text>

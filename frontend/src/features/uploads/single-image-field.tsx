@@ -3,6 +3,8 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, ImagePlus, X } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { uploadAsset, type UploadTarget } from "@/features/uploads/upload-asset";
 import { spacing } from "@/theme/spacing";
@@ -50,11 +52,12 @@ export function SingleImageField({
   url: string;
 }) {
   const { colors, type } = useTheme();
-  const [error, setError] = useState<string | null>(null);
+  // Uploads and permission denials happen mid-operation — there is no field to
+  // correct, so they surface as a modal rather than a line under the buttons.
+  const opErrors = useFormErrors<never>();
   const [uploading, setUploading] = useState(false);
 
   async function attach(asset: ImagePicker.ImagePickerAsset) {
-    setError(null);
     setUploading(true);
     try {
       const uploaded = await uploadAsset(
@@ -68,7 +71,7 @@ export function SingleImageField({
       );
       onChange(uploaded.url);
     } catch (uploadError) {
-      setError(
+      opErrors.failFromServer(
         uploadError instanceof Error && uploadError.message
           ? uploadError.message
           : "Could not upload the image. Try again.",
@@ -81,7 +84,7 @@ export function SingleImageField({
   async function pickFromLibrary() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setError("Allow photo library access to attach an image.");
+      opErrors.failFromServer("Allow photo library access to attach an image.");
       return;
     }
 
@@ -94,7 +97,7 @@ export function SingleImageField({
   async function capturePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      setError("Allow camera access to capture an image.");
+      opErrors.failFromServer("Allow camera access to capture an image.");
       return;
     }
 
@@ -155,10 +158,8 @@ export function SingleImageField({
         />
       </View>
 
-      {error ? (
-        <Text style={[type.caption, { color: colors.danger }]}>
-          {error}
-        </Text>
+      {opErrors.serverError ? (
+        <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
     </View>
   );

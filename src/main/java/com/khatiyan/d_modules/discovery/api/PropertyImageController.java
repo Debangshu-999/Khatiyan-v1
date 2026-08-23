@@ -7,6 +7,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.discovery.api.dto.AddPropertyImagesRequest;
+import com.khatiyan.d_modules.discovery.api.dto.UpdatePropertyImageCaptionRequest;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyImageResponse;
 import com.khatiyan.d_modules.discovery.service.PropertyImageService;
 
@@ -58,6 +60,15 @@ public class PropertyImageController {
             @PathVariable UUID propertyId,
             @PathVariable UUID imageId) {
         return propertyImageService.removeImage(user.userId(), propertyId, imageId);
+    }
+
+    @PatchMapping("/{imageId}/caption")
+    public List<PropertyImageResponse> updateCaption(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID imageId,
+            @Valid @RequestBody UpdatePropertyImageCaptionRequest request) {
+        return propertyImageService.updateCaption(user.userId(), propertyId, imageId, request.caption());
     }
 
     @PostMapping("/{imageId}/cover")

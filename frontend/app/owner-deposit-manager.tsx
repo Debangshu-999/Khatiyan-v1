@@ -13,6 +13,10 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonScreen } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAvailableAccounts } from "@/features/account/accounts";
@@ -52,6 +56,9 @@ export default function OwnerDepositManagerScreen() {
   const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
   const { colors, type } = useTheme();
   const toast = useToast();
+  // Settlement executes a decision made at end-tenancy — a refusal here is the
+  // server declining, with nothing on screen to correct.
+  const settleErrors = useFormErrors<never>();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
@@ -157,12 +164,12 @@ export default function OwnerDepositManagerScreen() {
       }
       setSettleModalOpen(false);
     } catch (error) {
-      toast.error(settleErrorMessage(error));
+      settleErrors.failFromServer(settleErrorMessage(error));
     }
   }
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         badge={!canManageDeposits ? <ViewOnlyChip /> : null}
         eyebrow={selectedTenancy ? "Deposit manager" : "Owner tool"}
@@ -178,8 +185,7 @@ export default function OwnerDepositManagerScreen() {
 
       {!property ? (
         <EmptyState
-          icon={Landmark}
-          eyebrow="No property selected"
+          icon={Landmark}
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select the property you want to manage deposits for."
         />
@@ -202,7 +208,6 @@ export default function OwnerDepositManagerScreen() {
               onPress={() => chooseTenancy(pendingDeposits[0].tenancyId)}
             >
               <NoticeBar
-                icon={AlertTriangle}
                 message={
                   pendingDeposits.length === 1
                     ? `1 deposit · ${formatMoneyPaise(pendingTotalPaise)} held`
@@ -217,8 +222,7 @@ export default function OwnerDepositManagerScreen() {
           {selectedTenancy && !pickerOpen ? (
             selectedTenancy.billingType === "DAILY" ? (
               <EmptyState
-                icon={Wallet}
-                eyebrow="Not eligible"
+                icon={Wallet}
                 title="No deposit for daily stays"
                 description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
               />
@@ -235,8 +239,7 @@ export default function OwnerDepositManagerScreen() {
               />
             ) : (
               <EmptyState
-                icon={Landmark}
-                eyebrow="No deposit account"
+                icon={Landmark}
                 title="Deposit not opened yet"
                 description="A deposit account opens automatically once this tenant's first monthly cycle is paid."
               />
@@ -287,6 +290,7 @@ export default function OwnerDepositManagerScreen() {
           title={payable ? "Settle deposit" : "Close deposit account"}
         />
       ) : null}
+      {settleErrors.serverError ? <AlertModal message={settleErrors.serverError} onClose={settleErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -454,7 +458,6 @@ function DepositDetail({
           they are carrying out rather than choosing. */}
       {pending ? (
         <NoticeBar
-          icon={Clock}
           message={
             payable == null
               ? "No payability decision was recorded when this tenancy ended, so this deposit cannot be settled here."
@@ -639,30 +642,28 @@ function CorrectionModal({
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"amount" | "reason">();
   const isAdd = mode === "add";
 
   async function handleSubmit() {
     const amountPaise = rupeesToPaise(amount);
-    if (amountPaise == null || amountPaise <= 0) {
-      setError("Enter an amount greater than zero.");
-      return;
-    }
-    if (!reason.trim()) {
-      setError("Add a short reason for this change.");
-      return;
-    }
-    if (!isAdd && amountPaise > balancePaise) {
-      setError("Deduction cannot exceed the current balance.");
+    const cleared = form.validate({
+      ...(amountPaise == null || amountPaise <= 0
+        ? { amount: "Enter an amount greater than zero." }
+        : !isAdd && amountPaise > balancePaise
+          ? { amount: "Deduction cannot exceed the current balance." }
+          : {}),
+      ...(reason.trim() ? {} : { reason: "Add a short reason for this change." }),
+    });
+    if (!cleared || amountPaise == null) {
       return;
     }
 
-    setError(null);
     setSubmitting(true);
     try {
       await onSubmit(amountPaise, reason.trim());
-    } catch {
-      setError("Could not save this deposit change. Please try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not save this deposit change. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -690,19 +691,38 @@ function CorrectionModal({
             Current balance {formatMoneyPaise(balancePaise)}
           </Text>
 
-          <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-          <FormInput label="Reason" maxLength={300} multiline onChangeText={setReason} placeholder={isAdd ? "Top-up reason" : "Deduction reason"} value={reason} />
-
-          {error ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              {error}
-            </Text>
-          ) : null}
+          <FormInput
+            error={form.errors.amount}
+            keyboardType="decimal-pad"
+            label="Amount"
+            onChangeText={(next) => {
+              setAmount(next);
+              form.clearField("amount");
+            }}
+            placeholder="0"
+            prefix="₹"
+            required
+            value={amount}
+          />
+          <FormInput
+            error={form.errors.reason}
+            label="Reason"
+            maxLength={300}
+            multiline
+            onChangeText={(next) => {
+              setReason(next);
+              form.clearField("reason");
+            }}
+            placeholder={isAdd ? "Top-up reason" : "Deduction reason"}
+            required
+            value={reason}
+          />
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ActionButton disabled={submitting} label="Cancel" onPress={onCancel} variant="secondary" />
-            <ActionButton disabled={submitting} label={isAdd ? "Add" : "Deduct"} onPress={() => void handleSubmit()} variant={isAdd ? "primary" : "danger"} />
+            <ActionButton disabled={submitting || form.blocked} label={isAdd ? "Add" : "Deduct"} onPress={() => void handleSubmit()} variant={isAdd ? "primary" : "danger"} />
           </View>
+          {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
         </View>
       </View>
     </Modal>

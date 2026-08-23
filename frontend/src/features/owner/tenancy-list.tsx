@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { BedDouble, CalendarDays, LogOut, UserRound } from "lucide-react-native";
+import { BedDouble, CalendarDays, LogOut, UserRound, UserRoundMinus } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -100,6 +100,8 @@ export function ActiveTenancyCard({
   ending = false,
   onEndTenancy,
   onOpen,
+  onRemove,
+  removing = false,
   roomLabel,
   tenancy,
 }: {
@@ -109,6 +111,9 @@ export function ActiveTenancyCard({
   canEndTenancy?: boolean;
   onEndTenancy: () => void;
   onOpen: () => void;
+  /** Withdraws a tenancy the tenant never accepted. */
+  onRemove?: () => void;
+  removing?: boolean;
   roomLabel: string | null;
   tenancy: TenancySummary;
 }) {
@@ -130,6 +135,11 @@ export function ActiveTenancyCard({
   // notice is served, but that is a pending exit rather than the agreed span,
   // and showing it as "Stay" would read as the term someone signed up for.
   const stayEndDate = tenancy.fixedTerm ? tenancy.endDate ?? tenancy.agreementEndDate : null;
+  // Held at PENDING_ACCEPTANCE from onboarding until the tenant signs. The
+  // tenancy's own status is the whole answer: acceptance and the expiry job both
+  // move the agreement and the tenancy in one transaction, so this can never
+  // disagree with the compliance record.
+  const awaitingAgreement = tenancy.status === "PENDING_ACCEPTANCE";
 
   // Nothing on the card navigates except the profile button beside the name.
   // The card carries a destructive "End tenancy" action, and a large invisible
@@ -162,6 +172,16 @@ export function ActiveTenancyCard({
                     </Text>
                   </View>
                 ) : null}
+                {/* A chip as well as the status line, because the status reads
+                    like every other status and this one is a task: nothing bills
+                    and nobody moves in until it is signed. */}
+                {awaitingAgreement ? (
+                  <View style={{ backgroundColor: colors.warningSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+                    <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 11, }}>
+                      Agreement unsigned
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
             <TenancyDetail label="Room" value={roomLabel ?? "Unavailable"} />
@@ -181,7 +201,26 @@ export function ActiveTenancyCard({
         </View>
       </View>
 
-      {canEndTenancy ? (
+      {/* A stay that was never accepted cannot be "ended" — nothing started.
+          The End button would sit permanently disabled under "Available once an
+          end date is set", which is true and useless. Withdrawing it is the only
+          thing anyone can do here, so that is the only thing offered. */}
+      {canEndTenancy && awaitingAgreement && onRemove ? (
+      <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={removing}
+            icon={UserRoundMinus}
+            label={removing ? "Removing…" : "Remove tenancy"}
+            onPress={onRemove}
+            variant="danger"
+          />
+        </View>
+        <Text style={[type.caption, { color: colors.muted }]}>
+          Frees the bed. Nothing has been billed yet.
+        </Text>
+      </View>
+      ) : canEndTenancy ? (
       <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
         <View style={{ flexDirection: "row" }}>
           <ActionButton

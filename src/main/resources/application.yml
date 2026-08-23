@@ -72,6 +72,7 @@ spring:
       - classpath:db/migration/dashboard
       - classpath:db/migration/nudge
       - classpath:db/migration/enquiry
+      - classpath:db/migration/chat
 
   modulith:
     events:
@@ -167,7 +168,11 @@ app:
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:60}
+
   auth:
+    # Concurrent signed-in devices per account. Checked AFTER credentials are
+    # proven, so refusing here cannot reveal whether a number is registered.
+    max-active-sessions: ${AUTH_MAX_ACTIVE_SESSIONS:4}
     login-rate-limit:
       phone-limit-attempts: ${LOGIN_PHONE_LIMIT_ATTEMPTS:20}
       phone-limit-duration-minutes: ${LOGIN_PHONE_LIMIT_DURATION_MINUTES:15}
@@ -261,6 +266,9 @@ app:
       base-url: ${GEOAPIFY_BASE_URL:https://api.geoapify.com/v1/geocode}
       api-key: ${GEOAPIFY_API_KEY:}
       country-filter: ${GEOAPIFY_COUNTRY_FILTER:countrycode:in}
+  enquiry:
+    expiry-cron: ${ENQUIRY_EXPIRY_CRON:0 20 * * * *}
+    expiry-zone: ${ENQUIRY_EXPIRY_ZONE:Asia/Kolkata}
   notice:
     recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */5 * * * *}
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}
@@ -282,6 +290,10 @@ app:
     monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 15 0 * * *}
     monthly-cycle-generation-zone: ${BILLING_MONTHLY_CYCLE_GENERATION_ZONE:Asia/Kolkata}
     monthly-cycle-generation-batch-size: ${BILLING_MONTHLY_CYCLE_GENERATION_BATCH_SIZE:50}
+    # Opens cycles whose period has started. Creation already opens same-day
+    # cycles, so this now catches future-dated starts and anything missed.
+    cycle-activation-cron: ${BILLING_CYCLE_ACTIVATION_CRON:0 18 0 * * *}
+    cycle-activation-zone: ${BILLING_CYCLE_ACTIVATION_ZONE:Asia/Kolkata}
     overdue-marker-cron: ${BILLING_OVERDUE_MARKER_CRON:0 20 0 * * *}
     overdue-marker-zone: ${BILLING_OVERDUE_MARKER_ZONE:Asia/Kolkata}
     late-fee-recalculation-cron: ${BILLING_LATE_FEE_RECALCULATION_CRON:0 25 0 * * *}

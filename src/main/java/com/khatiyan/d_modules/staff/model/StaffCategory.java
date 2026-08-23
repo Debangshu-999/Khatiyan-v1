@@ -68,6 +68,26 @@ public class StaffCategory extends BaseEntity {
         this.normalizedName = normalize(name);
     }
 
+    /**
+     * Brings a deleted category back, under whatever spelling was just typed.
+     *
+     * <p>Deleting is a soft delete, but (property_id, normalized_name) is UNIQUE
+     * across active and inactive rows alike — so re-creating a deleted name could
+     * never insert. It reported "a category with this name already exists" about
+     * a category nobody could see, which reads as a bug.
+     *
+     * <p>Reviving is also the only behaviour that keeps history: the staff rows
+     * already pointing at this category stay attached to it.
+     */
+    public void restore(String name) {
+        if (system) {
+            throw new IllegalStateException("System staff categories are never deleted");
+        }
+        this.name = name.trim();
+        this.normalizedName = normalize(name);
+        this.active = true;
+    }
+
     public void deactivate() {
         if (system) {
             throw new IllegalStateException("System staff categories cannot be deactivated");

@@ -10,8 +10,15 @@ import org.springframework.stereotype.Component;
 /**
  * Tunable limits for layered PIN login protection.
  *
- * <p>In-memory limits slow down bursts while durable DB window limits survive
- * restarts. Progressive account lockout policy lives here as product policy.
+ * <p>Two layers, both durable: Valkey-backed Bucket4j buckets slow down bursts,
+ * and a DB window over {@code login_attempts} survives a Valkey flush. Neither
+ * is in memory — this said "in-memory limits" for a long time and sent more than
+ * one reader looking for a map that does not exist.
+ *
+ * <p>Progressive lockout policy lives here as product policy, and is applied
+ * TWICE from one definition: to the user row by {@code AuthService}, and to the
+ * phone number by {@code PhoneLoginLockService}. They must escalate identically
+ * or the difference between them identifies which numbers hold accounts.
  */
 @Component
 @ConfigurationProperties(prefix = "app.auth.login-rate-limit")

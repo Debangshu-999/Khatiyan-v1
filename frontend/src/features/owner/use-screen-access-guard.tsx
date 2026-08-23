@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
-import { useToast } from "@/components/toast";
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import type { ManagerResource } from "@/store/services/property-api";
 
@@ -17,12 +18,17 @@ import type { ManagerResource } from "@/store/services/property-api";
  * This is a courtesy, not the gate. The API refuses these calls regardless; all
  * this does is fail fast with an explanation instead of opening a screen that
  * loads nothing.
+ *
+ * <p>
+ * Returns the refusal modal with the guard. The caller mounts {@code dialog}
+ * once; without it the refusal is computed and never seen.
  */
 export function useScreenAccessGuard(propertyId: string | null | undefined) {
   const { canView, isReady } = usePropertyPermissions(propertyId);
-  const toast = useToast();
+  const refusal = useFormErrors<never>();
+  const { failFromServer } = refusal;
 
-  return useCallback(
+  const guard = useCallback(
     (resource: ManagerResource, label: string, open: () => void) => {
       // Before the server has answered, let it through rather than blocking on a
       // guess — the API is the real gate and a false refusal is worse than a
@@ -32,8 +38,15 @@ export function useScreenAccessGuard(propertyId: string | null | undefined) {
         return;
       }
 
-      toast.error(`${label} is not available to you. Ask the property owner for access.`);
+      failFromServer(`${label} is not available to you. Ask the property owner for access.`);
     },
-    [canView, isReady, toast],
+    [canView, failFromServer, isReady],
   );
+
+  return {
+    dialog: refusal.serverError ? (
+      <AlertModal message={refusal.serverError} onClose={refusal.dismissServerError} />
+    ) : null,
+    guard,
+  };
 }

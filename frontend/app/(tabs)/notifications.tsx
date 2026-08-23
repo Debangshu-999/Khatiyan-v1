@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Text, View } from "react-native";
+import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { ArchiveRestore, Bell, BellOff, ChevronRight } from "lucide-react-native";
 import { useGetNudgeUnreadCountQuery, NUDGE_REFETCH_OPTIONS } from "@/store/services/nudge-api";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
-import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { BackButton } from "@/features/owner/owner-ui";
+import { PullUpSleeve } from "@/features/notifications/pull-up-sleeve";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
 import {
   countByTopic,
   notificationSource,
-  paginateAlerts,
   TopicBubbleRow,
   usePropertyAlertScope,
   type AlertTopic,
@@ -32,7 +31,20 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+/** First screenful, and how many more arrive each time the reader reaches the end. */
+/**
+ * Room left under the feed for the pinned sleeve.
+ *
+ * <p>Covers the floating tab bar AND the sleeve above it. Both overlay the list rather than
+ * sitting below it, so anything short of this leaves the final notification
+ * half-covered with no way to scroll it clear.
+ */
+const SLEEVE_CLEARANCE = 232;
+
 const PAGE_SIZE = 6;
+
+/** How close to the bottom counts as "reached the end", in px. */
+const LOAD_MORE_THRESHOLD_PX = 240;
 
 export default function NotificationsScreen() {
   const router = useGuardedRouter();
@@ -46,7 +58,7 @@ export default function NotificationsScreen() {
   const [markAllRead] = useMarkAllNotificationsReadMutation();
 
   const [topic, setTopic] = useState<AlertTopic>("all");
-  const [page, setPage] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useFocusEffect(
     useCallback(() => {
@@ -64,18 +76,38 @@ export default function NotificationsScreen() {
   const unreadCount = [...scopedRecent, ...scopedOlder].filter((notification) => !notification.readAt).length;
   const olderCount = scopedOlder.length;
 
-  // Property switches re-scope the queue; start from the first page again.
+  // Property switches re-scope the queue; collapse back to one screenful.
   useEffect(() => {
-    setPage(0);
+    setVisibleCount(PAGE_SIZE);
     setTopic("all");
   }, [selectedProperty?.id]);
 
   const queueItems = topic === "all" ? scopedRecent : scopedRecent.filter((notification) => notificationSource(notification) === topic);
-  const pagedQueue = paginateAlerts(queueItems, page, PAGE_SIZE);
+  const visibleQueue = queueItems.slice(0, visibleCount);
+  const hasMore = visibleCount < queueItems.length;
+
+  /**
+   * Reveals the next batch as the reader nears the end.
+   *
+   * <p>The whole window is already in memory — the feed arrives as one payload
+   * — so this pages the RENDER, not the fetch. That is the only reason it can
+   * be this simple, and the reason it must change if the feed ever paginates
+   * server-side.
+   */
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!hasMore) {
+      return;
+    }
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    if (distanceFromBottom <= LOAD_MORE_THRESHOLD_PX) {
+      setVisibleCount((current) => Math.min(current + PAGE_SIZE, queueItems.length));
+    }
+  }
 
   function changeTopic(next: AlertTopic) {
     setTopic(next);
-    setPage(0);
+    setVisibleCount(PAGE_SIZE);
   }
 
   async function handleNotificationPress(recipientId: string, alreadyRead: boolean) {
@@ -107,21 +139,32 @@ export default function NotificationsScreen() {
   const loading = recentQuery.isLoading || olderQuery.isLoading;
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+      <ScreenScrollView
+        contentContainerStyle={{
+          // Clears the pinned sleeve, so the last notification can still be
+          // scrolled out from under it.
+          paddingBottom: olderCount > 0 ? SLEEVE_CLEARANCE : undefined,
+          paddingTop: spacing.md,
+        }}
+        onScroll={handleScroll}
+        safeAreaEdges={["top", "bottom"]}
+        scrollEventThrottle={16}
+      >
       {/* Notifications left the tab bar and now open from the bell on Home, so
           they need a way back the way every other pushed screen has one.
 
-          Nudges sit on the far right of that row rather than in a tab below.
-          One pill serves both roles — management lands on the send list, a
-          tenant on their own received nudges — so neither side needs a second
-          entry point invented for it. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+          Nudges sits on the far right of that row. Mark read sits beside the
+          title, and is always rendered — it used to exist only while something
+          was unread, so the control vanished the instant it worked and the
+          header reflowed around it. It greys out now instead. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <BackButton onPress={() => router.back()} />
         <NudgesPill isManagement={isManagement} />
       </View>
       <ScreenHeader
-        title="Notifications,"
-        italicTail="one queue."
+        title="Notifications"
+        trailing={<MarkAllReadButton disabled={unreadCount === 0} onPress={() => void handleMarkAllRead()} />}
         subtitle={
           isManagement && selectedProperty
             ? `Notifications for ${selectedProperty.name}. Switch property from Home to see its own queue.`
@@ -129,44 +172,13 @@ export default function NotificationsScreen() {
               ? "Your tenancy notifications in one queue — filter by topic below."
               : "Notifications will appear here once your tenancy or property workspace is active."
         }
-        trailing={
-          unreadCount > 0 ? (
-            <AnimatedPressable
-              accessibilityLabel="Mark all alerts as read"
-              onPress={() => void handleMarkAllRead()}
-              style={{
-                alignItems: "center",
-                borderColor: colors.border,
-                borderRadius: 10,
-                borderWidth: 1,
-                flexDirection: "row",
-                gap: spacing.xs,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: spacing.xs,
-              }}
-            >
-              <ArchiveRestore color={colors.primary} size={14} strokeWidth={2.2} />
-              <Text
-                style={{
-                  color: colors.primary,
-                  fontFamily: fonts.sansBold,
-                  fontSize: 11,
-                  letterSpacing: 0.4,
-                }}
-              >
-                Mark read
-              </Text>
-            </AnimatedPressable>
-          ) : null
-        }
       />
 
       {loading ? <SkeletonCard /> : null}
 
       {recentQuery.isError ? (
         <EmptyState
-          icon={BellOff}
-          eyebrow="Backend unreachable"
+          icon={BellOff}
           title="Couldn't load alerts"
           description="Check your backend connection, then pull down to try again."
         />
@@ -178,8 +190,7 @@ export default function NotificationsScreen() {
 
           {queueItems.length === 0 ? (
             <EmptyState
-              icon={Bell}
-              eyebrow="All clear"
+              icon={Bell}
               title="Nothing in the queue"
               description={
                 topic === "all"
@@ -190,7 +201,7 @@ export default function NotificationsScreen() {
           ) : (
             <View style={{ gap: spacing.md }}>
               <View style={{ gap: spacing.sm }}>
-                {pagedQueue.pageItems.map((notification) => (
+                {visibleQueue.map((notification) => (
                   <NotificationRow
                     key={notification.recipientId}
                     notification={notification}
@@ -198,61 +209,68 @@ export default function NotificationsScreen() {
                   />
                 ))}
               </View>
-              {pagedQueue.totalPages > 1 ? (
-                <PaginationBar
-                  hasNext={pagedQueue.hasNext}
-                  hasPrevious={pagedQueue.hasPrevious}
-                  onNext={() => setPage(pagedQueue.page + 1)}
-                  onPrevious={() => setPage(Math.max(0, pagedQueue.page - 1))}
-                  page={pagedQueue.page}
-                  totalElements={pagedQueue.totalElements}
-                  totalPages={pagedQueue.totalPages}
-                />
-              ) : null}
+              {/* A foot for the list either way: still loading, or genuinely the
+                  end. Without it the last card just stops, and there is no way to
+                  tell a finished list from one that failed to extend. */}
+              {hasMore ? (
+                <ActivityIndicator color={colors.muted} />
+              ) : (
+                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
+                  That&apos;s all for now
+                </Text>
+              )}
             </View>
           )}
 
-          {olderCount > 0 ? (
-            <AnimatedPressable
-              accessibilityLabel="Open older alerts"
-              onPress={() => router.push("/notifications-older")}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderCurve: "continuous",
-                borderRadius: 14,
-                borderStyle: "dashed",
-                borderWidth: 1,
-                flexDirection: "row",
-                gap: spacing.md,
-                padding: spacing.lg,
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  On record
-                </Text>
-                <Text
-                  style={{
-                    color: colors.ink,
-                    fontFamily: fonts.display,
-                    fontSize: 17,
-                    letterSpacing: -0.2,
-                  }}
-                >
-                  Older notifications
-                </Text>
-                <Text style={[type.caption, { color: colors.muted }]}>
-                  {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
-                </Text>
-              </View>
-              <ChevronRight color={colors.primary} size={20} strokeWidth={2.2} />
-            </AnimatedPressable>
-          ) : null}
         </View>
       ) : null}
-    </ScreenScrollView>
+      </ScreenScrollView>
+
+      {/* Outside the scroll view and pinned to the bottom edge. In the list it
+          scrolled away, which put the one control answering "is there more?"
+          behind the whole feed. */}
+      {olderCount > 0 ? (
+        <PullUpSleeve count={olderCount} onOpen={() => router.push("/notifications-older")} />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Mark-all-read, always on screen.
+ *
+ * <p>It used to render only while something was unread, which meant the control
+ * vanished the instant it worked — and reappeared later somewhere the reader
+ * was not looking. Greyed and inert says the same thing without moving.
+ */
+function MarkAllReadButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const tint = disabled ? colors.muted : colors.primary;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Mark all alerts as read"
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        borderColor: disabled ? colors.border : colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 5,
+      }}
+    >
+      <ArchiveRestore color={tint} size={13} strokeWidth={2.2} />
+      <Text style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 0.4 }}>
+        Mark read
+      </Text>
+    </AnimatedPressable>
   );
 }
 
@@ -286,12 +304,11 @@ function NudgesPill({ isManagement }: { isManagement: boolean }) {
         borderWidth: 1,
         flexDirection: "row",
         gap: 3,
-        // Same height and the same negative bottom margin as BackButton. That
-        // margin shortens the back chip's layout box while it still paints full
-        // height, so a plain centred sibling sits visibly high; matching both
-        // numbers puts the two centres in the same place.
+        // Height matched to BackButton. It used to carry BackButton's negative
+        // bottom margin too, to line the two up as centred siblings — but the
+        // row is flex-start now and the pill sits above Mark read, so that -10
+        // was eating the 6px column gap and overlapping the button below it.
         height: 30,
-        marginBottom: -spacing.sm,
         paddingHorizontal: spacing.sm,
       }}
     >

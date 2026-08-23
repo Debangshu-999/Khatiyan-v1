@@ -10,7 +10,10 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { useToast } from "@/components/toast";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { SkeletonCard } from "@/components/skeleton";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { TenantRoomSummary } from "@/store/services/tenancy-api";
@@ -20,10 +23,13 @@ import { useTheme } from "@/theme/use-theme";
 
 const UNASSIGNED_FLOOR = "Unassigned floor";
 
+/** Every field the submit check can point at. */
+type RequestField = "reason" | "room";
+
 export default function TenancyRoomChangeRequestScreen() {
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
-  const toast = useToast();
+  const form = useFormErrors<RequestField>();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const roomsQuery = useListMyActivePropertyRoomsQuery();
   const [createRoomChangeRequest, createRoomChangeState] = useCreateRoomChangeRequestMutation();
@@ -33,12 +39,6 @@ export default function TenancyRoomChangeRequestScreen() {
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  // Validation/submit failures surface as toasts; success navigates to /tenancy.
-  const setError = (value: string | null) => {
-    if (value) {
-      toast.error(value);
-    }
-  };
 
   const rooms = useMemo(() => {
     const roomMap = new Map<string, TenantRoomSummary>();
@@ -68,24 +68,27 @@ export default function TenancyRoomChangeRequestScreen() {
 
   const selectRoom = (room: TenantRoomSummary) => {
     setSelectedRoomId(room.id);
+    // An unusable room is a problem with the choice just made, so it is reported
+    // on the room list immediately rather than waiting for a submit.
     const state = roomActionState(room, currentRoomId);
-    setError(state.kind === "error" ? state.message : null);
+    if (state.kind === "error") {
+      form.validate({ ...form.errors, room: state.message });
+      return;
+    }
+    form.clearField("room");
   };
 
   const submit = async () => {
-    if (!selectedRoom) {
-      setError("Select a target room.");
-      return;
-    }
-
-    const state = roomActionState(selectedRoom, currentRoomId);
-    if (state.kind === "error") {
-      setError(state.message);
-      return;
-    }
-
-    if (!reason.trim()) {
-      setError("Add a reason for the room change request.");
+    const state = selectedRoom ? roomActionState(selectedRoom, currentRoomId) : null;
+    const blocking = form.validate({
+      ...(selectedRoom
+        ? state?.kind === "error"
+          ? { room: state.message }
+          : {}
+        : { room: "Select a target room." }),
+      ...(reason.trim() ? {} : { reason: "Add a reason for the room change request." }),
+    });
+    if (!blocking || !selectedRoom) {
       return;
     }
 
@@ -95,13 +98,15 @@ export default function TenancyRoomChangeRequestScreen() {
         targetRoomId: selectedRoom.id,
       }).unwrap();
       router.replace({ pathname: "/tenancy", params: { roomChangeRequested: "1" } });
-    } catch {
-      setError("Could not submit room change request. Please check room availability and try again.");
+    } catch (caught) {
+      form.failFromServer(
+        errorMessage(caught) || "Could not submit room change request. Please check room availability and try again.",
+      );
     }
   };
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Tenancy"
         onBack={() => router.back()}
@@ -114,15 +119,13 @@ export default function TenancyRoomChangeRequestScreen() {
         <SkeletonCard />
       ) : roomsQuery.error ? (
         <EmptyState
-          icon={BedDouble}
-          eyebrow="Room data"
+          icon={BedDouble}
           title="Could not load rooms"
           description="Refresh after the backend is running with the latest tenant room endpoint."
         />
       ) : !activeTenancyQuery.data ? (
         <EmptyState
-          icon={BedDouble}
-          eyebrow="No active tenancy"
+          icon={BedDouble}
           title="No current stay"
           description="Room change requests can be raised only from an active tenancy."
         />
@@ -143,7 +146,7 @@ export default function TenancyRoomChangeRequestScreen() {
               onSelect={(floor) => {
                 setSelectedFloor(floor);
                 setSelectedRoomId(null);
-                setError(null);
+                form.clearField("room");
               }}
             />
 
@@ -153,18 +156,20 @@ export default function TenancyRoomChangeRequestScreen() {
               selectedRoomId={selectedRoomId}
               onSelect={selectRoom}
             />
+            <FieldError message={form.errors.room} />
 
             {selectedRoom ? <RoomDetailsCard room={selectedRoom} state={selectedRoomState} /> : null}
 
             <CycleRuleCard cycleEndDate={currentCycle?.periodEndDate ?? null} loading={cyclesQuery.isFetching} />
 
             <FormField
+              error={form.errors.reason}
               label="Reason"
               maxLength={500}
               multiline
               onChangeText={(value) => {
                 setReason(value);
-                setError(null);
+                form.clearField("reason");
               }}
               placeholder="Why do you want to change rooms?"
               value={reason}
@@ -173,14 +178,14 @@ export default function TenancyRoomChangeRequestScreen() {
 
             <AnimatedPressable
               accessibilityRole="button"
-              onPress={submit}
+              onPress={form.blocked ? undefined : submit}
               style={{
                 alignItems: "center",
                 backgroundColor: colors.primary,
                 borderRadius: 14,
                 justifyContent: "center",
                 minHeight: 52,
-                opacity: selectedRoomState?.kind === "error" || createRoomChangeState.isLoading ? 0.65 : 1,
+                opacity: form.blocked || selectedRoomState?.kind === "error" || createRoomChangeState.isLoading ? 0.65 : 1,
                 padding: spacing.md,
               }}
             >
@@ -195,6 +200,7 @@ export default function TenancyRoomChangeRequestScreen() {
           </View>
         </Card>
       )}
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -362,6 +368,7 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 function FormField({
+  error,
   label,
   maxLength,
   multiline,
@@ -369,6 +376,7 @@ function FormField({
   placeholder,
   value,
 }: {
+  error?: string;
   label: string;
   maxLength?: number;
   multiline?: boolean;
@@ -398,9 +406,9 @@ function FormField({
         placeholderTextColor={colors.kicker}
         style={{
           backgroundColor: colors.surface,
-          borderColor: colors.border,
+          borderColor: error ? colors.danger : colors.border,
           borderRadius: 14,
-          borderWidth: 1,
+          borderWidth: error ? 1.5 : 1,
           color: colors.ink,
           fontFamily: fonts.sans,
           fontSize: 15,
@@ -410,6 +418,7 @@ function FormField({
         }}
         value={value}
       />
+      <FieldError message={error} />
     </View>
   );
 }

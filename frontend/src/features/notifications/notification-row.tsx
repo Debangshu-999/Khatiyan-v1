@@ -28,34 +28,43 @@ export function NotificationRow({ notification, onPress }: Props) {
     <AnimatedPressable
       onPress={onPress}
       style={{
-        backgroundColor: isUnread ? colors.primarySoft : colors.surface,
-        borderColor: isUnread ? colors.primary : colors.border,
+        backgroundColor: colors.surface,
+        borderColor: isUnread ? colors.accent : colors.border,
         borderCurve: "continuous",
         borderRadius: 14,
-        borderWidth: 1,
+        // Unread is carried by the edge alone, so it has to be heavy enough to
+        // read at a glance down a list.
+        borderWidth: isUnread ? 2 : 1,
         gap: spacing.sm,
         padding: spacing.lg,
       }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          {categoryLabel(notification)}
+      {/* Urgency rides the title line rather than a row of its own.
+          The category eyebrow that used to sit up here is gone — it duplicated
+          the filter bubble already selected above the list — and leaving the
+          marker alone on that row kept the empty band it used to fill. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <Text
+          style={{
+            color: isUnread ? colors.ink : colors.inkSoft,
+            flex: 1,
+            fontFamily: fonts.display,
+            fontSize: 17,
+            fontWeight: isUnread ? "500" : "400",
+            letterSpacing: -0.2,
+            lineHeight: 22,
+          }}
+        >
+          {notification.title}
         </Text>
-        {urgency ? <UrgencyMarker signal={urgency} /> : null}
+        {/* Nudged down a couple of px: the display face sits high in its line
+            box, so a marker aligned to the box top reads as floating. */}
+        {urgency ? (
+          <View style={{ marginTop: 3 }}>
+            <UrgencyMarker signal={urgency} />
+          </View>
+        ) : null}
       </View>
-
-      <Text
-        style={{
-          color: isUnread ? colors.ink : colors.inkSoft,
-          fontFamily: fonts.display,
-          fontSize: 17,
-          fontWeight: isUnread ? "500" : "400",
-          letterSpacing: -0.2,
-          lineHeight: 22,
-        }}
-      >
-        {notification.title}
-      </Text>
       <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
         {notification.body}
       </Text>
@@ -80,7 +89,7 @@ export function NotificationRow({ notification, onPress }: Props) {
 }
 
 function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
-  const { colors, fonts } = useTheme();
+  const { colors, type } = useTheme();
   const Icon = signal.icon;
   const tone = signal.tone === "danger" ? colors.danger : colors.warningText;
 
@@ -88,13 +97,7 @@ function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
     <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
       <Icon color={tone} size={15} strokeWidth={2.5} />
       <Text
-        style={{
-          color: tone,
-          fontFamily: fonts.sansBold,
-          fontSize: 11,
-          letterSpacing: 0.6,
-          textTransform: "uppercase",
-        }}
+        style={[type.eyebrow, { color: tone }]}
       >
         {signal.label}
       </Text>
@@ -342,23 +345,6 @@ function formatDate(value?: string | null) {
     return value;
   }
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function categoryLabel(notification: NotificationItem) {
-  const subtype = notification.subtype?.toUpperCase() ?? "";
-  // The EXPENSE category surfaces to the user as "Budget" — matching the
-  // Budget filter bubble rather than the raw category name.
-  if (notification.category.toUpperCase() === "EXPENSE" || subtype.startsWith("BUDGET_")) {
-    return "Budget";
-  }
-  return humanizeCategory(notification.category);
-}
-
-function humanizeCategory(value: string) {
-  return value
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/^./, (c) => c.toUpperCase());
 }
 
 function formatRelative(iso: string) {

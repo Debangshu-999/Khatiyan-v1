@@ -8,11 +8,13 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.d_modules.discovery.api.dto.PropertyContactResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocalPlaceCategoryResponse;
 import com.khatiyan.d_modules.discovery.api.dto.NearbyPlacesResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
+import com.khatiyan.d_modules.discovery.service.PropertyContactService;
 import com.khatiyan.d_modules.discovery.service.LocalPlaceTaxonomyService;
 import com.khatiyan.d_modules.discovery.service.NearbyPlacesSearchService;
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
@@ -30,16 +32,50 @@ public class DiscoveryModule {
     private final PropertyLocalPlaceService propertyLocalPlaceService;
     private final NearbyPlacesSearchService nearbyPlacesSearchService;
     private final LocalPlaceTaxonomyService taxonomyService;
+    private final PropertyContactService propertyContactService;
 
     public DiscoveryModule(
             PropertyDiscoveryService propertyDiscoveryService,
             PropertyLocalPlaceService propertyLocalPlaceService,
             NearbyPlacesSearchService nearbyPlacesSearchService,
-            LocalPlaceTaxonomyService taxonomyService) {
+            LocalPlaceTaxonomyService taxonomyService,
+            PropertyContactService propertyContactService) {
         this.propertyDiscoveryService = propertyDiscoveryService;
         this.propertyLocalPlaceService = propertyLocalPlaceService;
         this.nearbyPlacesSearchService = nearbyPlacesSearchService;
         this.taxonomyService = taxonomyService;
+        this.propertyContactService = propertyContactService;
+    }
+
+    // ---- Listing contacts ------------------------------------------------
+
+    /** Owner first, then every manager the owner has listed. */
+    public List<PropertyContactResponse> listManagedPropertyContacts(UUID actorUserId, UUID propertyId) {
+        return propertyContactService.listManagedContacts(actorUserId, propertyId);
+    }
+
+    /** The same list, for the public profile — no actor to check. */
+    public List<PropertyContactResponse> listPropertyContacts(UUID propertyId) {
+        return propertyContactService.listContacts(propertyId);
+    }
+
+    public List<PropertyContactResponse> addPropertyContactManager(
+            UUID actorUserId,
+            UUID propertyId,
+            UUID managerUserId) {
+        return propertyContactService.addManagerContact(actorUserId, propertyId, managerUserId);
+    }
+
+    public List<PropertyContactResponse> removePropertyContactManager(
+            UUID actorUserId,
+            UUID propertyId,
+            UUID managerUserId) {
+        return propertyContactService.removeManagerContact(actorUserId, propertyId, managerUserId);
+    }
+
+    /** Drops a manager's contact entry when they stop managing the property. */
+    public void clearPropertyContactManager(UUID propertyId, UUID managerUserId) {
+        propertyContactService.removeManagerFromAllContacts(propertyId, managerUserId);
     }
 
     public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(

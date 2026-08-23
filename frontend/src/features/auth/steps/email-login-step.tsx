@@ -22,6 +22,9 @@ export function EmailLoginStep({
   onRequestOtp,
   onConfirm,
   onBackToLogin,
+  emailError,
+  otpError,
+  onEditEmail,
 }: {
   email: string;
   onEmailChange: (value: string) => void;
@@ -34,12 +37,15 @@ export function EmailLoginStep({
   onRequestOtp: () => void;
   onConfirm: () => void;
   onBackToLogin: () => void;
+  emailError?: string;
+  otpError?: string;
+  onEditEmail: () => void;
 }) {
   const { colors, type } = useTheme();
 
   return (
     <>
-      <AuthTextField label="Verified email" value={email} onChangeText={onEmailChange} placeholder="you@example.com" icon={Mail} />
+      <AuthTextField label="Verified email" value={email} onChangeText={onEmailChange} placeholder="you@example.com" icon={Mail} error={emailError} locked={otpRequested} onEdit={onEditEmail} />
 
       {/* Resend sits with the address it will send to rather than among the
           submit actions: it is a fact about the email just entered. It counts
@@ -68,7 +74,7 @@ export function EmailLoginStep({
         </View>
       ) : null}
 
-      {otpRequested ? <CodeField label="Email OTP" value={otp} onChangeText={onOtpChange} /> : null}
+      {otpRequested ? <CodeField label="Email OTP" value={otp} onChangeText={onOtpChange} error={otpError} /> : null}
 
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         {otpRequested ? (

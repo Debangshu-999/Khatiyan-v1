@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.enquiry.model;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -31,6 +32,19 @@ public class Enquiry extends BaseEntity {
 
     public static final int MAX_MESSAGE_LENGTH = 500;
 
+    /** How long an unanswered enquiry stays actionable. */
+    public static final Duration LIFETIME = Duration.ofDays(7);
+
+    /**
+     * How long an EXPIRED enquiry stays visible after it stopped being
+     * actionable.
+     *
+     * <p>One more day, so nothing vanishes between two glances at the list. The
+     * owner sees it greyed out and unactionable for a day first, which is the
+     * difference between "this closed" and "where did that go".
+     */
+    public static final Duration VISIBLE_AFTER_EXPIRY = Duration.ofDays(1);
+
     @Id
     @Column(nullable = false, updatable = false)
     private UUID id;
@@ -48,12 +62,23 @@ public class Enquiry extends BaseEntity {
     @Column(nullable = false, length = 20)
     private EnquiryStatus status;
 
+    /**
+     * When this stops being actionable.
+     *
+     * <p>Stored rather than derived from {@code createdAt}: it is shown to the
+     * owner on the card, and a date the reader can see should be a fact in the
+     * row rather than a sum recomputed in three places that might disagree.
+     */
+    @Column(name = "expires_at", nullable = false)
+    private Instant expiresAt;
+
     private Enquiry(UUID propertyId, UUID enquirerUserId, String message) {
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
         this.enquirerUserId = enquirerUserId;
         this.message = message;
         this.status = EnquiryStatus.NEW;
+        this.expiresAt = Instant.now().plus(LIFETIME);
     }
 
     public static Enquiry raise(UUID propertyId, UUID enquirerUserId, String message) {
@@ -69,6 +94,25 @@ public class Enquiry extends BaseEntity {
 
     public boolean isOpen() {
         return status == EnquiryStatus.NEW;
+    }
+
+    public boolean isExpired() {
+        return status == EnquiryStatus.EXPIRED;
+    }
+
+    /**
+     * Ages an unanswered enquiry out. Only ever moves NEW — an answered enquiry
+     * is finished, and expiring it afterwards would rewrite history.
+     */
+    public void expire() {
+        if (this.status == EnquiryStatus.NEW) {
+            this.status = EnquiryStatus.EXPIRED;
+        }
+    }
+
+    /** The moment it drops off the owner's list entirely. */
+    public Instant hiddenAt() {
+        return expiresAt.plus(VISIBLE_AFTER_EXPIRY);
     }
 
     /**

@@ -63,7 +63,15 @@ public enum NotificationAudience {
                     // not a tenant yet, but TENANT is the non-management
                     // workspace and that is where they are reading.
                     ENQUIRY_ANSWERED -> TENANT;
-            case USER_REGISTERED, PIN_CHANGED,
+            // Account-level, like the other auth subtypes: a sign-in belongs to
+            // the PERSON, not to a property workspace. Someone with both an
+            // owner and a tenant account must see it in whichever they are in.
+            case
+                    // Dual-audience: a conversation has a side, and the push goes
+                    // to whichever one did not send. The caller names the audience
+                    // per recipient group.
+                    CHAT_MESSAGE_RECEIVED,
+                    USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
                     TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
                     // Dual-audience: the tenant needs to know they have moved
                     // and what their rent becomes; the owner needs the bed

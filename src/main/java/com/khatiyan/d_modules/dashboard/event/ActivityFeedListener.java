@@ -5,6 +5,11 @@ import org.springframework.modulith.events.ApplicationModuleListener;
 import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.concerns.event.ConcernAssignedEvent;
+import com.khatiyan.d_modules.concerns.event.ConcernEscalatedEvent;
+import com.khatiyan.d_modules.concerns.event.ConcernStatusChangedEvent;
+import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
+import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.concerns.event.ConcernRaisedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernResolvedEvent;
 import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityType;
@@ -13,6 +18,7 @@ import com.khatiyan.d_modules.dashboard.service.ActivityEventService;
 import com.khatiyan.d_modules.notice.event.NoticePublishedEvent;
 import com.khatiyan.d_modules.property.event.ManagerAssignedEvent;
 import com.khatiyan.d_modules.property.event.ManagerRemovedEvent;
+import com.khatiyan.d_modules.property.event.RoomLifecycleEvent;
 import com.khatiyan.d_modules.staff.event.StaffMemberAddedEvent;
 import com.khatiyan.d_modules.staff.event.StaffMemberEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
@@ -119,11 +125,68 @@ public class ActivityFeedListener {
                 Instant.now());
     }
 
-    // NOTE: there is deliberately no CONCERN_ESCALATED handler. Escalation is not
-    // a state change — ConcernEscalationLevel.fromWaitingAge derives it from how
-    // long a concern has been waiting, so nothing ever fires when a concern
-    // "becomes" escalated. Feeding it would need a scheduler watching the 24h/48h
-    // /72h thresholds, which is its own piece of work.
+    @ApplicationModuleListener
+    public void onConcernAssigned(ConcernAssignedEvent event) {
+        activityEventService.record(
+                event.propertyId(),
+                RecentActivityType.CONCERN_ASSIGNED,
+                event.title(),
+                "Assigned to a team member",
+                event.assignedByUserId(),
+                event.concernId(),
+                Instant.now());
+    }
+
+    /**
+     * "Taken up" is the move to IN_PROGRESS specifically.
+     *
+     * <p>The other statuses are already covered or are not activity: RESOLVED has
+     * its own event, and OPEN / UNDER_REVIEW / CLOSED are either where a concern
+     * starts or bookkeeping after the work is done.
+     */
+    @ApplicationModuleListener
+    public void onConcernStatusChanged(ConcernStatusChangedEvent event) {
+        if (event.status() != ConcernStatus.IN_PROGRESS) {
+            return;
+        }
+
+        activityEventService.record(
+                event.propertyId(),
+                RecentActivityType.CONCERN_TAKEN_UP,
+                event.title(),
+                "Work started",
+                event.actorUserId(),
+                event.concernId(),
+                Instant.now());
+    }
+
+    /**
+     * Escalation used to have no handler, and the note here said so: nothing
+     * fired when a concern "became" escalated, because the level is derived from
+     * waiting time. That is no longer true — {@code ConcernSchedulerService}
+     * sweeps the thresholds daily, and it now publishes on a rise.
+     */
+    @ApplicationModuleListener
+    public void onConcernEscalated(ConcernEscalatedEvent event) {
+        activityEventService.record(
+                event.propertyId(),
+                RecentActivityType.CONCERN_ESCALATED,
+                event.title(),
+                escalationSubtitle(event.level()),
+                event.raisedByUserId(),
+                event.concernId(),
+                Instant.now());
+    }
+
+    /** How long it has been waiting, which is what the level actually measures. */
+    private String escalationSubtitle(ConcernEscalationLevel level) {
+        return switch (level) {
+            case CRITICAL -> "Waiting over 72 hours";
+            case ESCALATED -> "Waiting over 48 hours";
+            case ATTENTION -> "Waiting over 24 hours";
+            case NONE -> "Waiting";
+        };
+    }
 
     // People. Manager events carry only ids, so the name is resolved here — a
     // feed row reading "Manager removed" with no name is barely an event.
@@ -205,6 +268,48 @@ public class ActivityFeedListener {
                 event.recordedByUserId(),
                 event.billingCycleId(),
                 Instant.now());
+    }
+
+    /**
+     * Room state changes: maintenance on and off, deactivation and reactivation.
+     *
+     * <p>The four ROOM_* activity types were declared from the start and nothing
+     * ever emitted them, so a room going offline left no trace in the feed even
+     * though the property module had been publishing the event all along. One
+     * handler covers all four because {@code RoomLifecycleEvent.Kind} maps one to
+     * one onto them — which is also why an unmapped kind must never silently
+     * become "some room thing happened".
+     */
+    @ApplicationModuleListener
+    public void onRoomLifecycle(RoomLifecycleEvent event) {
+        RecentActivityType type = switch (event.kind()) {
+            case MAINTENANCE_STARTED -> RecentActivityType.ROOM_MAINTENANCE_STARTED;
+            case MAINTENANCE_ENDED -> RecentActivityType.ROOM_MAINTENANCE_ENDED;
+            case DEACTIVATED -> RecentActivityType.ROOM_DEACTIVATED;
+            case REACTIVATED -> RecentActivityType.ROOM_REACTIVATED;
+        };
+
+        activityEventService.record(
+                event.propertyId(),
+                type,
+                "Room " + event.roomNumber(),
+                roomSubtitle(event),
+                event.actorUserId(),
+                event.roomId(),
+                Instant.now());
+    }
+
+    /** The reason when one was given, else what happened. */
+    private static String roomSubtitle(RoomLifecycleEvent event) {
+        if (event.reason() != null && !event.reason().isBlank()) {
+            return event.reason().trim();
+        }
+        return switch (event.kind()) {
+            case MAINTENANCE_STARTED -> "Taken off service for maintenance";
+            case MAINTENANCE_ENDED -> "Back in service";
+            case DEACTIVATED -> "Deactivated";
+            case REACTIVATED -> "Reactivated as vacant";
+        };
     }
 
     private static String formatMoney(long paise) {

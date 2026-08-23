@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { MessageSquare } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { AppTextInput } from "@/components/app-text-input";
 import { SheetShell } from "@/components/sheet-shell";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
@@ -118,21 +120,19 @@ function EnquirySheet({
 }) {
   const { colors, fonts, type } = useTheme();
   const [message, setMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"message">();
   const [raiseEnquiry, raiseState] = useRaiseEnquiryMutation();
 
   const trimmed = message.trim();
 
   async function submit() {
-    if (!trimmed) {
-      setError("Write what you would like to ask.");
+    if (!form.validate(trimmed ? {} : { message: "Write what you would like to ask." })) {
       return;
     }
-    setError(null);
     try {
       onSent(await raiseEnquiry({ message: trimmed, propertyId }).unwrap());
     } catch (caught) {
-      setError(readErrorMessage(caught) ?? "Could not send the enquiry. Try again.");
+      form.failFromServer(readErrorMessage(caught) ?? "Could not send the enquiry. Try again.");
     }
   }
 
@@ -152,9 +152,7 @@ function EnquirySheet({
           multiline
           onChangeText={(next) => {
             setMessage(next);
-            if (error) {
-              setError(null);
-            }
+            form.clearField("message");
           }}
           placeholder="Is a single AC room available from the 1st of next month?"
           placeholderTextColor={colors.kicker}
@@ -172,8 +170,8 @@ function EnquirySheet({
           value={message}
         />
         <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.caption, { color: error ? colors.danger : colors.kicker, flex: 1 }]}>
-            {error ?? " "}
+          <Text style={[type.caption, { color: form.errors.message ? colors.danger : colors.kicker, flex: 1 }]}>
+            {form.errors.message ?? " "}
           </Text>
           <Text style={[type.caption, { color: colors.kicker }]}>
             {trimmed.length} / {ENQUIRY_MESSAGE_MAX_LENGTH}
@@ -182,11 +180,12 @@ function EnquirySheet({
       </View>
 
       <ActionButton
-        disabled={raiseState.isLoading || !trimmed}
+        disabled={raiseState.isLoading || !trimmed || form.blocked}
         icon={MessageSquare}
         label={raiseState.isLoading ? "Sending…" : "Send enquiry"}
         onPress={() => void submit()}
       />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }

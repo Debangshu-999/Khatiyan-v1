@@ -38,7 +38,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            ApiRateLimitFilter apiRateLimitFilter) throws Exception {
+            ApiRateLimitFilter apiRateLimitFilter,
+            TokenAuthenticationEntryPoint authenticationEntryPoint,
+            ApiAccessDeniedHandler accessDeniedHandler) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> {
@@ -47,6 +49,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/auth/me").authenticated()
+                        .requestMatchers("/api/v1/auth/sessions/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/sessions").authenticated()
                         .requestMatchers("/api/v1/notifications/**").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
@@ -115,6 +119,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/properties/{propertyId}/enquiries/**").authenticated()
                         .requestMatchers("/api/v1/enquiries/**").authenticated()
                         .anyRequest().authenticated())
+                // Without these two, an unauthenticated request falls to Spring
+                // default entry point, which for an API with no httpBasic or
+                // formLogin answers 403 — indistinguishable from a permission
+                // failure, and the reason an expired session never announced
+                // itself to the client.
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(apiRateLimitFilter, JwtAuthenticationFilter.class)
                 .build();
@@ -135,7 +147,15 @@ public class SecurityConfig {
         // request never reached the controller — which reads in the client as a
         // generic "could not save" with no server message to show.
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
+        // The device headers are here for the same reason PUT is in the method
+        // list above: a header the browser has not been told to allow fails at
+        // preflight, and the request never reaches the controller to explain why.
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-Device-Label",
+                "X-Device-Platform"));
         configuration.setExposedHeaders(List.of("Location"));
         configuration.setAllowCredentials(true);
 

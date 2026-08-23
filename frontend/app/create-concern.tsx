@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
+import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Camera, ImagePlus, X } from "lucide-react-native";
@@ -63,10 +67,12 @@ export default function CreateConcernScreen() {
   // Uploads run before the mutation, and are the slow half — the button has to
   // cover both or it sits idle while photos are in flight.
   const busy = uploading || createState.isLoading;
-  // This screen only surfaces error feedback; success navigates to /concerns.
+  const form = useFormErrors<"title" | "description">();
+  // Photo/permission problems are not about a field and cannot be corrected in
+  // one, so they take the modal alongside server refusals.
   const setError = (value: string | null) => {
     if (value) {
-      toast.error(value);
+      form.failFromServer(value);
     }
   };
 
@@ -165,13 +171,11 @@ export default function CreateConcernScreen() {
     const trimmedTitle = title.trim();
     const trimmedDescription = description.trim();
 
-    if (!trimmedTitle) {
-      setError("Add a short title for the concern.");
-      return;
-    }
-
-    if (!trimmedDescription) {
-      setError("Add the concern details before submitting.");
+    const problems = {
+      ...(trimmedTitle ? {} : { title: "Add a short title for the concern." }),
+      ...(trimmedDescription ? {} : { description: "Add the concern details before submitting." }),
+    };
+    if (!form.validate(problems)) {
       return;
     }
 
@@ -190,11 +194,7 @@ export default function CreateConcernScreen() {
       }).unwrap();
       router.replace({ pathname: "/concerns", params: { createdConcern: "1" } });
     } catch (createError) {
-      setError(
-        createError instanceof Error && createError.message
-          ? createError.message
-          : "Could not raise this concern. Please try again.",
-      );
+      form.failFromServer(errorMessage(createError));
     }
   };
 
@@ -241,11 +241,12 @@ export default function CreateConcernScreen() {
             maxLength={160}
             onChangeText={(value) => {
               setTitle(value);
-              setError(null);
+              form.clearField("title");
             }}
             placeholder="Short issue title"
             value={title}
           />
+          <FieldError message={form.errors.title} />
 
           <PhotoAttachmentSection
             onOpenCamera={openCamera}
@@ -261,16 +262,17 @@ export default function CreateConcernScreen() {
             multiline
             onChangeText={(value) => {
               setDescription(value);
-              setError(null);
+              form.clearField("description");
             }}
             placeholder="What happened? Add enough detail for the property team."
             value={description}
           />
+          <FieldError message={form.errors.description} />
 
 
           <AnimatedPressable
             accessibilityRole="button"
-            disabled={busy}
+            disabled={busy || form.blocked}
             onPress={submitConcern}
             style={{
               alignItems: "center",
@@ -278,7 +280,7 @@ export default function CreateConcernScreen() {
               borderRadius: 14,
               justifyContent: "center",
               minHeight: 52,
-              opacity: busy ? 0.75 : 1,
+              opacity: busy || form.blocked ? 0.75 : 1,
               padding: spacing.md,
             }}
           >
@@ -292,6 +294,10 @@ export default function CreateConcernScreen() {
           </AnimatedPressable>
         </View>
       </Card>
+
+      {form.serverError ? (
+        <AlertModal message={form.serverError} onClose={form.dismissServerError} />
+      ) : null}
     </ScreenScrollView>
   );
 }

@@ -1,6 +1,7 @@
 import {
   Inter_400Regular,
   Inter_500Medium,
+  Inter_600SemiBold,
   Inter_700Bold,
   useFonts as useInterFonts,
 } from "@expo-google-fonts/inter";
@@ -24,6 +25,7 @@ export function useAppFonts() {
   const [loaded] = useInterFonts({
     Inter_400Regular,
     Inter_500Medium,
+    Inter_600SemiBold,
     Inter_700Bold,
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,

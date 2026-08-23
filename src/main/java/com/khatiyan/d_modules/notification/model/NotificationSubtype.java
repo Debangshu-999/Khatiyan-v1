@@ -15,6 +15,7 @@ public enum NotificationSubtype {
     // Auth lifecycle.
     USER_REGISTERED,
     PIN_CHANGED,
+    NEW_DEVICE_SIGNED_IN,
 
     // Tenancy lifecycle.
     TENANCY_STARTED,
@@ -87,4 +88,14 @@ public enum NotificationSubtype {
     // Enquiries from a property's public profile.
     ENQUIRY_RECEIVED,
     ENQUIRY_ANSWERED,
+
+    /**
+     * Somebody wrote in a conversation.
+     *
+     * <p>Always PUSH_ONLY. A message owns its own screen with its own read
+     * state, so a queue row would be the same thing read twice in two places
+     * with two read marks — and the header badge would stop agreeing with the
+     * chat list.
+     */
+    CHAT_MESSAGE_RECEIVED,
 }

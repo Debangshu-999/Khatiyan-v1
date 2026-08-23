@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.enquiry.service;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -134,7 +135,7 @@ public class EnquiryService {
     public List<EnquiryDetailResponse> listForProperty(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        List<Enquiry> enquiries = enquiryRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId);
+        List<Enquiry> enquiries = enquiryRepository.findVisibleForProperty(propertyId, Instant.now());
         if (enquiries.isEmpty()) {
             return List.of();
         }
@@ -174,6 +175,14 @@ public class EnquiryService {
                 .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
 
         propertyModule.ensureCanManageProperty(actorUserId, enquiry.getPropertyId());
+
+        // Refused server-side as well as greyed out in the UI. The card can be
+        // stale — it was rendered before the sweep ran — and an expired enquiry
+        // is one the enquirer has been freed to re-raise, so answering it now
+        // would be answering a question that has already been withdrawn.
+        if (enquiry.isExpired()) {
+            throw new ValidationException("This enquiry has expired. The enquirer can raise a new one.");
+        }
 
         UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
         ensureChannelIsReachable(request.channel(), enquirer);
@@ -274,6 +283,7 @@ public class EnquiryService {
                 enquiry.getMessage(),
                 enquiry.getStatus(),
                 enquiry.askedAt(),
+                enquiry.getExpiresAt(),
                 enquiry.getEnquirerUserId(),
                 enquirer != null ? enquirer.fullName() : null,
                 enquirer != null ? enquirer.phone() : null,

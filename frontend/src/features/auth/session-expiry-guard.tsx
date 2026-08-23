@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { clearStoredSession } from "@/auth/session-storage";
@@ -29,6 +29,7 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 export function SessionExpiryGuard() {
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const pathname = usePathname();
   const expired = useAppSelector((state) => state.auth.sessionExpired);
   // Held locally so the dialog survives the acknowledgement that clears the
   // flag; without it the dialog would dismiss itself before being read.
@@ -67,7 +68,13 @@ export function SessionExpiryGuard() {
       onCancel={() => {}}
       onConfirm={() => {
         setShowing(false);
-        router.replace("/auth");
+        // Only if there is somewhere to go. A token can be refused while the
+        // sign-in screen is already up — a stale request finishing after a
+        // sign-out, say — and replacing a route with itself still runs the
+        // stack transition, so the auth screen slid in over the top of itself.
+        if (pathname !== "/auth") {
+          router.replace("/auth");
+        }
       }}
       title="Your session has expired"
     />

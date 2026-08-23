@@ -129,8 +129,7 @@ export default function NotificationsFeedScreen() {
 
       {isError ? (
         <EmptyState
-          icon={BellOff}
-          eyebrow="Backend unreachable"
+          icon={BellOff}
           title="Couldn't load notifications"
           description="Check your backend connection from Account, then pull down to try again."
         />
@@ -138,8 +137,7 @@ export default function NotificationsFeedScreen() {
 
       {!isLoading && !isError && recent.length === 0 ? (
         <EmptyState
-          icon={BellOff}
-          eyebrow="Quiet for now"
+          icon={BellOff}
           title="No recent notifications"
           description={
             user?.activeTenant || user?.role === "OWNER"

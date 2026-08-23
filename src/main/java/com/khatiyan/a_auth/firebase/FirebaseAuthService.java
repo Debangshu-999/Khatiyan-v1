@@ -1,5 +1,7 @@
 package com.khatiyan.a_auth.firebase;
 
+import java.time.Instant;
+
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,7 +15,9 @@ import com.khatiyan.a_auth.firebase.FirebasePhoneAuthService.VerifiedFirebasePho
 import com.khatiyan.a_auth.model.User;
 import com.khatiyan.a_auth.model.UserRole;
 import com.khatiyan.a_auth.repository.UserRepository;
+import com.khatiyan.a_auth.service.DeviceDescriptor;
 import com.khatiyan.a_auth.service.JwtService;
+import com.khatiyan.a_auth.service.UserSessionService;
 import com.khatiyan.a_auth.service.PinService;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -34,6 +38,8 @@ public class FirebaseAuthService {
     private final JwtService jwtService;
     private final PinService pinService;
     private final FirebasePhoneAuthService firebasePhoneAuthService;
+    private final UserSessionService userSessionService;
+    private final DeviceDescriptor deviceDescriptor;
     private final ApplicationEventPublisher eventPublisher;
 
     public FirebaseAuthService(
@@ -41,17 +47,36 @@ public class FirebaseAuthService {
             JwtService jwtService,
             PinService pinService,
             FirebasePhoneAuthService firebasePhoneAuthService,
+            UserSessionService userSessionService,
+            DeviceDescriptor deviceDescriptor,
             ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.pinService = pinService;
         this.firebasePhoneAuthService = firebasePhoneAuthService;
+        this.userSessionService = userSessionService;
+        this.deviceDescriptor = deviceDescriptor;
         this.eventPublisher = eventPublisher;
     }
 
+    /**
+     * Mirrors {@code AuthService.tokenFor}. The duplication is pre-existing and
+     * is exactly why the session write has to be in BOTH: a token minted here and
+     * not recorded would be a device its owner could neither see nor sign out.
+     */
     private TokenResponse tokenFor(User user) {
+        JwtService.IssuedToken issued = jwtService.issue(user);
+
+        userSessionService.open(
+                user.getId(),
+                issued.sessionId(),
+                deviceDescriptor.label(),
+                deviceDescriptor.platform(),
+                Instant.now(),
+                issued.expiresAt());
+
         return new TokenResponse(
-                jwtService.issue(user),
+                issued.token(),
                 "Bearer",
                 jwtService.accessTokenExpirySeconds(),
                 UserSummaryResponse.from(user));

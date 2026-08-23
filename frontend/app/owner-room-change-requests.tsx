@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
+import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CalendarDays, Check, Clock, FileClock, FileText, History, Info, IndianRupee, Repeat2, UserRound, X } from "lucide-react-native";
@@ -20,7 +24,7 @@ import {
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { FilterBubbles } from "@/components/filter-bubbles";
+import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
 import { SkeletonCard } from "@/components/skeleton";
 import { ActionButton, BackButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
@@ -109,8 +113,7 @@ export default function OwnerRoomChangeRequestsScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Repeat2}
-          eyebrow="Property required"
+          icon={Repeat2}
           title="No active property selected"
           description="Choose the property whose room-change requests you want to manage from Home."
         />
@@ -143,24 +146,7 @@ export default function OwnerRoomChangeRequestsScreen() {
             </View>
           </Card>
 
-          <Section
-            eyebrow="Active"
-            title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}
-            trailing={
-              <FilterBubbles
-                onChange={(next) => {
-                  setAttention(next);
-                  setActivePage(0);
-                }}
-                options={[
-                  { count: unattended.length, label: "Needs action", value: "unattended" as const },
-                  { count: attended.length, label: "Decided", value: "attended" as const },
-                  { count: liveRequests.length, label: "All", value: "all" as const },
-                ]}
-                value={filter}
-              />
-            }
-          >
+          <Section title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}>
             <AppTextInput
               autoCapitalize="characters"
               onChangeText={(next) => {
@@ -180,13 +166,28 @@ export default function OwnerRoomChangeRequestsScreen() {
               }}
               value={search}
             />
+            {/* Counts dropped from the pills: the heading above already states
+                how many the chosen filter matched, so carrying them here said
+                the same number twice. */}
+            <CollapsibleFilterBubbles
+              align="start"
+              onChange={(next) => {
+                setAttention(next);
+                setActivePage(0);
+              }}
+              options={[
+                { label: "Needs action", value: "unattended" as const },
+                { label: "Decided", value: "attended" as const },
+                { label: "All", value: "all" as const },
+              ]}
+              value={filter}
+            />
 
             {requestsQuery.isFetching && requests.length === 0 ? (
               <SkeletonCard />
             ) : activeRequests.length === 0 ? (
               <EmptyState
-                icon={Repeat2}
-                eyebrow={filter === "unattended" ? "All clear" : "Nothing decided"}
+                icon={Repeat2}
                 title={filter === "unattended" ? "Nothing waiting on you" : "No decided requests"}
                 description={
                   filter === "unattended"
@@ -277,7 +278,7 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
             <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
           </View>
           {requests.length === 0 ? (
-            <EmptyState icon={Repeat2} eyebrow="Nothing yet" title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
+            <EmptyState icon={Repeat2} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
           ) : (
             <>
               <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -451,7 +452,9 @@ function RoomChangeReviewModal({
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // No required field on this sheet — the note is optional — so every failure
+  // here is a server one.
+  const opErrors = useFormErrors<never>();
   const [confirm, setConfirm] = useState<{ confirmLabel: string; destructive?: boolean; message: string; title: string } | null>(null);
 
   const [approveRoomChange, approveState] = useApproveRoomChangeRequestMutation();
@@ -464,7 +467,6 @@ function RoomChangeReviewModal({
     if (busy) {
       return;
     }
-    setError(null);
 
     if (mode === "approve") {
       setConfirm({
@@ -484,7 +486,6 @@ function RoomChangeReviewModal({
   }
 
   async function submit() {
-    setError(null);
     try {
       if (mode === "approve") {
         await approveRoomChange({ adminNotes: notes.trim() || null, requestId: request.id }).unwrap();
@@ -492,14 +493,14 @@ function RoomChangeReviewModal({
         await rejectRoomChange({ adminNotes: notes.trim() || null, requestId: request.id }).unwrap();
       }
       onClose();
-    } catch {
-      setError("Action failed. Refresh and try again.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <>
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
@@ -532,11 +533,7 @@ function RoomChangeReviewModal({
               style={{ flexShrink: 1 }}
             >
               <FormInput multiline label={mode === "reject" ? "Rejection note" : "Note (optional)"} onChangeText={setNotes} placeholder="Optional note for the tenant" value={notes} />
-              {error ? (
-                <Text style={[type.caption, { color: colors.danger }]}>
-                  {error}
-                </Text>
-              ) : null}
+              {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
             </ScrollView>
 
             {/* A plain bordered footer, NOT PinnedFooter — that one paints a
@@ -684,12 +681,14 @@ function SummaryTile({ hint, label, tone = "default", value }: { hint: string; l
 // `@/features/owner/owner-ui`. It differs (no prefix/error affordances), so editing the shared
 // one does NOT change this screen. Unify before adding behaviour to either.
 function FormInput({
+  error,
   label,
   multiline,
   onChangeText,
   placeholder,
   value,
 }: {
+  error?: string;
   label: string;
   multiline?: boolean;
   onChangeText: (value: string) => void;
@@ -709,7 +708,7 @@ function FormInput({
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
         style={{
-          borderColor: colors.border,
+          borderColor: error ? colors.danger : colors.border,
           borderRadius: 12,
           borderWidth: 1,
           color: colors.ink,
@@ -720,6 +719,7 @@ function FormInput({
         }}
         value={value}
       />
+      <FieldError message={error} />
     </View>
   );
 }

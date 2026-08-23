@@ -13,8 +13,11 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
-import { errorMessage } from "@/features/auth/auth-ui";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
 import { ActionButton, BackButton, ChoiceButton, FormInput, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
@@ -33,6 +36,9 @@ import { useTheme } from "@/theme/use-theme";
 
 const PRIORITIES: NoticePriority[] = ["NORMAL", "IMPORTANT", "URGENT", "EMERGENCY"];
 const FREQUENCIES: RecurringNoticeFrequency[] = ["DAILY", "WEEKLY", "MONTHLY"];
+
+/** Every field the submit check can point at. */
+type NoticeField = "body" | "daysOfMonth" | "daysOfWeek" | "from" | "title" | "to";
 
 type DayOfWeekName = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
 
@@ -68,6 +74,7 @@ export default function OwnerNoticeCreateScreen() {
   const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
+  const form = useFormErrors<NoticeField>();
 
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -260,43 +267,34 @@ export default function OwnerNoticeCreateScreen() {
       router.back();
     } catch (error) {
       console.error("Notice save failed:", error);
-      toast.show("Could not save the notice. Try again.", "error");
+      form.failFromServer(errorMessage(error) || "Could not save the notice. Try again.");
     }
   }
 
-  /** Everything the form must satisfy, checked once when Save is pressed. */
+  /**
+   * Everything the form must satisfy, checked once when Save is pressed.
+   *
+   * <p>Every problem is reported together, each against the field that has to
+   * change. Caught here rather than at the server, which would refuse the whole
+   * save after the person had filled in everything else.
+   */
   function validate() {
-    if (!title.trim()) {
-      toast.show("Give the notice a title.", "error");
-      return false;
-    }
-    if (!body.trim()) {
-      toast.show("Write the notice body.", "error");
-      return false;
-    }
-    // Caught here rather than at the server, which would refuse the whole save
-    // after the person had filled in everything else.
-    if (recurring && frequency === "WEEKLY" && daysOfWeek.length === 0) {
-      toast.show("Pick at least one day of the week this notice repeats on.", "error");
-      return false;
-    }
-    if (recurring && frequency === "MONTHLY" && daysOfMonth.length === 0) {
-      toast.show("Pick at least one day of the month this notice repeats on.", "error");
-      return false;
-    }
-    if (!from) {
-      toast.show(recurring ? "Pick the daily start time." : "Pick when the notice goes live.", "error");
-      return false;
-    }
-    if (!to) {
-      toast.show(recurring ? "Pick the daily end time." : "Pick when the notice stops showing.", "error");
-      return false;
-    }
-    if (to.getTime() <= from.getTime()) {
-      toast.show("The end must come after the start.", "error");
-      return false;
-    }
-    return true;
+    return form.validate({
+      ...(title.trim() ? {} : { title: "Give the notice a title." }),
+      ...(body.trim() ? {} : { body: "Write the notice body." }),
+      ...(recurring && frequency === "WEEKLY" && daysOfWeek.length === 0
+        ? { daysOfWeek: "Pick at least one day of the week this notice repeats on." }
+        : {}),
+      ...(recurring && frequency === "MONTHLY" && daysOfMonth.length === 0
+        ? { daysOfMonth: "Pick at least one day of the month this notice repeats on." }
+        : {}),
+      ...(from ? {} : { from: recurring ? "Pick the daily start time." : "Pick when the notice goes live." }),
+      ...(to
+        ? from && to.getTime() <= from.getTime()
+          ? { to: "The end must come after the start." }
+          : {}
+        : { to: recurring ? "Pick the daily end time." : "Pick when the notice stops showing." }),
+    });
   }
 
 
@@ -320,7 +318,6 @@ export default function OwnerNoticeCreateScreen() {
       {!property && !propertiesQuery.isFetching ? (
         <EmptyState
           description="Notices are scoped to the active owner property."
-          eyebrow="Property required"
           icon={Megaphone}
           title="No property selected"
         />
@@ -333,11 +330,25 @@ export default function OwnerNoticeCreateScreen() {
             <View style={{ gap: spacing.md }}>
               <SectionHeading step="1" title="Message" />
 
-              <FormInput label="Title" onChangeText={(setTitle)} placeholder="Notice title" required value={title} />
+              <FormInput
+                error={form.errors.title}
+                label="Title"
+                onChangeText={(next) => {
+                  setTitle(next);
+                  form.clearField("title");
+                }}
+                placeholder="Notice title"
+                required
+                value={title}
+              />
               <FormInput
                 label="Body"
                 multiline
-                onChangeText={(setBody)}
+                error={form.errors.body}
+                onChangeText={(next) => {
+                  setBody(next);
+                  form.clearField("body");
+                }}
                 placeholder="Write the notice"
                 required
                 value={body}
@@ -448,11 +459,25 @@ export default function OwnerNoticeCreateScreen() {
                   still picks a moment; each recurrence picks only what it
                   actually repeats on, plus the window it shows for. */}
               {recurring && frequency === "WEEKLY" ? (
-                <DayOfWeekPicker onToggle={toggleDayOfWeek} value={daysOfWeek} />
+                <DayOfWeekPicker
+                  error={form.errors.daysOfWeek}
+                  onToggle={(day) => {
+                    toggleDayOfWeek(day);
+                    form.clearField("daysOfWeek");
+                  }}
+                  value={daysOfWeek}
+                />
               ) : null}
 
               {recurring && frequency === "MONTHLY" ? (
-                <DayOfMonthPicker onToggle={toggleDayOfMonth} value={daysOfMonth} />
+                <DayOfMonthPicker
+                  error={form.errors.daysOfMonth}
+                  onToggle={(day) => {
+                    toggleDayOfMonth(day);
+                    form.clearField("daysOfMonth");
+                  }}
+                  value={daysOfMonth}
+                />
               ) : null}
 
               {/* Only a daily template still needs a date — the day it begins.
@@ -482,6 +507,7 @@ export default function OwnerNoticeCreateScreen() {
               >
                 <View style={recurring ? { flex: 1 } : undefined}>
                   <DateTimeField
+                    error={form.errors.from}
                     label={recurring ? "Shows from" : "Goes live"}
                     mode={recurring ? "time" : "datetime"}
                     onClear={() => setFrom(null)}
@@ -492,6 +518,7 @@ export default function OwnerNoticeCreateScreen() {
                 </View>
                 <View style={recurring ? { flex: 1 } : undefined}>
                   <DateTimeField
+                    error={form.errors.to}
                     label={recurring ? "Until" : "Stops showing"}
                     mode={recurring ? "time" : "datetime"}
                     onClear={() => setTo(null)}
@@ -533,7 +560,7 @@ export default function OwnerNoticeCreateScreen() {
     {property ? (
       <PinnedFooter>
         <ActionButton
-          disabled={creating}
+          disabled={creating || form.blocked}
           icon={Send}
           label={
             creating
@@ -548,6 +575,8 @@ export default function OwnerNoticeCreateScreen() {
         />
       </PinnedFooter>
     ) : null}
+
+    {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </View>
   );
 }
@@ -588,6 +617,7 @@ function SectionHeading({ step, title }: { step: string; title: string }) {
  * the weekday out of the start date, so the two could never be set apart.
  */
 function DateTimeField({
+  error,
   label,
   mode = "datetime",
   onClear,
@@ -595,6 +625,7 @@ function DateTimeField({
   onPickTime,
   value,
 }: {
+  error?: string;
   label: string;
   mode?: "datetime" | "date" | "time";
   onClear: () => void;
@@ -608,15 +639,15 @@ function DateTimeField({
     <View
       style={{
         backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
+        borderColor: error ? colors.danger : colors.border,
         borderRadius: 16,
-        borderWidth: 1,
+        borderWidth: error ? 1.5 : 1,
         gap: spacing.sm,
         padding: spacing.md,
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>{label}</Text>
+        <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>{label}</Text>
         {value ? (
           <Pressable accessibilityRole="button" onPress={onClear}>
             <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]}>Clear</Text>
@@ -634,6 +665,7 @@ function DateTimeField({
           <ActionButton icon={CalendarClock} label="Time" onPress={onPickTime} variant="secondary" />
         ) : null}
       </View>
+      <FieldError message={error} />
     </View>
   );
 }
@@ -646,9 +678,11 @@ function DateTimeField({
  * glance, and a sheet would hide the answer behind a tap.
  */
 function DayOfWeekPicker({
+  error,
   onToggle,
   value,
 }: {
+  error?: string;
   onToggle: (day: DayOfWeekName) => void;
   value: DayOfWeekName[];
 }) {
@@ -656,7 +690,7 @@ function DayOfWeekPicker({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+      <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>
         Repeats on
       </Text>
       <View style={{ flexDirection: "row", gap: spacing.xs }}>
@@ -696,6 +730,7 @@ function DayOfWeekPicker({
           );
         })}
       </View>
+      <FieldError message={error} />
     </View>
   );
 }
@@ -707,9 +742,11 @@ function DayOfWeekPicker({
  * reminders and the old model could only hold one day.
  */
 function DayOfMonthPicker({
+  error,
   onToggle,
   value,
 }: {
+  error?: string;
   onToggle: (day: number) => void;
   value: number[];
 }) {
@@ -729,7 +766,7 @@ function DayOfMonthPicker({
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+        <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>
           Repeats on days
         </Text>
         {/* The house ⓘ pattern. Only once something is chosen — there are no
@@ -815,6 +852,7 @@ function DayOfMonthPicker({
       {datesOpen ? (
         <ProjectedDatesSheet days={value} onClose={() => setDatesOpen(false)} />
       ) : null}
+      <FieldError message={error} />
     </View>
   );
 }

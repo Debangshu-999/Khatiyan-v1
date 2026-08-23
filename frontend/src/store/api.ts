@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
+import { deviceLabel, devicePlatform } from "@/auth/device-identity";
 import { checkResponseShape } from "@/store/response-guards";
 import { sessionExpired } from "@/store/slices/auth-slice";
 import type { RootState } from "@/store/store";
@@ -29,6 +30,11 @@ export const api = createApi({
         if (token) {
           headers.set("Authorization", `Bearer ${token}`);
         }
+        // Names this device in the signed-in devices list. Sent on every request
+        // rather than only on sign-in: a token is minted by six endpoints, and
+        // the server records a session from whichever one was used.
+        headers.set("X-Device-Label", deviceLabel());
+        headers.set("X-Device-Platform", devicePlatform());
         return headers;
       },
     });
@@ -78,5 +84,10 @@ export const api = createApi({
     // without invalidating the list it just fetched.
     "NudgeUnread",
     "Enquiry",
+    "Session",
+    "Chat",
+    // Separate from "Chat" so opening a conversation can clear the tab badge
+    // without invalidating the thread list it is already showing.
+    "ChatUnread",
   ],
 });

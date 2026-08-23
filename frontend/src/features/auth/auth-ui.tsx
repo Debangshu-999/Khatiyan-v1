@@ -1,89 +1,20 @@
 import { useState, type ComponentType, type ReactNode } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Eye, EyeOff, KeyRound, Lock, Pencil, Phone, type LucideProps } from "lucide-react-native";
+import { Eye, EyeOff, KeyRound, Lock, Pencil, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
+import { FieldError } from "@/components/field-error";
+import { StatusIcon } from "@/components/status-icon";
+import { errorBody, errorCode, errorMessage } from "@/features/forms/server-error";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // ---------------------------------------------------------------- helpers
 
-/** Plain-language fallback for a response that carried no usable message. */
-function statusMessage(status: number) {
-  if (status === 401 || status === 403) {
-    return "You do not have access to do that.";
-  }
-  if (status === 404) {
-    return "We could not find what you asked for.";
-  }
-  if (status === 408 || status === 504) {
-    return "That took too long. Check your connection and try again.";
-  }
-  if (status === 429) {
-    return "Too many attempts. Wait a moment and try again.";
-  }
-  if (status >= 500) {
-    return "Something went wrong at our end. Please try again.";
-  }
-  return "Please check the details and try again.";
-}
-
-export function errorMessage(error: unknown) {
-  if (typeof error === "object" && error && "data" in error) {
-    const data = (error as { data?: { message?: string } }).data;
-    if (data?.message) {
-      return data.message;
-    }
-  }
-
-  if (typeof error === "object" && error && "status" in error) {
-    const queryError = error as { status?: unknown; error?: unknown; data?: unknown };
-    if (queryError.status === "TIMEOUT_ERROR") {
-      return "The server took too long to respond. Check your connection and try again.";
-    }
-    if (queryError.status === "FETCH_ERROR") {
-      return "Could not reach the backend. If you are on Expo Go, use the detected laptop URL.";
-    }
-    if (queryError.status === "PARSING_ERROR") {
-      return "Backend responded, but the app could not read the response.";
-    }
-    if (typeof queryError.status === "number") {
-      if (typeof queryError.data === "object" && queryError.data && "message" in queryError.data) {
-        const message = (queryError.data as { message?: unknown }).message;
-        if (typeof message === "string") {
-          return message;
-        }
-      }
-      // A body that came back as plain text rather than our ErrorResponse
-      // shape — a proxy page, a gateway error, a filter that rejected before
-      // the handler ran. Still more use to the reader than a status code.
-      if (typeof queryError.data === "string" && queryError.data.trim()) {
-        return queryError.data.trim();
-      }
-      // Last resort. Never show a raw HTTP status: it tells the person nothing
-      // they can act on and reads like the app broke. Say what it means.
-      return statusMessage(queryError.status);
-    }
-    if (typeof queryError.error === "string") {
-      return queryError.error;
-    }
-  }
-
-  // A plain Error is OUR bug, not the server's — a TypeError, a storage
-  // failure, a bad assumption. Its message is written for whoever is reading
-  // the stack trace, not for the person holding the phone, and shipping it to a
-  // toast has already put "Cannot read properties of null" in front of a user.
-  // Keep it in the console where it is useful; say something actionable on
-  // screen.
-  if (error instanceof Error) {
-    console.warn("Unexpected client error surfaced to the user", error);
-    return "Something went wrong. Please try again.";
-  }
-
-  return "Something went wrong. Please try again.";
-}
+// Re-exported so the many auth call sites keep working unchanged.
+export { errorBody, errorCode, errorMessage };
 
 export function digitsOnly(value: string) {
   return value.replace(/\D/g, "");
@@ -145,21 +76,89 @@ export function FieldLabel({ children }: { children: string }) {
   );
 }
 
-export function StepBadge({ text }: { text: string }) {
+export { FieldError };
+
+/**
+ * The auth screen's refusal dialog.
+ *
+ * <p>Keeps its status mark, unlike the shared {@link ErrorModal} used by forms
+ * elsewhere — the user specified this icon deliberately. See the note at the
+ * call site if the two ever need to converge.
+ */
+/**
+ * The auth screen's interrupt.
+ *
+ * <p>Keeps its status icon, unlike the plain {@code AlertModal} the rest of the
+ * app uses — settled deliberately: on a screen with no chrome around it, the
+ * mark is what says "this is a refusal" before a word is read.
+ */
+export function AuthAlertModal({ message, onClose }: { message: string; onClose: () => void }) {
   const { colors, fonts } = useTheme();
+
   return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        backgroundColor: colors.primarySoft,
-        borderCurve: "continuous",
-        borderRadius: 999,
-        paddingHorizontal: spacing.md,
-        paddingVertical: 6,
-      }}
-    >
-      <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }}>
-        {text}
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderCurve: "continuous",
+            borderRadius: 20,
+            borderWidth: 1,
+            gap: spacing.sm,
+            maxWidth: 330,
+            padding: spacing.lg,
+            width: "100%",
+          }}
+        >
+          <StatusIcon tone="error" />
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 15, lineHeight: 22, textAlign: "center" }}>
+            {message}
+          </Text>
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={onClose}
+            style={{
+              alignItems: "center",
+              alignSelf: "stretch",
+              backgroundColor: colors.primary,
+              borderCurve: "continuous",
+              borderRadius: 14,
+              marginTop: spacing.xs,
+              paddingVertical: spacing.md,
+            }}
+          >
+            <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15 }}>
+              OK
+            </Text>
+          </AnimatedPressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export function StepProgress({ step, total, label }: { step: number; total: number; label: string }) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 5 }}>
+        {Array.from({ length: total }, (_unused, index) => (
+          <View
+            key={index}
+            style={{
+              backgroundColor: index < step ? colors.primary : colors.borderStrong,
+              borderRadius: 2,
+              flex: 1,
+              height: 3,
+            }}
+          />
+        ))}
+      </View>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, letterSpacing: 0.2 }}>
+        {label}
       </Text>
     </View>
   );
@@ -213,6 +212,10 @@ export function AuthTextField({
   secureTextEntry,
   autoCapitalize = "none",
   icon: Icon,
+  error,
+  locked,
+  onEdit,
+  hideErrorText,
 }: {
   label: string;
   value: string;
@@ -221,6 +224,19 @@ export function AuthTextField({
   secureTextEntry?: boolean;
   autoCapitalize?: "none" | "words" | "sentences" | "characters";
   icon?: ComponentType<LucideProps>;
+  error?: string;
+  /** Committed: the value is being acted on, so it must not drift under it. */
+  locked?: boolean;
+  /** Required when locked — a field with no way back is a dead end. */
+  onEdit?: () => void;
+  /**
+   * Keep the red border but render the message somewhere else.
+   *
+   * <p>For fields followed by a chip link: the message under the box pushes the
+   * chip down, so the row jumps the moment a validation fails. The caller pairs
+   * the two on one line instead and places <FieldError> itself.
+   */
+  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -231,8 +247,8 @@ export function AuthTextField({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
-          borderColor: focused ? colors.primary : colors.border,
+          backgroundColor: locked ? colors.surfaceSunken : colors.surfaceRaised,
+          borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
           borderRadius: 16,
           borderWidth: 1.5,
@@ -248,6 +264,7 @@ export function AuthTextField({
           onChangeText={onChangeText}
           autoCapitalize={autoCapitalize}
           autoCorrect={false}
+          editable={!locked}
           onBlur={() => setFocused(false)}
           onFocus={() => setFocused(true)}
           placeholder={placeholder}
@@ -256,14 +273,26 @@ export function AuthTextField({
           underlineColorAndroid="transparent"
           style={{
             backgroundColor: "transparent",
-            color: colors.ink,
+            color: locked ? colors.muted : colors.ink,
             flex: 1,
             fontFamily: fonts.sansMedium,
             fontSize: 16,
             paddingVertical: spacing.md,
           }}
         />
+        {locked && onEdit ? (
+          <AnimatedPressable
+            accessibilityLabel={`Edit ${label.toLowerCase()}`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onEdit}
+            style={{ paddingHorizontal: spacing.xxs, paddingVertical: spacing.xs }}
+          >
+            <Pencil color={colors.primary} size={17} strokeWidth={2.4} />
+          </AnimatedPressable>
+        ) : null}
       </View>
+      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }
@@ -276,10 +305,21 @@ export function PhoneField({
   label,
   value,
   onChangeText,
+  error,
+  hideErrorText,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
+  error?: string;
+  /**
+   * Keep the red border but render the message somewhere else.
+   *
+   * <p>For fields followed by a chip link: the message under the box pushes the
+   * chip down, so the row jumps the moment a validation fails. The caller pairs
+   * the two on one line instead and places <FieldError> itself.
+   */
+  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -287,70 +327,68 @@ export function PhoneField({
   return (
     <View style={{ gap: 8 }}>
       <FieldLabel>{label}</FieldLabel>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: 16,
-            borderWidth: 1.5,
-            flexDirection: "row",
-            gap: 6,
-            justifyContent: "center",
-            minHeight: 56,
-            paddingHorizontal: spacing.md,
-          }}
-        >
+      {/* One box, not two. The dial code is part of the number being typed, so
+          boxing it separately read as a second field to fill in — and the gap
+          between them broke the line the eye follows while reading the digits
+          back. A hairline keeps the two halves legible without splitting them. */}
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceRaised,
+          borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
+          borderCurve: "continuous",
+          borderRadius: 16,
+          borderWidth: 1.5,
+          flexDirection: "row",
+          minHeight: 56,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
             +91
           </Text>
         </View>
+        {/* Shorter than the box so it reads as a separator rather than an inner
+            border. Follows the focus/error colour, or the divider stays grey
+            through a red field and looks like a rendering fault. */}
         <View
           style={{
-            alignItems: "center",
-            backgroundColor: colors.surfaceRaised,
-            borderColor: focused ? colors.primary : colors.border,
-            borderCurve: "continuous",
-            borderRadius: 16,
-            borderWidth: 1.5,
-            flex: 1,
-            flexDirection: "row",
-            gap: spacing.sm,
-            minHeight: 56,
-            paddingHorizontal: spacing.lg,
+            backgroundColor: error ? colors.danger : focused ? colors.primary : colors.borderStrong,
+            height: 24,
+            marginHorizontal: spacing.md,
+            opacity: error || focused ? 0.5 : 1,
+            width: 1,
           }}
-        >
-          <Phone color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
-          <AppTextInput
-            value={value}
-            onChangeText={(next) => onChangeText(digitsOnly(next).slice(0, 10))}
-            autoCapitalize="none"
-            autoComplete="tel"
-            autoCorrect={false}
-            importantForAutofill="no"
-            keyboardType="phone-pad"
-            maxLength={10}
-            onBlur={() => setFocused(false)}
-            onFocus={() => setFocused(true)}
-            placeholder="Enter your phone"
-            placeholderTextColor={colors.muted}
-            textContentType="telephoneNumber"
-            underlineColorAndroid="transparent"
-            style={{
-              backgroundColor: "transparent",
-              color: colors.ink,
-              flex: 1,
-              fontFamily: fonts.sansBold,
-              fontSize: 16,
-              letterSpacing: 0.6,
-              paddingVertical: spacing.md,
-            }}
-          />
-        </View>
+        />
+        <AppTextInput
+          value={value}
+          onChangeText={(next) => onChangeText(digitsOnly(next).slice(0, 10))}
+          autoCapitalize="none"
+          autoComplete="tel"
+          autoCorrect={false}
+          importantForAutofill="no"
+          keyboardType="phone-pad"
+          maxLength={10}
+          onBlur={() => setFocused(false)}
+          onFocus={() => setFocused(true)}
+          placeholder="Enter your phone"
+          placeholderTextColor={colors.muted}
+          textContentType="telephoneNumber"
+          underlineColorAndroid="transparent"
+          style={{
+            backgroundColor: "transparent",
+            color: colors.ink,
+            flex: 1,
+            fontFamily: fonts.sansBold,
+            fontSize: 16,
+            letterSpacing: 0.6,
+            paddingVertical: spacing.md,
+          }}
+        />
       </View>
+      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }
@@ -362,11 +400,22 @@ export function CodeField({
   value,
   onChangeText,
   secureTextEntry,
+  error,
+  hideErrorText,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
   secureTextEntry?: boolean;
+  error?: string;
+  /**
+   * Keep the red border but render the message somewhere else.
+   *
+   * <p>For fields followed by a chip link: the message under the box pushes the
+   * chip down, so the row jumps the moment a validation fails. The caller pairs
+   * the two on one line instead and places <FieldError> itself.
+   */
+  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [showValue, setShowValue] = useState(false);
@@ -382,7 +431,7 @@ export function CodeField({
         style={{
           alignItems: "center",
           backgroundColor: colors.surfaceRaised,
-          borderColor: focused ? colors.primary : colors.border,
+          borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
           borderRadius: 16,
           borderWidth: 1.5,
@@ -452,6 +501,7 @@ export function CodeField({
           </AnimatedPressable>
         ) : null}
       </View>
+      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }

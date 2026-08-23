@@ -34,7 +34,9 @@ export type UploadTarget =
   | "PROPERTY_IMAGE"
   | "LOCAL_PLACE_PHOTO"
   | "NOTICE_IMAGE"
-  | "NOTICE_DOCUMENT";
+  | "NOTICE_DOCUMENT"
+  | "CHAT_IMAGE"
+  | "CHAT_FILE";
 
 type UploadSignature = {
   cloudName: string;

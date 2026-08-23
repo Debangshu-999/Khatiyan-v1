@@ -313,6 +313,18 @@ public class BillingCycle extends BaseEntity {
     }
 
     /**
+     * The first rent cycle of a tenancy.
+     *
+     * <p>Singled out because it is the only cycle that never gets an editable
+     * UPCOMING window: every later one is generated ten days ahead, while this
+     * one is created and activated in the same transaction at onboarding. One-off
+     * bills have no cycle number and are not first cycles.
+     */
+    public boolean isFirstCycle() {
+        return cycleNumber != null && cycleNumber == 1;
+    }
+
+    /**
      * Creates a one-off bill (e.g. an early-exit penalty raised after the current
      * rent bill was already paid). It sits outside the rent-cycle sequence: no
      * cycle number, {@code ONE_OFF} category, single-day period, due immediately.
@@ -374,18 +386,6 @@ public class BillingCycle extends BaseEntity {
         this.lateFeeAmountPaise = lateFeeAmountPaise;
         this.discountAmountPaise = discountAmountPaise;
         this.totalAmountPaise = totalAmount;
-    }
-
-    public boolean isEditableForExtraCharges(LocalDate today) {
-        if (status != BillingCycleStatus.UNPAID && status != BillingCycleStatus.OVERDUE) {
-            return false;
-        }
-
-        if (today.isBefore(rentDueDate.minusDays(1))) {
-            return true;
-        }
-
-        return today.isAfter(rentDueDate);
     }
 
     public boolean isEditableForDailyCycle(LocalDate today) {

@@ -22,8 +22,12 @@ export function DiscoveryButton({ label, onPress, muted = false, disabled = fals
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: muted ? colors.primarySoft : colors.primary,
+        // Muted is white with a hairline and blue lettering, never a pale blue
+        // fill: a tinted block reads as a surface rather than a button.
+        backgroundColor: muted ? "transparent" : colors.primary,
+        borderColor: muted ? colors.borderStrong : "transparent",
         borderRadius: 14,
+        borderWidth: muted ? 1 : 0,
         justifyContent: "center",
         minHeight: 46,
         opacity: disabled ? 0.55 : 1,

@@ -5,7 +5,6 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type SectionProps = {
-  eyebrow?: string;
   title: string;
   trailing?: ReactNode;
   /**
@@ -20,21 +19,20 @@ type SectionProps = {
 };
 
 // Section heading used inside screens — smaller than ScreenHeader, with a
-// serif title and an optional eyebrow / trailing action. The rule underneath is
-// a ledger "ruled margin": a short accent tick flush-left, then a hairline
-// running across — a letterhead detail that ties every section together.
-export function Section({ children, eyebrow, style, title, trailing, trailingInline }: SectionProps) {
+// serif title and an optional trailing action. The rule underneath is a ledger
+// "ruled margin": a short accent tick flush-left, then a hairline running
+// across — a letterhead detail that ties every section together.
+//
+// There is deliberately NO eyebrow. Every use had a kicker sitting directly
+// above the title saying the same thing in fewer words — "Quick access" over
+// "Tools", "Owner actions" over "Workspace" — which read as two headings for
+// one section. The title alone is the heading.
+export function Section({ children, style, title, trailing, trailingInline }: SectionProps) {
   const { colors, type } = useTheme();
 
   return (
     <View style={[{ gap: spacing.md }, style]}>
       <View style={{ gap: spacing.xs }}>
-        {eyebrow ? (
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            {eyebrow}
-          </Text>
-        ) : null}
-
         <View
           style={{
             alignItems: "center",

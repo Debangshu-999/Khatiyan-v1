@@ -40,7 +40,7 @@ export default function OwnerUpcomingCyclesScreen() {
   const items = pageData?.items ?? [];
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         onBack={() => router.back()}
         eyebrow={`Owner billing · ${monthName}`}
@@ -55,8 +55,7 @@ export default function OwnerUpcomingCyclesScreen() {
 
       {!property ? (
         <EmptyState
-          icon={CalendarClock}
-          eyebrow="No property selected"
+          icon={CalendarClock}
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select a property to view its upcoming billing cycles."
         />
@@ -66,8 +65,7 @@ export default function OwnerUpcomingCyclesScreen() {
             <SkeletonCard />
           ) : items.length === 0 ? (
             <EmptyState
-              icon={CalendarClock}
-              eyebrow="All caught up"
+              icon={CalendarClock}
               title={`All cycles generated for ${monthName}`}
               description="Every active monthly tenancy has already been billed for this month. New upcoming dates appear once the month rolls over. Daily stays are billed once for the whole stay."
             />
@@ -220,12 +218,12 @@ function ScheduleCell({
   style?: ViewStyle;
   value: string;
 }) {
-  const { colors, fonts } = useTheme();
+  const { colors, fonts, type } = useTheme();
   return (
     <View style={[{ gap: 4, minWidth: 0, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 }, style]}>
       <Text
         numberOfLines={1}
-        style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.8, textTransform: "uppercase" }}
+        style={[type.eyebrow, { color: colors.kicker, fontSize: 10 }]}
       >
         {label}
       </Text>

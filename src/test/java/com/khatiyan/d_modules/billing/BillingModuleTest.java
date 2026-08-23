@@ -204,6 +204,7 @@ class BillingModuleTest {
                 BillingLineSettlementAction.ADDED_TO_BILL,
                 false,
                 UUID.randomUUID(),
+                "Asha Rao",
                 null,
                 1,
                 null,

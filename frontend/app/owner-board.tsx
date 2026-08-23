@@ -9,6 +9,10 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -65,8 +69,7 @@ export default function OwnerBoardScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={ClipboardList}
-          eyebrow="Property required"
+          icon={ClipboardList}
           title="No active property selected"
           description="Choose the property whose board you want to manage from Home."
         />
@@ -92,8 +95,7 @@ export default function OwnerBoardScreen() {
 
           {categories.length === 0 ? (
             <EmptyState
-              icon={ClipboardList}
-              eyebrow="Start here"
+              icon={ClipboardList}
               title="No categories yet"
               description="Create a category (e.g. Rules, Timings, Contacts) before adding board items."
             />
@@ -102,8 +104,7 @@ export default function OwnerBoardScreen() {
               const categoryItems = items.filter((item) => item.categoryId === category.id);
               return (
                 <Section
-                  key={category.id}
-                  eyebrow="Category"
+                  key={category.id}
                   title={category.name}
                 >
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -237,7 +238,7 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
   const { colors, fonts, type } = useTheme();
   const [name, setName] = useState(category?.name ?? "");
   const [order, setOrder] = useState(category ? String(category.displayOrder) : "");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"name">();
   const [createCategory, createState] = useCreateBoardCategoryMutation();
   const [updateCategory, updateState] = useUpdateBoardCategoryMutation();
   const busy = createState.isLoading || updateState.isLoading;
@@ -246,11 +247,9 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
     if (busy) {
       return;
     }
-    if (!name.trim()) {
-      setError("Enter a category name.");
+    if (!form.validate(name.trim() ? {} : { name: "Enter a category name." })) {
       return;
     }
-    setError(null);
     const trimmedName = name.trim();
     // Backend requires a non-blank, property-unique slug; derive it from the
     // name so management never has to type one by hand.
@@ -262,13 +261,13 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
         await createCategory({ payload, propertyId }).unwrap();
       }
       onClose();
-    } catch {
-      setError("Could not save the category. Try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
@@ -278,16 +277,23 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
             </Text>
             <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
           </View>
-          <FormInput label="Name" onChangeText={setName} placeholder="Rules, Timings, Contacts…" value={name} />
+          <FormInput
+            error={form.errors.name}
+            label="Name"
+            onChangeText={(next) => {
+              setName(next);
+              form.clearField("name");
+            }}
+            placeholder="Rules, Timings, Contacts…"
+            value={name}
+          />
           <FormInput keyboardType="number-pad" label="Display order (optional)" onChangeText={setOrder} placeholder="e.g. 1" value={order} />
-          {error ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              {error}
-            </Text>
-          ) : null}
           <View style={{ flexDirection: "row" }}>
-            <ActionButton disabled={busy} label={busy ? "Saving" : "Save category"} onPress={() => void submit()} />
+            <ActionButton disabled={busy || form.blocked} label={busy ? "Saving" : "Save category"} onPress={() => void submit()} />
           </View>
+          {form.serverError ? (
+            <AlertModal message={form.serverError} onClose={form.dismissServerError} />
+          ) : null}
         </View>
       </View>
       </KeyboardAvoidingView>
@@ -312,7 +318,7 @@ function ItemModal({
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? initialCategoryId ?? categories[0]?.id ?? "");
   const [title, setTitle] = useState(item?.title ?? "");
   const [body, setBody] = useState(item?.body ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"category" | "title" | "body">();
   const [createItem, createState] = useCreateBoardItemMutation();
   const [updateItem, updateState] = useUpdateBoardItemMutation();
   const busy = createState.isLoading || updateState.isLoading;
@@ -321,15 +327,16 @@ function ItemModal({
     if (busy) {
       return;
     }
-    if (!categoryId) {
-      setError("Pick a category.");
+    // Every problem reported at once, each against the field that owns it —
+    // rather than one message naming two fields and stopping at the first.
+    const problems = {
+      ...(categoryId ? {} : { category: "Pick a category." }),
+      ...(title.trim() ? {} : { title: "Enter a title." }),
+      ...(body.trim() ? {} : { body: "Enter the details tenants will read." }),
+    };
+    if (!form.validate(problems)) {
       return;
     }
-    if (!title.trim() || !body.trim()) {
-      setError("Enter a title and body.");
-      return;
-    }
-    setError(null);
     // The update endpoint requires a non-null displayOrder; preserve the
     // item's existing order on edit and let the backend default it on create.
     const payload = { body: body.trim(), categoryId, displayOrder: item ? item.displayOrder : null, title: title.trim() };
@@ -340,13 +347,13 @@ function ItemModal({
         await createItem({ payload, propertyId }).unwrap();
       }
       onClose();
-    } catch {
-      setError("Could not save the item. Try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
@@ -362,20 +369,46 @@ function ItemModal({
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
               {categories.map((category) => (
-                <ChoiceButton active={category.id === categoryId} key={category.id} label={category.name} onPress={() => setCategoryId(category.id)} />
+                <ChoiceButton
+                  active={category.id === categoryId}
+                  key={category.id}
+                  label={category.name}
+                  onPress={() => {
+                    setCategoryId(category.id);
+                    form.clearField("category");
+                  }}
+                />
               ))}
             </View>
+            <FieldError message={form.errors.category} />
           </View>
-          <FormInput label="Title" onChangeText={setTitle} placeholder="Item title" value={title} />
-          <FormInput multiline label="Body" onChangeText={setBody} placeholder="Details shown to tenants" value={body} />
-          {error ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              {error}
-            </Text>
-          ) : null}
+          <FormInput
+            error={form.errors.title}
+            label="Title"
+            onChangeText={(next) => {
+              setTitle(next);
+              form.clearField("title");
+            }}
+            placeholder="Item title"
+            value={title}
+          />
+          <FormInput
+            error={form.errors.body}
+            multiline
+            label="Body"
+            onChangeText={(next) => {
+              setBody(next);
+              form.clearField("body");
+            }}
+            placeholder="Details shown to tenants"
+            value={body}
+          />
           <View style={{ flexDirection: "row" }}>
-            <ActionButton disabled={busy} label={busy ? "Saving" : "Save item"} onPress={() => void submit()} />
+            <ActionButton disabled={busy || form.blocked} label={busy ? "Saving" : "Save item"} onPress={() => void submit()} />
           </View>
+          {form.serverError ? (
+            <AlertModal message={form.serverError} onClose={form.dismissServerError} />
+          ) : null}
         </View>
       </View>
       </KeyboardAvoidingView>

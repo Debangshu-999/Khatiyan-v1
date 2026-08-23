@@ -7,10 +7,12 @@ import { CalendarDays, Megaphone, Pencil, Plus, Save, X } from "lucide-react-nat
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { Skeleton } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
-import { errorMessage } from "@/features/auth/auth-ui";
+import { errorMessage } from "@/features/forms/server-error";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
 import { ActionButton, BackButton, ChoiceButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
@@ -138,12 +140,24 @@ export default function OwnerNoticeDetailScreen() {
     });
   }
 
+  const form = useFormErrors<"title" | "body">();
   async function save() {
     if (!notice) {
       return;
     }
+
+    // Saving an untouched notice would fire a request and drop out of edit
+    // mode, reporting success for a change nobody made.
+    if (!dirty) {
+      toast.warning("No changes have been made.");
+      return;
+    }
+
     if (!title.trim() || !body.trim()) {
-      toast.show("Give the notice both a title and a body.", "error");
+      form.validate({
+        ...(title.trim() ? {} : { title: "Give the notice a title." }),
+        ...(body.trim() ? {} : { body: "Give the notice a body." }),
+      });
       return;
     }
 
@@ -168,7 +182,7 @@ export default function OwnerNoticeDetailScreen() {
       // go-live guard — "already live and can no longer be edited" tells the
       // person exactly why, where a generic retry message would invite them to
       // try again forever.
-      toast.show(errorMessage(error), "error");
+      form.failFromServer(errorMessage(error));
       void noticeQuery.refetch();
     }
   }
@@ -205,7 +219,6 @@ export default function OwnerNoticeDetailScreen() {
       {!noticeQuery.isLoading && !notice ? (
         <EmptyState
           description="This notice may have been deleted, or the link is out of date."
-          eyebrow="Not found"
           icon={Megaphone}
           title="Notice unavailable"
         />
@@ -329,6 +342,7 @@ export default function OwnerNoticeDetailScreen() {
       ) : null}
 
       {attachments.overlays}
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }

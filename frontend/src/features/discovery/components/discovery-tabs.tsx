@@ -18,7 +18,7 @@ type DiscoveryTabsProps = {
 };
 
 export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps) {
-  const { colors } = useTheme();
+  const { colors, type } = useTheme();
   const [width, setWidth] = useState(0);
   const animatedIndex = useRef(new Animated.Value(activeIndexFor(activeTab, tabs))).current;
   const segmentWidth = width > 0 ? width / tabs.length : 0;
@@ -86,14 +86,7 @@ export function DiscoveryTabs({ activeTab, onChange, tabs }: DiscoveryTabsProps)
             }}
           >
             <Text
-              style={{
-                color: isActive ? colors.ink : colors.kicker,
-                fontSize: 11,
-                fontWeight: "700",
-                letterSpacing: 1.6,
-                textAlign: "center",
-                textTransform: "uppercase",
-              }}
+              style={[type.eyebrow, { color: isActive ? colors.ink : colors.kicker, textAlign: "center" }]}
             >
               {tab.label}
             </Text>

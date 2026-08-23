@@ -57,7 +57,10 @@ public class PropertyDiscoveryProfileEventListener {
             return List.of();
         }
         return refs.stream()
-                .map(ref -> new AddPropertyImagesRequest.Image(ref.url(), ref.publicId()))
+                // No caption: registration picks images before there is a
+                // listing to caption them against. The owner labels them from
+                // the property images section afterwards.
+                .map(ref -> new AddPropertyImagesRequest.Image(ref.url(), ref.publicId(), null))
                 .toList();
     }
 }

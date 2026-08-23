@@ -18,5 +18,8 @@ public interface StaffCategoryRepository extends JpaRepository<StaffCategory, UU
 
     boolean existsByPropertyIdAndNormalizedName(UUID propertyId, String normalizedName);
 
+    /** The row holding this name, active or not — see the expense twin. */
+    Optional<StaffCategory> findByPropertyIdAndNormalizedName(UUID propertyId, String normalizedName);
+
     boolean existsByPropertyIdAndSystemKey(UUID propertyId, String systemKey);
 }

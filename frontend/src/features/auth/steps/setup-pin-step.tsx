@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import { CodeField, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
+import { CodeField, PrimaryButton, StepProgress } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -16,6 +16,8 @@ export function SetupPinStep({
   onConfirmPinChange,
   busy,
   onSetPin,
+  newPinError,
+  confirmPinError,
 }: {
   newPin: string;
   onNewPinChange: (value: string) => void;
@@ -23,12 +25,14 @@ export function SetupPinStep({
   onConfirmPinChange: (value: string) => void;
   busy: boolean;
   onSetPin: () => void;
+  newPinError?: string;
+  confirmPinError?: string;
 }) {
   return (
     <>
-      <StepBadge text="Step 2/2" />
-      <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry />
-      <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry />
+      <StepProgress step={2} total={2} label="Choose your PIN" />
+      <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />
+      <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry error={confirmPinError} />
       <View style={{ marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Set PIN and enter app" onPress={onSetPin} busy={busy} />
       </View>

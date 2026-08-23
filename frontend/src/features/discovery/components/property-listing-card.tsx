@@ -1,5 +1,5 @@
 import { Image, Linking, Text, View } from "react-native";
-import { Eye, ImageOff, MapPin, Navigation, type LucideProps } from "lucide-react-native";
+import { CalendarClock, CalendarDays, Eye, ImageOff, MapPin, Navigation, type LucideProps } from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { Card } from "@/components/card";
@@ -22,7 +22,12 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
   const { colors, fonts, type } = useTheme();
   const match = filters ? computeFilterMatches(filters, property) : null;
   const imageUri = property.imageUrls?.find(Boolean) ?? property.profileImageUrl ?? null;
-  const addressLine = [property.area, property.city, property.state].filter(Boolean).join(", ");
+  // Pincode included: it was the one part of an Indian address a reader looks
+  // for to place somewhere exactly, and the line was assembled without it.
+  const addressLine = [property.area, property.city, property.state, property.pincode]
+    .filter(Boolean)
+    .join(", ");
+  const hasRent = property.startingRoomRentPaise != null && property.startingRoomRentPaise > 0;
 
   function openDirections() {
     if (property.directionsUrl) {
@@ -36,8 +41,21 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
     void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
   }
 
+  // Each divider owns the space around it, rather than the card owning one gap
+  // for everything: the sections are different weights of information and a
+  // uniform rhythm made the whole card read as one undifferentiated stack.
+  const section = {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+  } as const;
+
   return (
-    <Card>
+    // Gap surrendered to the sections below, which set their own rhythm around
+    // their dividers. Card padding stays — the photo is a thumbnail again, not
+    // something that runs to the edges.
+    <Card style={{ gap: 0 }}>
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         {imageUri ? (
           <Image
@@ -73,79 +91,85 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
           </View>
         )}
 
-        <View style={{ flex: 1, gap: spacing.xxs, justifyContent: "center", minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.primary }]}>
-            {humanizeToken(property.type)}
-          </Text>
-          <Text
+        <View style={{ flex: 1, gap: 5, justifyContent: "center", minWidth: 0 }}>
+          <View
             style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 20,
-              letterSpacing: -0.3,
-              lineHeight: 24,
+              alignSelf: "flex-start",
+              backgroundColor: colors.surfaceSunken,
+              borderRadius: 999,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 2,
             }}
+          >
+            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 10.5, letterSpacing: 0.3 }}>
+              {humanizeToken(property.type)}
+            </Text>
+          </View>
+          <Text
+            numberOfLines={2}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3, lineHeight: 24 }}
           >
             {property.name}
           </Text>
         </View>
       </View>
 
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            Address
-          </Text>
-          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
-            <MapPin color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-            <Text style={[type.body, { color: colors.inkSoft, flex: 1, fontSize: 13, lineHeight: 18 }]}>
-              {addressLine}
-            </Text>
-          </View>
-        </View>
+      {/* Its own row, under the thumbnail rather than squeezed beside it: an
+          Indian address with a pincode does not fit the column left over next to
+          a 72px image, and wrapping it there pushed the card taller than putting
+          it here does.
+
+          No "ADDRESS" label — the pin says what the line is. Distance sits on the
+          same line because it is a fact ABOUT this address; as a tinted chip
+          elsewhere it left the reader to join the two up. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, marginTop: spacing.sm }}>
+        <MapPin color={colors.inkSoft} size={14} strokeWidth={2.4} style={{ marginTop: 2 }} />
+        <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 18 }}>
+          {addressLine}
+        </Text>
         {property.distanceKm != null ? (
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.jadeSoft,
-              borderRadius: 999,
-              flexDirection: "row",
-              gap: 4,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 4,
-            }}
-          >
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginTop: 1 }}>
             <Navigation color={colors.jade} fill={colors.jade} size={10} strokeWidth={2} />
-            <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
+            <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 12, fontVariant: ["tabular-nums"] }}>
               {property.distanceKm < 1
-                ? `${Math.round(property.distanceKm * 1000)} m away`
-                : `${property.distanceKm.toFixed(1)} km away`}
+                ? `${Math.round(property.distanceKm * 1000)} m`
+                : `${property.distanceKm.toFixed(1)} km`}
             </Text>
           </View>
         ) : null}
       </View>
 
-      <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-      <View style={{ flexDirection: "row", gap: spacing.md }}>
-        <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            Rent from
-          </Text>
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.mono,
-              fontSize: 17,
-              fontVariant: ["tabular-nums"],
-              fontWeight: "500",
-            }}
-          >
-            {formatMoneyPaise(property.startingRoomRentPaise)}
-          </Text>
+      {/* Rent leads at display weight with the period beside it, the way every
+          listing app states a price; deposit follows quietly, because it is the
+          second question. Both were set in mono at one size, which read as a
+          spreadsheet and gave neither any priority. */}
+      <View style={[section, { alignItems: "flex-end", flexDirection: "row", gap: spacing.sm }]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {hasRent ? (
+            <View style={{ alignItems: "baseline", flexDirection: "row", gap: 4 }}>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
+                from
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, letterSpacing: -0.4 }}
+              >
+                {formatMoneyPaise(property.startingRoomRentPaise)}
+              </Text>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
+                /month
+              </Text>
+            </View>
+          ) : (
+            // One phrase, not "from Not set /month". A price expression built
+            // around a missing number reads as a bug, and every part of it —
+            // "from", the period — is a claim about a figure that isn't there.
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 15 }}>
+              Rent on request
+            </Text>
+          )}
         </View>
-        <View style={{ backgroundColor: colors.border, width: 1 }} />
-        <View style={{ flex: 1, gap: spacing.xxs }}>
+        <View style={{ alignItems: "flex-end", gap: 1 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Deposit
           </Text>
@@ -154,10 +178,9 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               wraps. ₹0 is the one thing it must not say. */}
           <Text
             style={{
-              color: colors.ink,
-              fontFamily: property.standardDepositPaise > 0 ? fonts.mono : fonts.sansBold,
-              fontSize: 17,
-              fontVariant: ["tabular-nums"],
+              color: property.standardDepositPaise > 0 ? colors.inkSoft : colors.muted,
+              fontFamily: fonts.sansBold,
+              fontSize: 15,
             }}
           >
             {property.standardDepositPaise > 0 ? formatMoneyPaise(property.standardDepositPaise) : "None"}
@@ -165,20 +188,30 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
         </View>
       </View>
 
-      <Text style={[type.caption, { color: property.dailyRentingAvailable ? colors.jade : colors.muted }]}>
-        {property.dailyRentingAvailable ? "✦ Daily renting available" : "Monthly renting only"}
-      </Text>
+      {match && match.activeCount > 0 ? (
+        <View style={section}>
+          <MatchSummary match={match} />
+        </View>
+      ) : null}
 
-      {match && match.activeCount > 0 ? <MatchSummary match={match} /> : null}
+      <View style={[section, { alignItems: "center", flexDirection: "row", gap: spacing.xs }]}>
+        {property.dailyRentingAvailable ? (
+          <CalendarClock color={colors.jade} size={15} strokeWidth={2.2} />
+        ) : (
+          <CalendarDays color={colors.muted} size={15} strokeWidth={2.2} />
+        )}
+        <Text style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13 }}>
+          {property.dailyRentingAvailable ? "Daily renting available" : "Monthly renting only"}
+        </Text>
+      </View>
 
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
         <IconButton icon={Eye} label="View" muted onPress={onView} style={{ flex: 1 }} />
         <IconButton icon={DirectionsIcon} label="Directions" onPress={openDirections} style={{ flex: 1 }} />
       </View>
     </Card>
   );
 }
-
 // Google-Maps-style directions glyph (diamond with a turn arrow); wrapped so it
 // satisfies IconButton's lucide icon contract.
 function DirectionsIcon({ color, size }: LucideProps) {
@@ -194,14 +227,12 @@ function DirectionsIcon({ color, size }: LucideProps) {
 function MatchSummary({ match }: { match: FilterMatch }) {
   const { colors, type } = useTheme();
   return (
-    <View style={{ gap: spacing.xs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        {match.strength ? <StrengthBadge matched={match.matchedCount} strength={match.strength} total={match.activeCount} /> : null}
-      </View>
+    <View style={{ gap: spacing.sm }}>
+      <MatchMeter matched={match.matchedCount} strength={match.strength} total={match.activeCount} />
       {match.matchedTags.length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
           {match.matchedTags.map((tag) => (
-            <FeatureTag key={tag} highlighted label={tag} />
+            <FeatureTag key={tag} label={tag} />
           ))}
         </View>
       ) : (
@@ -213,47 +244,67 @@ function MatchSummary({ match }: { match: FilterMatch }) {
   );
 }
 
-function StrengthBadge({ matched, strength, total }: { matched: number; strength: MatchStrength; total: number }) {
-  const { colors, type } = useTheme();
+/**
+ * How many of the reader's filters this place actually meets.
+ *
+ * <p>A meter rather than the badge it replaced. "● Strong match · 3/4" was a
+ * bordered pill sitting directly above a row of tags, so the one line that
+ * summarises the match competed with the evidence for it — and a fraction set in
+ * a pill is read, not glanced at. Filled segments carry the count, colour
+ * carries the verdict, and the words spell out what the fraction counts.
+ */
+function MatchMeter({ matched, strength, total }: { matched: number; strength: MatchStrength | null; total: number }) {
+  const { colors, fonts, type } = useTheme();
   const color = strength === "strong" ? colors.jade : strength === "moderate" ? colors.primary : colors.muted;
   const label = strength === "strong" ? "Strong match" : strength === "moderate" ? "Moderate match" : "Weak match";
+
   return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: color,
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 4,
-      }}
-    >
-      <View style={{ backgroundColor: color, borderRadius: 999, height: 7, width: 7 }} />
-      <Text style={[type.caption, { color, fontWeight: "800" }]}>
-        {label} · {matched}/{total}
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: 3 }}>
+        {Array.from({ length: total }, (_unused, index) => (
+          <View
+            key={index}
+            style={{
+              backgroundColor: index < matched ? color : colors.border,
+              borderRadius: 2,
+              height: 4,
+              width: 14,
+            }}
+          />
+        ))}
+      </View>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 12 }}>
+        {label}
+      </Text>
+      <Text style={[type.caption, { color: colors.kicker }]}>
+        {matched} of {total} filter{total === 1 ? "" : "s"}
       </Text>
     </View>
   );
 }
 
-function FeatureTag({ highlighted, label }: { highlighted?: boolean; label: string }) {
-  const { colors, type } = useTheme();
+/**
+ * One filter this place matched.
+ *
+ * <p>Outlined, never filled. These were `primarySoft` blocks, and three or four
+ * of them was a band of blue louder than the property's own name — they are
+ * evidence for the match line above, not a call to action.
+ */
+function FeatureTag({ label }: { label: string }) {
+  const { colors, fonts } = useTheme();
 
   return (
     <View
       style={{
-        backgroundColor: highlighted ? colors.primarySoft : "transparent",
-        borderColor: highlighted ? colors.primary : colors.border,
-        borderRadius: 8,
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
         borderWidth: 1,
         paddingHorizontal: spacing.sm,
-        paddingVertical: 6,
+        paddingVertical: 3,
       }}
     >
-      <Text style={[type.caption, { color: highlighted ? colors.primary : colors.inkSoft, fontWeight: "700" }]}>
+      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
         {label}
       </Text>
     </View>

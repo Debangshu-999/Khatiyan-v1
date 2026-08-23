@@ -15,6 +15,10 @@ import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { rupeesLabel } from "@/features/compliance/clause-values";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -62,10 +66,36 @@ export default function OwnerExitPoliciesScreen() {
     }
   }, [checklist, damageCharges, policiesQuery.data]);
 
+  // Server refusal — no field owns it, so it takes a modal.
+  const opErrors = useFormErrors<never>();
+
   async function save() {
     if (!propertyId || damageCharges === null || checklist === null) {
       return;
     }
+
+    // Compared against the server copy, so returning a field to its original
+    // value counts as no change rather than arming the save forever.
+    const saved = policiesQuery.data;
+    if (
+      saved &&
+      isUnchanged(
+        {
+          checklist: saved.exitChecklist,
+          damages: saved.damageCharges.map(damageKey),
+          premature: saved.prematureExitPolicy,
+        },
+        {
+          checklist,
+          damages: damageCharges.map(damageKey),
+          premature: prematureExit,
+        },
+      )
+    ) {
+      toast.warning("No changes have been made.");
+      return;
+    }
+
     try {
       await savePolicies({
         propertyId,
@@ -76,8 +106,8 @@ export default function OwnerExitPoliciesScreen() {
         },
       }).unwrap();
       toast.success("Exit policies saved.");
-    } catch {
-      toast.error("Could not save the exit policies.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -104,8 +134,7 @@ export default function OwnerExitPoliciesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={DoorOpen}
-            eyebrow="Property required"
+            icon={DoorOpen}
             title="No property selected"
             description="Choose an active property from Home before managing its exit policies."
           />
@@ -116,14 +145,13 @@ export default function OwnerExitPoliciesScreen() {
           </>
         ) : (
           <>
-            <Section eyebrow="Deposit settlement" title="Damage charges">
+            <Section title="Damage charges">
               <Card>
                 <DamageChargesEditor charges={damageCharges} onChange={setDamageCharges} readOnly={readOnly} />
               </Card>
             </Section>
 
-            <Section
-              eyebrow="Leaving without notice"
+            <Section
               title="Premature exit"
               trailing={
                 <AnimatedPressable
@@ -138,7 +166,7 @@ export default function OwnerExitPoliciesScreen() {
             >
               <Card>
                 {readOnly ? (
-                  <Text style={[type.body, { color: colors.ink, lineHeight: 20 }]}>
+                  <Text style={[type.policy, { color: colors.ink }]}>
                     {prematureExit?.trim() || "No premature exit policy is set."}
                   </Text>
                 ) : (
@@ -156,13 +184,15 @@ export default function OwnerExitPoliciesScreen() {
               </Card>
             </Section>
 
-            <Section eyebrow="Before settlement" title="Move-out checklist">
+            <Section title="Move-out checklist">
               <Card>
                 <ChecklistEditor checklist={checklist} onChange={setChecklist} readOnly={readOnly} />
               </Card>
             </Section>
           </>
         )}
+
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
 
       {prematureInfoOpen ? (
@@ -348,4 +378,14 @@ function ChecklistEditor({
 function toRupeesCount(text: string) {
   const value = Number(text.replace(/[^\d]/g, ""));
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * One damage charge flattened to a comparable string.
+ *
+ * <p>`isUnchanged` compares arrays element by element; a list of objects would
+ * compare by identity and every reload would read as an edit.
+ */
+function damageKey(charge: PropertyDamageCharge) {
+  return `${charge.name}::${charge.chargePaise}`;
 }

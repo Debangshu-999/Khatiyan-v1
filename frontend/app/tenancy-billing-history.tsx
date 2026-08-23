@@ -37,7 +37,7 @@ export default function TenancyBillingHistoryScreen() {
   const cycles = filter === "ALL" ? settled : settled.filter((cycle) => cycle.category === filter);
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Billing"
         onBack={() => router.back()}
@@ -59,7 +59,7 @@ export default function TenancyBillingHistoryScreen() {
           />
         ))
       ) : (
-        <EmptyState icon={ReceiptText} eyebrow="Nothing here" title="No past bills" description="Settled bills appear here once they're paid." />
+        <EmptyState icon={ReceiptText} title="No past bills" description="Settled bills appear here once they're paid." />
       )}
     </ScreenScrollView>
   );

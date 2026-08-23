@@ -1,7 +1,12 @@
 import { api } from "@/store/api";
 
 export type EnquiryResponseChannel = "CALL_BACK" | "EMAIL" | "CHAT";
-export type EnquiryStatus = "NEW" | "RESPONDED";
+/**
+ * EXPIRED is set by the server sweep seven days after an enquiry is raised. It
+ * both greys the card and releases the one-open-enquiry index, so the person who
+ * asked can ask again.
+ */
+export type EnquiryStatus = "NEW" | "RESPONDED" | "EXPIRED";
 export type EmailChannelState = "AVAILABLE" | "UNVERIFIED" | "NOT_REGISTERED";
 
 /**
@@ -29,6 +34,8 @@ export type EnquiryDetail = {
   message: string;
   status: EnquiryStatus;
   createdAt: string;
+  /** Still sent after it has passed — the card shows it for a further day. */
+  expiresAt: string;
   enquirerUserId: string;
   enquirerName: string | null;
   enquirerPhone: string | null;

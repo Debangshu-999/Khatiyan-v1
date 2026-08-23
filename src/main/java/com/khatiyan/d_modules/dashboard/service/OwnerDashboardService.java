@@ -16,8 +16,7 @@ import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.khatiyan.a_auth.AuthModule;
-import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
@@ -41,7 +40,6 @@ import com.khatiyan.d_modules.dashboard.api.dto.TodayDigest;
 import com.khatiyan.d_modules.enquiry.EnquiryModule;
 import com.khatiyan.d_modules.expense.ExpenseModule;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
-import com.khatiyan.d_modules.notice.NoticeModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
@@ -77,8 +75,6 @@ public class OwnerDashboardService {
     private final TenancyModule tenancyModule;
     private final BillingModule billingModule;
     private final ConcernModule concernModule;
-    private final NoticeModule noticeModule;
-    private final AuthModule authModule;
     private final StaffModule staffModule;
     private final ExpenseModule expenseModule;
     private final EnquiryModule enquiryModule;
@@ -92,8 +88,6 @@ public class OwnerDashboardService {
             TenancyModule tenancyModule,
             BillingModule billingModule,
             ConcernModule concernModule,
-            NoticeModule noticeModule,
-            AuthModule authModule,
             StaffModule staffModule,
             ExpenseModule expenseModule,
             EnquiryModule enquiryModule,
@@ -104,8 +98,6 @@ public class OwnerDashboardService {
         this.tenancyModule = tenancyModule;
         this.billingModule = billingModule;
         this.concernModule = concernModule;
-        this.noticeModule = noticeModule;
-        this.authModule = authModule;
         this.staffModule = staffModule;
         this.expenseModule = expenseModule;
         this.enquiryModule = enquiryModule;
@@ -151,10 +143,12 @@ public class OwnerDashboardService {
         long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
         AttentionSummary attention = buildAttention(
                 billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements,
-                enquiryModule.countNewForProperty(propertyId));
+                enquiryModule.countNewForProperty(propertyId),
+                staffModule.countSalaryPaymentDue(propertyId, today));
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
-        List<MonthlyTrendPoint> monthlyTrends = buildMonthlyTrends(allTenancies, cycles, occupancy.totalBeds(), today);
+        List<MonthlyTrendPoint> monthlyTrends =
+                buildMonthlyTrends(allTenancies, inactiveTenancies, cycles, occupancy.totalBeds(), today);
         // Straight read: the feed is only what listeners have recorded. Nothing is
         // derived from current state any more, which is what let history rewrite itself.
         List<RecentActivityItem> recentActivity = activityEventService.listRecent(propertyId, recentActivityLimit);
@@ -414,9 +408,17 @@ public class OwnerDashboardService {
      * by the dashboard bar charts. Occupancy rate is active tenancies in the
      * month over current total beds; collection rate is collected over billed in
      * the month. Both are clamped to 0..100.
+     *
+     * <p>Started and ended are counted exactly as the current-month figures on
+     * the tenancy snapshot are: any stay whose start date lands in the month,
+     * and only ENDED stays whose end date does. Ended reads from the inactive
+     * list alone because an active stay on notice carries a future end date,
+     * and counting that as an exit would report a month's departures before
+     * anybody had left.
      */
     private List<MonthlyTrendPoint> buildMonthlyTrends(
             List<TenancyResponse> allTenancies,
+            List<TenancyResponse> inactiveTenancies,
             List<BillingCycleResponse> cycles,
             long totalBeds,
             LocalDate today) {
@@ -430,6 +432,12 @@ public class OwnerDashboardService {
             long activeInMonth = activeTenantsDuring(allTenancies, windowStart, windowEnd);
             long billed = billedInMonth(cycles, windowStart, windowEnd);
             long collected = collectedInMonth(cycles, windowStart, windowEnd);
+            long started = allTenancies.stream()
+                    .filter(tenancy -> isWithinMonth(tenancy.startDate(), windowStart, windowEnd))
+                    .count();
+            long ended = inactiveTenancies.stream()
+                    .filter(tenancy -> isWithinMonth(tenancy.endDate(), windowStart, windowEnd))
+                    .count();
 
             int occupancyRate = totalBeds > 0
                     ? clampPercent((int) Math.round(100.0 * activeInMonth / totalBeds))
@@ -439,7 +447,7 @@ public class OwnerDashboardService {
                     : 0;
 
             String label = windowStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
-            points.add(new MonthlyTrendPoint(label, occupancyRate, collectionRate, collected));
+            points.add(new MonthlyTrendPoint(label, occupancyRate, collectionRate, collected, started, ended));
         }
 
         return points;
@@ -498,7 +506,8 @@ public class OwnerDashboardService {
             List<TenancyRoomChangeRequestResponse> roomChangeRequests,
             LocalDate today,
             long pendingDepositSettlements,
-            long newEnquiries) {
+            long newEnquiries,
+            long salaryPaymentsDue) {
         long tenantsOnNotice = activeTenancies.stream()
                 .filter(tenancy -> tenancy.status() == TenancyStatus.ON_NOTICE
                         || tenancy.status() == TenancyStatus.ON_PREMATURE_NOTICE)
@@ -510,6 +519,15 @@ public class OwnerDashboardService {
 
         long pendingRoomChangeRequests = roomChangeRequests.stream()
                 .filter(request -> request.status() == TenancyRoomChangeRequestStatus.REQUESTED)
+                .count();
+
+        // Read off the tenancy itself, not the agreement. A tenancy onboarded
+        // with an agreement is held at PENDING_ACCEPTANCE and the acceptance —
+        // and the expiry job — flip both records in one transaction, so the two
+        // can never disagree. Asking compliance would mean a second query and a
+        // module dependency for a fact already in this list.
+        long agreementsPendingAcceptance = activeTenancies.stream()
+                .filter(tenancy -> tenancy.status() == TenancyStatus.PENDING_ACCEPTANCE)
                 .count();
 
         long upcomingExits = countUpcomingExits(activeTenancies, exitRequests, today);
@@ -526,7 +544,9 @@ public class OwnerDashboardService {
                 exitsPastDue,
                 tenantsOnNotice,
                 pendingDepositSettlements,
-                newEnquiries);
+                newEnquiries,
+                salaryPaymentsDue,
+                agreementsPendingAcceptance);
     }
 
     private ConcernQueueSummary buildConcernQueue(ConcernDashboardSummary concern) {

@@ -45,6 +45,8 @@ export type BillingCycleLineItem = {
   settlementAction: BillingLineSettlementAction;
   systemGenerated: boolean;
   createdByUserId: string | null;
+  /** Who added it. Null on system lines, and null when a read path cannot resolve it. */
+  createdByName: string | null;
   lastAdjustedByUserId: string | null;
   displayOrder: number;
   createdAt: string;
@@ -316,6 +318,21 @@ export const billingApi = api.injectEndpoints({
       invalidatesTags: ["BillingCycle", "Notification"],
     }),
 
+    /**
+     * Reverses one owner action on a bill by zeroing its line.
+     *
+     * <p>The line is kept rather than deleted — a bill's history is the record
+     * of what was done to it, and a reverted discount that vanishes leaves the
+     * reader wondering why the total moved.
+     */
+    clearBillingLineItem: builder.mutation<BillingCycle, { billingCycleId: string; lineItemId: string }>({
+      query: ({ billingCycleId, lineItemId }) => ({
+        method: "PATCH",
+        url: `/api/v1/billing/cycles/${billingCycleId}/line-items/${lineItemId}/clear`,
+      }),
+      invalidatesTags: ["BillingCycle", "Deposit", "Notification"],
+    }),
+
     addTenancyDiscount: builder.mutation<BillingCycle, { discount: CreateDiscountPayload; tenancyId: string }>({
       query: ({ discount, tenancyId }) => ({
         body: discount,
@@ -423,6 +440,7 @@ export const billingApi = api.injectEndpoints({
 });
 
 export const {
+  useClearBillingLineItemMutation,
   useAddDepositCorrectionMutation,
   useAddTenancyDiscountMutation,
   useAddTenancyExtraChargesMutation,

@@ -10,6 +10,9 @@ import { ImageCarousel } from "@/components/image-carousel";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { classifyToast } from "@/components/toast";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ActionButton, BackButton, FormInput, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
@@ -57,10 +60,19 @@ export default function OwnerConcernDetailScreen() {
   const [resolutionNote, setResolutionNote] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
   // Action results route to the global toast; failures/validation read as errors.
+  // Failures raised anywhere on this screen; no field owns them.
+  const opErrors = useFormErrors<never>();
+
   const setMessage = (value: string | null) => {
-    if (value) {
-      toast.show(value, /could not|required|cannot|unable|invalid|failed/i.test(value) ? "error" : "success");
+    if (!value) {
+      return;
     }
+    // A failure ends the attempt, so it interrupts; a confirmation does not.
+    if (classifyToast(value) === "error") {
+      opErrors.failFromServer(value);
+      return;
+    }
+    toast.show(value);
   };
 
   const liveConcern = useMemo(() => {
@@ -170,7 +182,7 @@ export default function OwnerConcernDetailScreen() {
       />
 
       {loading && !concern ? <Card><Text style={[type.body, { color: colors.muted }]}>Loading concern...</Text></Card> : null}
-      {!loading && !concern ? <EmptyState icon={ImageOff} eyebrow="Concern" title="Concern not found" description="Refresh the queue and open the concern again." /> : null}
+      {!loading && !concern ? <EmptyState icon={ImageOff} title="Concern not found" description="Refresh the queue and open the concern again." /> : null}
 
       {concern ? (
         <>
@@ -250,6 +262,7 @@ export default function OwnerConcernDetailScreen() {
           ) : null}
         </>
       ) : null}
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -280,7 +293,7 @@ function AssignConcernModal({
 
           {loading ? <Text style={[type.body, { color: colors.muted }]}>Loading managers...</Text> : null}
           {!loading && managers.length === 0 ? (
-            <EmptyState icon={UserRoundPlus} eyebrow="Managers" title="No active managers" description="Add a manager to this property before assigning concerns." />
+            <EmptyState icon={UserRoundPlus} title="No active managers" description="Add a manager to this property before assigning concerns." />
           ) : null}
           {!loading && managers.length > 0 ? (
             <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>

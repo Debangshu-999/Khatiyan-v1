@@ -244,7 +244,9 @@ function TopicBubble({
 }) {
   const { colors, fonts } = useTheme();
   const Icon = source ? ALERT_ICONS[source] : null;
-  const color = active ? colors.primary : colors.inkSoft;
+  // Same accent the unread cards use for their edge, so the selected filter
+  // and the rows it produced are visibly the same thought.
+  const color = active ? colors.accent : colors.inkSoft;
 
   return (
     <AnimatedPressable
@@ -254,10 +256,10 @@ function TopicBubble({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surface,
-        borderColor: active ? colors.primary : colors.border,
+        backgroundColor: active ? colors.accentSoft : colors.surface,
+        borderColor: active ? colors.accent : colors.border,
         borderRadius: 999,
-        borderWidth: 1,
+        borderWidth: active ? 2 : 1,
         flexDirection: "row",
         gap: spacing.xs,
         paddingHorizontal: spacing.sm,
@@ -270,7 +272,7 @@ function TopicBubble({
       </Text>
       <Text
         style={{
-          color: active ? colors.primary : colors.kicker,
+          color: active ? colors.accent : colors.kicker,
           fontFamily: fonts.sansBold,
           fontSize: 11,
           fontVariant: ["tabular-nums"],

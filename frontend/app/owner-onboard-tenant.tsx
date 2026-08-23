@@ -9,7 +9,9 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
+import { AlertModal } from "@/components/alert-modal";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { deductionCategories, validityMonths } from "@/features/compliance/clause-values";
 import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
@@ -102,6 +104,9 @@ function errorText(e: unknown) {
 }
 
 export default function OwnerOnboardTenantScreen() {
+  // Server refusal — nothing on screen to correct.
+  const opErrors = useFormErrors<never>();
+
   const router = useRouter();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
@@ -109,7 +114,7 @@ export default function OwnerOnboardTenantScreen() {
   // Onboarding only surfaces error feedback (success advances the wizard step).
   const setMessage = (value: string | null) => {
     if (value) {
-      toast.error(value);
+      opErrors.failFromServer(value);
     }
   };
 
@@ -485,7 +490,6 @@ export default function OwnerOnboardTenantScreen() {
           {!propertiesQuery.isLoading && !selectedProperty ? (
             <EmptyState
               icon={KeyRound}
-              eyebrow="Property required"
               title={properties.length > 1 ? "Select a property from Home" : "No property available"}
               description="Onboarding uses the owner workspace property selected on Home."
             />
@@ -538,7 +542,6 @@ export default function OwnerOnboardTenantScreen() {
             ) : !propertiesQuery.isLoading ? (
               <EmptyState
                 icon={KeyRound}
-                eyebrow="Property required"
                 title={properties.length > 1 ? "Select a property from Home" : "No property available"}
                 description={
                   properties.length > 1
@@ -977,6 +980,7 @@ export default function OwnerOnboardTenantScreen() {
         </Card>
       ) : null}
 
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }

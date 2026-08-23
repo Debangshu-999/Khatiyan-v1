@@ -22,7 +22,11 @@ import { useToast } from "@/components/toast";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { ScreenHeader } from "@/components/screen-header";
+import { SessionCountdown, SignedInDevices } from "@/features/auth/signed-in-devices";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { classifyToast } from "@/components/toast";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Section } from "@/components/section";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -79,6 +83,7 @@ export default function AccountSettingsScreen() {
     return devices.find((device) => device.active) ?? null;
   }, [auth.registeredDeviceTokenId, devicesQuery.data]);
 
+  const opErrors = useFormErrors<never>();
   async function persistTokenSession(response: TokenResponse) {
     const session = {
       accessToken: response.accessToken,
@@ -104,7 +109,7 @@ export default function AccountSettingsScreen() {
       dispatch(setRegisteredDeviceTokenId(null));
       toast.success("Notifications disabled on this device.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update notification settings.");
+      opErrors.failFromServer(error instanceof Error ? error.message : "Unable to update notification settings.");
     }
   }
 
@@ -141,7 +146,7 @@ export default function AccountSettingsScreen() {
               photoUrl={auth.user?.profilePhotoUrl ?? null}
             />
 
-            <Section eyebrow="Security" title="PIN">
+            <Section title="PIN">
               <SettingsRow
                 icon={DialpadIcon}
                 title="Change PIN"
@@ -156,7 +161,12 @@ export default function AccountSettingsScreen() {
               />
             </Section>
 
-            <Section eyebrow="Notifications" title="Device alerts">
+            <Section title="Signed-in devices">
+              <SessionCountdown />
+              <SignedInDevices />
+            </Section>
+
+            <Section title="Device alerts">
               <Card>
                 <PreferenceRow
                   icon={BellRing}
@@ -180,7 +190,7 @@ export default function AccountSettingsScreen() {
               </Card>
             </Section>
 
-            <Section eyebrow="Appearance" title="Display">
+            <Section title="Display">
               <Card>
                 <PreferenceRow
                   icon={Moon}
@@ -218,6 +228,7 @@ export default function AccountSettingsScreen() {
               </Card>
             </Section>
 
+            {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
           </ScreenScrollView>
 
           <PinVerificationModal
@@ -352,6 +363,9 @@ function PinVerificationModal({
   onVerifyOtp: (otp: string) => Promise<void>;
   phone: string;
 }) {
+  // Refusals inside the PIN flow: wrong PIN, expired code.
+  const pinErrors = useFormErrors<never>();
+
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const [step, setStep] = useState<PinFlowStep>("details");
@@ -363,7 +377,11 @@ function PinVerificationModal({
   const setMessage = useCallback(
     (value: string | null) => {
       if (value) {
-        toast.show(value, /(sent|verified|success)/i.test(value) ? "success" : "error");
+        if (classifyToast(value) === "error") {
+          pinErrors.failFromServer(value);
+          return;
+        }
+        toast.show(value);
       }
     },
     [toast],
@@ -552,7 +570,6 @@ function PinVerificationModal({
                     if you are mid-task on one of them, and unguessable from a
                     screen that only talks about this device. */}
                 <NoticeBar
-                  icon={AlertTriangle}
                   message="Any other phone or tablet signed in to this account is signed out too."
                   title="This signs you out everywhere"
                   tone="warning"

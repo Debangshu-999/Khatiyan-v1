@@ -150,6 +150,7 @@ export function ScreenScrollView({
             "Notification",
             "Discovery",
             "Payment",
+            "Session",
             "Staff",
           ]),
         );

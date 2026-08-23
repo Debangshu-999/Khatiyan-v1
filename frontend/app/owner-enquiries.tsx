@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
-import { Dimensions, Linking, Text, View } from "react-native";
+import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
+
+import { openDialer } from "@/lib/dial";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilterBubbles } from "@/components/filter-bubbles";
-import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonCard } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
-import { paginateAlerts } from "@/features/notifications/alert-filters";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
@@ -31,6 +31,9 @@ type EnquiryFilter = "new" | "all";
 
 const PAGE_SIZE = 6;
 
+/** How close to the bottom counts as "show me more". Matches the alert feeds. */
+const LOAD_MORE_THRESHOLD_PX = 240;
+
 export default function OwnerEnquiriesScreen() {
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
@@ -47,7 +50,9 @@ export default function OwnerEnquiriesScreen() {
   // is converted, alongside the backend check.
 
   const [filter, setFilter] = useState<EnquiryFilter>("new");
-  const [page, setPage] = useState(0);
+  // Pages the RENDER, not the fetch — the list arrives as one payload. Same
+  // shape as the notifications feed so both lists end the same way.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [responding, setResponding] = useState<EnquiryDetail | null>(null);
   const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
 
@@ -62,15 +67,31 @@ export default function OwnerEnquiriesScreen() {
   // opening onto an empty filter reads as "no enquiries" when there are plenty.
   const effectiveFilter: EnquiryFilter = filter === "new" && openCount === 0 ? "all" : filter;
   const visible = effectiveFilter === "new" ? enquiries.filter((enquiry) => enquiry.status === "NEW") : enquiries;
-  const paged = paginateAlerts(visible, page, PAGE_SIZE);
+  const shown = visible.slice(0, visibleCount);
+  const hasMore = visibleCount < visible.length;
+
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!hasMore) {
+      return;
+    }
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    if (contentSize.height - contentOffset.y - layoutMeasurement.height <= LOAD_MORE_THRESHOLD_PX) {
+      setVisibleCount((current) => Math.min(current + PAGE_SIZE, visible.length));
+    }
+  }
 
   function changeFilter(next: EnquiryFilter) {
     setFilter(next);
-    setPage(0);
+    setVisibleCount(PAGE_SIZE);
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView
+      contentContainerStyle={{ paddingTop: 0 }}
+      onScroll={handleScroll}
+      safeAreaEdges={["top", "bottom"]}
+      scrollEventThrottle={16}
+    >
       <ScreenHeader
         eyebrow="Owner tool"
         italicTail="received."
@@ -86,7 +107,6 @@ export default function OwnerEnquiriesScreen() {
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
           description="Enquiries are scoped to the active owner property."
-          eyebrow="Property required"
           icon={MessageSquare}
           title="No property selected"
         />
@@ -109,10 +129,18 @@ export default function OwnerEnquiriesScreen() {
           {enquiriesQuery.isFetching && enquiries.length === 0 ? (
             <SkeletonCard />
           ) : visible.length === 0 ? (
-            <NothingAsked answeredEverything={enquiries.length > 0} />
+            <EmptyState
+              description={
+                enquiries.length > 0
+                  ? "Nothing is waiting on you."
+                  : "People who find this property in discovery can ask a question from its profile."
+              }
+              icon={MessageSquare}
+              title={enquiries.length > 0 ? "All answered" : "No enquiries yet"}
+            />
           ) : (
             <>
-              {paged.pageItems.map((enquiry) => (
+              {shown.map((enquiry) => (
                 <EnquiryCard
                   enquiry={enquiry}
                   key={enquiry.id}
@@ -120,15 +148,13 @@ export default function OwnerEnquiriesScreen() {
                   onViewLog={() => setViewingLog(enquiry)}
                 />
               ))}
-              <PaginationBar
-                hasNext={paged.hasNext}
-                hasPrevious={paged.hasPrevious}
-                onNext={() => setPage(paged.page + 1)}
-                onPrevious={() => setPage(Math.max(0, paged.page - 1))}
-                page={paged.page}
-                totalElements={paged.totalElements}
-                totalPages={paged.totalPages}
-              />
+              {/* The list ends by saying so, rather than with a pager whose
+                  numbers nobody was using to navigate. */}
+              {!hasMore ? (
+                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
+                  That&apos;s all for now
+                </Text>
+              ) : null}
             </>
           )}
         </Section>
@@ -166,10 +192,15 @@ function EnquiryCard({
   // status, and a pill disagreeing with the number beside it is worse than
   // either being wrong on its own.
   const isNew = enquiry.status === "NEW";
+  // Greyed and unactionable, but still listed for a day — see the module doc.
+  // Nothing should vanish between two glances at the screen.
+  const isExpired = enquiry.status === "EXPIRED";
 
   return (
     <Card>
-      <View style={{ gap: spacing.xs }}>
+      {/* Dimmed as a whole rather than restyling every line: an expired enquiry
+          is still readable, just plainly no longer something to act on. */}
+      <View style={{ gap: spacing.xs, opacity: isExpired ? 0.55 : 1 }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <View style={{ alignItems: "center", flexDirection: "row", flex: 1, gap: spacing.xs }}>
             <User color={colors.ink} fill={colors.ink} size={14} />
@@ -192,6 +223,21 @@ function EnquiryCard({
               </Text>
             </View>
           ) : null}
+          {isExpired ? (
+            <View
+              style={{
+                borderColor: colors.borderStrong,
+                borderRadius: 999,
+                borderWidth: 1,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: 1,
+              }}
+            >
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10 }}>
+                EXPIRED
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {enquiry.enquirerPhone ? (
@@ -200,7 +246,7 @@ function EnquiryCard({
           </Text>
         ) : null}
 
-        <Text style={[type.body, { color: colors.ink, marginTop: 2 }]}>
+        <Text style={[type.quote, { color: colors.ink, marginTop: 2 }]}>
           {enquiry.message}
         </Text>
 
@@ -209,14 +255,22 @@ function EnquiryCard({
             history, and history on every card buries the message that matters. */}
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
           <View style={{ flex: 1 }}>
-            <ActionButton label="Respond" onPress={onRespond} />
+            {/* Blocked once expired, and refused by the server too: the card may
+                have been rendered before the sweep ran. */}
+            <ActionButton disabled={isExpired} label="Respond" onPress={onRespond} />
           </View>
           <ActionLogButton count={enquiry.responses.length} onPress={onViewLog} />
         </View>
 
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          {formatWhen(enquiry.createdAt)}
-        </Text>
+        {/* When it was asked and when it runs out, on one line each and both on
+            the left — a right-aligned time read as a separate column of numbers
+            rather than as part of the same sentence. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: 2 }}>
+          <Text style={[type.caption, { color: colors.kicker, flex: 1 }]}>
+            {formatWhen(enquiry.createdAt)}
+          </Text>
+          <ExpiryChip expired={isExpired} expiresAt={enquiry.expiresAt} />
+        </View>
       </View>
     </Card>
   );
@@ -331,9 +385,14 @@ function RespondSheet({
   async function choose(channel: EnquiryResponseChannel, target: string | undefined) {
     setError(null);
 
-    const url = channel === "EMAIL" ? `mailto:${target}` : `tel:${target}`;
     try {
-      await Linking.openURL(url);
+      if (channel === "EMAIL") {
+        await Linking.openURL(`mailto:${target}`);
+      } else {
+        // Through the shared helper, so the dialer shows a local number here
+        // exactly as it does everywhere else.
+        openDialer(target);
+      }
     } catch {
       setError(
         channel === "EMAIL"
@@ -414,7 +473,9 @@ function ChannelOption({
 }) {
   const { colors, fonts, type } = useTheme();
   const usable = available && !disabled;
-  const tint = usable ? colors.primary : colors.muted;
+  // Ink, not primary. These are three equal choices of how to reach someone —
+  // blue made each one read as the recommended action, which none of them is.
+  const tint = usable ? colors.ink : colors.muted;
 
   return (
     <AnimatedPressable
@@ -424,7 +485,7 @@ function ChannelOption({
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderColor: usable ? colors.primary : colors.borderStrong,
+        borderColor: usable ? colors.ink : colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: 14,
         borderStyle: dashed ? "dashed" : "solid",
@@ -448,51 +509,6 @@ function ChannelOption({
   );
 }
 
-/**
- * Centred rather than boxed, matching the upcoming-notices and nudges screens:
- * an empty inbox is the ordinary state, not a gap worth boxing.
- */
-function NothingAsked({ answeredEverything }: { answeredEverything: boolean }) {
-  const { colors, fonts, type } = useTheme();
-  const minHeight = Math.round(Dimensions.get("window").height * 0.46);
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        gap: spacing.md,
-        justifyContent: "center",
-        minHeight,
-        paddingHorizontal: spacing.lg,
-      }}
-    >
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderCurve: "continuous",
-          borderRadius: 18,
-          borderWidth: 1,
-          height: 58,
-          justifyContent: "center",
-          width: 58,
-        }}
-      >
-        <MessageSquare color={colors.ink} size={26} strokeWidth={2} />
-      </View>
-      <View style={{ alignItems: "center", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21 }}>
-          {answeredEverything ? "All answered" : "No enquiries yet"}
-        </Text>
-        <Text style={[type.body, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
-          {answeredEverything
-            ? "Nothing is waiting on you."
-            : "People who find this property in discovery can ask a question from its profile."}
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 function firstName(fullName: string | null) {
   if (!fullName) {
@@ -501,14 +517,80 @@ function firstName(fullName: string | null) {
   return fullName.trim().split(/\s+/)[0];
 }
 
+/**
+ * "Today at 4:32 pm", "3 days ago at 9:05 am".
+ *
+ * <p>Relative day, absolute time. An owner scanning a list cares how long the
+ * question has been sitting there, not its calendar date — but the time of day
+ * still matters for deciding whether calling right now is reasonable.
+ *
+ * <p>Day distance is measured in Asia/Kolkata calendar days, not in elapsed
+ * 24-hour blocks: 11pm and 1am are "yesterday" and "today" to a reader even
+ * though only two hours separate them.
+ */
 function formatWhen(value: string) {
+  const asked = new Date(value);
+  const days = calendarDaysAgo(asked);
+  const time = new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    hour12: true,
+    minute: "2-digit",
+    timeZone: DISPLAY_ZONE,
+  }).format(asked);
+
+  if (days <= 0) {
+    return `Today at ${time}`;
+  }
+  if (days === 1) {
+    return `Yesterday at ${time}`;
+  }
+  return `${days} days ago at ${time}`;
+}
+
+const DISPLAY_ZONE = "Asia/Kolkata";
+
+/** Whole calendar days between then and now, in the display zone. */
+function calendarDaysAgo(then: Date) {
+  const startOfDay = (date: Date) => {
+    // en-CA renders as YYYY-MM-DD, which parses back as a clean date boundary.
+    const iso = new Intl.DateTimeFormat("en-CA", { timeZone: DISPLAY_ZONE }).format(date);
+    return new Date(`${iso}T00:00:00Z`).getTime();
+  };
+  return Math.round((startOfDay(new Date()) - startOfDay(then)) / 86_400_000);
+}
+
+/** The date this enquiry stops being actionable, or that it already has. */
+function formatExpiryDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
     month: "short",
-    timeZone: "Asia/Kolkata",
+    timeZone: DISPLAY_ZONE,
   }).format(new Date(value));
+}
+
+/**
+ * How long is left, or that the window has closed.
+ *
+ * <p>Present on every card, not only near the end: an owner should not have to
+ * learn the seven-day rule by watching an enquiry disappear.
+ */
+function ExpiryChip({ expired, expiresAt }: { expired: boolean; expiresAt: string }) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: expired ? colors.neutralSoft : colors.surfaceSunken,
+        borderRadius: 999,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 2,
+      }}
+    >
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10.5 }}>
+        {expired ? `Expired ${formatExpiryDate(expiresAt)}` : `Expires ${formatExpiryDate(expiresAt)}`}
+      </Text>
+    </View>
+  );
 }
 
 function readErrorMessage(caught: unknown) {

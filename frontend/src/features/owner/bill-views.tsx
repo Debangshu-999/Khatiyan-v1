@@ -108,6 +108,66 @@ export function compareByPeriodDesc(left: BillingCycle, right: BillingCycle) {
 
 // ---------------------------------------------------------------- components
 
+/**
+ * What the bill cost before discounts, and what the discounts came to overall.
+ *
+ * <p>{@code totalAmountPaise} is already net of discount, so the pre-discount
+ * figure is the total plus it back. Stacked discounts need no special handling:
+ * {@code discountAmountPaise} is the sum of every discount line, so one
+ * percentage against the gross is the effective rate however many were applied —
+ * which is the number a reader actually wants, rather than "10% then 5%".
+ *
+ * <p>Null when nothing was discounted, so callers render the plain total.
+ */
+export function discountBreakdown(cycle: BillingCycle): { grossPaise: number; percent: number } | null {
+  if (!cycle.discountAmountPaise || cycle.discountAmountPaise <= 0) {
+    return null;
+  }
+  const grossPaise = cycle.totalAmountPaise + cycle.discountAmountPaise;
+  if (grossPaise <= 0) {
+    return null;
+  }
+  return { grossPaise, percent: Math.round((cycle.discountAmountPaise / grossPaise) * 100) };
+}
+
+/**
+ * The payable figure, with the pre-discount price struck through beside it when
+ * something was taken off — the shape every shopping app uses, because it says
+ * "this is cheaper than it was" without the reader doing arithmetic.
+ */
+export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: number }) {
+  const { colors, fonts, type } = useTheme();
+  const discount = discountBreakdown(cycle);
+
+  return (
+    <View style={{ gap: 2 }}>
+      <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        Total payable
+      </Text>
+      <View style={{ alignItems: "flex-end", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: size, letterSpacing: -0.3 }} numberOfLines={1}>
+          {formatMoney(cycle.totalAmountPaise)}
+        </Text>
+        {discount ? (
+          <>
+            <Text
+              style={[type.caption, { color: colors.muted, textDecorationLine: "line-through" }]}
+              numberOfLines={1}
+            >
+              {formatMoney(discount.grossPaise)}
+            </Text>
+            <View style={{ backgroundColor: colors.jadeSoft, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 }}>
+              <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11 }}>
+                {discount.percent}% off
+              </Text>
+            </View>
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export function BillStatusPill({ cycle }: { cycle: BillingCycle }) {
   const statusDisplay = billingCycleStatusDisplay(cycle);
   const tone: "success" | "danger" | "warning" | "neutral" | "primary" =
@@ -277,19 +337,19 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
             </Text>
             <BillStatusPill cycle={cycle} />
           </View>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
-            {tenantName}
-          </Text>
-
-          <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", marginTop: spacing.xxs }}>
-            <View style={{ gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Total payable
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.3 }} numberOfLines={1}>
-                {formatMoney(cycle.totalAmountPaise)}
-              </Text>
-            </View>
+          {/* Due date rides with the tenant name, not with the total. Once a
+              bill carries a discount the total line grows a struck-through
+              price and a percentage chip, and sharing a row with the date
+              pushed the date off the card entirely. */}
+          {/* Top-aligned: the date block is two lines tall, and aligning to its
+              END dragged the tenant name down to meet its baseline. */}
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <Text
+              numberOfLines={2}
+              style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
+            >
+              {tenantName}
+            </Text>
             <View style={{ alignItems: "flex-end", gap: 3 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Due date
@@ -302,6 +362,8 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
               </View>
             </View>
           </View>
+
+          <BillTotal cycle={cycle} />
 
           <Text style={[type.caption, { color: colors.kicker }]}>
             {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}

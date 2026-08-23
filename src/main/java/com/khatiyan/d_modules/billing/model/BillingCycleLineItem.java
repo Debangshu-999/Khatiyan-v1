@@ -268,6 +268,36 @@ public class BillingCycleLineItem extends BaseEntity {
                 .build();
     }
 
+    /**
+     * An extra charge taken out of the deposit rather than added to the bill:
+     * it owes nothing now ({@code amountPaise} 0) but records the full amount
+     * as the settlement figure.
+     */
+    public static BillingCycleLineItem extraChargeAdjustedFromDeposit(
+            BillingCycle cycle,
+            String label,
+            String description,
+            long amountPaise,
+            UUID createdByUserId,
+            int displayOrder) {
+        return BillingCycleLineItem.builder()
+                .billingCycleId(cycle.getId())
+                .tenancyId(cycle.getTenancyId())
+                .tenantUserId(cycle.getTenantUserId())
+                .propertyId(cycle.getPropertyId())
+                .type(BillingCycleLineItemType.EXTRA_CHARGE)
+                .status(BillingCycleLineItemStatus.ADDED)
+                .label(label)
+                .description(description)
+                .amountPaise(0)
+                .settlementAmountPaise(amountPaise)
+                .settlementAction(BillingLineSettlementAction.ADJUSTED_FROM_DEPOSIT)
+                .systemGenerated(false)
+                .createdByUserId(createdByUserId)
+                .displayOrder(displayOrder)
+                .build();
+    }
+
     public static BillingCycleLineItem discount(
             BillingCycle cycle,
             String label,

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Info, X } from "lucide-react-native";
+
+import { SessionLimitModal } from "@/features/auth/session-limit-modal";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { saveSession } from "@/auth/session-storage";
@@ -13,9 +15,12 @@ import { useToast } from "@/components/toast";
 import { loadThemeModeForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { AUTH_SHEET_OVERLAP, AuthHero, authHeroCopy, type AuthMode, type AuthStep } from "@/features/auth/auth-hero";
 import {
+  AuthAlertModal,
   AuthBackground,
   AuthCard,
   AuthTextField,
+  errorBody,
+  errorCode,
   errorMessage,
   isValidEmail,
   isValidPhone,
@@ -37,6 +42,7 @@ import {
   useConfirmEmailLoginMutation,
   useConfirmPinResetMutation,
   useLoginWithPinMutation,
+  type UserSession,
   useRegisterOwnerMutation,
   useRegisterUserMutation,
   useRequestEmailLoginMutation,
@@ -53,15 +59,11 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-function successMessage(value: string) {
-  const loweredValue = value.toLowerCase();
-  return (
-    loweredValue.includes("created") ||
-    loweredValue.includes("requested") ||
-    loweredValue.includes("verified") ||
-    loweredValue.includes("sent")
-  );
-}
+/** How long a validation line stays under its field before clearing itself. */
+const FIELD_ERROR_TIMEOUT_MS = 3000;
+
+/** Every input on the auth flow that can carry its own validation line. */
+type AuthField = "phone" | "pin" | "otp" | "email" | "fullName" | "newPin" | "confirmPin";
 
 /**
  * Auth flow orchestrator: owns the step state machine, all mutations and
@@ -98,6 +100,11 @@ export function AuthScreen() {
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
 
   const [loginWithPin, loginState] = useLoginWithPinMutation();
+  // Set when the account is at its device cap. Holds the PIN so "sign out other
+  // devices" can complete the sign-in it interrupted.
+  const [sessionLimit, setSessionLimit] = useState<
+    { message: string; pin: string; sessions: UserSession[] } | null
+  >(null);
   const [registerUser, registerUserState] = useRegisterUserMutation();
   const [registerOwner, registerOwnerState] = useRegisterOwnerMutation();
   const [requestOtp, requestOtpState] = useRequestOtpMutation();
@@ -119,11 +126,48 @@ export function AuthScreen() {
   const setMessage = useCallback(
     (value: string | null) => {
       if (value) {
-        toast.show(value, successMessage(value) ? "success" : "error");
+        toast.show(value);
       }
     },
     [toast],
   );
+
+  /**
+   * Errors split two ways, by whether the reader can act on the field.
+   *
+   * <p>Shape problems — empty, too short, mismatched — go under the input in
+   * red and clear themselves, because the fix is right there and the field is
+   * what you are looking at. Refusals from the server — wrong PIN, wrong OTP,
+   * locked out — go to a modal with an OK, because they end the attempt and a
+   * toast that slides away leaves someone who glanced at the keypad with no
+   * idea why nothing happened.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AuthField, string>>>({});
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const fieldErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showFieldErrors = useCallback((errors: Partial<Record<AuthField, string>>) => {
+    setFieldErrors(errors);
+    if (fieldErrorTimer.current) {
+      clearTimeout(fieldErrorTimer.current);
+    }
+    fieldErrorTimer.current = setTimeout(() => setFieldErrors({}), FIELD_ERROR_TIMEOUT_MS);
+  }, []);
+
+  const clearFieldErrors = useCallback(() => {
+    if (fieldErrorTimer.current) {
+      clearTimeout(fieldErrorTimer.current);
+    }
+    setFieldErrors({});
+  }, []);
+
+  // The timer outlives the screen if a validation error is showing when the
+  // person signs in, and firing setState after unmount is a warning at best.
+  useEffect(() => () => {
+    if (fieldErrorTimer.current) {
+      clearTimeout(fieldErrorTimer.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!otpRequestedAt) {
@@ -212,20 +256,28 @@ export function AuthScreen() {
   }
 
   function validatePhone(value: string) {
+    if (!value.trim()) {
+      showFieldErrors({ phone: "Enter your phone number." });
+      return false;
+    }
     if (!isValidPhone(value)) {
-      setMessage("Enter a valid 10 digit phone number.");
+      showFieldErrors({ phone: "Enter a valid 10 digit phone number." });
       return false;
     }
     return true;
   }
 
   function validatePinPair() {
+    if (!newPin.trim()) {
+      showFieldErrors({ newPin: "Enter a PIN." });
+      return false;
+    }
     if (!isValidPin(newPin)) {
-      setMessage("PIN must be exactly 6 digits.");
+      showFieldErrors({ newPin: "PIN must be exactly 6 digits." });
       return false;
     }
     if (newPin !== confirmPin) {
-      setMessage("Both PIN entries must match.");
+      showFieldErrors({ confirmPin: "Both PIN entries must match." });
       return false;
     }
     return true;
@@ -238,25 +290,54 @@ export function AuthScreen() {
   }
 
   async function handleLogin() {
-    setMessage(null);
+    clearFieldErrors();
     if (!validatePhone(loginPhone)) {
       return;
     }
+    if (!pin.trim()) {
+      showFieldErrors({ pin: "Enter your PIN." });
+      return;
+    }
     if (!isValidPin(pin)) {
-      setMessage("PIN must be exactly 6 digits.");
+      showFieldErrors({ pin: "PIN must be exactly 6 digits." });
       return;
     }
 
+    await attemptPinLogin(pin);
+  }
+
+  /**
+   * One PIN sign-in attempt.
+   *
+   * <p>{@code signOutOthers} is the second pass, taken only after someone has
+   * been told they are at the device cap and chosen to make room. The PIN is
+   * sent again rather than the first attempt being held open: the server
+   * verifies credentials on the same call that does the revoking, so nothing is
+   * signed out on the strength of a request that was already refused.
+   */
+  async function attemptPinLogin(pin: string, signOutSessionId?: string) {
     try {
-      const response = await loginWithPin({ phone: loginPhone, pin }).unwrap();
+      const response = await loginWithPin({ phone: loginPhone, pin, signOutSessionId }).unwrap();
+      setSessionLimit(null);
       await persistTokenSession(response);
     } catch (error) {
-      setMessage(errorMessage(error));
+      if (errorCode(error) === "SESSION_LIMIT_REACHED") {
+        // A warning, not an error: nothing is wrong and the PIN was right —
+        // there is simply a decision to make about which device to end. The PIN
+        // is held so the retry does not ask for it a second time, and the
+        // devices come from the refusal because the sessions endpoint is closed
+        // to someone who is not signed in yet.
+        const sessions = (errorBody(error)?.sessions ?? []) as UserSession[];
+        setSessionLimit({ message: errorMessage(error), pin, sessions });
+        return;
+      }
+      setSessionLimit(null);
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleRegister() {
-    setMessage(null);
+    clearFieldErrors();
     if (!validatePhone(signupPhone)) {
       return;
     }
@@ -264,11 +345,11 @@ export function AuthScreen() {
     // owner/tenant choice moves to the post-login landing); a typed value must
     // still be a valid email.
     if (signupEmail.trim() && !isValidEmail(signupEmail)) {
-      setMessage("Enter a valid recovery email, or leave it blank.");
+      showFieldErrors({ email: "Enter a valid recovery email, or leave it blank." });
       return;
     }
     if (!fullName.trim()) {
-      setMessage("Enter your full name.");
+      showFieldErrors({ fullName: "Enter your full name." });
       return;
     }
 
@@ -283,7 +364,7 @@ export function AuthScreen() {
       setStep("setupOtp");
       setMessage("Account created. Setup OTP requested.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
@@ -307,7 +388,7 @@ export function AuthScreen() {
    * setupOtp → setupPin steps and simply skips registration.
    */
   async function handleActivateAccount() {
-    setMessage(null);
+    clearFieldErrors();
     if (!validatePhone(signupPhone)) {
       return;
     }
@@ -322,12 +403,12 @@ export function AuthScreen() {
       setStep("setupOtp");
       setMessage("If that number is waiting to be set up, we've sent it a code.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleRequestSetupOtp() {
-    setMessage(null);
+    clearFieldErrors();
     if (!validatePhone(signupPhone)) {
       return;
     }
@@ -337,14 +418,14 @@ export function AuthScreen() {
       startOtpCooldown();
       setMessage("PIN setup OTP requested.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleVerifySetupOtp() {
-    setMessage(null);
+    clearFieldErrors();
     if (otp.length !== 6) {
-      setMessage("Enter the 6 digit OTP.");
+      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
 
@@ -355,14 +436,14 @@ export function AuthScreen() {
       setStep("setupPin");
       setMessage("OTP verified. Choose your PIN.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleSetPin() {
-    setMessage(null);
+    clearFieldErrors();
     if (otp.length !== 6) {
-      setMessage("Enter the 6 digit OTP first.");
+      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
     if (!validatePinPair()) {
@@ -373,12 +454,12 @@ export function AuthScreen() {
       const response = await setPinMutation({ phone: signupPhone, otp, pin: newPin }).unwrap();
       await persistTokenSession(response);
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleRequestResetOtp() {
-    setMessage(null);
+    clearFieldErrors();
     if (!validatePhone(resetPhone)) {
       return;
     }
@@ -390,14 +471,14 @@ export function AuthScreen() {
       setStep("resetOtp");
       setMessage("If that number has an account, we've sent it a reset code.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleVerifyResetOtp() {
-    setMessage(null);
+    clearFieldErrors();
     if (otp.length !== 6) {
-      setMessage("Enter the 6 digit OTP.");
+      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
 
@@ -408,14 +489,14 @@ export function AuthScreen() {
       setStep("resetPin");
       setMessage("OTP verified. Choose a new PIN.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleResetPin() {
-    setMessage(null);
+    clearFieldErrors();
     if (otp.length !== 6) {
-      setMessage("Enter the 6 digit OTP first.");
+      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
     if (!validatePinPair()) {
@@ -426,13 +507,18 @@ export function AuthScreen() {
       const response = await confirmPinReset({ phone: resetPhone, otp, newPin }).unwrap();
       await persistTokenSession(response);
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleEmailLoginRequest() {
+    clearFieldErrors();
+    if (!loginEmail.trim()) {
+      showFieldErrors({ email: "Enter your email address." });
+      return;
+    }
     if (!isValidEmail(loginEmail)) {
-      setMessage("Enter a valid verified email address.");
+      showFieldErrors({ email: "Enter a valid verified email address." });
       return;
     }
     try {
@@ -442,25 +528,26 @@ export function AuthScreen() {
       startOtpCooldown();
       toast.show("Email OTP sent. Check your verified email.", "info");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   async function handleEmailLoginConfirm() {
+    clearFieldErrors();
     if (otp.length !== 6) {
-      setMessage("Enter the 6 digit OTP.");
+      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
     try {
       const response = await confirmEmailLogin({ email: loginEmail.trim(), otp }).unwrap();
       await persistTokenSession(response);
     } catch (error) {
-      setMessage(errorMessage(error));
+      setAlertMessage(errorMessage(error));
     }
   }
 
   function resetTransientState() {
-    setMessage(null);
+    clearFieldErrors();
     setOtp("");
     setNewPin("");
     setConfirmPin("");
@@ -517,6 +604,20 @@ export function AuthScreen() {
     >
       {/* Full-bleed brand band running edge-to-edge under the status bar. */}
       <AuthHero copy={heroCopy} />
+
+      {alertMessage ? (
+        <AuthAlertModal message={alertMessage} onClose={() => setAlertMessage(null)} />
+      ) : null}
+
+      {sessionLimit ? (
+        <SessionLimitModal
+          busy={loginState.isLoading}
+          message={sessionLimit.message}
+          onCancel={() => setSessionLimit(null)}
+          onSignOut={(session) => void attemptPinLogin(sessionLimit.pin, session.id)}
+          sessions={sessionLimit.sessions}
+        />
+      ) : null}
 
       {activateInfoOpen ? (
         <Modal animationType="fade" onRequestClose={() => setActivateInfoOpen(false)} transparent visible>
@@ -626,7 +727,7 @@ export function AuthScreen() {
               onLogin={() => void handleLogin()}
               onForgotPin={() => {
                 setStep("resetRequest");
-                setMessage(null);
+                clearFieldErrors();
                 setOtp("");
                 setNewPin("");
                 setConfirmPin("");
@@ -637,6 +738,8 @@ export function AuthScreen() {
                 setOtp("");
                 setEmailLoginOtpRequested(false);
               }}
+              phoneError={fieldErrors.phone}
+              pinError={fieldErrors.pin}
               onGoToSignup={goToSignup}
             />
           ) : null}
@@ -651,6 +754,9 @@ export function AuthScreen() {
               onFullNameChange={setFullName}
               busy={busy}
               onRegister={() => void handleRegister()}
+              phoneError={fieldErrors.phone}
+              emailError={fieldErrors.email}
+              fullNameError={fieldErrors.fullName}
               onGoToLogin={goToLogin}
             />
           ) : null}
@@ -661,6 +767,7 @@ export function AuthScreen() {
               onPhoneChange={setSignupPhone}
               busy={busy}
               onSendCode={() => void handleActivateAccount()}
+              phoneError={fieldErrors.phone}
               onBackToLogin={goToLogin}
             />
           ) : null}
@@ -680,6 +787,16 @@ export function AuthScreen() {
               busy={emailLoginOtpRequested ? confirmEmailLoginState.isLoading : requestEmailLoginState.isLoading}
               onRequestOtp={() => void handleEmailLoginRequest()}
               onConfirm={() => void handleEmailLoginConfirm()}
+              emailError={fieldErrors.email}
+              otpError={fieldErrors.otp}
+              onEditEmail={() => {
+                // Back to the address step. The cooldown deliberately keeps
+                // running: it mirrors a server-side limit that does not reset
+                // because the reader changed their mind.
+                setEmailLoginOtpRequested(false);
+                setOtp("");
+                clearFieldErrors();
+              }}
               onBackToLogin={goToLogin}
             />
           ) : null}
@@ -695,6 +812,8 @@ export function AuthScreen() {
               onResendOtp={() => void handleRequestSetupOtp()}
               onVerifyOtp={() => void handleVerifySetupOtp()}
               onEditPhone={setupOrigin === "activate" ? backToActivate : goToSignup}
+              otpError={fieldErrors.otp}
+              onBackToLogin={goToLogin}
               activating={setupOrigin === "activate"}
             />
           ) : null}
@@ -706,6 +825,8 @@ export function AuthScreen() {
               confirmPin={confirmPin}
               onConfirmPinChange={setConfirmPin}
               busy={setPinState.isLoading}
+              newPinError={fieldErrors.newPin}
+              confirmPinError={fieldErrors.confirmPin}
               onSetPin={() => void handleSetPin()}
             />
           ) : null}
@@ -715,6 +836,7 @@ export function AuthScreen() {
               phone={resetPhone}
               onPhoneChange={setResetPhone}
               busy={busy}
+              phoneError={fieldErrors.phone}
               onRequestOtp={() => void handleRequestResetOtp()}
               onBackToLogin={goToLogin}
             />
@@ -728,6 +850,7 @@ export function AuthScreen() {
               cooldownSeconds={otpCooldownSeconds}
               busy={busy}
               onResendOtp={() => void handleRequestResetOtp()}
+              otpError={fieldErrors.otp}
               onVerifyOtp={() => void handleVerifyResetOtp()}
               onEditPhone={() => {
                 setStep("resetRequest");
@@ -744,6 +867,8 @@ export function AuthScreen() {
               confirmPin={confirmPin}
               onConfirmPinChange={setConfirmPin}
               busy={busy}
+              newPinError={fieldErrors.newPin}
+              confirmPinError={fieldErrors.confirmPin}
               onResetPin={() => void handleResetPin()}
               onBackToLogin={goToLogin}
             />

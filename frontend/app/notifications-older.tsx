@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { View } from "react-native";
+import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { BellOff } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
-import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
 import {
   countByTopic,
   notificationSource,
-  paginateAlerts,
   TopicBubbleRow,
   usePropertyAlertScope,
   type AlertTopic,
@@ -23,26 +21,46 @@ import {
   useMarkNotificationReadMutation,
 } from "@/store/services/notification-api";
 import { spacing } from "@/theme/spacing";
+import { useTheme } from "@/theme/use-theme";
 
+/** First screenful, and how many more arrive each time the reader reaches the end. */
 const PAGE_SIZE = 6;
+
+/** How close to the bottom counts as "reached the end", in px. */
+const LOAD_MORE_THRESHOLD_PX = 240;
 
 export default function NotificationsOlderScreen() {
   const router = useGuardedRouter();
+  const { colors, type } = useTheme();
   const { activeAccount, inPropertyScope, isManagement, selectedProperty } = usePropertyAlertScope();
   const olderQuery = useGetOlderNotificationsQuery(activeAccount, NOTIFICATION_REFETCH_OPTIONS);
   const [markRead] = useMarkNotificationReadMutation();
 
   const [topic, setTopic] = useState<AlertTopic>("all");
-  const [page, setPage] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const scopedOlder = (olderQuery.data ?? []).filter(inPropertyScope);
   const topicCounts = countByTopic(scopedOlder);
   const olderItems = topic === "all" ? scopedOlder : scopedOlder.filter((notification) => notificationSource(notification) === topic);
-  const pagedOlder = paginateAlerts(olderItems, page, PAGE_SIZE);
+  const visibleOlder = olderItems.slice(0, visibleCount);
+  const hasMore = visibleCount < olderItems.length;
 
-  // Property switches re-scope the list; start from the first page again.
+  // Pages the RENDER, not the fetch: the older bucket arrives as one payload.
+  // Mirrors the main feed so both lists end the same way.
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!hasMore) {
+      return;
+    }
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    if (distanceFromBottom <= LOAD_MORE_THRESHOLD_PX) {
+      setVisibleCount((current) => Math.min(current + PAGE_SIZE, olderItems.length));
+    }
+  }
+
+  // Property switches re-scope the list; collapse back to one screenful.
   useEffect(() => {
-    setPage(0);
+    setVisibleCount(PAGE_SIZE);
     setTopic("all");
   }, [selectedProperty?.id]);
 
@@ -51,7 +69,7 @@ export default function NotificationsOlderScreen() {
 
   function changeTopic(next: AlertTopic) {
     setTopic(next);
-    setPage(0);
+    setVisibleCount(PAGE_SIZE);
   }
 
   async function handlePress(recipientId: string, alreadyRead: boolean) {
@@ -66,7 +84,12 @@ export default function NotificationsOlderScreen() {
   }
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView
+      // The nested-screen top position, shared with every other back-button screen.
+      contentContainerStyle={{ paddingTop: 0 }}
+      onScroll={handleScroll}
+      scrollEventThrottle={16}
+    >
       <ScreenHeader
         onBack={() => router.back()}
         eyebrow="Notifications"
@@ -83,8 +106,7 @@ export default function NotificationsOlderScreen() {
 
       {isError ? (
         <EmptyState
-          icon={BellOff}
-          eyebrow="Backend unreachable"
+          icon={BellOff}
           title="Couldn't load older notifications"
           description="Try again from Account once the backend is reachable."
         />
@@ -96,8 +118,7 @@ export default function NotificationsOlderScreen() {
 
           {olderItems.length === 0 ? (
             <EmptyState
-              icon={BellOff}
-              eyebrow="Empty"
+              icon={BellOff}
               title="No older notifications"
               description={
                 topic === "all"
@@ -108,7 +129,7 @@ export default function NotificationsOlderScreen() {
           ) : (
             <View style={{ gap: spacing.md }}>
               <View style={{ gap: spacing.sm }}>
-                {pagedOlder.pageItems.map((notification) => (
+                {visibleOlder.map((notification) => (
                   <NotificationRow
                     key={notification.recipientId}
                     notification={notification}
@@ -116,16 +137,12 @@ export default function NotificationsOlderScreen() {
                   />
                 ))}
               </View>
-              {pagedOlder.totalPages > 1 ? (
-                <PaginationBar
-                  hasNext={pagedOlder.hasNext}
-                  hasPrevious={pagedOlder.hasPrevious}
-                  onNext={() => setPage(pagedOlder.page + 1)}
-                  onPrevious={() => setPage(Math.max(0, pagedOlder.page - 1))}
-                  page={pagedOlder.page}
-                  totalElements={pagedOlder.totalElements}
-                  totalPages={pagedOlder.totalPages}
-                />
+              {hasMore ? (
+                <ActivityIndicator color={colors.muted} />
+              ) : olderItems.length > PAGE_SIZE ? (
+                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
+                  That&apos;s all for now
+                </Text>
               ) : null}
             </View>
           )}

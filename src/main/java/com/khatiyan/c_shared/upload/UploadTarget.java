@@ -20,7 +20,16 @@ public enum UploadTarget {
     LOCAL_PLACE_PHOTO("khatiyan/local-places", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     NOTICE_IMAGE("khatiyan/notices", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     /** Notices accept PDFs and the like, which must not be treated as images. */
-    NOTICE_DOCUMENT("khatiyan/notices", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 10);
+    NOTICE_DOCUMENT("khatiyan/notices", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 10),
+
+    CHAT_IMAGE("khatiyan/chat", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    /**
+     * Documents sent in a conversation — an agreement, a bill, a receipt.
+     *
+     * <p>RAW for the same reason notices are: Cloudinary would try to thumbnail
+     * and transform a PDF as though it were a picture.
+     */
+    CHAT_FILE("khatiyan/chat", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 10);
 
     private final String folder;
     private final ResourceType resourceType;

@@ -26,14 +26,14 @@ export function IconButton({
   style,
 }: IconButtonProps) {
   const { colors, fonts } = useTheme();
-  const backgroundColor = ghost
-    ? "transparent"
-    : muted
-      ? colors.primarySoft
-      : colors.primary;
-  const textColor = ghost ? colors.ink : muted ? colors.primaryDeep : colors.onPrimary;
-  const borderColor = ghost ? colors.border : "transparent";
-  const borderWidth = ghost ? 1 : 0;
+  // "muted" is white with a hairline and blue lettering — never the pale blue
+  // fill it used to carry. A tinted block inside a card reads as a second
+  // surface rather than a control, and a card with two of them is a band of
+  // blue louder than its own content.
+  const backgroundColor = ghost || muted ? "transparent" : colors.primary;
+  const textColor = ghost ? colors.ink : muted ? colors.primary : colors.onPrimary;
+  const borderColor = ghost ? colors.border : muted ? colors.borderStrong : "transparent";
+  const borderWidth = ghost || muted ? 1 : 0;
 
   return (
     <AnimatedPressable

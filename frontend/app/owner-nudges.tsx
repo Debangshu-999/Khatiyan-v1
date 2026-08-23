@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Dimensions, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { BellRing, Clock, Send, User } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -86,7 +88,11 @@ export default function OwnerNudgesScreen() {
   const sent = sentQuery.data ?? [];
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView
+      // The nested-screen top position, shared with every other back-button screen.
+      contentContainerStyle={{ paddingTop: 0 }}
+      safeAreaEdges={["top", "bottom"]}
+    >
       <ScreenHeader
         eyebrow="Notifications"
         italicTail="tenant."
@@ -102,7 +108,6 @@ export default function OwnerNudgesScreen() {
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
           description="Nudges are scoped to the active owner property."
-          eyebrow="Property required"
           icon={BellRing}
           title="No property selected"
         />
@@ -132,7 +137,15 @@ export default function OwnerNudgesScreen() {
               {candidatesQuery.isFetching && candidates.length === 0 ? (
                 <SkeletonCard />
               ) : matches.length === 0 ? (
-                <NothingToNudge searching={Boolean(search.trim())} />
+                <EmptyState
+                  description={
+                    search.trim()
+                      ? "No active tenant matches that name or room."
+                      : "Nudges go to tenants who are currently staying. Onboard one first."
+                  }
+                  icon={BellRing}
+                  title={search.trim() ? "Nothing found" : "No active tenants"}
+                />
               ) : (
                 <>
                   {paged.pageItems.map((candidate) => (
@@ -163,7 +176,11 @@ export default function OwnerNudgesScreen() {
               {sentQuery.isFetching && sent.length === 0 ? (
                 <SkeletonCard />
               ) : sent.length === 0 ? (
-                <NothingSent />
+                <EmptyState
+                  description="Nudges you and your managers send appear here for seven days."
+                  icon={Send}
+                  title="Nothing sent"
+                />
               ) : (
                 <>
                   {sent.map((nudge) => (
@@ -190,86 +207,6 @@ export default function OwnerNudgesScreen() {
         />
       ) : null}
     </ScreenScrollView>
-  );
-}
-
-/**
- * Centred rather than boxed, matching the upcoming-notices screen: having sent
- * nothing is the ordinary state of this tab, so it should read as calm rather
- * than as a card reporting a gap.
- */
-function CenteredEmpty({
-  description,
-  icon: Icon,
-  title,
-}: {
-  description: string;
-  icon: typeof Send;
-  title: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  // Sits in the middle of the space the list would have filled, rather than
-  // riding up under the section rule.
-  const minHeight = Math.round(Dimensions.get("window").height * 0.46);
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        gap: spacing.md,
-        justifyContent: "center",
-        minHeight,
-        paddingHorizontal: spacing.lg,
-      }}
-    >
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderCurve: "continuous",
-          borderRadius: 18,
-          borderWidth: 1,
-          height: 58,
-          justifyContent: "center",
-          width: 58,
-        }}
-      >
-        <Icon color={colors.ink} size={26} strokeWidth={2} />
-      </View>
-      <View style={{ alignItems: "center", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21 }}>
-          {title}
-        </Text>
-        <Text style={[type.body, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
-          {description}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function NothingSent() {
-  return (
-    <CenteredEmpty
-      description="Nudges you and your managers send appear here for seven days."
-      icon={Send}
-      title="Nothing sent"
-    />
-  );
-}
-
-function NothingToNudge({ searching }: { searching: boolean }) {
-  return (
-    <CenteredEmpty
-      description={
-        searching
-          ? "No active tenant matches that name or room."
-          : "Nudges go to tenants who are currently staying. Onboard one first."
-      }
-      icon={BellRing}
-      title={searching ? "Nothing found" : "No active tenants"}
-    />
   );
 }
 
@@ -370,7 +307,7 @@ function SentNudgeCard({ nudge }: { nudge: Nudge }) {
           To {nudge.recipientName ?? "tenant"}
           {nudge.roomNumber ? ` · Room ${nudge.roomNumber}` : ""}
         </Text>
-        <Text style={[type.body, { color: colors.ink }]}>
+        <Text style={[type.quote, { color: colors.ink }]}>
           {nudge.message}
         </Text>
         {/* Who and when share the footer row, pushed to opposite edges — the
@@ -400,24 +337,22 @@ function ComposeSheet({
 }) {
   const { colors, fonts, type } = useTheme();
   const [message, setMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"message">();
   const [sendNudge, sendState] = useSendNudgeMutation();
 
   const trimmed = message.trim();
 
   async function submit() {
-    if (!trimmed) {
-      setError("Write a message first.");
+    if (!form.validate(trimmed ? {} : { message: "Write a message first." })) {
       return;
     }
-    setError(null);
     try {
       await sendNudge({ message: trimmed, tenancyId: candidate.tenancyId }).unwrap();
       onSent(candidate.tenantName);
     } catch (caught) {
       // The cooldown is re-checked server-side, so its refusal arrives here and
       // is the one message worth showing verbatim.
-      setError(readErrorMessage(caught) ?? "Could not send the nudge. Try again.");
+      form.failFromServer(readErrorMessage(caught) ?? "Could not send the nudge. Try again.");
     }
   }
 
@@ -433,9 +368,7 @@ function ComposeSheet({
           multiline
           onChangeText={(next) => {
             setMessage(next);
-            if (error) {
-              setError(null);
-            }
+            form.clearField("message");
           }}
           placeholder="A quick reminder that this month's rent is still pending."
           placeholderTextColor={colors.kicker}
@@ -453,8 +386,8 @@ function ComposeSheet({
           value={message}
         />
         <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.caption, { color: error ? colors.danger : colors.kicker, flex: 1 }]}>
-            {error ?? "They cannot reply, so keep it specific."}
+          <Text style={[type.caption, { color: form.errors.message ? colors.danger : colors.kicker, flex: 1 }]}>
+            {form.errors.message ?? "They cannot reply, so keep it specific."}
           </Text>
           <Text style={[type.caption, { color: colors.kicker }]}>
             {trimmed.length} / {NUDGE_MESSAGE_MAX_LENGTH}
@@ -463,11 +396,12 @@ function ComposeSheet({
       </View>
 
       <ActionButton
-        disabled={sendState.isLoading || !trimmed}
+        disabled={sendState.isLoading || !trimmed || form.blocked}
         icon={Send}
         label={sendState.isLoading ? "Sending…" : "Send nudge"}
         onPress={() => void submit()}
       />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }

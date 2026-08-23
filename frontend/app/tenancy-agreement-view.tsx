@@ -22,7 +22,7 @@ export default function TenancyAgreementViewScreen() {
   const agreement = agreementQuery.data;
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Tenancy"
         onBack={() => router.back()}
@@ -38,8 +38,7 @@ export default function TenancyAgreementViewScreen() {
         </>
       ) : !agreement ? (
         <EmptyState
-          icon={FileSignature}
-          eyebrow="No agreement"
+          icon={FileSignature}
           title="No agreement on file"
           description="This tenancy does not have an accepted agreement."
         />

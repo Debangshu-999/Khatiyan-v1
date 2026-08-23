@@ -71,7 +71,7 @@ export default function OwnerDepositHistoryScreen() {
   }
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Deposit manager"
         onBack={() => router.back()}
@@ -82,8 +82,7 @@ export default function OwnerDepositHistoryScreen() {
 
       {!property ? (
         <EmptyState
-          icon={Landmark}
-          eyebrow="No property selected"
+          icon={Landmark}
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select a property to view its deposit history."
         />
@@ -106,8 +105,7 @@ export default function OwnerDepositHistoryScreen() {
             <SkeletonCard />
           ) : items.length === 0 ? (
             <EmptyState
-              icon={Landmark}
-              eyebrow="No deposits"
+              icon={Landmark}
               title="No matching deposit accounts"
               description={committedQuery || statusFilter !== "ALL" ? "Try a different search or filter." : "Deposit accounts appear here as tenancies open and settle."}
             />

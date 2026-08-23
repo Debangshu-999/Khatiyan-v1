@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -150,8 +151,33 @@ class BillingCycleServiceTest {
         verify(eventPublisher).publishEvent(any(BillingCycleGeneratedEvent.class));
     }
 
+    /**
+     * The bug this pair exists for: a tenancy onboarded during the day left an
+     * unpayable UPCOMING bill until 00:18 IST the next morning, because only the
+     * nightly job ever opened it. Creation now opens a cycle whose period has
+     * already started.
+     */
     @Test
-    void recalculateLateFeesChargesTheUpcomingCycleAndLeavesTheOverdueOneUntouched() {
+    void createFirstCycleOpensItWhenThePeriodHasAlreadyStarted() {
+        stubFirstCycleCreation(monthlyTenancy());
+
+        BillingCycleResponse response = billingCycleService.createFirstCycle(ACTOR_ID, TENANCY_ID);
+
+        assertThat(response.status()).isEqualTo(BillingCycleStatus.UNPAID);
+    }
+
+    /** A future-dated start still waits for the nightly job — that is its job. */
+    @Test
+    void createFirstCycleLeavesAFutureDatedPeriodUpcoming() {
+        stubFirstCycleCreation(monthlyTenancyStartingOn(LocalDate.now().plusMonths(2).withDayOfMonth(1)));
+
+        BillingCycleResponse response = billingCycleService.createFirstCycle(ACTOR_ID, TENANCY_ID);
+
+        assertThat(response.status()).isEqualTo(BillingCycleStatus.UPCOMING);
+    }
+
+    @Test
+    void recalculateLateFeesChargesTheOverdueCycleItself() {
         BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
         BillingCycleLineItem rentLine = BillingCycleLineItem.systemCharge(
                 overdue,
@@ -162,39 +188,32 @@ class BillingCycleServiceTest {
                 1);
         savedLineItems.add(rentLine);
 
-        BillingCycle upcoming = monthlyUpcomingCycle();
-
         when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 2))))
                 .thenReturn(List.of(overdue));
-        when(billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
-                TENANCY_ID, BillingCycleStatus.UPCOMING))
-                .thenReturn(Optional.of(upcoming));
-        when(lineItemRepository.findByBillingCycleIdAndType(upcoming.getId(), BillingCycleLineItemType.LATE_FEE))
+        when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
                 .thenReturn(List.of());
-        when(lineItemRepository.findMaxDisplayOrder(upcoming.getId())).thenReturn(1);
+        when(lineItemRepository.findMaxDisplayOrder(overdue.getId())).thenReturn(1);
         when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
             BillingCycleLineItem lineItem = invocation.getArgument(0);
             savedLineItems.add(lineItem);
             return lineItem;
         });
-        when(lineItemRepository.findByBillingCycleId(upcoming.getId()))
-                .thenAnswer(invocation -> lineItemsFor(upcoming.getId()));
+        when(lineItemRepository.findByBillingCycleId(overdue.getId()))
+                .thenAnswer(invocation -> lineItemsFor(overdue.getId()));
 
         int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 2));
 
         assertThat(updatedCount).isEqualTo(1);
 
-        // The bill the tenant is looking at must not move under them.
-        assertThat(overdue.getLateFeeAmountPaise()).isZero();
-        assertThat(overdue.getTotalAmountPaise()).isZero();
-
-        // The charge lands on the next cycle, which is still editable.
-        assertThat(upcoming.getLateFeeAmountPaise()).isEqualTo(100_00);
+        // One day late, on the bill that is late. Being overdue is the only
+        // thing allowed to move a figure the tenant has already been shown.
+        assertThat(overdue.getLateFeeAmountPaise()).isEqualTo(100_00);
+        assertThat(overdue.getTotalAmountPaise()).isEqualTo(12_100_00);
         assertThat(savedLineItems)
                 .filteredOn(lineItem -> lineItem.getType() == BillingCycleLineItemType.LATE_FEE)
                 .singleElement()
                 .satisfies(lineItem -> {
-                    assertThat(lineItem.getBillingCycleId()).isEqualTo(upcoming.getId());
+                    assertThat(lineItem.getBillingCycleId()).isEqualTo(overdue.getId());
                     assertThat(lineItem.getAmountPaise()).isEqualTo(100_00);
                     assertThat(lineItem.isSystemGenerated()).isTrue();
                 });
@@ -205,24 +224,52 @@ class BillingCycleServiceTest {
     }
 
     @Test
-    void recalculateLateFeesSkipsWhenThereIsNoUpcomingCycleToCarryTheCharge() {
+    void recalculateLateFeesNeedsNoUpcomingCycleToChargeTheFee() {
+        // The regression this replaces: the fee used to be carried to the next
+        // cycle, which is generated only ten days before it starts. A tenant
+        // going overdue early in a month therefore accrued nothing anywhere for
+        // weeks, then got the whole run as one lump on a later bill.
         BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
 
-        when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 2))))
+        when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 4))))
                 .thenReturn(List.of(overdue));
-        when(billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
-                TENANCY_ID, BillingCycleStatus.UPCOMING))
-                .thenReturn(Optional.empty());
+        when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
+                .thenReturn(List.of());
+        when(lineItemRepository.findMaxDisplayOrder(overdue.getId())).thenReturn(1);
+        when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
+            BillingCycleLineItem lineItem = invocation.getArgument(0);
+            savedLineItems.add(lineItem);
+            return lineItem;
+        });
+        when(lineItemRepository.findByBillingCycleId(overdue.getId()))
+                .thenAnswer(invocation -> lineItemsFor(overdue.getId()));
 
-        int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 2));
+        int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 4));
 
-        // The tenancy is ending, so the charge belongs to exit settlement rather
-        // than to a bill that no longer exists.
+        assertThat(updatedCount).isEqualTo(1);
+        assertThat(overdue.getLateFeeAmountPaise()).isEqualTo(300_00);
+        verifyNoInteractions(tenancyModule);
+    }
+
+    @Test
+    void recalculateLateFeesLeavesAManuallyAdjustedFeeAlone() {
+        BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
+        BillingCycleLineItem adjusted = BillingCycleLineItem.lateFee(
+                overdue, "Late fee", "Accrues daily while this bill is overdue", 100_00, 2);
+        adjusted.adjust(50_00, ACTOR_ID);
+        savedLineItems.add(adjusted);
+
+        when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 6))))
+                .thenReturn(List.of(overdue));
+        when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
+                .thenReturn(List.of(adjusted));
+
+        int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 6));
+
+        // An owner who waived part of the fee has made a decision. The nightly
+        // job must not quietly put it back.
         assertThat(updatedCount).isZero();
-        assertThat(overdue.getLateFeeAmountPaise()).isZero();
-        assertThat(savedLineItems)
-                .filteredOn(lineItem -> lineItem.getType() == BillingCycleLineItemType.LATE_FEE)
-                .isEmpty();
+        assertThat(adjusted.getAmountPaise()).isEqualTo(50_00);
     }
 
     @Test
@@ -348,6 +395,37 @@ class BillingCycleServiceTest {
                 LocalDate.of(2026, 7, 4),
                 BillingCollectionTiming.CYCLE_START,
                 3);
+    }
+
+    /** The mocks createFirstCycle needs, shared by the tests that only assert status. */
+    private void stubFirstCycleCreation(TenancyResponse tenancy) {
+        when(referenceCodeGenerator.nextCode("BIL")).thenReturn("BIL-2026-000001");
+        when(tenancyModule.findById(TENANCY_ID)).thenReturn(Optional.of(tenancy));
+        when(billingCycleRepository.existsByTenancyIdAndCycleNumber(TENANCY_ID, 1)).thenReturn(false);
+        when(authModule.findById(TENANT_ID)).thenReturn(Optional.of(tenantSummary()));
+        when(propertyModule.getBillingPolicy(PROPERTY_ID)).thenReturn(billingPolicy(3, 100_00L));
+        when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(room());
+        when(billingCycleRepository.save(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(billingCycleRepository.saveAndFlush(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
+            BillingCycleLineItem lineItem = invocation.getArgument(0);
+            savedLineItems.add(lineItem);
+            return lineItem;
+        });
+        when(lineItemRepository.findPendingByTenancyIdBefore(eq(TENANCY_ID), any(), any())).thenReturn(List.of());
+        when(lineItemRepository.findByBillingCycleId(any())).thenAnswer(invocation -> lineItemsFor(invocation.getArgument(0)));
+    }
+
+    /** Same tenancy, but starting well after today so its cycle is not yet due. */
+    private static TenancyResponse monthlyTenancyStartingOn(LocalDate startDate) {
+        TenancyResponse base = monthlyTenancy();
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), startDate, base.plannedEndDate(), base.endDate(), base.status(),
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementEndDate(), base.earlyExitRule(), base.idCheckConfirmed(), base.idCheckedAt());
     }
 
     private static TenancyResponse monthlyTenancy() {

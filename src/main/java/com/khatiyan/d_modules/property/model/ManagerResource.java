@@ -44,6 +44,18 @@ public enum ManagerResource {
     // --- Operations ---
     NOTICES,
     CONCERNS,
+    /**
+     * The property's shared conversations: the Tenants section, where a tenant
+     * writes to the management team and whoever is free answers.
+     *
+     * <p>Off until the owner grants it, unlike most resources — a manager
+     * reading a property's correspondence is a decision, not a default. It does
+     * NOT govern one-to-one chats or a manager's own enquiry conversations:
+     * being one of the two people in those is the whole permission, and a grant
+     * that could revoke them would be revoking access to messages addressed
+     * personally to the reader.
+     */
+    CHATS,
 
     // --- Tools ---
     // VACANCY_FINDER controls whether the tool APPEARS, not what it can read.

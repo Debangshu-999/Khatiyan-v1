@@ -3,11 +3,15 @@ import { Linking, Pressable, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
+import { Section } from "@/components/section";
+import { openDialer } from "@/lib/dial";
+import { useToast } from "@/components/toast";
+import { BackButton } from "@/features/owner/owner-ui";
 import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
+import { NOTICE_PERIOD_LABELS, ROOM_TYPES } from "@/store/services/property-api";
 import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
 import { EnquireAction } from "./enquire-action";
 import { PropertyMediaCarousel } from "./property-media-carousel";
@@ -19,7 +23,7 @@ type PropertyProfileProps = {
 
 
 export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
-  const { colors } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const facilities = [...(property.facilities ?? []), ...(property.customFacilities ?? [])];
 
   function openDirections() {
@@ -40,8 +44,33 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
     .filter(Boolean)
     .join(", ");
 
+  // No manager contacts on the wire yet — the listing has nowhere to add them.
+  // Declared here so the section below is written once and lights up the moment
+  // the API carries them, rather than being retrofitted around a heading.
+  // By occupancy — single, double, triple, and so on up to dormitory. The API
+  // returns a set, so the order it arrives in is arbitrary and a list that reads
+  // "triple, single, four sharing" makes the reader sort it themselves.
+  //
+  // Keyed off ROOM_TYPES rather than a second hardcoded order, which would drift
+  // from it the first time a sharing type is added.
+  const sharingTypes = [...property.availableSharingTypes].sort(
+    (left, right) => ROOM_TYPES.indexOf(left) - ROOM_TYPES.indexOf(right),
+  );
+
+  // The listing decides who is reachable: the owner comes through only when the
+  // listing shows them, and a manager comes through because somebody chose to
+  // list them on the Property contacts card.
+  const contacts = property.contacts ?? [];
+  const ownerContact = contacts.find((contact) => contact.owner) ?? null;
+  const managerContacts = contacts.filter((contact) => !contact.owner);
+
   return (
     <View style={{ gap: spacing.md }}>
+      {/* Above the name, not floating over the photo. A control sitting on an
+          unknown image is only as legible as that image allows, and it was the
+          one way out of the screen. */}
+      <BackButton onPress={onBack} />
+
       {/* Header: name + address + open-in-map */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
@@ -59,20 +88,26 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
           onPress={openDirections}
           style={{
             alignItems: "center",
-            backgroundColor: colors.primary,
-            borderRadius: 16,
-            height: 46,
+            height: 40,
             justifyContent: "center",
-            width: 46,
+            width: 40,
           }}
         >
-          <MaterialCommunityIcons color={colors.onPrimary} name="directions" size={25} />
+          <MaterialCommunityIcons color={colors.primary} name="directions" size={24} />
         </Pressable>
       </View>
 
       {/* Property image slider */}
-      <View style={{ borderRadius: 16, overflow: "hidden" }}>
-        <PropertyMediaCarousel imageUrls={imageUrls} propertyName={property.name} onBack={onBack} />
+      {/* Full-bleed: the profile sits inside the screen's spacing.lg horizontal
+          padding, so the carousel cancels it with a negative margin of the same
+          size. Square corners — the photo meets the screen edge, and a radius
+          there reads as a card that failed to fit. */}
+      <View style={{ marginHorizontal: -spacing.lg, overflow: "hidden" }}>
+        <PropertyMediaCarousel
+          captions={(property.images ?? []).map((image) => image.caption)}
+          imageUrls={imageUrls}
+          propertyName={property.name}
+        />
       </View>
 
       {/* Directly under the name and photos, above the detail. The profile is
@@ -81,15 +116,20 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
 
       {/* Remaining information */}
       <View style={{ gap: spacing.md }}>
-          <Text style={{ color: colors.muted, lineHeight: 22 }}>
+          {/* The headline is the listing's own claim about itself and was set
+              smaller and greyer than the description under it, so the paragraph
+              read as the headline and the headline as a caption. */}
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.2, lineHeight: 25 }}>
             {property.headline || `${humanizeToken(property.type)} property in ${property.city}`}
           </Text>
 
-          <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>
+          {/* The serif the app uses for words somebody wrote — the same one a
+              nudge and an enquiry message are set in. This is prose, not data. */}
+          <Text style={[type.quote, { color: colors.inkSoft }]}>
             {property.description || "This property profile has not added a detailed description yet."}
           </Text>
 
-          <ProfileSection title="Property details">
+          <Section title="Property details">
             <DetailGrid
               rows={[
                 [
@@ -125,9 +165,9 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
                 ? "Daily renting is available for short stays."
                 : "Daily renting is not available for this property."}
             </Text>
-          </ProfileSection>
+          </Section>
 
-          <ProfileSection title="Facilities">
+          <Section title="Facilities">
             {facilities.length > 0 ? (
               <FacilityOverviewGrid facilities={facilities} />
             ) : (
@@ -135,9 +175,9 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
                 Facilities have not been listed yet.
               </Text>
             )}
-          </ProfileSection>
+          </Section>
 
-          <ProfileSection title="Stay preferences">
+          <Section title="Stay preferences">
             <DetailGrid
               rows={[
                 [
@@ -158,67 +198,112 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
                       : "Not included",
                   },
                 ],
-                [
-                  {
-                    label: "Sharing options",
-                    value:
-                      property.availableSharingTypes.length > 0
-                        ? property.availableSharingTypes.map((sharingType) => humanizeToken(sharingType)).join(", ")
-                        : "Not listed",
-                  },
-                ],
               ]}
+              // A list, not a comma-joined sentence in a cell: six sharing types
+              // wrap to two lines there and read as one long word. It sits in the
+              // grid's own footer so it stays inside the table's boundary with
+              // the rest of stay preferences.
+              footer={
+                <>
+                  <Text style={[type.eyebrow, { color: colors.muted }]}>
+                    Sharing options
+                  </Text>
+                  {sharingTypes.length > 0 ? (
+                    sharingTypes.map((sharingType) => (
+                      <View key={sharingType} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                        <View style={{ backgroundColor: colors.kicker, borderRadius: 999, height: 4, width: 4 }} />
+                        <Text style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 20 }}>
+                          {humanizeToken(sharingType)}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 20 }}>
+                      Not listed
+                    </Text>
+                  )}
+                </>
+              }
             />
-          </ProfileSection>
+          </Section>
 
-          <ProfileSection title="Contacts">
-            {property.showOwnerContact && property.ownerPhone ? (
-              <ContactCard name={property.ownerName || "Property owner"} phone={property.ownerPhone} />
+          <Section title="Contacts">
+            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+              Owner
+            </Text>
+            {ownerContact?.phone ? (
+              <ContactRow
+                email={ownerContact.email}
+                name={ownerContact.name || "Property owner"}
+                phone={ownerContact.phone}
+              />
             ) : (
               <Text style={{ color: colors.muted, lineHeight: 21 }}>
                 Owner contact is not publicly visible for this listing.
               </Text>
             )}
-          </ProfileSection>
+
+            {/* Only when the owner has listed somebody. A manager may not exist,
+                and a heading over nothing is worse than no heading. */}
+            {managerContacts.length > 0 ? (
+              <>
+                <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.sm }} />
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                  Manager
+                </Text>
+                {managerContacts.map((contact) => (
+                  <ContactRow
+                    email={contact.email}
+                    key={contact.userId}
+                    name={contact.name || "Manager"}
+                    phone={contact.phone ?? ""}
+                  />
+                ))}
+              </>
+            ) : null}
+          </Section>
         </View>
     </View>
   );
 }
 
-function ContactCard({ name, phone }: { name: string; phone: string }) {
+/**
+ * One contact, unboxed.
+ *
+ * <p>It used to sit in its own raised card inside the Contacts card — a card in
+ * a card, which read as a separate object rather than a row of the section it
+ * belongs to. The section already draws the boundary.
+ */
+function ContactRow({ email, name, phone }: { email: string | null; name: string; phone: string }) {
   const { colors } = useTheme();
+  const toast = useToast();
 
-  function openDialer() {
-    const normalizedPhone = phone.replace(/[^\d+]/g, "");
-    void Linking.openURL(`tel:${normalizedPhone}`);
+  function callContact() {
+    openDialer(phone);
+  }
+
+  function openMail() {
+    // Still pressable without an address. A dead control that swallows the tap
+    // teaches nothing; this says why nothing happened, which is the one thing
+    // the grey glyph on its own cannot.
+    if (!email) {
+      toast.warning(`${name} has no verified email.`);
+      return;
+    }
+    void Linking.openURL(`mailto:${email}`);
   }
 
   return (
     <View
       style={{
         alignItems: "center",
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: 16,
-        borderWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
-        padding: spacing.md,
+        paddingVertical: spacing.xs,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 15,
-          borderWidth: 1,
-          height: 48,
-          justifyContent: "center",
-          width: 48,
-        }}
-      >
-        <MaterialCommunityIcons color={colors.primary} name="account-tie-outline" size={24} />
+      <View style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}>
+        <MaterialCommunityIcons color={colors.ink} name="account-tie-outline" size={22} />
       </View>
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: "900" }}>
@@ -228,51 +313,60 @@ function ContactCard({ name, phone }: { name: string; phone: string }) {
           {phone}
         </Text>
       </View>
+      {/* The two actions are one cluster, so they sit closer to each other than
+          to the name they belong to — the row gap would otherwise read as three
+          separate things rather than a contact and its two ways in. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
       <Pressable
         accessibilityLabel={`Call ${name}`}
         accessibilityRole="button"
-        onPress={openDialer}
+        onPress={callContact}
         style={{
           alignItems: "center",
-          backgroundColor: colors.primary,
-          borderRadius: 16,
-          height: 46,
+          height: 36,
           justifyContent: "center",
-          width: 46,
+          width: 36,
         }}
       >
-        <MaterialCommunityIcons color={colors.onPrimary} name="phone-outline" size={21} />
+        <MaterialCommunityIcons color={colors.primary} name="phone-outline" size={19} />
       </Pressable>
+      {/* Always rendered, greyed when there is nothing to write to: an icon that
+          appears and disappears between listings reads as a layout bug, and its
+          absence never explains itself. Grey says "this person has not verified
+          an address", which is the actual state. */}
+      <Pressable
+        accessibilityLabel={email ? `Email ${name}` : `${name} has no verified email`}
+        accessibilityRole="button"
+        onPress={openMail}
+        style={{
+          alignItems: "center",
+          height: 36,
+          justifyContent: "center",
+          width: 36,
+        }}
+      >
+        <MaterialCommunityIcons
+          color={email ? colors.primary : colors.kicker}
+          name="email-outline"
+          size={19}
+        />
+      </Pressable>
+      </View>
     </View>
   );
 }
 
 
-
-function ProfileSection({ children, title }: { children: ReactNode; title: string }) {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      style={{
-        borderColor: colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        gap: spacing.sm,
-        padding: spacing.md,
-      }}
-    >
-      <Text style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
-}
 
 type DetailItem = { label: string; value: string };
 
-function DetailGrid({ rows }: { rows: DetailItem[][] }) {
+/**
+ * @param footer a full-width block rendered INSIDE the border, under the rows.
+ *     For a value that will not fit a cell — a list rather than a figure — but
+ *     still belongs to the same table. Outside the border it read as a separate
+ *     section of the screen.
+ */
+function DetailGrid({ footer, rows }: { footer?: ReactNode; rows: DetailItem[][] }) {
   const { colors } = useTheme();
 
   return (
@@ -282,7 +376,9 @@ function DetailGrid({ rows }: { rows: DetailItem[][] }) {
           key={row.map((item) => item.label).join("-")}
           style={{
             borderBottomColor: colors.border,
-            borderBottomWidth: rowIndex === rows.length - 1 ? 0 : 1,
+            // The footer is another row, so the last cell row keeps its rule
+            // when one follows it.
+            borderBottomWidth: rowIndex === rows.length - 1 && !footer ? 0 : 1,
             flexDirection: "row",
           }}
         >
@@ -291,12 +387,17 @@ function DetailGrid({ rows }: { rows: DetailItem[][] }) {
           ))}
         </View>
       ))}
+      {footer ? (
+        <View style={{ gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 }}>
+          {footer}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function DetailCell({ item, showDivider }: { item: DetailItem; showDivider: boolean }) {
-  const { colors } = useTheme();
+  const { colors, type } = useTheme();
 
   return (
     <View
@@ -311,7 +412,7 @@ function DetailCell({ item, showDivider }: { item: DetailItem; showDivider: bool
       }}
     >
       <Text
-        style={{ color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.9, textTransform: "uppercase" }}
+        style={[type.eyebrow, { color: colors.muted }]}
       >
         {item.label}
       </Text>

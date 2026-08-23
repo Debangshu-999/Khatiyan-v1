@@ -5,7 +5,10 @@ import DateTimePicker, { type DateTimePickerEvent } from "@react-native-communit
 import { useFocusEffect, useRouter } from "expo-router";
 import { ArrowLeftRight, Banknote, BriefcaseBusiness, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, Trash2, UsersRound, WalletCards, X } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
@@ -17,7 +20,7 @@ import { useToast } from "@/components/toast";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { TabSwitcher } from "@/components/tab-switcher";
-import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { ALL_DAYS_MASK, WEEKDAYS, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { MANAGEABLE_MODULES, fullAccessLevels } from "@/features/owner/manager-access-model";
@@ -99,10 +102,6 @@ type EndTarget = {
   name: string;
   salaryStructure: SalaryStructure;
 };
-type ModalFeedback = {
-  tone: "error" | "success";
-  message: string;
-};
 
 export function StaffWorkspace() {
   const router = useRouter();
@@ -119,7 +118,7 @@ export function StaffWorkspace() {
       contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
     >
         <BackButton onPress={() => router.back()} />
-        <EmptyState icon={UsersRound} eyebrow="Staff" title="Choose a property" description="Select one of your properties from Home to manage its team." />
+        <EmptyState icon={UsersRound} title="Choose a property" description="Select one of your properties from Home to manage its team." />
       </ScreenScrollView>
     );
   }
@@ -176,7 +175,7 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
       <BackButton onPress={onBack} />
       <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
 
-      <Section eyebrow="Your record" title="My employment">
+      <Section title="My employment">
         {employmentQuery.isLoading ? (
           <SkeletonCard />
         ) : employment ? (
@@ -205,7 +204,7 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
         )}
       </Section>
 
-      <Section eyebrow="Your pay" title="My salary account">
+      <Section title="My salary account">
         {salaryQuery.isLoading ? (
           <SkeletonCard />
         ) : salaryQuery.data ? (
@@ -215,7 +214,7 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
         )}
       </Section>
 
-      <Section eyebrow="Team" title={`${directory.length} staff member${directory.length === 1 ? "" : "s"}`}>
+      <Section title={`${directory.length} staff member${directory.length === 1 ? "" : "s"}`}>
         {directory.length ? directory.map((member) => (
           <View key={member.referenceCode} style={rowCardStyle(colors)}>
             <View style={{ alignItems: "center", borderColor: colors.ink, borderCurve: "continuous", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
@@ -236,6 +235,10 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
 }
 
 function TeamDirectory({ property }: { property: OwnerProperty }) {
+  // Failures from list-level actions — deleting a category, transferring a
+  // manager. No field owns them, so they take a modal rather than a toast.
+  const opErrors = useFormErrors<never>();
+
   const router = useRouter();
   const toast = useToast();
   const categories = useListStaffCategoriesQuery(property.id).data ?? [];
@@ -283,7 +286,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
       }
       toast.show(`${category.name} category deleted.`);
     } catch (error) {
-      toast.error(errorMessage(error, `"${category.name}" still has staff members, so it can't be deleted.`));
+      opErrors.failFromServer(errorMessage(error, `"${category.name}" still has staff members, so it cannot be deleted.`));
     }
   }
   async function confirmShift() {
@@ -297,14 +300,14 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
       setPendingShift(null);
       toast.show("Manager transferred successfully.");
     } catch (error) {
-      toast.show(errorMessage(error, "Could not transfer the manager."));
+      opErrors.failFromServer(errorMessage(error, "Could not transfer the manager."));
     }
   }
 
   return (
     <View style={{ gap: spacing.lg }}>
 
-      <Section eyebrow="Managers" title={`${managerEntries.length} assigned`} trailing={<View style={{ width: 148 }}><ActionButton compact icon={Plus} label="Add manager" onPress={() => setAddManagerOpen(true)} variant="secondary" /></View>}>
+      <Section title={`${managerEntries.length} assigned`} trailing={<View style={{ width: 148 }}><ActionButton compact icon={Plus} label="Add manager" onPress={() => setAddManagerOpen(true)} variant="secondary" /></View>}>
         {managerEntries.length ? managerEntries.map((entry) => (
           <ManagerCard
             entry={entry}
@@ -317,7 +320,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
         )}
       </Section>
 
-      <Section eyebrow="Staff members" title={`${filteredMembers.length} tracked`} trailing={<View style={{ width: 144 }}><ActionButton icon={Plus} label="Add member" onPress={() => setMemberEditor("NEW")} variant="secondary" /></View>}>
+      <Section title={`${filteredMembers.length} tracked`} trailing={<View style={{ width: 144 }}><ActionButton icon={Plus} label="Add member" onPress={() => setMemberEditor("NEW")} variant="secondary" /></View>}>
         {/* One control instead of a wall of chips. Categories grow without
             limit, and every chip carried its own delete button — wrapped over
             three or four rows that read as clutter rather than as a filter. The
@@ -435,6 +438,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
         />
       ) : null}
       {pendingShift ? <ConfirmDialog confirmLabel="Transfer" message={`Transfer ${pendingShift.entry.assignment.managerFullName} to ${pendingShift.target.name}?`} onCancel={() => setPendingShift(null)} onConfirm={() => void confirmShift()} title="Transfer manager?" /> : null}
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       {pendingDeleteCategory ? <ConfirmDialog confirmLabel="Delete" destructive message={`Delete the "${pendingDeleteCategory.name}" category? This only works if no staff are assigned to it.`} onCancel={() => setPendingDeleteCategory(null)} onConfirm={() => void confirmDeleteCategory()} title="Delete category?" /> : null}
     </View>
   );
@@ -444,6 +448,10 @@ type SalaryFilter = "ALL" | "MANAGER" | "STAFF";
 type AdjustmentTarget = "NEW" | { payrollMonth: string; adjustment: SalaryAdjustment };
 
 function SalaryTracker({ property }: { property: OwnerProperty }) {
+  // Failures from list-level actions — deleting a category, transferring a
+  // manager. No field owns them, so they take a modal rather than a toast.
+  const opErrors = useFormErrors<never>();
+
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const managers = useListManagerEmploymentQuery(property.id).data ?? [];
@@ -470,7 +478,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
         : await openStaffAccount({ propertyId: property.id, staffReferenceCode: target.person.referenceCode }).unwrap();
       setSelected(detail);
     } catch (error) {
-      toast.show(errorMessage(error, "Complete employment details before opening this salary account."));
+      opErrors.failFromServer(errorMessage(error, "Complete employment details before opening this salary account."));
     }
   }
 
@@ -481,7 +489,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
     try {
       setSelected(await removeAdjustment({ accountReferenceCode: selected.account.referenceCode, adjustmentId: target.adjustmentId, payrollMonth: target.payrollMonth, propertyId: property.id }).unwrap());
     } catch (error) {
-      toast.show(errorMessage(error, "Could not remove the adjustment."));
+      opErrors.failFromServer(errorMessage(error, "Could not remove the adjustment."));
     }
   }
 
@@ -500,7 +508,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
 
   return (
     <View style={{ gap: spacing.lg }}>
-      <Section eyebrow="Choose member" title="Salary accounts">
+      <Section title="Salary accounts">
         {!selected ? (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ChoiceButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
@@ -600,6 +608,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
           title="Delete adjustment?"
         />
       ) : null}
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </View>
   );
 }
@@ -1008,7 +1017,6 @@ function EmployeeHistory({ property }: { property: OwnerProperty }) {
   return (
     <View style={{ gap: spacing.lg }}>
       <Section
-        eyebrow="Past employees"
         title={knownTotal === undefined ? "Loading…" : `${knownTotal} record${knownTotal === 1 ? "" : "s"}`}
       >
         {loading ? (
@@ -1238,7 +1246,11 @@ function CategoryRow({
           onPress={onDelete}
           style={{ alignItems: "center", alignSelf: "stretch", justifyContent: "center", paddingHorizontal: spacing.md }}
         >
-          <X color={active ? colors.surface : colors.danger} size={16} strokeWidth={2.4} />
+          {/* On a selected row the fill is colors.ink, so the glyph takes
+              colors.surface instead — danger red on that ground is unreadable in
+              one theme or the other, and an illegible delete is worse than an
+              uncoloured one. Every unselected row shows it red. */}
+          <Trash2 color={active ? colors.surface : colors.danger} size={16} strokeWidth={2.2} />
         </AnimatedPressable>
       ) : null}
     </View>
@@ -1398,14 +1410,24 @@ function AmountMetric({ label, value }: { label: string; value: string }) {
 }
 
 function CreateCategoryModal({ onClose, propertyId }: { onClose: () => void; propertyId: string }) {
-  const toast = useToast();
   const [name, setName] = useState("");
   const [createCategory, state] = useCreateStaffCategoryMutation();
+  const fieldErrors = useFormErrors<"name">();
+
   async function submit() {
-    if (!name.trim()) return;
-    try { await createCategory({ name: name.trim(), propertyId }).unwrap(); onClose(); } catch (error) { toast.show(errorMessage(error, "Could not create the category.")); }
+    // Submitting an empty name used to do nothing at all — no request, no
+    // message, a button that simply did not respond.
+    if (!fieldErrors.validate(name.trim() ? {} : { name: "Enter a category name." })) {
+      return;
+    }
+    try {
+      await createCategory({ name: name.trim(), propertyId }).unwrap();
+      onClose();
+    } catch (error) {
+      fieldErrors.failFromServer(errorMessage(error, "Could not create the category."));
+    }
   }
-  return <Sheet onClose={onClose} title="New staff category"><FormInput label="Category name" onChangeText={setName} placeholder="e.g. Laundry" value={name} /><ActionButton disabled={state.isLoading} icon={Plus} label={state.isLoading ? "Creating" : "Create category"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title="New staff category"><FormInput error={fieldErrors.errors.name} label="Category name" onChangeText={(next) => { setName(next); fieldErrors.clearField("name"); }} placeholder="e.g. Laundry" value={name} /><ActionButton disabled={state.isLoading || fieldErrors.blocked} icon={Plus} label={state.isLoading ? "Creating" : "Create category"} onPress={() => void submit()} />{fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}</Sheet>;
 }
 
 
@@ -1435,12 +1457,15 @@ function ManagerAccessModal({
   onClose: () => void;
   propertyId: string;
 }) {
+  // Saving permissions can fail after the manager already exists; that refusal
+  // has no field of its own.
+  const permErrors = useFormErrors<never>();
+
   const router = useRouter();
   const toast = useToast();
   const { colors, type } = useTheme();
   const [configuring, setConfiguring] = useState(false);
   const [confirmFullAccess, setConfirmFullAccess] = useState(false);
-  const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
   const [replacePermissions, permissionsState] = useReplaceManagerPermissionsMutation();
   const permissionsQuery = useGetManagerPermissionsQuery({ managerUserId: manager.managerUserId, propertyId });
 
@@ -1471,7 +1496,7 @@ function ManagerAccessModal({
       toast.show(`${manager.name} has full access. You can change this any time.`);
     } catch {
       setConfirmFullAccess(false);
-      setFeedback({ message: "Could not save permissions. Open the manager and set them manually.", tone: "error" });
+      permErrors.failFromServer("Could not save permissions. Open the manager and set them manually.");
     }
   }
 
@@ -1505,7 +1530,7 @@ function ManagerAccessModal({
         Continuing without configuring gives them full access to every module you can currently manage. You can change it
         any time from their profile.
       </Text>
-      <InlineFeedback feedback={feedback} />
+      {permErrors.serverError ? <AlertModal message={permErrors.serverError} onClose={permErrors.dismissServerError} /> : null}
 
       {confirmFullAccess ? (
         <ConfirmDialog
@@ -1544,7 +1569,7 @@ function AddManagerModal({
   const [startDate, setStartDate] = useState(today());
   const [notes, setNotes] = useState("");
   const [lookup, setLookup] = useState<ManagerLookup | null>(null);
-  const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
+  const mgrErrors = useFormErrors<"phone" | "fullName" | "salary" | "startDate">();
   const [runLookup, lookupState] = useLazyLookupManagerQuery();
   const [addManager, state] = useAddPropertyManagerMutation();
 
@@ -1552,35 +1577,37 @@ function AddManagerModal({
     setPhone(value);
     setFullName("");
     setLookup(null);
-    setFeedback(null);
+    mgrErrors.clearAll();
   }
 
   async function doLookup() {
-    if (!/^\d{10,15}$/.test(phone.trim())) {
-      setFeedback({ message: "Enter a valid phone number.", tone: "error" });
+    if (!mgrErrors.validate(/^\d{10,15}$/.test(phone.trim()) ? {} : { phone: "Enter a valid phone number." })) {
       return;
     }
-    setFeedback(null);
     try {
       const result = await runLookup({ phone: phone.trim(), propertyId }).unwrap();
       setLookup(result);
       if (result.exists && result.fullName) setFullName(result.fullName);
-    } catch {
-      setFeedback({ message: "Could not look up this phone number. Try again.", tone: "error" });
+    } catch (error) {
+      mgrErrors.failFromServer(errorMessage(error, "Could not look up this phone number. Try again."));
     }
   }
 
   async function submit() {
     const salaryRatePaise = rupeesToPaise(salary);
-    if (!lookup?.eligible) {
-      setFeedback({ message: lookup?.message ?? "Look up the phone number before assigning a manager.", tone: "error" });
+    // The lookup gate belongs on the phone field: it is that number that has
+    // not been checked, or has come back ineligible.
+    const problems = {
+      ...(lookup?.eligible
+        ? {}
+        : { phone: lookup?.message ?? "Look up the phone number before assigning a manager." }),
+      ...(fullName.trim() ? {} : { fullName: "Enter the manager's name." }),
+      ...(salaryRatePaise ? {} : { salary: "Enter a valid amount." }),
+      ...(startDate ? {} : { startDate: "Pick a working start date." }),
+    };
+    if (!mgrErrors.validate(problems) || !salaryRatePaise) {
       return;
     }
-    if (!fullName.trim() || !salaryRatePaise || !startDate) {
-      setFeedback({ message: "Name, salary and working start date are required.", tone: "error" });
-      return;
-    }
-    setFeedback(null);
     try {
       const created = await addManager({
         propertyId,
@@ -1601,32 +1628,33 @@ function AddManagerModal({
       // manager who cannot work and no hint why, so the decision is made now.
       onAssigned({ managerUserId: created.managerUserId, name: fullName.trim() });
       toast.show("Manager assigned. Now choose their access.");
-    } catch {
-      setFeedback({ message: "Could not assign the manager. Check the details and try again.", tone: "error" });
+    } catch (error) {
+      mgrErrors.failFromServer(errorMessage(error, "Could not assign the manager. Check the details and try again."));
     }
   }
 
   return (
     <Sheet onClose={onClose} title="Assign manager">
-      <FormInput keyboardType="phone-pad" label="Phone number" onChangeText={changePhone} placeholder="10-digit phone" value={phone} />
+      <FormInput error={mgrErrors.errors.phone} keyboardType="phone-pad" label="Phone number" onChangeText={(next) => { changePhone(next); mgrErrors.clearField("phone"); }} placeholder="10-digit phone" value={phone} />
       <ActionButton disabled={lookupState.isFetching} icon={Search} label={lookupState.isFetching ? "Looking up" : "Look up"} onPress={() => void doLookup()} variant="secondary" />
       {lookup ? <ManagerLookupResult lookup={lookup} /> : null}
       {lookup?.eligible ? (
         <>
-          <FormInput label="Full name" onChangeText={setFullName} placeholder="Manager name" value={fullName} />
+          <FormInput error={mgrErrors.errors.fullName} label="Full name" onChangeText={(next) => { setFullName(next); mgrErrors.clearField("fullName"); }} placeholder="Manager name" value={fullName} />
           <DatePickerField clearable label="Date of birth" onChange={setDateOfBirth} value={dateOfBirth} />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
             <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
           </View>
-          <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
+          <FormInput error={mgrErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); mgrErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
           <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
-          <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
+          <DatePickerField label="Working start date" onChange={(next) => { setStartDate(next); mgrErrors.clearField("startDate"); }} value={startDate} />
+          <FieldError message={mgrErrors.errors.startDate} />
           <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
         </>
       ) : null}
-      <InlineFeedback feedback={feedback} />
-      {lookup?.eligible ? <ActionButton disabled={state.isLoading} icon={Plus} label={state.isLoading ? "Assigning" : "Assign manager"} onPress={() => void submit()} /> : null}
+      {mgrErrors.serverError ? <AlertModal message={mgrErrors.serverError} onClose={mgrErrors.dismissServerError} /> : null}
+      {lookup?.eligible ? <ActionButton disabled={state.isLoading || mgrErrors.blocked} icon={Plus} label={state.isLoading ? "Assigning" : "Assign manager"} onPress={() => void submit()} /> : null}
     </Sheet>
   );
 }
@@ -1645,17 +1673,23 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
   const [notes, setNotes] = useState(member?.employmentNotes ?? "");
   const [createMember, createState] = useCreateStaffMemberMutation();
   const [updateMember, updateState] = useUpdateStaffMemberMutation();
-  const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
+  const fieldErrors = useFormErrors<"category" | "fullName" | "salary" | "startDate" | "workingDays">();
   const saving = createState.isLoading || updateState.isLoading;
   const dailyEstPaise = workingDaysInCurrentMonth(workingDaysMask) * (rupeesToPaise(salary) ?? 0);
   async function submit() {
     const salaryRatePaise = rupeesToPaise(salary);
-    if (!categoryId || !fullName.trim() || !salaryRatePaise || !startDate) {
-      setFeedback({ message: "Category, name, salary and start date are required.", tone: "error" });
-      return;
-    }
-    if (salaryStructure === "DAILY" && workingDaysMask <= 0) {
-      setFeedback({ message: "Select at least one working day for daily staff.", tone: "error" });
+    // One message naming four fields made the reader work out which was
+    // missing; each now sits under the input it means.
+    const problems = {
+      ...(categoryId ? {} : { category: "Pick a category." }),
+      ...(fullName.trim() ? {} : { fullName: "Enter the staff member's name." }),
+      ...(salaryRatePaise ? {} : { salary: "Enter a valid amount." }),
+      ...(startDate ? {} : { startDate: "Pick a start date." }),
+      ...(salaryStructure === "DAILY" && workingDaysMask <= 0
+        ? { workingDays: "Select at least one working day." }
+        : {}),
+    };
+    if (!fieldErrors.validate(problems) || !salaryRatePaise) {
       return;
     }
     const payload = { benefitsSummary: benefits, categoryId, dateOfBirth: birthDate || null, employmentEndDate: member?.employmentEndDate ?? null, employmentNotes: notes, employmentStartDate: startDate, fullName: fullName.trim(), identityVerificationStatus: member?.identityVerificationStatus ?? "NOT_STARTED" as const, salaryRatePaise, salaryStructure, workingDaysMask: salaryStructure === "DAILY" ? workingDaysMask : ALL_DAYS_MASK };
@@ -1665,7 +1699,7 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
       onClose();
       toast.show(member ? "Staff member updated successfully." : "Staff member added successfully.");
     } catch (error) {
-      setFeedback({ message: "Could not save the staff member. Check the details and try again.", tone: "error" });
+      fieldErrors.failFromServer(errorMessage(error, "Could not save the staff member. Check the details and try again."));
     }
   }
   return (
@@ -1674,18 +1708,20 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
           unbounded, and a dozen of them pushed the rest of the form off-screen. */}
       <SingleOptionPicker
         label="Category"
-        onChange={setCategoryId}
+        onChange={(next) => { setCategoryId(next); fieldErrors.clearField("category"); }}
         options={categories.map((category) => ({ label: category.name, value: category.id }))}
         required
         value={categoryId}
       />
-      <FormInput label="Full name" onChangeText={setFullName} placeholder="Staff member name" value={fullName} />
+      <FieldError message={fieldErrors.errors.category} />
+      <FormInput error={fieldErrors.errors.fullName} label="Full name" onChangeText={(next) => { setFullName(next); fieldErrors.clearField("fullName"); }} placeholder="Staff member name" value={fullName} />
       <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
       <View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} /><ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} /></View>
-      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
+      <FormInput error={fieldErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); fieldErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
       {salaryStructure === "DAILY" ? (
         <>
-          <WeekdayPicker mask={workingDaysMask} onChange={setWorkingDaysMask} />
+          <WeekdayPicker mask={workingDaysMask} onChange={(next) => { setWorkingDaysMask(next); fieldErrors.clearField("workingDays"); }} />
+          <FieldError message={fieldErrors.errors.workingDays} />
           <Text style={[type.caption, { color: colors.muted }]}>
             {workingDaysInCurrentMonth(workingDaysMask)} working days this month{dailyEstPaise ? ` · est. ${formatMoneyFull(dailyEstPaise)}` : ""}
           </Text>
@@ -1694,8 +1730,8 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
       <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
       <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
-      <InlineFeedback feedback={feedback} />
-      <ActionButton disabled={saving} icon={Pencil} label={saving ? "Saving" : "Save member"} onPress={() => void submit()} />
+      <ActionButton disabled={saving || fieldErrors.blocked} icon={Pencil} label={saving ? "Saving" : "Save member"} onPress={() => void submit()} />
+      {fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}
       {member?.active && onEnd ? <ActionButton icon={Trash2} label="End employment" onPress={onEnd} variant="danger" /> : null}
     </Sheet>
   );
@@ -1709,17 +1745,18 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
   const [benefits, setBenefits] = useState(manager.benefitsSummary);
   const [startDate, setStartDate] = useState(manager.employmentStartDate ?? today());
   const [notes, setNotes] = useState(manager.employmentNotes);
-  const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
+  const empErrors = useFormErrors<"salary" | "startDate">();
   const [updateManager, state] = useUpdateManagerEmploymentMutation();
 
   async function submit() {
     const salaryRatePaise = rupeesToPaise(salary);
-    if (!salaryRatePaise || !startDate) {
-      setFeedback({ message: "Salary and working start date are required.", tone: "error" });
+    const problems = {
+      ...(salaryRatePaise ? {} : { salary: "Enter a valid amount." }),
+      ...(startDate ? {} : { startDate: "Pick a working start date." }),
+    };
+    if (!empErrors.validate(problems) || !salaryRatePaise) {
       return;
     }
-
-    setFeedback(null);
     try {
       await updateManager({
         managerReferenceCode: manager.referenceCode,
@@ -1741,7 +1778,7 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
       onClose();
       toast.show("Manager employment updated successfully.");
     } catch (error) {
-      setFeedback({ message: errorMessage(error, "Could not save manager employment details."), tone: "error" });
+      empErrors.failFromServer(errorMessage(error, "Could not save manager employment details."));
     }
   }
 
@@ -1752,23 +1789,30 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
         <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
         <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
       </View>
-      <FormInput keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={setSalary} placeholder="0" prefix="₹" value={salary} />
+      <FormInput error={empErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); empErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
-      <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
+      <DatePickerField label="Working start date" onChange={(next) => { setStartDate(next); empErrors.clearField("startDate"); }} value={startDate} />
+      <FieldError message={empErrors.errors.startDate} />
       <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
-      <InlineFeedback feedback={feedback} />
-      <ActionButton disabled={state.isLoading} icon={Pencil} label={state.isLoading ? "Saving" : "Save manager employment"} onPress={() => void submit()} />
+      {empErrors.serverError ? <AlertModal message={empErrors.serverError} onClose={empErrors.dismissServerError} /> : null}
+      <ActionButton disabled={state.isLoading || empErrors.blocked} icon={Pencil} label={state.isLoading ? "Saving" : "Save manager employment"} onPress={() => void submit()} />
     </Sheet>
   );
 }
 function OpenMonthModal({ account, onClose, onSaved, propertyId }: { account: SalaryAccountDetail; onClose: () => void; onSaved: (value: SalaryAccountDetail) => void; propertyId: string }) {
   const { colors, type } = useTheme();
-  const toast = useToast();
   const [openMonth, state] = useOpenSalaryMonthMutation();
+  // No fields on this sheet — it is a confirm. Any refusal is a server one.
+  const opErrors = useFormErrors<never>();
   async function submit() {
-    try { onSaved(await openMonth({ accountReferenceCode: account.account.referenceCode, propertyId }).unwrap()); onClose(); } catch (error) { toast.show(errorMessage(error, "Could not open salary month.")); }
+    try {
+      onSaved(await openMonth({ accountReferenceCode: account.account.referenceCode, propertyId }).unwrap());
+      onClose();
+    } catch (error) {
+      opErrors.failFromServer(errorMessage(error, "Could not open salary month."));
+    }
   }
-  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.body, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.body, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} />{opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}</Sheet>;
 }
 
 function formatDayMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00`)); }
@@ -1799,10 +1843,25 @@ function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { a
   const [addAdjustment, addState] = useAddSalaryAdjustmentMutation();
   const [updateAdjustment, updateState] = useUpdateSalaryAdjustmentMutation();
   const saving = addState.isLoading || updateState.isLoading;
+  const fieldErrors = useFormErrors<"amount" | "reason">();
+
   async function submit() {
-    if (!payrollMonth) { toast.show("Open a salary month first."); return; }
+    // Not about a field: no month is open, so there is nothing on this sheet
+    // to correct. It ends the attempt, so it takes the modal.
+    if (!payrollMonth) {
+      fieldErrors.failFromServer("Open a salary month before recording an adjustment.");
+      return;
+    }
+
     const amountPaise = rupeesToPaise(amount);
-    if (!amountPaise || !reason.trim()) { toast.show("Enter an amount and reason."); return; }
+    const problems = {
+      ...(amountPaise ? {} : { amount: "Enter a valid amount." }),
+      ...(reason.trim() ? {} : { reason: "Enter a reason." }),
+    };
+    if (!fieldErrors.validate(problems) || !amountPaise) {
+      return;
+    }
+
     const payload = { adjustmentType: type, amountPaise, reason: reason.trim() };
     try {
       const detail = editing
@@ -1810,9 +1869,11 @@ function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { a
         : await addAdjustment({ accountReferenceCode: account.account.referenceCode, payload, payrollMonth, propertyId }).unwrap();
       onSaved(detail);
       onClose();
-    } catch (error) { toast.show(errorMessage(error, "Could not save the salary adjustment.")); }
+    } catch (error) {
+      fieldErrors.failFromServer(errorMessage(error, "Could not save the salary adjustment."));
+    }
   }
-  return <Sheet onClose={onClose} title={editing ? "Edit adjustment" : "Salary adjustment"}><View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={type === "ADDITION"} label="Addition" onPress={() => setType("ADDITION")} /><ChoiceButton active={type === "DEDUCTION"} label="Deduction" onPress={() => setType("DEDUCTION")} /></View><FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} /><FormInput label="Reason" multiline onChangeText={setReason} placeholder="e.g. Performance incentive" value={reason} /><ActionButton disabled={saving} label={saving ? "Saving" : "Save adjustment"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title={editing ? "Edit adjustment" : "Salary adjustment"}><View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={type === "ADDITION"} label="Addition" onPress={() => setType("ADDITION")} /><ChoiceButton active={type === "DEDUCTION"} label="Deduction" onPress={() => setType("DEDUCTION")} /></View><FormInput error={fieldErrors.errors.amount} keyboardType="decimal-pad" label="Amount" onChangeText={(next) => { setAmount(next); fieldErrors.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} /><FormInput error={fieldErrors.errors.reason} label="Reason" multiline onChangeText={(next) => { setReason(next); fieldErrors.clearField("reason"); }} placeholder="e.g. Performance incentive" value={reason} /><ActionButton disabled={saving || fieldErrors.blocked} label={saving ? "Saving" : "Save adjustment"} onPress={() => void submit()} />{fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}</Sheet>;
 }
 
 function SalaryPaymentModal({ account, onClose, onSaved, propertyId }: { account: SalaryAccountDetail; onClose: () => void; onSaved: (value: SalaryAccountDetail) => void; propertyId: string }) {
@@ -1823,13 +1884,27 @@ function SalaryPaymentModal({ account, onClose, onSaved, propertyId }: { account
   const [referenceText, setReferenceText] = useState("");
   const [notes, setNotes] = useState("");
   const [recordPayment, state] = useRecordSalaryPaymentMutation();
+  const fieldErrors = useFormErrors<"amount">();
+
   async function submit() {
-    if (!latest) { toast.show("Open a salary month first."); return; }
+    if (!latest) {
+      fieldErrors.failFromServer("Open a salary month before recording a payment.");
+      return;
+    }
+
     const amountPaise = rupeesToPaise(amount);
-    if (!amountPaise) { toast.show("Enter a valid payment amount."); return; }
-    try { onSaved(await recordPayment({ accountReferenceCode: account.account.referenceCode, payrollMonth: latest.payrollMonth, payload: { amountPaise, notes, paidOn: today(), paymentMethod: method, referenceText }, propertyId }).unwrap()); onClose(); } catch (error) { toast.show(errorMessage(error, "Could not record salary payment.")); }
+    if (!fieldErrors.validate(amountPaise ? {} : { amount: "Enter a valid payment amount." }) || !amountPaise) {
+      return;
+    }
+
+    try {
+      onSaved(await recordPayment({ accountReferenceCode: account.account.referenceCode, payrollMonth: latest.payrollMonth, payload: { amountPaise, notes, paidOn: today(), paymentMethod: method, referenceText }, propertyId }).unwrap());
+      onClose();
+    } catch (error) {
+      fieldErrors.failFromServer(errorMessage(error, "Could not record salary payment."));
+    }
   }
-  return <Sheet onClose={onClose} title="Record manual payment"><FormInput keyboardType="decimal-pad" label="Amount paid" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{(["CASH", "UPI", "BANK_TRANSFER", "OTHER"] as SalaryPaymentMethod[]).map((item) => <ChoiceButton active={method === item} key={item} label={item.replaceAll("_", " ")} onPress={() => setMethod(item)} />)}</View><FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} /><FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} /><ActionButton disabled={state.isLoading} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} /></Sheet>;
+  return <Sheet onClose={onClose} title="Record manual payment"><FormInput error={fieldErrors.errors.amount} keyboardType="decimal-pad" label="Amount paid" onChangeText={(next) => { setAmount(next); fieldErrors.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{(["CASH", "UPI", "BANK_TRANSFER", "OTHER"] as SalaryPaymentMethod[]).map((item) => <ChoiceButton active={method === item} key={item} label={item.replaceAll("_", " ")} onPress={() => setMethod(item)} />)}</View><FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} /><FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} /><ActionButton disabled={state.isLoading || fieldErrors.blocked} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} />{fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}</Sheet>;
 }
 
 // Ends a manager or staff employment. For monthly employees this also runs the
@@ -1890,7 +1965,7 @@ function EndEmploymentSheet({
   const [method, setMethod] = useState<SalaryPaymentMethod>("CASH");
   const [settlementNotes, setSettlementNotes] = useState("");
   const [scheduledDate, setScheduledDate] = useState("");
-  const [feedback, setFeedback] = useState<ModalFeedback | null>(null);
+  const endErrors = useFormErrors<"reason" | "scheduledDate">();
   const saving = endStaffState.isLoading || endManagerState.isLoading;
   const scheduling = mode === "scheduled";
 
@@ -1901,19 +1976,17 @@ function EndEmploymentSheet({
   const showSettlement = !isDaily && !scheduling;
 
   async function submit() {
-    if (!reason.trim()) {
-      setFeedback({ message: "A reason for ending employment is required.", tone: "error" });
+    // All three checked together, each against the control it means.
+    const problems = {
+      ...(reason.trim() ? {} : { reason: "Give a reason for ending this employment." }),
+      ...(scheduling && !scheduledDate ? { scheduledDate: "Pick the last working day." } : {}),
+      ...(scheduling && scheduledDate && scheduledDate <= today()
+        ? { scheduledDate: "A scheduled last day must be in the future. Use End now instead." }
+        : {}),
+    };
+    if (!endErrors.validate(problems)) {
       return;
     }
-    if (scheduling && !scheduledDate) {
-      setFeedback({ message: "Pick the last working day.", tone: "error" });
-      return;
-    }
-    if (scheduling && scheduledDate <= today()) {
-      setFeedback({ message: "A scheduled last day must be in the future. Use End now instead.", tone: "error" });
-      return;
-    }
-    setFeedback(null);
     // Nothing settles when scheduling: they keep working and keep earning until
     // the day arrives, so there is no final figure yet.
     const settling = !scheduling && totalSettlementPaise > 0;
@@ -1936,7 +2009,7 @@ function EndEmploymentSheet({
           : `${target.name}'s employment has been ended.`,
       );
     } catch (error) {
-      setFeedback({ message: errorMessage(error, "Could not end the employment. Try again."), tone: "error" });
+      endErrors.failFromServer(errorMessage(error, "Could not end the employment. Try again."));
     }
   }
 
@@ -1944,23 +2017,23 @@ function EndEmploymentSheet({
     <Sheet onClose={onClose} subtitle={target.name} title={scheduling ? "Schedule end" : "End now"}>
       {scheduling ? (
         <>
-          <View style={{ backgroundColor: colors.surfaceSunken, borderCurve: "continuous", borderRadius: 14, gap: 4, padding: spacing.md }}>
-            <Text style={[type.bodyStrong, { color: colors.ink }]}>They keep working until that day</Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Pay and access continue as normal. Nothing is settled now — the final amount is worked out when the day
-              arrives.
-            </Text>
-          </View>
-          <DatePickerField label="Last working day" onChange={setScheduledDate} value={scheduledDate} />
+          <NoticeBar
+            message="Pay and access continue as normal. Nothing is settled now — the final amount is worked out when the day arrives."
+            title="They keep working until that day"
+            tone="warning"
+          />
+          <DatePickerField label="Last working day" onChange={(next) => { setScheduledDate(next); endErrors.clearField("scheduledDate"); }} value={scheduledDate} />
+          <FieldError message={endErrors.errors.scheduledDate} />
         </>
       ) : (
-        <View style={{ backgroundColor: colors.dangerSoft, borderColor: colors.danger, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: 4, padding: spacing.md }}>
-          <Text style={[type.bodyStrong, { color: colors.danger }]}>This deactivates the record immediately</Text>
-          <Text style={[type.caption, { color: colors.danger }]}>The end date is recorded as today. This cannot be undone.</Text>
-        </View>
+        <NoticeBar
+          message="The end date is recorded as today. This cannot be undone."
+          title="This deactivates the record immediately"
+          tone="danger"
+        />
       )}
 
-      <FormInput label="Reason for leaving" multiline onChangeText={setReason} placeholder="e.g. Resigned, relocated, performance" value={reason} />
+      <FormInput error={endErrors.errors.reason} label="Reason for leaving" multiline onChangeText={(next) => { setReason(next); endErrors.clearField("reason"); }} placeholder="e.g. Resigned, relocated, performance" value={reason} />
       <FormInput label="Exit review (optional)" multiline onChangeText={setReview} placeholder="A short note for your records" value={review} />
 
       {showSettlement ? (
@@ -2002,9 +2075,9 @@ function EndEmploymentSheet({
         </Text>
       )}
 
-      <InlineFeedback feedback={feedback} />
+      {endErrors.serverError ? <AlertModal message={endErrors.serverError} onClose={endErrors.dismissServerError} /> : null}
       <ActionButton
-        disabled={saving}
+        disabled={saving || endErrors.blocked}
         icon={scheduling ? CalendarCheck : Trash2}
         label={saving ? "Saving" : scheduling ? "Schedule end" : "End now"}
         onPress={() => void submit()}
@@ -2055,16 +2128,6 @@ function FieldLabel({ children }: { children: string }) {
   return <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>{children}</Text>;
 }
 
-function InlineFeedback({ feedback }: { feedback: ModalFeedback | null }) {
-  const { colors, type } = useTheme();
-  if (!feedback) return null;
-  const success = feedback.tone === "success";
-  return (
-    <View style={{ backgroundColor: success ? colors.primarySoft : colors.surfaceSunken, borderColor: success ? colors.primary : colors.danger, borderRadius: 12, borderWidth: 1, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: success ? colors.successText : colors.danger, fontWeight: "700" }]}>{feedback.message}</Text>
-    </View>
-  );
-}
 // Bottom-sheet modal matching the rest of the app (e.g. owner-rooms ModalShell):
 // dimmed overlay, surface anchored to the bottom with rounded top corners, and a
 // keyboard-avoiding scrollable body honouring the bottom safe area.

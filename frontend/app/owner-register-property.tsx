@@ -10,7 +10,10 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { FieldHint } from "@/components/field-hint";
-import { useToast } from "@/components/toast";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal } from "@/features/geo/map-location-picker";
 import { FacilitiesField } from "@/features/owner/facilities-field";
@@ -57,12 +60,28 @@ import { useTheme } from "@/theme/use-theme";
 const MAX_PROPERTY_IMAGES = 10;
 /** Mirrors Property.MIN_NOTICE_PERIOD_DAYS. */
 
+/** Every field the submit check can point at. */
+type FormField =
+  | "acRate"
+  | "address"
+  | "area"
+  | "city"
+  | "deposit"
+  | "facilities"
+  | "graceDays"
+  | "images"
+  | "name"
+  | "nonAcRate"
+  | "pincode"
+  | "sharing"
+  | "state";
+
 export default function OwnerRegisterPropertyScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const toast = useToast();
+  const form = useFormErrors<FormField>();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [area, setArea] = useState("");
@@ -97,12 +116,6 @@ export default function OwnerRegisterPropertyScreen() {
   const [nonAcRate, setNonAcRate] = useState("");
   const [headline, setHeadline] = useState("");
   const [description, setDescription] = useState("");
-  // Validation/submit failures surface as toasts; success navigates to property.
-  const setError = (value: string | null) => {
-    if (value) {
-      toast.error(value);
-    }
-  };
   const [createProperty, { isLoading }] = useCreatePropertyMutation();
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -133,50 +146,43 @@ export default function OwnerRegisterPropertyScreen() {
     if (isLoading || uploading) {
       return;
     }
-    if (!name.trim() || !address.trim() || !area.trim() || !city.trim() || !state.trim() || !pincode.trim()) {
-      setError("Name, address line 1, area, city, state and pincode are required.");
-      return;
-    }
-    if (availableSharingTypes.length === 0) {
-      setError("Choose at least one sharing option.");
-      return;
-    }
-    if (facilities.length === 0 && customFacilities.length === 0) {
-      setError("Add at least one facility.");
-      return;
-    }
     const depositPaise = rupeesToPaise(deposit);
-    if (depositPaise == null) {
-      setError("Enter the standard deposit amount.");
-      return;
-    }
-    if (!graceDays.trim()) {
-      setError("Enter the rent grace days.");
-      return;
-    }
-    // Notice needs no validation any more — it is a picker, so there is no
-    // invalid value to enter.
     const grace = Number(graceDays);
-    if (!Number.isInteger(grace)) {
-      setError("Grace days must be a whole number.");
-      return;
-    }
-    if (grace < MIN_RENT_GRACE_DAYS || grace > MAX_RENT_GRACE_DAYS) {
-      setError(`Grace days must be between ${MIN_RENT_GRACE_DAYS} and ${MAX_RENT_GRACE_DAYS}.`);
-      return;
-    }
     const acRatePaise = offersDailyStays ? rupeesToPaise(acRate) : null;
     const nonAcRatePaise = offersDailyStays ? rupeesToPaise(nonAcRate) : null;
-    if (offersDailyStays && (acRatePaise == null || nonAcRatePaise == null)) {
-      setError("Enter both daily guest rates, or turn daily stays off.");
-      return;
-    }
-    if (images.length === 0) {
-      setError("Add at least one listing image.");
-      return;
-    }
 
-    setError(null);
+    // Every problem at once, each one keyed to the field that has to change.
+    // Reporting them one at a time turns a half-filled form into a queue of
+    // round trips to the submit button.
+    const found: Partial<Record<FormField, string>> = {
+      ...(name.trim() ? {} : { name: "Enter the property name." }),
+      ...(address.trim() ? {} : { address: "Enter address line 1." }),
+      ...(area.trim() ? {} : { area: "Enter the area or locality." }),
+      ...(city.trim() ? {} : { city: "Enter the city." }),
+      ...(state.trim() ? {} : { state: "Enter the state." }),
+      ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
+      ...(availableSharingTypes.length ? {} : { sharing: "Choose at least one sharing option." }),
+      ...(facilities.length || customFacilities.length ? {} : { facilities: "Add at least one facility." }),
+      ...(depositPaise == null ? { deposit: "Enter the standard deposit amount." } : {}),
+      ...(images.length ? {} : { images: "Add at least one listing image." }),
+    };
+    if (!graceDays.trim()) {
+      found.graceDays = "Enter the rent grace days.";
+    } else if (!Number.isInteger(grace)) {
+      found.graceDays = "Grace days must be a whole number.";
+    } else if (grace < MIN_RENT_GRACE_DAYS || grace > MAX_RENT_GRACE_DAYS) {
+      found.graceDays = `Grace days must be between ${MIN_RENT_GRACE_DAYS} and ${MAX_RENT_GRACE_DAYS}.`;
+    }
+    if (offersDailyStays && acRatePaise == null) {
+      found.acRate = "Enter the AC rate, or turn daily stays off.";
+    }
+    if (offersDailyStays && nonAcRatePaise == null) {
+      found.nonAcRate = "Enter the non-AC rate, or turn daily stays off.";
+    }
+    // The deposit re-check is the type narrowing the validate map cannot express.
+    if (!form.validate(found) || depositPaise == null) {
+      return;
+    }
 
     try {
       const property = await createProperty({
@@ -214,8 +220,10 @@ export default function OwnerRegisterPropertyScreen() {
       unsaved.markSaved();
       dispatch(setSelectedOwnerPropertyId(property.id));
       router.replace("/owner-property");
-    } catch {
-      setError("Could not register the property. Please check the details and try again.");
+    } catch (caught) {
+      form.failFromServer(
+        errorMessage(caught) || "Could not register the property. Please check the details and try again.",
+      );
     }
   }
 
@@ -247,7 +255,7 @@ export default function OwnerRegisterPropertyScreen() {
   async function pickImages() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setError("Allow photo library access to add listing images.");
+      form.failFromServer("Allow photo library access to add listing images.");
       return;
     }
     const remaining = MAX_PROPERTY_IMAGES - images.length;
@@ -275,7 +283,7 @@ export default function OwnerRegisterPropertyScreen() {
       );
       setImages((current) => [...current, ...uploaded].slice(0, MAX_PROPERTY_IMAGES));
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Could not upload the images. Try again.");
+      form.failFromServer(uploadError instanceof Error ? uploadError.message : "Could not upload the images. Try again.");
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -298,23 +306,23 @@ export default function OwnerRegisterPropertyScreen() {
       />
 
       <FormSection eyebrow="Basics" title="Name & location">
-        <FormInput autoCapitalize="words" label="Property name" onChangeText={setName} placeholder="e.g. Sunrise Residency" value={name} required />
+        <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="e.g. Sunrise Residency" value={name} required />
         <LocationPinCard
           addressSummary={addressSummaryLine(area, city, pincode)}
           coords={coords}
           onPress={() => setPickerOpen(true)}
         />
-        <FormInput label="Address line 1" multiline onChangeText={setAddress} placeholder="Building, street, landmark" value={address} required />
-        <FormInput autoCapitalize="words" label="Address line 2 / Area" onChangeText={setArea} placeholder="Area or locality" value={area} required />
+        <FormInput label="Address line 1" multiline error={form.errors.address} onChangeText={(next) => { setAddress(next); form.clearField("address"); }} placeholder="Building, street, landmark" value={address} required />
+        <FormInput autoCapitalize="words" label="Address line 2 / Area" error={form.errors.area} onChangeText={(next) => { setArea(next); form.clearField("area"); }} placeholder="Area or locality" value={area} required />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <FormInput autoCapitalize="words" label="City" onChangeText={setCity} placeholder="City" value={city} required />
+            <FormInput autoCapitalize="words" label="City" error={form.errors.city} onChangeText={(next) => { setCity(next); form.clearField("city"); }} placeholder="City" value={city} required />
           </View>
           <View style={{ flex: 1 }}>
-            <FormInput autoCapitalize="words" label="State" onChangeText={setState} placeholder="State" value={state} required />
+            <FormInput autoCapitalize="words" label="State" error={form.errors.state} onChangeText={(next) => { setState(next); form.clearField("state"); }} placeholder="State" value={state} required />
           </View>
         </View>
-        <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} onChangeText={setPincode} placeholder="6 digit pincode" value={pincode} required />
+        <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} error={form.errors.pincode} onChangeText={(next) => { setPincode(next); form.clearField("pincode"); }} placeholder="6 digit pincode" value={pincode} required />
       </FormSection>
 
       <FormSection eyebrow="Setup" title="Rooms & inclusions">
@@ -357,26 +365,39 @@ export default function OwnerRegisterPropertyScreen() {
 
         <OptionPicker
           emptyLabel="No sharing options selected"
+          error={form.errors.sharing}
           label="Sharing options"
           required
-          onChange={setAvailableSharingTypes}
+          onChange={(next) => {
+            setAvailableSharingTypes(next);
+            form.clearField("sharing");
+          }}
           options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
           title="Sharing options"
           value={availableSharingTypes}
         />
 
-        <FacilitiesField
-          customFacilities={customFacilities}
-          facilities={facilities}
-          onChangeCustom={setCustomFacilities}
-          onChangeFacilities={setFacilities}
-        />
+        <View style={{ gap: 6 }}>
+          <FacilitiesField
+            customFacilities={customFacilities}
+            facilities={facilities}
+            onChangeCustom={(next) => {
+              setCustomFacilities(next);
+              form.clearField("facilities");
+            }}
+            onChangeFacilities={(next) => {
+              setFacilities(next);
+              form.clearField("facilities");
+            }}
+          />
+          <FieldError message={form.errors.facilities} />
+        </View>
       </FormSection>
 
       <FormSection eyebrow="Money" title="Pricing & policy">
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Deposit" onChangeText={setDeposit} placeholder="10000" prefix="₹" value={deposit} required />
+            <FormInput keyboardType="decimal-pad" label="Deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="10000" prefix="₹" value={deposit} required />
           </View>
           <View style={{ flex: 1 }}>
             <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
@@ -397,7 +418,7 @@ export default function OwnerRegisterPropertyScreen() {
         <FormInput
           keyboardType="number-pad"
           label="Grace days"
-          onChangeText={setGraceDays}
+          error={form.errors.graceDays} onChangeText={(next) => { setGraceDays(next); form.clearField("graceDays"); }}
           placeholder={`e.g. 3 — max ${MAX_RENT_GRACE_DAYS}`}
           required
           value={graceDays}
@@ -410,10 +431,10 @@ export default function OwnerRegisterPropertyScreen() {
         {offersDailyStays ? (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <View style={{ flex: 1 }}>
-              <FormInput keyboardType="decimal-pad" label="Guest AC/day" onChangeText={setAcRate} placeholder="800" prefix="₹" value={acRate} required />
+              <FormInput keyboardType="decimal-pad" label="Guest AC/day" error={form.errors.acRate} onChangeText={(next) => { setAcRate(next); form.clearField("acRate"); }} placeholder="800" prefix="₹" value={acRate} required />
             </View>
             <View style={{ flex: 1 }}>
-              <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" onChangeText={setNonAcRate} placeholder="600" prefix="₹" value={nonAcRate} required />
+              <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" error={form.errors.nonAcRate} onChangeText={(next) => { setNonAcRate(next); form.clearField("nonAcRate"); }} placeholder="600" prefix="₹" value={nonAcRate} required />
             </View>
           </View>
         ) : null}
@@ -428,6 +449,7 @@ export default function OwnerRegisterPropertyScreen() {
           progress={uploadProgress}
           tiles={images.map((asset, index) => ({ cover: index === 0, key: asset.publicId, uri: asset.url }))}
         />
+        <FieldError message={form.errors.images} />
       </FormSection>
 
       <FormSection eyebrow="Listing" title="Discovery profile">
@@ -441,11 +463,13 @@ export default function OwnerRegisterPropertyScreen() {
           stays reachable no matter how long the form scrolls. */}
       <PinnedFooter>
         <ActionButton
-          disabled={isLoading || uploading}
+          disabled={isLoading || uploading || form.blocked}
           label={uploading ? "Uploading images…" : isLoading ? "Registering…" : "Register property"}
           onPress={() => void submit()}
         />
       </PinnedFooter>
+
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
 
       {pickerOpen ? (
         <MapLocationPickerModal

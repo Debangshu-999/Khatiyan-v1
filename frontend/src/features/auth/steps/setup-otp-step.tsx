@@ -1,6 +1,8 @@
 import { Text, View } from "react-native";
 
-import { CodeField, otpTimerLabel, PhoneSummaryRow, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
+import { ArrowLeft } from "lucide-react-native";
+
+import { AuthChipLink, CodeField, otpTimerLabel, PhoneSummaryRow, PrimaryButton, StepProgress } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -19,6 +21,8 @@ export function SetupOtpStep({
   onVerifyOtp,
   onEditPhone,
   activating = false,
+  otpError,
+  onBackToLogin,
 }: {
   phone: string;
   otp: string;
@@ -33,21 +37,24 @@ export function SetupOtpStep({
   // can be waiting on a code that will never come, because that request stays
   // silent when the number has no account — everyone else was told outright.
   activating?: boolean;
+  otpError?: string;
+  onBackToLogin: () => void;
 }) {
   const { colors, type } = useTheme();
 
   return (
     <>
-      <StepBadge text="Step 1/2" />
+      <StepProgress step={1} total={2} label="Verify your number" />
       {/* Shows where the code went; Edit returns to signup with values intact. */}
       <PhoneSummaryRow phone={phone} onEdit={onEditPhone} />
-      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} />
+      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} error={otpError} />
       {activating ? (
         <Text style={[type.caption, { color: colors.muted }]}>
           No code? Contact Provisioner.
         </Text>
       ) : null}
-      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+      <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <PrimaryButton
           label={cooldownSeconds > 0 ? otpTimerLabel(cooldownSeconds) : "Resend OTP"}
           onPress={onResendOtp}
@@ -57,6 +64,10 @@ export function SetupOtpStep({
           grow
         />
         <PrimaryButton label="Verify" onPress={onVerifyOtp} busy={verifyBusy} grow />
+        </View>
+        {/* Every other step offers a way back to sign-in; this one stranded
+            anyone who opened it by mistake, or whose code never arrived. */}
+        <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>
     </>
   );

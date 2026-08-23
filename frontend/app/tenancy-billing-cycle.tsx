@@ -23,7 +23,7 @@ export default function TenancyBillingCycleScreen() {
   const cycle = cyclesQuery.data?.find((item) => item.id === cycleId) ?? cyclesQuery.data?.[0];
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Billing"
         onBack={() => router.back()}
@@ -44,15 +44,14 @@ export default function TenancyBillingCycleScreen() {
               .map((item) => <LineItemCard item={item} key={item.id} />)
           ) : (
             <EmptyState
-              icon={ReceiptText}
-              eyebrow="No items"
+              icon={ReceiptText}
               title="No line items yet"
               description="Line items appear here once the bill is generated or adjusted."
             />
           )}
         </>
       ) : (
-        <EmptyState icon={ReceiptText} eyebrow="Missing bill" title="Bill not found" description="Refresh billing and try again." />
+        <EmptyState icon={ReceiptText} title="Bill not found" description="Refresh billing and try again." />
       )}
     </ScreenScrollView>
   );

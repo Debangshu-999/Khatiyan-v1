@@ -1,12 +1,15 @@
 import { Text, View, type StyleProp, type TextStyle } from "react-native";
 import { Lock, ScrollText } from "lucide-react-native";
 
+import { StatusIcon } from "@/components/status-icon";
 import {
   damageCatalogItems,
   deductionCategories,
   deductionLabel,
+  earlyExitRule,
   exitPrerequisites,
   rupeesLabel,
+  validityMonths,
 } from "@/features/compliance/clause-values";
 import { PROPERTY_DERIVED_CLAUSE_TYPES, type AgreementClause } from "@/store/services/compliance-api";
 import { spacing } from "@/theme/spacing";
@@ -88,6 +91,38 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
     }
   }
 
+  // Leaving early is the one term in the agreement that COSTS the tenant money,
+  // and it was a trailing sub-clause of a sentence — "…and the tenancy ends with
+  // it. If the tenancy ends earlier: one month's rent." Read at signing speed
+  // that is the easiest line on the page to skim past, which is the opposite of
+  // what an agreement is for. It gets pulled out and marked.
+  //
+  // Both agreement shapes carry one: a fixed term stores the owner's rule on the
+  // clause itself, an indefinite term derives PREMATURE_EXIT from the property.
+  // Handling only the first would have highlighted the penalty for some tenants
+  // and buried it for the rest.
+  if (clause.kind === "SYSTEM" && (clause.systemType === "VALIDITY" || clause.systemType === "LOCK_IN")) {
+    const months = validityMonths(clause);
+    const rule = earlyExitRule(clause).trim();
+    const term =
+      months != null
+        ? `This agreement runs for ${months} month${months === 1 ? "" : "s"} from the start of the tenancy, and the tenancy ends with it.`
+        : clause.body;
+
+    return (
+      <View style={{ gap: spacing.sm }}>
+        <Text style={bodyStyle}>
+          {term}
+        </Text>
+        {rule ? <PenaltyCallout heading="If you leave early" text={rule} /> : null}
+      </View>
+    );
+  }
+
+  if (clause.kind === "SYSTEM" && clause.systemType === "PREMATURE_EXIT") {
+    return <PenaltyCallout heading="If you leave without notice" text={clause.body} />;
+  }
+
   if (clause.kind === "SYSTEM" && clause.systemType === "EXIT_PREREQUISITES") {
     const checklist = exitPrerequisites(clause);
     if (checklist.length > 0) {
@@ -124,6 +159,43 @@ function ClauseBody({ clause }: { clause: AgreementClause }) {
     <Text style={bodyStyle}>
       {clause.body}
     </Text>
+  );
+}
+
+/**
+ * A term that costs the tenant money, set apart from the clause around it.
+ *
+ * <p>Warning-toned rather than danger-toned: this is a condition of the
+ * agreement they are about to accept, not something that has gone wrong. Danger
+ * red on a document a tenant is signing reads as an error in the document.
+ */
+function PenaltyCallout({ heading, text }: { heading: string; text: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: colors.warningSoft,
+        borderColor: colors.warning,
+        borderCurve: "continuous",
+        borderRadius: 12,
+        // A left rail rather than a full border: the callout belongs to the
+        // clause above it, and a box all the way round detaches it into a
+        // notice of its own.
+        borderLeftWidth: 4,
+        gap: 4,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <StatusIcon size={15} tone="warning" />
+        <Text style={[type.eyebrow, { color: colors.warningText }]}>
+          {heading}
+        </Text>
+      </View>
+      <Text selectable style={[type.policy, { color: colors.ink }]}>
+        {text}
+      </Text>
+    </View>
   );
 }
 

@@ -9,6 +9,8 @@ import { ArrowLeft, Crosshair, Home, MapPin } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { SearchField } from "@/components/search-field";
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ActionButton } from "@/features/owner/owner-ui";
 import {
@@ -85,6 +87,8 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  // Locating fails mid-operation; a toast behind this modal would never be seen.
+  const opErrors = useFormErrors<never>();
   const { Camera, Map: MapView, Marker } = maplibre!;
 
   const start = initial ?? home ?? null;
@@ -183,7 +187,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) {
-        toast.error("Location permission was denied.");
+        opErrors.failFromServer("Location permission was denied.");
         return;
       }
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -193,7 +197,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
         duration: 600,
       });
     } catch {
-      toast.error("Could not read your current location.");
+      opErrors.failFromServer("Could not read your current location.");
     } finally {
       setLocating(false);
     }
@@ -343,6 +347,9 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
         </View>
         <ActionButton disabled={!center || resolvingAddress} label="Confirm location" onPress={confirm} />
       </View>
+      {opErrors.serverError ? (
+        <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
+      ) : null}
     </View>
   );
 }
@@ -353,8 +360,7 @@ function DevBuildRequiredScreen({ onBack }: { onBack: () => void }) {
   return (
     <View style={{ backgroundColor: colors.background, flex: 1, gap: spacing.lg, justifyContent: "center", padding: spacing.lg, paddingTop: insets.top + spacing.lg }}>
       <EmptyState
-        icon={MapPin}
-        eyebrow="Development build needed"
+        icon={MapPin}
         title="Maps need a dev build"
         description={
           "The map picker uses a native module that Expo Go cannot load. Build and install the development app once with: npx expo run:android — then reopen this screen."

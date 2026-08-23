@@ -9,8 +9,8 @@ import {
   Bed,
   BedDouble,
   CalendarDays,
-  Check,
   ChevronDown,
+  ChevronUp,
   Clock,
   Info,
   Layers,
@@ -23,8 +23,14 @@ import {
   X,
 } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
+import { SheetShell } from "@/components/sheet-shell";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
@@ -98,6 +104,9 @@ function roomTypePatch(value: RoomType): Partial<RoomFormState> {
 }
 
 export default function OwnerRoomsScreen() {
+  // Both of these are refused by the server, not by anything on screen.
+  const reactivateErrors = useFormErrors<never>();
+  const deactivateErrors = useFormErrors<never>();
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -168,6 +177,29 @@ export default function OwnerRoomsScreen() {
   const floorBeds = floorActiveRooms.reduce((sum, room) => sum + room.capacity, 0);
   const floorOccupiedBeds = floorActiveRooms.reduce((sum, room) => sum + room.occupiedCount, 0);
 
+  function confirmDeactivate() {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target || !selectedProperty) {
+      return;
+    }
+    void (async () => {
+      try {
+        await deactivateRoom({ propertyId: selectedProperty.id, roomId: target.id }).unwrap();
+        toast.success(`Room ${target.roomNumber} deactivated.`);
+      } catch (caught) {
+        // The server refuses an occupied room outright. The call used to be
+        // fired and forgotten, so that refusal — and the success — both landed
+        // nowhere, and the room simply appeared to stay put for no reason.
+        deactivateErrors.failFromServer(
+          target.occupiedCount > 0
+            ? "Failed to deactivate room, this room has active occupancy"
+            : errorMessage(caught) || "Could not deactivate the room. Please try again.",
+        );
+      }
+    })();
+  }
+
   function confirmReactivate() {
     const target = pendingReactivate;
     setPendingReactivate(null);
@@ -179,7 +211,7 @@ export default function OwnerRoomsScreen() {
         await reactivateRoom({ propertyId: selectedProperty.id, roomId: target.id }).unwrap();
         toast.success(`Room ${target.roomNumber} reactivated.`);
       } catch {
-        toast.error("Could not reactivate the room. The room number may already be in use.");
+        reactivateErrors.failFromServer("Could not reactivate the room. The room number may already be in use.");
       }
     })();
   }
@@ -197,8 +229,7 @@ export default function OwnerRoomsScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={BedDouble}
-          eyebrow="Property required"
+          icon={BedDouble}
           title="No active property selected"
           description="Choose the property whose rooms you want to manage from Home."
         />
@@ -231,8 +262,7 @@ export default function OwnerRoomsScreen() {
             <SkeletonCard />
           ) : allRooms.length === 0 ? (
             <EmptyState
-              icon={BedDouble}
-              eyebrow="No rooms"
+              icon={BedDouble}
               title="No rooms yet"
               description="Add rooms one by one, or bulk-create a numbered range."
             />
@@ -240,8 +270,7 @@ export default function OwnerRoomsScreen() {
             <>
               <FloorSelector active={activeFloor} floors={floors} onSelect={setSelectedFloor} />
               {activeFloor != null ? (
-                <Section
-                  eyebrow="Floor summary"
+                <Section
                   title={activeFloor ? `Floor ${activeFloor}` : "Unassigned"}
                   trailing={
                     <FloorFilters
@@ -300,13 +329,7 @@ export default function OwnerRoomsScreen() {
           destructive
           message={`Deactivate room ${pendingDelete.roomNumber}? It will no longer be available for new tenancies.`}
           onCancel={() => setPendingDelete(null)}
-          onConfirm={() => {
-            const target = pendingDelete;
-            setPendingDelete(null);
-            if (selectedProperty) {
-              void deactivateRoom({ propertyId: selectedProperty.id, roomId: target.id });
-            }
-          }}
+          onConfirm={confirmDeactivate}
           title="Deactivate room?"
         />
       ) : null}
@@ -320,6 +343,8 @@ export default function OwnerRoomsScreen() {
           title="Reactivate room?"
         />
       ) : null}
+      {reactivateErrors.serverError ? <AlertModal message={reactivateErrors.serverError} onClose={reactivateErrors.dismissServerError} /> : null}
+      {deactivateErrors.serverError ? <AlertModal message={deactivateErrors.serverError} onClose={deactivateErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -383,16 +408,10 @@ function FloorFilters({
 }) {
   const { colors, fonts } = useTheme();
 
-  const toneFor = (key: RoomFilter) =>
-    key === "active" ? colors.jade : key === "maintenance" ? colors.accent : colors.danger;
-  const softFor = (key: RoomFilter) =>
-    key === "active" ? colors.jadeSoft : key === "maintenance" ? colors.accentSoft : colors.dangerSoft;
-
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
       {ROOM_FILTERS.map(({ key, label }) => {
         const selected = key === active;
-        const tone = toneFor(key);
         return (
           <AnimatedPressable
             accessibilityLabel={`${label} rooms: ${counts[key]}`}
@@ -401,8 +420,8 @@ function FloorFilters({
             onPress={() => onSelect(key)}
             style={{
               alignItems: "center",
-              backgroundColor: selected ? softFor(key) : colors.surfaceSunken,
-              borderColor: selected ? tone : colors.border,
+              backgroundColor: selected ? colors.primary : colors.surfaceSunken,
+              borderColor: selected ? colors.primary : colors.border,
               borderCurve: "continuous",
               borderRadius: 999,
               borderWidth: 1,
@@ -412,10 +431,10 @@ function FloorFilters({
               paddingVertical: 5,
             }}
           >
-            <Text style={{ color: selected ? tone : colors.muted, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
+            <Text style={{ color: selected ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
               {label}
             </Text>
-            <Text style={{ color: selected ? tone : colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
+            <Text style={{ color: selected ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
               {counts[key]}
             </Text>
           </AnimatedPressable>
@@ -505,8 +524,8 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                       }}
                       style={{
                         alignItems: "center",
-                        backgroundColor: selected ? colors.primarySoft : colors.surfaceSunken,
-                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.ink : colors.surfaceSunken,
+                        borderColor: selected ? colors.ink : colors.border,
                         borderRadius: 12,
                         borderWidth: 1,
                         flexDirection: "row",
@@ -515,10 +534,9 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                         paddingVertical: spacing.md,
                       }}
                     >
-                      <Text style={{ color: selected ? colors.primary : colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
+                      <Text style={{ color: selected ? colors.surface : colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
                         {floor ? `Floor ${floor}` : "Unassigned"}
                       </Text>
-                      {selected ? <Check color={colors.primary} size={18} strokeWidth={2.4} /> : null}
                     </Pressable>
                   );
                 })}
@@ -824,15 +842,121 @@ function ChoiceRow<T extends string>({
   );
 }
 
+/**
+ * How many beds a type fixes, or null when it leaves capacity to the owner.
+ * Shown on each option because picking a type also rewrites the capacity field,
+ * which is otherwise a silent edit two rows further down.
+ */
+function roomTypeBeds(value: RoomType) {
+  const capacity = CAPACITY_BY_TYPE[value];
+  return capacity != null ? `${capacity} bed${capacity === 1 ? "" : "s"}` : "Capacity you set";
+}
+
+/**
+ * Occupancy picker for a room, in the same shape as the floor picker above.
+ *
+ * <p>A pill row was wrong for six options: they wrapped across three lines,
+ * which made the room type the visually heaviest thing in a form where it is
+ * one field among eight, and left no room to say what each type does to the
+ * capacity field.
+ */
+function RoomTypePicker({ onChange, value }: { onChange: (value: RoomType) => void; value: RoomType }) {
+  const { colors, fonts, type } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
+        Room type
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setOpen(true)}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: 14,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.sm,
+          minHeight: 48,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        <BedDouble color={colors.kicker} size={19} strokeWidth={2} />
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
+          {humanizeToken(value)}
+        </Text>
+        <Text style={[type.caption, { color: colors.muted }]}>
+          {roomTypeBeds(value)}
+        </Text>
+        <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
+      </Pressable>
+
+      {open ? (
+        <SheetShell onClose={() => setOpen(false)} title="Choose room type">
+          <View style={{ gap: spacing.xs }}>
+            {ROOM_TYPES.map((option) => {
+              const selected = option === value;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  key={option}
+                  onPress={() => {
+                    onChange(option);
+                    setOpen(false);
+                  }}
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: selected ? colors.ink : colors.surfaceSunken,
+                    borderColor: selected ? colors.ink : colors.border,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.md,
+                  }}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold, fontSize: 15, }}>
+                      {humanizeToken(option)}
+                    </Text>
+                    <Text style={[type.caption, { color: selected ? colors.surface : colors.muted, opacity: selected ? 0.75 : 1 }]}>
+                      {roomTypeBeds(option)}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </SheetShell>
+      ) : null}
+    </View>
+  );
+}
+
 function RoomFieldset({
+  errors,
   form,
+  onClearField,
   setForm,
   showPrefix = true,
 }: {
+  errors?: Partial<Record<RoomField, string>>;
   form: RoomFormState;
+  /** Clears one field's error as it is edited, releasing the submit gate. */
+  onClearField?: (field: RoomField) => void;
   setForm: (patch: Partial<RoomFormState>) => void;
   showPrefix?: boolean;
 }) {
+  const edit = (field: RoomField, patch: Partial<RoomFormState>) => {
+    setForm(patch);
+    onClearField?.(field);
+  };
+
   return (
     <>
       {showPrefix ? (
@@ -841,46 +965,112 @@ function RoomFieldset({
             <FormInput label="Prefix (optional)" onChangeText={(value) => setForm({ prefix: value })} placeholder="R, A-..." value={form.prefix} />
           </View>
           <View style={{ flex: 2 }}>
-            <FormInput label="Room number" onChangeText={(value) => setForm({ roomNumber: value })} placeholder="101" value={form.roomNumber} />
+            <FormInput
+              error={errors?.roomNumber}
+              label="Room number"
+              onChangeText={(value) => edit("roomNumber", { roomNumber: value })}
+              placeholder="101"
+              value={form.roomNumber}
+            />
           </View>
         </View>
       ) : (
-        <FormInput label="Room number" onChangeText={(value) => setForm({ roomNumber: value })} placeholder="101" value={form.roomNumber} />
+        <FormInput
+          error={errors?.roomNumber}
+          label="Room number"
+          onChangeText={(value) => edit("roomNumber", { roomNumber: value })}
+          placeholder="101"
+          value={form.roomNumber}
+        />
       )}
-      <FormInput label="Floor" onChangeText={(value) => setForm({ floor: value })} placeholder="Ground, 1, 2..." value={form.floor} />
-      <ChoiceRow label="Room type" onChange={(value: RoomType) => setForm(roomTypePatch(value))} options={ROOM_TYPES} value={form.roomType} />
-      <FormInput keyboardType="number-pad" label="Capacity (beds)" onChangeText={(value) => setForm({ capacity: value })} placeholder="2" value={form.capacity} />
+      <FormInput
+        error={errors?.floor}
+        label="Floor"
+        onChangeText={(value) => edit("floor", { floor: value })}
+        placeholder="Ground, 1, 2..."
+        value={form.floor}
+      />
+      <RoomTypePicker onChange={(value) => setForm(roomTypePatch(value))} value={form.roomType} />
+      {/* Every type but Dormitory fixes its own bed count, so the field was
+          asking for something already decided — and an owner could contradict
+          it, leaving a "Single" with three beds. Dormitory has no fixed size,
+          so it is the one type that still has to be told. */}
+      {form.roomType === "DORMITORY" ? (
+        <FormInput
+          error={errors?.capacity}
+          keyboardType="number-pad"
+          label="Beds in this dormitory"
+          onChangeText={(value) => edit("capacity", { capacity: value })}
+          placeholder="8"
+          value={form.capacity}
+        />
+      ) : null}
       <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
-      <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
+      <FormInput
+        error={errors?.rent}
+        keyboardType="decimal-pad"
+        label="Base rent"
+        onChangeText={(value) => edit("rent", { rent: value })}
+        placeholder="0"
+        prefix="₹"
+        value={form.rent}
+      />
     </>
   );
 }
 
-function buildRoomPayload(form: RoomFormState): CreateRoomPayload | string {
+/** The fields the room form can complain about. */
+export type RoomField = "roomNumber" | "floor" | "capacity" | "rent";
+
+/**
+ * Validates the room form and builds its payload.
+ *
+ * <p>Returns EVERY problem, each keyed to the field that owns it. It used to
+ * return the first as a bare string, which meant a form with three empty fields
+ * was corrected one submit at a time, and the message named a field the reader
+ * then had to go find.
+ *
+ * <p>`payload` is null exactly when `errors` is non-empty.
+ */
+function buildRoomPayload(form: RoomFormState): {
+  errors: Partial<Record<RoomField, string>>;
+  payload: CreateRoomPayload | null;
+} {
+  const errors: Partial<Record<RoomField, string>> = {};
+
   if (!form.roomNumber.trim()) {
-    return "Enter a room number.";
+    errors.roomNumber = "Enter a room number.";
   }
   if (!form.floor.trim()) {
-    return "Enter a floor.";
+    errors.floor = "Enter a floor.";
   }
+
   const capacity = Number(form.capacity);
   if (!Number.isInteger(capacity) || capacity < 1) {
-    return "Capacity must be at least 1.";
+    errors.capacity = "Capacity must be at least 1.";
   }
+
+  const baseRentPaise = form.rent.trim() ? rupeesToPaise(form.rent) : null;
   if (!form.rent.trim()) {
-    return "Enter the base rent.";
+    errors.rent = "Enter the base rent.";
+  } else if (baseRentPaise == null) {
+    errors.rent = "Enter a valid base rent.";
   }
-  const baseRentPaise = rupeesToPaise(form.rent);
-  if (baseRentPaise == null) {
-    return "Enter a valid base rent.";
+
+  if (Object.keys(errors).length > 0 || baseRentPaise == null) {
+    return { errors, payload: null };
   }
+
   return {
-    baseRentPaise,
-    capacity,
-    conditioning: form.conditioning,
-    floor: form.floor.trim(),
-    roomNumber: `${form.prefix.trim()}${form.roomNumber.trim()}`,
-    roomType: form.roomType,
+    errors,
+    payload: {
+      baseRentPaise,
+      capacity,
+      conditioning: form.conditioning,
+      floor: form.floor.trim(),
+      roomNumber: `${form.prefix.trim()}${form.roomNumber.trim()}`,
+      roomType: form.roomType,
+    },
   };
 }
 
@@ -939,7 +1129,7 @@ function AddRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId
   const toast = useToast();
   const [form, setFormState] = useState<RoomFormState>(emptyForm);
   const setForm = (patch: Partial<RoomFormState>) => setFormState((current) => ({ ...current, ...patch }));
-  const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFormErrors<RoomField>();
   const [pendingPayload, setPendingPayload] = useState<CreateRoomPayload | null>(null);
   const [createRoom, { isLoading }] = useCreateRoomMutation();
 
@@ -949,12 +1139,10 @@ function AddRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId
     if (isLoading) {
       return;
     }
-    const payload = buildRoomPayload(form);
-    if (typeof payload === "string") {
-      setError(payload);
+    const { errors, payload } = buildRoomPayload(form);
+    if (!fieldErrors.validate(errors) || !payload) {
       return;
     }
-    setError(null);
     setPendingPayload(payload);
   }
 
@@ -968,25 +1156,28 @@ function AddRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId
       await createRoom({ payload, propertyId }).unwrap();
       onClose();
       toast.success(`Room ${payload.roomNumber} created.`);
-    } catch {
-      onClose();
-      toast.error("Could not create the room. The room number may already exist.");
+    } catch (caught) {
+      // Stay open: the room number is the likely culprit and it is on screen.
+      fieldErrors.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <ModalShell onClose={onClose} title="Add room">
       <RoomScroll>
-        <RoomFieldset form={form} setForm={setForm} />
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
+        <RoomFieldset errors={fieldErrors.errors} form={form} onClearField={fieldErrors.clearField} setForm={setForm} />
       </RoomScroll>
       <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={isLoading} label={isLoading ? "Creating" : "Create room"} onPress={review} />
+        <ActionButton
+          disabled={isLoading || fieldErrors.blocked}
+          label={isLoading ? "Creating" : "Create room"}
+          onPress={review}
+        />
       </View>
+
+      {fieldErrors.serverError ? (
+        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
+      ) : null}
 
       {pendingPayload ? (
         <ConfirmDialog
@@ -1013,50 +1204,87 @@ function EditRoomModal({ onClose, propertyId, room }: { onClose: () => void; pro
     roomType: room.roomType,
   });
   const setForm = (patch: Partial<RoomFormState>) => setFormState((current) => ({ ...current, ...patch }));
-  const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFormErrors<RoomField>();
   const toast = useToast();
   const [updateRoom, { isLoading }] = useUpdateRoomMutation();
+
+  // What the room held when the sheet opened, for the no-changes guard.
+  const initial = {
+    capacity: String(room.capacity),
+    conditioning: room.conditioning,
+    floor: room.floor ?? "",
+    rent: String(Math.round(room.baseRentPaise / 100)),
+    roomNumber: room.roomNumber,
+    roomType: room.roomType,
+  };
 
   async function submit() {
     if (isLoading) {
       return;
     }
-    const payload = buildRoomPayload(form);
-    if (typeof payload === "string") {
-      setError(payload);
+    const { errors, payload } = buildRoomPayload(form);
+    if (!fieldErrors.validate(errors) || !payload) {
       return;
     }
-    setError(null);
+
+    const { prefix: _prefix, ...current } = form;
+    if (isUnchanged(initial, current)) {
+      toast.warning("No changes have been made.");
+      return;
+    }
+
     try {
       await updateRoom({ payload, propertyId, roomId: room.id }).unwrap();
       onClose();
       toast.success(`Room ${payload.roomNumber} updated.`);
-    } catch {
-      setError("Could not update the room. Capacity cannot drop below current occupants.");
+    } catch (caught) {
+      fieldErrors.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <ModalShell onClose={onClose} title={`Edit room ${room.roomNumber}`}>
       <RoomScroll>
-        <RoomFieldset form={form} setForm={setForm} showPrefix={false} />
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
+        <RoomFieldset
+          errors={fieldErrors.errors}
+          form={form}
+          onClearField={fieldErrors.clearField}
+          setForm={setForm}
+          showPrefix={false}
+        />
       </RoomScroll>
       <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={isLoading} label={isLoading ? "Saving" : "Save changes"} onPress={() => void submit()} />
+        <ActionButton
+          disabled={isLoading || fieldErrors.blocked}
+          label={isLoading ? "Saving" : "Save changes"}
+          onPress={() => void submit()}
+        />
       </View>
+
+      {fieldErrors.serverError ? (
+        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
+      ) : null}
     </ModalShell>
   );
 }
 
 type BulkMode = "range" | "custom";
 
+/** What a closed custom-list row shows in place of its form. */
+function customRoomSummary(room: RoomFormState) {
+  const number = `${room.prefix.trim()}${room.roomNumber.trim()}`.trim();
+  const beds = Number(room.capacity);
+  return [
+    number || "No number yet",
+    humanizeToken(room.roomType),
+    Number.isInteger(beds) && beds > 0 ? `${beds} bed${beds === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId: string }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [mode, setMode] = useState<BulkMode>("range");
 
   // Serial-range state.
@@ -1068,12 +1296,29 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
 
   // Custom-list state.
   const [customRooms, setCustomRooms] = useState<RoomFormState[]>([{ ...emptyForm }]);
+  // One row open at a time. Ten rooms of open form is a wall to scroll past,
+  // and the row being filled loses its own heading somewhere above the fold.
+  // -1 means every row is closed.
+  const [expandedRow, setExpandedRow] = useState(0);
   const updateCustom = (index: number, patch: Partial<RoomFormState>) =>
     setCustomRooms((current) => current.map((room, i) => (i === index ? { ...room, ...patch } : room)));
-  const addCustom = () => setCustomRooms((current) => [...current, { ...emptyForm }]);
-  const removeCustom = (index: number) => setCustomRooms((current) => current.filter((_, i) => i !== index));
+  const addCustom = () => {
+    // Length before the append, so the new row is the one that opens.
+    setExpandedRow(customRooms.length);
+    setCustomRooms((current) => [...current, { ...emptyForm }]);
+  };
+  const removeCustom = (index: number) => {
+    setCustomRooms((current) => current.filter((_, i) => i !== index));
+    // Row errors are keyed by index, and removing a row shifts every index
+    // after it, so a kept error would then be pointing at the wrong room.
+    setRowErrors({});
+    setExpandedRow((current) => (current === index ? -1 : current > index ? current - 1 : current));
+  };
 
-  const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFormErrors<RoomField | "range" | "rooms">();
+  // The repeater validates N rooms, so an error has to say WHICH row it means.
+  // A single form-level line naming "Room 3" made the reader count cards.
+  const [rowErrors, setRowErrors] = useState<Record<number, Partial<Record<RoomField, string>>>>({});
   const [pending, setPending] = useState<{ count: number; expected: string[]; payload: CreateRoomBulkPayload } | null>(null);
   const toast = useToast();
   const [createRoomsBulk, { isLoading }] = useCreateRoomsBulkMutation();
@@ -1086,22 +1331,17 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
   // Validate and build the request, returning what would be created. Returns
   // null after surfacing an inline error so the modal stays open to fix it.
   function prepareRange(): { count: number; expected: string[]; payload: CreateRoomBulkPayload } | null {
-    if (!Number.isInteger(startNumber) || !Number.isInteger(endNumber) || endNumber < startNumber) {
-      setError("Enter a valid start and end number.");
-      return null;
-    }
-    if (!form.floor.trim()) {
-      setError("Enter a floor.");
-      return null;
-    }
     const capacity = Number(form.capacity);
-    if (!Number.isInteger(capacity) || capacity < 1) {
-      setError("Capacity must be at least 1.");
-      return null;
-    }
     const baseRentPaise = rupeesToPaise(form.rent);
-    if (baseRentPaise == null) {
-      setError("Enter a valid base rent.");
+    const problems = {
+      ...(Number.isInteger(startNumber) && Number.isInteger(endNumber) && endNumber >= startNumber
+        ? {}
+        : { range: "Enter a valid start and end number." }),
+      ...(form.floor.trim() ? {} : { floor: "Enter a floor." }),
+      ...(Number.isInteger(capacity) && capacity >= 1 ? {} : { capacity: "Capacity must be at least 1." }),
+      ...(baseRentPaise == null ? { rent: "Enter a valid base rent." } : {}),
+    };
+    if (!fieldErrors.validate(problems) || baseRentPaise == null) {
       return null;
     }
     const expected: string[] = [];
@@ -1130,16 +1370,29 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
 
   function prepareCustom(): { count: number; expected: string[]; payload: CreateRoomBulkPayload } | null {
     const rooms: CreateRoomPayload[] = [];
-    for (let index = 0; index < customRooms.length; index += 1) {
-      const payload = buildRoomPayload(customRooms[index]);
-      if (typeof payload === "string") {
-        setError(`Room ${index + 1}: ${payload}`);
-        return null;
+    const foundRowErrors: Record<number, Partial<Record<RoomField, string>>> = {};
+
+    // Every row checked, not just up to the first bad one — otherwise a sheet
+    // of ten rooms is corrected ten submits at a time.
+    customRooms.forEach((room, index) => {
+      const { errors, payload } = buildRoomPayload(room);
+      if (payload) {
+        rooms.push(payload);
+      } else {
+        foundRowErrors[index] = errors;
       }
-      rooms.push(payload);
+    });
+
+    setRowErrors(foundRowErrors);
+    const badRows = Object.keys(foundRowErrors);
+    if (badRows.length > 0) {
+      // A closed row hides its own errors, so open the first one that failed
+      // rather than blocking submit with nothing visible to fix.
+      setExpandedRow(Number(badRows[0]));
+      return null;
     }
     if (rooms.length === 0) {
-      setError("Add at least one room.");
+      fieldErrors.validate({ rooms: "Add at least one room." });
       return null;
     }
     return { count: rooms.length, expected: rooms.map((room) => room.roomNumber), payload: { rooms } };
@@ -1151,7 +1404,6 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
     }
     const prepared = mode === "range" ? prepareRange() : prepareCustom();
     if (prepared) {
-      setError(null);
       setPending(prepared);
     }
   }
@@ -1166,8 +1418,8 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
       const created = await createRoomsBulk({ payload, propertyId }).unwrap();
       onClose();
       toast.success(bulkResultMessage(expected, created));
-    } catch {
-      toast.error("Could not create rooms. Please try again.");
+    } catch (caught) {
+      fieldErrors.failFromServer(errorMessage(caught) || "Could not create rooms. Please try again.");
     }
   }
 
@@ -1201,8 +1453,17 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
               </View>
             </View>
             <FormInput label="Floor" onChangeText={(value) => setForm({ floor: value })} placeholder="Ground, 1, 2..." value={form.floor} />
-            <ChoiceRow label="Room type" onChange={(value: RoomType) => setForm(roomTypePatch(value))} options={ROOM_TYPES} value={form.roomType} />
-            <FormInput keyboardType="number-pad" label="Capacity (beds)" onChangeText={(value) => setForm({ capacity: value })} placeholder="2" value={form.capacity} />
+            <RoomTypePicker onChange={(value) => setForm(roomTypePatch(value))} value={form.roomType} />
+            {form.roomType === "DORMITORY" ? (
+              <FormInput
+                error={fieldErrors.errors.capacity}
+                keyboardType="number-pad"
+                label="Beds in this dormitory"
+                onChangeText={(value) => setForm({ capacity: value })}
+                placeholder="8"
+                value={form.capacity}
+              />
+            ) : null}
             <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
             <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
             {rangeCount > 0 ? (
@@ -1213,35 +1474,88 @@ function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyI
           </>
         ) : (
           <>
-            {customRooms.map((room, index) => (
-              <View
-                key={index}
-                style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, gap: spacing.md, padding: spacing.md }}
-              >
-                <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
-                    Room {index + 1}
-                  </Text>
-                  {customRooms.length > 1 ? (
-                    <IconButton accessibilityLabel={`Remove room ${index + 1}`} icon={Trash2} onPress={() => removeCustom(index)} />
+            {customRooms.map((room, index) => {
+              const expanded = expandedRow === index;
+              const failed = Boolean(rowErrors[index]);
+              return (
+                <View
+                  key={index}
+                  style={{
+                    borderColor: failed && !expanded ? colors.danger : colors.border,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    gap: expanded ? spacing.md : 0,
+                    padding: spacing.md,
+                  }}
+                >
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      onPress={() => setExpandedRow(expanded ? -1 : index)}
+                      style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm }}
+                    >
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16, letterSpacing: -0.2 }}>
+                          Room {index + 1}
+                        </Text>
+                        {/* A closed row has to be identifiable without opening
+                            it, so the summary stands in for the form. */}
+                        {expanded ? null : (
+                          <Text numberOfLines={1} style={[type.caption, { color: failed ? colors.danger : colors.muted }]}>
+                            {failed ? "Needs attention" : customRoomSummary(room)}
+                          </Text>
+                        )}
+                      </View>
+                      {expanded ? (
+                        <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
+                      ) : (
+                        <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
+                      )}
+                    </Pressable>
+                    {customRooms.length > 1 ? (
+                      <IconButton accessibilityLabel={`Remove room ${index + 1}`} icon={Trash2} onPress={() => removeCustom(index)} />
+                    ) : null}
+                  </View>
+                  {expanded ? (
+                    <RoomFieldset
+                      errors={rowErrors[index]}
+                      form={room}
+                      onClearField={(field) =>
+                        setRowErrors((current) => {
+                          if (!current[index]?.[field]) {
+                            return current;
+                          }
+                          const next = { ...current, [index]: { ...current[index] } };
+                          delete next[index][field];
+                          return next;
+                        })
+                      }
+                      setForm={(patch) => updateCustom(index, patch)}
+                    />
                   ) : null}
                 </View>
-                <RoomFieldset form={room} setForm={(patch) => updateCustom(index, patch)} />
-              </View>
-            ))}
+              );
+            })}
             <ActionButton icon={Plus} label="Add another room" onPress={addCustom} variant="secondary" />
           </>
         )}
 
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
+        {/* Range bounds and "add at least one room" have no single input to sit
+            under, so they stay here — beneath the controls they describe. */}
+        <FieldError message={fieldErrors.errors.range ?? fieldErrors.errors.rooms} />
       </RoomScroll>
       <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={isLoading} label={isLoading ? "Creating" : submitLabel} onPress={review} />
+        <ActionButton
+          disabled={isLoading || fieldErrors.blocked || Object.keys(rowErrors).length > 0}
+          label={isLoading ? "Creating" : submitLabel}
+          onPress={review}
+        />
       </View>
+
+      {fieldErrors.serverError ? (
+        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
+      ) : null}
 
       {pending ? (
         <ConfirmDialog
@@ -1262,7 +1576,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
   const [markStatus, { isLoading }] = useMarkRoomStatusMutation();
   const [reason, setReason] = useState("");
   const [until, setUntil] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFormErrors<"reason">();
   const occupied = room.occupiedCount > 0;
   const isMaintenance = room.status === "MAINTENANCE";
 
@@ -1272,13 +1586,12 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
     if (isLoading) {
       return;
     }
-    setError(null);
     try {
       await markStatus({ propertyId, roomId: room.id, status: "VACANT" }).unwrap();
       onClose();
       toast.success(`Room ${room.roomNumber} taken off maintenance.`);
-    } catch {
-      setError(occupied ? occupiedMessage : "Could not update the room status. Please try again.");
+    } catch (caught) {
+      fieldErrors.failFromServer(occupied ? occupiedMessage : errorMessage(caught));
     }
   }
 
@@ -1287,10 +1600,9 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
       return;
     }
     if (!reason.trim()) {
-      setError("Enter a maintenance reason.");
+      fieldErrors.validate({ reason: "Enter a maintenance reason." });
       return;
     }
-    setError(null);
     try {
       await markStatus({
         propertyId,
@@ -1301,8 +1613,8 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
       }).unwrap();
       onClose();
       toast.success(`Room ${room.roomNumber} marked under maintenance.`);
-    } catch {
-      setError(occupied ? occupiedMessage : "Could not update the room status. Please try again.");
+    } catch (caught) {
+      fieldErrors.failFromServer(occupied ? occupiedMessage : errorMessage(caught));
     }
   }
 
@@ -1345,24 +1657,31 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
         ) : (
           <>
             <FormInput
+              error={fieldErrors.errors.reason}
               label="Maintenance reason"
-              onChangeText={setReason}
+              onChangeText={(next) => {
+                setReason(next);
+                fieldErrors.clearField("reason");
+              }}
               placeholder="e.g. Repainting, plumbing repair"
               value={reason}
             />
             <MaintenanceUntilField onChange={setUntil} value={until} />
             <View style={{ flexDirection: "row" }}>
-              <ActionButton disabled={isLoading} label={isLoading ? "Saving" : "Mark under maintenance"} onPress={() => void startMaintenance()} />
+              <ActionButton
+                disabled={isLoading || fieldErrors.blocked}
+                label={isLoading ? "Saving" : "Mark under maintenance"}
+                onPress={() => void startMaintenance()}
+              />
             </View>
           </>
         )}
 
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
       </RoomScroll>
+
+      {fieldErrors.serverError ? (
+        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
+      ) : null}
     </ModalShell>
   );
 }
@@ -1373,17 +1692,16 @@ function EditMaintenanceModal({ onClose, propertyId, room }: { onClose: () => vo
   const [updateMaintenance, { isLoading }] = useUpdateRoomMaintenanceMutation();
   const [reason, setReason] = useState(room.maintenanceReason ?? "");
   const [until, setUntil] = useState<Date | null>(room.maintenanceUntil ? new Date(room.maintenanceUntil) : null);
-  const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFormErrors<"reason">();
 
   async function submit() {
     if (isLoading) {
       return;
     }
     if (!reason.trim()) {
-      setError("Enter a maintenance reason.");
+      fieldErrors.validate({ reason: "Enter a maintenance reason." });
       return;
     }
-    setError(null);
     try {
       await updateMaintenance({
         propertyId,
@@ -1393,24 +1711,36 @@ function EditMaintenanceModal({ onClose, propertyId, room }: { onClose: () => vo
       }).unwrap();
       onClose();
       toast.success(`Maintenance details updated for room ${room.roomNumber}.`);
-    } catch {
-      setError("Could not update the maintenance details. You may not have permission to edit this note.");
+    } catch (caught) {
+      fieldErrors.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <ModalShell onClose={onClose} title={`Edit maintenance  -  Room ${room.roomNumber}`}>
       <RoomScroll>
-        <FormInput label="Maintenance reason" onChangeText={setReason} placeholder="e.g. Repainting, plumbing repair" value={reason} />
+        <FormInput
+          error={fieldErrors.errors.reason}
+          label="Maintenance reason"
+          onChangeText={(next) => {
+            setReason(next);
+            fieldErrors.clearField("reason");
+          }}
+          placeholder="e.g. Repainting, plumbing repair"
+          value={reason}
+        />
         <MaintenanceUntilField onChange={setUntil} value={until} />
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger }]}>
-            {error}
-          </Text>
-        ) : null}
       </RoomScroll>
       <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={isLoading} label={isLoading ? "Saving" : "Save details"} onPress={() => void submit()} />
+        <ActionButton
+          disabled={isLoading || fieldErrors.blocked}
+          label={isLoading ? "Saving" : "Save details"}
+          onPress={() => void submit()}
+        />
+
+        {fieldErrors.serverError ? (
+          <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
+        ) : null}
       </View>
     </ModalShell>
   );

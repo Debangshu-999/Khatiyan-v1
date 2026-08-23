@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.staff.api.dto.EmployeeActivityItem;
+import com.khatiyan.d_modules.staff.api.dto.SalaryMonthOpenItem;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentDueItem;
 import com.khatiyan.d_modules.staff.service.StaffService;
 
@@ -31,6 +32,16 @@ public class StaffModule {
     /** Active monthly salary accounts whose current-month salary is unpaid. */
     public List<SalaryPaymentDueItem> listSalaryPaymentDue(LocalDate today) {
         return staffService.listSalaryPaymentDue(today);
+    }
+
+    /** Salary months open for the current payroll month — salaries now recordable. */
+    public List<SalaryMonthOpenItem> listOpenSalaryMonths(LocalDate today) {
+        return staffService.listOpenSalaryMonths(today);
+    }
+
+    /** Unpaid salaries for one property this month, for the owner action center. */
+    public long countSalaryPaymentDue(UUID propertyId, LocalDate today) {
+        return staffService.countSalaryPaymentDue(propertyId, today);
     }
 
     /** Projected total salary payout for a property in a month (the "Est payout"). */

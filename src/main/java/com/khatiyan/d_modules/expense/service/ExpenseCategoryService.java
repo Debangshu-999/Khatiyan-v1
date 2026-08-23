@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.expense.service;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -42,9 +43,21 @@ public class ExpenseCategoryService {
     public ExpenseCategoryResponse createCategory(UUID actorUserId, UUID propertyId, UpsertExpenseCategoryRequest request) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ensureSeeded(propertyId);
-        if (categoryRepository.existsByPropertyIdAndNormalizedName(propertyId, normalize(request.name()))) {
-            throw new ValidationException("A category with this name already exists");
+        Optional<ExpenseCategory> existing =
+                categoryRepository.findByPropertyIdAndNormalizedName(propertyId, normalize(request.name()));
+
+        if (existing.isPresent()) {
+            ExpenseCategory found = existing.get();
+            if (found.isActive()) {
+                throw new ValidationException("A category with this name already exists");
+            }
+            // Deleted, not gone. Revive rather than refuse — the name is taken by
+            // a row nobody can see, and inserting would break the unique
+            // constraint anyway.
+            found.restore(request.name());
+            return ExpenseCategoryResponse.from(found);
         }
+
         return ExpenseCategoryResponse.from(categoryRepository.save(ExpenseCategory.custom(propertyId, request.name())));
     }
 
@@ -54,9 +67,17 @@ public class ExpenseCategoryService {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ExpenseCategory category = category(propertyId, categoryId);
         String normalized = normalize(request.name());
-        if (!normalized.equals(category.getNormalizedName())
-                && categoryRepository.existsByPropertyIdAndNormalizedName(propertyId, normalized)) {
-            throw new ValidationException("A category with this name already exists");
+        // Renaming ONTO a deleted name still refuses: two rows would share it and
+        // the unique constraint would reject the flush. Said plainly, so nobody
+        // hunts for a category that is not on screen.
+        if (!normalized.equals(category.getNormalizedName())) {
+            Optional<ExpenseCategory> clash =
+                    categoryRepository.findByPropertyIdAndNormalizedName(propertyId, normalized);
+            if (clash.isPresent()) {
+                throw new ValidationException(clash.get().isActive()
+                        ? "A category with this name already exists"
+                        : "A deleted category has this name. Create it again instead of renaming.");
+            }
         }
         category.rename(request.name());
         return ExpenseCategoryResponse.from(category);

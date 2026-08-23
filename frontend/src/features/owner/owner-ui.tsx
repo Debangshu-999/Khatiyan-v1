@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
 import { Modal, Text, View, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { StatusIcon, statusTonePalette, type StatusTone } from "@/components/status-icon";
 import { ArrowLeft, X, type LucideProps } from "lucide-react-native";
 type LucideIcon = ComponentType<LucideProps>;
 
@@ -392,67 +393,65 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
  * <p>Square corners on purpose — these are structural notices, not cards, and
  * the rounded card language elsewhere would make them look dismissible.
  */
+/**
+ * A standing notice on the screen: a precaution to read while deciding, not
+ * something to dismiss.
+ *
+ * <p>Built to match the toast — same status mark, same thick tone-coloured rule
+ * along the bottom — only larger, because this one stays put and carries a
+ * title. The two are the same voice at two volumes: a toast confirms something
+ * that already happened, this warns about something about to.
+ *
+ * <p>Replaced a left-edge stripe with an outlined glyph, which read as a
+ * quotation rule rather than a warning and shared nothing with the rest of the
+ * feedback language.
+ */
 export function NoticeBar({
-  icon: Icon,
   message,
   title,
   tone = "success",
 }: {
-  icon: LucideIcon;
   message: string;
   title: string;
-  tone?: "success" | "warning" | "danger";
+  /** "info" is the blue one: an explanation rather than a precaution. */
+  tone?: "success" | "warning" | "danger" | "info";
 }) {
-  const { colors, type } = useTheme();
-  const accent =
-    tone === "success" ? colors.jade : tone === "warning" ? colors.warningText : colors.danger;
+  const { colors, fonts, type } = useTheme();
+  // "danger" predates the shared tones; it means the same as error.
+  const statusTone: StatusTone = tone === "danger" ? "error" : tone;
+  const { fill } = statusTonePalette(statusTone, colors);
 
   return (
     <View
       style={{
+        alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.ink,
-        borderRadius: 0,
+        borderBottomColor: fill,
+        // Thicker than the toast: this one is read at rest rather than caught
+        // in passing, and it has more height to balance against.
+        borderBottomWidth: 5,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: 16,
         borderWidth: 1,
         flexDirection: "row",
+        gap: spacing.md,
+        padding: spacing.md,
       }}
     >
-      {/* Inside the border, not a margin — the rule is part of the box. */}
-      <View style={{ backgroundColor: accent, width: 5 }} />
-      <View
-        style={{
-          alignItems: "center",
-          flex: 1,
-          flexDirection: "row",
-          gap: spacing.md,
-          padding: spacing.md,
-        }}
-      >
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: accent,
-            borderRadius: 999,
-            borderWidth: 1.5,
-            height: 30,
-            justifyContent: "center",
-            width: 30,
-          }}
-        >
-          <Icon color={accent} size={16} strokeWidth={2.4} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: accent }]}>
-            {title}
-          </Text>
-          <Text selectable style={[type.caption, { color: colors.ink, lineHeight: 18 }]}>
-            {message}
-          </Text>
-        </View>
+      <StatusIcon size={28} tone={statusTone} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+          {title}
+        </Text>
+        <Text selectable style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          {message}
+        </Text>
       </View>
     </View>
   );
 }
+
 
 export function ConfirmDialog({
   acknowledgeOnly,

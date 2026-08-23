@@ -159,13 +159,12 @@ export default function TenancyScreen() {
             </View>
           </Card>
 
-          <Section eyebrow="Payable" title="My bills">
+          <Section title="My bills">
             {cyclesQuery.isFetching && cycles.length === 0 ? (
               <SkeletonCard />
             ) : payableBills.length === 0 ? (
               <EmptyState
-                icon={ReceiptText}
-                eyebrow="All clear"
+                icon={ReceiptText}
                 title="No bills due"
                 description="Bills to pay appear here. Rent cycles and any one-off charges are listed separately."
               />
@@ -199,7 +198,7 @@ export default function TenancyScreen() {
             )}
           </Section>
 
-          <Section eyebrow="Deposit manager" title="Deposit snapshot">
+          <Section title="Deposit snapshot">
             {depositQuery.isFetching ? (
               <SkeletonCard />
             ) : depositQuery.data ? (
@@ -227,7 +226,7 @@ export default function TenancyScreen() {
             )}
           </Section>
 
-          <Section eyebrow="History" title="Past bills">
+          <Section title="Past bills">
             <ActionCard
               meta={`${pastBills.length} bill${pastBills.length === 1 ? "" : "s"}`}
               title="Past bills"
@@ -236,7 +235,7 @@ export default function TenancyScreen() {
             />
           </Section>
 
-          <Section eyebrow="Raise requests" title="Stay requests">
+          <Section title="Stay requests">
             <ActionCard
               meta="Room"
               title="Room change request"
@@ -258,14 +257,13 @@ export default function TenancyScreen() {
         </>
       ) : (
         <EmptyState
-          icon={DoorOpen}
-          eyebrow="No active tenancy"
+          icon={DoorOpen}
           title="No current stay"
           description="Current tenancy and billing details appear when you have an active stay. Request history stays visible below."
         />
       )}
 
-      <Section eyebrow="Requests" title="Tenancy requests">
+      <Section title="Tenancy requests">
         {exitRequestsQuery.isFetching ? (
           <SkeletonCard />
         ) : (
@@ -301,7 +299,7 @@ export default function TenancyScreen() {
       </Section>
 
       {!activeTenancy && tenanciesQuery.data?.length ? (
-        <Section eyebrow="Past stays" title="Tenancies">
+        <Section title="Tenancies">
           {tenanciesQuery.data.slice(0, 3).map((tenancy) => (
             <Card key={tenancy.id}>
               {/* The tenant's own view of their stay — the one place the

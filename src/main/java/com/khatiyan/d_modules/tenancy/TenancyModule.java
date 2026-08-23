@@ -170,4 +170,9 @@ public class TenancyModule {
     public void cancelPendingTenancyBySystem(UUID tenancyId, String reason) {
         tenancyService.cancelPendingAsSystem(tenancyId, reason);
     }
+
+    /** Owner/manager withdraws a tenancy the tenant never accepted. */
+    public void cancelPendingTenancyByManager(UUID actorUserId, UUID tenancyId, String reason) {
+        tenancyService.cancelPendingAsManager(actorUserId, tenancyId, reason);
+    }
 }

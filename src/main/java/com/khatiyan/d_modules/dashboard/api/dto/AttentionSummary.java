@@ -18,6 +18,15 @@ public record AttentionSummary(
     long tenantsOnNotice,
     long pendingDepositSettlements,
     /** Enquiries from the property's public profile with no answer yet. */
-    long newEnquiries
+    long newEnquiries,
+    /**
+     * Salaries unpaid for the current payroll month.
+     *
+     * <p>Counted the whole month, not just the last few days. The end-of-month
+     * reminder is a nudge about a deadline; this is the standing task.
+     */
+    long salaryPaymentsDue,
+    /** Agreements signed by the owner and still waiting on the tenant. */
+    long agreementsPendingAcceptance
 ) {
 }

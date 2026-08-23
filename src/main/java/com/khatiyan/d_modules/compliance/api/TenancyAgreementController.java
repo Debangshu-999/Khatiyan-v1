@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.compliance.ComplianceModule;
+import com.khatiyan.d_modules.compliance.api.dto.CancelPendingTenancyRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementResponse;
 import com.khatiyan.d_modules.compliance.api.dto.TenancyAgreementResponse;
@@ -72,6 +73,24 @@ public class TenancyAgreementController {
     }
 
     // Tenant endpoints
+
+    /**
+     * Withdraws a tenancy the tenant never accepted — they backed out, or it was
+     * created by mistake. Refused once the agreement is accepted; a live stay
+     * ends through the end-tenancy settlement instead.
+     */
+    @PostMapping("/tenancies/{tenancyId}/agreement/cancel")
+    public void cancelPendingTenancy(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID tenancyId,
+            @RequestBody(required = false) CancelPendingTenancyRequest request) {
+        complianceModule.cancelPendingTenancy(
+                user.userId(),
+                tenancyId,
+                request == null || request.reason() == null || request.reason().isBlank()
+                        ? "Withdrawn by the owner"
+                        : request.reason().trim());
+    }
 
     @GetMapping("/me/agreement")
     public TenancyAgreementResponse getMyAgreement(@AuthenticationPrincipal UserPrincipal user) {

@@ -58,10 +58,34 @@ public record PropertyDiscoveryDetailResponse(
         String profileImageUrl,
         String ownerName,
         String ownerPhone,
+        /**
+         * The owner's email, and only when they have VERIFIED it.
+         *
+         * <p>Null otherwise, which the reader is shown as an unavailable way to
+         * reach them. An unverified address is one nobody has proved they can
+         * read, so offering it invites a message into a void.
+         */
+        String ownerEmail,
         boolean showOwnerContact,
         boolean showManagerContact,
+        /**
+         * Everyone this listing says to call, owner first.
+         *
+         * <p>Supersedes the three owner fields above, which stay for callers not
+         * yet moved across. The owner appears here only when
+         * {@code showOwnerContact} allows it; a manager appears because somebody
+         * chose to list them, which IS the opt-in.
+         */
+        List<PropertyContactResponse> contacts,
         /** The full gallery, cover first. {@code profileImageUrl} is the cover. */
-        List<String> imageUrls
+        List<String> imageUrls,
+        /**
+         * The same gallery with each photo's caption, in the same order.
+         *
+         * <p>Separate from {@code imageUrls} rather than replacing it: the
+         * search cards read that flat list and have nowhere to show a caption.
+         */
+        List<PropertyImageResponse> images
 ) {
 
     public static PropertyDiscoveryDetailResponse from(
@@ -72,7 +96,10 @@ public record PropertyDiscoveryDetailResponse(
             Long startingRoomRentPaise,
             String ownerName,
             String ownerPhone,
-            List<String> imageUrls) {
+            String ownerEmail,
+            List<PropertyContactResponse> contacts,
+            List<String> imageUrls,
+            List<PropertyImageResponse> images) {
         return new PropertyDiscoveryDetailResponse(
                 property.id(),
                 property.ownerId(),
@@ -109,9 +136,12 @@ public record PropertyDiscoveryDetailResponse(
                 profile.getProfileImageUrl(),
                 ownerName,
                 ownerPhone,
+                ownerEmail,
                 profile.isShowOwnerContact(),
                 profile.isShowManagerContact(),
-                imageUrls == null ? List.of() : imageUrls);
+                contacts == null ? List.of() : contacts,
+                imageUrls == null ? List.of() : imageUrls,
+                images == null ? List.of() : images);
     }
 
     private static boolean hasPositiveDailyRate(Long value) {

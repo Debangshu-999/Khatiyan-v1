@@ -3,6 +3,10 @@ package com.khatiyan.c_shared.exception;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import com.khatiyan.a_auth.api.dto.SessionLimitResponse;
+import com.khatiyan.a_auth.api.dto.UserSessionResponse;
+import com.khatiyan.a_auth.service.SessionLimitReachedException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -36,6 +40,22 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    /**
+     * Declared BEFORE the BusinessException handler it specialises. Spring picks
+     * the most specific match regardless, but the ordering keeps the pair
+     * obvious to whoever reads this next.
+     */
+    @ExceptionHandler(SessionLimitReachedException.class)
+    public ResponseEntity<SessionLimitResponse> handleSessionLimit(SessionLimitReachedException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(SessionLimitResponse.of(
+                e.getCode(),
+                e.getMessage(),
+                // No caller session to compare against: nobody is signed in yet,
+                // so none of these can be "this device".
+                e.getSessions().stream().map(session -> UserSessionResponse.from(session, null)).toList()));
     }
 
     @ExceptionHandler(BusinessException.class)

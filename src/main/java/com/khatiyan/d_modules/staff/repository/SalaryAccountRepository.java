@@ -22,4 +22,11 @@ public interface SalaryAccountRepository extends JpaRepository<SalaryAccount, UU
 
     /** Open, un-settled accounts across all properties — used by scheduled jobs. */
     List<SalaryAccount> findByActiveTrueAndSettledOnIsNull();
+
+    /**
+     * Live accounts for one property. The unscoped version above walks every
+     * account in the system, which is right for a nightly scan and wrong for a
+     * dashboard read.
+     */
+    List<SalaryAccount> findByPropertyIdAndActiveTrueAndSettledOnIsNull(UUID propertyId);
 }

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -36,6 +37,7 @@ import com.khatiyan.d_modules.staff.api.dto.EmployeeActivityType;
 import com.khatiyan.d_modules.staff.api.dto.EmployeeHistoryResponse;
 import com.khatiyan.d_modules.staff.api.dto.EndEmploymentRequest;
 import com.khatiyan.d_modules.staff.api.dto.SalaryHolderType;
+import com.khatiyan.d_modules.staff.api.dto.SalaryMonthOpenItem;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentDueItem;
 import com.khatiyan.d_modules.staff.api.dto.StaffCategoryResponse;
 import com.khatiyan.d_modules.staff.api.dto.StaffMemberResponse;
@@ -162,9 +164,19 @@ public class StaffService {
         ensureOwner(actorUserId, propertyId);
         String name = requiredText(request.name(), "Category name");
         String normalizedName = name.toLowerCase(java.util.Locale.ROOT);
-        if (staffCategoryRepository.existsByPropertyIdAndNormalizedName(propertyId, normalizedName)) {
-            throw new ValidationException("A staff category with this name already exists");
+        Optional<StaffCategory> existing =
+                staffCategoryRepository.findByPropertyIdAndNormalizedName(propertyId, normalizedName);
+
+        if (existing.isPresent()) {
+            StaffCategory found = existing.get();
+            if (found.isActive()) {
+                throw new ValidationException("A staff category with this name already exists");
+            }
+            // Deleted, not gone — see ExpenseCategoryService for the reasoning.
+            found.restore(name);
+            return StaffCategoryResponse.from(found);
         }
+
         StaffCategory category = staffCategoryRepository.save(StaffCategory.custom(propertyId, name));
         return StaffCategoryResponse.from(category);
     }
@@ -179,9 +191,14 @@ public class StaffService {
         StaffCategory category = category(categoryId, propertyId);
         String name = requiredText(request.name(), "Category name");
         String normalizedName = name.toLowerCase(java.util.Locale.ROOT);
-        if (!normalizedName.equals(category.getNormalizedName())
-                && staffCategoryRepository.existsByPropertyIdAndNormalizedName(propertyId, normalizedName)) {
-            throw new ValidationException("A staff category with this name already exists");
+        if (!normalizedName.equals(category.getNormalizedName())) {
+            Optional<StaffCategory> clash =
+                    staffCategoryRepository.findByPropertyIdAndNormalizedName(propertyId, normalizedName);
+            if (clash.isPresent()) {
+                throw new ValidationException(clash.get().isActive()
+                        ? "A staff category with this name already exists"
+                        : "A deleted category has this name. Create it again instead of renaming.");
+            }
         }
         category.rename(name);
         return StaffCategoryResponse.from(category);
@@ -353,6 +370,14 @@ public class StaffService {
     @Transactional(readOnly = true)
     public List<SalaryPaymentDueItem> listSalaryPaymentDue(LocalDate today) {
         return salaryAccountService.listSalaryPaymentDue(today);
+    }
+
+    public List<SalaryMonthOpenItem> listOpenSalaryMonths(LocalDate today) {
+        return salaryAccountService.listOpenSalaryMonths(today);
+    }
+
+    public long countSalaryPaymentDue(UUID propertyId, LocalDate today) {
+        return salaryAccountService.countSalaryPaymentDue(propertyId, today);
     }
 
     private static Instant toInstant(LocalDate date) {

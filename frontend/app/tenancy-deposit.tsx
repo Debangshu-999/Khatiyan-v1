@@ -23,7 +23,7 @@ export default function TenancyDepositScreen() {
   const deposit = depositQuery.data;
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Tenancy"
         onBack={() => router.back()}
@@ -55,15 +55,14 @@ export default function TenancyDepositScreen() {
             deposit.movements.map((movement) => <MovementCard key={movement.id} movement={movement} />)
           ) : (
             <EmptyState
-              icon={Landmark}
-              eyebrow="No movements"
+              icon={Landmark}
               title="No deposit actions yet"
               description="Credits, deductions and settlement actions will appear here as the deposit ledger changes."
             />
           )}
         </>
       ) : (
-        <EmptyState icon={Landmark} eyebrow="No deposit" title="Deposit account unavailable" description="Deposit details will appear after the account opens." />
+        <EmptyState icon={Landmark} title="Deposit account unavailable" description="Deposit details will appear after the account opens." />
       )}
     </ScreenScrollView>
   );

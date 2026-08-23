@@ -5,6 +5,10 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { BedDouble, Building2, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -16,6 +20,7 @@ import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
+import { PropertyContactsSection } from "@/features/property/property-contacts-section";
 import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
 import {
   ActionButton,
@@ -103,8 +108,7 @@ export default function OwnerPropertyScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Building2}
-          eyebrow="Property required"
+          icon={Building2}
           title="No active property selected"
           description="Choose the property you want to manage from Home."
         />
@@ -182,7 +186,7 @@ export default function OwnerPropertyScreen() {
 
           {selectedProperty.discoveryProfileCreated ? <DiscoveryListingCard canManage={canManageSettings} propertyId={selectedProperty.id} /> : null}
 
-          <Section eyebrow="Manage" title="Property workspace">
+          <Section title="Property workspace">
             <ActionCard
               icon={BedDouble}
               title="Rooms & beds"
@@ -213,6 +217,9 @@ export default function OwnerPropertyScreen() {
 // unpublish endpoints; unlisting only hides the property from discovery search —
 // onboarded tenants and the owner's other workspaces are unaffected.
 function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; propertyId: string }) {
+  // Server refusal — nothing on screen to correct, so it interrupts.
+  const listErrors = useFormErrors<never>();
+
   const { colors, type } = useTheme();
   const toast = useToast();
   const profileQuery = useGetOwnerDiscoveryProfileQuery(propertyId);
@@ -252,7 +259,7 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
     } catch (error) {
       setOptimisticListed(null);
       const message = (error as { data?: { message?: string } })?.data?.message;
-      toast.error(
+      listErrors.failFromServer(
         message ??
           (next
             ? "Could not list the property. Add a headline and description to its listing details first."
@@ -262,7 +269,7 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
   }
 
   return (
-    <Section eyebrow="Discovery" title="Listing">
+    <Section title="Listing">
       <Card>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
           <View
@@ -320,6 +327,17 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
             variant="secondary"
           />
         </View>
+      {listErrors.serverError ? <AlertModal message={listErrors.serverError} onClose={listErrors.dismissServerError} /> : null}
+      </Card>
+
+      {/* Its own card. It belongs to the listing, but it is a list somebody
+          edits rather than a property of the listing — folded into the card
+          above it read as one more field of the same form. */}
+      <Card>
+        <Text style={[type.eyebrow, { color: colors.kicker }]}>
+          Property contacts
+        </Text>
+        <PropertyContactsSection canManage={canManage} propertyId={propertyId} />
       </Card>
 
       {detailsOpen && profile ? (
@@ -341,8 +359,7 @@ function EditListingDetailsSheet({
   const toast = useToast();
   const [headline, setHeadline] = useState(profile.headline ?? "");
   const [description, setDescription] = useState(profile.description ?? "");
-  const [headlineError, setHeadlineError] = useState<string | undefined>();
-  const [descriptionError, setDescriptionError] = useState<string | undefined>();
+  const form = useFormErrors<"description" | "headline">();
   const [updateProfile, { isLoading }] = useUpdateOwnerDiscoveryProfileMutation();
 
   async function submit() {
@@ -351,13 +368,26 @@ function EditListingDetailsSheet({
     }
     const trimmedHeadline = headline.trim();
     const trimmedDescription = description.trim();
-    const headlineProblem = !trimmedHeadline ? "Headline is required." : undefined;
-    const descriptionProblem = !trimmedDescription ? "Description is required." : undefined;
-    setHeadlineError(headlineProblem);
-    setDescriptionError(descriptionProblem);
-    if (headlineProblem || descriptionProblem) {
+    const cleared = form.validate({
+      ...(trimmedHeadline ? {} : { headline: "Headline is required." }),
+      ...(trimmedDescription ? {} : { description: "Description is required." }),
+    });
+    if (!cleared) {
       return;
     }
+
+    // Saving an untouched listing would fire a request and close the sheet,
+    // reporting success for a change nobody made.
+    if (
+      isUnchanged(
+        { description: profile.description, headline: profile.headline },
+        { description: trimmedDescription, headline: trimmedHeadline },
+      )
+    ) {
+      toast.warning("No changes have been made.");
+      return;
+    }
+
     try {
       await updateProfile({
         propertyId,
@@ -374,33 +404,41 @@ function EditListingDetailsSheet({
       toast.success("Listing details updated.");
       onClose();
     } catch (error) {
-      const message = (error as { data?: { message?: string } })?.data?.message;
-      toast.error(message ?? "Could not update the listing details. Please try again.");
+      form.failFromServer(errorMessage(error) || "Could not update the listing details. Please try again.");
     }
   }
 
   return (
     <SheetShell onClose={onClose} title="Edit listing details">
       <FormInput
-        error={headlineError}
+        error={form.errors.headline}
         label="Headline"
         maxLength={160}
-        onChangeText={setHeadline}
+        onChangeText={(next) => {
+          setHeadline(next);
+          form.clearField("headline");
+        }}
         placeholder="Short listing headline"
+        required
         value={headline}
       />
       <FormInput
-        error={descriptionError}
+        error={form.errors.description}
         label="Description"
         maxLength={1000}
         multiline
-        onChangeText={setDescription}
+        onChangeText={(next) => {
+          setDescription(next);
+          form.clearField("description");
+        }}
         placeholder="What should prospects know?"
+        required
         value={description}
       />
       <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={isLoading} label={isLoading ? "Saving…" : "Save details"} onPress={() => void submit()} />
+        <ActionButton disabled={isLoading || form.blocked} label={isLoading ? "Saving…" : "Save details"} onPress={() => void submit()} />
       </View>
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }

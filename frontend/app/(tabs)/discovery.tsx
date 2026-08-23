@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, BackHandler, Easing, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, BackHandler, Easing, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -60,6 +60,7 @@ export default function DiscoveryScreen() {
   const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   // The property profile is a state on this tab, not a route, so the device
   // back button knew nothing about it and popped the tab instead — landing on
@@ -304,16 +305,47 @@ export default function DiscoveryScreen() {
     return unique;
   }, [suggestionsQuery.data]);
 
+  async function refreshDetail() {
+    setDetailRefreshing(true);
+    try {
+      await detailQuery.refetch().unwrap();
+    } catch {
+      // The error state on screen already says the load failed; a refresh that
+      // fails the same way has nothing to add.
+    } finally {
+      setDetailRefreshing(false);
+    }
+  }
   if (selectedPropertyId) {
     return (
       <LinearGradient colors={[colors.primarySoft, colors.background, colors.background]} style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+          {/* A plain ScrollView, so it has to bring its own RefreshControl —
+              ScreenScrollView supplies one everywhere else, which is why the
+              gesture worked on every screen except this one. Its own state
+              rather than the query's isFetching: that is also true while the
+              detail loads on first open, and the spinner would appear over a
+              screen nobody pulled. */}
           <ScrollView
             contentContainerStyle={{ gap: spacing.lg, paddingBottom: 96, paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}
             keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                colors={[colors.primary]}
+                onRefresh={() => void refreshDetail()}
+                progressBackgroundColor={colors.surface}
+                refreshing={detailRefreshing}
+                tintColor={colors.primary}
+              />
+            }
             showsVerticalScrollIndicator={false}
           >
-            {detailQuery.isFetching ? (
+            {/* isLoading, not isFetching: isFetching is also true during a pull
+                refresh, so the skeleton replaced the profile someone was looking
+                at and the refresh read as the screen reloading from scratch.
+                isLoading is only the first fetch, when there is nothing to keep
+                on screen anyway. */}
+            {detailQuery.isLoading ? (
               <SkeletonScreen tiles={0} rows={2} />
             ) : null}
 
@@ -328,7 +360,7 @@ export default function DiscoveryScreen() {
               />
             ) : null}
 
-            {!detailQuery.isFetching && !detailQuery.data ? (
+            {!detailQuery.isLoading && !detailQuery.data && !detailQuery.isError ? (
               <DiscoveryButton label="Back to listings" muted onPress={() => setSelectedPropertyId(null)} />
             ) : null}
           </ScrollView>
@@ -338,7 +370,7 @@ export default function DiscoveryScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         title="Find"
         italicTail="nearby."

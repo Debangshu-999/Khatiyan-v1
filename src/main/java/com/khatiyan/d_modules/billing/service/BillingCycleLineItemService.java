@@ -25,7 +25,6 @@ import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
-import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
 import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
 
@@ -108,6 +107,8 @@ public class BillingCycleLineItemService {
             throw new ValidationException("At least one extra charge is required");
         }
 
+        ensureCycleStillEditable(cycle);
+
         int displayOrder = nextDisplayOrder(cycle.getId());
 
         for (CreateExtraChargeRequest request : requests) {
@@ -122,8 +123,12 @@ public class BillingCycleLineItemService {
             displayOrder++;
         }
 
+        // These are live lines now rather than a queue for the next cycle, so
+        // the cycle's totals have to move with them.
+        calculateCycle(cycle);
+
         log.info(
-                "Pending billing extra charges added tenancyId={} sourceBillingCycleId={} actorUserId={} count={}",
+                "Billing extra charges added tenancyId={} billingCycleId={} actorUserId={} count={}",
                 tenancyId,
                 cycle.getId(),
                 actorUserId,
@@ -141,29 +146,29 @@ public class BillingCycleLineItemService {
             UUID tenancyId,
             CreateDiscountRequest request) {
         BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+        ensureCycleStillEditable(cycle);
 
         long discountAmountPaise = computeDiscountAmount(cycle.getTotalAmountPaise(), request.discountPercent());
-        BillingCycleLineItem lineItem = createDiscountLineItem(
+        BillingCycleLineItem lineItem = BillingCycleLineItem.discount(
                 cycle,
+                request.label().trim(),
+                cleanDescription(request.description()),
+                discountAmountPaise,
                 actorUserId,
-                request,
-                discountAmountPaise);
+                nextDisplayOrder(cycle.getId()));
 
         lineItemRepository.save(lineItem);
-        if (lineItem.getStatus() == BillingCycleLineItemStatus.ADDED) {
-            calculateCycle(cycle);
-        }
+        calculateCycle(cycle);
         publishLineItemEvent(lineItem, BillingLineItemNotificationAction.CREATED);
 
         log.info(
-                "Billing discount added tenancyId={} sourceBillingCycleId={} lineItemId={} actorUserId={} percent={} amount={} status={}",
+                "Billing discount added tenancyId={} billingCycleId={} lineItemId={} actorUserId={} percent={} amount={}",
                 tenancyId,
                 cycle.getId(),
                 lineItem.getId(),
                 actorUserId,
                 request.discountPercent(),
-                discountAmountPaise,
-                lineItem.getStatus());
+                discountAmountPaise);
 
         return toResponse(cycle);
     }
@@ -418,7 +423,7 @@ public class BillingCycleLineItemService {
             CreateExtraChargeRequest request,
             int displayOrder) {
         if (request.adjustFromDeposit()) {
-            return BillingCycleLineItem.pendingExtraChargeAdjustedFromDeposit(
+            return BillingCycleLineItem.extraChargeAdjustedFromDeposit(
                     cycle,
                     request.label().trim(),
                     cleanDescription(request.description()),
@@ -427,43 +432,13 @@ public class BillingCycleLineItemService {
                     displayOrder);
         }
 
-        return BillingCycleLineItem.pendingExtraChargeAddedToBill(
+        return BillingCycleLineItem.extraChargeAddedToBill(
                 cycle,
                 request.label().trim(),
                 cleanDescription(request.description()),
                 request.amountPaise(),
                 actorUserId,
                 displayOrder);
-    }
-
-    /**
-     * Discounts are safer than charges because they reduce payable amount. If
-     * the latest cycle is still unpaid, the discount is attached immediately;
-     * otherwise it waits for the next generated cycle.
-     */
-    private BillingCycleLineItem createDiscountLineItem(
-            BillingCycle cycle,
-            UUID actorUserId,
-            CreateDiscountRequest request,
-            long discountAmountPaise) {
-        if (cycle.getStatus() == BillingCycleStatus.UNPAID
-                || cycle.getStatus() == BillingCycleStatus.OVERDUE) {
-            return BillingCycleLineItem.discount(
-                    cycle,
-                    request.label().trim(),
-                    cleanDescription(request.description()),
-                    discountAmountPaise,
-                    actorUserId,
-                    nextDisplayOrder(cycle.getId()));
-        }
-
-        return BillingCycleLineItem.pendingDiscount(
-                cycle,
-                request.label().trim(),
-                cleanDescription(request.description()),
-                discountAmountPaise,
-                actorUserId,
-                nextDisplayOrder(cycle.getId()));
     }
 
     /**
@@ -587,40 +562,29 @@ public class BillingCycleLineItemService {
     }
 
     /**
-     * Enforces the edit window for extra charges and discounts.
-     */
-    private void ensureExtraChargeEditable(BillingCycle cycle) {
-        ensureCycleStillEditable(cycle);
-
-        if (!cycle.isEditableForExtraCharges(LocalDate.now())) {
-            throw new ValidationException("Billing cycle is not editable for extra charges today");
-        }
-    }
-
-    /**
      * Enforces type-specific edit windows for an existing line item.
      */
     private void ensureLineEditableForCurrentDate(BillingCycle cycle, BillingCycleLineItem lineItem) {
         ensureCycleStillEditable(cycle);
 
-        if (lineItem.getType() == BillingCycleLineItemType.LATE_FEE) {
-            if (!cycle.isEditableForLateFee(LocalDate.now())) {
-                throw new ValidationException("Late fee can be edited only after due date");
-            }
-
-            return;
+        if (lineItem.getType() == BillingCycleLineItemType.LATE_FEE
+                && !cycle.isEditableForLateFee(LocalDate.now())) {
+            throw new ValidationException("Late fee can be edited only after due date");
         }
-
-        ensureExtraChargeEditable(cycle);
     }
 
     /**
-     * Blocks every amount edit once a cycle's payment window has opened.
+     * The one gate on changing a bill: is it still open?
      *
-     * <p>A tenant must always owe exactly the amount they were shown. Once a
-     * rent cycle goes live its total is fixed, so charges arising afterwards
-     * belong to the next cycle — or to a one-off bill when they can't wait.
-     * One-off bills have no upcoming phase, so they stay editable until paid.
+     * <p>A rent cycle is generated ten days before it goes live, and that window
+     * is when it is meant to be edited. The FIRST cycle of a tenancy never gets
+     * one — it is created and activated in the same transaction at onboarding —
+     * so it stays editable until paid instead. Without that it was the only bill
+     * nobody could ever touch, not even to discount it on the day it was raised.
+     *
+     * <p>Every later cycle keeps the lock, and a charge arising after one goes
+     * live belongs on a one-off bill, which has its own path and stays editable
+     * until paid.
      */
     private void ensureCycleStillEditable(BillingCycle cycle) {
         if (cycle.isPaid()) {
@@ -631,10 +595,12 @@ public class BillingCycleLineItemService {
             throw new ValidationException("Cancelled billing cycle cannot be edited");
         }
 
-        if (cycle.getCategory() == BillingCycleCategory.RENT_CYCLE && cycle.isLocked()) {
+        if (cycle.getCategory() == BillingCycleCategory.RENT_CYCLE
+                && cycle.isLocked()
+                && !cycle.isFirstCycle()) {
             throw new ValidationException(
-                    "This bill is already live and can no longer be changed. Add the charge to the upcoming cycle,"
-                            + " or raise a one-off bill if it can't wait.");
+                    "This bill is already live and can no longer be changed."
+                            + " Raise a one-off bill for the charge instead.");
         }
     }
 

@@ -425,6 +425,30 @@ public class TenancyAgreementService {
                 tenantUserId);
     }
 
+    /**
+     * Owner or manager withdraws an unaccepted tenancy.
+     *
+     * <p>Goes through compliance rather than straight to tenancy so the
+     * agreement is cancelled in the SAME transaction, exactly as the tenant's
+     * decline and the expiry job do. Cancelling only the tenancy would leave the
+     * agreement PENDING_ACCEPTANCE forever, and the nightly expiry job would
+     * then try to cancel an already-cancelled tenancy every night from here on.
+     */
+    @Transactional
+    public void cancelPendingAsManager(UUID actorUserId, UUID tenancyId, String reason) {
+        TenancyAgreement agreement = getAgreementByTenancyId(tenancyId);
+        ensurePending(agreement);
+
+        agreement.cancel();
+        tenancyModule.cancelPendingTenancyByManager(actorUserId, tenancyId, reason);
+
+        log.info(
+                "Pending tenancy withdrawn by manager agreementId={} tenancyId={} actorUserId={}",
+                agreement.getId(),
+                tenancyId,
+                actorUserId);
+    }
+
     /** Tenancy ids of agreements still pending past the acceptance window. */
     @Transactional(readOnly = true)
     public List<UUID> findExpiredPendingTenancyIds(int ttlDays) {

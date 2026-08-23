@@ -4,11 +4,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,6 +39,7 @@ import com.khatiyan.a_auth.firebase.dto.FirebaseRegisterRequest;
 import com.khatiyan.a_auth.firebase.dto.FirebaseSetPinRequest;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.service.AuthService;
+import com.khatiyan.a_auth.api.dto.UserSessionResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -122,7 +128,7 @@ public class AuthController {
 
     @PostMapping("/email/login/confirm")
     public TokenResponse confirmEmailLogin(@Valid @RequestBody EmailLoginConfirmRequest request) {
-        return authService.loginWithEmailOTP(request.email(), request.otp());
+        return authService.loginWithEmailOTP(request.email(), request.otp(), request.signOutSessionId());
     }
     @PostMapping("/pin/login")
     public TokenResponse loginWithPin(
@@ -131,7 +137,8 @@ public class AuthController {
         return authService.loginWithPIN(
                 request.phone(),
                 request.pin(),
-                clientIp(servletRequest));
+                clientIp(servletRequest),
+                request.signOutSessionId());
     }
 
     @PostMapping("/pin/reset/request")
@@ -169,6 +176,31 @@ public class AuthController {
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody ChangePinRequest request) {
         return authService.changePIN(user.userId(), request.currentPin(), request.otp(), request.newPin());
+    }
+
+    /**
+     * Where this account is signed in.
+     *
+     * <p>The caller's own session is flagged server-side rather than left for the
+     * client to work out — the client would have to be handed a jti to compare
+     * against, and that is a credential it has no other use for.
+     */
+    @GetMapping("/sessions")
+    public List<UserSessionResponse> sessions(@AuthenticationPrincipal UserPrincipal user) {
+        return authService.listSessions(user.userId(), user.sessionId());
+    }
+
+    /**
+     * Signs one other device out. Refuses the caller's own session — that is a
+     * sign-out, and doing it from a list of other devices is almost certainly a
+     * misfire.
+     */
+    @DeleteMapping("/sessions/{sessionId}")
+    public ResponseEntity<Void> revokeSession(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID sessionId) {
+        authService.revokeSession(user.userId(), sessionId, user.sessionId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me/email")

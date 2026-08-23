@@ -1,11 +1,10 @@
-import { Text, View } from "react-native";
+import type { ReactNode } from "react";
+import { View } from "react-native";
 
 import { KeyRound, Mail, ShieldCheck, UserPlus } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
-import { AuthChipLink, CodeField, LinkButton, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { AuthChipLink, CodeField, FieldError, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
-import { useTheme } from "@/theme/use-theme";
 
 /**
  * Phone + PIN sign-in — the default screen.
@@ -22,6 +21,8 @@ export function LoginStep({
   onEmailLogin,
   onActivateAccount,
   onGoToSignup,
+  phoneError,
+  pinError,
 }: {
   phone: string;
   onPhoneChange: (value: string) => void;
@@ -33,18 +34,28 @@ export function LoginStep({
   onEmailLogin: () => void;
   onActivateAccount: () => void;
   onGoToSignup: () => void;
+  phoneError?: string;
+  pinError?: string;
 }) {
-  const { colors, fonts } = useTheme();
-
   return (
     <>
-      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
+      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} hideErrorText />
       {/* The alternative to the phone sits directly under the phone field: it is
           a choice about HOW you identify yourself, so it belongs next to the
-          identifier, not stranded among the submit actions. */}
-      <AuthChipLink align="end" icon={Mail} label="Use verified email" onPress={onEmailLogin} />
-      <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry />
-      <AuthChipLink align="end" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
+          identifier, not stranded among the submit actions.
+
+          The validation line shares this row rather than sitting under the field.
+          Under it, appearing on a failed submit pushed the chip — and everything
+          below it — down a line, so the form jumped at the exact moment the
+          reader was looking for what went wrong. These messages are short enough
+          to sit beside the chip without meeting it. */}
+      <FieldRowWithChip error={phoneError}>
+        <AuthChipLink align="auto" icon={Mail} label="Use verified email" onPress={onEmailLogin} />
+      </FieldRowWithChip>
+      <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry error={pinError} hideErrorText />
+      <FieldRowWithChip error={pinError}>
+        <AuthChipLink align="auto" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
+      </FieldRowWithChip>
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
         {/* Both are ways OUT of this form, so they sit together on one row
@@ -55,5 +66,23 @@ export function LoginStep({
         </View>
       </View>
     </>
+  );
+}
+
+/**
+ * One row holding a field's validation line and the chip link that follows it.
+ *
+ * <p>The chip keeps its place whether or not there is an error, so a failed
+ * submit changes the text on screen without moving anything. The message takes
+ * the remaining width and wraps rather than shoving the chip off the edge.
+ */
+function FieldRowWithChip({ children, error }: { children: ReactNode; error?: string }) {
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+      <View style={{ flex: 1 }}>
+        <FieldError message={error} />
+      </View>
+      {children}
+    </View>
   );
 }

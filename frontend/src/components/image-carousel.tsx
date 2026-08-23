@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { Animated, Image, Modal, Pressable, View } from "react-native";
+import { Animated, Image, Modal, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
+import { MoreVertical, X } from "lucide-react-native";
 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -85,39 +85,66 @@ function Dashes({ count, scrollX, width }: { count: number; scrollX: Animated.Va
  * view someone opens precisely to see the whole thing.
  */
 export function Lightbox({
+  actions,
   images,
   initialIndex,
   onClose,
 }: {
+  /**
+   * Offered behind an overflow button, against whichever image is on screen.
+   *
+   * <p>Optional, and absent by default: a viewer with nothing to offer should
+   * not grow a menu button that opens an empty sheet. The callback is handed
+   * the image it was opened against rather than reading an index later, because
+   * the person can keep swiping while the sheet is open.
+   */
+  actions?: { label: string; onPress: (imageUrl: string, index: number) => void }[];
   images: string[];
   initialIndex: number;
   onClose: () => void;
 }) {
   const [width, setWidth] = useState(0);
+  // Which image the overflow menu would act on. Tracked separately from the
+  // scroll offset the dashes use: those interpolate continuously, and an action
+  // needs one settled answer rather than a value mid-swipe.
+  const [index, setIndex] = useState(initialIndex);
+  const [menuOpen, setMenuOpen] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: "#000000", flex: 1 }}>
         <SafeAreaView edges={["top"]} style={{ zIndex: 2 }}>
-          <Pressable
-            accessibilityLabel="Close image"
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={onClose}
+          <View
             style={{
-              alignItems: "center",
               alignSelf: "flex-end",
-              backgroundColor: "rgba(255,255,255,0.14)",
-              borderRadius: 999,
-              height: 40,
-              justifyContent: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
               margin: spacing.md,
-              width: 40,
             }}
           >
-            <X color="#FFFFFF" size={20} strokeWidth={2.4} />
-          </Pressable>
+            {actions?.length ? (
+              <Pressable
+                accessibilityLabel="Image options"
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={() => setMenuOpen(true)}
+                style={roundButton}
+              >
+                <MoreVertical color="#FFFFFF" size={20} strokeWidth={2.4} />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              accessibilityLabel="Close image"
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={onClose}
+              style={roundButton}
+            >
+              <X color="#FFFFFF" size={20} strokeWidth={2.4} />
+            </Pressable>
+          </View>
         </SafeAreaView>
 
         <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ flex: 1 }}>
@@ -128,6 +155,9 @@ export function Lightbox({
               onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
                 useNativeDriver: false,
               })}
+              onMomentumScrollEnd={(event) =>
+                setIndex(Math.round(event.nativeEvent.contentOffset.x / width))
+              }
               pagingEnabled
               scrollEventThrottle={16}
               showsHorizontalScrollIndicator={false}
@@ -139,12 +169,61 @@ export function Lightbox({
               ))}
             </Animated.ScrollView>
           ) : null}
-          <Dashes count={images.length} scrollX={scrollX} width={width} />
+      <Dashes count={images.length} scrollX={scrollX} width={width} />
         </View>
+
+        {menuOpen && actions?.length ? (
+          <Pressable
+            accessibilityLabel="Close options"
+            onPress={() => setMenuOpen(false)}
+            style={{
+              backgroundColor: "rgba(0,0,0,0.55)",
+              bottom: 0,
+              justifyContent: "flex-end",
+              left: 0,
+              position: "absolute",
+              right: 0,
+              top: 0,
+            }}
+          >
+            <SafeAreaView edges={["bottom"]} style={{ backgroundColor: "#1A1A1A" }}>
+              {actions.map((action) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={action.label}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    action.onPress(images[index], index);
+                  }}
+                  style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
+                >
+                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "600" }}>
+                    {action.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </SafeAreaView>
+          </Pressable>
+        ) : null}
       </View>
     </Modal>
   );
 }
+
+/**
+ * The two controls in the viewer's top bar.
+ *
+ * <p>A translucent white disc rather than a bare glyph: these sit over a photo
+ * whose colour is unknown, and a white icon on a white sky is invisible.
+ */
+const roundButton = {
+  alignItems: "center",
+  backgroundColor: "rgba(255,255,255,0.14)",
+  borderRadius: 999,
+  height: 40,
+  justifyContent: "center",
+  width: 40,
+} as const;
 
 /**
  * A swipeable image window with dash indicators, and a full-screen view on tap.
@@ -158,11 +237,73 @@ export function Lightbox({
  * pages correctly inside a padded card as well as edge to edge — the screen
  * width is not the page width wherever there is a margin.
  */
+/**
+ * The current photo's caption, top-left.
+ *
+ * <p>Cross-faded on the same scroll offset the dashes use, rather than swapped
+ * on an index: momentum-end fires late, and on web often not at all, which would
+ * leave the previous photo's words over the next photo.
+ *
+ * <p>Same dark pill as the dashes, for the same reason — white text over a white
+ * photo is invisible, and the contrast has to come from behind it.
+ */
+function Captions({
+  captions,
+  scrollX,
+  width,
+}: {
+  captions?: Array<string | null | undefined>;
+  scrollX: Animated.Value;
+  width: number;
+}) {
+  if (!captions || width <= 0 || !captions.some((caption) => caption && caption.trim())) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="none" style={{ left: spacing.md, position: "absolute", right: spacing.xxl, top: spacing.md }}>
+      {captions.map((caption, at) => {
+        if (!caption || !caption.trim()) {
+          return null;
+        }
+        const range = [(at - 1) * width, at * width, (at + 1) * width];
+        return (
+          <Animated.View
+            key={`caption-${at}`}
+            style={{
+              alignSelf: "flex-start",
+              backgroundColor: "rgba(0,0,0,0.45)",
+              borderRadius: 999,
+              // Stacked, not laid out: each sits in the same spot and only the
+              // one on screen is opaque.
+              position: at === 0 ? "relative" : "absolute",
+              opacity: scrollX.interpolate({ extrapolate: "clamp", inputRange: range, outputRange: [0, 1, 0] }),
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 5,
+              top: 0,
+            }}
+          >
+            <Text numberOfLines={1} style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>
+              {caption.trim()}
+            </Text>
+          </Animated.View>
+        );
+      })}
+    </View>
+  );
+}
+
 export function ImageCarousel({
+  captions,
   height = 260,
   images,
   radius = 16,
 }: {
+  /**
+   * One per image, same order. Optional throughout — a caller with nothing to
+   * say passes nothing and the overlay never renders.
+   */
+  captions?: Array<string | null | undefined>;
   height?: number;
   images: string[];
   radius?: number;
@@ -202,6 +343,7 @@ export function ImageCarousel({
         ))}
       </Animated.ScrollView>
 
+      <Captions captions={captions} scrollX={scrollX} width={width} />
       <Dashes count={images.length} scrollX={scrollX} width={width} />
 
       {expandedIndex != null ? (

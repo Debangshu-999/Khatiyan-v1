@@ -22,6 +22,9 @@ export function SignupStep({
   busy,
   onRegister,
   onGoToLogin,
+  phoneError,
+  emailError,
+  fullNameError,
 }: {
   phone: string;
   onPhoneChange: (value: string) => void;
@@ -32,18 +35,22 @@ export function SignupStep({
   busy: boolean;
   onRegister: () => void;
   onGoToLogin: () => void;
+  phoneError?: string;
+  emailError?: string;
+  fullNameError?: string;
 }) {
   return (
     <>
-      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
+      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
       <AuthTextField
         label="Email (optional)"
         value={email}
         onChangeText={onEmailChange}
         placeholder="you@example.com"
         icon={Mail}
+        error={emailError}
       />
-      <AuthTextField label="Full name" value={fullName} onChangeText={onFullNameChange} placeholder="Enter your name" autoCapitalize="words" icon={User} />
+      <AuthTextField label="Full name" value={fullName} onChangeText={onFullNameChange} placeholder="Enter your name" autoCapitalize="words" icon={User} error={fullNameError} />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Create account" onPress={onRegister} busy={busy} />
         <AuthChipLink icon={UserCheck} label="Already have an account?" onPress={onGoToLogin} />

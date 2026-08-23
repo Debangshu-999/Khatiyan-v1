@@ -21,7 +21,7 @@ export default function PropertyBoardScreen() {
   const groupedItems = groupByCategory(boardItems);
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Property"
         onBack={() => router.back()}
@@ -34,7 +34,7 @@ export default function PropertyBoardScreen() {
         <SkeletonCard />
       ) : boardItems.length > 0 ? (
         groupedItems.map(([categoryName, items]) => (
-          <Section eyebrow="Board category" key={categoryName} title={categoryName}>
+          <Section key={categoryName} title={categoryName}>
             {items.map((item) => (
               <Card key={item.id} tone="sunken">
                 <View style={{ gap: spacing.xs }}>
@@ -51,8 +51,7 @@ export default function PropertyBoardScreen() {
         ))
       ) : (
         <EmptyState
-          icon={ClipboardList}
-          eyebrow="Property board"
+          icon={ClipboardList}
           title="No board items yet"
           description="Stable property information will appear here after it is published."
         />

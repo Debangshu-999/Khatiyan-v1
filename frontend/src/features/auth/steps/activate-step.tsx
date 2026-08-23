@@ -27,16 +27,18 @@ export function ActivateStep({
   busy,
   onSendCode,
   onBackToLogin,
+  phoneError,
 }: {
   phone: string;
   onPhoneChange: (value: string) => void;
   busy: boolean;
   onSendCode: () => void;
   onBackToLogin: () => void;
+  phoneError?: string;
 }) {
   return (
     <>
-      <PhoneField label="Registered phone number" value={phone} onChangeText={onPhoneChange} />
+      <PhoneField label="Registered phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
 
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Send setup code" onPress={onSendCode} busy={busy} />

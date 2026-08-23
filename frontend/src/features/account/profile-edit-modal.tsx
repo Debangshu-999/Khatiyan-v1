@@ -4,12 +4,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
+import { FieldError } from "@/components/field-error";
+import { useToast } from "@/components/toast";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type ProfileEditField = "name" | "email";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
  * Edits one field of the signed-in user's profile.
@@ -32,31 +40,42 @@ export function ProfileEditModal({
   onSave: (value: string) => Promise<void>;
 }) {
   const { colors, fonts, type } = useTheme();
+  const toast = useToast();
   const [value, setValue] = useState(initialValue);
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"value">();
   const isEmail = field === "email";
 
   // Re-seed whenever a different field is opened; the modal is mounted once and
   // reused, so state would otherwise carry over from the previous edit.
   useEffect(() => {
     setValue(initialValue);
-    setError(null);
-  }, [field, initialValue]);
+    form.clearAll();
+  }, [field, form.clearAll, initialValue]);
 
   async function submit() {
     const trimmed = value.trim();
-    if (isEmail) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
-        return setError("Enter a valid email address.");
-      }
-    } else if (trimmed.length < 2) {
-      return setError("Enter your full name.");
+    const problem = isEmail
+      ? EMAIL_PATTERN.test(trimmed)
+        ? null
+        : "Enter a valid email address."
+      : trimmed.length < 2
+        ? "Enter your full name."
+        : null;
+    if (!form.validate(problem ? { value: problem } : {})) {
+      return;
+    }
+
+    // Saving an untouched field would send a request, close the modal, and
+    // report success for a change nobody made. Say so and stay put.
+    if (isUnchanged({ value: initialValue }, { value: trimmed })) {
+      toast.warning("No changes have been made.");
+      return;
     }
 
     try {
       await onSave(trimmed);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Something went wrong. Try again.");
+      form.failFromServer(errorMessage(submitError) || "Something went wrong. Try again.");
     }
   }
 
@@ -110,12 +129,12 @@ export function ProfileEditModal({
               keyboardType={isEmail ? "email-address" : "default"}
               onChangeText={(next) => {
                 setValue(next);
-                setError(null);
+                form.clearField("value");
               }}
               placeholder={isEmail ? "you@example.com" : "Your full name"}
               style={{
                 backgroundColor: colors.surfaceRaised,
-                borderColor: error ? colors.danger : colors.borderStrong,
+                borderColor: form.errors.value ? colors.danger : colors.borderStrong,
                 borderRadius: 12,
                 borderWidth: 1,
                 color: colors.ink,
@@ -133,12 +152,10 @@ export function ProfileEditModal({
               </Text>
             ) : null}
 
-            {error ? (
-              <Text style={[type.caption, { color: colors.danger, fontFamily: fonts.sansBold }]}>{error}</Text>
-            ) : null}
+            <FieldError message={form.errors.value} />
 
             <AnimatedPressable
-              onPress={busy ? undefined : () => void submit()}
+              onPress={busy || form.blocked ? undefined : () => void submit()}
               style={{
                 alignItems: "center",
                 backgroundColor: colors.primary,
@@ -156,6 +173,7 @@ export function ProfileEditModal({
             </AnimatedPressable>
             <SafeAreaView edges={["bottom"]} />
           </Card>
+          {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
         </KeyboardAvoidingView>
       </View>
     </Modal>

@@ -52,6 +52,20 @@ export type PropertyDiscoveryDetail = PropertyDiscoveryCard & {
   ownerId: string;
   ownerName: string | null;
   ownerPhone: string | null;
+  /** Only present when the owner has verified it; null otherwise. */
+  ownerEmail: string | null;
+  /**
+   * Everyone this listing says to call, owner first.
+   *
+   * <p>Supersedes the three owner fields above. The owner is absent when the
+   * listing hides them, and a manager is present because the owner listed them.
+   */
+  contacts: PropertyContact[];
+  /**
+   * The same gallery as `imageUrls`, in the same order, with each photo's
+   * caption. The flat list stays for callers with nowhere to show one.
+   */
+  images: PropertyImage[];
   showOwnerContact: boolean;
   showManagerContact: boolean;
 };
@@ -206,6 +220,8 @@ export type PropertyImage = {
   url: string;
   publicId: string | null;
   sortOrder: number;
+  /** What the photo is of, or null when the owner did not say. */
+  caption: string | null;
   cover: boolean;
 };
 
@@ -213,6 +229,21 @@ export type PropertyImage = {
 export type NewPropertyImage = {
   url: string;
   publicId: string | null;
+};
+
+/**
+ * Someone a listing offers as a way to reach the property.
+ *
+ * <p>The owner is always present and always first, and `owner: true` is how the
+ * client knows not to offer a remove control for them.
+ */
+export type PropertyContact = {
+  userId: string;
+  name: string | null;
+  phone: string | null;
+  /** Only when they have verified it; null otherwise. */
+  email: string | null;
+  owner: boolean;
 };
 
 export const discoveryApi = api.injectEndpoints({
@@ -399,6 +430,42 @@ export const discoveryApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Discovery"],
     }),
+    listPropertyContacts: builder.query<PropertyContact[], string>({
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/contacts` }),
+      providesTags: ["Discovery"],
+    }),
+
+    // Every mutation returns the whole list: the owner is not a stored row, so a
+    // response carrying one manager would leave the client to reassemble an
+    // order it does not own.
+    addPropertyContactManager: builder.mutation<PropertyContact[], { managerUserId: string; propertyId: string }>({
+      query: ({ managerUserId, propertyId }) => ({
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/contacts/managers/${managerUserId}`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+
+    removePropertyContactManager: builder.mutation<PropertyContact[], { managerUserId: string; propertyId: string }>({
+      query: ({ managerUserId, propertyId }) => ({
+        method: "DELETE",
+        url: `/api/v1/properties/${propertyId}/contacts/managers/${managerUserId}`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+
+    updatePropertyImageCaption: builder.mutation<
+      PropertyImage[],
+      { caption: string | null; imageId: string; propertyId: string }
+    >({
+      query: ({ caption, imageId, propertyId }) => ({
+        body: { caption },
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/images/${imageId}/caption`,
+      }),
+      invalidatesTags: ["Discovery"],
+    }),
+
     makePropertyImageCover: builder.mutation<PropertyImage[], { propertyId: string; imageId: string }>({
       query: ({ propertyId, imageId }) => ({
         method: "POST",
@@ -410,6 +477,10 @@ export const discoveryApi = api.injectEndpoints({
 });
 
 export const {
+  useUpdatePropertyImageCaptionMutation,
+  useRemovePropertyContactManagerMutation,
+  useAddPropertyContactManagerMutation,
+  useListPropertyContactsQuery,
   useAddPropertyImagesMutation,
   useCreateLocalPlaceCategoryMutation,
   useCreateLocalPlaceMutation,

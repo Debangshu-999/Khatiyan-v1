@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
+import com.khatiyan.a_auth.event.NewDeviceSignedInEvent;
 import com.khatiyan.a_auth.event.PinChangedEvent;
 import com.khatiyan.a_auth.event.UserRegisteredEvent;
 import com.khatiyan.d_modules.notification.NotificationModule;
@@ -41,6 +42,28 @@ public class AuthNotificationEventListener {
                         "phone", event.phone(),
                         "role", event.role().name()),
                 NotificationDeliveryMode.IN_APP_ONLY);
+    }
+
+    /**
+     * HIGH priority and pushed: this is the one notification whose whole value is
+     * being seen quickly. A sign-in the owner did not make is worth interrupting
+     * them for; one they did make costs them a glance.
+     */
+    @ApplicationModuleListener
+    public void onNewDeviceSignedIn(NewDeviceSignedInEvent event) {
+        notificationModule.notifyUser(
+                event.userId(),
+                "New device signed in",
+                event.deviceLabel() + " just signed in to your account. If this was not you, "
+                        + "sign that device out from Settings and change your PIN.",
+                NotificationCategory.AUTH,
+                NotificationPriority.HIGH,
+                NotificationSubtype.NEW_DEVICE_SIGNED_IN,
+                event.userId(),
+                Map.of(
+                        "userId", event.userId().toString(),
+                        "deviceLabel", event.deviceLabel()),
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
     }
 
     @ApplicationModuleListener

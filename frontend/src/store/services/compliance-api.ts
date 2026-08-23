@@ -163,11 +163,28 @@ export const complianceApi = api.injectEndpoints({
       query: () => ({ method: "POST", url: "/api/v1/compliance/me/agreement/decline" }),
       invalidatesTags: ["Compliance", "Tenancy", "Profile"],
     }),
+
+    /**
+     * Owner/manager withdraws a tenancy the tenant never accepted.
+     *
+     * <p>Invalidates Property as well as Tenancy: the pending stay was holding
+     * a bed, and cancelling frees it. The owner dashboard is tagged "Tenancy",
+     * so the action centre's unsigned-agreement count refreshes with the list.
+     */
+    cancelPendingTenancy: builder.mutation<void, { reason?: string; tenancyId: string }>({
+      query: ({ reason, tenancyId }) => ({
+        body: { reason },
+        method: "POST",
+        url: `/api/v1/compliance/tenancies/${tenancyId}/agreement/cancel`,
+      }),
+      invalidatesTags: ["Compliance", "Tenancy", "Property"],
+    }),
   }),
 });
 
 export const {
   useAcceptMyAgreementMutation,
+  useCancelPendingTenancyMutation,
   useDeclineMyAgreementMutation,
   useGetMyAgreementQuery,
   useGetPropertyAgreementSettingsQuery,

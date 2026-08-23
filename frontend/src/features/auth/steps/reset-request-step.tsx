@@ -14,16 +14,18 @@ export function ResetRequestStep({
   busy,
   onRequestOtp,
   onBackToLogin,
+  phoneError,
 }: {
   phone: string;
   onPhoneChange: (value: string) => void;
   busy: boolean;
   onRequestOtp: () => void;
   onBackToLogin: () => void;
+  phoneError?: string;
 }) {
   return (
     <>
-      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} />
+      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
 
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Request reset OTP" onPress={onRequestOtp} busy={busy} />

@@ -53,7 +53,7 @@ export default function ConcernsScreen() {
           subtitle="Current concerns, history and concern actions for your active tenancy."
         />
 
-        <Section eyebrow="Create" title="Raise a concern">
+        <Section title="Raise a concern">
           <ActionCard
             meta="New"
             title="Create concern"
@@ -63,7 +63,7 @@ export default function ConcernsScreen() {
           />
         </Section>
 
-        <Section eyebrow="Current" title="Open concerns">
+        <Section title="Open concerns">
           {currentQuery.isFetching ? (
             <SkeletonCard />
           ) : currentConcerns.length > 0 ? (
@@ -71,15 +71,14 @@ export default function ConcernsScreen() {
               <ConcernOverviewCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
             ))
           ) : (
-            <EmptyState
-              eyebrow="Current"
+            <EmptyState
               title="No open concerns"
               description="New concerns and in-progress issues will appear here."
             />
           )}
         </Section>
 
-        <Section eyebrow="History" title="Resolved concerns">
+        <Section title="Resolved concerns">
           {historyQuery.isFetching ? (
             <SkeletonCard />
           ) : concernHistory.length > 0 ? (
@@ -90,8 +89,7 @@ export default function ConcernsScreen() {
               ))
           ) : (
             <EmptyState
-              icon={CheckCircle2}
-              eyebrow="History"
+              icon={CheckCircle2}
               title="No concern history"
               description="Resolved or closed concerns will be kept here for reference."
             />

@@ -8,6 +8,9 @@ import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
@@ -80,8 +83,7 @@ export default function OwnerEditPropertyScreen() {
   if (!property) {
     return (
       <View style={{ backgroundColor: colors.background, flex: 1, padding: spacing.lg }}>
-        <EmptyState
-          eyebrow="Property required"
+        <EmptyState
           title="No active property selected"
           description="Choose the property you want to edit from Home."
         />
@@ -93,6 +95,19 @@ export default function OwnerEditPropertyScreen() {
   // the state below is initialised from props exactly once.
   return <EditPropertyForm key={property.id} property={property} />;
 }
+
+/** Every field the save check can point at. */
+type EditField =
+  | "acRate"
+  | "address"
+  | "area"
+  | "city"
+  | "deposit"
+  | "graceDays"
+  | "name"
+  | "nonAcRate"
+  | "pincode"
+  | "state";
 
 function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const router = useGuardedRouter();
@@ -120,17 +135,19 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [noticePeriod, setNoticePeriod] = useState<NoticePeriod>(property.noticePeriod);
   const [graceDays, setGraceDays] = useState(String(property.rentGraceDays));
   const [lateFee, setLateFee] = useState(paiseToRupees(property.rentLateFeePerDayPaise));
+  // Opt-in, as at registration. Without the toggle the rate fields were
+  // permanently `required`: a property that does not offer daily stays could
+  // not be saved at all, and one that does could never stop offering them.
+  //
+  // The rates keep their own state while hidden, so switching this off and back
+  // on brings the typed figures back rather than making someone retype them.
+  const [offersDailyStays, setOffersDailyStays] = useState(
+    property.dailyGuestAcRatePaise != null || property.dailyGuestNonAcRatePaise != null,
+  );
   const [acRate, setAcRate] = useState(paiseToRupees(property.dailyGuestAcRatePaise));
   const [nonAcRate, setNonAcRate] = useState(paiseToRupees(property.dailyGuestNonAcRatePaise));
   const toast = useToast();
-  // A toast, not an inline banner. The banner lived at the bottom of a long
-  // scroll: submitting from the top said nothing, because the message rendered
-  // off-screen behind the pinned footer.
-  const setError = (value: string | null) => {
-    if (value) {
-      toast.error(value);
-    }
-  };
+  const form = useFormErrors<EditField>();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [updateProperty, { isLoading }] = useUpdatePropertyMutation();
 
@@ -184,40 +201,100 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     customFacilities.join() !== (property.customFacilities ?? []).join() ||
     deposit !== paiseToRupees(property.standardDepositPaise) ||
     lateFee !== paiseToRupees(property.rentLateFeePerDayPaise) ||
+    offersDailyStays !== (property.dailyGuestAcRatePaise != null || property.dailyGuestNonAcRatePaise != null) ||
     acRate !== paiseToRupees(property.dailyGuestAcRatePaise) ||
     nonAcRate !== paiseToRupees(property.dailyGuestNonAcRatePaise) ||
     latitude !== property.latitude ||
     longitude !== property.longitude;
 
+  // Photos are written the moment they change, so they are not part of `dirty`.
+  // This only exists so Save can tell "you changed nothing" apart from "you
+  // changed photos, which are already saved".
+  const [photosTouched, setPhotosTouched] = useState(false);
+
   const unsaved = useUnsavedChanges(dirty);
+
+  /**
+   * Turning daily stays back on restores the rates rather than clearing them.
+   *
+   * <p>Typed figures survive in state while the fields are hidden, so they come
+   * back on their own. This also falls back to the property's stored rates, so
+   * the fields are never blank when the property has rates on record — the
+   * toggle is a visibility switch, not an eraser.
+   */
+  function setDailyStays(next: boolean) {
+    setOffersDailyStays(next);
+    if (!next) {
+      return;
+    }
+    setAcRate((current) => current || paiseToRupees(property.dailyGuestAcRatePaise));
+    setNonAcRate((current) => current || paiseToRupees(property.dailyGuestNonAcRatePaise));
+  }
 
   async function submit() {
     if (isLoading) {
       return;
     }
-    if (!name.trim() || !address.trim() || !area.trim() || !city.trim() || !state.trim() || !pincode.trim()) {
-      setError("Name, address line 1, area, city, state and pincode are required.");
+
+    // Saving an untouched form would fire a request and close the screen,
+    // reporting success for a change nobody made.
+    if (!dirty) {
+      // Photos went to the server as they were changed, so there is nothing
+      // left to write — but the work IS done, and refusing to close is the
+      // wrong answer to someone saying they have finished.
+      if (photosTouched) {
+        toast.success("Photos updated.");
+        onClose();
+        return;
+      }
+      toast.warning("No changes have been made.");
       return;
     }
+
     const depositPaise = rupeesToPaise(deposit);
-    if (depositPaise == null) {
-      setError("Enter a valid standard deposit.");
-      return;
-    }
+    const acRatePaise = offersDailyStays ? rupeesToPaise(acRate) : null;
+    const nonAcRatePaise = offersDailyStays ? rupeesToPaise(nonAcRate) : null;
     // Notice is a picker now, so there is no invalid value left to guard.
     const grace = Number(graceDays);
-    if (!Number.isInteger(grace) || grace < MIN_RENT_GRACE_DAYS || grace > MAX_RENT_GRACE_DAYS) {
-      setError(`Grace days must be a whole number between ${MIN_RENT_GRACE_DAYS} and ${MAX_RENT_GRACE_DAYS}.`);
+    const cleared = form.validate({
+      ...(name.trim() ? {} : { name: "Enter the property name." }),
+      ...(address.trim() ? {} : { address: "Enter address line 1." }),
+      ...(area.trim() ? {} : { area: "Enter the area or locality." }),
+      ...(city.trim() ? {} : { city: "Enter the city." }),
+      ...(state.trim() ? {} : { state: "Enter the state." }),
+      ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
+      ...(depositPaise == null ? { deposit: "Enter a valid standard deposit." } : {}),
+      ...(Number.isInteger(grace) && grace >= MIN_RENT_GRACE_DAYS && grace <= MAX_RENT_GRACE_DAYS
+        ? {}
+        : { graceDays: `Grace days must be a whole number between ${MIN_RENT_GRACE_DAYS} and ${MAX_RENT_GRACE_DAYS}.` }),
+      // The fields were marked `required` and nothing checked them. Saving with
+      // daily stays on and a blank — or zero — rate stored null, and the reader
+      // is shown daily renting only when a rate is greater than zero, so the
+      // listing card and the property profile silently stayed off. It looked
+      // like the toggle had not taken, which is why the numbers "had to be
+      // retyped" before anything picked them up.
+      ...(offersDailyStays && !(acRatePaise != null && acRatePaise > 0)
+        ? { acRate: "Enter the AC rate, or turn daily stays off." }
+        : {}),
+      ...(offersDailyStays && !(nonAcRatePaise != null && nonAcRatePaise > 0)
+        ? { nonAcRate: "Enter the non-AC rate, or turn daily stays off." }
+        : {}),
+    });
+    // The deposit re-check is the type narrowing the validate map cannot express.
+    if (!cleared || depositPaise == null) {
       return;
     }
-    setError(null);
+
     const payload: UpdatePropertyPayload = {
       address: address.trim(),
       area: area.trim(),
       city: city.trim(),
       customFacilities,
-      dailyGuestAcRatePaise: rupeesToPaise(acRate),
-      dailyGuestNonAcRatePaise: rupeesToPaise(nonAcRate),
+      // Null when the toggle is off. The typed values survive in state for the
+      // rest of the session, but a saved property that no longer offers daily
+      // stays must not keep rates on record for it.
+      dailyGuestAcRatePaise: acRatePaise,
+      dailyGuestNonAcRatePaise: nonAcRatePaise,
       availableSharingTypes,
       bathroomType,
       electricityIncluded,
@@ -240,9 +317,13 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     try {
       await updateProperty({ payload, propertyId: property.id }).unwrap();
       unsaved.markSaved();
+      // Before the close, not after: the screen unmounts on close and the only
+      // other outcome — the refusal below — already speaks for itself, so a save
+      // that said nothing at all was indistinguishable from one that was ignored.
+      toast.success(`${name.trim() || property.name} updated.`);
       onClose();
-    } catch {
-      setError("Could not save the property. Please try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not save the property. Please try again.");
     }
   }
 
@@ -289,23 +370,23 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               style={{ flexShrink: 1 }}
             >
               <ModalSection eyebrow="Basics" title="Name & location">
-                <FormInput autoCapitalize="words" label="Property name" onChangeText={setName} placeholder="Property name" value={name} required />
+                <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="Property name" value={name} required />
                 <LocationPinCard
                   addressSummary={addressSummaryLine(area, city, pincode)}
                   coords={latitude != null && longitude != null ? { latitude, longitude } : null}
                   onPress={() => setPickerOpen(true)}
                 />
-                <FormInput label="Address line 1" multiline onChangeText={setAddress} placeholder="Building, street, landmark" value={address} required />
-                <FormInput autoCapitalize="words" label="Address line 2 / Area" onChangeText={setArea} placeholder="Area or locality" value={area} required />
+                <FormInput label="Address line 1" multiline error={form.errors.address} onChangeText={(next) => { setAddress(next); form.clearField("address"); }} placeholder="Building, street, landmark" value={address} required />
+                <FormInput autoCapitalize="words" label="Address line 2 / Area" error={form.errors.area} onChangeText={(next) => { setArea(next); form.clearField("area"); }} placeholder="Area or locality" value={area} required />
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput autoCapitalize="words" label="City" onChangeText={setCity} placeholder="City" value={city} required />
+                    <FormInput autoCapitalize="words" label="City" error={form.errors.city} onChangeText={(next) => { setCity(next); form.clearField("city"); }} placeholder="City" value={city} required />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput autoCapitalize="words" label="State" onChangeText={setState} placeholder="State" value={state} required />
+                    <FormInput autoCapitalize="words" label="State" error={form.errors.state} onChangeText={(next) => { setState(next); form.clearField("state"); }} placeholder="State" value={state} required />
                   </View>
                 </View>
-                <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} onChangeText={setPincode} placeholder="Pincode" value={pincode} required />
+                <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} error={form.errors.pincode} onChangeText={(next) => { setPincode(next); form.clearField("pincode"); }} placeholder="Pincode" value={pincode} required />
               </ModalSection>
 
               <ModalSection eyebrow="Setup" title="Rooms & inclusions">
@@ -367,7 +448,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               <ModalSection eyebrow="Money" title="Pricing & policy">
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Std. deposit" onChangeText={setDeposit} placeholder="Amount" prefix="₹" value={deposit} required />
+                    <FormInput keyboardType="decimal-pad" label="Std. deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="Amount" prefix="₹" value={deposit} required />
                   </View>
                   <View style={{ flex: 1 }}>
                     <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
@@ -388,37 +469,76 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 <FormInput
                   keyboardType="number-pad"
                   label="Grace (days)"
-                  onChangeText={setGraceDays}
+                  error={form.errors.graceDays} onChangeText={(next) => { setGraceDays(next); form.clearField("graceDays"); }}
                   placeholder={`e.g. 3 — max ${MAX_RENT_GRACE_DAYS}`}
                   required
                   value={graceDays}
                 />
                 <FieldHint text={RENT_GRACE_RANGE_HINT} />
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest AC/day" onChangeText={setAcRate} placeholder="Optional" prefix="₹" value={acRate} required />
+                <Labeled label="Offers daily stays">
+                  <ChoiceButton active={offersDailyStays} label="Yes" onPress={() => setDailyStays(true)} square />
+                  <ChoiceButton active={!offersDailyStays} label="No" onPress={() => setDailyStays(false)} square />
+                </Labeled>
+                {offersDailyStays ? (
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <FormInput
+                        error={form.errors.acRate}
+                        keyboardType="decimal-pad"
+                        label="Guest AC/day"
+                        onChangeText={(next) => { setAcRate(next); form.clearField("acRate"); }}
+                        placeholder="800"
+                        prefix="₹"
+                        required
+                        value={acRate}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <FormInput
+                        error={form.errors.nonAcRate}
+                        keyboardType="decimal-pad"
+                        label="Guest non-AC/day"
+                        onChangeText={(next) => { setNonAcRate(next); form.clearField("nonAcRate"); }}
+                        placeholder="600"
+                        prefix="₹"
+                        required
+                        value={nonAcRate}
+                      />
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" onChangeText={setNonAcRate} placeholder="Optional" prefix="₹" value={nonAcRate} required />
-                  </View>
-                </View>
+                ) : null}
               </ModalSection>
 
               {/* Saved immediately, unlike the fields above. The property already
                   exists, so an image has somewhere to belong the moment it
                   uploads — there is nothing to batch it into. */}
               <ModalSection eyebrow="Photos" title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
-                <PropertyImagesSection propertyId={property.id} />
+                <PropertyImagesSection onChanged={() => setPhotosTouched(true)} propertyId={property.id} />
               </ModalSection>
 
             </ScrollView>
-
-            <PinnedFooter>
-              <ActionButton disabled={isLoading} label={isLoading ? "Saving..." : "Save property"} onPress={() => void submit()} />
-            </PinnedFooter>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* OUTSIDE the KeyboardAvoidingView, and it has to be.
+
+          The footer is position:absolute bottom:0, so it pins to whatever box
+          contains it. Inside the KAV that box shrinks from the bottom as padding
+          is applied, taking the footer up with it — and the KAV's padding does
+          not reliably return to zero after a MODAL closes, because on Android a
+          modal is its own window and the view behind it never sees the keyboard
+          hide. The button and its shadow were left floating with a band of page
+          colour underneath.
+
+          Out here it pins to the screen, which is where "pinned to the bottom"
+          was always meant to mean. The scroll content keeps its keyboard
+          avoidance; only the footer stops moving. */}
+      <PinnedFooter>
+        <ActionButton disabled={isLoading || form.blocked} label={isLoading ? "Saving..." : "Save property"} onPress={() => void submit()} />
+      </PinnedFooter>
+
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
 
       {pickerOpen ? (
         <MapLocationPickerModal

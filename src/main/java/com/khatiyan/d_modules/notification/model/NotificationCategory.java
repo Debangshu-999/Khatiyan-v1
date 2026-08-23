@@ -20,6 +20,7 @@ public enum NotificationCategory {
      * tenant's own nudges screen, never from the notification queue.
      */
     NUDGE,
+    CHAT,
     /** A prospective tenant asking about a property, and the reply to it. */
     ENQUIRY,
     SYSTEM

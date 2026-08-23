@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -143,6 +144,21 @@ public class BillingCycleService {
         createBaseLineItems(savedCycle, tenancy);
         attachPendingLineItems(savedCycle, generationCutoff);
         calculateCycle(savedCycle);
+
+        // Open it here when its period has already started, instead of leaving
+        // it UPCOMING until the 00:18 IST activation job. A tenancy onboarded at
+        // 3pm used to show an unpayable "upcoming" bill for the rest of the day
+        // and only became payable overnight — or, as it turned out, whenever the
+        // backend next restarted and ran the catch-up.
+        //
+        // Done BEFORE the flush and the event, so the row is persisted UNPAID and
+        // listeners are not told about a cycle in a state it was never really in.
+        // A future-dated start stays UPCOMING and is opened by the nightly job,
+        // which is the case that job still exists for.
+        if (!savedCycle.getPeriodStartDate().isAfter(LocalDate.now(DASHBOARD_ZONE))) {
+            savedCycle.activate(lateFeePerDayPaise(savedCycle.getPropertyId()));
+        }
+
         lineItemRepository.flush();
         billingCycleRepository.saveAndFlush(savedCycle);
 
@@ -1269,6 +1285,22 @@ public class BillingCycleService {
         return toResponses(billingCycleRepository.findOverdueCycles());
     }
 
+    /**
+     * Adds or refreshes the late-fee line on the overdue bill itself.
+     *
+     * <p>This is the single exception to the rule that a live bill is frozen.
+     * Every other charge arising after a cycle opens has to be raised as a
+     * one-off bill, because a live bill is a figure the tenant has already been
+     * shown and agreed to. A late fee is not like those: it is caused by this
+     * bill, it is arithmetic the tenant can check against the rate stamped on
+     * the cycle, and putting it anywhere else detaches what they owe for being
+     * late from the thing they were late paying.
+     *
+     * <p>System-only. The manual path still refuses a locked cycle — see
+     * {@code BillingCycleLineItemService.ensureCycleStillEditable} — and this
+     * method writes through the repository rather than that service precisely
+     * so the exception cannot be reached by hand.
+     */
     private boolean applyLateFeeIfNeeded(BillingCycle cycle, LocalDate today) {
         if (cycle.isPaid() || cycle.isCancelled()) {
             return false;
@@ -1294,19 +1326,8 @@ public class BillingCycleService {
 
         long lateFeeAmountPaise = lateDays * lateFeePerDayPaise;
 
-        // The fee is charged on the next cycle, never on this one. A frozen bill
-        // stays frozen: the tenant always owes exactly what they were shown, and
-        // being late shows up on the following bill the way a utility does.
-        BillingCycle target = findUpcomingCycle(cycle.getTenancyId()).orElse(null);
-        if (target == null) {
-            // No next cycle — the tenancy is ending. This falls to exit
-            // settlement, which nets it against the deposit.
-            log.debug("Late fee not carried forward: no upcoming cycle for tenancyId={}", cycle.getTenancyId());
-            return false;
-        }
-
         List<BillingCycleLineItem> existingLateFeeLines = lineItemRepository.findByBillingCycleIdAndType(
-                target.getId(),
+                cycle.getId(),
                 BillingCycleLineItemType.LATE_FEE);
 
         if (existingLateFeeLines.isEmpty()) {
@@ -1314,22 +1335,25 @@ public class BillingCycleService {
                 return false;
             }
 
+            // The description carries no day count. It is written once and only
+            // the amount is refreshed afterwards, so a number here would be
+            // stale by the next morning and contradict the figure beside it.
             BillingCycleLineItem lateFeeLine = BillingCycleLineItem.lateFee(
-                    target,
+                    cycle,
                     "Late fee",
-                    "Late fee for overdue rent on cycle " + cycle.getCycleNumber(),
+                    "Accrues daily while this bill is overdue",
                     lateFeeAmountPaise,
-                    nextDisplayOrder(target.getId()));
+                    nextDisplayOrder(cycle.getId()));
             lineItemRepository.save(lateFeeLine);
-            calculateCycle(target);
-            publishLateFeeApplied(target, lateFeeLine);
+            calculateCycle(cycle);
+            publishLateFeeApplied(cycle, lateFeeLine);
             return true;
         }
 
         BillingCycleLineItem lateFeeLine = existingLateFeeLines.get(0);
         if (lateFeeLine.getLastAdjustedByUserId() != null || !lateFeeLine.isSystemGenerated()) {
             log.debug("Late fee skipped because it was manually adjusted billingCycleId={} lineItemId={}",
-                    target.getId(),
+                    cycle.getId(),
                     lateFeeLine.getId());
             return false;
         }
@@ -1339,19 +1363,9 @@ public class BillingCycleService {
         }
 
         lateFeeLine.replaceSystemLateFee(lateFeeAmountPaise);
-        calculateCycle(target);
-        publishLateFeeApplied(target, lateFeeLine);
+        calculateCycle(cycle);
+        publishLateFeeApplied(cycle, lateFeeLine);
         return true;
-    }
-
-    /**
-     * The tenancy's cycle that is still editable, if one exists. Late fees and
-     * any charge arising after a window opens are carried here.
-     */
-    private Optional<BillingCycle> findUpcomingCycle(UUID tenancyId) {
-        return billingCycleRepository.findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
-                tenancyId,
-                BillingCycleStatus.UPCOMING);
     }
 
     private long lateFeePerDayPaise(UUID propertyId) {
@@ -1813,9 +1827,10 @@ public class BillingCycleService {
      * Builds the API response with the current line-item breakdown.
      */
     private BillingCycleResponse toResponse(BillingCycle cycle) {
-        List<BillingCycleLineItemResponse> lineItems = lineItemRepository.findByBillingCycleId(cycle.getId())
-                .stream()
-                .map(lineItem -> BillingCycleLineItemResponse.from(lineItem))
+        List<BillingCycleLineItem> rows = lineItemRepository.findByBillingCycleId(cycle.getId());
+        Map<UUID, String> actorNames = actorNames(rows);
+        List<BillingCycleLineItemResponse> lineItems = rows.stream()
+                .map(lineItem -> BillingCycleLineItemResponse.from(lineItem, actorName(actorNames, lineItem)))
                 .toList();
 
         return BillingCycleResponse.from(cycle, lineItems, resolveTenancyReferenceCode(cycle), resolveRoomNumber(cycle));
@@ -1835,12 +1850,16 @@ public class BillingCycleService {
         List<UUID> cycleIds = cycles.stream()
                 .map(BillingCycle::getId)
                 .toList();
-        Map<UUID, List<BillingCycleLineItemResponse>> lineItemsByCycleId = lineItemRepository
-                .findByBillingCycleIds(cycleIds)
-                .stream()
+        List<BillingCycleLineItem> rows = lineItemRepository.findByBillingCycleIds(cycleIds);
+        // One lookup for the whole page. Resolving per line would be a query per
+        // discount on a screen that lists a month of them.
+        Map<UUID, String> actorNames = actorNames(rows);
+        Map<UUID, List<BillingCycleLineItemResponse>> lineItemsByCycleId = rows.stream()
                 .collect(Collectors.groupingBy(
                         BillingCycleLineItem::getBillingCycleId,
-                        Collectors.mapping(BillingCycleLineItemResponse::from, Collectors.toList())));
+                        Collectors.mapping(
+                                lineItem -> BillingCycleLineItemResponse.from(lineItem, actorName(actorNames, lineItem)),
+                                Collectors.toList())));
 
         Map<RoomDisplayKey, String> roomNumbers = roomNumbers(cycles);
 
@@ -1851,6 +1870,40 @@ public class BillingCycleService {
                         tenancyReferenceCodes.get(cycle.getTenancyId()),
                         roomNumbers.get(new RoomDisplayKey(cycle.getPropertyId(), cycle.getRoomId()))))
                 .toList();
+    }
+
+    /**
+     * One name, or null.
+     *
+     * <p>Guards the null key rather than reaching straight into the map: system
+     * lines have no author, and {@code Map.of()} — what {@link #actorNames}
+     * returns for a bill of nothing but system lines — throws on a null key
+     * instead of answering null. That is every rent bill ever listed.
+     */
+    private static String actorName(Map<UUID, String> actorNames, BillingCycleLineItem lineItem) {
+        UUID actorId = lineItem.getCreatedByUserId();
+        return actorId == null ? null : actorNames.get(actorId);
+    }
+
+    /**
+     * Names for whoever added the hand-made lines, keyed by user id.
+     *
+     * <p>System-generated rows are skipped: nobody added the rent line, and
+     * asking auth about a null actor is a lookup that can only fail.
+     */
+    private Map<UUID, String> actorNames(List<BillingCycleLineItem> lineItems) {
+        Set<UUID> actorIds = lineItems.stream()
+                .filter(lineItem -> !lineItem.isSystemGenerated())
+                .map(BillingCycleLineItem::getCreatedByUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (actorIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return authModule.findByIds(actorIds).entrySet().stream()
+                .filter(entry -> entry.getValue() != null && entry.getValue().fullName() != null)
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
     }
 
     private Map<UUID, String> tenancyReferenceCodes(List<BillingCycle> cycles) {

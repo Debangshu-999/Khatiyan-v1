@@ -76,13 +76,15 @@ class BillingCycleTest {
                 .hasMessageContaining("Paid billing cycle cannot be edited");
     }
 
+    /**
+     * The first cycle is the only one created and activated in the same
+     * transaction, so it is the only one with no UPCOMING window to be edited
+     * in — which is what earns it the exemption from the live-cycle lock.
+     */
     @Test
-    void extraChargesAreEditableBeforeLockedDayAndAfterDueDate() {
-        BillingCycle cycle = monthlyCycle(2, LocalDate.of(2026, 6, 1));
-
-        assertThat(cycle.isEditableForExtraCharges(LocalDate.of(2026, 6, 2))).isTrue();
-        assertThat(cycle.isEditableForExtraCharges(LocalDate.of(2026, 6, 3))).isFalse();
-        assertThat(cycle.isEditableForExtraCharges(LocalDate.of(2026, 6, 5))).isTrue();
+    void onlyCycleNumberOneIsTheFirstCycle() {
+        assertThat(monthlyCycle(1, LocalDate.of(2026, 6, 1)).isFirstCycle()).isTrue();
+        assertThat(monthlyCycle(2, LocalDate.of(2026, 6, 1)).isFirstCycle()).isFalse();
     }
 
     /**

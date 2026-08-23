@@ -30,6 +30,7 @@ import com.khatiyan.d_modules.staff.api.dto.SalaryAccountResponse;
 import com.khatiyan.d_modules.staff.api.dto.SalaryAdjustmentResponse;
 import com.khatiyan.d_modules.staff.api.dto.SalaryHolderType;
 import com.khatiyan.d_modules.staff.api.dto.SalaryMonthResponse;
+import com.khatiyan.d_modules.staff.api.dto.SalaryMonthOpenItem;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentDueItem;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPaymentResponse;
 import com.khatiyan.d_modules.staff.api.dto.SalaryPayslipResponse;
@@ -443,6 +444,68 @@ public class SalaryAccountService {
                     terms.fullName(),
                     currentMonth,
                     outstanding));
+        }
+        return due;
+    }
+
+    /**
+     * Every salary month open for the current payroll month, across all active
+     * unsettled accounts.
+     *
+     * <p>Reads the same three-level chain as {@code listSalaryPaymentDue} but
+     * asks a different question: not "what is still owed" but "what is now
+     * recordable". Paid months stay in the list — the month being open is the
+     * fact being reported, and a month paid on the 2nd was still opened on the
+     * 1st.
+     */
+    @Transactional(readOnly = true)
+    public List<SalaryMonthOpenItem> listOpenSalaryMonths(LocalDate today) {
+        LocalDate currentMonth = YearMonth.from(today).atDay(1);
+        List<SalaryMonthOpenItem> open = new ArrayList<>();
+        for (SalaryAccount account : salaryAccountRepository.findByActiveTrueAndSettledOnIsNull()) {
+            SalaryMonth month = salaryMonthRepository
+                    .findBySalaryAccountIdAndPayrollMonth(account.getId(), currentMonth)
+                    .orElse(null);
+            if (month == null) {
+                continue;
+            }
+            HolderTerms terms = holderTermsOrNull(account);
+            if (terms == null) {
+                continue;
+            }
+            open.add(new SalaryMonthOpenItem(
+                    account.getPropertyId(),
+                    account.getId(),
+                    account.getReferenceCode(),
+                    terms.fullName(),
+                    currentMonth,
+                    month.getNetAmountPaise(),
+                    !salaryMonthRepository.existsBySalaryAccountIdAndPayrollMonthBefore(
+                            account.getId(), currentMonth)));
+        }
+        return open;
+    }
+
+    /**
+     * How many salaries at this property are unpaid for the current month.
+     *
+     * <p>No end-of-month window, unlike the reminder that chases the same
+     * condition. The Action Center answers "what needs doing", and an unpaid
+     * salary needs doing on the 10th as much as on the 30th — it simply is not
+     * worth a push notification yet.
+     */
+    @Transactional(readOnly = true)
+    public long countSalaryPaymentDue(UUID propertyId, LocalDate today) {
+        LocalDate currentMonth = YearMonth.from(today).atDay(1);
+        long due = 0;
+        for (SalaryAccount account : salaryAccountRepository
+                .findByPropertyIdAndActiveTrueAndSettledOnIsNull(propertyId)) {
+            SalaryMonth month = salaryMonthRepository
+                    .findBySalaryAccountIdAndPayrollMonth(account.getId(), currentMonth)
+                    .orElse(null);
+            if (month != null && month.getNetAmountPaise() - month.getPaidAmountPaise() > 0) {
+                due = due + 1;
+            }
         }
         return due;
     }

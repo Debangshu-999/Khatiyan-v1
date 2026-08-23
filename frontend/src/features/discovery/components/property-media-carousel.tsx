@@ -8,42 +8,22 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PropertyMediaCarouselProps = {
+  /** One per URL, same order. Absent when the caller has none. */
+  captions?: Array<string | null | undefined>;
   imageUrls?: Array<string | null | undefined> | null;
   propertyName: string;
-  onBack: () => void;
 };
 
-export function PropertyMediaCarousel({ imageUrls, onBack, propertyName }: PropertyMediaCarouselProps) {
+export function PropertyMediaCarousel({ captions, imageUrls, propertyName }: PropertyMediaCarouselProps) {
   const { colors } = useTheme();
   const images = useMemo(() => (imageUrls ?? []).filter((url): url is string => Boolean(url)), [imageUrls]);
   const hasImages = images.length > 0;
 
   return (
     <View style={{ backgroundColor: colors.primarySoft, height: 260, overflow: "hidden" }}>
-      <AnimatedPressable
-        accessibilityLabel="Back to listings"
-        onPress={onBack}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 999,
-          borderWidth: 1,
-          height: 44,
-          justifyContent: "center",
-          left: spacing.md,
-          position: "absolute",
-          top: spacing.md,
-          width: 44,
-          zIndex: 5,
-        }}
-      >
-        <ArrowLeft color={colors.text} size={21} strokeWidth={2.5} />
-      </AnimatedPressable>
-
       {hasImages ? (
         <>
-          <ImageCarousel images={images} radius={0} />
+          <ImageCarousel captions={captions} images={images} radius={0} />
 
         </>
       ) : (

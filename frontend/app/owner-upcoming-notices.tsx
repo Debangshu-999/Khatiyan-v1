@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dimensions, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -13,6 +13,10 @@ import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
 import { InfoModal } from "@/components/info-modal";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import {
   ActionButton,
@@ -112,8 +116,7 @@ export default function OwnerUpcomingNoticesScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          description="Upcoming notices are scoped to the active owner property."
-          eyebrow="Property required"
+          description="Upcoming notices are scoped to the active owner property."
           icon={Megaphone}
           title="No property selected"
         />
@@ -121,22 +124,18 @@ export default function OwnerUpcomingNoticesScreen() {
 
       {selectedProperty ? (
         <>
-          <Section
-            eyebrow="Next three hours"
-            title={`${notices.length} ${notices.length === 1 ? "notice" : "notices"}`}
-            trailingInline
-            trailing={
-              <CollapsibleFilterBubbles
-                onChange={setFilter}
-                options={[
-                  { label: "All", value: "all" as const },
-                  { label: "Scheduled", value: "normal" as const },
-                  { label: "Recurring", value: "recurring" as const },
-                ]}
-                value={filter}
-              />
-            }
-          >
+          <Section title={`${notices.length} ${notices.length === 1 ? "notice" : "notices"}`}>
+            {/* Under the heading rule, not beside the count — see owner-notices. */}
+            <CollapsibleFilterBubbles
+              align="start"
+              onChange={setFilter}
+              options={[
+                { label: "All", value: "all" as const },
+                { label: "Scheduled", value: "normal" as const },
+                { label: "Recurring", value: "recurring" as const },
+              ]}
+              value={filter}
+            />
             {upcomingQuery.isLoading ? (
               <SkeletonCard />
             ) : notices.length > 0 ? (
@@ -151,7 +150,17 @@ export default function OwnerUpcomingNoticesScreen() {
                 />
               ))
             ) : (
-              <NothingUpcoming filter={filter} />
+              <EmptyState
+                description={
+                  filter === "recurring"
+                    ? "No recurring notice is due in the next three hours."
+                    : filter === "normal"
+                      ? "No scheduled notice is due in the next three hours."
+                      : "Nothing upcoming. Notices appear here before tenants see them."
+                }
+                icon={CalendarClock}
+                title="All clear"
+              />
             )}
           </Section>
         </>
@@ -173,57 +182,6 @@ export default function OwnerUpcomingNoticesScreen() {
   );
 }
 
-/**
- * Centred rather than boxed: an empty three-hour window is the normal state, so
- * it reads as reassurance instead of a card reporting a gap.
- */
-function NothingUpcoming({ filter }: { filter: UpcomingFilter }) {
-  const { colors, fonts, type } = useTheme();
-
-  // Sits in the middle of the space the list would have filled, rather than
-  // riding up under the section rule. Roughly half the viewport is what is left
-  // below the header, filter bar and section heading.
-  const minHeight = Math.round(Dimensions.get("window").height * 0.46);
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        gap: spacing.md,
-        justifyContent: "center",
-        minHeight,
-        paddingHorizontal: spacing.lg,
-      }}
-    >
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderCurve: "continuous",
-          borderRadius: 18,
-          borderWidth: 1,
-          height: 58,
-          justifyContent: "center",
-          width: 58,
-        }}
-      >
-        <CalendarClock color={colors.ink} size={26} strokeWidth={2} />
-      </View>
-      <View style={{ alignItems: "center", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
-          All clear
-        </Text>
-        <Text style={[type.body, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
-          {filter === "recurring"
-            ? "No recurring notice is due in the next three hours."
-            : filter === "normal"
-              ? "No scheduled notice is due in the next three hours."
-              : "Nothing upcoming. Notices appear here before tenants see them."}
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 function UpcomingInfoModal({ onClose }: { onClose: () => void }) {
   const { colors, type } = useTheme();
@@ -320,7 +278,9 @@ function DelaySheet({
   const { colors, fonts, type } = useTheme();
   const [picked, setPicked] = useState<Date>(new Date(notice.visibleFrom));
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // "time" is the only thing on this sheet, so a bad choice is a field error
+  // shown against the picker; a refused save is a server error and gets a modal.
+  const form = useFormErrors<"time">();
   const [delayNotice, delayState] = useDelayNoticeMutation();
 
   const originalStart = new Date(notice.visibleFrom);
@@ -337,28 +297,27 @@ function DelaySheet({
     const next = new Date(originalStart);
     next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
     setPicked(next);
-    setError(null);
+    form.clearField("time");
   }
 
   async function submit() {
-    if (picked.getTime() <= Date.now()) {
-      setError("Pick a time later than right now.");
-      return;
-    }
-    if (picked.getTime() < originalStart.getTime()) {
-      setError("A notice can be postponed, not brought forward.");
-      return;
-    }
-    if (picked.getTime() === originalStart.getTime()) {
-      setError("Pick a later time to postpone this notice.");
+    const problem =
+      picked.getTime() <= Date.now()
+        ? "Pick a time later than right now."
+        : picked.getTime() < originalStart.getTime()
+          ? "A notice can be postponed, not brought forward."
+          : picked.getTime() === originalStart.getTime()
+            ? "Pick a later time to postpone this notice."
+            : null;
+    if (!form.validate(problem ? { time: problem } : {})) {
       return;
     }
 
     try {
       await delayNotice({ noticeId: notice.id, visibleFrom: picked.toISOString() }).unwrap();
       onDelayed();
-    } catch {
-      setError("Could not postpone the notice. Try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not postpone the notice. Try again.");
     }
   }
 
@@ -442,14 +401,10 @@ function DelaySheet({
               </Text>
             ) : null}
 
-            {error ? (
-              <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
-                {error}
-              </Text>
-            ) : null}
+            <FieldError message={form.errors.time} />
 
             <ActionButton
-                disabled={delayState.isLoading}
+                disabled={delayState.isLoading || form.blocked}
                 icon={Clock}
                 label={delayState.isLoading ? "Postponing…" : "Postpone"}
                 onPress={submit}
@@ -462,6 +417,7 @@ function DelaySheet({
       </KeyboardAvoidingView>
 
       {pickerOpen ? <DateTimePicker mode="time" onChange={onPick} value={picked} /> : null}
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Modal>
   );
 }

@@ -21,9 +21,21 @@ export type TokenResponse = {
 
 export type OtpVerifyResponse = {
   phone: string;
-  purpose: "LOGIN" | "PIN_RESET" | "EMAIL_LOGIN" | "NEW_DEVICE";
+  purpose: "LOGIN" | "PIN_RESET" | "EMAIL_LOGIN";
   verified: boolean;
   pinRequired: boolean;
+};
+
+/** One signed-in device, as the sessions list shows it. */
+export type UserSession = {
+  id: string;
+  deviceLabel: string | null;
+  platform: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  /** The session making the request — rendered as "This device", not a button. */
+  current: boolean;
 };
 
 export type EmailRecoveryStatus = { email: string | null; verified: boolean };
@@ -56,7 +68,17 @@ export const authApi = api.injectEndpoints({
       query: () => ({ url: "/api/v1/auth/me/email/verification/request", method: "POST" }),
       invalidatesTags: ["Profile"],
     }),
-    loginWithPin: builder.mutation<TokenResponse, { phone: string; pin: string }>({
+    listSessions: builder.query<UserSession[], void>({
+      query: () => "/api/v1/auth/sessions",
+      providesTags: ["Session"],
+    }),
+
+    revokeSession: builder.mutation<void, string>({
+      query: (sessionId) => ({ url: `/api/v1/auth/sessions/${sessionId}`, method: "DELETE" }),
+      invalidatesTags: ["Session"],
+    }),
+
+    loginWithPin: builder.mutation<TokenResponse, { phone: string; pin: string; signOutSessionId?: string }>({
       query: (body) => ({ url: "/api/v1/auth/pin/login", method: "POST", body }),
       invalidatesTags: ["Profile", "Notification"],
     }),
@@ -115,6 +137,7 @@ export const {
   useGetEmailRecoveryStatusQuery,
   useGetProfileQuery,
   useLazyGetProfileQuery,
+  useListSessionsQuery,
   useLoginWithPinMutation,
   useRegisterOwnerMutation,
   useRegisterUserMutation,
@@ -123,6 +146,7 @@ export const {
   useRequestEmailVerificationMutation,
   useRequestOtpMutation,
   useRequestPinResetMutation,
+  useRevokeSessionMutation,
   useSetPinMutation,
   useUpdateProfileMutation,
   useUpdateRecoveryEmailMutation,

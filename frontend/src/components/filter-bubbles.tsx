@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import { ScrollView, Text, View } from "react-native";
+import { Filter } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
@@ -11,6 +11,135 @@ export type FilterBubbleOption<T extends string> = {
   label: string;
   value: T;
 };
+
+/**
+ * The app's one filter row: a sideways-scrolling strip of pills, the selected
+ * one filled in primary, counts in a badge of their own.
+ *
+ * <p>Lifted out of the action centre, which had the version everything else was
+ * measured against. Notifications, latest events and the action centre had each
+ * grown their own pill — soft-accent with an icon, ink-filled with an inline
+ * "label · count", and this one — so the same control looked like three
+ * different controls depending on which screen you were standing on.
+ *
+ * <p>The count is a separate badge rather than part of the label because it
+ * changes on its own: a label that reads "Billing · 3" one moment and
+ * "Billing · 12" the next re-flows the whole row, and the number is what the
+ * reader is scanning for.
+ */
+export function FilterPillRow<T extends string>({
+  inset,
+  onChange,
+  options,
+  value,
+}: {
+  /**
+   * Pads both ends of the strip by one screen gutter.
+   *
+   * <p>For a row inside an EDGE-TO-EDGE parent — a full-bleed sheet — which has
+   * no margin of its own to align to. Leave it off inside a normally padded
+   * screen, where the parent already supplies the gutter and adding another
+   * would indent the first pill past the content margin.
+   */
+  inset?: boolean;
+  onChange: (value: T) => void;
+  options: FilterBubbleOption<T>[];
+  value: T;
+}) {
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        alignItems: "center",
+        gap: spacing.sm,
+        paddingLeft: inset ? spacing.lg : 0,
+        // Trailing room either way, so the last pill never sits flush against
+        // the edge it scrolls under.
+        paddingRight: inset ? spacing.lg : spacing.md,
+      }}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      // flexShrink:0 as well as flexGrow:0 — grow alone stops it expanding but
+      // leaves it shrinkable, and a column then compresses the strip and clips
+      // the pills' descenders.
+      style={{ flexGrow: 0, flexShrink: 0 }}
+    >
+      {options.map((option) => (
+        <FilterPill
+          active={option.value === value}
+          count={option.count}
+          key={option.value}
+          label={option.label}
+          onPress={() => onChange(option.value)}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+export function FilterPill({
+  active,
+  count,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  /** Omitted, or zero, renders no badge — the pill still shows. */
+  count?: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={count == null ? label : `${label}, ${count}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: active ? colors.primary : colors.surfaceSunken,
+        borderColor: active ? colors.primary : colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: 6,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm - 2,
+      }}
+      // No tap lock: switching filters in quick succession must not drop taps.
+      tapLockMs={0}
+    >
+      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
+        {label}
+      </Text>
+      {count != null && count > 0 ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: active ? colors.onPrimary : colors.primary,
+            borderRadius: 999,
+            height: 18,
+            justifyContent: "center",
+            minWidth: 18,
+            paddingHorizontal: 5,
+          }}
+        >
+          <Text
+            style={{
+              color: active ? colors.primary : colors.onPrimary,
+              fontFamily: fonts.sansBold,
+              fontSize: 11,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
+            {count}
+          </Text>
+        </View>
+      ) : null}
+    </AnimatedPressable>
+  );
+}
 
 /**
  * A small pill row for filtering the list beneath it.
@@ -54,14 +183,26 @@ export function FilterBubbles<T extends string>({
  * even though most visits do not change the filter; one pill states that
  * filtering exists and stays out of the way until it is wanted.
  *
- * <p>The chevron points the way the row will move: right to open outward, left
- * to fold back.
+ * <p>A funnel rather than a chevron: the chevron described the animation, which
+ * nobody needs told, while the funnel says what the control is for. It turns
+ * primary while open, so the pill states its own state without a second label.
+ *
+ * <p>The expanded pills SCROLL sideways rather than wrapping. Wrapping pushed a
+ * fourth option onto a second line inside a heading row that has no room for
+ * one, and the overflow was simply clipped.
  */
 export function CollapsibleFilterBubbles<T extends string>({
+  align = "end",
   onChange,
   options,
   value,
 }: {
+  /**
+   * Where the row sits when closed. "end" pins the pill to the right, for use
+   * beside a section heading; "start" left-aligns it, for a row standing on its
+   * own above a search field.
+   */
+  align?: "end" | "start";
   onChange: (value: T) => void;
   options: FilterBubbleOption<T>[];
   value: T;
@@ -73,11 +214,14 @@ export function CollapsibleFilterBubbles<T extends string>({
     <View
       style={{
         alignItems: "center",
+        // flex:1 ONLY when pinned beside a heading, where it has to claim the
+        // width to the right of the title. Standing on its own it sits in a
+        // COLUMN, and there flex:1 means grow DOWNWARD — a filter row stretched
+        // to the height of whatever space was going spare.
+        flex: align === "start" ? undefined : 1,
         flexDirection: "row",
-        flexShrink: 1,
-        flexWrap: "wrap",
         gap: spacing.xs,
-        justifyContent: "flex-end",
+        justifyContent: open || align === "start" ? "flex-start" : "flex-end",
       }}
     >
       <AnimatedPressable
@@ -92,7 +236,9 @@ export function CollapsibleFilterBubbles<T extends string>({
           borderRadius: 999,
           borderWidth: 1,
           flexDirection: "row",
-          gap: 2,
+          // Never squeezed by the scroller beside it.
+          flexShrink: 0,
+          gap: 3,
           paddingHorizontal: spacing.sm,
           paddingVertical: 3,
         }}
@@ -101,23 +247,29 @@ export function CollapsibleFilterBubbles<T extends string>({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11 }}>
           Filters
         </Text>
-        {open ? (
-          <ChevronLeft color={colors.muted} size={13} strokeWidth={2.4} />
-        ) : (
-          <ChevronRight color={colors.muted} size={13} strokeWidth={2.4} />
-        )}
+        <Filter color={open ? colors.primary : colors.ink} size={12} strokeWidth={2.4} />
       </AnimatedPressable>
 
-      {open
-        ? options.map((option) => (
+      {open ? (
+        <ScrollView
+          contentContainerStyle={{ alignItems: "center", gap: spacing.xs, paddingRight: spacing.xs }}
+          horizontal
+          keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
+          // Takes whatever width is left beside the Filters pill and scrolls
+          // inside it, rather than wrapping onto a line the heading row lacks.
+          style={{ flexGrow: 0, flexShrink: 1 }}
+        >
+          {options.map((option) => (
             <Bubble
               key={option.value}
               label={option.count == null ? option.label : `${option.label} · ${option.count}`}
               on={option.value === value}
               onPress={() => onChange(option.value)}
             />
-          ))
-        : null}
+          ))}
+        </ScrollView>
+      ) : null}
     </View>
   );
 }

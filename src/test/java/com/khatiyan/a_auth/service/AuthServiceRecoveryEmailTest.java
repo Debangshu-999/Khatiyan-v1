@@ -55,6 +55,15 @@ class AuthServiceRecoveryEmailTest {
     private LoginAttemptService loginAttemptService;
 
     @Mock
+    private PhoneLoginLockService phoneLoginLockService;
+
+    @Mock
+    private UserSessionService userSessionService;
+
+    @Mock
+    private DeviceDescriptor deviceDescriptor;
+
+    @Mock
     private EmailVerificationLinkSender emailVerificationLinkSender;
 
     @Mock
@@ -74,6 +83,9 @@ class AuthServiceRecoveryEmailTest {
                 rateLimitService,
                 new LoginRateLimitProperties(),
                 loginAttemptService,
+                phoneLoginLockService,
+                userSessionService,
+                deviceDescriptor,
                 emailVerificationLinkSender,
                 recoveryEmailChangeNotifier);
     }

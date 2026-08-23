@@ -22,7 +22,7 @@ export default function PropertyNoticesScreen() {
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority);
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Property"
         onBack={() => router.back()}
@@ -31,15 +31,14 @@ export default function PropertyNoticesScreen() {
         subtitle="Active announcements for your current property, including notices generated from recurring schedules."
       />
 
-      <Section eyebrow="Visible now" title="Published notices">
+      <Section title="Published notices">
         {noticesQuery.isFetching ? (
           <SkeletonCard />
         ) : notices.length > 0 ? (
           notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)
         ) : (
           <EmptyState
-            icon={Bell}
-            eyebrow="Notices"
+            icon={Bell}
             title="No active notices"
             description="Published property notices will appear here when they are visible to tenants."
           />

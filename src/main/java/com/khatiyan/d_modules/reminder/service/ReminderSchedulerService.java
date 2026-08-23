@@ -19,6 +19,7 @@ public class ReminderSchedulerService {
     private final TenancyReminderScannerService tenancyReminderScannerService;
     private final ConcernReminderScannerService concernReminderScannerService;
     private final SalaryReminderScannerService salaryReminderScannerService;
+    private final SalaryMonthOpenedReminderScannerService salaryMonthOpenedReminderScannerService;
     private final ExpenseBudgetReminderScannerService expenseBudgetReminderScannerService;
     private final ReminderService reminderService;
 
@@ -27,12 +28,14 @@ public class ReminderSchedulerService {
             TenancyReminderScannerService tenancyReminderScannerService,
             ConcernReminderScannerService concernReminderScannerService,
             SalaryReminderScannerService salaryReminderScannerService,
+            SalaryMonthOpenedReminderScannerService salaryMonthOpenedReminderScannerService,
             ExpenseBudgetReminderScannerService expenseBudgetReminderScannerService,
             ReminderService reminderService) {
         this.billingReminderScannerService = billingReminderScannerService;
         this.tenancyReminderScannerService = tenancyReminderScannerService;
         this.concernReminderScannerService = concernReminderScannerService;
         this.salaryReminderScannerService = salaryReminderScannerService;
+        this.salaryMonthOpenedReminderScannerService = salaryMonthOpenedReminderScannerService;
         this.expenseBudgetReminderScannerService = expenseBudgetReminderScannerService;
         this.reminderService = reminderService;
     }
@@ -60,16 +63,18 @@ public class ReminderSchedulerService {
         int tenancyCount = tenancyReminderScannerService.scan(today);
         int concernCount = concernReminderScannerService.scan(today);
         int salaryCount = salaryReminderScannerService.scan(today);
+        int salaryOpenedCount = salaryMonthOpenedReminderScannerService.scan(today);
         int budgetCount = expenseBudgetReminderScannerService.scan(today);
-        int totalCount = billingCount + tenancyCount + concernCount + salaryCount + budgetCount;
+        int totalCount = billingCount + tenancyCount + concernCount + salaryCount + salaryOpenedCount + budgetCount;
 
         log.info(
-                "Reminder scan completed today={} billing={} tenancy={} concern={} salary={} budget={} total={}",
+                "Reminder scan completed today={} billing={} tenancy={} concern={} salary={} salaryOpened={} budget={} total={}",
                 today,
                 billingCount,
                 tenancyCount,
                 concernCount,
                 salaryCount,
+                salaryOpenedCount,
                 budgetCount,
                 totalCount);
 

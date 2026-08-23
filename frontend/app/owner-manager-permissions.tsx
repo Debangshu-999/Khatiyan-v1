@@ -13,6 +13,9 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import {
@@ -54,6 +57,8 @@ export default function OwnerManagerPermissionsScreen() {
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const toast = useToast();
+  // Permission saves either land or are refused; there is no field to blame.
+  const opErrors = useFormErrors<never>();
   const params = useLocalSearchParams<{ managerName?: string; managerUserId?: string; propertyId?: string }>();
 
   const propertyId = params.propertyId ?? "";
@@ -106,7 +111,7 @@ export default function OwnerManagerPermissionsScreen() {
       // only signal, which says nothing about whether it was a validation
       // problem, a stale manager row, or the request never landing.
       const message = (error as { data?: { message?: string } })?.data?.message;
-      toast.error(message ?? "Could not save permissions. Try again.");
+      opErrors.failFromServer(message ?? "Could not save permissions. Try again.");
     }
   }
 
@@ -115,11 +120,11 @@ export default function OwnerManagerPermissionsScreen() {
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
         <ScreenHeader onBack={() => router.back()} eyebrow="Access" title="Manager" italicTail="permissions." />
         <EmptyState
-          icon={ShieldCheck}
-          eyebrow="Manager required"
+          icon={ShieldCheck}
           title="No manager selected"
           description="Open this from a manager in the Staff workspace."
         />
+        {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
     );
   }
@@ -131,7 +136,13 @@ export default function OwnerManagerPermissionsScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: spacing.xxxl + spacing.lg, paddingTop: 0 }}
+        // PINNED_FOOTER_CLEARANCE, not a hand-picked number. The footer is 132pt
+        // tall once its fade and safe-area gap are counted, and this was padding
+        // 66 — so the last module card could never be scrolled out from under
+        // it. The footer adds insets.bottom itself, which is why the scroll view
+        // does NOT also take a "bottom" safe-area edge: that would pad for the
+        // navigation bar twice.
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
       >
         <ScreenHeader
           onBack={() => router.back()}
@@ -149,8 +160,7 @@ export default function OwnerManagerPermissionsScreen() {
 
         {permissionsQuery.data ? (
           <>
-            <Section
-              eyebrow="Modules"
+            <Section
               title="What they can access"
               trailing={
                 <AnimatedPressable
@@ -188,8 +198,7 @@ export default function OwnerManagerPermissionsScreen() {
 
         {!permissionsQuery.isLoading && permissionsQuery.isError ? (
           <EmptyState
-            icon={ShieldCheck}
-            eyebrow="Unavailable"
+            icon={ShieldCheck}
             title="Could not load permissions"
             description="Only the property owner can view or change manager permissions."
           />

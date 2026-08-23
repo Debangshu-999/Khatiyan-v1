@@ -18,6 +18,9 @@ import { FilterBubbles } from "@/components/filter-bubbles";
 import { SkeletonCard } from "@/components/skeleton";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton } from "@/features/owner/owner-ui";
 import {
   buildExitRequestChains,
@@ -72,7 +75,7 @@ export default function TenancyRequestHistoryScreen() {
   const scopedRoomChanges = scopeToTenancy(roomChangeQuery.data ?? [], params);
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Tenancy"
         onBack={() => router.back()}
@@ -131,8 +134,7 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
     <View style={{ gap: spacing.lg }}>
       <OverviewTiles counts={counts} />
 
-      <Section
-        eyebrow="Live"
+      <Section
         title={`${active.length} request${active.length === 1 ? "" : "s"}`}
         trailing={
           <FilterBubbles
@@ -166,8 +168,7 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
           <SkeletonCard />
         ) : active.length === 0 ? (
           <EmptyState
-            icon={DoorOpen}
-            eyebrow="All clear"
+            icon={DoorOpen}
             title={filter === "unattended" ? "Nothing awaiting a reply" : "No active exit requests"}
             description="A request stays here until it expires — including after it is decided."
           />
@@ -181,11 +182,10 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
         )}
       </Section>
 
-      <Section eyebrow="Closed" title="Exit request history">
+      <Section title="Exit request history">
         {history.length === 0 ? (
           <EmptyState
-            icon={FileClock}
-            eyebrow="Nothing yet"
+            icon={FileClock}
             title="No past exit requests"
             description="Requests move here once they expire."
           />
@@ -230,8 +230,7 @@ function RoomChangeTab({
     <View style={{ gap: spacing.lg }}>
       <OverviewTiles counts={counts} />
 
-      <Section
-        eyebrow="Live"
+      <Section
         title={`${active.length} request${active.length === 1 ? "" : "s"}`}
         trailing={
           <FilterBubbles
@@ -262,8 +261,7 @@ function RoomChangeTab({
           <SkeletonCard />
         ) : active.length === 0 ? (
           <EmptyState
-            icon={Repeat}
-            eyebrow="All clear"
+            icon={Repeat}
             title={filter === "unattended" ? "Nothing awaiting a reply" : "No active room change requests"}
             description="A room change closes as soon as it is decided — there is no withdrawal window."
           />
@@ -277,11 +275,10 @@ function RoomChangeTab({
         )}
       </Section>
 
-      <Section eyebrow="Closed" title="Room change request history">
+      <Section title="Room change request history">
         {history.length === 0 ? (
           <EmptyState
-            icon={FileClock}
-            eyebrow="Nothing yet"
+            icon={FileClock}
             title="No past room change requests"
             description="Requests move here once they are decided or expire."
           />
@@ -534,14 +531,16 @@ function WithdrawExitSheet({
   const toast = useToast();
   const [reason, setReason] = useState("");
   const [withdraw, withdrawState] = useWithdrawApprovedExitRequestMutation();
+  // Server refusal — no field owns it, so it takes a modal.
+  const opErrors = useFormErrors<never>();
 
   async function submit() {
     try {
       await withdraw({ reason: reason.trim() || null, requestId }).unwrap();
       toast.success("Sent. Management will decide whether you can stay on.");
       onClose();
-    } catch {
-      toast.error("Could not send that. The window to cancel may have closed.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -581,6 +580,7 @@ function WithdrawExitSheet({
           onPress={() => void submit()}
         />
       </View>
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </SheetShell>
   );
 }

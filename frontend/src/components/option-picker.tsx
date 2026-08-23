@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { Check, ChevronDown, Filter } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { FieldError } from "@/components/field-error";
 import { RequiredMark } from "@/features/owner/owner-ui";
 import { SheetShell } from "@/components/sheet-shell";
 import { spacing } from "@/theme/spacing";
@@ -27,6 +28,7 @@ export type PickerOption<T extends string> = { label: string; value: T };
  */
 export function OptionPicker<T extends string>({
   emptyLabel,
+  error,
   label,
   onChange,
   options,
@@ -36,6 +38,8 @@ export function OptionPicker<T extends string>({
 }: {
   /** Shown as the value when nothing is chosen. */
   emptyLabel: string;
+  /** Inline validation message; tints the field red while present. */
+  error?: string;
   label: string;
   onChange: (value: T[]) => void;
   options: PickerOption<T>[];
@@ -56,6 +60,7 @@ export function OptionPicker<T extends string>({
   return (
     <>
       <PickerField
+        error={error}
         label={label}
         onPress={() => setOpen(true)}
         required={required}
@@ -82,6 +87,7 @@ export function OptionPicker<T extends string>({
 
 /** The single-choice twin. Commits and closes on tap; no tick column. */
 export function SingleOptionPicker<T extends string>({
+  error,
   label,
   onChange,
   options,
@@ -89,6 +95,7 @@ export function SingleOptionPicker<T extends string>({
   title,
   value,
 }: {
+  error?: string;
   label: string;
   onChange: (value: T) => void;
   options: PickerOption<T>[];
@@ -102,7 +109,7 @@ export function SingleOptionPicker<T extends string>({
 
   return (
     <>
-      <PickerField label={label} onPress={() => setOpen(true)} required={required} value={chosen?.label ?? "Select"} />
+      <PickerField error={error} label={label} onPress={() => setOpen(true)} required={required} value={chosen?.label ?? "Select"} />
       {open ? (
         <SheetShell onClose={() => setOpen(false)} title={title ?? label}>
           <View style={{ gap: spacing.xs }}>
@@ -126,11 +133,13 @@ export function SingleOptionPicker<T extends string>({
 }
 
 function PickerField({
+  error,
   label,
   onPress,
   required,
   value,
 }: {
+  error?: string;
   label: string;
   onPress: () => void;
   required?: boolean;
@@ -139,24 +148,25 @@ function PickerField({
   const { colors, type } = useTheme();
 
   return (
+    <View style={{ gap: 6 }}>
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: error ? colors.danger : colors.border,
         borderRadius: 14,
-        borderWidth: 1,
+        borderWidth: error ? 1.5 : 1,
         flexDirection: "row",
         gap: spacing.sm,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
       }}
     >
-      <Filter color={colors.kicker} size={16} strokeWidth={2.2} />
+      <Filter color={error ? colors.danger : colors.kicker} size={16} strokeWidth={2.2} />
       <View style={{ flex: 1 }}>
-        <Text style={[type.caption, { color: colors.kicker }]}>
+        <Text style={[type.caption, { color: error ? colors.danger : colors.kicker }]}>
           {label}
           <RequiredMark required={required} />
         </Text>
@@ -166,6 +176,8 @@ function PickerField({
       </View>
       <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
+    <FieldError message={error} />
+    </View>
   );
 }
 

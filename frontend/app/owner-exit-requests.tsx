@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CalendarDays, Check, Clock, DoorOpen, FileClock, FileText, History, Info, IndianRupee, LogOut, UserRound, X } from "lucide-react-native";
@@ -11,8 +12,11 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { PINNED_FOOTER_CLEARANCE } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Section } from "@/components/section";
-import { FilterBubbles } from "@/components/filter-bubbles";
+import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
 import { SkeletonCard } from "@/components/skeleton";
 import { RequestTimelineSheet } from "@/features/tenancy/request-timeline-sheet";
 import {
@@ -130,12 +134,15 @@ export default function OwnerExitRequestsScreen() {
    * Decides a pending withdrawal. No notes are collected for a refusal: the veto
    * means only "no", unlike rejecting the exit itself where a reason is required.
    */
+  // Refusal of a decision — nothing on the row to correct.
+  const decisionErrors = useFormErrors<never>();
+
   async function decideWithdrawal(request: TenancyExitRequest, approved: boolean) {
     try {
       await decideWithdrawalMutation({ adminNotes: null, approved, requestId: request.id }).unwrap();
       toast.success(approved ? "Exit cancelled — the tenancy continues." : "The exit stands.");
-    } catch {
-      toast.error("Could not record that decision. Refresh and try again.");
+    } catch (caught) {
+      decisionErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -158,8 +165,7 @@ export default function OwnerExitRequestsScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={DoorOpen}
-          eyebrow="Property required"
+          icon={DoorOpen}
           title="No active property selected"
           description="Choose the property whose exit requests you want to manage from Home."
         />
@@ -196,24 +202,7 @@ export default function OwnerExitRequestsScreen() {
             </View>
           </Card>
 
-          <Section
-            eyebrow="Active"
-            title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}
-            trailing={
-              <FilterBubbles
-                onChange={(next) => {
-                  setAttention(next);
-                  setActivePage(0);
-                }}
-                options={[
-                  { count: unattended.length, label: "Needs action", value: "unattended" as const },
-                  { count: attended.length, label: "Decided", value: "attended" as const },
-                  { count: liveRequests.length, label: "All", value: "all" as const },
-                ]}
-                value={filter}
-              />
-            }
-          >
+          <Section title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}>
             {/* Sits with the list it filters rather than above the summary,
                 where it looked like it searched the whole screen. */}
             <AppTextInput
@@ -235,13 +224,28 @@ export default function OwnerExitRequestsScreen() {
               }}
               value={search}
             />
+            {/* Counts dropped from the pills: the heading above already states
+                how many the chosen filter matched, so carrying them here said
+                the same number twice. */}
+            <CollapsibleFilterBubbles
+              align="start"
+              onChange={(next) => {
+                setAttention(next);
+                setActivePage(0);
+              }}
+              options={[
+                { label: "Needs action", value: "unattended" as const },
+                { label: "Decided", value: "attended" as const },
+                { label: "All", value: "all" as const },
+              ]}
+              value={filter}
+            />
 
             {requestsQuery.isFetching && requests.length === 0 ? (
               <SkeletonCard />
             ) : activeRequests.length === 0 ? (
               <EmptyState
-                icon={DoorOpen}
-                eyebrow={filter === "unattended" ? "All clear" : "Nothing decided"}
+                icon={DoorOpen}
                 title={filter === "unattended" ? "Nothing waiting on you" : "No decided requests"}
                 description={
                   filter === "unattended"
@@ -286,6 +290,7 @@ export default function OwnerExitRequestsScreen() {
         <ExitReviewModal mode={mode} onClose={closeReview} request={selected} tenancy={tenancyById[selected.tenancyId]} />
       ) : null}
       {pastOpen ? <PastExitRequestsModal chainByHeadId={activeChainByHeadId} onClose={() => setPastOpen(false)} requests={expiredRequests} roomLabels={roomLabels} /> : null}
+      {decisionErrors.serverError ? <AlertModal message={decisionErrors.serverError} onClose={decisionErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -353,7 +358,7 @@ function PastExitRequestsModal({
             <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
           </View>
           {requests.length === 0 ? (
-            <EmptyState icon={DoorOpen} eyebrow="Nothing yet" title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
+            <EmptyState icon={DoorOpen} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
           ) : (
             <>
               <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -565,7 +570,7 @@ function ExitReviewModal({
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"notes">();
   const [confirm, setConfirm] = useState<{ confirmLabel: string; destructive?: boolean; message: string; title: string } | null>(null);
 
   const [approveExit, approveState] = useApproveExitRequestMutation();
@@ -588,7 +593,7 @@ function ExitReviewModal({
     if (busy) {
       return;
     }
-    setError(null);
+    form.clearAll();
 
     if (reject) {
       // A reason is mandatory, and the server enforces it too. Rejection cannot
@@ -596,8 +601,7 @@ function ExitReviewModal({
       // permission — so what it has to mean is "this request is not right".
       // Requiring the reason is what keeps those apart, and the tenant needs it
       // to re-raise with the correction.
-      if (!notes.trim()) {
-        setError("Give a reason. The tenant needs to know what to change.");
+      if (!form.validate(notes.trim() ? {} : { notes: "Give a reason. The tenant needs to know what to change." })) {
         return;
       }
       setConfirm({
@@ -617,7 +621,6 @@ function ExitReviewModal({
   }
 
   async function submit() {
-    setError(null);
     try {
       if (mode === "approve") {
         // Deposit settlement + final billing are handled at end-of-tenancy now,
@@ -632,14 +635,14 @@ function ExitReviewModal({
         await rejectExit({ adminNotes: notes.trim(), requestId: request.id }).unwrap();
       }
       onClose();
-    } catch {
-      setError("Action failed. Refresh and try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <>
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
@@ -714,14 +717,10 @@ function ExitReviewModal({
                     message="The deposit is settled when the tenancy ends, not at approval."
                   />
 
-                  <FormInput multiline label="Note (optional)" onChangeText={setNotes} placeholder="Optional note for the tenant" value={notes} />
+                  <FormInput error={form.errors.notes} multiline label="Note (optional)" onChangeText={(next) => { setNotes(next); form.clearField("notes"); }} placeholder="Optional note for the tenant" value={notes} />
                 </>
               )}
-              {error ? (
-                <Text style={[type.caption, { color: colors.danger }]}>
-                  {error}
-                </Text>
-              ) : null}
+              {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
             </ScrollView>
 
             {/* A plain bordered footer, NOT PinnedFooter. That component is
@@ -873,6 +872,7 @@ function SummaryTile({ hint, label, tone = "default", value }: { hint: string; l
 // `@/features/owner/owner-ui`. It differs (no prefix/error affordances), so editing the shared
 // one does NOT change this screen. Unify before adding behaviour to either.
 function FormInput({
+  error,
   keyboardType,
   label,
   multiline,
@@ -880,6 +880,7 @@ function FormInput({
   placeholder,
   value,
 }: {
+  error?: string;
   keyboardType?: "decimal-pad";
   label: string;
   multiline?: boolean;
@@ -902,7 +903,7 @@ function FormInput({
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
         style={{
-          borderColor: colors.border,
+          borderColor: error ? colors.danger : colors.border,
           borderRadius: 12,
           borderWidth: 1,
           color: colors.ink,
@@ -913,6 +914,7 @@ function FormInput({
         }}
         value={value}
       />
+      <FieldError message={error} />
     </View>
   );
 }

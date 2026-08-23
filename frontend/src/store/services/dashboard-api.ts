@@ -43,6 +43,10 @@ export type MonthlyTrendPoint = {
   occupancyRate: number;
   collectionRate: number;
   collectedPaise: number;
+  /** Stays that began in the month. */
+  startedCount: number;
+  /** Stays that ended in the month — ended ones only, never notice served. */
+  endedCount: number;
 };
 
 export type TodayDigest = {
@@ -65,6 +69,15 @@ export type AttentionSummary = {
   pendingDepositSettlements: number;
   /** Enquiries from the property's public profile with no answer yet. */
   newEnquiries: number;
+  /**
+   * Salaries unpaid for the current payroll month.
+   *
+   * <p>Counted all month, unlike the end-of-month push reminder that chases the
+   * same condition — so the two deliberately disagree on timing.
+   */
+  salaryPaymentsDue: number;
+  /** Agreements signed by the owner and still waiting on the tenant. */
+  agreementsPendingAcceptance: number;
 };
 
 export type BudgetAttentionLevel = "NONE" | "APPROACHING" | "EXCEEDED";

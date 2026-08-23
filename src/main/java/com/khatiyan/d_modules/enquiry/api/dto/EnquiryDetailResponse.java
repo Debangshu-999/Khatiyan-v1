@@ -21,6 +21,14 @@ public record EnquiryDetailResponse(
     EnquiryStatus status,
     Instant createdAt,
 
+    /**
+     * When this stops being actionable — shown on the card as "Expires on".
+     *
+     * <p>Sent even once it has passed, because the card goes on displaying it
+     * for a further day while the enquiry sits greyed out.
+     */
+    Instant expiresAt,
+
     UUID enquirerUserId,
     String enquirerName,
     String enquirerPhone,

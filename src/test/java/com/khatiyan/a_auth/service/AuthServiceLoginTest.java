@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,15 @@ class AuthServiceLoginTest {
     private LoginAttemptService loginAttemptService;
 
     @Mock
+    private PhoneLoginLockService phoneLoginLockService;
+
+    @Mock
+    private UserSessionService userSessionService;
+
+    @Mock
+    private DeviceDescriptor deviceDescriptor;
+
+    @Mock
     private EmailVerificationLinkSender emailVerificationLinkSender;
 
     @Mock
@@ -84,6 +94,9 @@ class AuthServiceLoginTest {
                 rateLimitService,
                 properties,
                 loginAttemptService,
+                phoneLoginLockService,
+                userSessionService,
+                deviceDescriptor,
                 emailVerificationLinkSender,
                 recoveryEmailChangeNotifier);
     }
@@ -92,7 +105,7 @@ class AuthServiceLoginTest {
     void unknownPhoneRecordsUserNotFoundFailure() {
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Invalid phone or PIN");
 
@@ -113,7 +126,7 @@ class AuthServiceLoginTest {
                         properties.phoneLimitDurationMinutes() * 60,
                         "Too many login attempts for this phone. Try again later.");
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Too many login attempts");
 
@@ -131,7 +144,7 @@ class AuthServiceLoginTest {
                 .when(loginAttemptService)
                 .checkDurableWindow(NORMALIZED_PHONE, IP_ADDRESS);
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Too many login attempts");
 
@@ -148,12 +161,12 @@ class AuthServiceLoginTest {
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("111111", "pin-hash")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Invalid phone or PIN");
         assertThat(user.isLoginLocked()).isFalse();
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Invalid phone or PIN");
 
@@ -174,9 +187,12 @@ class AuthServiceLoginTest {
         user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.now());
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("temporarily locked");
+                // Same wording the durable rate limiter gives ANY phone, registered
+                // or not. A lockout message only a real account could produce would
+                // confirm the number exists.
+                .hasMessage("Too many login attempts for this phone. Try again later.");
 
         verify(loginAttemptService).recordFailure(
                 NORMALIZED_PHONE,
@@ -193,10 +209,11 @@ class AuthServiceLoginTest {
         user.recordFailedLoginAttempt(2, Duration.ofMinutes(5), Instant.parse("2026-06-01T10:01:00Z"));
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("123456", "pin-hash")).thenReturn(true);
-        when(jwtService.issue(user)).thenReturn("jwt-token");
+        when(jwtService.issue(user))
+                .thenReturn(new JwtService.IssuedToken("jwt-token", UUID.randomUUID(), Instant.now().plusSeconds(3600)));
         when(jwtService.accessTokenExpirySeconds()).thenReturn(3600L);
 
-        TokenResponse response = authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS);
+        TokenResponse response = authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null);
 
         assertThat(response.accessToken()).isEqualTo("jwt-token");
         assertThat(user.isLoginLocked()).isFalse();
@@ -213,9 +230,11 @@ class AuthServiceLoginTest {
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("111111", "pin-hash")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Account risk detected");
+                // No "account risk" hint: it was reachable only for a real account,
+                // so its appearance told a prober the number was registered.
+                .hasMessage("Invalid phone or PIN");
 
         assertThat(user.isLoginLocked()).isFalse();
         assertThat(user.getFailedLoginAttempts()).isEqualTo(3);
@@ -232,9 +251,11 @@ class AuthServiceLoginTest {
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("111111", "pin-hash")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS))
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS, null))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Account risk detected");
+                // No "account risk" hint: it was reachable only for a real account,
+                // so its appearance told a prober the number was registered.
+                .hasMessage("Invalid phone or PIN");
 
         assertThat(user.isLoginLocked()).isTrue();
         assertThat(user.getFailedLoginAttempts()).isEqualTo(4);
@@ -294,10 +315,11 @@ class AuthServiceLoginTest {
         User user = userWithPin();
         when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
         when(pinService.matches("123456", "pin-hash")).thenReturn(true);
-        when(jwtService.issue(user)).thenReturn("jwt-token");
+        when(jwtService.issue(user))
+                .thenReturn(new JwtService.IssuedToken("jwt-token", UUID.randomUUID(), Instant.now().plusSeconds(3600)));
         when(jwtService.accessTokenExpirySeconds()).thenReturn(3600L);
 
-        TokenResponse response = authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS);
+        TokenResponse response = authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null);
 
         assertThat(response.accessToken()).isEqualTo("jwt-token");
         assertThat(response.user().phone()).isEqualTo(NORMALIZED_PHONE);

@@ -14,6 +14,10 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
@@ -40,6 +44,8 @@ const PAGE_SIZE = 20;
 export default function OwnerPnlScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
+  // The report export fails outside any form — a modal is the only place for it.
+  const reportErrors = useFormErrors<never>();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
@@ -72,8 +78,7 @@ export default function OwnerPnlScreen() {
 
         {!property ? (
           <EmptyState
-            icon={TrendingUp}
-            eyebrow="Property required"
+            icon={TrendingUp}
             title="No property selected"
             description="Choose an active property from Home before opening the P&L statement."
           />
@@ -88,12 +93,12 @@ export default function OwnerPnlScreen() {
                 <NetHero statement={statement} />
 
                 {trend && trend.points.length > 0 ? (
-                  <Section eyebrow="Trends" title="Last 6 months">
+                  <Section title="Last 6 months">
                     <PnlTrendChart points={trend.points} />
                   </Section>
                 ) : null}
 
-                <Section eyebrow="Actions" title="P&L tools">
+                <Section title="P&L tools">
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     <ToolBox icon={Plus} label="Add income" onPress={() => setSheet("add-income")} />
                     <ToolBox icon={FileText} label="Summary report" onPress={() => setSheet("report")} />
@@ -120,11 +125,11 @@ export default function OwnerPnlScreen() {
                   totalPaise={statement.expensePaise}
                 />
 
-                <Section eyebrow="Ledger" title="Manual income this month">
+                <Section title="Manual income this month">
                   {incomeQuery.isFetching && !incomePage ? <SkeletonList rows={3} /> : null}
 
                   {incomePage && incomePage.items.length === 0 ? (
-                    <EmptyState icon={Wallet} eyebrow="Nothing yet" title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
+                    <EmptyState icon={Wallet} title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
                   ) : null}
 
                   <View style={{ gap: spacing.sm }}>
@@ -151,6 +156,8 @@ export default function OwnerPnlScreen() {
         )}
       </ScreenScrollView>
 
+      {reportErrors.serverError ? <AlertModal message={reportErrors.serverError} onClose={reportErrors.dismissServerError} /> : null}
+
       {sheet === "add-income" && property ? (
         <AddIncomeSheet month={month} onClose={() => setSheet(null)} propertyId={propertyId} />
       ) : null}
@@ -159,7 +166,7 @@ export default function OwnerPnlScreen() {
           month={month}
           onClose={() => setSheet(null)}
           onDownloaded={() => toast.success("Report download started.")}
-          onError={() => toast.error("Could not generate the report.")}
+          onError={() => reportErrors.failFromServer("Could not generate the report.")}
           propertyId={propertyId}
           statement={statement}
         />
@@ -284,7 +291,7 @@ function Breakdown({
   const max = lines.reduce((peak, item) => Math.max(peak, Math.abs(item.amountPaise)), 0);
 
   return (
-    <Section eyebrow={eyebrow} title={title}>
+    <Section title={title}>
       <Card>
         {lines.length === 0 ? (
           <Text style={[type.body, { color: colors.muted }]}>
@@ -404,16 +411,6 @@ function IncomeBadge({ entryType }: { entryType: IncomeEntry["entryType"] }) {
 
 // ---------------------------------------------------------------- sheets
 
-function InlineError({ message }: { message: string | null }) {
-  const { colors, type } = useTheme();
-  if (!message) return null;
-  return (
-    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
-      {message}
-    </Text>
-  );
-}
-
 function FieldLabel({ children }: { children: string }) {
   const { colors, type } = useTheme();
   return (
@@ -439,14 +436,19 @@ function AddIncomeSheet({ month, onClose, propertyId }: { month: string; onClose
   const [amount, setAmount] = useState("");
   const [receivedDate, setReceivedDate] = useState(defaultReceivedDate(month));
   const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"amount" | "receivedDate" | "source">();
   const [createIncome, state] = useCreateIncomeMutation();
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    if (!source.trim()) return setError("Enter an income source.");
-    if (!amountPaise) return setError("Enter a valid amount.");
-    if (!receivedDate) return setError("Pick the date.");
+    const cleared = form.validate({
+      ...(source.trim() ? {} : { source: "Enter an income source." }),
+      ...(amountPaise ? {} : { amount: "Enter a valid amount." }),
+      ...(receivedDate ? {} : { receivedDate: "Pick the date." }),
+    });
+    if (!cleared || !amountPaise) {
+      return;
+    }
     try {
       await createIncome({
         payload: {
@@ -460,20 +462,50 @@ function AddIncomeSheet({ month, onClose, propertyId }: { month: string; onClose
       }).unwrap();
       onClose();
       toast.success("Income added.");
-    } catch {
-      setError("Could not save the income.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not save the income.");
     }
   }
 
   return (
     <SheetShell onClose={onClose} title="Add income">
-      <FormInput label="Source" onChangeText={setSource} placeholder="e.g. Parking, Laundry, Misc" value={source} />
+      <FormInput
+        error={form.errors.source}
+        label="Source"
+        onChangeText={(next) => {
+          setSource(next);
+          form.clearField("source");
+        }}
+        placeholder="e.g. Parking, Laundry, Misc"
+        required
+        value={source}
+      />
       <FormInput label="Received from" onChangeText={setReceivedFrom} placeholder="Optional payer" value={receivedFrom} />
-      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <IncomeDateField label="Received date" onChange={setReceivedDate} value={receivedDate} />
+      <FormInput
+        error={form.errors.amount}
+        keyboardType="decimal-pad"
+        label="Amount"
+        onChangeText={(next) => {
+          setAmount(next);
+          form.clearField("amount");
+        }}
+        placeholder="0"
+        prefix="₹"
+        required
+        value={amount}
+      />
+      <IncomeDateField
+        error={form.errors.receivedDate}
+        label="Received date"
+        onChange={(next) => {
+          setReceivedDate(next);
+          form.clearField("receivedDate");
+        }}
+        value={receivedDate}
+      />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
-      <InlineError message={error} />
-      <ActionButton disabled={state.isLoading} icon={Plus} label={state.isLoading ? "Saving" : "Save income"} onPress={() => void submit()} />
+      <ActionButton disabled={state.isLoading || form.blocked} icon={Plus} label={state.isLoading ? "Saving" : "Save income"} onPress={() => void submit()} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }
@@ -481,17 +513,19 @@ function AddIncomeSheet({ month, onClose, propertyId }: { month: string; onClose
 function ReverseIncomeSheet({ entry, onClose, propertyId }: { entry: IncomeEntry; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"reason">();
   const [reverseIncome, state] = useReverseIncomeMutation();
 
   async function submit() {
-    if (!reason.trim()) return setError("A reason is required to reverse an entry.");
+    if (!form.validate(reason.trim() ? {} : { reason: "A reason is required to reverse an entry." })) {
+      return;
+    }
     try {
       await reverseIncome({ incomeId: entry.id, propertyId, reason: reason.trim() }).unwrap();
       onClose();
       toast.success("Income reversed.");
-    } catch {
-      setError("Could not reverse the income.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not reverse the income.");
     }
   }
 
@@ -500,9 +534,20 @@ function ReverseIncomeSheet({ entry, onClose, propertyId }: { entry: IncomeEntry
       <BodyNote>
         Reversing posts a correcting entry of {formatMoneyPaise(-entry.amountPaise)} against {entry.source}. The original row is kept for the audit trail.
       </BodyNote>
-      <FormInput label="Reason" multiline onChangeText={setReason} placeholder="Why is this being reversed?" value={reason} />
-      <InlineError message={error} />
-      <ActionButton disabled={state.isLoading} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse income"} onPress={() => void submit()} variant="danger" />
+      <FormInput
+        error={form.errors.reason}
+        label="Reason"
+        multiline
+        onChangeText={(next) => {
+          setReason(next);
+          form.clearField("reason");
+        }}
+        placeholder="Why is this being reversed?"
+        required
+        value={reason}
+      />
+      <ActionButton disabled={state.isLoading || form.blocked} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse income"} onPress={() => void submit()} variant="danger" />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }
@@ -588,7 +633,7 @@ function Divider() {
   return <View style={{ backgroundColor: colors.border, height: 1 }} />;
 }
 
-function IncomeDateField({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+function IncomeDateField({ error, label, onChange, value }: { error?: string; label: string; onChange: (value: string) => void; value: string }) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
   const selected = value ? new Date(`${value}T12:00:00`) : new Date();
@@ -605,12 +650,13 @@ function IncomeDateField({ label, onChange, value }: { label: string; onChange: 
       <AnimatedPressable
         accessibilityRole="button"
         onPress={() => setOpen(true)}
-        style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: spacing.md }}
+        style={{ backgroundColor: colors.surface, borderColor: error ? colors.danger : colors.border, borderRadius: 14, borderWidth: error ? 1.5 : 1, justifyContent: "center", minHeight: 50, paddingHorizontal: spacing.md }}
       >
         <Text style={[type.body, { color: value ? colors.ink : colors.muted }]}>
           {value ? formatDate(value) : "Select date"}
         </Text>
       </AnimatedPressable>
+      <FieldError message={error} />
       {open ? <DateTimePicker display="default" maximumDate={new Date()} mode="date" onChange={update} value={selected} /> : null}
     </View>
   );

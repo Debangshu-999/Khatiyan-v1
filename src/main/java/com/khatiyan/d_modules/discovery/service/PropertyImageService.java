@@ -71,7 +71,7 @@ public class PropertyImageService {
         int nextSlot = existing.size();
         List<PropertyImage> added = new ArrayList<>();
         for (AddPropertyImagesRequest.Image image : request.images()) {
-            added.add(PropertyImage.of(propertyId, image.url(), image.publicId(), nextSlot++));
+            added.add(PropertyImage.of(propertyId, image.url(), image.publicId(), nextSlot++, image.caption()));
         }
         propertyImageRepository.saveAll(added);
 
@@ -106,6 +106,29 @@ public class PropertyImageService {
         syncCover(propertyId, remaining);
         log.info("Property image removed propertyId={} imageId={} remaining={}", propertyId, imageId, remaining.size());
         return toResponses(remaining);
+    }
+
+    /**
+     * Renames one photo. Returns the whole gallery, like every other mutation
+     * here, so the client never has to merge a single row into its copy.
+     */
+    @Transactional
+    public List<PropertyImageResponse> updateCaption(
+            UUID actorUserId,
+            UUID propertyId,
+            UUID imageId,
+            String caption) {
+        discoveryAccessPolicy.ensureCanManageListing(actorUserId, propertyId);
+
+        List<PropertyImage> images = propertyImageRepository.findByPropertyIdOrderBySortOrderAsc(propertyId);
+        PropertyImage target = images.stream()
+                .filter(candidate -> candidate.getId().equals(imageId))
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("Property image", imageId));
+
+        target.recaption(caption);
+        log.info("Property image caption updated propertyId={} imageId={}", propertyId, imageId);
+        return toResponses(images);
     }
 
     @Transactional
@@ -154,7 +177,7 @@ public class PropertyImageService {
             if (slot >= PropertyImage.MAX_PER_PROPERTY) {
                 break;
             }
-            rows.add(PropertyImage.of(propertyId, image.url(), image.publicId(), slot++));
+            rows.add(PropertyImage.of(propertyId, image.url(), image.publicId(), slot++, image.caption()));
         }
         propertyImageRepository.saveAll(rows);
         syncCover(propertyId, rows);
@@ -162,6 +185,20 @@ public class PropertyImageService {
     }
 
     /** Gallery URLs for one property, cover first. */
+    /**
+     * The gallery with its captions, cover first.
+     *
+     * <p>{@link #imageUrlsFor(UUID)} stays for the search cards, which show a
+     * thumbnail and have nowhere to put a caption. A profile has the room, and a
+     * photo nobody labelled is worth less there than one that is.
+     */
+    @Transactional(readOnly = true)
+    public List<PropertyImageResponse> imagesFor(UUID propertyId) {
+        return propertyImageRepository.findByPropertyIdOrderBySortOrderAsc(propertyId).stream()
+                .map(PropertyImageResponse::from)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public List<String> imageUrlsFor(UUID propertyId) {
         return propertyImageRepository.findByPropertyIdOrderBySortOrderAsc(propertyId).stream()
@@ -188,6 +225,16 @@ public class PropertyImageService {
     }
 
     /** Renumbers slots to 0..n-1 in list order, so no gaps or duplicates survive. */
+    /**
+     * Renumbers a gallery 0..n-1.
+     *
+     * <p>The intermediate states are NOT unique — promoting the third image
+     * writes sort_order 0 on it while the current cover still holds 0 — so this
+     * relies on the (property_id, sort_order) constraint being DEFERRABLE
+     * INITIALLY DEFERRED (V6096). It was a plain unique index until then, which
+     * Postgres checks per statement, and every reorder that moved an image
+     * forward failed.
+     */
     private void resequence(List<PropertyImage> images) {
         for (int index = 0; index < images.size(); index++) {
             images.get(index).moveTo(index);

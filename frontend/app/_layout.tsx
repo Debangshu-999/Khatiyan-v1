@@ -94,6 +94,10 @@ function ThemedRootStack() {
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="account-select" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* The conversation draws its own header, with the other party's
+            name in it. Without this the stack falls back to the default
+            header and titles the screen "chat/[threadId]". */}
+        <Stack.Screen name="chat/[threadId]" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
@@ -144,6 +148,9 @@ function ThemedRootStack() {
         <Stack.Screen
           name="notifications-older"
           options={{
+            // Overrides the stack's slide_from_left: this screen is reached by
+            // pulling a sleeve upward, and the transition continues that motion.
+            animation: "slide_from_bottom",
             headerShown: false,
             presentation: "card",
           }}

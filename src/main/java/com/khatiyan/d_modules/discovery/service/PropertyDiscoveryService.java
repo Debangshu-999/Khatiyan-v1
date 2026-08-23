@@ -42,19 +42,22 @@ public class PropertyDiscoveryService {
     private final PropertyModule propertyModule;
     private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final AuthModule authModule;
-    private final PropertyImageService propertyImageService;
+    private final PropertyImageService propertyImageService;
+    private final PropertyContactService propertyContactService;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
             PropertyModule propertyModule,
             DiscoveryAccessPolicy discoveryAccessPolicy,
             AuthModule authModule,
-            PropertyImageService propertyImageService) {
+            PropertyImageService propertyImageService,
+            PropertyContactService propertyContactService) {
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
         this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.authModule = authModule;
-        this.propertyImageService = propertyImageService;
+        this.propertyImageService = propertyImageService;
+        this.propertyContactService = propertyContactService;
     }
 
     // Public/user side property discovery
@@ -231,7 +234,17 @@ public class PropertyDiscoveryService {
                 startingRoomRentPaise,
                 owner == null ? null : owner.fullName(),
                 owner == null ? null : owner.phone(),
-                propertyImageService.imageUrlsFor(propertyId));
+                // Verified only. The flag exists because an unverified address is
+                // one nobody has proved they can read.
+                owner != null && owner.emailVerified() ? owner.email() : null,
+                // The owner is dropped when the listing hides them; a listed
+                // manager is kept, because listing them was the decision to
+                // publish them.
+                propertyContactService.listContacts(propertyId).stream()
+                        .filter(contact -> !contact.owner() || profile.isShowOwnerContact())
+                        .toList(),
+                propertyImageService.imageUrlsFor(propertyId),
+                propertyImageService.imagesFor(propertyId));
     }
 
     // Owner/manager side discovery profile management

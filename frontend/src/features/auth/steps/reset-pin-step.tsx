@@ -1,7 +1,7 @@
 import { View } from "react-native";
 import { ArrowLeft } from "lucide-react-native";
 
-import { AuthChipLink, CodeField, LinkButton, PrimaryButton, StepBadge } from "@/features/auth/auth-ui";
+import { AuthChipLink, CodeField, LinkButton, PrimaryButton, StepProgress } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -16,6 +16,8 @@ export function ResetPinStep({
   busy,
   onResetPin,
   onBackToLogin,
+  newPinError,
+  confirmPinError,
 }: {
   newPin: string;
   onNewPinChange: (value: string) => void;
@@ -24,12 +26,14 @@ export function ResetPinStep({
   busy: boolean;
   onResetPin: () => void;
   onBackToLogin: () => void;
+  newPinError?: string;
+  confirmPinError?: string;
 }) {
   return (
     <>
-      <StepBadge text="Reset PIN / Final step" />
-      <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry />
-      <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry />
+      <StepProgress step={2} total={2} label="Choose a new PIN" />
+      <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />
+      <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry error={confirmPinError} />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Reset PIN and enter app" onPress={onResetPin} busy={busy} />
         <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />

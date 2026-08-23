@@ -5,6 +5,8 @@ import { Check, FileSignature } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
@@ -24,6 +26,8 @@ import { useTheme } from "@/theme/use-theme";
 export function AgreementAcceptanceView({ propertyName }: { propertyName: string }) {
   const { colors, type } = useTheme();
   const toast = useToast();
+  // Accept and decline are one-tap operations — a refusal has no field to blame.
+  const opErrors = useFormErrors<never>();
   const agreementQuery = useGetMyAgreementQuery();
   const [acceptAgreement, acceptState] = useAcceptMyAgreementMutation();
   const [declineAgreement, declineState] = useDeclineMyAgreementMutation();
@@ -37,7 +41,7 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
       await acceptAgreement().unwrap();
       toast.success("Agreement accepted. Welcome home!");
     } catch {
-      toast.error("Could not record your acceptance. Please try again.");
+      opErrors.failFromServer("Could not record your acceptance. Please try again.");
     }
   }
 
@@ -47,7 +51,7 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
       await declineAgreement().unwrap();
       toast.success("Agreement declined. The tenancy was cancelled.");
     } catch {
-      toast.error("Could not decline the agreement. Please try again.");
+      opErrors.failFromServer("Could not decline the agreement. Please try again.");
     }
   }
 
@@ -58,8 +62,7 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
   if (!agreement) {
     return (
       <EmptyState
-        icon={FileSignature}
-        eyebrow="Agreement"
+        icon={FileSignature}
         title="Agreement unavailable"
         description="Your tenancy is awaiting its agreement. Ask the property owner to re-check the onboarding."
       />

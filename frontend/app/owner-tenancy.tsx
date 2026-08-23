@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useLocalSearchParams } from "expo-router";
+import { AlertModal } from "@/components/alert-modal";
+import { ConfirmDialog } from "@/features/owner/owner-ui";
+import { useToast } from "@/components/toast";
+import { useFormErrors } from "@/features/forms/use-form-errors";
+import { useCancelPendingTenancyMutation } from "@/store/services/compliance-api";
+import { errorMessage } from "@/features/forms/server-error";
 import { ActivityIndicator, Text, View } from "react-native";
 import { ArrowLeft, ArrowLeftRight, Bell, FileSignature, History, Lock, LogOut, UserMinus, UserPlus, Users, UsersRound } from "lucide-react-native";
 
@@ -41,7 +48,18 @@ export default function OwnerTenancyWorkspaceScreen() {
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [upcomingOpen, setUpcomingOpen] = useState(false);
+  // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
+  // row is about the stays listed in this sheet — not the exit REQUESTS screen,
+  // which is a different queue.
+  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
+  const [upcomingOpen, setUpcomingOpen] = useState(openParam === "upcoming-exits");
+  // Withdrawing a stay the tenant never accepted. Held here rather than in the
+  // card so one dialog serves the whole list.
+  const [pendingRemoval, setPendingRemoval] = useState<TenancySummary | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [cancelPendingTenancy] = useCancelPendingTenancyMutation();
+  const removeErrors = useFormErrors<never>();
+  const toast = useToast();
   const [activePage, setActivePage] = useState(0);
   const [pastPage, setPastPage] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
@@ -62,7 +80,7 @@ export default function OwnerTenancyWorkspaceScreen() {
   // and says why. Property stays is a panel already on screen, so it explains
   // inside instead.
   const { canManage, canView } = usePropertyPermissions(selectedProperty?.id);
-  const guard = useScreenAccessGuard(selectedProperty?.id);
+  const { dialog: accessDialog, guard } = useScreenAccessGuard(selectedProperty?.id);
 
   const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const activeTenanciesQuery = useListActivePropertyTenanciesQuery(
@@ -157,8 +175,7 @@ export default function OwnerTenancyWorkspaceScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={UsersRound}
-          eyebrow="Property required"
+          icon={UsersRound}
           title="No active property selected"
           description="Go to Home and choose the property whose tenancies you want to manage."
         />
@@ -181,7 +198,7 @@ export default function OwnerTenancyWorkspaceScreen() {
           </Card>
 
           {tenancySnapshot ? (
-            <Section eyebrow="Tenancy" title="Tenancy snapshot">
+            <Section title="Tenancy snapshot">
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <SnapshotTile
                   icon={Users}
@@ -213,7 +230,7 @@ export default function OwnerTenancyWorkspaceScreen() {
             <SkeletonTiles count={2} />
           )}
 
-          <Section eyebrow="Actions" title="Tenancy tools">
+          <Section title="Tenancy tools">
             <Card>
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <TenancyToolBox
@@ -271,7 +288,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               when they move out. They were only under Property because that is
               where they are configured, which is where the owner does not look
               for them. */}
-          <Section eyebrow="Setup" title="Tenancy rules">
+          <Section title="Tenancy rules">
             <ActionCard
               icon={FileSignature}
               title="Tenancy agreement"
@@ -286,13 +303,12 @@ export default function OwnerTenancyWorkspaceScreen() {
             />
           </Section>
 
-          <Section eyebrow="Tenancies" title="Property stays">
+          <Section title="Property stays">
             {!canView("TENANCIES") ? (
               // A panel, not a destination — so it explains rather than refusing
               // to open something the manager is already looking at.
               <EmptyState
-                icon={Lock}
-                eyebrow="No access"
+                icon={Lock}
                 title="You cannot view tenancies"
                 description="The property owner has not given you access to the stay list. Ask them if you need it."
               />
@@ -306,8 +322,7 @@ export default function OwnerTenancyWorkspaceScreen() {
 
               {isError ? (
                 <EmptyState
-                  icon={UsersRound}
-                  eyebrow="Unavailable"
+                  icon={UsersRound}
                   title="Could not load tenancies"
                   description="Refresh the screen and try again."
                 />
@@ -315,8 +330,7 @@ export default function OwnerTenancyWorkspaceScreen() {
 
               {!isLoading && !isError && visiblePage?.items.length === 0 ? (
                 <EmptyState
-                  icon={UsersRound}
-                  eyebrow={committedQuery ? "No matches" : "No active stay"}
+                  icon={UsersRound}
                   title={committedQuery ? "No tenancies found" : "No active tenancies"}
                   description={
                     committedQuery
@@ -335,6 +349,8 @@ export default function OwnerTenancyWorkspaceScreen() {
                     ending={false}
                     onEndTenancy={() => router.push({ pathname: "/owner-end-tenancy", params: { tenancyId: tenancy.id } })}
                     onOpen={() => openActiveTenancy(tenancy)}
+                    onRemove={() => setPendingRemoval(tenancy)}
+                    removing={removingId === tenancy.id}
                     roomLabel={roomLabel}
                     tenancy={tenancy}
                   />
@@ -358,6 +374,36 @@ export default function OwnerTenancyWorkspaceScreen() {
 
         </>
       ) : null}
+      {accessDialog}
+      {pendingRemoval ? (
+        <ConfirmDialog
+          confirmLabel="Remove"
+          destructive
+          message={`Remove ${pendingRemoval.tenantName?.trim() || "this tenancy"}? The bed is freed and the agreement is cancelled. Nothing has been billed, so there is nothing to settle.`}
+          onCancel={() => setPendingRemoval(null)}
+          onConfirm={() => {
+            const target = pendingRemoval;
+            setPendingRemoval(null);
+            setRemovingId(target.id);
+            void (async () => {
+              try {
+                await cancelPendingTenancy({ tenancyId: target.id }).unwrap();
+                toast.success(`${target.tenantName?.trim() || "Tenancy"} removed.`);
+              } catch (caught) {
+                removeErrors.failFromServer(
+                  errorMessage(caught) || "Could not remove the tenancy. It may already have been accepted.",
+                );
+              } finally {
+                setRemovingId(null);
+              }
+            })();
+          }}
+          title="Remove this tenancy?"
+        />
+      ) : null}
+      {removeErrors.serverError ? (
+        <AlertModal message={removeErrors.serverError} onClose={removeErrors.dismissServerError} />
+      ) : null}
     </ScreenScrollView>
 
     {historyOpen ? (
@@ -366,8 +412,7 @@ export default function OwnerTenancyWorkspaceScreen() {
 
         {!pastTenanciesQuery.isFetching && (pastTenancies?.items.length ?? 0) === 0 ? (
           <EmptyState
-            icon={History}
-            eyebrow="No history"
+            icon={History}
             title="No past tenancies"
             description="Completed and inactive tenancies appear here after a stay ends."
           />
@@ -398,7 +443,11 @@ export default function OwnerTenancyWorkspaceScreen() {
     {upcomingOpen ? (
       <SheetShell onClose={() => setUpcomingOpen(false)} title="Upcoming exits">
         {upcomingExits.length === 0 ? (
-          <NothingUpcomingExits />
+          <EmptyState
+            description="No stay is due to end in the next seven days."
+            icon={LogOut}
+            title="All clear"
+          />
         ) : (
           upcomingExits.map((tenancy) => (
             <ActiveTenancyCard
@@ -424,50 +473,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   );
 }
 
-/**
- * Mirrors the upcoming-notices empty state: centred in the space the list would
- * have filled, bordered glyph, "All clear". Kept visually identical because the
- * two answer the same question in the same shape — what is coming, and nothing
- * is.
- */
-function NothingUpcomingExits() {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        gap: spacing.md,
-        justifyContent: "center",
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.xxxl,
-      }}
-    >
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderCurve: "continuous",
-          borderRadius: 18,
-          borderWidth: 1,
-          height: 58,
-          justifyContent: "center",
-          width: 58,
-        }}
-      >
-        <LogOut color={colors.ink} size={26} strokeWidth={2} />
-      </View>
-      <View style={{ alignItems: "center", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21 }}>
-          All clear
-        </Text>
-        <Text style={[type.body, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
-          No stay is due to end in the next seven days.
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 function TenancyToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; icon: typeof UserPlus; label: string; onPress: () => void }) {
   const { colors, fonts } = useTheme();

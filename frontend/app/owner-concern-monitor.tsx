@@ -52,7 +52,7 @@ export default function OwnerConcernMonitorScreen() {
       />
 
       {!propertyId ? (
-        <EmptyState icon={AlertCircle} eyebrow="Property required" title="No property selected" description="Open this screen from a selected owner property." />
+        <EmptyState icon={AlertCircle} title="No property selected" description="Open this screen from a selected owner property." />
       ) : null}
 
       {propertyId ? (
@@ -81,8 +81,7 @@ export default function OwnerConcernMonitorScreen() {
               </View>
             ) : (
               <EmptyState
-                icon={Activity}
-                eyebrow="Monitor"
+                icon={Activity}
                 title="No concerns being monitored"
                 description="Assigned active concerns and resolved concerns in the reopen window will appear here."
               />

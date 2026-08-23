@@ -80,8 +80,7 @@ export default function OwnerPaymentHistoryScreen() {
 
       {!property ? (
         <EmptyState
-          icon={ReceiptText}
-          eyebrow="Property required"
+          icon={ReceiptText}
           title="No property selected"
           description="Choose an active property from Home before viewing payment history."
         />
@@ -107,13 +106,12 @@ export default function OwnerPaymentHistoryScreen() {
             <HistoryMetric label="Unpaid" value={String(unpaidCount)} />
           </View>
 
-          <Section eyebrow={monthLabel(month)} title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
+          <Section title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
             {cyclesQuery.isFetching && visible.length === 0 ? <SkeletonList rows={4} /> : null}
 
             {!cyclesQuery.isFetching && visible.length === 0 ? (
               <EmptyState
-                icon={ReceiptText}
-                eyebrow="No history"
+                icon={ReceiptText}
                 title="No payment history found"
                 description={
                   ordered.length === 0

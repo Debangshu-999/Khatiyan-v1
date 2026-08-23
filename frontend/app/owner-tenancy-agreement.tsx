@@ -2,15 +2,20 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Check, ChevronRight, Eye, FileSignature, Info, Plus, SlidersHorizontal, Trash2, X } from "lucide-react-native";
+import { Check, Eye, FileSignature, Info, Plus, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { StatusIcon } from "@/components/status-icon";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
@@ -25,7 +30,7 @@ import {
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { ActionButton, ChoiceButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   NOTICE_PERIOD_LABELS,
@@ -77,6 +82,9 @@ export default function OwnerTenancyAgreementScreen() {
   const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  // A clause edited down to blank is a problem with a card on screen, so it is
+  // named against that card; a refused save gets the modal.
+  const form = useFormErrors<`clause-${number}`>();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [addClauseOpen, setAddClauseOpen] = useState(false);
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -88,6 +96,9 @@ export default function OwnerTenancyAgreementScreen() {
   // Damage schedule + move-out checklist are property exit policies now; the
   // preview reads them so it matches the assembled agreement the tenant sees.
   const exitPoliciesQuery = useGetPropertyExitPoliciesQuery(propertyId, { skip: !propertyId });
+  // Read once for the damage-schedule tile: an unconfigured schedule is a
+  // state the owner has to SEE, not an absence that hides the tile.
+  const damageScheduleCount = exitPoliciesQuery.data?.damageCharges.length ?? 0;
   const [saveSettings, saveState] = useUpdatePropertyAgreementSettingsMutation();
 
   // Editable draft, initialized from the server copy once it arrives.
@@ -184,9 +195,13 @@ export default function OwnerTenancyAgreementScreen() {
     // Clauses are created through the add-clause modal (never empty), but an
     // existing card can still be edited down to blank — block the save and say
     // which one, instead of silently dropping it.
-    const invalidIndex = customClauses.findIndex((clause) => !clause.heading.trim() || !clause.body.trim());
-    if (invalidIndex >= 0) {
-      toast.error(`Clause ${invalidIndex + 1} needs both a heading and a body.`);
+    const blanks: Partial<Record<`clause-${number}`, string>> = {};
+    customClauses.forEach((clause, index) => {
+      if (!clause.heading.trim() || !clause.body.trim()) {
+        blanks[`clause-${index}`] = "This clause needs both a heading and a body.";
+      }
+    });
+    if (!form.validate(blanks)) {
       return;
     }
     const trimmedCustoms = customClauses.map((clause) => ({
@@ -205,8 +220,8 @@ export default function OwnerTenancyAgreementScreen() {
       setBaseline(stableClauseKey(ordered));
       setNeedsCleanup(false);
       toast.success("Agreement settings saved.");
-    } catch {
-      toast.error("Could not save the agreement settings.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught) || "Could not save the agreement settings.");
     }
   }
 
@@ -246,8 +261,7 @@ export default function OwnerTenancyAgreementScreen() {
 
       {!property ? (
         <EmptyState
-          icon={FileSignature}
-          eyebrow="Property required"
+          icon={FileSignature}
           title="No property selected"
           description="Choose an active property from Home before managing its tenancy agreement."
         />
@@ -259,43 +273,89 @@ export default function OwnerTenancyAgreementScreen() {
       ) : (
         <>
 
-          <Section eyebrow="Locked" title="Rent & property policy">
+          <Section title="Rent & property policy">
             <Card>
+              {/* Rent and the damage schedule sit apart from the figures below:
+                  neither has a value of its own. Rent follows whichever room the
+                  tenant is put in, and the schedule lives on the exit policies.
+                  As rows of the same table they both read as missing numbers. */}
+              <PolicyTile
+                label="Rent"
+                value="From the room chosen at onboarding, payable each billing cycle."
+              />
+              <PolicyTile
+                label="Damage schedule"
+                value={
+                  damageScheduleCount > 0
+                    ? `As configured in exit policies — ${damageScheduleCount} item${damageScheduleCount === 1 ? "" : "s"}.`
+                    : "Not configured. Any damage charge must be evidenced at move-out."
+                }
+                warn={damageScheduleCount === 0}
+              />
+
+              {/* One row per value, not a paragraph. Each of these is a separate
+                  figure the owner may want to check against their property
+                  settings, and a sentence running them together forces a re-read
+                  to find the one being looked for. */}
+              <View style={{ gap: spacing.xs }}>
+                <PolicyRow
+                  label="Security deposit"
+                  value={property ? rupeesLabel(property.standardDepositPaise ?? 0) : "—"}
+                />
+                <PolicyRow
+                  label="Notice period"
+                  value={property ? NOTICE_PERIOD_LABELS[property.noticePeriod] : "—"}
+                />
+                <PolicyRow
+                  label="Rent grace days"
+                  value={property ? `${property.rentGraceDays} day${property.rentGraceDays === 1 ? "" : "s"}` : "—"}
+                />
+                <PolicyRow
+                  label="Late fee"
+                  value={
+                    property
+                      ? (property.rentLateFeePerDayPaise ?? 0) > 0
+                        ? `${rupeesLabel(property.rentLateFeePerDayPaise ?? 0)} per day`
+                        : "None"
+                      : "—"
+                  }
+                />
+              </View>
+
+              <View style={{ backgroundColor: colors.border, height: 1, opacity: 0.7 }} />
+
               <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-                <Info color={colors.muted} size={15} strokeWidth={2.2} style={{ marginTop: 2 }} />
-                <Text style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 }]}>
-                  Rent comes from the room chosen at onboarding, the deposit from this property's standard deposit
-                  {property ? ` (${rupeesLabel(property.standardDepositPaise ?? 0)})` : ""}, and the notice period,
-                  grace days and late fee from your property policy. The damage schedule and move-out checklist come
-                  from the property's exit policies. Edit those in the property settings — they are locked inside every
-                  agreement for uniformity.
+                <Info color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 2 }} />
+                <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]}>
+                  Edit these values in Property settings, they are locked inside every agreement uniformly.
                 </Text>
               </View>
             </Card>
           </Section>
 
-          <Section eyebrow="From exit policies" title="Damage & move-out">
+          <Section title="Damage & move-out">
             <ExitPolicyCard
+              body="No damage schedule configured — any damage charge must be evidenced at move-out."
               heading="Damage charges"
-              body={
-                (exitPoliciesQuery.data?.damageCharges.length ?? 0) > 0
-                  ? `${exitPoliciesQuery.data?.damageCharges.length} item${(exitPoliciesQuery.data?.damageCharges.length ?? 0) === 1 ? "" : "s"} in the property's damage schedule: ${exitPoliciesQuery.data?.damageCharges.map((item) => `${item.name} (${rupeesLabel(item.chargePaise)})`).join(", ")}.`
-                  : "No damage schedule configured — any damage charge must be evidenced at move-out."
-              }
+              // The schedule exactly as exit policies holds it. Flattened into a
+              // sentence, a six-item schedule became an unreadable run of names
+              // and figures, and the one item being looked for could only be
+              // found by reading all of them.
+              items={(exitPoliciesQuery.data?.damageCharges ?? []).map(
+                (item) => `${item.name} — ${rupeesLabel(item.chargePaise)}`,
+              )}
               onConfigure={() => router.push("/owner-exit-policies")}
             />
             <ExitPolicyCard
+              body="No move-out checklist configured."
+              caption="Verified before the deposit is settled."
               heading="Move-out checklist"
-              body={
-                (exitPoliciesQuery.data?.exitChecklist.length ?? 0) > 0
-                  ? `Verified before the deposit is settled: ${exitPoliciesQuery.data?.exitChecklist.join(", ")}.`
-                  : "No move-out checklist configured."
-              }
+              items={exitPoliciesQuery.data?.exitChecklist ?? []}
               onConfigure={() => router.push("/owner-exit-policies")}
             />
           </Section>
 
-          <Section eyebrow="Uniform per property" title="Agreement rules">
+          <Section title="Agreement rules">
             {systemClauses.map((clause) => (
               <SystemRuleEditor
                 key={clause.systemType ?? clause.heading}
@@ -305,7 +365,7 @@ export default function OwnerTenancyAgreementScreen() {
             ))}
           </Section>
 
-          <Section eyebrow="Your own terms" title="House rules & other clauses">
+          <Section title="House rules & other clauses">
             {customClauses.map((clause, index) => (
               <Card key={`custom-${index}`}>
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -321,16 +381,30 @@ export default function OwnerTenancyAgreementScreen() {
                   </AnimatedPressable>
                 </View>
                 <FormInput
+                  error={clause.heading.trim() ? undefined : form.errors[`clause-${index}`]}
                   label="Clause Heading"
-                  onChangeText={(text) => updateCustomClause(index, { heading: text })}
+                  onChangeText={(text) => {
+                    updateCustomClause(index, { heading: text });
+                    if (text.trim() && clause.body.trim()) {
+                      form.clearField(`clause-${index}`);
+                    }
+                  }}
                   placeholder="e.g. Liability, Guests, Parking"
+                  required
                   value={clause.heading}
                 />
                 <FormInput
+                  error={clause.body.trim() ? undefined : form.errors[`clause-${index}`]}
                   label="Clause Body"
                   multiline
-                  onChangeText={(text) => updateCustomClause(index, { body: text })}
+                  onChangeText={(text) => {
+                    updateCustomClause(index, { body: text });
+                    if (text.trim() && clause.heading.trim()) {
+                      form.clearField(`clause-${index}`);
+                    }
+                  }}
                   placeholder="Write the rule exactly as the tenant should read it"
+                  required
                   value={clause.body}
                 />
               </Card>
@@ -339,6 +413,8 @@ export default function OwnerTenancyAgreementScreen() {
         </>
       )}
       </ScreenScrollView>
+
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
 
       {/* Fixed footer, matching register-property: the three actions stay
           reachable no matter how long the clause list scrolls.
@@ -365,7 +441,7 @@ export default function OwnerTenancyAgreementScreen() {
           </View>
           <View style={{ flexDirection: "row" }}>
             <ActionButton
-              disabled={readOnly || saveState.isLoading || !dirty}
+              disabled={readOnly || saveState.isLoading || !dirty || form.blocked}
               label={
                 saveState.isLoading
                   ? "Saving…"
@@ -411,11 +487,14 @@ function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, body: str
   const { colors, fonts, type } = useTheme();
   const [heading, setHeading] = useState("");
   const [body, setBody] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"body" | "heading">();
 
   function submit() {
-    if (!heading.trim() || !body.trim()) {
-      setError("Fill in both the heading and the body to add the clause.");
+    const cleared = form.validate({
+      ...(heading.trim() ? {} : { heading: "Give the clause a heading." }),
+      ...(body.trim() ? {} : { body: "Write the clause body." }),
+    });
+    if (!cleared) {
       return;
     }
     onAdd(heading.trim(), body.trim());
@@ -453,30 +532,29 @@ function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, body: str
               style={{ flexShrink: 1 }}
             >
                 <FormInput
+                  error={form.errors.heading}
                   label="Clause Heading"
                   onChangeText={(text) => {
                     setHeading(text);
-                    setError(null);
+                    form.clearField("heading");
                   }}
                   placeholder="e.g. Liability, Guests, Parking"
+                  required
                   value={heading}
                 />
                 <FormInput
+                  error={form.errors.body}
                   label="Clause Body"
                   multiline
                   onChangeText={(text) => {
                     setBody(text);
-                    setError(null);
+                    form.clearField("body");
                   }}
                   placeholder="Write the rule exactly as the tenant should read it"
+                  required
                   value={body}
                 />
-                {error ? (
-                  <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
-                    {error}
-                  </Text>
-                ) : null}
-                <ActionButton icon={Plus} label="Add clause" onPress={submit} />
+                <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={submit} />
             </ScrollView>
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
           </View>
@@ -651,23 +729,63 @@ function AgreementPreviewSheet({ clauses, onClose }: { clauses: AgreementClause[
 // jump to the exit-policies screen where the values are actually edited.
 function ExitPolicyCard({
   body,
+  caption,
   heading,
+  items,
   onConfigure,
 }: {
+  /** Shown when {@code items} is empty — what having nothing configured means. */
   body: string;
+  /** Optional line above the list, for what the list is FOR. */
+  caption?: string;
   heading: string;
+  /** The configured entries, one per row. Empty falls back to {@code body}. */
+  items?: string[];
   onConfigure: () => void;
 }) {
   const { colors, type } = useTheme();
   const readOnly = useAgreementReadOnly();
+  const configured = items ?? [];
   return (
     <Card>
-      <Text style={[type.bodyStrong, { color: colors.ink }]}>
-        {heading}
-      </Text>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-        {body}
-      </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <Text style={[type.bodyStrong, { color: colors.ink }]}>
+          {heading}
+        </Text>
+        {configured.length > 0 ? (
+          <Text style={[type.caption, { color: colors.kicker }]}>
+            {configured.length} item{configured.length === 1 ? "" : "s"}
+          </Text>
+        ) : null}
+      </View>
+      {configured.length === 0 ? (
+        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          {body}
+        </Text>
+      ) : (
+        <View style={{ gap: spacing.xs }}>
+          {caption ? (
+            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              {caption}
+            </Text>
+          ) : null}
+          <View style={{ borderColor: colors.border, borderRadius: 12, borderWidth: 1, overflow: "hidden" }}>
+            {configured.map((entry, index) => (
+              <View key={`${entry}-${index}`}>
+                {index > 0 ? <View style={{ backgroundColor: colors.border, height: 1, opacity: 0.7 }} /> : null}
+                <Text
+                  style={[
+                    type.body,
+                    { color: colors.ink, fontSize: 13.5, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+                  ]}
+                >
+                  {entry}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
       <View style={{ flexDirection: "row" }}>
         <ActionButton disabled={readOnly} icon={SlidersHorizontal} label="Configure" onPress={onConfigure} variant="secondary" />
       </View>
@@ -924,13 +1042,15 @@ function PrematureExitSummary() {
         <Text style={[type.eyebrow, { color: colors.kicker }]}>
           Premature exit
         </Text>
-        <Text selectable style={[type.body, { color: policy ? colors.ink : colors.kicker, lineHeight: 20 }]}>
+        <Text selectable style={[type.policy, { color: policy ? colors.ink : colors.kicker }]}>
           {policy || "Not set — nothing is shown to the tenant for leaving without notice."}
         </Text>
       </View>
 
       <ActionButton
-        icon={ChevronRight}
+        // The same icon the damage-schedule and checklist cards use — all three
+        // go to the same screen and do the same thing.
+        icon={SlidersHorizontal}
         label={policy ? "Configure premature exit" : "Set premature exit policy"}
         onPress={() => router.push("/owner-exit-policies")}
         variant="secondary"
@@ -955,51 +1075,41 @@ function DeductionsEditor({ clause, onChange }: EditorProps) {
     setDraft("");
   }
 
+  function toggle(value: string) {
+    onChange((current) =>
+      withDeductionCategories(
+        current,
+        selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value],
+      ),
+    );
+  }
+
   return (
     <View style={{ gap: spacing.sm }}>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {DEDUCTION_OPTIONS.map((option) => (
-          <ChoiceButton
-            active={selected.includes(option.value)}
+      {/* A checked list, not a wrap of pills. These are permissions over
+          someone's deposit, read down as a list of what may and may not be
+          taken — a pill row states only what IS selected, so an unticked
+          category and a category nobody considered look identical. */}
+      <View style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, overflow: "hidden" }}>
+        {DEDUCTION_OPTIONS.map((option, index) => (
+          <DeductionRow
+            checked={selected.includes(option.value)}
+            first={index === 0}
             key={option.value}
             label={option.label}
-            onPress={() =>
-              onChange((current) =>
-                withDeductionCategories(
-                  current,
-                  selected.includes(option.value)
-                    ? selected.filter((value) => value !== option.value)
-                    : [...selected, option.value],
-                ),
-              )
-            }
+            onToggle={() => toggle(option.value)}
           />
         ))}
         {customs.map((value) => (
-          <View
+          <DeductionRow
+            checked
             key={value}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderRadius: 999,
-              flexDirection: "row",
-              gap: spacing.xs,
-              paddingHorizontal: spacing.md,
-              paddingVertical: 9,
-            }}
-          >
-            <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13, }}>
-              {value}
-            </Text>
-            <AnimatedPressable
-              accessibilityLabel={`Remove ${value}`}
-              onPress={() =>
-                onChange((current) => withDeductionCategories(current, selected.filter((item) => item !== value)))
-              }
-            >
-              <X color={colors.primary} size={14} strokeWidth={2.6} />
-            </AnimatedPressable>
-          </View>
+            label={value}
+            onRemove={() =>
+              onChange((current) => withDeductionCategories(current, selected.filter((item) => item !== value)))
+            }
+            onToggle={() => toggle(value)}
+          />
         ))}
       </View>
       <FormInput
@@ -1009,6 +1119,129 @@ function DeductionsEditor({ clause, onChange }: EditorProps) {
         value={draft}
       />
       <ActionButton disabled={readOnly} icon={Plus} label="Add deduction type" onPress={addCustom} variant="secondary" />
+    </View>
+  );
+}
+
+/**
+ * A property-derived term with no figure of its own — rent, the damage
+ * schedule. Same tile for both, so they read as one class of thing distinct
+ * from the numbers listed under them.
+ *
+ * <p>{@code warn} is for a term that is not configured yet. It stays visible
+ * and says so, rather than vanishing: an owner with no damage schedule is
+ * exactly the owner who needs telling that there isn't one.
+ */
+function PolicyTile({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  const { colors, type } = useTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: warn ? colors.warningSoft : colors.surfaceSunken,
+        borderCurve: "continuous",
+        borderRadius: 14,
+        gap: 3,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {warn ? <StatusIcon size={15} tone="warning" /> : null}
+        <Text style={[type.eyebrow, { color: warn ? colors.warningText : colors.kicker }]}>
+          {label}
+        </Text>
+      </View>
+      <Text style={[type.policy, { color: colors.ink }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/** One property-derived value, label left, value right. */
+function PolicyRow({ label, value }: { label: string; value: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+      <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+        {label}
+      </Text>
+      <Text style={[type.caption, { color: colors.ink, flexShrink: 1, fontWeight: "800", textAlign: "right" }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * One permitted-deduction category as a tickable row.
+ *
+ * <p>A custom category also carries a remove control: unticking it only
+ * clears the permission, while the row itself was typed by the owner and has
+ * to be deletable or the list can only ever grow.
+ */
+function DeductionRow({
+  checked,
+  first,
+  label,
+  onRemove,
+  onToggle,
+}: {
+  checked: boolean;
+  /** Only the first row skips the divider above it. */
+  first?: boolean;
+  label: string;
+  onRemove?: () => void;
+  onToggle: () => void;
+}) {
+  const { colors, type } = useTheme();
+  const readOnly = useAgreementReadOnly();
+
+  return (
+    <View>
+      {first ? null : <View style={{ backgroundColor: colors.border, height: 1, opacity: 0.7 }} />}
+      <AnimatedPressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked, disabled: readOnly }}
+        onPress={readOnly ? undefined : onToggle}
+        style={{
+          alignItems: "center",
+          flexDirection: "row",
+          gap: spacing.sm,
+          opacity: readOnly ? 0.6 : 1,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm + 2,
+        }}
+        // Ticking several categories in a row must not drop taps.
+        tapLockMs={0}
+      >
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: checked ? colors.primary : "transparent",
+            borderColor: checked ? colors.primary : colors.borderStrong,
+            borderRadius: 6,
+            borderWidth: 1.5,
+            height: 20,
+            justifyContent: "center",
+            width: 20,
+          }}
+        >
+          {checked ? <Check color={colors.onPrimary} size={13} strokeWidth={3} /> : null}
+        </View>
+        <Text style={[type.body, { color: colors.ink, flex: 1, fontSize: 14 }]}>
+          {label}
+        </Text>
+        {onRemove ? (
+          <AnimatedPressable
+            accessibilityLabel={`Remove ${label}`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={readOnly ? undefined : onRemove}
+          >
+            <X color={colors.muted} size={15} strokeWidth={2.6} />
+          </AnimatedPressable>
+        ) : null}
+      </AnimatedPressable>
     </View>
   );
 }

@@ -83,4 +83,9 @@ public class ComplianceModule {
     public void declineMyAgreement(UUID tenantUserId) {
         tenancyAgreementService.decline(tenantUserId);
     }
+
+    /** Owner/manager withdraws a tenancy the tenant never accepted. */
+    public void cancelPendingTenancy(UUID actorUserId, UUID tenancyId, String reason) {
+        tenancyAgreementService.cancelPendingAsManager(actorUserId, tenancyId, reason);
+    }
 }

@@ -10,6 +10,9 @@ import {
   useCreateLocalPlaceSubcategoryMutation,
   type LocalPlaceCategory,
 } from "@/store/services/discovery-api";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -61,6 +64,8 @@ export function CategoryPickerModal({
     setExpanded((current) => ({ ...current, [categoryId]: !current[categoryId] }));
   }
 
+  // Server refusal — nothing on screen to correct, so it interrupts.
+  const opErrors = useFormErrors<never>();
   async function addSubcategory(categoryId: string) {
     const trimmed = subName.trim();
     if (!trimmed || !propertyId) {
@@ -71,8 +76,8 @@ export function CategoryPickerModal({
       onToggleSubcategory?.(created.id);
       setSubName("");
       setAddingSubFor(null);
-    } catch {
-      toast.error("Could not add the subcategory.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -86,8 +91,8 @@ export function CategoryPickerModal({
       setExpanded((current) => ({ ...current, [created.id]: true }));
       setCategoryName("");
       setAddingCategory(false);
-    } catch {
-      toast.error("Could not add the category.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -285,6 +290,7 @@ export function CategoryPickerModal({
           ) : null}
         </View>
       </View>
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </Modal>
   );
 }

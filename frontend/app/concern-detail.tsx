@@ -107,8 +107,7 @@ export default function ConcernDetailScreen() {
       ) : null}
       {!loading && !concern ? (
         <EmptyState
-          icon={ImageOff}
-          eyebrow="Concern"
+          icon={ImageOff}
           title="Concern not found"
           description="Go back to your concerns and open it again."
         />
@@ -465,7 +464,7 @@ function ReopenConcernModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View
           style={{

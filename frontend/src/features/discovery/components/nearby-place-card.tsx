@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { openDialer } from "@/lib/dial";
 import { Linking, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Info, MapPin, Navigation, Pencil, Phone, Star, Trash2 } from "lucide-react-native";
@@ -32,11 +33,11 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
     void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
   }
 
-  function openDialer() {
+  function callPlace() {
     if (!place.phone) {
       return;
     }
-    void Linking.openURL(`tel:${place.phone.replace(/[^\d+]/g, "")}`);
+    openDialer(place.phone);
   }
 
   return (
@@ -97,7 +98,7 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
               disabled={!place.phone}
               icon={<Phone color={place.phone ? colors.jade : colors.muted} size={13} strokeWidth={2.4} />}
               label={place.phone ? "Call" : "No number"}
-              onPress={openDialer}
+              onPress={callPlace}
               tint={place.phone ? colors.jade : colors.muted}
             />
             <CardButton icon={<MaterialCommunityIcons color={colors.primary} name="directions" size={17} />} label="Directions" onPress={openDirections} tint={colors.primary} />

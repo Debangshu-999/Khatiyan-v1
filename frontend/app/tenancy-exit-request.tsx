@@ -14,6 +14,9 @@ import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
 import { rupeesLabel } from "@/features/compliance/clause-values";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { isRequestActive } from "@/features/tenancy/request-activity";
 import {
@@ -33,7 +36,7 @@ export default function TenancyExitRequestScreen() {
   const tenancy = activeTenancyQuery.data?.tenancy;
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
         eyebrow="Tenancy"
         onBack={() => router.back()}
@@ -46,8 +49,7 @@ export default function TenancyExitRequestScreen() {
         <SkeletonCard />
       ) : !tenancy ? (
         <EmptyState
-          icon={CalendarClock}
-          eyebrow="No active tenancy"
+          icon={CalendarClock}
           title="No current stay"
           description="Exit requests can be raised only from an active tenancy."
         />
@@ -128,8 +130,7 @@ function ServeNoticeForm({ onDone }: { onDone: () => void }) {
   if (!windowQuery.data) {
     return (
       <EmptyState
-        icon={CalendarClock}
-        eyebrow="Unavailable"
+        icon={CalendarClock}
         title="Cannot work out your notice"
         description="We could not load your notice period right now. Please try again shortly."
       />
@@ -162,12 +163,14 @@ function NoticeWindowForm({
   const chosenIso = toISODate(chosenDate);
   const premature = chosenIso < checkoutWindow.earliestCheckoutDate;
 
+  // Server refusal — no field owns it, so it takes a modal.
+  const opErrors = useFormErrors<never>();
   async function submit() {
     try {
       await createExit({ chosenCheckoutDate: chosenIso, reason: reason.trim() || null }).unwrap();
       onDone();
-    } catch {
-      toast.error("Could not raise the exit request. Please try again.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught));
     }
   }
 
@@ -243,6 +246,8 @@ function NoticeWindowForm({
           onPress={() => void submit()}
         />
       </View>
+
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
 
       {pickerOpen ? (
         <CheckoutDatePicker

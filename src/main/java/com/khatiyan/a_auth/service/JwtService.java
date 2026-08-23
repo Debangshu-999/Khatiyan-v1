@@ -19,9 +19,13 @@ import java.util.UUID;
 /**
  * Issues and parses JWT access tokens for authenticated users.
  *
- * <p>Tokens carry the user id, phone, role, and credential version.
- * The credential version lets the auth filter reject older tokens after
- * sensitive changes such as PIN reset or forced logout.
+ * <p>Tokens carry the user id, phone, role, credential version, and a {@code jti}
+ * identifying the single session the token belongs to.
+ *
+ * <p>The credential version rejects EVERY token a user holds after a sensitive
+ * change such as a PIN reset. The {@code jti} is the finer instrument: it names
+ * one token, which is what lets a person end the session on a lost phone without
+ * ending the one they are using to do it.
  */
 @Service
 public class JwtService {
@@ -42,8 +46,17 @@ public class JwtService {
         UUID userId,
         String phone,
         String role,
-        int credentialVersion
+        int credentialVersion,
+        /**
+         * Session id claim. Null for a token issued before sessions existed —
+         * those stay valid until they expire on their own rather than signing
+         * everybody out on deploy, so every reader must tolerate the absence.
+         */
+        UUID sessionId
     ) {}
+
+    /** An issued token and the session identity baked into it. */
+    public record IssuedToken(String token, UUID sessionId, Instant expiresAt) {}
 
     public JwtService(
         @Value("${app.jwt.secret}") String secret,
@@ -53,11 +66,13 @@ public class JwtService {
         this.accessTokenExpiry = Duration.ofMinutes(accessTokenExpiryMinutes);
     }
 
-    public String issue(User user) {
+    public IssuedToken issue(User user) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(accessTokenExpiry);
+        UUID sessionId = UUID.randomUUID();
 
-        return Jwts.builder()
+        String token = Jwts.builder()
+            .id(sessionId.toString())
             .subject(user.getId().toString())
             .claim("phone", user.getPhone())
             .claim("role", user.getRole().name())
@@ -66,6 +81,8 @@ public class JwtService {
             .expiration(Date.from(expiresAt))
             .signWith(key)
             .compact();
+
+        return new IssuedToken(token, sessionId, expiresAt);
     }
 
     public ParsedToken parse(String token) {
@@ -79,12 +96,30 @@ public class JwtService {
             UUID.fromString(claims.getSubject()),
             claims.get("phone", String.class),
             claims.get("role", String.class),
-            claims.get("credentialVersion", Integer.class)
+            claims.get("credentialVersion", Integer.class),
+            parseSessionId(claims.getId())
         );
     }
 
     public long accessTokenExpirySeconds() {
         return accessTokenExpiry.toSeconds();
+    }
+
+    /**
+     * A jti that is missing or not a UUID reads as "no session", not as a broken
+     * token. Tokens minted before this claim existed are still perfectly valid
+     * signatures, and refusing them would sign out everyone on the deploy that
+     * shipped sessions.
+     */
+    private UUID parseSessionId(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(rawId);
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
     }
 
 }

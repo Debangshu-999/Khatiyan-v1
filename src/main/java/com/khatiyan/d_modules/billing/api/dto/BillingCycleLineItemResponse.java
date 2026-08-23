@@ -26,12 +26,23 @@ public record BillingCycleLineItemResponse(
     BillingLineSettlementAction settlementAction,
     boolean systemGenerated,
     UUID createdByUserId,
+    /**
+     * Display name of whoever added the line, when it can be resolved.
+     *
+     * <p>Null on system lines, and null on read paths that do not resolve names
+     * — a caller must treat it as "unknown", never as "nobody".
+     */
+    String createdByName,
     UUID lastAdjustedByUserId,
     int displayOrder,
     Instant createdAt,
     Instant updatedAt
 ) {
     public static BillingCycleLineItemResponse from(BillingCycleLineItem lineItem) {
+        return from(lineItem, null);
+    }
+
+    public static BillingCycleLineItemResponse from(BillingCycleLineItem lineItem, String createdByName) {
         return new BillingCycleLineItemResponse(
             lineItem.getId(),
             lineItem.getBillingCycleId(),
@@ -47,6 +58,7 @@ public record BillingCycleLineItemResponse(
             lineItem.getSettlementAction(),
             lineItem.isSystemGenerated(),
             lineItem.getCreatedByUserId(),
+            createdByName,
             lineItem.getLastAdjustedByUserId(),
             lineItem.getDisplayOrder(),
             lineItem.getCreatedAt(),

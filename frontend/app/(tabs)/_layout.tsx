@@ -2,17 +2,17 @@ import { useEffect, type ReactNode } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, Pressable, Text, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Bell, Building2, Compass, Home, KeyRound, ShieldCheck, UserRound } from "lucide-react-native";
+import { Bell, Building2, Compass, Home, KeyRound, MessageCircle, ShieldCheck, UserRound } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { useScopedUnreadCount } from "@/features/notifications/alert-filters";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
 import { selectHaptic } from "@/lib/haptics";
 import { api } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
+import { useGetChatUnreadCountQuery } from "@/store/services/chat-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
 import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-slice";
 import { clearSession } from "@/store/slices/auth-slice";
@@ -197,12 +197,16 @@ export default function TabLayout() {
     : manageableProperties.length === 1
       ? manageableProperties[0]
       : null;
-  const blockedRoutes = showOwnerTab && !resolvedManagedProperty ? ["discovery", "owner", "notifications"] : [];
+  const blockedRoutes = showOwnerTab && !resolvedManagedProperty ? ["discovery", "owner", "notifications", "chat"] : [];
 
-  // Drives the badge on the Alerts tab. Shares one hook with the notifications
-  // screen so the number on the bell always matches the list behind it.
-  const unreadAlertCount = useScopedUnreadCount({ enabled: Boolean(auth.accessToken) });
-  const hasUnreadAlerts = unreadAlertCount > 0;
+  // Conversations with something unread, counted server-side. Polled slowly:
+  // the tab is a glance, and the thread list refreshes properly when opened.
+  const unreadChats =
+    useGetChatUnreadCountQuery(undefined, {
+      pollingInterval: 20_000,
+      refetchOnFocus: true,
+      skip: !auth.accessToken,
+    }).data?.count ?? 0;
 
   useEffect(() => {
     const status =
@@ -313,6 +317,39 @@ export default function TabLayout() {
           tabBarLabel: "DISCOVER",
           title: "Discovery",
           tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Compass} />,
+        }}
+      />
+      {/* Third for everybody. Tenancy and Owner are each conditional, so
+          anchoring Chat straight after Discovery is what keeps its position
+          fixed whichever workspace the reader is in. */}
+      <Tabs.Screen
+        name="chat"
+        options={{
+          headerShown: false,
+          title: "Chats",
+          tabBarLabel: "CHATS",
+          tabBarIcon: ({ color, focused }) => (
+            <View>
+              <TabIcon color={color} focused={focused} icon={MessageCircle} />
+              {/* A dot rather than a number: the tab says "somebody wrote",
+                  and how many conversations is the list's job to show. */}
+              {unreadChats > 0 ? (
+                <View
+                  style={{
+                    backgroundColor: colors.primary,
+                    borderColor: colors.surface,
+                    borderRadius: 999,
+                    borderWidth: 1.5,
+                    height: 9,
+                    position: "absolute",
+                    right: -2,
+                    top: -1,
+                    width: 9,
+                  }}
+                />
+              ) : null}
+            </View>
+          ),
         }}
       />
       <Tabs.Screen

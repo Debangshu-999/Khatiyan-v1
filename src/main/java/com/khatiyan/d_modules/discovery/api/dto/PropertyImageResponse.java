@@ -9,6 +9,8 @@ public record PropertyImageResponse(
         String url,
         String publicId,
         int sortOrder,
+        /** What the photo is of, or null when the owner did not say. */
+        String caption,
         /** The listing thumbnail. Derived, so the client never computes it. */
         boolean cover
 ) {
@@ -19,6 +21,7 @@ public record PropertyImageResponse(
                 image.getUrl(),
                 image.getPublicId(),
                 image.getSortOrder(),
+                image.getCaption(),
                 image.getSortOrder() == 0);
     }
 }

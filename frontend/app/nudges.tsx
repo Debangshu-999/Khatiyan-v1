@@ -26,7 +26,11 @@ export default function NudgesScreen() {
   const nudges = nudgesQuery.data ?? [];
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView
+      // The nested-screen top position, shared with every other back-button screen.
+      contentContainerStyle={{ paddingTop: 0 }}
+      safeAreaEdges={["top", "bottom"]}
+    >
       <ScreenHeader
         eyebrow="Notifications"
         italicTail="for you."
@@ -40,7 +44,6 @@ export default function NudgesScreen() {
       {nudgesQuery.isError ? (
         <EmptyState
           description="Check your connection, then pull down to try again."
-          eyebrow="Backend unreachable"
           icon={BellRing}
           title="Couldn't load nudges"
         />
@@ -49,7 +52,6 @@ export default function NudgesScreen() {
       {!nudgesQuery.isLoading && !nudgesQuery.isError && nudges.length === 0 ? (
         <EmptyState
           description="When your owner or manager sends you one, it shows up here."
-          eyebrow="Quiet for now"
           icon={BellRing}
           title="No nudges"
         />
@@ -93,7 +95,7 @@ function NudgeRow({ nudge }: { nudge: Nudge }) {
       <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {nudge.senderName ?? "Your property"} · {formatWhen(nudge.sentAt)}
       </Text>
-      <Text style={[type.body, { color: colors.ink }]}>
+      <Text style={[type.quote, { color: colors.ink }]}>
         {nudge.message}
       </Text>
     </View>

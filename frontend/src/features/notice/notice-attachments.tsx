@@ -14,6 +14,8 @@ import { ChevronRight, FileText, Image as ImageIcon, Plus, X } from "lucide-reac
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
+import { AlertModal } from "@/components/alert-modal";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
@@ -84,6 +86,8 @@ export function useNoticeAttachments(
   noticeId?: string | null,
 ) {
   const toast = useToast();
+  // Attachment failures happen mid-operation, so they get a modal.
+  const opErrors = useFormErrors<never>();
   const [items, setItems] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -111,7 +115,7 @@ export function useNoticeAttachments(
     const remaining = MAX_ATTACHMENTS - items.length;
     const accepted = picked.slice(0, remaining);
     if (accepted.length === 0) {
-      toast.show(`A notice can have at most ${MAX_ATTACHMENTS} attachments.`, "error");
+      opErrors.failFromServer(`A notice can have at most ${MAX_ATTACHMENTS} attachments.`);
       return;
     }
 
@@ -175,7 +179,7 @@ export function useNoticeAttachments(
         onChanged?.();
       } catch (error) {
         console.error("Notice attachment removal failed:", error);
-        toast.show("Could not remove the attachment.", "error");
+        opErrors.failFromServer("Could not remove the attachment.");
       }
       return;
     }
@@ -193,7 +197,7 @@ export function useNoticeAttachments(
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      toast.show("Allow photo library access to attach images.", "error");
+      opErrors.failFromServer("Allow photo library access to attach images.");
       return;
     }
 

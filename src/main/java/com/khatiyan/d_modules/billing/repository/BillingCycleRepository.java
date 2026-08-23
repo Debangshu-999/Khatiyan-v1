@@ -124,11 +124,6 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     /** Cycles whose payment window has arrived and which must now freeze. */
     List<BillingCycle> findByStatusAndPeriodStartDateLessThanEqual(BillingCycleStatus status, LocalDate periodStartDate);
 
-    /** The tenancy's still-editable cycle, which carries forward late charges. */
-    Optional<BillingCycle> findFirstByTenancyIdAndStatusOrderByPeriodStartDateAsc(
-            UUID tenancyId,
-            BillingCycleStatus status);
-
     /**
      * Finds unpaid/overdue cycles for which late fee recalculation may be needed.
      */

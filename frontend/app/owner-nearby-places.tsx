@@ -1,11 +1,10 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Compass } from "lucide-react-native";
+import { Compass, MapPin } from "lucide-react-native";
 
-import { ActionCard } from "@/components/action-card";
 import { EmptyState } from "@/components/empty-state";
+import { GradientCtaCard } from "@/components/gradient-cta-card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { NearbyPlacesView } from "@/features/discovery/components/nearby-places-view";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ViewOnlyChip } from "@/features/owner/owner-ui";
@@ -38,7 +37,6 @@ export default function OwnerNearbyPlacesScreen() {
       {!property ? (
         <EmptyState
           icon={Compass}
-          eyebrow="Property required"
           title="No property selected"
           description="Choose an active property from Home to view its nearby places."
         />
@@ -46,19 +44,20 @@ export default function OwnerNearbyPlacesScreen() {
         <>
           <NearbyPlacesView mode="admin" propertyId={property.id} />
 
-          {/* Hidden, not greyed: the whole card exists to open a management
-              screen, so at view-only there is nothing behind it to see. The
-              places themselves are still listed above. */}
+          {/* No section heading: the card states what it is, and "Curate" over a
+              single card was a heading for an audience of one.
+
+              Hidden, not greyed, at view-only: the whole card exists to open a
+              management screen, so there is nothing behind it to see. The places
+              themselves are still listed above. */}
           {canManagePlaces ? (
-          <Section eyebrow="Manage" title="Curate">
-            <ActionCard
-              meta="Owner tools"
-              title="Manage nearby places"
+            <GradientCtaCard
               description="Add, edit or remove the landmarks and services around this property."
+              icon={MapPin}
+              kicker="Owner tools"
               onPress={() => router.push("/owner-local-places")}
-              tone="primary"
+              title="Manage nearby places"
             />
-          </Section>
           ) : null}
         </>
       )}

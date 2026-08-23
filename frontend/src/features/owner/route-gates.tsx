@@ -39,23 +39,28 @@ export const ROUTE_GATES: Record<string, { label: string; resource: ManagerResou
 };
 
 /**
- * Runs {@code open} only if the route is allowed, otherwise explains with a
- * toast. Ungated routes always run.
+ * Runs {@code open} only if the route is allowed, otherwise explains in a modal.
+ * Ungated routes always run.
+ *
+ * <p>Returns the refusal modal alongside the gate; mount {@code dialog} once in
+ * the screen that uses it, or the explanation has nowhere to render.
  */
 export function useRouteGate(propertyId: string | null | undefined) {
-  const guard = useScreenAccessGuard(propertyId);
+  const { dialog, guard } = useScreenAccessGuard(propertyId);
 
-  return useCallback(
+  const gate = useCallback(
     (route: string, open: () => void) => {
       // Match on the path alone. A route carrying params ("/x?id=1") would miss
       // an exact-key lookup and fail OPEN — silently ungating the screen.
-      const gate = ROUTE_GATES[route.split("?")[0]];
-      if (!gate) {
+      const found = ROUTE_GATES[route.split("?")[0]];
+      if (!found) {
         open();
         return;
       }
-      guard(gate.resource, gate.label, open);
+      guard(found.resource, found.label, open);
     },
     [guard],
   );
+
+  return { dialog, gate };
 }

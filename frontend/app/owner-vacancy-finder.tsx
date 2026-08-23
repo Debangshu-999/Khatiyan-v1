@@ -250,8 +250,7 @@ export default function OwnerVacancyFinderScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Building2}
-          eyebrow="Property required"
+          icon={Building2}
           title="No active property selected"
           description="Choose the property whose rooms you want to search from Home."
         />
@@ -348,8 +347,7 @@ export default function OwnerVacancyFinderScreen() {
             <SkeletonCard />
           ) : matchCount === 0 && similarCount === 0 ? (
             <EmptyState
-              icon={Search}
-              eyebrow="No matches"
+              icon={Search}
               title={showUpcoming ? "No active or upcoming vacancies" : "No available rooms"}
               description={
                 showUpcoming
@@ -360,7 +358,7 @@ export default function OwnerVacancyFinderScreen() {
           ) : (
             <>
               {matchCount > 0 ? (
-                <Section eyebrow="Matches your search" title={`${matchCount} room${matchCount === 1 ? "" : "s"}`}>
+                <Section title={`${matchCount} room${matchCount === 1 ? "" : "s"}`}>
                   {nowMatches.map((room) => (
                     <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
                   ))}
@@ -379,7 +377,7 @@ export default function OwnerVacancyFinderScreen() {
                       </Text>
                     </View>
                   ) : null}
-                <Section eyebrow="Other vacancies" title={`${similarCount} other room${similarCount === 1 ? "" : "s"}`}>
+                <Section title={`${similarCount} other room${similarCount === 1 ? "" : "s"}`}>
                   {nowSimilar.map((room) => (
                     <RoomResultCard key={room.id} highlight={Boolean(floorQuery) && (room.floor ?? "") === floorQuery} room={room} />
                   ))}

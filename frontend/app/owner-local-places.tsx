@@ -8,6 +8,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
@@ -18,6 +19,11 @@ import { NearbyPlaceCard } from "@/features/discovery/components/nearby-place-ca
 import { LocationPinCard } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
 import { SingleImageField } from "@/features/uploads/single-image-field";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, FormInput, IconButton,
   ViewOnlyChip,
 } from "@/features/owner/owner-ui";
@@ -37,6 +43,8 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerLocalPlacesScreen() {
+  // Deleting is refused by the server; there is no field to correct.
+  const removeErrors = useFormErrors<never>();
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
@@ -63,14 +71,23 @@ export default function OwnerLocalPlacesScreen() {
     try {
       await deletePlace({ placeId: target.id, propertyId }).unwrap();
       toast.success(`${target.name} removed.`);
-    } catch {
-      toast.error("Could not remove the place.");
+    } catch (caught) {
+      removeErrors.failFromServer(errorMessage(caught) || "Could not remove the place.");
     }
   }
 
   return (
     <>
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+      <ScreenScrollView
+        // No "bottom" edge while the add button is pinned: PinnedFooter carries
+        // the safe-area inset itself, and both would pad for the navigation bar
+        // twice.
+        safeAreaEdges={property ? ["top"] : ["top", "bottom"]}
+        contentContainerStyle={{
+          paddingBottom: property ? PINNED_FOOTER_CLEARANCE : undefined,
+          paddingTop: 0,
+        }}
+      >
         <ScreenHeader
         onBack={() => router.back()}
         badge={!canManagePlaces ? <ViewOnlyChip /> : null}
@@ -86,26 +103,20 @@ export default function OwnerLocalPlacesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={Compass}
-            eyebrow="Property required"
+            icon={Compass}
             title="No property selected"
             description="Choose an active property from Home before curating nearby places."
           />
         ) : (
           <>
-            <View style={{ flexDirection: "row" }}>
-              <ActionButton disabled={!canManagePlaces} icon={Plus} label="Add nearby place" onPress={() => setEditing("new")} />
-            </View>
-
-            <Section eyebrow={`${places.length} place${places.length === 1 ? "" : "s"}`} title="Curated list">
+            <Section title="Curated list">
               {placesQuery.isFetching && places.length === 0 ? (
                 <SkeletonList />
               ) : null}
 
               {!placesQuery.isFetching && places.length === 0 ? (
                 <EmptyState
-                  icon={MapPinned}
-                  eyebrow="Nothing yet"
+                  icon={MapPinned}
                   title="No nearby places added"
                   description="Add the metro station, hospital, market or gym around your property — pinned places show tenants real distances."
                 />
@@ -127,7 +138,22 @@ export default function OwnerLocalPlacesScreen() {
             </Section>
           </>
         )}
+        {removeErrors.serverError ? <AlertModal message={removeErrors.serverError} onClose={removeErrors.dismissServerError} /> : null}
       </ScreenScrollView>
+
+      {/* Pinned, not the first row of the list. The button was above a list that
+          grows without limit, so on a well-curated property the one action the
+          screen is for scrolled away from the places it acts on. */}
+      {property ? (
+        <PinnedFooter>
+          <ActionButton
+            disabled={!canManagePlaces}
+            icon={Plus}
+            label="Add nearby place"
+            onPress={() => setEditing("new")}
+          />
+        </PinnedFooter>
+      ) : null}
 
       {editing && property ? (
         <PlaceFormSheet
@@ -173,8 +199,35 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
   // Stored URL, not a device URI: the photo is uploaded when it is picked.
   const [photoUrl, setPhotoUrl] = useState(editing?.photoUrl ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"name" | "categories">();
   const saving = createState.isLoading || updateState.isLoading;
+
+  // The two halves of the no-changes check. Kept adjacent and built from the
+  // same key set, because a field present in one and missing from the other
+  // reads as an edit that never happened.
+  const initialValues = (place: PropertyLocalPlace) => ({
+    addressText: place.addressText,
+    description: place.description,
+    latitude: place.latitude,
+    longitude: place.longitude,
+    name: place.name,
+    ownerRecommended: place.ownerRecommended,
+    phone: place.phone,
+    photoUrl: place.photoUrl,
+    subcategoryIds: place.subcategoryIds,
+  });
+
+  const currentValues = () => ({
+    addressText,
+    description,
+    latitude: coords?.latitude ?? null,
+    longitude: coords?.longitude ?? null,
+    name,
+    ownerRecommended: recommended,
+    phone,
+    photoUrl,
+    subcategoryIds: selectedSubcategoryIds,
+  });
 
   const home = property.latitude != null && property.longitude != null
     ? { latitude: property.latitude, longitude: property.longitude, label: property.name }
@@ -200,11 +253,23 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
   }
 
   async function submit() {
-    if (!name.trim()) {
-      return setError("Give this place a name.");
+    // Both problems at once, each against its own field.
+    const problems = {
+      ...(name.trim() ? {} : { name: "Give this place a name." }),
+      ...(selectedSubcategoryIds.length > 0
+        ? {}
+        : { categories: "Pick at least one category so tenants can filter it." }),
+    };
+    if (!form.validate(problems)) {
+      return;
     }
-    if (selectedSubcategoryIds.length === 0) {
-      return setError("Pick at least one category so tenants can filter it.");
+
+    // Saving an untouched form used to fire the request, succeed, toast
+    // "Place updated." and close the sheet — reporting a change that never
+    // happened and costing the reader the screen they were on.
+    if (editing && isUnchanged(initialValues(editing), currentValues())) {
+      toast.warning("No changes have been made.");
+      return;
     }
     // PATCH replaces every field, so carry through values the form doesn't
     // surface to avoid wiping them on edit.
@@ -228,21 +293,34 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
       }
       onClose();
       toast.success(editing ? "Place updated." : "Place added.");
-    } catch {
-      setError("Could not save the place. Check the details and try again.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <>
       <Sheet onClose={onClose} title={editing ? "Edit place" : "Add nearby place"}>
-        <FormInput autoCapitalize="words" label="Place name" onChangeText={setName} placeholder="e.g. Hitec City Metro Station" value={name} />
+        <FormInput
+          autoCapitalize="words"
+          error={form.errors.name}
+          label="Place name"
+          onChangeText={(next) => {
+            setName(next);
+            form.clearField("name");
+          }}
+          placeholder="e.g. Hitec City Metro Station"
+          value={name}
+        />
 
         <FieldLabel>Categories</FieldLabel>
         <AnimatedPressable
           accessibilityLabel="Choose categories"
           accessibilityRole="button"
-          onPress={() => setCategoryPickerOpen(true)}
+          onPress={() => {
+            setCategoryPickerOpen(true);
+            form.clearField("categories");
+          }}
           style={{
             alignItems: "center",
             backgroundColor: colors.surfaceRaised,
@@ -260,6 +338,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
           </Text>
           <ChevronDown color={colors.muted} size={18} strokeWidth={2.3} />
         </AnimatedPressable>
+        <FieldError message={form.errors.categories} />
         {selectedNames.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
             {selectedNames.map((subcategory) => (
@@ -310,12 +389,14 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
           </View>
         </AnimatedPressable>
 
-        {error ? (
-          <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
-            {error}
-          </Text>
+        <ActionButton
+          disabled={saving || form.blocked}
+          label={saving ? "Saving…" : editing ? "Save changes" : "Add place"}
+          onPress={() => void submit()}
+        />
+        {form.serverError ? (
+          <AlertModal message={form.serverError} onClose={form.dismissServerError} />
         ) : null}
-        <ActionButton disabled={saving} label={saving ? "Saving…" : editing ? "Save changes" : "Add place"} onPress={() => void submit()} />
       </Sheet>
 
       <CategoryPickerModal

@@ -379,6 +379,23 @@ public class TenancyService {
     }
 
     /**
+     * Owner or manager withdraws a pending tenancy — the tenant backed out, or
+     * was onboarded by mistake.
+     *
+     * <p>Only ever a PENDING one. {@code cancelPending} refuses any other
+     * status, which is what keeps this from becoming a second, unaudited way to
+     * end a live stay: a real tenancy has money and a deposit behind it and must
+     * go through the end-tenancy settlement.
+     */
+    @Transactional
+    public void cancelPendingAsManager(UUID actorUserId, UUID tenancyId, String reason) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
+        cancelPendingInternal(tenancy, reason);
+    }
+
+    /**
      * System cancellation of a pending tenancy (acceptance window expired).
      */
     @Transactional

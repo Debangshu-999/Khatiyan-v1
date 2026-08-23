@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Modal, PanResponder, ScrollView, Text, View } from "react-native";
+import { Modal, PanResponder, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
@@ -161,12 +161,16 @@ export function PropertyFilterModal({
               />
             </FilterSection>
 
-            <FilterSection title="Minimum rent">
-              <RentSlider
-                onChange={(rupees) =>
-                  update({ maxRentPaise: null, minRentPaise: rupees > 0 ? rupees * 100 : null })
+            <FilterSection title="Budget">
+              <RentRange
+                maxRupees={filters.maxRentPaise === null ? 0 : Math.round(filters.maxRentPaise / 100)}
+                minRupees={filters.minRentPaise === null ? 0 : Math.round(filters.minRentPaise / 100)}
+                onChange={(next) =>
+                  update({
+                    maxRentPaise: next.max > 0 ? next.max * 100 : null,
+                    minRentPaise: next.min > 0 ? next.min * 100 : null,
+                  })
                 }
-                value={filters.minRentPaise === null ? 0 : Math.round(filters.minRentPaise / 100)}
               />
             </FilterSection>
 
@@ -325,11 +329,113 @@ function FilterChip({ label, onPress, selected }: { label: string; onPress: () =
   );
 }
 
-// Single-thumb rent slider (0 – ₹1,00,000). The chosen value is the MINIMUM
-// rent; 0 means "Any". Built on PanResponder so it needs no extra package.
+// Single-thumb rent slider (0 – ₹1,00,000). The chosen value is the MAXIMUM
+// rent someone will pay — a budget is a ceiling. It was wired to the minimum,
+// so asking for ₹8,000 hid every room at or below it and showed the expensive
+// ones instead, which is the opposite of what a searcher means.
+//
+// 0 means "Any". Built on PanResponder so it needs no extra package.
 const RENT_MIN = 0;
 const RENT_MAX = 100000;
 const RENT_STEP = 1000;
+
+/**
+ * Budget: a slider for the ceiling, and two boxes for anyone who would rather
+ * type it.
+ *
+ * <p>The slider drives the MAX only. A single thumb cannot express two ends, and
+ * a two-thumb slider on a phone is a fiddly way to say a number you already know
+ * — so the boxes are the way to set a floor, and they stay in step with the
+ * slider rather than duplicating it.
+ *
+ * <p>Min defaults to 0 and is left alone unless someone types in it: almost
+ * nobody searching for a room has a minimum, and defaulting it to anything else
+ * would quietly hide the cheapest listings.
+ */
+function RentRange({
+  maxRupees,
+  minRupees,
+  onChange,
+}: {
+  maxRupees: number;
+  minRupees: number;
+  onChange: (next: { max: number; min: number }) => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  // Digits only, and empty reads as 0 — "Any" — rather than NaN.
+  function parse(text: string) {
+    const digits = text.replace(/[^0-9]/g, "");
+    return digits ? Math.min(Number(digits), RENT_MAX) : 0;
+  }
+
+  return (
+    <View style={{ gap: spacing.md }}>
+      <RentSlider
+        onChange={(rupees) => onChange({ max: rupees, min: Math.min(minRupees, rupees || RENT_MAX) })}
+        value={maxRupees}
+      />
+
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+            Min
+          </Text>
+          <TextInput
+            keyboardType="number-pad"
+            onChangeText={(text) => {
+              const min = parse(text);
+              // A floor above the ceiling returns nothing and looks broken, so
+              // the ceiling gives way — the slider is the thing being typed
+              // against, not the thing being fought.
+              onChange({ max: maxRupees > 0 && min > maxRupees ? min : maxRupees, min });
+            }}
+            placeholder="0"
+            placeholderTextColor={colors.kicker}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: 12,
+              borderWidth: 1,
+              color: colors.ink,
+              fontFamily: fonts.sansBold,
+              fontSize: 15,
+              minHeight: 44,
+              paddingHorizontal: spacing.md,
+            }}
+            value={minRupees > 0 ? String(minRupees) : ""}
+          />
+        </View>
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+            Max
+          </Text>
+          <TextInput
+            keyboardType="number-pad"
+            onChangeText={(text) => {
+              const max = parse(text);
+              onChange({ max, min: max > 0 ? Math.min(minRupees, max) : minRupees });
+            }}
+            placeholder="Any"
+            placeholderTextColor={colors.kicker}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: 12,
+              borderWidth: 1,
+              color: colors.ink,
+              fontFamily: fonts.sansBold,
+              fontSize: 15,
+              minHeight: 44,
+              paddingHorizontal: spacing.md,
+            }}
+            value={maxRupees > 0 ? String(maxRupees) : ""}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
 
 function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; value: number }) {
   const { colors, fonts, type } = useTheme();
@@ -367,16 +473,16 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
 
   const ratio = (value - RENT_MIN) / (RENT_MAX - RENT_MIN);
   const filledWidth = Math.max(ratio * trackWidth, 0);
-  const thumbLeft = Math.min(Math.max(ratio * trackWidth - 12, 0), Math.max(trackWidth - 24, 0));
+  const thumbLeft = Math.min(Math.max(ratio * trackWidth - 9, 0), Math.max(trackWidth - 18, 0));
 
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
         <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
-          At least
+          Up to
         </Text>
-        <Text style={{ color: colors.ink, fontFamily: fonts.mono, fontSize: 17, fontWeight: "800" }}>
-          {value === 0 ? "Any" : `₹${value.toLocaleString("en-IN")}`}
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.3 }}>
+          {value === 0 ? "Any rent" : `₹${value.toLocaleString("en-IN")}`}
         </Text>
       </View>
 
@@ -384,7 +490,7 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
         <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 6 }} />
         <View
           style={{
-            backgroundColor: colors.primary,
+            backgroundColor: colors.ink,
             borderRadius: 999,
             height: 6,
             left: 0,
@@ -392,18 +498,34 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
             width: filledWidth,
           }}
         />
+        {/* An upright capsule rather than a ringed circle: it is taller than the
+            track it rides, so it reads as a grip rather than a dot sitting on a
+            line, and the extra height is what the thumb is actually caught by. */}
         <View
           style={{
             backgroundColor: colors.surface,
-            borderColor: colors.primary,
+            borderColor: colors.ink,
             borderRadius: 999,
-            borderWidth: 3,
-            height: 24,
+            borderWidth: 2,
+            height: 30,
             left: thumbLeft,
             position: "absolute",
-            width: 24,
+            width: 18,
           }}
-        />
+        >
+          <View
+            style={{
+              backgroundColor: colors.borderStrong,
+              borderRadius: 999,
+              height: 12,
+              left: "50%",
+              marginLeft: -1,
+              position: "absolute",
+              top: 7,
+              width: 2,
+            }}
+          />
+        </View>
       </View>
 
       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

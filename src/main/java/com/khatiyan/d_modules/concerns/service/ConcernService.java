@@ -32,6 +32,7 @@ import com.khatiyan.d_modules.concerns.api.dto.ReopenConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.ResolveConcernRequest;
 import com.khatiyan.d_modules.concerns.api.dto.UpdateConcernStatusRequest;
 import com.khatiyan.d_modules.concerns.event.ConcernAssignedEvent;
+import com.khatiyan.d_modules.concerns.event.ConcernEscalatedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernRaisedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernReopenedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernResolvedEvent;
@@ -556,6 +557,11 @@ public class ConcernService {
      * Promotes old open/under-review concerns into visible escalation levels.
      */
     @Transactional
+    /** Null-safe ordinal, so a concern with no level yet counts as the floor. */
+    private static int ordinalOf(ConcernEscalationLevel level) {
+        return level == null ? ConcernEscalationLevel.NONE.ordinal() : level.ordinal();
+    }
+
     public int updateConcernEscalationLevels() {
         Instant now = Instant.now();
         Instant attentionThreshold = now.minus(ConcernEscalationLevel.ATTENTION_THRESHOLD);
@@ -563,8 +569,23 @@ public class ConcernService {
         int updatedCount = 0;
 
         for (Concern concern : concerns) {
-            if (concern.refreshEscalationLevel(now)) {
-                updatedCount = updatedCount + 1;
+            ConcernEscalationLevel before = concern.getEscalationLevel();
+            if (!concern.refreshEscalationLevel(now)) {
+                continue;
+            }
+            updatedCount = updatedCount + 1;
+
+            // Only a RISE is an event. A level falling back to NONE means the
+            // concern was picked up or resolved, which the status change
+            // already announced — publishing here too would report the good
+            // news as an escalation.
+            if (concern.getEscalationLevel().ordinal() > ordinalOf(before)) {
+                eventPublisher.publishEvent(new ConcernEscalatedEvent(
+                        concern.getId(),
+                        concern.getPropertyId(),
+                        concern.getRaisedByUserId(),
+                        concern.getEscalationLevel(),
+                        concern.getTitle()));
             }
         }
 

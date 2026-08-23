@@ -5,6 +5,7 @@ import { AppTextInput } from "@/components/app-text-input";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,6 +20,7 @@ import {
   Eye,
   FileDown,
   History,
+  Undo2,
   Info,
   IndianRupee,
   MoreHorizontal,
@@ -40,14 +42,22 @@ import { ScreenHeader } from "@/components/screen-header";
 import { StatusPill as Pill } from "@/components/status-pill";
 import { MonthSelector } from "@/components/month-selector";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { classifyToast } from "@/components/toast";
+import { errorMessage } from "@/features/forms/server-error";
+import { NoticeBar } from "@/features/owner/owner-ui";
+import { SheetShell } from "@/components/sheet-shell";
+import { BillTotal } from "@/features/owner/bill-views";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
 import { SingleImageField } from "@/features/uploads/single-image-field";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { BackButton, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { BackButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { Section } from "@/components/section";
 import { useAppSelector } from "@/store/hooks";
 import {
+  useClearBillingLineItemMutation,
   type BillingCycle,
   type BillingCycleLineItem,
   type BillingMonthSummary,
@@ -164,10 +174,19 @@ export default function OwnerBillingScreen() {
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
   const [reportActionMode, setReportActionMode] = useState<ReportActionMode | null>(null);
   const toast = useToast();
+  // Failures raised anywhere on this screen; no field owns them.
+  const opErrors = useFormErrors<never>();
+
   const setStatusMessage = (value: string | null) => {
-    if (value) {
-      toast.show(value, /could not|cannot|unable|failed|not finalized|not available|no report/i.test(value) ? "error" : "success");
+    if (!value) {
+      return;
     }
+    // A failure ends the attempt, so it interrupts; a confirmation does not.
+    if (classifyToast(value) === "error") {
+      opErrors.failFromServer(value);
+      return;
+    }
+    toast.show(value);
   };
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter | null>(null);
   const [receiptCycle, setReceiptCycle] = useState<BillingCycle | null>(null);
@@ -234,7 +253,7 @@ export default function OwnerBillingScreen() {
     // view-only manager can look at the figures on screen without being able to
     // take the book away.
     if (!canManageBilling) {
-      toast.error("Downloading the monthly report is not available to you. Ask the property owner for access.");
+      opErrors.failFromServer("Downloading the monthly report is not available to you. Ask the property owner for access.");
       return;
     }
 
@@ -303,8 +322,7 @@ export default function OwnerBillingScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Banknote}
-          eyebrow="Property required"
+          icon={Banknote}
           title="Select a property"
           description="Billing is scoped to the active owner property selected on Home."
         />
@@ -408,6 +426,7 @@ export default function OwnerBillingScreen() {
           propertyName={selectedProperty?.name ?? null}
         />
       ) : null}
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
@@ -443,8 +462,7 @@ function ActiveSummarySection({
 
       {summary && !summary.hasData ? (
         <EmptyState
-          icon={ReceiptText}
-          eyebrow={monthLabel(month)}
+          icon={ReceiptText}
           title="No data available"
           description="No billing cycles started in this month."
         />
@@ -498,7 +516,7 @@ function PaymentHistorySection({
   const paged = paginateArray(orderedCycles, page, CYCLE_PAGE_SIZE);
 
   return (
-    <Section eyebrow={monthLabel(month)} title="Payment history">
+    <Section title="Payment history">
       <View style={{ gap: spacing.md }}>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <HistorySummaryMetric label="Paid" tone="success" value={String(paidCount)} />
@@ -508,8 +526,7 @@ function PaymentHistorySection({
 
         {orderedCycles.length === 0 ? (
           <EmptyState
-            icon={ReceiptText}
-            eyebrow="No history"
+            icon={ReceiptText}
             title="No payment history found"
             description={query ? "No billing cycle matched the current search for this month." : "No billing cycles started in this month."}
           />
@@ -579,8 +596,7 @@ function BillingCyclesSection({
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
-    <Section
-      eyebrow={monthLabel(month)}
+    <Section
       title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}
       trailing={
         <AnimatedPressable
@@ -598,8 +614,7 @@ function BillingCyclesSection({
       {rulesOpen ? <BillingRulesModal onClose={() => setRulesOpen(false)} /> : null}
       {cycles.length === 0 ? (
         <EmptyState
-          icon={ReceiptText}
-          eyebrow={!query && notGeneratedCount > 0 ? "Pending generation" : "No cycles"}
+          icon={ReceiptText}
           title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
           description={
             query
@@ -1138,6 +1153,11 @@ function BillingCycleCard({
 }) {
   const { colors, fonts, type } = useTheme();
   const [windowInfoOpen, setWindowInfoOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Owner actions only. System lines are the bill itself — rent, deposit — and
+  // listing them as "history" would bury the two or three things a person
+  // actually did among rows nobody performed.
+  const ownerActions = (cycle.lineItems ?? []).filter((item) => !item.systemGenerated);
   // Two different questions, and they do NOT have the same answer. A cycle is
   // payable once its window opens (UNPAID/OVERDUE); a rent cycle is editable
   // only BEFORE that, while it is still UPCOMING — see the backend's
@@ -1182,6 +1202,20 @@ function BillingCycleCard({
           >
             <Info color={colors.kicker} size={16} strokeWidth={2.4} />
           </AnimatedPressable>
+          {/* Only once something has been done to the bill. On an untouched one
+              it would open an empty sheet, which reads as broken. */}
+          {ownerActions.length > 0 ? (
+            <AnimatedPressable
+              accessibilityLabel={`Action history for ${cycle.referenceCode}`}
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={() => setHistoryOpen(true)}
+              style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+              tapLockMs={0}
+            >
+              <History color={colors.kicker} size={16} strokeWidth={2.4} />
+            </AnimatedPressable>
+          ) : null}
         </View>
 
         <View style={{ flex: 1, gap: spacing.xs }}>
@@ -1194,22 +1228,19 @@ function BillingCycleCard({
             </Text>
             <StatusPill cycle={cycle} />
           </View>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
-            {tenantName}
-          </Text>
-
-          <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", marginTop: spacing.xxs }}>
-            <View style={{ gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Total payable
-              </Text>
-              <Text
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.3 }}
-                numberOfLines={1}
-              >
-                {formatMoney(cycle.totalAmountPaise)}
-              </Text>
-            </View>
+          {/* Due date rides with the tenant name, not with the total. Once a
+              bill carries a discount the total line grows a struck-through
+              price and a percentage chip, and sharing a row with the date
+              pushed the date off the card entirely. */}
+          {/* Top-aligned: the date block is two lines tall, and aligning to its
+              END dragged the tenant name down to meet its baseline. */}
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <Text
+              numberOfLines={2}
+              style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
+            >
+              {tenantName}
+            </Text>
             <View style={{ alignItems: "flex-end", gap: 3 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Due date
@@ -1228,6 +1259,8 @@ function BillingCycleCard({
               </View>
             </View>
           </View>
+
+          <BillTotal cycle={cycle} />
 
           <Text style={[type.caption, { color: colors.kicker }]}>
             {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
@@ -1259,6 +1292,10 @@ function BillingCycleCard({
         <Text style={[type.caption, { color: colors.muted }]}>
           Open the billing screen to manage receipts and cycle actions.
         </Text>
+      ) : null}
+
+      {historyOpen ? (
+        <BillHistorySheet cycle={cycle} onClose={() => setHistoryOpen(false)} readOnly={readOnly || !canManage} />
       ) : null}
 
       {windowInfoOpen ? (
@@ -1329,8 +1366,7 @@ function SummaryCyclesModal({
 
           {cycles.length === 0 ? (
             <EmptyState
-              icon={ReceiptText}
-              eyebrow={notGeneratedCount > 0 ? "Pending generation" : "No cycles"}
+              icon={ReceiptText}
               title={notGeneratedCount > 0 ? "Cycles not generated yet" : "No matching cycles"}
               description={
                 notGeneratedCount > 0
@@ -1431,8 +1467,17 @@ function BillingActionModal({
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeDescription, setChargeDescription] = useState("");
   const [chargeAdjustFromDeposit, setChargeAdjustFromDeposit] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Per field, under the field. The old single line at the foot of the sheet
+  // said "Enter a charge label" below a form of four inputs and left the reader
+  // to work out which one, and it scrolled out of sight on a short screen.
+  const form = useFormErrors<"amount" | "label" | "percent">();
   const [confirm, setConfirm] = useState<{ message: string; title: string } | null>(null);
+  const insets = useSafeAreaInsets();
+  const toast = useToast();
+  // Refusals get their own modal: they are things the reader cannot fix by
+  // retyping (bill already paid, cycle locked, discount exceeds the payable
+  // amount), while `error` above stays the inline channel for bad input.
+  const opErrors = useFormErrors<never>();
   const [recordManualPayment, manualPaymentState] = useRecordManualPaymentMutation();
   const [addDiscount, discountState] = useAddTenancyDiscountMutation();
   const [addExtraCharges, extraChargeState] = useAddTenancyExtraChargesMutation();
@@ -1455,11 +1500,46 @@ function BillingActionModal({
 
   // Validates the active form, then shows a final confirmation dialog before
   // performing the action.
+  /**
+   * Everything the form itself can refuse, keyed by field.
+   *
+   * <p>Returns every problem rather than the first: a sheet that rejects the
+   * label, then the amount, then the label again is three round trips for one
+   * form.
+   */
+  function problems(): Partial<Record<"amount" | "label" | "percent", string>> {
+    if (mode === "discount") {
+      const percent = Number(discountPercent);
+      if (!discountPercent.trim()) {
+        return { percent: "Enter a discount percentage." };
+      }
+      return Number.isFinite(percent) && percent > 0 && percent <= 100
+        ? {}
+        : { percent: "Enter a percentage between 0 and 100." };
+    }
+
+    if (mode === "extra-charge") {
+      const amountPaise = Math.round(Number(chargeAmount) * 100);
+      return {
+        ...(chargeLabel.trim() ? {} : { label: "Enter a charge label." }),
+        ...(chargeAmount.trim()
+          ? Number.isFinite(amountPaise) && amountPaise > 0
+            ? {}
+            : { amount: "Enter a valid amount." }
+          : { amount: "Enter an amount." }),
+      };
+    }
+
+    return {};
+  }
+
   function handleSave() {
     if (busy) {
       return;
     }
-    setError(null);
+    if (!form.validate(problems())) {
+      return;
+    }
 
     if (mode === "manual-payment") {
       setConfirm({
@@ -1471,10 +1551,6 @@ function BillingActionModal({
 
     if (mode === "discount") {
       const percent = Number(discountPercent);
-      if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
-        setError("Enter a discount percentage between 0 and 100.");
-        return;
-      }
       setConfirm({
         message: `Apply a ${percent}% discount to ${cycle.referenceCode}?`,
         title: "Apply discount?",
@@ -1484,14 +1560,6 @@ function BillingActionModal({
 
     if (mode === "extra-charge") {
       const amountPaise = Math.round(Number(chargeAmount) * 100);
-      if (!chargeLabel.trim()) {
-        setError("Enter a charge label.");
-        return;
-      }
-      if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
-        setError("Enter a valid charge amount.");
-        return;
-      }
       setConfirm({
         message: chargeAdjustFromDeposit
           ? `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and adjust it from the deposit?`
@@ -1502,8 +1570,15 @@ function BillingActionModal({
   }
 
   async function submit() {
-    setError(null);
     try {
+      // What to say once it lands. Built before the call so the sheet can close
+      // immediately and the toast still names what happened.
+      const done =
+        mode === "manual-payment"
+          ? `${cycle.referenceCode} marked paid.`
+          : mode === "discount"
+            ? `${discountPercent}% discount applied to ${cycle.referenceCode}.`
+            : `Charge added to ${cycle.referenceCode}.`;
       if (mode === "manual-payment") {
         await recordManualPayment({
           billingCycleId: cycle.id,
@@ -1516,10 +1591,6 @@ function BillingActionModal({
         }).unwrap();
       } else if (mode === "discount") {
         const percent = Number(discountPercent);
-        if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
-          setError("Enter a discount percentage between 0 and 100.");
-          return;
-        }
         await addDiscount({
           discount: {
             description: note.trim() || null,
@@ -1530,14 +1601,6 @@ function BillingActionModal({
         }).unwrap();
       } else if (mode === "extra-charge") {
         const amountPaise = Math.round(Number(chargeAmount) * 100);
-        if (!chargeLabel.trim()) {
-          setError("Enter a charge label.");
-          return;
-        }
-        if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
-          setError("Enter a valid charge amount.");
-          return;
-        }
         await addExtraCharges({
           charges: [
             {
@@ -1551,25 +1614,45 @@ function BillingActionModal({
         }).unwrap();
       }
       onClose();
-    } catch {
-      setError("Action failed. Refresh and try again.");
+      toast.success(done);
+    } catch (caught) {
+      // The server's own words. "Action failed. Refresh and try again." was the
+      // same sentence whether the bill was locked, already paid, or the discount
+      // exceeded the payable amount — none of which a refresh fixes.
+      opErrors.failFromServer(
+        errorMessage(caught) || "Could not complete the action. Please try again.",
+      );
     }
   }
 
   return (
     <>
-    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    {/* No statusBarTranslucent: it extends the modal window under the system
+        bars on Android, and the KeyboardAvoidingView below then measures the
+        keyboard against a frame taller than the one it is padding. The sheet
+        rises correctly and never comes back down, because the padding it
+        resolves to on dismissal is not zero. The same flag is already omitted
+        from AddClauseSheet and the manager-permissions sheet for the sibling
+        symptom — a foot button that could not be tapped. */}
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        {/* Full width and anchored to the bottom edge, like every other sheet in
+            the app. An inset card floating above the edge is the dialog
+            language, and this is a sheet — it scrolls, it holds a form, and it
+            has a button at its foot that wants the whole width. */}
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 22,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
             maxHeight: "90%",
-            padding: spacing.lg,
+            paddingBottom: insets.bottom + spacing.lg,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.lg,
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
@@ -1579,7 +1662,7 @@ function BillingActionModal({
                   accessibilityLabel="Back to actions"
                   icon={ArrowLeft}
                   onPress={() => {
-                    setError(null);
+                    form.clearAll();
                     onSelectMode("menu");
                   }}
                 />
@@ -1627,7 +1710,7 @@ function BillingActionModal({
                     ? "This bill isn't payable until its due window opens. You can still change it until then."
                     : cycle.status === "PAID" || cycle.status === "CANCELLED"
                       ? "Paid or cancelled bills cannot be edited."
-                      : "This bill is live, so its charges are frozen. Add anything new to the upcoming cycle."}
+                      : "This bill is live, so its charges are frozen. Raise a one-off bill for anything new."}
                 </Text>
               ) : null}
             </View>
@@ -1659,10 +1742,15 @@ function BillingActionModal({
           {mode === "discount" ? (
             <>
               <FormInput
+                error={form.errors.percent}
                 keyboardType="decimal-pad"
                 label="Discount percentage"
-                onChangeText={setDiscountPercent}
+                onChangeText={(next) => {
+                  setDiscountPercent(next);
+                  form.clearField("percent");
+                }}
                 placeholder="Example: 10"
+                required
                 value={discountPercent}
               />
               <DiscountPreview percent={discountPercent} totalPaise={cycle.totalAmountPaise} />
@@ -1672,8 +1760,30 @@ function BillingActionModal({
 
           {mode === "extra-charge" ? (
             <>
-              <FormInput label="Charge label" onChangeText={setChargeLabel} placeholder="Damage, cleaning, extra usage" value={chargeLabel} />
-              <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setChargeAmount} placeholder="0" prefix="₹" value={chargeAmount} />
+              <FormInput
+                error={form.errors.label}
+                label="Charge label"
+                onChangeText={(next) => {
+                  setChargeLabel(next);
+                  form.clearField("label");
+                }}
+                placeholder="Damage, cleaning, extra usage"
+                required
+                value={chargeLabel}
+              />
+              <FormInput
+                error={form.errors.amount}
+                keyboardType="decimal-pad"
+                label="Amount"
+                onChangeText={(next) => {
+                  setChargeAmount(next);
+                  form.clearField("amount");
+                }}
+                placeholder="0"
+                prefix="₹"
+                required
+                value={chargeAmount}
+              />
               <FormInput label="Description" onChangeText={setChargeDescription} placeholder="Optional description" value={chargeDescription} />
               <View style={{ gap: spacing.xs }}>
                 <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
@@ -1687,14 +1797,16 @@ function BillingActionModal({
             </>
           ) : null}
 
-          {error ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              {error}
-            </Text>
-          ) : null}
           </ScrollView>
 
-          {mode !== "menu" ? <ActionButton disabled={busy} icon={IndianRupee} label={busy ? "Saving" : "Save"} onPress={handleSave} /> : null}
+          {mode !== "menu" ? (
+            <ActionButton
+              disabled={busy || form.blocked}
+              icon={IndianRupee}
+              label={busy ? "Saving" : "Save"}
+              onPress={handleSave}
+            />
+          ) : null}
         </View>
       </View>
       </KeyboardAvoidingView>
@@ -1710,6 +1822,11 @@ function BillingActionModal({
         }}
         title={confirm.title}
       />
+    ) : null}
+    {/* Sits outside the sheet's own Modal so the refusal is still readable
+        after the sheet closes on a failed submit. */}
+    {opErrors.serverError ? (
+      <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
     ) : null}
     </>
   );
@@ -1827,6 +1944,22 @@ function SegmentedControl({
 }
 
 
+/**
+ * Line heights reserved above and below the figure in a small tile.
+ *
+ * <p>Three tiles sit in a row at a third of the screen each, where "Billing
+ * cycles" wraps to two lines and "Overdue" does not — so the figures below them
+ * landed at different heights and the row read as misaligned. Reserving two
+ * lines for both the label and the hint fixes the figure's position regardless
+ * of how the copy happens to break.
+ *
+ * <p>Reserved rather than solved by shortening the labels: a longer word, a
+ * narrower phone or a larger system font size would reintroduce the wrap, and
+ * the alignment would silently break again.
+ */
+const TILE_LABEL_LINE_HEIGHT = 14;
+const TILE_HINT_LINE_HEIGHT = 17;
+
 function SummaryTile({
   hint,
   label,
@@ -1860,9 +1993,20 @@ function SummaryTile({
   // red, green and blue side by side reads as five warnings rather than a
   // breakdown. Meaning lives in the label, emphasis in the size.
   const fontSize = large ? 30 : 20;
+  // Only the small tiles share a row and need to line up. The large one is full
+  // width, never wraps, and would just gain dead space.
   const content = (
     <>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
+      <Text
+        numberOfLines={large ? 1 : 2}
+        style={[
+          type.eyebrow,
+          { color: colors.kicker, lineHeight: TILE_LABEL_LINE_HEIGHT },
+          large ? null : { height: TILE_LABEL_LINE_HEIGHT * 2 },
+        ]}
+      >
+        {label}
+      </Text>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.7}
@@ -1872,7 +2016,16 @@ function SummaryTile({
         {leadValue ? <Text style={{ color: colors.muted }}>{leadValue}</Text> : null}
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.muted }]}>{hint}</Text>
+      <Text
+        numberOfLines={large ? 1 : 2}
+        style={[
+          type.caption,
+          { color: colors.muted },
+          large ? null : { height: TILE_HINT_LINE_HEIGHT * 2 },
+        ]}
+      >
+        {hint}
+      </Text>
     </>
   );
 
@@ -1885,70 +2038,6 @@ function SummaryTile({
   }
 
   return <View style={style}>{content}</View>;
-}
-
-// LOCAL VARIANT — deliberately NOT the shared FormInput in
-// `@/features/owner/owner-ui`. It differs (no prefix/error affordances), so editing the shared
-// one does NOT change this screen. Unify before adding behaviour to either.
-function FormInput({
-  keyboardType,
-  label,
-  onChangeText,
-  placeholder,
-  prefix,
-  value,
-}: {
-  keyboardType?: "decimal-pad";
-  label: string;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  prefix?: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-        {label}
-      </Text>
-      {prefix ? (
-        // Adornment (₹) inside the field: the container owns the border and the
-        // input goes borderless beside the prefix.
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.border,
-            borderRadius: 12,
-            borderWidth: 1,
-            flexDirection: "row",
-            minHeight: 46,
-            paddingLeft: spacing.md,
-          }}
-        >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 15, }}>
-            {prefix}
-          </Text>
-          <AppTextInput
-            keyboardType={keyboardType}
-            onChangeText={onChangeText}
-            placeholder={placeholder}
-            placeholderTextColor={colors.kicker}
-            style={{ color: colors.ink, flex: 1, minHeight: 44, paddingHorizontal: spacing.xs }}
-            value={value}
-          />
-        </View>
-      ) : (
-        <AppTextInput
-          keyboardType={keyboardType}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.kicker}
-          style={{ borderColor: colors.border, borderRadius: 12, borderWidth: 1, color: colors.ink, minHeight: 46, paddingHorizontal: spacing.md }}
-          value={value}
-        />
-      )}
-    </View>
-  );
 }
 
 function ChoiceButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
@@ -2027,20 +2116,28 @@ function BillingRulesModal({ onClose }: { onClose: () => void }) {
   const { colors, fonts, type } = useTheme();
   const rules: { body: string; title: string }[] = [
     {
-      title: "Bills appear before they are due",
-      body: "A cycle is created about 10 days ahead of its due date and sits as UPCOMING. It is visible to you but not yet payable by the tenant.",
+      title: "The first bill of a tenancy stays open",
+      body: "It is created and opened the moment you onboard the tenant, so it never gets an early window like the others. Discounts, extra charges and reverting them all stay available on it until it is paid.",
     },
     {
-      title: "UPCOMING is your window to change it",
-      body: "Discounts and extra charges can only be added while a rent cycle is UPCOMING. That is the whole reason it appears early.",
+      title: "Every later bill appears about 10 days early",
+      body: "Cycle 2 onwards is created ahead of its due date and sits as UPCOMING — visible to you, not yet payable by the tenant.",
     },
     {
-      title: "Going live locks the amount",
-      body: "On its start date the cycle turns UNPAID and the total freezes. It cannot be edited or reversed after that — the tenant owes exactly what they were shown.",
+      title: "UPCOMING is your window on those",
+      body: "On cycle 2 onwards, discounts and extra charges can only be added while the bill is UPCOMING. That is the whole reason it appears early.",
     },
     {
-      title: "Anything later goes on the next cycle",
-      body: "Once a bill is live, a charge you meant to add has to go on the upcoming cycle instead, or on a one-off bill if it cannot wait.",
+      title: "Going live freezes a later bill",
+      body: "On its start date the cycle turns UNPAID and its total is fixed, so the tenant owes exactly what they were shown. Charges and discounts are refused from then on — the first cycle is the only exception.",
+    },
+    {
+      title: "After that, raise a one-off bill",
+      body: "A charge that arrives once a later cycle is live goes on its own bill, due immediately. Nothing waits in a queue for the next cycle any more.",
+    },
+    {
+      title: "What you add by hand can be undone",
+      body: "The history icon on a bill lists every discount and charge someone added, and who added it. Reverting sets that line to zero and recalculates the bill — available for as long as the bill itself is still editable.",
     },
     {
       title: "Due date already includes grace",
@@ -2143,6 +2240,228 @@ function BillingRulesModal({ onClose }: { onClose: () => void }) {
 // The pay window runs from the period start to the due date, because the due
 // date IS start + grace days (BillingCycleService.calculateMonthlyDueDate) —
 // the grace is already inside it, not added on top.
+/** What each owner action is called when it needs naming — a toast, a dialog. */
+const ACTION_LABEL: Record<string, string> = {
+  DISCOUNT: "Discount",
+  EXTRA_CHARGE: "Extra charge",
+  LATE_FEE: "Late fee",
+};
+
+/**
+ * The name the person gave the action, title-cased.
+ *
+ * <p>A history row used to carry three headings that all said "discount": the
+ * type, the generic "Owner discount" label the form stamps on every one, and
+ * the note actually typed. Only the last distinguishes one row from another, so
+ * it is the only one kept — falling back to the label when no note was written.
+ */
+/** Cleared to zero and marked waived — the shape a reverted line is left in. */
+function isReverted(item: BillingCycleLineItem): boolean {
+  return item.amountPaise === 0 && item.settlementAction === "WAIVED";
+}
+
+function actionName(item: BillingCycleLineItem): string {
+  const given = item.description?.trim() || item.label?.trim() || "";
+  if (!given) {
+    return ACTION_LABEL[item.type] ?? humanizeToken(item.type);
+  }
+  return given
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
+ * Everything an owner has done to one bill, newest first, each reversible.
+ *
+ * <p>Reverting zeroes the line rather than deleting it, so the row stays in the
+ * list marked "Reverted". A bill's history is the record of what was done to it,
+ * and an entry that disappears leaves the reader wondering why the total moved.
+ *
+ * <p>Only owner actions. The rent and deposit lines are the bill itself, and
+ * listing them here would bury the two or three things a person actually did.
+ */
+function BillHistorySheet({
+  cycle,
+  onClose,
+  readOnly,
+}: {
+  cycle: BillingCycle;
+  onClose: () => void;
+  readOnly: boolean;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const toast = useToast();
+  const revertErrors = useFormErrors<never>();
+  const [clearLineItem] = useClearBillingLineItemMutation();
+  const [pending, setPending] = useState<BillingCycleLineItem | null>(null);
+  const [revertingId, setRevertingId] = useState<string | null>(null);
+
+  // Live actions first, newest within each group. A reverted line still counts
+  // as history — it says the total moved and then moved back — but it is not a
+  // thing anyone can act on, so it should never sit above one that is.
+  const actions = (cycle.lineItems ?? [])
+    .filter((item) => !item.systemGenerated)
+    .slice()
+    .sort((left, right) => {
+      const byState = Number(isReverted(left)) - Number(isReverted(right));
+      return byState !== 0 ? byState : right.createdAt.localeCompare(left.createdAt);
+    });
+
+  const editable = isCycleEditable(cycle);
+
+  async function revert(item: BillingCycleLineItem) {
+    setRevertingId(item.id);
+    try {
+      await clearLineItem({ billingCycleId: cycle.id, lineItemId: item.id }).unwrap();
+      toast.success(`${ACTION_LABEL[item.type] ?? "Action"} reverted.`);
+    } catch (caught) {
+      revertErrors.failFromServer(
+        errorMessage(caught) || "Could not revert this action. The bill may no longer be editable.",
+      );
+    } finally {
+      setRevertingId(null);
+    }
+  }
+
+  return (
+    <>
+      <SheetShell onClose={onClose} title="Action history">
+        <Text style={[type.caption, { color: colors.muted }]}>
+          Everything added to {cycle.referenceCode} by hand. Reverting sets the line to zero and
+          recalculates the bill.
+        </Text>
+
+        <View style={{ gap: spacing.sm }}>
+          {actions.map((item) => {
+            const reverted = isReverted(item);
+            return (
+              <View
+                key={item.id}
+                style={{
+                  borderColor: colors.border,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  gap: spacing.sm,
+                  opacity: reverted ? 0.6 : 1,
+                  padding: spacing.md,
+                }}
+              >
+                <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    {/* Kind first, then the name the person gave it. What was
+                        removed was the FORM's generic "Owner discount" label
+                        sitting between them, which repeated the kind and said
+                        nothing about this particular one. */}
+                    <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                      {ACTION_LABEL[item.type] ?? humanizeToken(item.type)}
+                    </Text>
+                    <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                      {actionName(item)}
+                    </Text>
+                    {/* Who, then when. The actor matters more than the clock on a
+                        property with a manager, and it is the one thing the row
+                        could not previously answer. */}
+                    <Text style={[type.caption, { color: colors.kicker }]}>
+                      {item.createdByName ? `${item.createdByName} · ` : ""}
+                      {formatDateTime(item.createdAt)}
+                    </Text>
+                    {/* Borderless and inline, under the line that says who did
+                        it — the thing being undone is fully described by the
+                        time you reach it. Not an ActionButton: every variant
+                        fills or tints its background, and a filled block inside
+                        an already-bordered row reads as a second card rather
+                        than a control. The blue is carried by glyph and label.
+                        */}
+                    {!reverted && !readOnly && editable ? (
+                      <AnimatedPressable
+                        accessibilityLabel={`Revert ${actionName(item)}`}
+                        accessibilityRole="button"
+                        disabled={revertingId === item.id}
+                        hitSlop={8}
+                        onPress={() => setPending(item)}
+                        style={{
+                          alignItems: "center",
+                          alignSelf: "flex-start",
+                          flexDirection: "row",
+                          gap: spacing.xs,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        <Undo2
+                          color={revertingId === item.id ? colors.muted : colors.primary}
+                          size={15}
+                          strokeWidth={2.3}
+                        />
+                        <Text
+                          style={{
+                            color: revertingId === item.id ? colors.muted : colors.primary,
+                            fontFamily: fonts.sansBold,
+                            fontSize: 13,
+                          }}
+                        >
+                          {revertingId === item.id ? "Reverting…" : "Revert"}
+                        </Text>
+                      </AnimatedPressable>
+                    ) : null}
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <Text
+                      style={{
+                        color: item.type === "DISCOUNT" ? colors.jade : colors.ink,
+                        fontFamily: fonts.sansBold,
+                        fontSize: 15,
+                        textDecorationLine: reverted ? "line-through" : "none",
+                      }}
+                    >
+                      {item.type === "DISCOUNT" ? "−" : ""}
+                      {formatMoney(reverted ? item.settlementAmountPaise || item.amountPaise : item.amountPaise)}
+                    </Text>
+                    {reverted ? (
+                      <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+                        <Text style={{ color: colors.neutralText, fontFamily: fonts.sansBold, fontSize: 11 }}>
+                          Reverted
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Says why the buttons are missing rather than leaving a list of rows
+            that look like they should be actionable. */}
+        {!editable ? (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            This bill is no longer editable, so its actions cannot be reverted.
+          </Text>
+        ) : null}
+      </SheetShell>
+
+      {pending ? (
+        <ConfirmDialog
+          confirmLabel="Revert"
+          message={`Revert "${pending.label}"? The line is set to zero and ${cycle.referenceCode} is recalculated.`}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const target = pending;
+            setPending(null);
+            void revert(target);
+          }}
+          title="Revert this action?"
+        />
+      ) : null}
+
+      {revertErrors.serverError ? (
+        <AlertModal message={revertErrors.serverError} onClose={revertErrors.dismissServerError} />
+      ) : null}
+    </>
+  );
+}
+
 function CycleWindowModal({
   cycle,
   fallbackLateFeePerDayPaise,
@@ -2198,27 +2517,23 @@ function CycleWindowModal({
             />
           </View>
 
-          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              If paid late
-            </Text>
-            {rate != null && rate > 0 ? (
-              <>
-                <ReceiptLine label="Late fee" strong value={`${formatMoney(rate)} per day`} />
-                <Text style={[type.caption, { color: colors.muted }]}>
-                  Charged from the day after {formatDate(cycle.rentDueDate)}.
-                  {rateIsProvisional
-                    ? " The rate is locked in when this cycle goes live, so a change made before then still applies to it."
-                    : " This rate was locked in when the cycle went live — changing it now applies from the next cycle, not this one."}
-                </Text>
-              </>
-            ) : (
-              <Text style={[type.caption, { color: colors.muted }]}>
-                No late fee is set for this property, so paying after {formatDate(cycle.rentDueDate)} costs nothing
-                extra. You can set a daily rate in property billing settings.
-              </Text>
-            )}
-          </View>
+          {/* A precaution about what paying late costs — which is what NoticeBar
+              is for. A sunken grey block read as one more section of the sheet,
+              and the one paragraph here that changes a decision got skimmed with
+              the rest. */}
+          <NoticeBar
+            message={
+              rate != null && rate > 0
+                ? `${formatMoney(rate)} per day, charged from the day after ${formatDate(cycle.rentDueDate)}.${
+                    rateIsProvisional
+                      ? " The rate is locked in when this cycle goes live, so a change made before then still applies to it."
+                      : " This rate was locked in when the cycle went live — changing it now applies from the next cycle, not this one."
+                  }`
+                : `No late fee is set for this property, so paying after ${formatDate(cycle.rentDueDate)} costs nothing extra. You can set a daily rate in property billing settings.`
+            }
+            title="If paid late"
+            tone="warning"
+          />
 
           {cycle.lateFeeAmountPaise > 0 ? (
             <Text style={[type.caption, { color: colors.muted }]}>
@@ -2248,11 +2563,17 @@ function markPaidLabel(cycle: BillingCycle): string {
 // Mirrors BillingCycleLineItemService.ensureCycleStillEditable: a rent cycle
 // freezes the moment its payment window opens, so only UPCOMING can be changed;
 // one-off bills stay editable until they are settled.
+// A rent cycle is editable during the ten days it sits UPCOMING. The FIRST
+// cycle of a tenancy never gets that window — it is created and activated in
+// the same transaction at onboarding — so it stays editable until it is paid,
+// which is the only reason a new tenant's bill could not be discounted at all.
+//
+// Later cycles keep the lock: once live, a new charge belongs on a one-off bill.
 function isCycleEditable(cycle: BillingCycle): boolean {
   if (cycle.status === "PAID" || cycle.status === "CANCELLED") {
     return false;
   }
-  return cycle.category === "ONE_OFF" || cycle.status === "UPCOMING";
+  return cycle.category === "ONE_OFF" || cycle.status === "UPCOMING" || cycle.cycleNumber === 1;
 }
 
 // Circular overflow control pinned to the action row's height, so its diameter

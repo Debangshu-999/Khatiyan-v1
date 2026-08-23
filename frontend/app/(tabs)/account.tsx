@@ -26,6 +26,9 @@ import { Card } from "@/components/card";
 import { Lightbox } from "@/components/image-carousel";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -49,6 +52,9 @@ export default function AccountScreen() {
   const dispatch = useAppDispatch();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
+  // "email" is the one field on this screen; everything else here is a photo or
+  // permission failure with nothing on screen to correct, so it goes to the modal.
+  const form = useFormErrors<"email">();
   const auth = useAppSelector((state) => state.auth);
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
   const profileQuery = useGetProfileQuery();
@@ -99,8 +105,7 @@ export default function AccountScreen() {
 
   async function saveRecoveryEmail() {
     const email = emailDraft.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast.error("Enter a valid recovery email address.");
+    if (!form.validate(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? {} : { email: "Enter a valid recovery email address." })) {
       return;
     }
     try {
@@ -108,7 +113,7 @@ export default function AccountScreen() {
       setEmailDraft("");
       toast.success("Email added. Verify it before using email sign-in or PIN reset.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add recovery email.");
+      form.failFromServer(error instanceof Error ? error.message : "Unable to add recovery email.");
     }
   }
 
@@ -117,7 +122,7 @@ export default function AccountScreen() {
     // beats a generic failure — and the link is only reachable when an address
     // is on file, so this catches the race where it was just removed.
     if (!emailRecoveryQuery.data?.email?.trim()) {
-      toast.error("Add an email address first.");
+      form.failFromServer("Add an email address first.");
       return;
     }
     if (requestEmailVerificationState.isLoading) {
@@ -127,7 +132,7 @@ export default function AccountScreen() {
       await requestEmailVerification().unwrap();
       toast.success("Verification link sent to your email.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to send verification link.");
+      form.failFromServer(error instanceof Error ? error.message : "Unable to send verification link.");
     }
   }
   /**
@@ -169,7 +174,7 @@ export default function AccountScreen() {
    */
   async function attachPhoto(asset: ImagePicker.ImagePickerAsset) {
     if (!nameForPhotoSave()) {
-      toast.error("Add your name before setting a photo.");
+      form.failFromServer("Add your name before setting a photo.");
       return;
     }
 
@@ -193,7 +198,7 @@ export default function AccountScreen() {
       toast.success("Profile photo updated.");
     } catch (error) {
       setPickedImageUri(null);
-      toast.error(
+      form.failFromServer(
         error instanceof Error && error.message ? error.message : "Could not update your photo. Try again.",
       );
     } finally {
@@ -204,7 +209,7 @@ export default function AccountScreen() {
   async function pickProfileImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      toast.error("Allow photo library access to change your picture.");
+      form.failFromServer("Allow photo library access to change your picture.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -221,7 +226,7 @@ export default function AccountScreen() {
   async function captureProfileImage() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      toast.error("Allow camera access to take a picture.");
+      form.failFromServer("Allow camera access to take a picture.");
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -243,7 +248,7 @@ export default function AccountScreen() {
    */
   async function removeProfileImage() {
     if (!nameForPhotoSave()) {
-      toast.error("Add your name before changing your photo.");
+      form.failFromServer("Add your name before changing your photo.");
       return;
     }
     setUploadingPhoto(true);
@@ -252,7 +257,7 @@ export default function AccountScreen() {
       setPickedImageUri(null);
       toast.success("Profile photo removed.");
     } catch (error) {
-      toast.error(
+      form.failFromServer(
         error instanceof Error && error.message ? error.message : "Could not remove your photo. Try again.",
       );
     } finally {
@@ -309,7 +314,7 @@ export default function AccountScreen() {
       </View>
 
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle eyebrow="Identity" title="Personal information" />
+        <SectionTitle title="Personal information" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
           <ReadonlyField label="Registered phone" value={user?.phone ?? "-"} />
           <ReadonlyField label="Workspace access" value={accessLabel} />
@@ -342,14 +347,18 @@ export default function AccountScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
-                onChangeText={setEmailDraft}
+                onChangeText={(next) => {
+                  setEmailDraft(next);
+                  form.clearField("email");
+                }}
                 placeholder="Add your email"
                 placeholderTextColor={colors.muted}
                 value={emailDraft}
-                style={{ backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: 12, borderWidth: 1, color: colors.ink, fontFamily: fonts.sans, minHeight: 46, paddingHorizontal: spacing.md }}
+                style={{ backgroundColor: colors.surfaceRaised, borderColor: form.errors.email ? colors.danger : colors.border, borderRadius: 12, borderWidth: form.errors.email ? 1.5 : 1, color: colors.ink, fontFamily: fonts.sans, minHeight: 46, paddingHorizontal: spacing.md }}
               />
+              <FieldError message={form.errors.email} />
               <ActionButton
-                disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading}
+                disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked}
                 icon={MailCheck}
                 label={updateRecoveryEmailState.isLoading ? "Adding email…" : "Add email"}
                 onPress={() => void saveRecoveryEmail()}
@@ -365,7 +374,7 @@ export default function AccountScreen() {
           wondering whether switching exists at all; saying "one account" answers
           the question outright. */}
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle eyebrow="Access" title="Switch account" />
+        <SectionTitle title="Switch account" />
         {accounts.length > 1 ? (
           <View style={{ gap: spacing.sm }}>
             {accounts.map((account) => (
@@ -387,7 +396,7 @@ export default function AccountScreen() {
 
       {accounts.includes("owner") ? (
         <View style={{ gap: spacing.sm }}>
-          <SectionTitle eyebrow="Portfolio" title="Registered properties" />
+          <SectionTitle title="Registered properties" />
           <Card style={{ gap: spacing.sm, padding: spacing.md }}>
             <ReadonlyField
               label="Owner portfolio"
@@ -520,6 +529,8 @@ export default function AccountScreen() {
           title="Remove profile photo?"
         />
       ) : null}
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
+
     </ScreenScrollView>
   );
 }
@@ -674,8 +685,8 @@ function ProfileAvatar({
  * lone terracotta line of bold sans, which was the only heading style in the
  * app that looked like this.
  */
-function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return <Section eyebrow={eyebrow} title={title} />;
+function SectionTitle({ title }: { title: string }) {
+  return <Section title={title} />;
 }
 
 /**

@@ -148,7 +148,7 @@ export default function OwnerConcernsScreen() {
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
-        <EmptyState icon={AlertCircle} eyebrow="Property required" title="No property selected" description="Concerns are scoped to the active owner property." />
+        <EmptyState icon={AlertCircle} title="No property selected" description="Concerns are scoped to the active owner property." />
       ) : null}
 
       {selectedProperty ? (
@@ -229,7 +229,7 @@ export default function OwnerConcernsScreen() {
                       <ConcernCard actionLabel="Review" concern={concern} key={concern.id} onPress={() => openConcern(concern, "property")} />
                     ))
                   ) : (
-                    <EmptyState icon={AlertCircle} eyebrow="Property" title="No property concerns" description="Available and escalated tenant concerns will appear here." />
+                    <EmptyState icon={AlertCircle} title="No property concerns" description="Available and escalated tenant concerns will appear here." />
                   )}
                   {propertyConcerns.length > 0 ? (
                     <PaginationBar
@@ -249,8 +249,7 @@ export default function OwnerConcernsScreen() {
               // shows is why it is empty, since a view-only manager can never
               // take a concern up and so can never have a personal queue.
               <EmptyState
-                icon={Lock}
-                eyebrow="View-only access"
+                icon={Lock}
                 title="You cannot take up concerns"
                 description="Your access to concerns is view-only, so nothing can be assigned to you here. Ask the property owner if you need to work on them."
               />
@@ -274,7 +273,7 @@ export default function OwnerConcernsScreen() {
                       />
                     ))
                   ) : (
-                    <EmptyState icon={Clock3} eyebrow="My concerns" title="No concerns in this queue" description="Concerns you take up will appear here." />
+                    <EmptyState icon={Clock3} title="No concerns in this queue" description="Concerns you take up will appear here." />
                   )}
                   {myVisibleConcerns.length > 0 ? (
                     <PaginationBar
@@ -503,7 +502,7 @@ function HistoryModal({
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
               {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => onOpen(concern)} />) : null}
-              {sorted.length === 0 ? <EmptyState icon={Clock3} eyebrow="Property history" title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
+              {sorted.length === 0 ? <EmptyState icon={Clock3} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
             </ScrollView>
           )}
           {pageData && pageData.totalElements > 0 ? (

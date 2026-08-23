@@ -48,7 +48,9 @@ export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) 
           {
             color: selected.text,
             fontSize: 10.5,
-            letterSpacing: 1.2,
+            // Tracking scales with the size so the pill matches every other
+            // caps label rather than sitting a touch looser than all of them.
+            letterSpacing: 0.85,
           },
         ]}
       >

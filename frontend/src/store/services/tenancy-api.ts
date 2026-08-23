@@ -26,6 +26,12 @@ export function tenancyStatusLabel(status: TenancyStatus) {
   if (status === "ON_NOTICE" || status === "ON_PREMATURE_NOTICE") {
     return "On notice";
   }
+  // "Pending Acceptance" never says WHAT is unaccepted. The bed is already
+  // reserved and the tenant is onboarded; the only thing outstanding is their
+  // signature on the agreement, so the label says so.
+  if (status === "PENDING_ACCEPTANCE") {
+    return "Pending agreement";
+  }
   return status
     .replace(/_/g, " ")
     .toLowerCase()

@@ -99,7 +99,6 @@ export default function OwnerScreen() {
       {!propertiesQuery.isFetching && properties.length === 0 ? (
         <EmptyState
           icon={Building2}
-          eyebrow="No property"
           title="Create a property first"
           description="Owner services unlock after at least one property exists."
         />
@@ -124,7 +123,6 @@ export default function OwnerScreen() {
           ) : (
             <EmptyState
               icon={Building2}
-              eyebrow="Property required"
               title="Select a property from Home"
               description="You own multiple properties. Pick the active property on Home before opening owner services."
             />
@@ -143,7 +141,7 @@ export default function OwnerScreen() {
             </>
           ) : null}
 
-          <Section eyebrow="Services" title="Open workspace">
+          <Section title="Open workspace">
             <View style={{ gap: spacing.sm }}>
               {modules.map((module) => (
                 <ServiceCard

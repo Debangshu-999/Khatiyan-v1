@@ -28,7 +28,10 @@ public record AddPropertyImagesRequest(
 
             /** Cloudinary handle. Absent only for legacy rows; new uploads always have one. */
             @Size(max = 255)
-            String publicId
+            String publicId,
+            /** What the photo is of. Optional — an owner may not have a word for it. */
+            @Size(max = 50)
+            String caption
     ) {
     }
 }

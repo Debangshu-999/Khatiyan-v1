@@ -37,7 +37,12 @@ export const themes = {
     successSoft: "#ECFDF5",
     successText: "#047857",
     warningSoft: "#FFFBEB",
+    // Text ON warningSoft — deliberately dark so it stays readable on the pale
+    // wash. Not a fill: as a filled disc it reads brown.
     warningText: "#B45309",
+    // The warning FILL, for a solid status mark or rule. Amber, so it reads as
+    // yellow at a glance rather than brown.
+    warning: "#F59E0B",
     neutralSoft: "#F1F5F9",
     neutralText: "#334155",
 
@@ -79,6 +84,7 @@ export const themes = {
     successText: "#34D399",
     warningSoft: "#221A08",
     warningText: "#FBBF24",
+    warning: "#FBBF24",
     neutralSoft: "#1C1C1C",
     neutralText: "#D4D4D4",
 

@@ -11,6 +11,9 @@ import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { AlertModal } from "@/components/alert-modal";
+import { classifyToast } from "@/components/toast";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { InfoModal } from "@/components/info-modal";
 import { Section } from "@/components/section";
 import { TabSwitcher } from "@/components/tab-switcher";
@@ -78,10 +81,19 @@ export default function OwnerNoticesScreen() {
   const [view, setView] = useState<NoticeView>("normal");
   const [tab, setTab] = useState<NoticeTab>("published");
   const [confirm, setConfirm] = useState<NoticeConfirmState | null>(null);
+  // Failures raised anywhere on this screen; no field owns them.
+  const opErrors = useFormErrors<never>();
+
   const setStatus = (value: string | null) => {
-    if (value) {
-      toast.show(value, /could not|cannot|unable|failed/i.test(value) ? "error" : "success");
+    if (!value) {
+      return;
     }
+    // A failure ends the attempt, so it interrupts; a confirmation does not.
+    if (classifyToast(value) === "error") {
+      opErrors.failFromServer(value);
+      return;
+    }
+    toast.show(value);
   };
 
   const publishedQuery = useListPublishedNoticesQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
@@ -143,8 +155,7 @@ export default function OwnerNoticesScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          description="Notices are scoped to the active owner property."
-          eyebrow="Property required"
+          description="Notices are scoped to the active owner property."
           icon={Megaphone}
           title="No property selected"
         />
@@ -156,21 +167,22 @@ export default function OwnerNoticesScreen() {
 
           <Section
             title={view === "recurring" ? `${recurringQuery.data?.length ?? 0} schedules` : `${notices.length} notices`}
-            trailingInline
-            trailing={
-              view === "normal" ? (
-                <CollapsibleFilterBubbles
-                  onChange={setTab}
-                  options={[
-                    { label: "Published", value: "published" as const },
-                    { label: "Visible", value: "visible" as const },
-                    { label: "Archived", value: "archived" as const },
-                  ]}
-                  value={tab}
-                />
-              ) : null
-            }
           >
+            {/* Under the heading rule, not beside the count. Pinned right it had
+                to share a line with a number that changes width, so the filter
+                shifted every time the list did. */}
+            {view === "normal" ? (
+              <CollapsibleFilterBubbles
+                align="start"
+                onChange={setTab}
+                options={[
+                  { label: "Published", value: "published" as const },
+                  { label: "Visible", value: "visible" as const },
+                  { label: "Archived", value: "archived" as const },
+                ]}
+                value={tab}
+              />
+            ) : null}
             {loading ? (
               <SkeletonCard />
             ) : view === "recurring" ? (
@@ -186,8 +198,7 @@ export default function OwnerNoticesScreen() {
                 ))
               ) : (
                 <EmptyState
-                  description="Recurring notice schedules will appear here."
-                  eyebrow="Recurring"
+                  description="Recurring notice schedules will appear here."
                   icon={CalendarClock}
                   title="No recurring notices"
                 />
@@ -207,8 +218,7 @@ export default function OwnerNoticesScreen() {
               ))
             ) : (
               <EmptyState
-                description="Published property notices will appear here."
-                eyebrow="Notices"
+                description="Published property notices will appear here."
                 icon={Megaphone}
                 title="No notices found"
               />
@@ -227,6 +237,7 @@ export default function OwnerNoticesScreen() {
           title={confirm.action === "archive" ? "Archive notice?" : "Delete notice?"}
         />
       ) : null}
+        {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
 
       {selectedProperty ? (

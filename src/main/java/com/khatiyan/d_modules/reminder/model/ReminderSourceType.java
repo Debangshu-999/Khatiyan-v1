@@ -5,5 +5,7 @@ public enum ReminderSourceType {
     TENANCY,
     CONCERN,
     SALARY_ACCOUNT,
+    /** A property's payroll as a whole, for reminders batched across accounts. */
+    SALARY_PAYROLL,
     EXPENSE_BUDGET
 }

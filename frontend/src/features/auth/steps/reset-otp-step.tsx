@@ -1,7 +1,7 @@
 import { View } from "react-native";
 import { ArrowLeft } from "lucide-react-native";
 
-import { AuthChipLink, CodeField, LinkButton, PhoneSummaryRow, PrimaryButton, StepBadge, otpTimerLabel } from "@/features/auth/auth-ui";
+import { AuthChipLink, CodeField, LinkButton, PhoneSummaryRow, PrimaryButton, StepProgress, otpTimerLabel } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -18,6 +18,7 @@ export function ResetOtpStep({
   onVerifyOtp,
   onEditPhone,
   onBackToLogin,
+  otpError,
 }: {
   phone: string;
   otp: string;
@@ -28,13 +29,14 @@ export function ResetOtpStep({
   onVerifyOtp: () => void;
   onEditPhone: () => void;
   onBackToLogin: () => void;
+  otpError?: string;
 }) {
   return (
     <>
-      <StepBadge text="Reset PIN / OTP" />
+      <StepProgress step={1} total={2} label="Verify your number" />
       {/* Shows where the code went; Edit returns to the phone-entry step. */}
       <PhoneSummaryRow phone={phone} onEdit={onEditPhone} />
-      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} />
+      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} error={otpError} />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <PrimaryButton

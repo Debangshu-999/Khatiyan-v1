@@ -16,4 +16,10 @@ public interface SalaryMonthRepository extends JpaRepository<SalaryMonth, UUID> 
     Optional<SalaryMonth> findBySalaryAccountIdAndPayrollMonth(UUID salaryAccountId, LocalDate payrollMonth);
 
     List<SalaryMonth> findBySalaryAccountIdOrderByPayrollMonthDesc(UUID salaryAccountId);
+
+    /**
+     * Whether the account has any payroll month before this one — false means
+     * the given month is its first, i.e. a new employee joining payroll.
+     */
+    boolean existsBySalaryAccountIdAndPayrollMonthBefore(UUID salaryAccountId, LocalDate payrollMonth);
 }

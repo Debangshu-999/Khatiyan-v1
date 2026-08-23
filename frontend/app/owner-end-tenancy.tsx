@@ -13,6 +13,9 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { SkeletonCard } from "@/components/skeleton";
+import { AlertModal } from "@/components/alert-modal";
+import { errorMessage } from "@/features/forms/server-error";
+import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
@@ -77,6 +80,10 @@ export default function OwnerEndTenancyScreen() {
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const toast = useToast();
+  // Every refusal on this screen arrives mid-operation — an instrument that
+  // cannot be used, a server that says no. There is no field to correct, so
+  // they all go to the modal.
+  const opErrors = useFormErrors<never>();
   const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
   const tenancyId = typeof tenancyIdParam === "string" ? tenancyIdParam : "";
 
@@ -253,10 +260,10 @@ export default function OwnerEndTenancyScreen() {
         : null;
 
   async function end() {
+    // The button is already disabled while anything is blocking, and the reason
+    // is stated on screen in the "Action needed" bar — repeating it here would
+    // be a second copy of a message the reader is already looking at.
     if (!tenancyId || blockingMessage) {
-      if (blockingMessage) {
-        toast.error(blockingMessage);
-      }
       return;
     }
     try {
@@ -284,8 +291,7 @@ export default function OwnerEndTenancyScreen() {
       toast.success("Tenancy ended.");
       router.back();
     } catch (error) {
-      const message = (error as { data?: { message?: string } })?.data?.message;
-      toast.error(message ?? "Could not end the tenancy. Please try again.");
+      opErrors.failFromServer(errorMessage(error) || "Could not end the tenancy. Please try again.");
     }
   }
 
@@ -317,15 +323,13 @@ export default function OwnerEndTenancyScreen() {
           <SkeletonCard />
         ) : !tenancy ? (
           <EmptyState
-            icon={DoorOpen}
-            eyebrow="Not found"
+            icon={DoorOpen}
             title="Tenancy unavailable"
             description="This tenancy could not be loaded for the selected property."
           />
         ) : (
           <>
             <NoticeBar
-              icon={duesCleared ? Check : AlertCircle}
               message={
                 duesCleared
                   ? "All bills are paid — rent cycles and any one-off charges."
@@ -342,7 +346,7 @@ export default function OwnerEndTenancyScreen() {
                 bottom will not move — so they belong in one place the actor
                 reads before scrolling, not scattered down the page. */}
             {blockingMessage && duesCleared ? (
-              <NoticeBar icon={AlertTriangle} message={blockingMessage} title="Action needed" tone="warning" />
+              <NoticeBar message={blockingMessage} title="Action needed" tone="warning" />
             ) : null}
 
             {showsExitCharge ? (
@@ -352,13 +356,21 @@ export default function OwnerEndTenancyScreen() {
                   of={stepCount}
                   title={isEarlyExit ? "Leaving early" : "Leaving without notice"}
                 />
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                  {isEarlyExit
-                    ? tenancy.agreementEndDate
-                      ? `The agreement runs to ${formatDate(tenancy.agreementEndDate)}.`
-                      : "The agreement has a fixed term."
-                    : "This stay is open-ended and is ending before notice was served."}
-                </Text>
+                {/* A stay ending before its term or before notice is the whole
+                    reason this section exists, and it changes what the owner is
+                    entitled to charge. Set as a plain caption it read as a
+                    footnote to the heading; it is a warning. */}
+                <NoticeBar
+                  message={
+                    isEarlyExit
+                      ? tenancy.agreementEndDate
+                        ? `The agreement runs to ${formatDate(tenancy.agreementEndDate)}.`
+                        : "The agreement has a fixed term."
+                      : "This stay is open-ended and is ending before notice was served."
+                  }
+                  title={isEarlyExit ? "Ending before the term" : "Ending without notice"}
+                  tone="warning"
+                />
 
                 {governingRule ? (
                   <View
@@ -421,7 +433,7 @@ export default function OwnerEndTenancyScreen() {
                     // money, so it is confirmed before it sticks rather than
                     // toggled by a stray tap.
                     if (next === "DEPOSIT" && depositUnavailable) {
-                      toast.error("There is no deposit to charge against.");
+                      opErrors.failFromServer("There is no deposit to charge against.");
                       return;
                     }
                     setPendingInstrument(next);
@@ -559,7 +571,6 @@ export default function OwnerEndTenancyScreen() {
               <StepLabel index={stepOf("damages")} of={stepCount} title="Damage charges" />
               {damageCharges.length === 0 ? (
                 <NoticeBar
-                  icon={AlertTriangle}
                   message="This agreement set no damage-charge schedule, so nothing here is pre-agreed. Anything you charge must be evidenced at move-out."
                   title="No agreed damage charges"
                   tone="warning"
@@ -624,7 +635,7 @@ export default function OwnerEndTenancyScreen() {
                     disabled={false}
                     onChange={(next) => {
                       if (next === "DEPOSIT" && depositUnavailable) {
-                        toast.error("There is no deposit left to charge against.");
+                        opErrors.failFromServer("There is no deposit left to charge against.");
                         return;
                       }
                       setPendingDamageInstrument(next);
@@ -740,6 +751,8 @@ export default function OwnerEndTenancyScreen() {
           />
         </PinnedFooter>
       ) : null}
+
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
 
       {instrumentPreviewOpen && pendingInstrument === "DEPOSIT" ? (
         <DepositDeductionSheet
@@ -1168,7 +1181,6 @@ function BillPreviewSheet({
       </View>
 
       <NoticeBar
-        icon={AlertTriangle}
         message="This bill is recorded as already paid. Collect the money from the tenant during the exit — nothing will chase it afterwards."
         title="Collect this manually"
         tone="warning"
@@ -1197,16 +1209,15 @@ function AddDamageChargeSheet({
   const { colors, type } = useTheme();
   const [item, setItem] = useState("");
   const [rupees, setRupees] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"item" | "rupees">();
   const amountPaise = rupeesToPaise(rupees) ?? 0;
 
   function submit() {
-    if (!item.trim()) {
-      setError("Name what was damaged.");
-      return;
-    }
-    if (amountPaise <= 0) {
-      setError("Enter an amount greater than zero.");
+    const cleared = form.validate({
+      ...(item.trim() ? {} : { item: "Name what was damaged." }),
+      ...(amountPaise > 0 ? {} : { rupees: "Enter an amount greater than zero." }),
+    });
+    if (!cleared) {
       return;
     }
     onAdd({ amountPaise, reason: item.trim() });
@@ -1215,21 +1226,23 @@ function AddDamageChargeSheet({
   return (
     <SheetShell onRequestClose={onCancel} title="Add damage charge">
       <FormInput
+        error={form.errors.item}
         label="Item"
         onChangeText={(text) => {
           setItem(text);
-          setError(null);
+          form.clearField("item");
         }}
         placeholder="e.g. Repainting"
         required
         value={item}
       />
       <FormInput
+        error={form.errors.rupees}
         keyboardType="number-pad"
         label="Price"
         onChangeText={(text) => {
           setRupees(text);
-          setError(null);
+          form.clearField("rupees");
         }}
         placeholder="0"
         prefix="₹"
@@ -1237,22 +1250,16 @@ function AddDamageChargeSheet({
         value={rupees}
       />
 
-      {error ? (
-        <Text style={[type.caption, { color: colors.danger }]}>
-          {error}
-        </Text>
-      ) : (
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-          Not pre-agreed in the agreement, so keep evidence of it.
-        </Text>
-      )}
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        Not pre-agreed in the agreement, so keep evidence of it.
+      </Text>
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
           <ActionButton label="Cancel" onPress={onCancel} variant="secondary" />
         </View>
         <View style={{ flex: 1 }}>
-          <ActionButton label="Add charge" onPress={submit} />
+          <ActionButton disabled={form.blocked} label="Add charge" onPress={submit} />
         </View>
       </View>
     </SheetShell>

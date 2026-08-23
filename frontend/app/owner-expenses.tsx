@@ -22,11 +22,16 @@ import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
+import { AlertModal } from "@/components/alert-modal";
+import { FieldError } from "@/components/field-error";
+import { errorMessage } from "@/features/forms/server-error";
+import { isUnchanged } from "@/features/forms/unchanged";
+import { useFormErrors } from "@/features/forms/use-form-errors";
+import { ExpenseCategoryPicker } from "@/features/owner/expense-category-picker";
+import { ActionButton, BackButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { MonthSelector } from "@/components/month-selector";
 import { useAppSelector } from "@/store/hooks";
 import {
-  useCreateExpenseCategoryMutation,
   useCreateExpenseMutation,
   useCreateRecurringExpenseMutation,
   useDeactivateRecurringExpenseMutation,
@@ -34,6 +39,7 @@ import {
   useGetBudgetTrendQuery,
   useGetExpenseSummaryQuery,
   useListExpenseCategoriesQuery,
+  type ExpenseCategory,
   useListExpensesQuery,
   useListRecurringExpensesQuery,
   useRaiseBudgetMutation,
@@ -76,6 +82,29 @@ export default function OwnerExpensesScreen() {
   const expensesPage = expensesQuery.data;
   const categories = useMemo(() => (categoriesQuery.data ?? []).filter((category) => category.active), [categoriesQuery.data]);
 
+  /**
+   * A reversal folded into the row it undoes, so the pair reads as one entry
+   * rather than two cards saying opposite things.
+   *
+   * <p>Only when BOTH are on this page. The ledger is paginated and a correction
+   * can land on a different page from the entry it corrects — folding across
+   * that boundary would silently drop the reversal from the list entirely, which
+   * is worse than showing it on its own.
+   */
+  const ledgerRows = useMemo(() => {
+    const items = expensesPage?.items ?? [];
+    const onThisPage = new Set(items.map((item) => item.id));
+    const foldable = (item: Expense) =>
+      item.entryType === "REVERSAL" && item.reversesExpenseId != null && onThisPage.has(item.reversesExpenseId);
+
+    const reversalByOriginal = new Map<string, Expense>();
+    items.filter(foldable).forEach((item) => reversalByOriginal.set(item.reversesExpenseId!, item));
+
+    return items
+      .filter((item) => !foldable(item))
+      .map((expense) => ({ expense, reversal: reversalByOriginal.get(expense.id) }));
+  }, [expensesPage?.items]);
+
   return (
     <>
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
@@ -88,8 +117,7 @@ export default function OwnerExpensesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={Wallet}
-            eyebrow="Property required"
+            icon={Wallet}
             title="No property selected"
             description="Choose an active property from Home before opening the expense tracker."
           />
@@ -105,15 +133,7 @@ export default function OwnerExpensesScreen() {
 
             {budget ? <BudgetTiles budget={budget} /> : null}
 
-            {trend && trend.points.length > 0 ? (
-              <Section eyebrow="Trends" title="Last 6 months">
-                <BudgetSpendChart points={trend.points} />
-                <BudgetTrendChart points={trend.points} />
-                {trend.points.some((point) => point.raisedPaise > 0) ? <RaisedTrendChart points={trend.points} /> : null}
-              </Section>
-            ) : null}
-
-            <Section eyebrow="Actions" title="Expense tools">
+            <Section title="Expense tools">
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <ToolBox icon={Plus} label="Add expense" onPress={() => setSheet("add")} />
                 <ToolBox icon={Repeat2} label="Recurring" onPress={() => setSheet("recurring")} />
@@ -121,20 +141,33 @@ export default function OwnerExpensesScreen() {
               </View>
             </Section>
 
+            {trend && trend.points.length > 0 ? (
+              <Section title="Last 6 months">
+                <BudgetSpendChart points={trend.points} />
+                <BudgetTrendChart points={trend.points} />
+                {trend.points.some((point) => point.raisedPaise > 0) ? <RaisedTrendChart points={trend.points} /> : null}
+              </Section>
+            ) : null}
+
             <CategoryBreakdown loading={summaryQuery.isFetching && !summary} totals={summary?.byCategory ?? []} totalSpentPaise={summary?.totalSpentPaise ?? 0} />
 
-            <Section eyebrow="Ledger" title="This month">
+            <Section title="This month">
               {expensesQuery.isFetching && !expensesPage ? (
                 <SkeletonList rows={4} />
               ) : null}
 
               {expensesPage && expensesPage.items.length === 0 ? (
-                <EmptyState icon={Wallet} eyebrow="Nothing yet" title="No expenses this month" description="Add a manual expense or set up recurring costs to start the ledger." />
+                <EmptyState icon={Wallet} title="No expenses this month" description="Add a manual expense or set up recurring costs to start the ledger." />
               ) : null}
 
               <View style={{ gap: spacing.sm }}>
-                {expensesPage?.items.map((expense) => (
-                  <ExpenseRow expense={expense} key={expense.id} onReverse={() => setReverseTarget(expense)} />
+                {ledgerRows.map(({ expense, reversal }) => (
+                  <ExpenseRow
+                    expense={expense}
+                    key={expense.id}
+                    onReverse={() => setReverseTarget(expense)}
+                    reversal={reversal}
+                  />
                 ))}
               </View>
 
@@ -244,7 +277,7 @@ function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: bool
   const max = totals.reduce((peak, item) => Math.max(peak, item.amountPaise), 0);
 
   return (
-    <Section eyebrow="Breakdown" title="By category">
+    <Section title="By category">
       <Card>
         {loading ? (
           <ActivityIndicator color={colors.primary} />
@@ -552,7 +585,16 @@ function RaisedTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
   );
 }
 
-function ExpenseRow({ expense, onReverse }: { expense: Expense; onReverse: () => void }) {
+function ExpenseRow({
+  expense,
+  onReverse,
+  reversal,
+}: {
+  expense: Expense;
+  onReverse: () => void;
+  /** The entry that undoes this one, when it is on the same page. */
+  reversal?: Expense;
+}) {
   const { colors, fonts, type } = useTheme();
   const negative = expense.amountPaise < 0;
   const canReverse = expense.entryType !== "REVERSAL" && !expense.reversed;
@@ -598,6 +640,30 @@ function ExpenseRow({ expense, onReverse }: { expense: Expense; onReverse: () =>
         <Text style={[type.caption, { color: colors.muted }]}>
           {expense.description}
         </Text>
+      ) : null}
+
+      {/* The correction, inside the same card and below a rule. As its own card
+          the ledger showed two entries with opposing amounts and no visible link
+          between them — you had to match the payee and the date by eye to see
+          that one undid the other. */}
+      {reversal ? (
+        <>
+          <View style={{ backgroundColor: colors.border, height: 1, opacity: 0.7 }} />
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Undo2 color={colors.danger} size={14} strokeWidth={2.2} />
+            <View style={{ flex: 1, gap: 1 }}>
+              <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]}>
+                Reversed {formatDate(reversal.incurredDate)}
+              </Text>
+              {reversal.description ? (
+                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+                  {reversal.description}
+                </Text>
+              ) : null}
+            </View>
+            <MoneyText color={colors.danger} paise={reversal.amountPaise} weight="700" />
+          </View>
+        </>
       ) : null}
     </View>
   );
@@ -647,75 +713,61 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
   );
 }
 
-function InlineError({ message }: { message: string | null }) {
-  const { colors, type } = useTheme();
-  if (!message) return null;
-  return (
-    <Text style={[type.caption, { color: colors.danger, fontWeight: "700" }]}>
-      {message}
-    </Text>
-  );
-}
 
-function AddExpenseSheet({ categories, month, onClose, propertyId }: { categories: { id: string; name: string }[]; month: string; onClose: () => void; propertyId: string }) {
+function AddExpenseSheet({ categories, month, onClose, propertyId }: { categories: ExpenseCategory[]; month: string; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [paidTo, setPaidTo] = useState("");
   const [amount, setAmount] = useState("");
   const [incurredDate, setIncurredDate] = useState(defaultIncurredDate(month));
   const [description, setDescription] = useState("");
-  const [newCategory, setNewCategory] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"category" | "paidTo" | "amount" | "incurredDate">();
   const [createExpense, createState] = useCreateExpenseMutation();
-  const [createCategory, categoryState] = useCreateExpenseCategoryMutation();
-
-  async function addCategory() {
-    const name = newCategory.trim();
-    if (!name) return;
-    try {
-      const created = await createCategory({ name, propertyId }).unwrap();
-      setCategoryId(created.id);
-      setNewCategory("");
-    } catch {
-      setError("Could not add that category.");
-    }
-  }
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    if (!categoryId) return setError("Pick or create a category.");
-    if (!paidTo.trim()) return setError("Enter who this was paid to.");
-    if (!amountPaise) return setError("Enter a valid amount.");
-    if (!incurredDate) return setError("Pick the date.");
+    // Reported together, each under its own control, instead of one at a time.
+    const problems = {
+      ...(categoryId ? {} : { category: "Pick or create a category." }),
+      ...(paidTo.trim() ? {} : { paidTo: "Enter who this was paid to." }),
+      ...(amountPaise ? {} : { amount: "Enter a valid amount." }),
+      ...(incurredDate ? {} : { incurredDate: "Pick the date." }),
+    };
+    if (!form.validate(problems) || !amountPaise) {
+      return;
+    }
     try {
       await createExpense({ payload: { amountPaise, categoryId, description: description.trim() || undefined, incurredDate, paidTo: paidTo.trim() }, propertyId }).unwrap();
       onClose();
       toast.success("Expense added.");
-    } catch {
-      setError("Could not save the expense.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <Sheet onClose={onClose} title="Add expense">
-      <FieldLabel>Category</FieldLabel>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {categories.map((category) => (
-          <ChoiceButton active={category.id === categoryId} key={category.id} label={category.name} onPress={() => setCategoryId(category.id)} />
-        ))}
-      </View>
-      <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1 }}>
-          <FormInput label="New category" onChangeText={setNewCategory} placeholder="e.g. Housekeeping" value={newCategory} />
-        </View>
-        <ActionButton disabled={!newCategory.trim() || categoryState.isLoading} icon={Plus} label="Add" onPress={() => void addCategory()} variant="secondary" />
-      </View>
-      <FormInput label="Paid to" onChangeText={setPaidTo} placeholder="Payee or vendor" value={paidTo} />
-      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <ExpenseDateField label="Incurred date" onChange={setIncurredDate} value={incurredDate} />
+      {/* A picker, not a wrap of chips. Categories are owner-created and grow
+          without limit — at a dozen the chip wrap was four ragged rows above the
+          fields it belonged to, and creating one meant a permanent text box on a
+          form most people never use it on. */}
+      <ExpenseCategoryPicker
+        categories={categories}
+        error={form.errors.category}
+        onChange={(next) => {
+          setCategoryId(next);
+          form.clearField("category");
+        }}
+        propertyId={propertyId}
+        value={categoryId}
+      />
+      <FormInput error={form.errors.paidTo} label="Paid to" onChangeText={(next) => { setPaidTo(next); form.clearField("paidTo"); }} placeholder="Payee or vendor" value={paidTo} />
+      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+      <ExpenseDateField label="Incurred date" onChange={(next) => { setIncurredDate(next); form.clearField("incurredDate"); }} value={incurredDate} />
+      <FieldError message={form.errors.incurredDate} />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
-      <InlineError message={error} />
-      <ActionButton disabled={createState.isLoading} icon={Plus} label={createState.isLoading ? "Saving" : "Save expense"} onPress={() => void submit()} />
+      <ActionButton disabled={createState.isLoading || form.blocked} icon={Plus} label={createState.isLoading ? "Saving" : "Save expense"} onPress={() => void submit()} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Sheet>
   );
 }
@@ -723,27 +775,34 @@ function AddExpenseSheet({ categories, month, onClose, propertyId }: { categorie
 function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defaultMonthlyBudgetPaise: number | null }; month: string; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [amount, setAmount] = useState(budget.defaultMonthlyBudgetPaise != null ? String(Math.round(budget.defaultMonthlyBudgetPaise / 100)) : "");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"amount">();
   const [setDefaultBudget, state] = useSetDefaultBudgetMutation();
+  const initialAmount = budget.defaultMonthlyBudgetPaise;
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    if (amountPaise == null) return setError("Enter a valid amount.");
+    if (!form.validate(amountPaise == null ? { amount: "Enter a valid amount." } : {}) || amountPaise == null) {
+      return;
+    }
+    if (amountPaise === initialAmount) {
+      toast.warning("No changes have been made.");
+      return;
+    }
     try {
       await setDefaultBudget({ amountPaise, month, propertyId }).unwrap();
       onClose();
       toast.success("Monthly budget updated.");
-    } catch {
-      setError("Could not update the budget.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <Sheet onClose={onClose} title="Monthly budget">
       <BodyNote>This is the recurring monthly budget. Set it once — it carries forward every month and can be edited anytime.</BodyNote>
-      <FormInput keyboardType="decimal-pad" label="Monthly budget" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <InlineError message={error} />
-      <ActionButton disabled={state.isLoading} label={state.isLoading ? "Saving" : "Save budget"} onPress={() => void submit()} />
+      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Monthly budget" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+      <ActionButton disabled={state.isLoading || form.blocked} label={state.isLoading ? "Saving" : "Save budget"} onPress={() => void submit()} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Sheet>
   );
 }
@@ -752,28 +811,30 @@ function RaiseBudgetSheet({ month, onClose, propertyId }: { month: string; onClo
   const toast = useToast();
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"amount">();
   const [raiseBudget, state] = useRaiseBudgetMutation();
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    if (!amountPaise) return setError("Enter a valid amount.");
+    if (!form.validate(amountPaise ? {} : { amount: "Enter a valid amount." }) || !amountPaise) {
+      return;
+    }
     try {
       await raiseBudget({ amountPaise, month, propertyId, reason: reason.trim() || undefined }).unwrap();
       onClose();
       toast.success("Budget raised for this month.");
-    } catch {
-      setError("Could not raise the budget.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <Sheet onClose={onClose} title="Raise budget">
       <BodyNote>A raise adds to this month&apos;s budget only and is tracked separately from the recurring default.</BodyNote>
-      <FormInput keyboardType="decimal-pad" label="Raise amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
+      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Raise amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
       <FormInput label="Reason" onChangeText={setReason} placeholder="Optional reason" value={reason} />
-      <InlineError message={error} />
-      <ActionButton disabled={state.isLoading} icon={Plus} label={state.isLoading ? "Saving" : "Raise budget"} onPress={() => void submit()} />
+      <ActionButton disabled={state.isLoading || form.blocked} icon={Plus} label={state.isLoading ? "Saving" : "Raise budget"} onPress={() => void submit()} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Sheet>
   );
 }
@@ -781,17 +842,19 @@ function RaiseBudgetSheet({ month, onClose, propertyId }: { month: string; onClo
 function ReverseSheet({ expense, onClose, propertyId }: { expense: Expense; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"reason">();
   const [reverseExpense, state] = useReverseExpenseMutation();
 
   async function submit() {
-    if (!reason.trim()) return setError("A reason is required to reverse an entry.");
+    if (!form.validate(reason.trim() ? {} : { reason: "A reason is required to reverse an entry." })) {
+      return;
+    }
     try {
       await reverseExpense({ expenseId: expense.id, propertyId, reason: reason.trim() }).unwrap();
       onClose();
       toast.success("Expense reversed.");
-    } catch {
-      setError("Could not reverse the expense.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
@@ -800,16 +863,18 @@ function ReverseSheet({ expense, onClose, propertyId }: { expense: Expense; onCl
       <BodyNote>
         Reversing posts a correcting entry of {formatMoneyPaise(-expense.amountPaise)} against {expense.paidTo}. The original row is kept for the audit trail.
       </BodyNote>
-      <FormInput label="Reason" multiline onChangeText={setReason} placeholder="Why is this being reversed?" value={reason} />
-      <InlineError message={error} />
-      <ActionButton disabled={state.isLoading} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse expense"} onPress={() => void submit()} variant="danger" />
+      <FormInput error={form.errors.reason} label="Reason" multiline onChangeText={(next) => { setReason(next); form.clearField("reason"); }} placeholder="Why is this being reversed?" value={reason} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
+      <ActionButton disabled={state.isLoading || form.blocked} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse expense"} onPress={() => void submit()} variant="danger" />
     </Sheet>
   );
 }
 
-function RecurringSheet({ categories, onClose, propertyId }: { categories: { id: string; name: string }[]; onClose: () => void; propertyId: string }) {
+function RecurringSheet({ categories, onClose, propertyId }: { categories: ExpenseCategory[]; onClose: () => void; propertyId: string }) {
   const { colors, type } = useTheme();
   const toast = useToast();
+  // Removing a recurring expense is refused by the server, not by a field.
+  const opErrors = useFormErrors<never>();
   const recurringQuery = useListRecurringExpensesQuery(propertyId);
   const items = recurringQuery.data ?? [];
   const [editing, setEditing] = useState<RecurringExpense | "new" | null>(null);
@@ -823,8 +888,8 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: { id:
     try {
       await deactivate({ propertyId, recurringExpenseId: target.id }).unwrap();
       toast.success("Recurring expense removed.");
-    } catch {
-      toast.error("Could not remove the recurring expense.");
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught) || "Could not remove the recurring expense.");
     }
   }
 
@@ -892,18 +957,19 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: { id:
           title="Remove recurring expense?"
         />
       ) : null}
+      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </>
   );
 }
 
-function RecurringFormSheet({ categories, editing, onClose, propertyId }: { categories: { id: string; name: string }[]; editing: RecurringExpense | null; onClose: () => void; propertyId: string }) {
+function RecurringFormSheet({ categories, editing, onClose, propertyId }: { categories: ExpenseCategory[]; editing: RecurringExpense | null; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [categoryId, setCategoryId] = useState(editing?.categoryId ?? categories[0]?.id ?? "");
   const [paidTo, setPaidTo] = useState(editing?.paidTo ?? "");
   const [amount, setAmount] = useState(editing ? String(Math.round(editing.amountPaise / 100)) : "");
   const [dayOfMonth, setDayOfMonth] = useState(String(editing?.dayOfMonth ?? 1));
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const form = useFormErrors<"category" | "paidTo" | "amount" | "dayOfMonth">();
   const [create, createState] = useCreateRecurringExpenseMutation();
   const [update, updateState] = useUpdateRecurringExpenseMutation();
   const saving = createState.isLoading || updateState.isLoading;
@@ -911,35 +977,55 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
     const day = Number(dayOfMonth);
-    if (!categoryId) return setError("Pick a category.");
-    if (!paidTo.trim()) return setError("Enter who this is paid to.");
-    if (!amountPaise) return setError("Enter a valid amount.");
-    if (!Number.isInteger(day) || day < 1 || day > 28) return setError("Day of month must be between 1 and 28.");
+    const problems = {
+      ...(categoryId ? {} : { category: "Pick a category." }),
+      ...(paidTo.trim() ? {} : { paidTo: "Enter who this is paid to." }),
+      ...(amountPaise ? {} : { amount: "Enter a valid amount." }),
+      ...(Number.isInteger(day) && day >= 1 && day <= 28
+        ? {}
+        : { dayOfMonth: "Day of month must be between 1 and 28." }),
+    };
+    if (!form.validate(problems) || !amountPaise) {
+      return;
+    }
+
+    // An edit that changed nothing should say so rather than report success.
+    if (editing && isUnchanged(
+      { amountPaise: editing.amountPaise, categoryId: editing.categoryId, dayOfMonth: editing.dayOfMonth, description: editing.description, paidTo: editing.paidTo },
+      { amountPaise, categoryId, dayOfMonth: day, description, paidTo },
+    )) {
+      toast.warning("No changes have been made.");
+      return;
+    }
     const payload = { amountPaise, categoryId, dayOfMonth: day, description: description.trim() || undefined, paidTo: paidTo.trim() };
     try {
       if (editing) await update({ payload, propertyId, recurringExpenseId: editing.id }).unwrap();
       else await create({ payload, propertyId }).unwrap();
       onClose();
       toast.success(editing ? "Recurring expense updated." : "Recurring expense added.");
-    } catch {
-      setError("Could not save the recurring expense.");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
     }
   }
 
   return (
     <Sheet onClose={onClose} title={editing ? "Edit recurring" : "Add recurring"}>
-      <FieldLabel>Category</FieldLabel>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {categories.map((category) => (
-          <ChoiceButton active={category.id === categoryId} key={category.id} label={category.name} onPress={() => setCategoryId(category.id)} />
-        ))}
-      </View>
-      <FormInput label="Paid to" onChangeText={setPaidTo} placeholder="Payee or vendor" value={paidTo} />
-      <FormInput keyboardType="decimal-pad" label="Amount" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <FormInput keyboardType="number-pad" label="Day of month (1-28)" onChangeText={setDayOfMonth} placeholder="1" value={dayOfMonth} />
+      <ExpenseCategoryPicker
+        categories={categories}
+        error={form.errors.category}
+        onChange={(next) => {
+          setCategoryId(next);
+          form.clearField("category");
+        }}
+        propertyId={propertyId}
+        value={categoryId}
+      />
+      <FormInput error={form.errors.paidTo} label="Paid to" onChangeText={(next) => { setPaidTo(next); form.clearField("paidTo"); }} placeholder="Payee or vendor" value={paidTo} />
+      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+      <FormInput error={form.errors.dayOfMonth} keyboardType="number-pad" label="Day of month (1-28)" onChangeText={(next) => { setDayOfMonth(next); form.clearField("dayOfMonth"); }} placeholder="1" value={dayOfMonth} />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
-      <InlineError message={error} />
-      <ActionButton disabled={saving} label={saving ? "Saving" : editing ? "Save changes" : "Add recurring"} onPress={() => void submit()} />
+      {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
+      <ActionButton disabled={saving || form.blocked} label={saving ? "Saving" : editing ? "Save changes" : "Add recurring"} onPress={() => void submit()} />
     </Sheet>
   );
 }
@@ -989,6 +1075,7 @@ function BodyNote({ children }: { children: ReactNode }) {
     </Text>
   );
 }
+
 
 // ---------------------------------------------------------------- helpers
 
