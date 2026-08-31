@@ -10,5 +10,16 @@ package com.khatiyan.a_auth.model;
 public enum OtpPurpose {
     LOGIN,
     PIN_RESET,
-    EMAIL_LOGIN
+    EMAIL_LOGIN,
+
+    /**
+     * Signing a tenancy agreement.
+     *
+     * <p>Its own purpose so a code the tenant requested to log in cannot be
+     * turned into a signature. That separation is the whole reason this enum
+     * exists, and it matters more here than anywhere else: every other purpose
+     * grants access, which the person can undo by signing out. This one binds
+     * them to a contract.
+     */
+    AGREEMENT_ACCEPTANCE
 }

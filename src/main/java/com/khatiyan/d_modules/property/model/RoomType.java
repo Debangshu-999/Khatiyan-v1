@@ -12,7 +12,6 @@ public enum RoomType {
     DOUBLE,
     TRIPLE,
     FOUR_SHARING,
-    FIVE_SHARING,
     DORMITORY
 }
 

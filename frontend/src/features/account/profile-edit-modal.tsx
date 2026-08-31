@@ -3,6 +3,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Text, View } from "reac
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
+import { emailProblem } from "@/features/forms/email-validation";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
@@ -17,7 +18,6 @@ import { useTheme } from "@/theme/use-theme";
 
 export type ProfileEditField = "name" | "email";
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
  * Edits one field of the signed-in user's profile.
@@ -55,9 +55,7 @@ export function ProfileEditModal({
   async function submit() {
     const trimmed = value.trim();
     const problem = isEmail
-      ? EMAIL_PATTERN.test(trimmed)
-        ? null
-        : "Enter a valid email address."
+      ? emailProblem(trimmed, "Enter an email address.")
       : trimmed.length < 2
         ? "Enter your full name."
         : null;
@@ -80,7 +78,7 @@ export function ProfileEditModal({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={field !== null}>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={field !== null}>
       {/* A plain dim, not a blur.
           expo-blur can only blur content inside a BlurTargetView that the
           BlurView itself sits within. A React Native Modal renders in its own

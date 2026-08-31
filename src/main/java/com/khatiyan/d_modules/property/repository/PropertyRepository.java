@@ -28,6 +28,8 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
     List<Property> findByOwnerIdAndActiveTrue(UUID ownerId);
 
+    long countByOwnerIdAndActiveTrue(UUID ownerId);
+
     List<Property> findByIdInAndActiveTrue(Collection<UUID> ids);
 
     boolean existsByIdAndOwnerIdAndActiveTrue(UUID id, UUID ownerId);

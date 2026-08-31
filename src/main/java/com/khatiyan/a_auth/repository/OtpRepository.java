@@ -42,4 +42,17 @@ public interface OtpRepository extends JpaRepository<OtpRequest, UUID> {
     long countByPhoneAndCreatedAtAfter(String phone, Instant since);
 
     long countByRequestIpAddressAndCreatedAtAfter(String requestIpAddress, Instant since);
+
+    /**
+     * The oldest request still inside the window, for telling somebody when
+     * their budget frees up.
+     *
+     * <p>The window is rolling: it started when this row was written, not when
+     * the caller was refused, so the wait is what is left of ITS fifteen
+     * minutes.
+     */
+    Optional<OtpRequest> findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(String phone, Instant since);
+
+    Optional<OtpRequest> findFirstByRequestIpAddressAndCreatedAtAfterOrderByCreatedAtAsc(
+            String requestIpAddress, Instant since);
 }

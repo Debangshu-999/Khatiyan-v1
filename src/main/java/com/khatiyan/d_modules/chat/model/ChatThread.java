@@ -166,6 +166,22 @@ public class ChatThread extends BaseEntity {
     }
 
     /**
+     * Withdraws the newest message from the list preview.
+     *
+     * <p>Separate from {@link #repeatLastMessagePreview} because it also has to
+     * change the kind. A deleted photo left the row showing a camera icon beside
+     * the words "Message deleted", which reads as an image that is still there.
+     *
+     * <p>The kind becomes DELETED rather than TEXT so the list can mark the row
+     * without matching on the preview string. The words are copy and will change;
+     * what happened to the message is a fact about it.
+     */
+    public void noteLastMessageWithdrawn(String preview) {
+        this.lastMessagePreview = trimPreview(preview);
+        this.lastMessageKind = "DELETED";
+    }
+
+    /**
      * Ends the conversation without deleting it.
      *
      * <p>Idempotent: closing twice is not an error, because both parties can

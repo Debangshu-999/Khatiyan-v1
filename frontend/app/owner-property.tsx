@@ -2,8 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { BedDouble, Building2, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
+import { BedDouble, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { ActionCard } from "@/components/action-card";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
@@ -108,7 +109,7 @@ export default function OwnerPropertyScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Building2}
+          icon={PropertyIcon}
           title="No active property selected"
           description="Choose the property you want to manage from Home."
         />
@@ -117,7 +118,12 @@ export default function OwnerPropertyScreen() {
       {selectedProperty ? (
         <>
           <Card>
-            <View style={{ gap: spacing.xs }}>
+            {/* The property mark beside its own name, as on the Home selector.
+                This card IS the property; every other card on the screen is a
+                part of it, and the glyph is what says which is which. */}
+            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+              <PropertyIcon color={colors.ink} size={34} />
+            <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {selectedProperty.referenceCode}  /  {humanizeToken(selectedProperty.type)}
               </Text>
@@ -127,6 +133,7 @@ export default function OwnerPropertyScreen() {
               <Text style={[type.body, { color: colors.muted }]}>
                 {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
               </Text>
+            </View>
             </View>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
               <ActionButton disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="secondary" />
@@ -173,15 +180,17 @@ export default function OwnerPropertyScreen() {
           {/* Same grid a prospective tenant sees on the discovery profile. The
               owner was previously shown flat pills — the same facts in a weaker
               form, so they could not tell how their own listing actually reads. */}
+          {/* A Section like the others, not a card with an eyebrow inside it.
+              The grid already draws its own tiles, so the surface around them
+              was a container holding containers — and the heading now matches
+              "Property workspace" and "Listing" instead of being a smaller
+              label in a different place. */}
           {selectedProperty.facilities.length || selectedProperty.customFacilities.length ? (
-            <Card tone="sunken">
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Facilities
-              </Text>
+            <Section title="Facilities">
               <FacilityOverviewGrid
                 facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]}
               />
-            </Card>
+            </Section>
           ) : null}
 
           {selectedProperty.discoveryProfileCreated ? <DiscoveryListingCard canManage={canManageSettings} propertyId={selectedProperty.id} /> : null}

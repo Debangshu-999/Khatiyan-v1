@@ -26,6 +26,12 @@ import com.khatiyan.d_modules.property.model.RoomStatus;
 @Repository
 public interface RoomRepository extends JpaRepository<Room, UUID> {
 
+    /** How many rooms were cut from one mold — shown before retiring it. */
+    long countByMoldId(UUID moldId);
+
+    List<Room> findByPropertyIdAndMoldId(UUID propertyId, UUID moldId);
+
+
     Optional<Room> findByIdAndActiveTrue(UUID id);
 
     Optional<Room> findByIdAndPropertyId(UUID id, UUID propertyId);

@@ -26,6 +26,7 @@ export default function OwnerActiveTenancyDetailScreen() {
     billingType?: string;
     dailyRatePaise?: string;
     depositAmountPaise?: string;
+    guestStay?: string;
     plannedEndDate?: string;
     referenceCode?: string;
     rentAmountPaise?: string;
@@ -43,6 +44,11 @@ export default function OwnerActiveTenancyDetailScreen() {
   const toast = useToast();
   // Both refusals here happen on tap, with nothing on screen to correct.
   const opErrors = useFormErrors<never>();
+  // A daily guest has no account, so the three "is this person set up" fields
+  // below have nothing to report. They are not pending — there is nothing to
+  // verify and nothing to complete, and showing them half-done reads as work
+  // outstanding rather than a stay that never needed any.
+  const guestStay = stringParam(params.guestStay) === "true";
   const tenantName = stringParam(params.tenantName) || "Unnamed tenant";
   const tenantPhone = stringParam(params.tenantPhone);
   const roomLabel = stringParam(params.roomLabel) || "-";
@@ -175,15 +181,23 @@ export default function OwnerActiveTenancyDetailScreen() {
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenant details" />
         <Card style={{ gap: spacing.sm, padding: spacing.md }}>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
-            <ProfileInfoBox label="Document verified" value="Pending" />
-          </View>
-          <ReadonlyField label="Tenant name" value={tenantName} />
+          {guestStay ? null : (
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
+              <ProfileInfoBox label="Document verified" value="Pending" />
+            </View>
+          )}
+          <ReadonlyField label={guestStay ? "Guest name" : "Tenant name"} value={tenantName} />
           <ReadonlyField label="Phone" value={tenantPhone || "-"} />
           <ReadonlyField label="Tenant ID" value={stringParam(params.referenceCode) || shortId(stringParam(params.tenancyId))} mono />
-          <ReadonlyField label="User ID" value={shortId(stringParam(params.userId))} mono />
-          <ReadonlyField label="Profile completion" value={params.tenantProfileCompleted === "true" ? "Complete" : "Basic"} />
+          {guestStay ? (
+            <ReadonlyField label="Account" value="No account, guest stay" />
+          ) : (
+            <>
+              <ReadonlyField label="User ID" value={shortId(stringParam(params.userId))} mono />
+              <ReadonlyField label="Profile completion" value={params.tenantProfileCompleted === "true" ? "Complete" : "Basic"} />
+            </>
+          )}
         </Card>
       </View>
 

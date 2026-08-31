@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -22,6 +23,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.khatiyan.d_modules.tenancy.model.IdDocumentType;
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.model.UserRole;
@@ -44,6 +47,9 @@ import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
+import com.khatiyan.a_auth.model.Gender;
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
+import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
@@ -51,6 +57,10 @@ import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 
 @ExtendWith(MockitoExtension.class)
 class TenancyServiceTest {
+
+    /** A complete declaration, so creation paths exercise the same shape production does. */
+    private static final IdCheckDeclarationInput ID_CHECK =
+            new IdCheckDeclarationInput(true, IdDocumentType.PASSPORT, "4417");
 
     private static final UUID ACTOR_ID = UUID.randomUUID();
     private static final UUID TENANT_ID = UUID.randomUUID();
@@ -114,7 +124,7 @@ class TenancyServiceTest {
                 null,
                 LocalDate.of(2026, 6, 1),
                 null,
-                true);
+                ID_CHECK);
 
         assertThat(tenancy.getUserId()).isEqualTo(TENANT_ID);
         assertThat(tenancy.getReferenceCode()).isEqualTo("TEN-2026-000001");
@@ -155,7 +165,7 @@ class TenancyServiceTest {
                 5_000_00L,
                 LocalDate.of(2026, 6, 1),
                 null,
-                true);
+                ID_CHECK);
 
         assertThat(tenancy.getRentAmountPaise()).isEqualTo(15_000_00);
         assertThat(tenancy.getDepositAmountPaise()).isEqualTo(5_000_00);
@@ -177,7 +187,7 @@ class TenancyServiceTest {
                 null,
                 LocalDate.of(2026, 6, 1),
                 null,
-                true))
+                ID_CHECK))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("User already has an active tenancy");
 
@@ -260,6 +270,110 @@ class TenancyServiceTest {
                 true);
     }
 
+    /**
+     * The whole point of the daily rework: a guest staying two nights gets no
+     * account, so nothing here provisions a user or marks anyone a tenant.
+     */
+    @Test
+    void aDailyStayIsOnboardedWithoutCreatingAnAccount() {
+        when(referenceCodeGenerator.nextCode("TEN")).thenReturn("TEN-2026-000003");
+        when(propertyModule.hasAvailableVacancy(PROPERTY_ID, ROOM_ID)).thenReturn(true);
+        when(propertyModule.getActiveProperty(PROPERTY_ID)).thenReturn(propertyResponse());
+        when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(roomResponse(12_000_00));
+        when(tenancyRepository.save(any(Tenancy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TenancyOnboardingResponse response = tenancyService.onboardDailyGuest(
+                ACTOR_ID,
+                PROPERTY_ID,
+                ROOM_ID,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 3),
+                guestDetails(),
+                ID_CHECK);
+
+        assertThat(response.tenantAccountCreated()).isFalse();
+        assertThat(response.tenancy().guestStay()).isTrue();
+        assertThat(response.tenancy().userId()).isNull();
+        // The guest's own name and number fill the tenant fields, so every
+        // existing reader that shows "who is this stay for" still works.
+        assertThat(response.tenancy().tenantName()).isEqualTo("Ravi Menon");
+        assertThat(response.tenancy().tenantPhone()).isEqualTo("+919007433360");
+        assertThat(response.tenancy().billingType()).isEqualTo(TenancyBillingType.DAILY);
+
+        verify(authModule, never()).provisionTenantUser(any(), any(), any());
+        verify(authModule, never()).markActiveTenant(any());
+        verify(billingModule).initializeStartedTenancy(ACTOR_ID, response.tenancy());
+
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue()).isInstanceOf(TenancyStartedEvent.class);
+        // Null rather than a placeholder: the listener that would notify a
+        // tenant has to be able to tell there is nobody to notify.
+        assertThat(((TenancyStartedEvent) eventCaptor.getValue()).userId()).isNull();
+    }
+
+    /**
+     * Monthly stays are agreement-backed and app-resident, so they keep their
+     * account. Nothing may quietly route one through the guest register.
+     */
+    @Test
+    void aMonthlyTenancyCannotBeCreatedThroughTheAccountlessPath() {
+        assertThatThrownBy(() -> tenancyService.create(
+                ACTOR_ID,
+                "+919007433360",
+                null,
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.DAILY,
+                null,
+                null,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 3),
+                ID_CHECK))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Daily stays are onboarded as guest records");
+
+        verify(tenancyRepository, never()).save(any(Tenancy.class));
+    }
+
+    /**
+     * Mapping a guest stay must not reach for an account.
+     *
+     * <p>Spring Data throws on a null id rather than returning an empty
+     * Optional, so an `.orElse(null)` after the lookup never runs. One daily
+     * guest in a property therefore took down every list that mapped its
+     * tenancies — the tenant-bills screen among them.
+     */
+    @Test
+    void mappingAGuestStayNeverLooksUpAnAccount() {
+        Tenancy stay = Tenancy.startDailyGuest(
+                "TEN-2026-000009",
+                PROPERTY_ID,
+                ROOM_ID,
+                ACTOR_ID,
+                1_000_00,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 3),
+                guestDetails());
+
+        TenancyResponse response = tenancyService.toResponse(stay);
+
+        assertThat(response.guestStay()).isTrue();
+        assertThat(response.userId()).isNull();
+        assertThat(response.tenantName()).isEqualTo("Ravi Menon");
+        verifyNoInteractions(authModule);
+    }
+
+    private static GuestDetails guestDetails() {
+        return new GuestDetails(
+                "Ravi Menon",
+                "+919007433360",
+                null,
+                "12 Nandidurga Road, Bengaluru 560046",
+                29,
+                Gender.MALE);
+    }
+
     private static PropertyResponse propertyResponse() {
         return new PropertyResponse(
                 PROPERTY_ID,
@@ -309,6 +423,9 @@ class TenancyServiceTest {
                 RoomType.DOUBLE,
                 RoomConditioning.NON_AC,
                 baseRentPaise,
+                null,
+                Set.of(),
+                Set.of(),
                 RoomStatus.VACANT,
                 true,
                 null,

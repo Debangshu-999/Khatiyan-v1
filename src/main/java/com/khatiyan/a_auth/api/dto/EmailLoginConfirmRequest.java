@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record EmailLoginConfirmRequest(
-    @NotBlank @Email @Size(max = 254) String email,
+    @NotBlank @Email(message = "Enter a valid email address") @Size(max = 254) String email,
     @NotBlank @Pattern(regexp = "\\d{6}") String otp,
     /**
      * The session to end before signing in, chosen from the list returned when

@@ -46,20 +46,13 @@ export function EmptyState({ action, compact, description, icon: Icon, title }: 
         paddingVertical: compact ? spacing.xl : 0,
       }}
     >
+      {/* Bigger and closer. With the container's border gone the 58pt box was
+          holding a 26pt glyph in the middle of a lot of nothing, and the gap it
+          left read as a missing element between the mark and the title it
+          belongs to. The icon now fills its own space and sits on the text. */}
       {Icon ? (
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.ink,
-            borderCurve: "continuous",
-            borderRadius: 18,
-            borderWidth: 1,
-            height: 58,
-            justifyContent: "center",
-            width: 58,
-          }}
-        >
-          <Icon color={colors.ink} size={26} strokeWidth={2} />
+        <View style={{ alignItems: "center", justifyContent: "center", marginBottom: -spacing.xs }}>
+          <Icon color={colors.ink} size={46} strokeWidth={1.6} />
         </View>
       ) : null}
 

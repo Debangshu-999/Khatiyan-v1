@@ -32,8 +32,6 @@ export function ScreenErrorFallback({ error, retry }: ErrorBoundaryProps) {
       <View
         style={{
           alignItems: "center",
-          borderColor: colors.ink,
-          borderWidth: 1,
           borderCurve: "continuous",
           borderRadius: 18,
           height: 56,
@@ -41,7 +39,7 @@ export function ScreenErrorFallback({ error, retry }: ErrorBoundaryProps) {
           width: 56,
         }}
       >
-        <TriangleAlert color={colors.ink} size={26} strokeWidth={2.2} />
+        <TriangleAlert color={colors.ink} size={40} strokeWidth={2.2} />
       </View>
 
       <Text

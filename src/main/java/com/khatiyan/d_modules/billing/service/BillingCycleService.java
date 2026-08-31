@@ -135,10 +135,7 @@ public class BillingCycleService {
             throw new ValidationException("First billing cycle already exists");
         }
 
-        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
-                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
-
-        BillingCycle cycle = createCycleEntity(tenancy, tenant.fullName(), 1, tenancy.startDate());
+        BillingCycle cycle = createCycleEntity(tenancy, tenantNameFor(tenancy), 1, tenancy.startDate());
         BillingCycle savedCycle = billingCycleRepository.save(cycle);
 
         createBaseLineItems(savedCycle, tenancy);
@@ -155,7 +152,13 @@ public class BillingCycleService {
         // listeners are not told about a cycle in a state it was never really in.
         // A future-dated start stays UPCOMING and is opened by the nightly job,
         // which is the case that job still exists for.
-        if (!savedCycle.getPeriodStartDate().isAfter(LocalDate.now(DASHBOARD_ZONE))) {
+        //
+        // Only an UPCOMING cycle is activated. A daily stay is billed for the
+        // whole stay at once and so is born UNPAID with no editable window —
+        // there is nothing to open, and asking it to activate threw "Only an
+        // upcoming billing cycle can be activated" on every daily onboarding.
+        if (savedCycle.isUpcoming()
+                && !savedCycle.getPeriodStartDate().isAfter(LocalDate.now(DASHBOARD_ZONE))) {
             savedCycle.activate(lateFeePerDayPaise(savedCycle.getPropertyId()));
         }
 
@@ -764,7 +767,7 @@ public class BillingCycleService {
                 cycle.getTotalAmountPaise(),
                 request.method(),
                 normalize(request.referenceText()),
-                normalize(request.proofImageUrl()),
+                normalizeUrls(request.proofImageUrls()),
                 normalize(request.note()),
                 actorUserId,
                 now);
@@ -807,6 +810,24 @@ public class BillingCycleService {
         return manualPaymentRepository.findByBillingCycleId(billingCycleId)
                 .stream()
                 .map(ManualPaymentResponse::from)
+                .toList();
+    }
+
+    /**
+     * Drops blanks and duplicates from a proof list.
+     *
+     * <p>A form that attaches, removes and re-attaches can send an empty slot,
+     * and the same photo twice is one photo.
+     */
+    private List<String> normalizeUrls(List<String> urls) {
+        if (urls == null) {
+            return List.of();
+        }
+
+        return urls.stream()
+                .map(this::normalize)
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
                 .toList();
     }
 
@@ -1160,12 +1181,9 @@ public class BillingCycleService {
             return false;
         }
 
-        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
-                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
-
         latest.markUnpaidAfterOverdueWindow(nextPeriodStart);
 
-        BillingCycle cycle = createCycleEntity(tenancy, tenant.fullName(), nextCycleNumber, nextPeriodStart);
+        BillingCycle cycle = createCycleEntity(tenancy, tenantNameFor(tenancy), nextCycleNumber, nextPeriodStart);
         BillingCycle savedCycle = billingCycleRepository.save(cycle);
 
         createBaseLineItems(savedCycle, tenancy);
@@ -1495,14 +1513,11 @@ public class BillingCycleService {
             throw new ValidationException("Amount must be greater than zero");
         }
 
-        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
-                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
-
         BillingCycle bill = billingCycleRepository.save(BillingCycle.createOneOff(
                 tenancy.id(),
                 referenceCodeGenerator.nextCode("BIL"),
                 tenancy.userId(),
-                tenant.fullName(),
+                tenantNameFor(tenancy),
                 tenancy.propertyId(),
                 tenancy.roomId(),
                 tenancy.billingType(),
@@ -1569,15 +1584,13 @@ public class BillingCycleService {
         }
 
         // Current bill already paid — raise a new ONE_OFF penalty bill, due today.
-        UserSummaryResponse tenant = authModule.findById(tenancy.userId())
-                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
         LocalDate today = LocalDate.now();
 
         BillingCycle penaltyBill = BillingCycle.createOneOff(
                 tenancy.id(),
                 referenceCodeGenerator.nextCode("BIL"),
                 tenancy.userId(),
-                tenant.fullName(),
+                tenantNameFor(tenancy),
                 tenancy.propertyId(),
                 tenancy.roomId(),
                 tenancy.billingType(),
@@ -1609,6 +1622,26 @@ public class BillingCycleService {
     /**
      * Builds a billing cycle shell for the supplied cycle number and period start.
      */
+    /**
+     * The name to stamp on a bill.
+     *
+     * <p>A monthly tenant's name is read from their account, which is the only
+     * place it can still change. A daily guest has no account — their name was
+     * written into the tenancy at check-in and is the only one there is.
+     *
+     * <p>Either way the result is snapshotted onto the bill and never re-read,
+     * so a later rename does not rewrite what an already-issued bill says.
+     */
+    private String tenantNameFor(TenancyResponse tenancy) {
+        if (tenancy.userId() == null) {
+            return tenancy.tenantName();
+        }
+
+        return authModule.findById(tenancy.userId())
+                .map(UserSummaryResponse::fullName)
+                .orElseThrow(() -> new NotFoundException("User", tenancy.userId()));
+    }
+
     private BillingCycle createCycleEntity(
             TenancyResponse tenancy,
             String tenantNameSnapshot,

@@ -1,7 +1,8 @@
 import { Text, View } from "react-native";
-import { FileText, Image as ImageIcon } from "lucide-react-native";
+import { Ban, FileText, Image as ImageIcon } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { selectHaptic } from "@/lib/haptics";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
 import { threadStamp } from "@/features/chat/chat-time";
 import type { ChatThread } from "@/store/services/chat-api";
@@ -26,11 +27,22 @@ const AVATAR_SIZE = 52;
  * and tapping it is what creates the thread.
  */
 export function ThreadRow({
+  onLongPress,
   onPress,
+  selected,
   subtitle,
   thread,
 }: {
+  /**
+   * Picks the row out for deletion.
+   *
+   * <p>Absent on a roster row that has no conversation behind it yet — there is
+   * nothing to delete, and offering it would suggest the person could be
+   * removed rather than the chat.
+   */
+  onLongPress?: () => void;
   onPress: () => void;
+  selected?: boolean;
   /** Room number, role, whatever places this person. Optional. */
   subtitle?: string | null;
   thread: ChatThread;
@@ -48,9 +60,18 @@ export function ThreadRow({
     <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={`Open conversation with ${thread.title}`}
+      onLongPress={
+        onLongPress
+          ? () => {
+              selectHaptic();
+              onLongPress();
+            }
+          : undefined
+      }
       onPress={onPress}
       style={{
         alignItems: "center",
+        backgroundColor: selected ? colors.surfaceSunken : "transparent",
         flexDirection: "row",
         gap: spacing.sm + 2,
         // Left only. The rule below belongs to the text block, not to the row,
@@ -65,45 +86,36 @@ export function ThreadRow({
         team={facingTheProperty}
       />
 
-      {/* Carries the separator so it runs from the name to the screen edge
-          rather than under the face. A rule crossing a column of circles cuts
-          each one in half and turns the list into a grid. */}
+      {/* No rule. Ruling every row turned a list of people into a table, and
+          on white the lines were the loudest thing on the screen. Space does
+          the separating instead — enough of it that two rows never read as one
+          block, which is the only job the line was doing. */}
       <View
         style={{
           alignItems: "center",
           alignSelf: "stretch",
-          borderBottomColor: colors.border,
-          borderBottomWidth: 1,
           flex: 1,
           flexDirection: "row",
           gap: spacing.sm,
           paddingRight: spacing.lg,
-          paddingVertical: spacing.sm + 2,
+          paddingVertical: spacing.md,
         }}
       >
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Text
-            numberOfLines={1}
-            // The family is the weight. Left to `fontWeight` alone the name
-            // fell back to the platform face and Android bolded it a second
-            // time, which is why unread rows looked heavier on device than in
-            // the browser.
-            style={{
-              color: started ? colors.ink : colors.inkSoft,
-              flex: 1,
-              fontFamily: thread.unread ? fonts.sansBold : fonts.sansSemiBold,
-              fontSize: 15,
-            }}
-          >
-            {thread.title}
-          </Text>
-          {started ? (
-            <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-              {threadStamp(thread.lastMessageAt)}
-            </Text>
-          ) : null}
-        </View>
+        <Text
+          numberOfLines={1}
+          // The family is the weight. Left to `fontWeight` alone the name
+          // fell back to the platform face and Android bolded it a second
+          // time, which is why unread rows looked heavier on device than in
+          // the browser.
+          style={{
+            color: started ? colors.ink : colors.inkSoft,
+            fontFamily: thread.unread ? fonts.sansBold : fonts.sansSemiBold,
+            fontSize: 15,
+          }}
+        >
+          {thread.title}
+        </Text>
 
         <Preview thread={thread} />
 
@@ -114,18 +126,30 @@ export function ThreadRow({
         ) : null}
       </View>
 
-      {/* A dot, not a count. A thread either wants attention or it does not,
-          and the number of messages inside it does not change the answer. */}
-      {thread.unread ? (
-        <View
-          style={{
-            backgroundColor: colors.primary,
-            borderRadius: 999,
-            height: 9,
-            width: 9,
-          }}
-        />
-      ) : null}
+      {/* Time above, mark below, both hard right. The mark used to be a
+          sibling of the whole text block and so sat centred against three
+          lines of it, landing beside the preview instead of under the date it
+          belongs to. */}
+      <View style={{ alignItems: "flex-end", gap: 6 }}>
+        {started ? (
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+            {threadStamp(thread.lastMessageAt)}
+          </Text>
+        ) : null}
+
+        {/* A dot, not a count. A thread either wants attention or it does not,
+            and the number of messages inside it does not change the answer. */}
+        {thread.unread ? (
+          <View
+            style={{
+              backgroundColor: colors.primary,
+              borderRadius: 999,
+              height: 9,
+              width: 9,
+            }}
+          />
+        ) : null}
+      </View>
       </View>
     </AnimatedPressable>
   );
@@ -142,18 +166,22 @@ function Preview({ thread }: { thread: ChatThread }) {
     );
   }
 
-  const Icon = thread.lastMessageKind === "IMAGE" ? ImageIcon : FileText;
+  const deleted = thread.lastMessageKind === "DELETED";
   const attachment = thread.lastMessageKind === "IMAGE" || thread.lastMessageKind === "FILE";
+  const Icon = deleted ? Ban : thread.lastMessageKind === "IMAGE" ? ImageIcon : FileText;
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
-      {attachment ? <Icon color={colors.muted} size={13} strokeWidth={2.2} /> : null}
+      {deleted || attachment ? <Icon color={colors.muted} size={13} strokeWidth={2.2} /> : null}
       <Text
         numberOfLines={1}
         style={{
-          color: thread.unread ? colors.ink : colors.muted,
+          // Withdrawn text stays muted even in an unread row. Bolding it would
+          // be drawing attention to the one thing there is nothing to read.
+          color: deleted || !thread.unread ? colors.muted : colors.ink,
           flex: 1,
           fontSize: 13.5,
+          fontStyle: deleted ? "italic" : "normal",
         }}
       >
         {thread.lastMessagePreview ?? ""}

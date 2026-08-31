@@ -17,6 +17,8 @@ public enum UploadTarget {
     PAYMENT_PROOF("khatiyan/payments", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     PROFILE_PHOTO("khatiyan/profiles", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 5),
     PROPERTY_IMAGE("khatiyan/properties", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    /** A photo of a room type, not of a particular room. */
+    ROOM_TYPE_IMAGE("khatiyan/room-types", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     LOCAL_PLACE_PHOTO("khatiyan/local-places", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     NOTICE_IMAGE("khatiyan/notices", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
     /** Notices accept PDFs and the like, which must not be treated as images. */

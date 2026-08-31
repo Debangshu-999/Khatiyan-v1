@@ -13,30 +13,66 @@ import type { ChatAttachment } from "@/store/services/chat-api";
 export class AttachmentError extends Error {}
 
 /**
- * The native modules behind these two actions, resolved on use.
+ * Keeps the real failure attached to the readable one.
  *
- * <p>Deliberately not top-level imports. Each of these throws from its own
- * module body when the matching native code is missing from the installed
- * binary, and a static import takes the whole route down with it: expo-router
- * cannot read `ErrorBoundary` off a module that never finished evaluating, so
- * the reader gets a blank screen instead of a chat.
- *
- * <p>Loaded here, a binary built before these packages were added costs the
- * person Save and Open — with a message saying so — and nothing else.
+ * <p>The first version of this file caught everything and replaced it with a
+ * friendly sentence, so a missing permission, a dead network and an absent
+ * native module all produced the same words and there was nothing left to
+ * debug from. The sentence is still what the reader sees; the cause goes to the
+ * log and is appended in brackets.
  */
-function native() {
+function fail(readable: string, cause: unknown): never {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  console.warn(`[chat attachments] ${readable}`, cause);
+  throw new AttachmentError(detail ? `${readable}\n\n(${detail})` : readable);
+}
+
+/**
+ * Loads one native module, on use.
+ *
+ * <p>Deliberately not a top-level import. Each of these throws from its own
+ * module body when the native half is missing, and a static import takes the
+ * whole route down with it: expo-router cannot read `ErrorBoundary` off a
+ * module that never finished evaluating, so the reader gets a blank screen
+ * instead of a chat.
+ *
+ * <p>One module per call, never a bundle of them. Loading all four together
+ * meant a problem with the media library was reported against opening a
+ * document, which does not use it — the message named a package that had
+ * nothing to do with the thing that failed.
+ */
+function load<T>(what: string, require_: () => T): T {
   try {
-    return {
-      FileSystem: require("expo-file-system") as typeof import("expo-file-system"),
-      IntentLauncher: require("expo-intent-launcher") as typeof import("expo-intent-launcher"),
-      LegacyFileSystem: require("expo-file-system/legacy") as typeof import("expo-file-system/legacy"),
-      MediaLibrary: require("expo-media-library") as typeof import("expo-media-library"),
-    };
-  } catch {
-    throw new AttachmentError(
-      "This copy of the app was built before attachment support was added. Reinstall it to save and open attachments.",
-    );
+    return require_();
+  } catch (error) {
+    fail(`This build of the app cannot ${what} yet.`, error);
   }
+}
+
+/**
+ * The media library, through its LEGACY entry point.
+ *
+ * <p>Not the current `Asset.create` API, and not by accident. The package's
+ * main entry resolves `ExpoMediaLibraryNext` while it is being imported, and
+ * Expo Go does not carry that native module — so `import 'expo-media-library'`
+ * throws there before any of our code runs. The legacy entry binds to
+ * `ExpoMediaLibrary`, which Expo Go does have.
+ *
+ * <p>`saveToLibraryAsync` is marked deprecated in favour of `Asset.create`.
+ * That is the right trade while Expo Go is the iteration loop: a deprecated
+ * call that works everywhere beats a current one that only works in a build
+ * nobody is running day to day. Worth revisiting once the project moves to a
+ * development build.
+ */
+function mediaLibrary() {
+  return load(
+    "save pictures",
+    () => require("expo-media-library/legacy") as typeof import("expo-media-library/legacy"),
+  );
+}
+
+function fileSystem() {
+  return load("download files", () => require("expo-file-system") as typeof import("expo-file-system"));
 }
 
 /**
@@ -49,7 +85,7 @@ function native() {
  * on the server, and the system is welcome to reclaim them.
  */
 async function download(url: string, fileName?: string | null) {
-  const { FileSystem } = native();
+  const FileSystem = fileSystem();
 
   // Named after the sender's own filename where there is one, so the app that
   // opens it shows "Rent agreement.pdf" rather than the storage id we happen to
@@ -62,8 +98,8 @@ async function download(url: string, fileName?: string | null) {
       // copy left in the cache by the first one is still there.
       idempotent: true,
     });
-  } catch {
-    throw new AttachmentError("That file could not be downloaded. Check your connection and try again.");
+  } catch (error) {
+    fail("That file could not be downloaded. Check your connection and try again.", error);
   }
 }
 
@@ -87,7 +123,7 @@ function safeName(fileName: string) {
  * is a different, less alarming prompt.
  */
 export async function saveImageToDevice(url: string) {
-  const { MediaLibrary } = native();
+  const MediaLibrary = mediaLibrary();
 
   if (!(await ensureCanSave())) {
     throw new AttachmentError(
@@ -97,9 +133,9 @@ export async function saveImageToDevice(url: string) {
 
   const file = await download(url);
   try {
-    await MediaLibrary.Asset.create(file.uri);
-  } catch {
-    throw new AttachmentError("That image could not be saved to your gallery.");
+    await MediaLibrary.saveToLibraryAsync(file.uri);
+  } catch (error) {
+    fail("That image could not be saved to your gallery.", error);
   }
 }
 
@@ -112,7 +148,7 @@ export async function saveImageToDevice(url: string) {
  * happened. The refusal message points at Settings for exactly that case.
  */
 async function ensureCanSave() {
-  const { MediaLibrary } = native();
+  const MediaLibrary = mediaLibrary();
 
   const existing = await MediaLibrary.getPermissionsAsync(true);
   if (existing.granted) {
@@ -144,9 +180,26 @@ export async function openFileWithApp(attachment: ChatAttachment) {
     throw new AttachmentError("Opening files is only supported on Android.");
   }
 
-  const { IntentLauncher, LegacyFileSystem } = native();
+  const IntentLauncher = load(
+    "open files",
+    () => require("expo-intent-launcher") as typeof import("expo-intent-launcher"),
+  );
+  const legacyFileSystem = load(
+    "open files",
+    () => require("expo-file-system/legacy") as typeof import("expo-file-system/legacy"),
+  );
+
   const file = await download(attachment.url, attachment.fileName);
-  const contentUri = await LegacyFileSystem.getContentUriAsync(file.uri);
+
+  let contentUri: string;
+  try {
+    contentUri = await legacyFileSystem.getContentUriAsync(file.uri);
+  } catch (error) {
+    // Its own step and its own message. This is the one that fails when the
+    // app's FileProvider does not cover the directory the file landed in, which
+    // says nothing about whether a reader for it exists.
+    fail("That file could not be shared with another app.", error);
+  }
 
   try {
     // The literal action, because ActivityAction only enumerates the Settings
@@ -158,7 +211,7 @@ export async function openFileWithApp(attachment: ChatAttachment) {
       flags: 1,
       type: attachment.contentType ?? "*/*",
     });
-  } catch {
-    throw new AttachmentError("No app on this device can open that file.");
+  } catch (error) {
+    fail("No app on this device can open that file.", error);
   }
 }

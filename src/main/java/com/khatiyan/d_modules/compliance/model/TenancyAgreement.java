@@ -46,9 +46,36 @@ public class TenancyAgreement extends BaseEntity {
     @Column(nullable = false, length = 20)
     private AgreementStatus status;
 
+    /**
+     * The head of the deed: title, execution, both parties, recitals.
+     *
+     * <p>Stored, not rendered on read, and covered by the content hash — so a
+     * signed agreement pins WHO agreed as firmly as what they agreed to. Rendering
+     * the parties from the user table at read time would let a tenant change their
+     * own address and silently alter a document they had already signed.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "preamble", columnDefinition = "jsonb")
+    private AgreementPreamble preamble;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "clauses", columnDefinition = "jsonb", nullable = false)
     private List<AgreementClause> clauses = new ArrayList<>();
+
+    /**
+     * How this deed was built, kept beside what it says.
+     *
+     * <p>This is what makes a PENDING agreement re-editable: an owner dropping a
+     * clause at onboarding changes the template, the assembler runs again and the
+     * clause list is replaced. Re-deriving from the property instead would throw
+     * away whatever was varied for this one stay.
+     *
+     * <p>After acceptance it stops mattering. The frozen clause list IS the
+     * agreement; the template beside it is only a record of how it was produced.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "template", columnDefinition = "jsonb", nullable = false)
+    private AgreementTemplate template = AgreementTemplate.starter();
 
     @Column(name = "content_hash", length = 128)
     private String contentHash;
@@ -59,21 +86,48 @@ public class TenancyAgreement extends BaseEntity {
     @Column(name = "accepted_at")
     private Instant acceptedAt;
 
-    public static TenancyAgreement pending(UUID tenancyId, UUID propertyId, List<AgreementClause> clauses) {
+    public static TenancyAgreement pending(
+            UUID tenancyId,
+            UUID propertyId,
+            AgreementTemplate template,
+            AgreementPreamble preamble,
+            List<AgreementClause> clauses) {
         TenancyAgreement agreement = new TenancyAgreement();
         agreement.id = UUID.randomUUID();
         agreement.tenancyId = tenancyId;
         agreement.propertyId = propertyId;
         agreement.status = AgreementStatus.PENDING_ACCEPTANCE;
+        agreement.template = template != null ? template : AgreementTemplate.starter();
+        agreement.preamble = preamble;
         agreement.clauses = clauses != null ? new ArrayList<>(clauses) : new ArrayList<>();
         return agreement;
     }
 
-    /** Replace the clause list while still editable (pending). */
-    public void replaceClauses(List<AgreementClause> clauses) {
+    /**
+     * Replace both halves while still editable.
+     *
+     * <p>Template and clauses move together and there is no setter for either
+     * alone: the clauses are the template's output, so writing one without the
+     * other leaves a deed whose text and whose stated construction disagree.
+     */
+    public void replace(
+            AgreementTemplate template, AgreementPreamble preamble, List<AgreementClause> clauses) {
         ensureEditable();
+        this.template = template != null ? template : AgreementTemplate.starter();
+        this.preamble = preamble;
         this.clauses = clauses != null ? new ArrayList<>(clauses) : new ArrayList<>();
     }
+
+    /**
+     * The execution date is deliberately NOT written into the stored preamble.
+     *
+     * <p>It stays a placeholder there, and a reader renders {@link #acceptedAt}
+     * in its place once the deed is accepted. Stamping it at acceptance would
+     * change the document's bytes at the exact instant of signing — so the hash
+     * the tenant agreed to would no longer be the hash of what is stored, and the
+     * "you signed what you saw" guarantee would be lost to a field that is a
+     * record of WHEN, not part of what was agreed.
+     */
 
     /** Freeze the agreement as the accepted snapshot. */
     public void accept(UUID acceptedByUserId, String contentHash, Instant acceptedAt) {

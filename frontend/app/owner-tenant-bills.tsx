@@ -26,7 +26,7 @@ import { BillCard, compareByPeriodDesc } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useCreateOneOffBillMutation, useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 8;
@@ -134,7 +134,8 @@ export default function OwnerTenantBillsScreen() {
 
       {!property ? (
         <EmptyState
-          icon={Users}
+          icon={Users}
+
           title="No property selected"
           description="Choose an active property from Home before viewing tenant bills."
         />
@@ -217,7 +218,8 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
 
       {!tenanciesQuery.isFetching && filtered.length === 0 ? (
         <EmptyState
-          icon={Users}
+          icon={Users}
+
           title="No matching tenants"
           description={search ? "No active tenant matched that search." : "This property has no active tenancies."}
         />
@@ -317,7 +319,8 @@ function TenantBills({
 
         {!cyclesQuery.isFetching && filtered.length === 0 ? (
           <EmptyState
-            icon={ReceiptText}
+            icon={ReceiptText}
+
             title="No bills in this filter"
             description={all.length === 0 ? "This tenant has no bills yet." : "Switch the filter above to see other bills."}
           />
@@ -379,7 +382,7 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
           <View
@@ -387,7 +390,7 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderCurve: "continuous",
-              borderRadius: 22,
+              borderRadius: radii.card,
               borderWidth: 1,
               gap: spacing.md,
               maxHeight: "88%",

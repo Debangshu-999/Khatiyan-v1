@@ -21,7 +21,6 @@ import { BloomModalShell } from "@/components/bloom-modal-shell";
 import { useToast } from "@/components/toast";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
-import { ScreenHeader } from "@/components/screen-header";
 import { SessionCountdown, SignedInDevices } from "@/features/auth/signed-in-devices";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
@@ -35,9 +34,12 @@ import {
   useConfirmPinResetMutation,
   useGetEmailRecoveryStatusQuery,
   useRequestPinResetMutation,
+  useGetMyIdentityQuery,
+  useUpdateMyIdentityMutation,
   useUpdateProfileMutation,
   useUpdateRecoveryEmailMutation,
   useVerifyOtpMutation,
+  type Gender,
   type TokenResponse,
 } from "@/store/services/auth-api";
 import {
@@ -46,7 +48,9 @@ import {
   useRegisterDeviceMutation,
 } from "@/store/services/notification-api";
 import { setRegisteredDeviceTokenId, setSession } from "@/store/slices/auth-slice";
-import { NoticeBar } from "@/features/owner/owner-ui";
+import { DateOfBirthField } from "@/features/account/date-of-birth-field";
+import { GenderPicker } from "@/features/account/gender-picker";
+import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -130,21 +134,21 @@ export default function AccountSettingsScreen() {
       {(close) => (
         <>
           <ScreenScrollView>
-            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Account · settings
-              </Text>
-              <CloseButton onPress={close} />
-            </View>
-
-            <ScreenHeader title="Settings" italicTail="menu." subtitle="Device preferences and account security." />
-
+            {/* No eyebrow, no screen header. Both said "settings" above a screen
+                whose every section already says what it is, and the title pushed
+                the first real control below the fold. The profile card is the top
+                of the screen now, and carries the close. */}
             <ProfileCard
               email={emailStatus?.email ?? null}
               fullName={auth.user?.fullName ?? ""}
+              onClose={close}
               phone={phone}
               photoUrl={auth.user?.profilePhotoUrl ?? null}
             />
+
+            <Section title="Identity">
+              <IdentityCard />
+            </Section>
 
             <Section title="PIN">
               <SettingsRow
@@ -271,11 +275,13 @@ function DialpadIcon({ color, size }: LucideProps) {
 function ProfileCard({
   email,
   fullName,
+  onClose,
   phone,
   photoUrl,
 }: {
   email: string | null;
   fullName: string;
+  onClose: () => void;
   phone: string;
   photoUrl: string | null;
 }) {
@@ -289,6 +295,30 @@ function ProfileCard({
 
   return (
     <Card>
+      {/* The close sits in the card's top-right, absolutely positioned so it
+          does not push the avatar off centre. This card is the top of the screen
+          now that the headers are gone, so it carries the way out. */}
+      <AnimatedPressable
+        accessibilityLabel="Close settings"
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={onClose}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: 999,
+          height: 32,
+          justifyContent: "center",
+          position: "absolute",
+          right: spacing.md,
+          top: spacing.md,
+          width: 32,
+          zIndex: 1,
+        }}
+      >
+        <X color={colors.ink} size={16} strokeWidth={2.4} />
+      </AnimatedPressable>
+
       <View style={{ alignItems: "center", gap: spacing.sm }}>
         {photoUrl ? (
           <Image
@@ -498,7 +528,7 @@ function PinVerificationModal({
         : `We'll send an OTP to ${phone} before you choose a fresh PIN.`;
 
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={resetAndClose}>
+    <Modal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={resetAndClose}>
       {/* A plain dim, not a blur — see ProfileEditModal for the reasoning: a
           Modal is its own window on Android, so expo-blur has nothing it is
           allowed to sample. */}
@@ -857,3 +887,112 @@ function formatRelativeTime(iso: string) {
   return `${Math.floor(diffMs / day)}d ago`;
 }
 
+
+/**
+ * The particulars an agreement names you by.
+ *
+ * <p>Permanent address, date of birth and gender. None of them gate profile
+ * completion — that stays name, phone and email — because a tenant with no
+ * agreement never needs any of them, and blocking a profile on fields most
+ * people will not use would be a wall in front of everyone to serve a few.
+ *
+ * <p>The address IS required to onboard a tenant, but the demand belongs at
+ * onboarding, where it can say why. A settings screen refusing to save until you
+ * supply an address cannot explain what it is for.
+ *
+ * <p>Age and gender are optional even there. The deed omits them when absent
+ * rather than printing a blank, so nobody has to answer a question they would
+ * rather not to let a tenancy start.
+ */
+function IdentityCard() {
+  const { colors, type } = useTheme();
+  const toast = useToast();
+  const identityQuery = useGetMyIdentityQuery();
+  const [saveIdentity, saveState] = useUpdateMyIdentityMutation();
+  const form = useFormErrors<"pincode">();
+
+  const [address, setAddress] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [dob, setDob] = useState("");
+  const [gender, setGender] = useState<Gender | null>(null);
+
+  // Seeded once the server copy lands. Keyed on the record's id so a cache
+  // refresh does not wipe an edit in progress.
+  useEffect(() => {
+    const held = identityQuery.data;
+    if (!held) {
+      return;
+    }
+    setAddress(held.permanentAddress ?? "");
+    setPincode(held.permanentAddressPincode ?? "");
+    setDob(held.dateOfBirth ?? "");
+    setGender(held.gender);
+  }, [identityQuery.data?.id]);
+
+  const save = async () => {
+    // A PIN code is either six digits or absent. Half of one is neither, and it
+    // is the only field here the server will refuse.
+    if (!form.validate(pincode.trim() && !/^\d{6}$/.test(pincode.trim())
+      ? { pincode: "A PIN code is 6 digits." }
+      : {})) {
+      return;
+    }
+
+    try {
+      await saveIdentity({
+        dateOfBirth: dob.trim() ? dob.trim() : null,
+        gender,
+        permanentAddress: address.trim() ? address.trim() : null,
+        permanentAddressPincode: pincode.trim() ? pincode.trim() : null,
+      }).unwrap();
+      toast.success("Details saved");
+    } catch (caught) {
+      form.failFromServer(errorMessage(caught));
+    }
+  };
+
+  return (
+    <Card>
+      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        Used on tenancy agreements. Your permanent address is needed before you can onboard a tenant. Age and
+        gender are optional, and are left off the agreement when blank.
+      </Text>
+
+      <FormInput
+        label="Permanent address"
+        multiline
+        onChangeText={setAddress}
+        placeholder=""
+        value={address}
+      />
+      <FormInput
+        error={form.errors.pincode}
+        keyboardType="number-pad"
+        label="PIN code"
+        maxLength={6}
+        onChangeText={(text) => {
+          setPincode(text.replace(/[^0-9]/g, ""));
+          form.clearField("pincode");
+        }}
+        placeholder=""
+        value={pincode}
+      />
+      {/* No "(optional)" suffix. The paragraph above already says which fields
+          are optional, and repeating it on every label makes the required ones
+          look like an oversight rather than a rule. */}
+      <DateOfBirthField onChange={setDob} value={dob} />
+
+      <GenderPicker onChange={setGender} value={gender} />
+
+      <ActionButton
+        disabled={saveState.isLoading || form.blocked}
+        label="Save details"
+        onPress={() => void save()}
+      />
+
+      {form.serverError ? (
+        <AlertModal message={form.serverError} onClose={form.dismissServerError} />
+      ) : null}
+    </Card>
+  );
+}

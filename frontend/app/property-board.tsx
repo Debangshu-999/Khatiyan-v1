@@ -35,8 +35,12 @@ export default function PropertyBoardScreen() {
       ) : boardItems.length > 0 ? (
         groupedItems.map(([categoryName, items]) => (
           <Section key={categoryName} title={categoryName}>
+            {/* Default tone, not sunken. Sunken exists for cards nested INSIDE
+                another surface, which is why it carries no shadow — these sit
+                straight on the page, so they were being denied the lift they
+                should have had. */}
             {items.map((item) => (
-              <Card key={item.id} tone="sunken">
+              <Card key={item.id}>
                 <View style={{ gap: spacing.xs }}>
                   <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
                     {item.title}

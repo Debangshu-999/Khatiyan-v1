@@ -27,7 +27,7 @@ import {
   useListMyCurrentConcernsQuery,
   useReopenConcernMutation,
 } from "@/store/services/concern-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { BackButton } from "@/features/owner/owner-ui";
 import { useTheme } from "@/theme/use-theme";
 
@@ -107,7 +107,8 @@ export default function ConcernDetailScreen() {
       ) : null}
       {!loading && !concern ? (
         <EmptyState
-          icon={ImageOff}
+          icon={ImageOff}
+
           title="Concern not found"
           description="Go back to your concerns and open it again."
         />
@@ -237,7 +238,7 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
           ))}
         </ScrollView>
       ) : null}
-      <Modal animationType="fade" onRequestClose={() => setExpanded(false)} statusBarTranslucent transparent visible={expanded}>
+      <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setExpanded(false)} statusBarTranslucent transparent visible={expanded}>
         <View style={{ backgroundColor: "rgba(0,0,0,0.92)", flex: 1, justifyContent: "center", padding: spacing.md }}>
           <AnimatedPressable
             accessibilityLabel="Close image"
@@ -289,7 +290,7 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
           </View>
         </View>
 
-        <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 16, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
+        <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 40, justifyContent: "center", width: 40 }}>
               <UserRound color={colors.primary} size={20} strokeWidth={2.4} />
@@ -396,7 +397,7 @@ function FactTile({ label, value, wide }: { label: string; value: string; wide?:
       style={{
         backgroundColor: colors.surfaceSunken,
         borderColor: colors.border,
-        borderRadius: 12,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.xs,
         padding: spacing.md,
@@ -464,7 +465,7 @@ function ReopenConcernModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View
           style={{
@@ -479,7 +480,7 @@ function ReopenConcernModal({
             style={{
               backgroundColor: colors.surfaceRaised,
               borderColor: colors.border,
-              borderRadius: 24,
+              borderRadius: radii.card,
               borderWidth: 1,
               gap: spacing.md,
               maxWidth: 520,

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -193,6 +194,13 @@ class ConcernServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                // Not a guest stay: this fixture is an account-backed monthly tenancy.
+                false,
+                null,
+                null,
+                null,
                 null);
     }
 
@@ -209,6 +217,9 @@ class ConcernServiceTest {
                 RoomType.SINGLE,
                 RoomConditioning.NON_AC,
                 12_000_00L,
+                null,
+                Set.of(),
+                Set.of(),
                 RoomStatus.OCCUPIED,
                 true,
                 null,

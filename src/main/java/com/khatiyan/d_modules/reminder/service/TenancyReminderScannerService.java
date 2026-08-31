@@ -50,7 +50,12 @@ public class TenancyReminderScannerService {
 
             PropertyResponse property = propertyModule.getActiveProperty(tenancy.propertyId());
             List<UUID> recipients = new ArrayList<>();
-            recipients.add(tenancy.userId());
+            // A guest stay has no account, so the tenant-facing half of this
+            // reminder has no recipient. The owner and managers still get theirs
+            // — they are the ones who act on a checkout either way.
+            if (tenancy.userId() != null) {
+                recipients.add(tenancy.userId());
+            }
             recipients.add(property.ownerId());
             recipients.addAll(propertyModule.findActiveManagerUserIds(property.id()));
 
@@ -64,7 +69,7 @@ public class TenancyReminderScannerService {
                 // The tenant reads a personal checkout reminder; the owner and
                 // managers read an operational one that names the tenancy by its
                 // TEN- reference code so they know which stay is ending.
-                boolean forManagement = !tenancy.userId().equals(recipientUserId);
+                boolean forManagement = !recipientUserId.equals(tenancy.userId());
 
                 var created = reminderService.createPendingIfAbsent(
                         reminderKey,
@@ -111,7 +116,9 @@ public class TenancyReminderScannerService {
     }
 
     private NotificationAudience reminderAudience(UUID tenantUserId, UUID recipientUserId) {
-        return tenantUserId.equals(recipientUserId)
+        // Recipient first: a guest stay has no tenant user, and every recipient
+        // left on the list is then management by definition.
+        return recipientUserId.equals(tenantUserId)
                 ? NotificationAudience.TENANT
                 : NotificationAudience.MANAGEMENT;
     }

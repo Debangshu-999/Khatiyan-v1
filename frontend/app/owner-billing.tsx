@@ -1,38 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Animated, Easing, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Banknote,
-  CalendarClock,
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  Eye,
-  FileDown,
-  History,
-  Undo2,
-  Info,
-  IndianRupee,
-  MoreHorizontal,
-  Percent,
-  Plus,
-  ReceiptText,
-  Search,
-  TimerReset,
-  Users,
-  X,
-  type LucideProps,
-} from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, Repeat, Search, TimerReset, Undo2, Users, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -45,12 +19,15 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
-import { NoticeBar } from "@/features/owner/owner-ui";
+import { NoticeBar, RequiredMark } from "@/features/owner/owner-ui";
 import { SheetShell } from "@/components/sheet-shell";
 import { BillTotal } from "@/features/owner/bill-views";
 import { useFormErrors } from "@/features/forms/use-form-errors";
+import { FieldError } from "@/components/field-error";
+import { SingleOptionPicker } from "@/components/option-picker";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
+import { MultiImageField } from "@/features/uploads/multi-image-field";
 import { SingleImageField } from "@/features/uploads/single-image-field";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { BackButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
@@ -73,7 +50,7 @@ import {
   useRecordManualPaymentMutation,
 } from "@/store/services/billing-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
@@ -151,7 +128,61 @@ function summaryFilterTitle(filter: SummaryFilter): string {
   }
 }
 
-const manualPaymentMethods: ManualPaymentMethod[] = ["CASH", "UPI", "CARD", "CHEQUE", "OTHER"];
+/**
+ * How an offline payment was collected, and what proof each one leaves behind.
+ *
+ * <p>The reference is a DIFFERENT number for every method, so one generic
+ * "Reference" box was asking the owner to know which of four things to type.
+ * Each option carries its own label and the format it comes in:
+ *
+ * <ul>
+ *   <li>UPI — the UTR, also printed as "RRN" or "transaction reference". NPCI
+ *       issues it as 12 digits, and every UPI app shows it on the receipt.</li>
+ *   <li>Card — the approval (auth) code off the charge slip, six digits. Slips
+ *       also carry a 12-digit RRN, so the field accepts either rather than
+ *       insisting on the one this particular terminal happened to print.</li>
+ *   <li>Cheque — the cheque number, six digits under CTS-2010: the first block
+ *       of the MICR line along the bottom of the leaf.</li>
+ *   <li>Cash — nothing. Cash leaves no reference to quote, which is why it is
+ *       the one method with no proof section at all.</li>
+ * </ul>
+ *
+ * <p>The formats are stated in the label but NOT enforced. A UPI app may show a
+ * longer alphanumeric transaction id beside the 12-digit UTR, and refusing what
+ * an owner is reading off their own screen would be worse than storing it.
+ *
+ * <p>OTHER is deliberately absent. It stays in the enum — old rows still carry
+ * it and a persisted constant is never removed — but offering it invited a
+ * payment with no defined proof at all.
+ */
+type ManualPaymentOption = {
+  value: ManualPaymentMethod;
+  label: string;
+  referenceLabel: string;
+  referencePlaceholder: string;
+};
+
+const manualPaymentMethods: ManualPaymentOption[] = [
+  { label: "Cash", referenceLabel: "", referencePlaceholder: "", value: "CASH" },
+  {
+    label: "UPI",
+    referenceLabel: "UTR / transaction reference (12 digits)",
+    referencePlaceholder: "123456789012",
+    value: "UPI",
+  },
+  {
+    label: "Card",
+    referenceLabel: "Approval code or RRN from the slip",
+    referencePlaceholder: "6-digit approval code",
+    value: "CARD",
+  },
+  {
+    label: "Cheque",
+    referenceLabel: "Cheque number (6 digits)",
+    referencePlaceholder: "123456",
+    value: "CHEQUE",
+  },
+];
 
 export default function OwnerBillingScreen() {
   const router = useGuardedRouter();
@@ -322,7 +353,8 @@ export default function OwnerBillingScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Banknote}
+          icon={Banknote}
+
           title="Select a property"
           description="Billing is scoped to the active owner property selected on Home."
         />
@@ -462,7 +494,8 @@ function ActiveSummarySection({
 
       {summary && !summary.hasData ? (
         <EmptyState
-          icon={ReceiptText}
+          icon={ReceiptText}
+
           title="No data available"
           description="No billing cycles started in this month."
         />
@@ -526,7 +559,8 @@ function PaymentHistorySection({
 
         {orderedCycles.length === 0 ? (
           <EmptyState
-            icon={ReceiptText}
+            icon={ReceiptText}
+
             title="No payment history found"
             description={query ? "No billing cycle matched the current search for this month." : "No billing cycles started in this month."}
           />
@@ -596,7 +630,8 @@ function BillingCyclesSection({
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
-    <Section
+    <Section
+
       title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}
       trailing={
         <AnimatedPressable
@@ -614,7 +649,8 @@ function BillingCyclesSection({
       {rulesOpen ? <BillingRulesModal onClose={() => setRulesOpen(false)} /> : null}
       {cycles.length === 0 ? (
         <EmptyState
-          icon={ReceiptText}
+          icon={ReceiptText}
+
           title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
           description={
             query
@@ -655,6 +691,9 @@ function BillingCyclesSection({
 function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
   const { colors, fonts, type } = useTheme();
   const tenantName = cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`;
+  // Settled covers cancelled as well as paid: neither is money still to come,
+  // and both should sit back from the rows that are.
+  const settled = cycle.status === "PAID" || cycle.status === "CANCELLED";
 
   return (
     <Card>
@@ -663,17 +702,21 @@ function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
           <View
             style={{
               alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderColor: colors.border,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              borderWidth: 1,
               height: 46,
               justifyContent: "center",
               width: 46,
             }}
           >
-            <ReceiptText color={colors.primary} size={21} strokeWidth={2.3} />
+            {/* The colour carries the state, not a tile behind it. A blue fill
+                on every unpaid row made the list a wall of blue boxes; the same
+                fact reads just as fast from the glyph itself, and a paid row
+                then recedes into grey instead of shouting in a quieter shade.
+                No border either — this labels the row, it is not a control. */}
+            <ReceiptText
+              color={settled ? colors.muted : colors.primary}
+              size={28}
+              strokeWidth={1.8}
+            />
           </View>
 
           <View style={{ flex: 1, gap: spacing.xxs }}>
@@ -748,7 +791,7 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
         backgroundColor: colors.surfaceSunken,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: 2,
@@ -776,22 +819,16 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
 // Holds exactly the paginated page of bills — no inner scroller. A scroll view
 // nested in the screen's own scroll view meant two competing gestures and a
 // list that could never be seen whole; pagination already bounds the height.
+/**
+ * Spacing between the cards, and nothing else.
+ *
+ * <p>It used to be a sunken panel with its own border and padding: a box of
+ * boxes. That cost every card the width of two insets and left them floating in
+ * a container that carried no information — now that the page itself is grey,
+ * a white card already has an edge and needs no tray to sit in.
+ */
 function CycleListFrame({ children }: { children: ReactNode }) {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surfaceSunken,
-        borderColor: colors.border,
-        borderRadius: 18,
-        borderWidth: 1,
-        gap: spacing.sm,
-        padding: spacing.md,
-      }}
-    >
-      {children}
-    </View>
-  );
+  return <View style={{ gap: spacing.sm }}>{children}</View>;
 }
 
 // Square tiles, three to a row, matching the pinned-module grid on Home.
@@ -890,7 +927,7 @@ function HistorySummaryMetric({
         backgroundColor: colors.surfaceSunken,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: 2,
@@ -990,13 +1027,13 @@ function MonthlyReportModal({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 22,
+            borderRadius: radii.card,
             borderWidth: 1,
             gap: spacing.md,
             padding: spacing.lg,
@@ -1170,7 +1207,7 @@ function BillingCycleCard({
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
@@ -1178,19 +1215,13 @@ function BillingCycleCard({
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
         <View style={{ alignItems: "center", gap: spacing.xs }}>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: payable ? colors.primarySoft : colors.surfaceSunken,
-              borderColor: colors.border,
-              borderRadius: 14,
-              borderWidth: 1,
-              height: 44,
-              justifyContent: "center",
-              width: 44,
-            }}
-          >
-            <ReceiptText color={payable ? colors.primary : colors.kicker} size={20} strokeWidth={2.2} />
+          {/* The colour carries the state, not a tile behind it. A blue fill on
+              every unpaid row made the list a wall of blue boxes; the glyph
+              says the same thing as fast, and a settled row then recedes into
+              grey instead of shouting in a quieter shade. No border either —
+              this labels the row, it is not a control. */}
+          <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+            <ReceiptText color={payable ? colors.primary : colors.muted} size={30} strokeWidth={1.8} />
           </View>
           <AnimatedPressable
             accessibilityLabel={`Payment window for ${cycle.referenceCode}`}
@@ -1338,7 +1369,7 @@ function SummaryCyclesModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -1366,7 +1397,8 @@ function SummaryCyclesModal({
 
           {cycles.length === 0 ? (
             <EmptyState
-              icon={ReceiptText}
+              icon={ReceiptText}
+
               title={notGeneratedCount > 0 ? "Cycles not generated yet" : "No matching cycles"}
               description={
                 notGeneratedCount > 0
@@ -1458,9 +1490,11 @@ function BillingActionModal({
   onViewReceipt: (cycle: BillingCycle) => void;
 }) {
   const { colors, fonts, type } = useTheme();
-  const [method, setMethod] = useState<ManualPaymentMethod>("CASH");
+  // Starts unchosen. The proof section is revealed BY the choice, so defaulting
+  // to Cash would open the sheet already past the question it is asking.
+  const [method, setMethod] = useState<ManualPaymentMethod | null>(null);
   const [referenceText, setReferenceText] = useState("");
-  const [proofImageUrl, setProofImageUrl] = useState("");
+  const [proofImageUrls, setProofImageUrls] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [chargeLabel, setChargeLabel] = useState("");
@@ -1470,9 +1504,42 @@ function BillingActionModal({
   // Per field, under the field. The old single line at the foot of the sheet
   // said "Enter a charge label" below a form of four inputs and left the reader
   // to work out which one, and it scrolled out of sight on a short screen.
-  const form = useFormErrors<"amount" | "label" | "percent">();
+  const form = useFormErrors<"amount" | "label" | "percent" | "method" | "proof">();
   const [confirm, setConfirm] = useState<{ message: string; title: string } | null>(null);
   const insets = useSafeAreaInsets();
+
+  /**
+   * Android's keyboard height, measured rather than inferred.
+   *
+   * <p>`KeyboardAvoidingView behavior="padding"` is broken on Android under
+   * edge-to-edge, which has been mandatory since SDK 53. It infers the keyboard
+   * height by comparing screen height to window height, and edge-to-edge makes
+   * the window span the whole display — so the number is wrong, and on DISMISSAL
+   * its padding does not return to zero. That is exactly the bug where this
+   * sheet stayed shoved up the screen after the keyboard closed.
+   *
+   * <p>This is SheetShell's fix, copied because this sheet is hand-rolled rather
+   * than built on it. If that ever changes, delete this and use SheetShell.
+   */
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const onShow = Keyboard.addListener("keyboardDidShow", (event) =>
+      // Minus the safe-area inset: on a gesture-navigation device the keyboard's
+      // reported height already includes that strip, and counting it twice lifts
+      // the sheet a nav-bar's height too far.
+      setKeyboardInset(Math.max(0, event.endCoordinates.height - insets.bottom)),
+    );
+    const onHide = Keyboard.addListener("keyboardDidHide", () => setKeyboardInset(0));
+
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [insets.bottom]);
   const toast = useToast();
   // Refusals get their own modal: they are things the reader cannot fix by
   // retyping (bill already paid, cycle locked, discount exceeds the payable
@@ -1484,6 +1551,8 @@ function BillingActionModal({
   const busy = manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading;
   const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const editable = isCycleEditable(cycle);
+
+  const chosenMethod = manualPaymentMethods.find((item) => item.value === method) ?? null;
 
   const title = useMemo(() => {
     if (mode === "menu") {
@@ -1507,7 +1576,7 @@ function BillingActionModal({
    * label, then the amount, then the label again is three round trips for one
    * form.
    */
-  function problems(): Partial<Record<"amount" | "label" | "percent", string>> {
+  function problems(): Partial<Record<"amount" | "label" | "percent" | "method" | "proof", string>> {
     if (mode === "discount") {
       const percent = Number(discountPercent);
       if (!discountPercent.trim()) {
@@ -1530,6 +1599,21 @@ function BillingActionModal({
       };
     }
 
+    if (mode === "manual-payment") {
+      if (!method) {
+        return { method: "Select how the payment was made." };
+      }
+      // Cash is the exception on purpose: it leaves no reference to quote and
+      // no slip to photograph, so demanding proof would only teach owners to
+      // type something meaningless into the box.
+      if (method === "CASH") {
+        return {};
+      }
+      return referenceText.trim() || proofImageUrls.length > 0
+        ? {}
+        : { proof: "Enter the reference or attach a photo of the proof." };
+    }
+
     return {};
   }
 
@@ -1543,7 +1627,7 @@ function BillingActionModal({
 
     if (mode === "manual-payment") {
       setConfirm({
-        message: `Mark ${cycle.referenceCode} as paid for ${formatMoney(cycle.totalAmountPaise)} via ${humanizeToken(method)}?`,
+        message: `Mark ${cycle.referenceCode} as paid for ${formatMoney(cycle.totalAmountPaise)} via ${chosenMethod?.label ?? ""}?`,
         title: "Mark this bill paid?",
       });
       return;
@@ -1583,9 +1667,9 @@ function BillingActionModal({
         await recordManualPayment({
           billingCycleId: cycle.id,
           payload: {
-            method,
+            method: method!,
             note: note.trim() || null,
-            proofImageUrl: proofImageUrl.trim() || null,
+            proofImageUrls,
             referenceText: referenceText.trim() || null,
           },
         }).unwrap();
@@ -1634,8 +1718,13 @@ function BillingActionModal({
         resolves to on dismissal is not zero. The same flag is already omitted
         from AddClauseSheet and the manager-permissions sheet for the sibling
         symptom — a foot button that could not be tapped. */}
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <KeyboardAvoidingView
+        // Android drives itself from the measured inset below; handing it
+        // "padding" too would apply the lift twice — and leave it applied.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         {/* Full width and anchored to the bottom edge, like every other sheet in
             the app. An inset card floating above the edge is the dialog
@@ -1649,8 +1738,13 @@ function BillingActionModal({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
+            // Lifted clear of the keyboard rather than padded behind it, so the
+            // sheet's own bottom edge stays visible sitting on top of it.
+            marginBottom: keyboardInset,
             maxHeight: "90%",
-            paddingBottom: insets.bottom + spacing.lg,
+            // The safe-area inset is the nav bar's. With the keyboard up the
+            // keyboard covers it, so applying both leaves a dead strip.
+            paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.lg,
             paddingHorizontal: spacing.lg,
             paddingTop: spacing.lg,
           }}
@@ -1722,20 +1816,109 @@ function BillingActionModal({
                 Records the full bill amount {formatMoney(cycle.totalAmountPaise)} as received. Rent is collected
                 outside the app, so this is what marks it settled.
               </Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-                {manualPaymentMethods.map((item) => (
-                  <ChoiceButton active={item === method} key={item} label={humanizeToken(item)} onPress={() => setMethod(item)} />
-                ))}
-              </View>
-              <FormInput label="Reference" onChangeText={setReferenceText} placeholder="UPI ref, cheque no, cash note" value={referenceText} />
-              <SingleImageField
-                attachedLabel="Proof attached"
-                label="Payment proof (optional)"
-                onChange={setProofImageUrl}
-                target="PAYMENT_PROOF"
-                url={proofImageUrl}
+              {/* One: how it was paid. A picker rather than a row of chips —
+                  the same control the app uses for every other single choice,
+                  and the chips wrapped to two lines at five options. */}
+              <SingleOptionPicker<ManualPaymentMethod>
+                centered
+                emptyLabel="Select how it was paid"
+                error={form.errors.method}
+                label="Payment method"
+                onChange={(picked) => {
+                  setMethod(picked);
+                  form.clearField("method");
+                  form.clearField("proof");
+                  // Cash carries no proof, so anything typed against a previous
+                  // method must not ride along with it.
+                  if (picked === "CASH") {
+                    setReferenceText("");
+                    setProofImageUrls([]);
+                  }
+                }}
+                options={manualPaymentMethods.map((item) => ({ label: item.label, value: item.value }))}
+                required
+                showIcon={false}
+                title="Payment method"
+                value={method}
               />
-              <FormInput label="Note" onChangeText={setNote} placeholder="Optional note" value={note} />
+
+              {/* Two: the proof, revealed by the choice above and skipped
+                  entirely for cash.
+
+                  Its own card, because the two halves are one requirement
+                  rather than two fields that happen to sit together — loose in
+                  the sheet they read as a reference AND a photo, both wanted.
+                  The OR between them is the whole rule, said once and in the
+                  place a reader is already looking: an owner holding the slip
+                  should not have to transcribe the number off it, and one
+                  holding the number should not have to photograph it. */}
+              {chosenMethod && chosenMethod.value !== "CASH" ? (
+                <View
+                  style={{
+                    backgroundColor: colors.surface,
+                    // Reddens as one, because the requirement is the card's and
+                    // not either field's — neither box is individually wrong.
+                    borderColor: form.errors.proof ? colors.danger : colors.borderStrong,
+                    borderCurve: "continuous",
+                    borderRadius: radii.card,
+                    borderWidth: 1,
+                    gap: spacing.md,
+                    padding: spacing.md,
+                  }}
+                >
+                  <Text style={[type.label, { color: form.errors.proof ? colors.danger : colors.inkSoft }]}>
+                    Payment proof
+                    <RequiredMark required />
+                  </Text>
+
+                  <FormInput
+                    label={chosenMethod.referenceLabel}
+                    onChangeText={(next) => {
+                      setReferenceText(next);
+                      form.clearField("proof");
+                    }}
+                    placeholder={chosenMethod.referencePlaceholder}
+                    value={referenceText}
+                  />
+
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                    <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+                    <Text style={[type.caption, { color: colors.kicker, fontFamily: fonts.sansBold }]}>
+                      OR
+                    </Text>
+                    <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+                  </View>
+
+                  {/* Two, because the evidence usually comes in pairs — a
+                      cheque's face and counterfoil, a card slip's merchant and
+                      customer copies, a UPI screenshot and the bank's SMS. */}
+                  <MultiImageField
+                    label="Photo of payment proof"
+                    max={2}
+                    onChange={(next) => {
+                      setProofImageUrls(next);
+                      form.clearField("proof");
+                    }}
+                    target="PAYMENT_PROOF"
+                    urls={proofImageUrls}
+                  />
+
+                  <FieldError message={form.errors.proof} />
+                </View>
+              ) : null}
+
+              {/* Three: the note, always last. Multiline because it is the one
+                  free-text box here — a single line invited four words when the
+                  useful thing is a sentence about where the money came from.
+                  The placeholder no longer says "optional": nothing on this
+                  field is marked required, so saying so twice was noise. */}
+              <FormInput
+                label="Note"
+                multiline
+                onChangeText={setNote}
+                placeholder="Add a note"
+                value={note}
+              />
             </>
           ) : null}
 
@@ -1848,13 +2031,13 @@ function ConfirmDialog({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 20,
+            borderRadius: radii.card,
             borderWidth: 1,
             gap: spacing.md,
             maxWidth: 420,
@@ -2154,7 +2337,7 @@ function BillingRulesModal({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -2184,7 +2367,7 @@ function BillingRulesModal({ onClose }: { onClose: () => void }) {
             {rules.map((rule, index) => (
               <View
                 key={rule.title}
-                style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: 4, padding: spacing.md }}
+                style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
               >
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                   <View
@@ -2478,7 +2661,7 @@ function CycleWindowModal({
   const rateIsProvisional = stampedRate == null;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <AnimatedPressable
         accessibilityLabel="Close"
         onPress={onClose}
@@ -2535,10 +2718,18 @@ function CycleWindowModal({
             tone="warning"
           />
 
+          {/* Says where the fee came FROM, because that used to be a different
+              answer. Late fees were once carried onto the next upcoming cycle,
+              which meant a tenant who went overdue early in a month saw nothing
+              for weeks and then met the whole run as one lump on a later bill.
+              They now accrue on the overdue bill itself — see
+              docs/modules/billing.md. The old wording outlived the old
+              behaviour and was telling owners the fee came from somewhere it
+              no longer comes from. */}
           {cycle.lateFeeAmountPaise > 0 ? (
             <Text style={[type.caption, { color: colors.muted }]}>
-              This bill already carries {formatMoney(cycle.lateFeeAmountPaise)} of late fee carried over from an
-              earlier cycle.
+              This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on
+              this bill as a line item and is recalculated each night it stays overdue.
             </Text>
           ) : null}
         </View>
@@ -2640,6 +2831,24 @@ function receiptRows(cycle: BillingCycle): { label: string; value: string }[] {
   ];
 }
 
+/**
+ * The lines a receipt should show.
+ *
+ * <p>Reverting a line does not delete it. `clear()` sets its amount to zero and
+ * stamps it WAIVED, so the row survives as an audit trail of what was charged
+ * and then taken back. A receipt is a statement of what is owed rather than that
+ * trail, so a waived line has nothing to say on it — and printing "₹0.00" next
+ * to a discount invites the reader to work out why it is there.
+ *
+ * <p><b>Zero amount is not the test.</b> A line settled from the deposit is also
+ * worth zero on the bill and must still appear, because the money genuinely
+ * moved — it came out of the deposit instead of the payable. Only WAIVED means
+ * "this was undone", and only `clear()` ever sets it.
+ */
+function receiptLineItems(cycle: BillingCycle) {
+  return cycle.lineItems.filter((item) => item.settlementAction !== "WAIVED");
+}
+
 function receiptAmounts(cycle: BillingCycle): { label: string; value: string }[] {
   return [
     { label: "Base rent", value: formatMoney(cycle.baseAmountPaise) },
@@ -2656,8 +2865,12 @@ function buildReceiptHtml(cycle: BillingCycle, propertyName: string | null) {
   const amountRows = receiptAmounts(cycle)
     .map((row) => `<tr><td class="k">${escapeHtml(row.label)}</td><td class="v">${escapeHtml(row.value)}</td></tr>`)
     .join("");
-  const lineItems = cycle.lineItems.length
-    ? cycle.lineItems
+  // Same filter as the on-screen receipt. The PDF is the copy that gets sent
+  // to a tenant, so a reverted line slipping through here would be the version
+  // that actually gets argued about.
+  const printableLines = receiptLineItems(cycle);
+  const lineItems = printableLines.length
+    ? printableLines
         .map(
           (item) =>
             `<tr><td>${escapeHtml(item.label)}</td><td class="muted">${escapeHtml(humanizeToken(item.type))}</td><td class="v">${escapeHtml(formatMoney(item.amountPaise))}</td></tr>`,
@@ -2709,7 +2922,7 @@ function ReceiptModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -2755,12 +2968,12 @@ function ReceiptModal({
                 </View>
               </View>
 
-              {cycle.lineItems.length ? (
+              {receiptLineItems(cycle).length ? (
                 <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
                   <Text style={[type.eyebrow, { color: colors.kicker }]}>
                     Line items
                   </Text>
-                  {cycle.lineItems.map((item) => (
+                  {receiptLineItems(cycle).map((item) => (
                     <ReceiptLine key={item.id} label={`${item.label} · ${humanizeToken(item.type)}`} value={formatMoney(item.amountPaise)} />
                   ))}
                 </View>

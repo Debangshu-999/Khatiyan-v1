@@ -18,14 +18,20 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
      *
      * <p>Descending because "the last fifty" is what a chat screen opens on; the
      * caller reverses for display.
+     *
+     * <p>{@code afterSeq} is the reader's own clear mark, zero for almost
+     * everyone. It cannot be folded into {@code findAfter}: that one reads
+     * ASCENDING, so on a thread with two hundred messages since the clear it
+     * would open on the oldest fifty rather than the newest.
      */
     @Query("""
             SELECT message
             FROM ChatMessage message
             WHERE message.threadId = :threadId
+              AND message.seq > :afterSeq
             ORDER BY message.seq DESC
             """)
-    List<ChatMessage> findLatest(UUID threadId, Pageable pageable);
+    List<ChatMessage> findLatestAfter(UUID threadId, long afterSeq, Pageable pageable);
 
     /**
      * Everything after a cursor, oldest first — the poll.

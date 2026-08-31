@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
@@ -36,6 +37,7 @@ import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
+import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
@@ -103,11 +105,11 @@ public class TenancyService {
             Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate, LocalDate plannedEndDate,
-            boolean idCheckConfirmed) {
+            IdCheckDeclarationInput idCheck) {
         return createInternal(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
                 billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate, false,
-                idCheckConfirmed);
+                idCheck);
     }
 
     /**
@@ -127,10 +129,18 @@ public class TenancyService {
             Long depositAmountPaise,
             LocalDate startDate, LocalDate plannedEndDate,
             boolean holdForAcceptance,
-            boolean idCheckConfirmed) {
+            IdCheckDeclarationInput idCheck) {
 
         tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
         TenancyBillingType resolvedBillingType = billingType != null ? billingType : TenancyBillingType.MONTHLY;
+
+        // Daily stays no longer come through here. They create no account at
+        // all, so every line below this — provisioning a user, checking whether
+        // that user is already a tenant, marking them one — is meaningless for
+        // them. They go through onboardDailyGuest instead.
+        if (resolvedBillingType == TenancyBillingType.DAILY) {
+            throw new ValidationException("Daily stays are onboarded as guest records, not accounts");
+        }
 
         String provisionName = (tenantName != null && !tenantName.isBlank())
                 ? tenantName.trim()
@@ -159,39 +169,24 @@ public class TenancyService {
             throw new ValidationException("Room has no available vacancy");
         }
 
-        Tenancy tenancy;
-        if (resolvedBillingType == TenancyBillingType.DAILY) {
-            tenancy = createDailyTenancy(
-                    tenantId,
-                    propertyId,
-                    roomId,
-                    actorUserId,
-                    startDate,
-                    plannedEndDate,
-                    depositAmountPaise);
-        } else {
-            tenancy = createMonthlyTenancy(
-                    tenantId,
-                    propertyId,
-                    roomId,
-                    actorUserId,
-                    rentAmountPaise,
-                    depositAmountPaise,
-                    startDate,
-                    plannedEndDate);
-        }
+        Tenancy tenancy = createMonthlyTenancy(
+                tenantId,
+                propertyId,
+                roomId,
+                actorUserId,
+                rentAmountPaise,
+                depositAmountPaise,
+                startDate,
+                plannedEndDate);
 
         if (holdForAcceptance) {
-            if (resolvedBillingType != TenancyBillingType.MONTHLY) {
-                throw new ValidationException("Only monthly tenancies can be held for agreement acceptance");
-            }
             tenancy.markPendingAcceptance();
         }
 
         // Stamped before the save and the started event: the declaration is part of
         // the onboarding record, not an afterthought applied to it.
-        if (idCheckConfirmed) {
-            tenancy.confirmIdCheck(actorUserId, Instant.now());
+        if (idCheck != null && idCheck.confirmed()) {
+            tenancy.confirmIdCheck(actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour());
         }
 
         tenancy = tenancyRepository.save(tenancy);
@@ -230,8 +225,8 @@ public class TenancyService {
         return authModule.findByPhone(tenantPhone)
                 .map(user -> {
                     if (user.role() != com.khatiyan.a_auth.model.UserRole.USER) {
-                        return new TenantLookupResponse(true, user.fullName(), false, false,
-                                "This phone belongs to a non-tenant account.");
+                        return TenantLookupResponse.existing(user.fullName(), false, false,
+                                "This phone belongs to a non-tenant account.", null);
                     }
                     // Managers hold the USER role, so the check above does not
                     // catch them. Without this the wizard says "a new tenancy
@@ -239,58 +234,109 @@ public class TenancyService {
                     // field has been filled in.
                     if (propertyId != null
                             && propertyModule.findActiveManagerUserIds(propertyId).contains(user.id())) {
-                        return new TenantLookupResponse(true, user.fullName(), false, false,
-                                "This person manages this property and cannot also be a tenant here.");
+                        return TenantLookupResponse.existing(user.fullName(), false, false,
+                                "This person manages this property and cannot also be a tenant here.", null);
                     }
                     if (user.activeTenant()) {
-                        return new TenantLookupResponse(true, user.fullName(), true, false,
-                                "This user already has an active tenancy.");
+                        return TenantLookupResponse.existing(user.fullName(), true, false,
+                                "This user already has an active tenancy.", null);
                     }
-                    return new TenantLookupResponse(true, user.fullName(), false, true,
-                            "Existing user - a new tenancy will be added.");
+                    // Prefill only on the path that can actually proceed. A
+                    // refused lookup has no form to fill, and sending someone's
+                    // address alongside "this person manages the property" would
+                    // hand it over for no reason at all.
+                    return TenantLookupResponse.existing(user.fullName(), false, true,
+                            "Existing user - a new tenancy will be added.", prefillFor(user.id()));
                 })
-                .orElseGet(() -> new TenantLookupResponse(false, null, false, true,
-                        "New user - an account will be created."));
+                .orElseGet(() -> TenantLookupResponse.newUser("New user - an account will be created."));
     }
 
     /**
-     * Admin onboarding: creates the tenancy (provisioning the tenant account if
-     * needed) and reports whether a new account was created, so the wizard can
-     * show the right success message.
+     * What this account already holds, for the onboarding form to prefill.
+     *
+     * <p>Read through the identity facade rather than the user summary, because
+     * a permanent address and a date of birth are not things the summary should
+     * be carrying to every screen that names a person.
+     */
+    private TenantLookupResponse.TenantPrefill prefillFor(UUID userId) {
+        return authModule.findIdentity(userId)
+                .map(identity -> new TenantLookupResponse.TenantPrefill(
+                        identity.permanentAddress(),
+                        identity.permanentAddressPincode(),
+                        identity.dateOfBirth(),
+                        identity.gender()))
+                .orElse(null);
+    }
+
+    /**
+     * Admin onboarding for a daily stay. Creates no account.
+     *
+     * <p>Somebody staying two nights should not have to install an app, set a
+     * PIN and keep a login they will never open again, so nothing here
+     * provisions a user. The guest's details go onto the tenancy row the way a
+     * hotel register holds them, and the stay is management-side from end to
+     * end: the owner raises the bill and marks it paid, and a concern or a
+     * request is handled in person.
+     *
+     * <p>Monthly stays never come through here. That tenant signs an agreement
+     * and lives in the app for months, so they go through
+     * {@link #onboardPending} and get a real account.
      */
     @Transactional
-    public TenancyOnboardingResponse onboard(
+    public TenancyOnboardingResponse onboardDailyGuest(
             UUID actorUserId,
-            String tenantPhone,
-            String tenantName,
             UUID propertyId,
             UUID roomId,
-            TenancyBillingType billingType,
-            Long rentAmountPaise,
-            Long depositAmountPaise,
             LocalDate startDate,
             LocalDate plannedEndDate,
-            boolean idCheckConfirmed) {
-        // Every monthly stay is agreement-backed, so this path — which creates a
-        // tenancy with no agreement at all — is closed to them. Enforced here
-        // rather than only in the client because the endpoint is reachable
-        // directly, and a monthly tenancy without an agreement has no validity
-        // clause, no early-exit rule and nothing for end-tenancy to apply.
-        //
-        // Daily stays keep this path: they carry no agreement by design.
-        if (billingType == null || billingType == TenancyBillingType.MONTHLY) {
-            throw new ValidationException(
-                    "Monthly tenancies must be onboarded with an agreement");
+            GuestDetails guest,
+            IdCheckDeclarationInput idCheck) {
+        if (guest == null) {
+            throw new ValidationException("Guest details are required for a daily stay");
         }
 
-        boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
+        tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
 
-        Tenancy tenancy = create(
-                actorUserId, tenantPhone, tenantName, propertyId, roomId,
-                billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate,
-                idCheckConfirmed);
+        if (!propertyModule.hasAvailableVacancy(propertyId, roomId)) {
+            throw new ValidationException("Room has no available vacancy");
+        }
 
-        return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+        Tenancy tenancy = createDailyGuestTenancy(
+                propertyId, roomId, actorUserId, startDate, plannedEndDate, guest);
+
+        // Stamped before the save and the started event, for the same reason it
+        // is on the account path: the declaration is part of the onboarding
+        // record rather than something applied to it afterwards.
+        if (idCheck != null && idCheck.confirmed()) {
+            tenancy.confirmIdCheck(actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour());
+        }
+
+        tenancy = tenancyRepository.save(tenancy);
+        billingModule.initializeStartedTenancy(actorUserId, TenancyResponse.from(tenancy));
+
+        // Published with a null userId. Listeners that reserve the bed and write
+        // the owner's activity feed still need it; the one that notifies a
+        // tenant checks for the account and finds none, which is the right
+        // answer rather than a missing one.
+        eventPublisher.publishEvent(new TenancyStartedEvent(
+                tenancy.getId(),
+                null,
+                actorUserId,
+                tenancy.getPropertyId(),
+                tenancy.getRoomId(),
+                tenancy.getStartDate()));
+
+        log.info(
+                "Daily guest stay created tenancyId={} actorUserId={} propertyId={} roomId={} startDate={} plannedEndDate={}",
+                tenancy.getId(),
+                actorUserId,
+                tenancy.getPropertyId(),
+                tenancy.getRoomId(),
+                tenancy.getStartDate(),
+                tenancy.getPlannedEndDate());
+
+        // Never an account, so never a new one to announce.
+        return new TenancyOnboardingResponse(false, TenancyResponse.from(tenancy));
     }
 
     /**
@@ -309,13 +355,13 @@ public class TenancyService {
             Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate,
-            boolean idCheckConfirmed) {
+            IdCheckDeclarationInput idCheck) {
         boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
 
         Tenancy tenancy = createInternal(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
                 TenancyBillingType.MONTHLY, rentAmountPaise, depositAmountPaise, startDate, null, true,
-                idCheckConfirmed);
+                idCheck);
 
         return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
     }
@@ -465,20 +511,15 @@ public class TenancyService {
                 startDate);
     }
 
-    private Tenancy createDailyTenancy(
-            UUID tenantId,
+    private Tenancy createDailyGuestTenancy(
             UUID propertyId,
             UUID roomId,
             UUID actorUserId,
             LocalDate startDate,
             LocalDate plannedEndDate,
-            Long depositAmountPaise) {
-        if (depositAmountPaise != null) {
-            throw new ValidationException("Daily tenancy does not accept deposit amount");
-        }
-
+            GuestDetails guest) {
         if (plannedEndDate == null) {
-            throw new ValidationException("Planned end date is required for daily tenancy");
+            throw new ValidationException("Checkout date is required for a daily stay");
         }
 
         long stayDays = ChronoUnit.DAYS.between(startDate, plannedEndDate);
@@ -496,15 +537,15 @@ public class TenancyService {
             throw new ValidationException("Property daily guest rate is not configured for this room conditioning");
         }
 
-        return Tenancy.startDaily(
+        return Tenancy.startDailyGuest(
                 referenceCodeGenerator.nextCode("TEN"),
-                tenantId,
                 propertyId,
                 roomId,
                 actorUserId,
                 dailyRatePaise,
                 startDate,
-                plannedEndDate);
+                plannedEndDate,
+                guest);
     }
 
     @Transactional
@@ -735,7 +776,14 @@ public class TenancyService {
     }
 
     public TenancyResponse toResponse(Tenancy tenancy) {
-        UserSummaryResponse user = authModule.findById(tenancy.getUserId()).orElse(null);
+        // Asked BEFORE the lookup, not handled after it. Spring Data throws
+        // InvalidDataAccessApiUsageException on a null id rather than returning
+        // an empty Optional, so `.orElse(null)` never got the chance to run — a
+        // single daily guest in a property took down every list that mapped its
+        // tenancies, the tenant-bills screen included.
+        UserSummaryResponse user = tenancy.hasTenantAccount()
+                ? authModule.findById(tenancy.getUserId()).orElse(null)
+                : null;
         return TenancyResponse.from(tenancy, user);
     }
 

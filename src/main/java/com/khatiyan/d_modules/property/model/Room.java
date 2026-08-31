@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.property.model;
 
+import java.util.Set;
+import java.util.HashSet;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -7,6 +9,9 @@ import com.khatiyan.c_shared.audit.BaseEntity;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.money.Money;
 
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -82,6 +87,40 @@ public class Room extends BaseEntity {
     @Column(name = "maintenance_marked_by")
     private UUID maintenanceMarkedBy;
 
+    /**
+     * The mold this room was cut from.
+     *
+     * <p>Nullable, and it stays nullable: a room outlives the template it came
+     * from. Deleting a mold sets this to null rather than taking an occupied
+     * room with it.
+     */
+    @Column(name = "mold_id")
+    private UUID moldId;
+
+    /**
+     * This room's own amenities, copied from the mold and then free to differ.
+     *
+     * <p>A room that could only ever show its mold's list would make "editable
+     * per room" a promise the model could not keep. AC is not among these — it
+     * is the conditioning above, and a second copy here could contradict it.
+     */
+    @ElementCollection
+    @CollectionTable(
+            name = "room_amenities",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "room_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "amenity", nullable = false, length = 40)
+    private Set<RoomAmenity> amenities = new HashSet<>();
+
+    @ElementCollection
+    @CollectionTable(
+            name = "room_custom_amenities",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "room_id"))
+    @Column(name = "name", nullable = false, length = 80)
+    private Set<String> customAmenities = new HashSet<>();
+
     @Column(name = "maintenance_marked_at")
     private Instant maintenanceMarkedAt;
 
@@ -116,6 +155,100 @@ public class Room extends BaseEntity {
         }
 
         return new Room(propertyId, roomNumber, floor, capacity, roomType, conditioning, baseRent);
+    }
+
+    /**
+     * Cuts a room from a mold, taking its shape and its defaults.
+     *
+     * <p>The defaults are copied, not referenced. From this moment the room's
+     * rent and amenities are its own — which is what lets one room in a floor of
+     * doubles carry a fan the others do not, without inventing a mold for it.
+     */
+    public static Room fromMold(RoomMold mold, String roomNumber, String floor) {
+        return fromMold(mold, roomNumber, floor, null, null, null);
+    }
+
+    /**
+     * Cuts a room from a mold, optionally overriding what it comes with.
+     *
+     * <p>Null amenities means the mold's — the ordinary case. A supplied set,
+     * empty included, is the caller saying this room differs, which is allowed
+     * because a mold is a template: rooms copy from it and may diverge, and
+     * doing so at creation is no different from doing it a minute later.
+     *
+     * <p>Bed count, sharing type and conditioning are NOT overridable here.
+     * Those are what the room IS, and a room contradicting its own mold on them
+     * is the state molds were introduced to make unrepresentable. Rent is a
+     * different matter — the mold's is a default and rooms are meant to diverge
+     * from it, which is why reporting what a double costs reads the rooms.
+     */
+    public static Room fromMold(
+            RoomMold mold,
+            String roomNumber,
+            String floor,
+            Long baseRentPaise,
+            Set<RoomAmenity> amenities,
+            Set<String> customAmenities) {
+        Room room = create(
+                mold.getPropertyId(),
+                roomNumber,
+                floor,
+                mold.getBedCount(),
+                mold.getSharingType(),
+                mold.getConditioning(),
+                Money.ofPaise(baseRentPaise == null ? mold.getBaseRentPaise() : baseRentPaise));
+
+        room.moldId = mold.getId();
+        room.amenities = new HashSet<>(amenities == null ? mold.getAmenities() : amenities);
+        room.customAmenities = RoomAmenities.cleanCustom(
+                customAmenities == null ? mold.getCustomAmenities() : customAmenities);
+        return room;
+    }
+
+    /**
+     * Moves a room onto a different mold — the upgrade path.
+     *
+     * <p>The point of this is that turning a double into a triple, or a non-AC
+     * room into an AC one, does not mean deleting the room and losing its
+     * number, its history and its activity trail.
+     *
+     * <p><b>Refuses to shrink below the people already in it.</b> A four-bed
+     * room holding three tenants cannot become a double by editing a field;
+     * somebody has to move first, and saying so is more useful than a
+     * constraint violation two layers down.
+     *
+     * <p>Rent and amenities are re-taken from the new mold. A room being recut
+     * is becoming a different product, so keeping the old room's overrides
+     * would leave an AC triple priced as the non-AC double it used to be.
+     */
+    public void recut(RoomMold mold) {
+        if (!mold.getPropertyId().equals(this.propertyId)) {
+            throw new ValidationException("That mold belongs to a different property");
+        }
+        if (!mold.isActive()) {
+            throw new ValidationException("That room type is retired and cannot be assigned");
+        }
+
+        int taken = this.occupiedCount + this.reservedCount;
+        if (mold.getBedCount() < taken) {
+            throw new ValidationException(
+                    "This room holds %d occupant%s. Move them before changing it to a %d-bed room."
+                            .formatted(taken, taken == 1 ? "" : "s", mold.getBedCount()));
+        }
+
+        this.moldId = mold.getId();
+        this.capacity = mold.getBedCount();
+        this.roomType = mold.getSharingType();
+        this.conditioning = mold.getConditioning();
+        this.baseRentPaise = mold.getBaseRentPaise();
+        this.amenities = new HashSet<>(mold.getAmenities());
+        this.customAmenities = new HashSet<>(mold.getCustomAmenities());
+    }
+
+    /** Per-room overrides, after the mold's defaults have been copied in. */
+    public void updateAmenities(Set<RoomAmenity> amenities, Set<String> customAmenities) {
+        this.amenities = amenities == null ? new HashSet<>() : new HashSet<>(amenities);
+        this.customAmenities = RoomAmenities.cleanCustom(customAmenities);
     }
 
     public void updateDetails(String roomNumber, String floor, int capacity,

@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type StatCardProps = {
@@ -27,7 +27,7 @@ export function StatCard({ icon: Icon, label, tone = "default", value, valueSuff
         backgroundColor: colors.surface,
         borderColor: colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: 20,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: spacing.sm,

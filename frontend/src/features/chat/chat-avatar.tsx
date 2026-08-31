@@ -1,5 +1,5 @@
 import { Image, Text, View } from "react-native";
-import { Building2 } from "lucide-react-native";
+import { PropertyIcon } from "@/components/property-icon";
 
 import { initialsOf } from "@/features/chat/chat-time";
 import { useTheme } from "@/theme/use-theme";
@@ -39,7 +39,7 @@ export function ChatAvatar({
           width: size,
         }}
       >
-        <Building2 color={colors.primary} size={size * 0.48} strokeWidth={2.2} />
+        <PropertyIcon color={colors.primary} size={size * 0.48} strokeWidth={2.2} />
       </View>
     );
   }

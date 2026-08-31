@@ -16,7 +16,7 @@ import {
   useRaiseEnquiryMutation,
   type EnquiryReceipt,
 } from "@/store/services/enquiry-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -69,7 +69,7 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
             backgroundColor: colors.surfaceSunken,
             borderColor: colors.borderStrong,
             borderCurve: "continuous",
-            borderRadius: 14,
+            borderRadius: radii.card,
             borderWidth: 1,
             flexDirection: "row",
             gap: spacing.sm,

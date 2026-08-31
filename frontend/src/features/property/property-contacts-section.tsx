@@ -155,9 +155,7 @@ function ContactRow({
       <View
         style={{
           alignItems: "center",
-          borderColor: colors.ink,
           borderRadius: 14,
-          borderWidth: 1,
           height: 40,
           justifyContent: "center",
           width: 40,
@@ -166,7 +164,7 @@ function ContactRow({
         <MaterialCommunityIcons
           color={colors.ink}
           name={contact.owner ? "account-tie-outline" : "account-outline"}
-          size={20}
+          size={28}
         />
       </View>
 
@@ -264,15 +262,13 @@ function ManagerPickerSheet({
             <View
               style={{
                 alignItems: "center",
-                borderColor: colors.ink,
                 borderRadius: 14,
-                borderWidth: 1,
                 height: 40,
                 justifyContent: "center",
                 width: 40,
               }}
             >
-              <MaterialCommunityIcons color={colors.ink} name="account-outline" size={20} />
+              <MaterialCommunityIcons color={colors.ink} name="account-outline" size={28} />
             </View>
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
               <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>

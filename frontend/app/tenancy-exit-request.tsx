@@ -13,7 +13,6 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
-import { rupeesLabel } from "@/features/compliance/clause-values";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -49,7 +48,7 @@ export default function TenancyExitRequestScreen() {
         <SkeletonCard />
       ) : !tenancy ? (
         <EmptyState
-          icon={CalendarClock}
+          icon={CalendarClock}
           title="No current stay"
           description="Exit requests can be raised only from an active tenancy."
         />
@@ -130,7 +129,7 @@ function ServeNoticeForm({ onDone }: { onDone: () => void }) {
   if (!windowQuery.data) {
     return (
       <EmptyState
-        icon={CalendarClock}
+        icon={CalendarClock}
         title="Cannot work out your notice"
         description="We could not load your notice period right now. Please try again shortly."
       />

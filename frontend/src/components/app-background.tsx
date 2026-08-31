@@ -12,11 +12,13 @@ export function AppBackground() {
   const { colors, isDark } = useTheme();
   const { height, width } = useWindowDimensions();
 
-  // Light mode is neutral paper — no blue cast. The only colour is a whisper
-  // of warm ochre in the lower corner, matching the ledger accent. Dark mode
-  // keeps its original wash and glows.
-  const top = isDark ? "#0A0C12" : "#FFFFFF";
-  const mid = isDark ? "#070708" : "#FCFCFD";
+  // Light mode is the page grey, top to bottom. It used to start at #FFFFFF
+  // and only reach colors.background at the very bottom, which meant the token
+  // was overridden across most of every screen — cards floated on white at the
+  // top and on grey at the foot of a long scroll. The wash keeps a whisper of
+  // lift so it is not a flat fill, but it stays in one colour family now.
+  const top = isDark ? "#0A0C12" : "#F4F6F9";
+  const mid = isDark ? "#070708" : "#F1F3F7";
   const bottom = colors.background;
 
   const primaryGlow = colors.primary;

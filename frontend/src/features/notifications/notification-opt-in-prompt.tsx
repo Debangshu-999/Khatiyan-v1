@@ -14,7 +14,7 @@ import {
   useRegisterDeviceMutation,
 } from "@/store/services/notification-api";
 import { setRegisteredDeviceTokenId } from "@/store/slices/auth-slice";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export function NotificationOptInPrompt() {
@@ -83,7 +83,7 @@ export function NotificationOptInPrompt() {
   }
 
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={() => void closePrompt()}>
+    <Modal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={() => void closePrompt()}>
       <View
         style={{
           alignItems: "center",
@@ -97,7 +97,7 @@ export function NotificationOptInPrompt() {
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 18,
+            borderRadius: radii.card,
             borderWidth: 1,
             gap: spacing.md,
             maxWidth: 420,
@@ -109,15 +109,13 @@ export function NotificationOptInPrompt() {
             <View
               style={{
                 alignItems: "center",
-                borderColor: colors.ink,
-                borderWidth: 1,
-                borderRadius: 12,
+                borderRadius: radii.card,
                 height: 44,
                 justifyContent: "center",
                 width: 44,
               }}
             >
-              <BellRing color={colors.ink} size={20} strokeWidth={2} />
+              <BellRing color={colors.ink} size={29} strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1, gap: spacing.xs }}>
               <Text

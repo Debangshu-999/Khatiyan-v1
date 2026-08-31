@@ -45,7 +45,7 @@ import {
   type TenancyExitRequest,
   type TenancySummary,
 } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type ReviewMode = "approve" | "reject";
@@ -165,7 +165,8 @@ export default function OwnerExitRequestsScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={DoorOpen}
+          icon={DoorOpen}
+
           title="No active property selected"
           description="Choose the property whose exit requests you want to manage from Home."
         />
@@ -245,7 +246,8 @@ export default function OwnerExitRequestsScreen() {
               <SkeletonCard />
             ) : activeRequests.length === 0 ? (
               <EmptyState
-                icon={DoorOpen}
+                icon={DoorOpen}
+
                 title={filter === "unattended" ? "Nothing waiting on you" : "No decided requests"}
                 description={
                   filter === "unattended"
@@ -335,7 +337,7 @@ function PastExitRequestsModal({
   const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Full width. These cards now carry a timeline button and an alternating
           rail behind it, and an inset sheet left the rail squeezed into about
           half the screen with the labels wrapping. */}
@@ -642,7 +644,7 @@ function ExitReviewModal({
 
   return (
     <>
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
@@ -817,7 +819,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
 function InfoPopover({ onClose, title, value }: { onClose: () => void; title: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <Pressable
         onPress={onClose}
         style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
@@ -854,7 +856,7 @@ function SummaryTile({ hint, label, tone = "default", value }: { hint: string; l
   const { colors, fonts, type } = useTheme();
   const accent = tone === "primary" ? colors.primary : colors.ink;
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
       <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>

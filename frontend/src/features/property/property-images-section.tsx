@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Image, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Pencil, Plus, Star, Trash2 } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
+import { AddPhotoTarget, PhotoRow, UploadProgress } from "@/features/property/photo-list";
 import { SkeletonCard } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { ImageCaptionDialog, type CaptionedAsset } from "@/features/property/image-caption-dialog";
@@ -197,63 +196,24 @@ export function PropertyImagesSection({
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
-      {/* Insert area on top, files stacked under it — the shape the notice
-          attachments use. A wrap of square tiles left a caption nowhere to go
-          but under a 104px thumbnail, where it truncated after two words; a row
-          gives it the whole width beside the picture. */}
       {images.length < MAX_PROPERTY_IMAGES ? (
-        <AnimatedPressable
-          accessibilityLabel="Add a listing photo"
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={() => void pickAndUpload()}
-          style={{
-            alignItems: "center",
-            borderColor: colors.borderStrong,
-            borderCurve: "continuous",
-            borderRadius: 14,
-            borderStyle: "dashed",
-            borderWidth: 1,
-            gap: 4,
-            justifyContent: "center",
-            opacity: busy ? 0.5 : 1,
-            paddingVertical: spacing.lg,
-            width: "100%",
-          }}
-        >
-          <Plus color={colors.kicker} size={20} strokeWidth={2.2} />
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            Add listing photo
-          </Text>
-        </AnimatedPressable>
+        <AddPhotoTarget busy={busy} onPress={() => void pickAndUpload()} />
       ) : null}
 
-      {progress ? (
-        <View style={{ gap: 6 }}>
-          <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
-            Uploading {Math.min(progress.completed + 1, progress.total)} of {progress.total}…
-          </Text>
-          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 4, overflow: "hidden" }}>
-            <View
-              style={{
-                backgroundColor: colors.ink,
-                height: 4,
-                width: `${Math.round((progress.completed / Math.max(progress.total, 1)) * 100)}%`,
-              }}
-            />
-          </View>
-        </View>
-      ) : null}
+      <UploadProgress progress={progress} />
 
       <View style={{ gap: spacing.xs }}>
         {images.map((image) => (
-          <ImageRow
+          <PhotoRow
             busy={busy}
-            image={image}
+            cover={image.cover}
             key={image.id}
+            muted={!image.caption}
             onEditCaption={() => setEditing(image)}
             onMakeCover={() => void promote(image.id)}
             onRemove={() => void remove(image.id)}
+            title={image.caption || "No caption"}
+            uri={image.url}
           />
         ))}
       </View>
@@ -267,153 +227,10 @@ export function PropertyImagesSection({
   );
 }
 
-/**
- * One photo: the picture, what it is of, and the two things you can do to it.
- *
- * <p>The caption gets the row's width rather than a line under a square tile,
- * which is the whole reason this is a list and not a grid.
- */
-function ImageRow({
-  busy,
-  image,
-  onEditCaption,
-  onMakeCover,
-  onRemove,
-}: {
-  busy: boolean;
-  image: PropertyImage;
-  onEditCaption: () => void;
-  onMakeCover: () => void;
-  onRemove: () => void;
-}) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        borderColor: colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.sm,
-      }}
-    >
-      {/* The star sits ON the photo, as it did on the tiles: it is a property of
-          that picture, and in the action row it read as a third button rather
-          than as this photo's state. Solid ground under it, because it lies over
-          a photograph that could be any colour. */}
-      <View style={{ height: 64, width: 64 }}>
-        <Image
-          resizeMode="cover"
-          source={{ uri: image.url }}
-          style={{
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 10,
-            height: 64,
-            width: 64,
-          }}
-        />
-        <AnimatedPressable
-          accessibilityLabel={image.cover ? "This is the cover photo" : "Make this the cover photo"}
-          accessibilityRole="button"
-          accessibilityState={{ selected: image.cover }}
-          disabled={busy || image.cover}
-          hitSlop={6}
-          onPress={onMakeCover}
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 999,
-            borderWidth: 1,
-            height: 24,
-            justifyContent: "center",
-            left: 3,
-            opacity: busy && !image.cover ? 0.5 : 1,
-            position: "absolute",
-            top: 3,
-            width: 24,
-          }}
-        >
-          <Star
-            color={image.cover ? colors.warning : colors.ink}
-            fill={image.cover ? colors.warning : "transparent"}
-            size={13}
-            strokeWidth={2.4}
-          />
-        </AnimatedPressable>
-      </View>
-
-      {/* No "Cover photo" line: the filled star on the picture already says it,
-          and a label repeating a mark right beside it is the same fact twice. */}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
-          numberOfLines={2}
-          style={{
-            color: image.caption ? colors.ink : colors.kicker,
-            fontWeight: "700",
-          }}
-        >
-          {image.caption || "No caption"}
-        </Text>
-      </View>
-
-      {/* Tighter than the row gap: these two are a pair of actions on the same
-          photo, and spaced like the caption beside them they read as three
-          unrelated things. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
-      <AnimatedPressable
-        accessibilityLabel="Edit this photo's caption"
-        accessibilityRole="button"
-        disabled={busy}
-        hitSlop={6}
-        onPress={onEditCaption}
-        style={{
-          alignItems: "center",
-          height: 36,
-          justifyContent: "center",
-          opacity: busy ? 0.5 : 1,
-          width: 36,
-        }}
-      >
-        <Pencil color={colors.primary} size={17} strokeWidth={2.2} />
-      </AnimatedPressable>
-
-      <AnimatedPressable
-        accessibilityLabel="Remove this photo"
-        accessibilityRole="button"
-        disabled={busy}
-        hitSlop={8}
-        onPress={onRemove}
-        style={{
-          alignItems: "center",
-          height: 36,
-          justifyContent: "center",
-          opacity: busy ? 0.5 : 1,
-          width: 36,
-        }}
-      >
-        <Trash2 color={colors.danger} size={18} strokeWidth={2.2} />
-      </AnimatedPressable>
-      </View>
-    </View>
-  );
-}
-
-/**
- * What to show when a gallery call fails.
- *
- * <p>Server messages are logged, not shown. Most are written for whoever is
- * reading the stack trace — "Property image with id … not found" tells the
- * owner nothing they can act on. The exception is a deliberate rule we wrote
- * for them, which the backend marks VALIDATION_ERROR.
- */
 function errorText(error: unknown, fallback: string) {
   if (typeof error === "object" && error !== null && "data" in error) {
     const data = (error as { data?: { message?: string; code?: string } }).data;
-    // A rule we wrote for the owner — "a listing needs at least one image" — is
+    // A rule we wrote for the owner â€” "a listing needs at least one image" â€” is
     // the endpoint working, not failing. console.error raises a red LogBox over
     // the app, so removing the last photo looked like a crash on top of the
     // modal that had already explained it politely.

@@ -1,6 +1,7 @@
 package com.khatiyan.a_auth.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.Duration;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -26,11 +27,14 @@ import com.khatiyan.a_auth.api.dto.EmailRecoveryStatusResponse;
 import com.khatiyan.a_auth.api.dto.OtpVerifyResponse;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.api.dto.UserSessionResponse;
+import com.khatiyan.a_auth.api.dto.UpdateUserIdentityRequest;
+import com.khatiyan.a_auth.api.dto.UserIdentityResponse;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.event.PinChangedEvent;
 import com.khatiyan.a_auth.event.UserRegisteredEvent;
 import com.khatiyan.a_auth.model.OtpDeliveryChannel;
 import com.khatiyan.a_auth.model.OtpPurpose;
+import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.a_auth.model.User;
 import com.khatiyan.a_auth.model.LoginFailureReason;
 import com.khatiyan.a_auth.model.UserRole;
@@ -215,6 +219,58 @@ public class AuthService {
 
         User user = registerNewAccount(phone, email, fullName, UserRole.USER);
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+    }
+
+    /**
+     * Sends a signing code to the person's registered number.
+     *
+     * <p>SMS only, and to the number on the account rather than one supplied
+     * with the request. A code sent to an address the caller nominated would
+     * prove they control that address and nothing about who they are.
+     *
+     * @return the destination, masked to its last four digits, so the screen can
+     *         say where the code went without restating the whole number
+     */
+    @Transactional
+    public String startAgreementSigning(UUID userId, String requestIpAddress) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+
+        otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.AGREEMENT_ACCEPTANCE, OtpDeliveryChannel.SMS);
+        return maskPhone(user.getPhone());
+    }
+
+    /**
+     * Checks a signing code and spends it.
+     *
+     * <p>Consuming rather than peeking: a code that survives its own use can
+     * sign twice, and the second signature would carry the evidence of the
+     * first.
+     */
+    @Transactional
+    public String completeAgreementSigning(UUID userId, String otp) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+
+        otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.AGREEMENT_ACCEPTANCE, otp);
+        return maskPhone(user.getPhone());
+    }
+
+    /**
+     * The last four digits, and nothing else.
+     *
+     * <p>Enough for the person to recognise the number as theirs. The whole
+     * number is already on the account and does not need a second copy inside an
+     * evidence record that is never deleted.
+     */
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) {
+            return "unknown";
+        }
+        // The digits alone. A leading run of asterisks reads as part of the
+        // number on screen, and the caller says "the number ending ..." around
+        // it — the mask was doing the sentence's job badly.
+        return phone.substring(phone.length() - 4);
     }
 
     /**
@@ -786,6 +842,57 @@ public class AuthService {
         return userRepository.findById(userId)
                 .filter(user -> user.isCurrentlyActive())
                 .map(user -> UserSummaryResponse.from(user));
+    }
+
+    /**
+     * Someone editing their own identity details.
+     *
+     * <p>Uses {@code updateIdentity} on the entity, which lets blanks CLEAR —
+     * unlike {@link #fillMissingTenantIdentity}, where somebody else is supplying
+     * what they know and must not overwrite what the person set themselves.
+     */
+    @Transactional
+    public UserIdentityResponse updateIdentity(UUID userId, UpdateUserIdentityRequest request) {
+        User user = findActiveUserById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+
+        user.updateIdentity(
+                request.permanentAddress(),
+                request.permanentAddressPincode(),
+                request.dateOfBirth(),
+                request.gender());
+
+        return UserIdentityResponse.from(userRepository.save(user));
+    }
+
+    /** The particulars a deed names a person by. See {@link UserIdentityResponse}. */
+    @Transactional(readOnly = true)
+    public Optional<UserIdentityResponse> findIdentity(UUID userId) {
+        return userRepository.findById(userId)
+                .filter(User::isCurrentlyActive)
+                .map(UserIdentityResponse::from);
+    }
+
+    /**
+     * Fills a tenant's blank identity fields from an owner's onboarding form.
+     *
+     * <p>Writes nothing over a field the tenant already has — the entity enforces
+     * that, not this method, so the rule holds for any future caller. The email is
+     * stored unverified.
+     */
+    @Transactional
+    public void fillMissingTenantIdentity(
+            UUID userId,
+            String permanentAddress,
+            String permanentAddressPincode,
+            LocalDate dateOfBirth,
+            Gender gender) {
+
+        userRepository.findById(userId).ifPresent(user -> {
+            if (user.fillMissingIdentity(permanentAddress, permanentAddressPincode, dateOfBirth, gender)) {
+                userRepository.save(user);
+            }
+        });
     }
 
     /**

@@ -1,5 +1,5 @@
 import { PropsWithChildren } from "react";
-import { View } from "react-native";
+import { View, type ViewProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -23,14 +23,58 @@ import { useTheme } from "@/theme/use-theme";
  * {@link PINNED_FOOTER_CLEARANCE} so its last item can still be scrolled clear
  * of the button.
  */
-export function PinnedFooter({ children }: PropsWithChildren) {
+export function PinnedFooter({
+  children,
+  fade = true,
+  onLayout,
+  solid = false,
+}: PropsWithChildren<{
+  /**
+   * The gradient veils under the footer.
+   *
+   * <p>On for a bare button, which needs the page to recede behind it. Off
+   * where the footer carries explanatory text as well: the ramp is darkest at
+   * the bottom, which is exactly where that text sits, and it read as printed
+   * on a shadow.
+   */
+  fade?: boolean;
+  /**
+   * An opaque strip instead of a veil, with a hairline along its top edge.
+   *
+   * <p>For a footer carrying MORE than one control. The gradients deliberately
+   * never reach full opacity — content stays legible the whole way down, which
+   * is right behind a single button and wrong behind a stack: text and buttons
+   * from the page show through between the controls and the strip stops reading
+   * as one surface.
+   *
+   * <p>Content still scrolls UNDER it; it just cannot be seen through it. Implies
+   * no gradient, since an opaque background has nothing to fade over.
+   */
+  solid?: boolean;
+  /**
+   * Reports the strip's real height.
+   *
+   * <p>For callers whose footer is not the standard one — a note under the
+   * button, or no fade — where {@link PINNED_FOOTER_CLEARANCE} is the wrong
+   * number and a second literal would drift from it.
+   */
+  onLayout?: ViewProps["onLayout"];
+}>) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // An opaque strip has nothing to fade over, and the tall runway the gradient
+  // needs would just become a band of empty background above the controls.
+  const veiled = fade && !solid;
+
   return (
     <View
+      onLayout={onLayout}
       pointerEvents="box-none"
       style={{
+        backgroundColor: solid ? colors.background : undefined,
+        borderTopColor: solid ? colors.border : undefined,
+        borderTopWidth: solid ? 1 : 0,
         bottom: 0,
         left: 0,
         position: "absolute",
@@ -45,10 +89,12 @@ export function PinnedFooter({ children }: PropsWithChildren) {
         // bottom edge on devices with no inset at all, which is where the whole
         // floating effect falls apart.
         paddingBottom: insets.bottom + spacing.xl,
-        // Top padding is the runway the dim needs to build over. Too little and
-        // the gradient reads as a line rather than a fade.
         paddingHorizontal: spacing.lg,
-        paddingTop: spacing.xxxl,
+        // Runway for the dim to build over — too little and the gradient reads
+        // as a line rather than a fade. With no gradient there is nothing to
+        // build, and the same padding becomes a tall opaque band that swallows
+        // content well above the button.
+        paddingTop: veiled ? spacing.xxxl : spacing.md,
       }}
     >
       {/* Two veils, not one. A single ramp can only do one of these: fading
@@ -60,22 +106,40 @@ export function PinnedFooter({ children }: PropsWithChildren) {
 
           Both start transparent at the top edge and build downward, so the
           effect begins above the button rather than at it. */}
-      <LinearGradient
-        colors={[
-          withAlpha(colors.background, 0),
-          withAlpha(colors.background, 0.45),
-          withAlpha(colors.background, 0.72),
-        ]}
-        locations={[0, 0.45, 1]}
-        pointerEvents="none"
-        style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
-      />
-      <LinearGradient
-        colors={[DIM_TRANSPARENT, withAlpha(DIM, 0.08), withAlpha(DIM, 0.26)]}
-        locations={[0, 0.42, 1]}
-        pointerEvents="none"
-        style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
-      />
+      {veiled ? (
+        <>
+          <LinearGradient
+            colors={[
+              withAlpha(colors.background, 0),
+              withAlpha(colors.background, 0.45),
+              withAlpha(colors.background, 0.72),
+            ]}
+            locations={[0, 0.45, 1]}
+            pointerEvents="none"
+            style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
+          />
+          <LinearGradient
+            colors={[DIM_TRANSPARENT, withAlpha(DIM, 0.08), withAlpha(DIM, 0.26)]}
+            locations={[0, 0.42, 1]}
+            pointerEvents="none"
+            style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
+          />
+        </>
+      ) : (
+        // Without the ramp the strip still has to be opaque, or the list
+        // scrolls visibly behind the button and its note.
+        <View
+          pointerEvents="none"
+          style={{
+            backgroundColor: colors.background,
+            bottom: 0,
+            left: 0,
+            position: "absolute",
+            right: 0,
+            top: 0,
+          }}
+        />
+      )}
       {children}
     </View>
   );

@@ -31,6 +31,7 @@ import {
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { Lightbox } from "@/components/image-carousel";
 import { useToast } from "@/components/toast";
 import { dayDivider } from "@/features/chat/chat-time";
@@ -275,42 +276,107 @@ export default function ChatThreadScreen() {
     }, [goBack]),
   );
 
+  /**
+   * The newest of my messages that anyone has reached.
+   *
+   * <p>Reading is sequential, so this one message vouches for every one before
+   * it — a receipt under each bubble repeated the same fact down the screen and
+   * left the reader working out whether the lower ones meant something more.
+   *
+   * <p>Walked from the end because the list is in seq order, so the first hit
+   * is the answer.
+   */
+  const lastSeenMineId = (() => {
+    for (let at = messages.length - 1; at >= 0; at = at - 1) {
+      const message = messages[at];
+      if (message.mine && seenCountFor(message.seq) > 0) {
+        return message.id;
+      }
+    }
+    return null;
+  })();
+
   return (
-    <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background, flex: 1 }}>
+    <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.chatSurface, flex: 1 }}>
+      {/* Lifted, not ruled. The thread is white now, and a hairline across the
+          top of a white screen is the heaviest mark on it — a shadow says the
+          same thing (this floats above the conversation) without drawing a
+          line through the design. */}
       <View
         style={{
           alignItems: "center",
-          borderBottomColor: colors.border,
-          borderBottomWidth: 1,
+          backgroundColor: colors.chatSurface,
+          elevation: 3,
           flexDirection: "row",
-          gap: spacing.sm,
+          gap: spacing.md,
+          paddingBottom: spacing.md,
           paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
+          paddingTop: spacing.xs,
+          shadowColor: colors.shadow,
+          shadowOffset: { height: 3, width: 0 },
+          shadowOpacity: 1,
+          shadowRadius: 8,
+          zIndex: 2,
         }}
       >
-        <AnimatedPressable accessibilityLabel="Back" accessibilityRole="button" hitSlop={10} onPress={goBack}>
-          <ArrowLeft color={colors.ink} size={22} strokeWidth={2.2} />
+        {/* The same grey disc as every other back and close button in the app.
+            A bare arrow floating on white was the one navigation control that
+            did not look like a control. */}
+        <AnimatedPressable
+          accessibilityLabel="Back"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={goBack}
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            height: 32,
+            justifyContent: "center",
+            width: 32,
+          }}
+        >
+          <ArrowLeft color={colors.inkSoft} size={17} strokeWidth={2.4} />
         </AnimatedPressable>
-        {/* Beside the name, as every messaging app puts it — it is the
-            fastest way to confirm you opened the right conversation. */}
-        {/* The building only when the other side IS the property — management
+
+        {/* Beside the name, as every messaging app puts it — it is the fastest
+            way to confirm you opened the right conversation. Ringed in the page
+            grey so a light photograph still reads as a disc against white.
+
+            The building only when the other side IS the property — management
             reading a team thread is looking at a tenant, not at a place. */}
-        <ChatAvatar
-          name={title}
-          photoUrl={thread?.counterpartPhotoUrl ?? params.photo}
-          size={34}
-          team={
-            thread
-              ? thread.kind === "TEAM" && thread.counterpartUserId === null
-              : params.team === "1"
-          }
-        />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
+        <View
+          style={{
+            borderColor: colors.border,
+            borderRadius: 999,
+            borderWidth: 1,
+            padding: 2,
+          }}
+        >
+          <ChatAvatar
+            name={title}
+            photoUrl={thread?.counterpartPhotoUrl ?? params.photo}
+            size={38}
+            team={
+              thread
+                ? thread.kind === "TEAM" && thread.counterpartUserId === null
+                : params.team === "1"
+            }
+          />
+        </View>
+
+        <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}
+          >
             {title}
           </Text>
           {params.subtitle ? (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+            // Caps and tracked out, the app's eyebrow voice. At caption size it
+            // competed with the name for the same reading; as a kicker it reads
+            // as a label ON the name instead of a second line of equal weight.
+            <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
               {params.subtitle}
             </Text>
           ) : null}
@@ -405,7 +471,7 @@ export default function ChatThreadScreen() {
                       index,
                     })
                   }
-                  seenBy={message.mine ? seenCountFor(message.seq) : undefined}
+                  seenBy={message.id === lastSeenMineId ? seenCountFor(message.seq) : undefined}
                   selected={selected?.id === message.id}
                   tail={startsRun}
                 />
@@ -417,7 +483,7 @@ export default function ChatThreadScreen() {
         {readOnly ? (
           <View
             style={{
-              backgroundColor: colors.background,
+              backgroundColor: colors.chatSurface,
               paddingBottom: spacing.md + insets.bottom,
               paddingHorizontal: spacing.md,
               paddingTop: spacing.md,
@@ -433,7 +499,7 @@ export default function ChatThreadScreen() {
             <View
               style={{
                 alignItems: "center",
-                backgroundColor: colors.background,
+                backgroundColor: colors.chatSurface,
                 flexDirection: "row",
                 gap: spacing.sm,
                 paddingHorizontal: spacing.md,
@@ -463,7 +529,7 @@ export default function ChatThreadScreen() {
             // The same ground as the message list, with no rule between them.
             // A bar in its own colour reads as a separate panel bolted on; the
             // input's own pill is enough to say where typing happens.
-            backgroundColor: colors.background,
+            backgroundColor: colors.chatSurface,
             flexDirection: "row",
             gap: spacing.sm,
             // Clears the gesture bar. SafeAreaView only pads the top here,
@@ -594,12 +660,21 @@ export default function ChatThreadScreen() {
           down by the status-bar inset, which was invisible for a tall photo
           and put the menu on top of the bubble for a one-row file menu.
 
-          A Modal's origin is the window, so the two spaces cannot drift apart
-          again. It also lets the backdrop cover the status-bar strip, and gives
-          the Android back button a way to close the menu. */}
+          Both translucency flags, and they must stay together: Android refuses
+          "translucent navigation bar without translucent status bar" and warns
+          on every open. So the modal spans the whole DISPLAY, and its origin is
+          the top of the screen rather than the line under the status bar.
+
+          `measureInWindow` reports from below that bar, so the two spaces differ
+          by exactly its height. That gap is closed ONCE, in menuTop, by adding the
+          top inset to the anchor — not here. Dropping a flag to make the spaces
+          match was tried and is what produced the warning; converting between
+          them is the version the platform allows. */}
       <Modal
         animationType="fade"
+        navigationBarTranslucent
         onRequestClose={() => setSelected(null)}
+        statusBarTranslucent
         transparent
         visible={Boolean(selected)}
       >
@@ -664,9 +739,11 @@ export default function ChatThreadScreen() {
       </Modal>
 
       {pendingDelete ? (
-        <DeleteMessageDialog
+        <ConfirmDeleteDialog
+          message="Are you sure you want to delete this message?"
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => void confirmDelete()}
+          title="Delete message"
         />
       ) : null}
 
@@ -766,18 +843,31 @@ function menuTop(
     return screenHeight / 2 - height / 2;
   }
 
+  // THE conversion, and the only one. `measureInWindow` reports the bubble from
+  // below the status bar; the menu's modal is translucent on both bars, so its
+  // origin is the top of the display. Everything below this line is therefore in
+  // display space, which is the space `top` is resolved in.
+  //
+  // Without it the menu drew a status bar too high — over the message it
+  // belonged under, and a bar's worth of gap above the last one. Do not "fix"
+  // that by dropping a translucency flag: Android refuses a translucent
+  // navigation bar without a translucent status bar and warns on every open.
+  const anchorY = anchor.y + topInset;
+
   // The composer is not an obstacle. Nothing can be typed while the menu is
   // open, so the menu is free to sit over it. Reserving its height instead sent
   // the menu upwards for the LAST message in a thread — where "above" means on
   // top of the message before it, which is the one it then appears to be about.
   const floor = screenHeight - bottomInset - height - GAP;
 
-  const below = anchor.y + anchor.height + GAP;
+  const below = anchorY + anchor.height + GAP;
   if (below <= floor) {
     return below;
   }
 
-  const above = anchor.y - height - GAP;
+  // The ceiling reserves the status-bar strip, because the modal spans the
+  // display and the menu would otherwise sit under the clock.
+  const above = anchorY - height - GAP;
   if (above >= topInset + GAP) {
     return above;
   }
@@ -845,79 +935,5 @@ function actionRows(message: ChatMessage) {
     (message.mine && message.attachments.length === 0 ? 1 : 0) +
     (message.body ? 1 : 0) +
     (message.mine ? 1 : 0)
-  );
-}
-
-/**
- * The delete confirmation.
- *
- * <p>Deliberately not the shared `ConfirmDialog`. That one is built for
- * decisions worth stopping for — ending a tenancy, settling a deposit — and its
- * two full-width buttons carry that weight. Removing one line of chat does not
- * warrant it. Here the question is plain and the answers are the two verbs,
- * right-aligned in reading order so the destructive one is furthest from the
- * thumb's resting path.
- */
-function DeleteMessageDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
-      <Pressable
-        accessibilityLabel="Dismiss"
-        onPress={onCancel}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          padding: spacing.lg,
-        }}
-      >
-        {/* Swallows the tap so a press inside the card does not dismiss it. */}
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: 16,
-            borderWidth: 1,
-            maxWidth: 340,
-            padding: spacing.lg,
-            width: "100%",
-          }}
-        >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            Delete message
-          </Text>
-          <Text style={[type.body, { color: colors.muted, marginTop: spacing.sm }]}>
-            Are you sure you want to delete this message?
-          </Text>
-
-          <View
-            style={{
-              flexDirection: "row",
-              gap: spacing.lg,
-              justifyContent: "flex-end",
-              marginTop: spacing.lg,
-            }}
-          >
-            <DialogChoice label="Cancel" onPress={onCancel} tone={colors.primary} />
-            <DialogChoice label="Delete" onPress={onConfirm} tone={colors.danger} />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function DialogChoice({ label, onPress, tone }: { label: string; onPress: () => void; tone: string }) {
-  const { fonts } = useTheme();
-
-  return (
-    <AnimatedPressable accessibilityRole="button" hitSlop={10} onPress={onPress}>
-      <Text style={{ color: tone, fontFamily: fonts.sansSemiBold, fontSize: 15 }}>{label}</Text>
-    </AnimatedPressable>
   );
 }

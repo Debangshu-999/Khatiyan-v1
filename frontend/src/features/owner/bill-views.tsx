@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarDays, CheckCircle2, ReceiptText, TimerReset } fr
 import { Card } from "@/components/card";
 import { StatusPill } from "@/components/status-pill";
 import { billTitle, type BillingCycle } from "@/store/services/billing-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // Shared, read-only bill views + pure bill helpers, reused by the owner
@@ -229,7 +229,7 @@ export function InfoBlock({ label, strong = false, value }: { label: string; str
         backgroundColor: colors.surfaceSunken,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: 2,
@@ -313,14 +313,14 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
   const tenantName = cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`;
 
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, gap: spacing.md, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
         <View
           style={{
             alignItems: "center",
             backgroundColor: mutable ? colors.primarySoft : colors.surfaceSunken,
             borderColor: colors.border,
-            borderRadius: 14,
+            borderRadius: radii.card,
             borderWidth: 1,
             height: 44,
             justifyContent: "center",

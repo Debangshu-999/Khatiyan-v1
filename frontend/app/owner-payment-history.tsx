@@ -21,7 +21,7 @@ import {
 } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useListPropertyBillingCyclesQuery } from "@/store/services/billing-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 8;
@@ -80,7 +80,8 @@ export default function OwnerPaymentHistoryScreen() {
 
       {!property ? (
         <EmptyState
-          icon={ReceiptText}
+          icon={ReceiptText}
+
           title="No property selected"
           description="Choose an active property from Home before viewing payment history."
         />
@@ -111,7 +112,8 @@ export default function OwnerPaymentHistoryScreen() {
 
             {!cyclesQuery.isFetching && visible.length === 0 ? (
               <EmptyState
-                icon={ReceiptText}
+                icon={ReceiptText}
+
                 title="No payment history found"
                 description={
                   ordered.length === 0
@@ -160,7 +162,7 @@ function HistoryMetric({ label, value }: { label: string; value: string }) {
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: spacing.xs,

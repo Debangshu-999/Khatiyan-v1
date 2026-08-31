@@ -37,19 +37,28 @@ public class PropertyAgreementSettings extends BaseEntity {
     @Column(name = "property_id", nullable = false, unique = true)
     private UUID propertyId;
 
+    /**
+     * The owner's choices, not the deed.
+     *
+     * <p>This used to hold a list of rendered clauses, which meant the property's
+     * defaults carried prose resolved against no particular tenancy — a rent
+     * sentence with somebody else's rent in it, waiting to be copied. A template
+     * holds only what the owner actually decided; the words are produced per
+     * tenancy, from that tenancy's facts.
+     */
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "default_clauses", columnDefinition = "jsonb", nullable = false)
-    private List<AgreementClause> defaultClauses = new ArrayList<>();
+    @Column(name = "template", columnDefinition = "jsonb", nullable = false)
+    private AgreementTemplate template = AgreementTemplate.starter();
 
-    public static PropertyAgreementSettings create(UUID propertyId, List<AgreementClause> defaultClauses) {
+    public static PropertyAgreementSettings create(UUID propertyId, AgreementTemplate template) {
         PropertyAgreementSettings settings = new PropertyAgreementSettings();
         settings.id = UUID.randomUUID();
         settings.propertyId = propertyId;
-        settings.defaultClauses = defaultClauses != null ? new ArrayList<>(defaultClauses) : new ArrayList<>();
+        settings.template = template != null ? template : AgreementTemplate.starter();
         return settings;
     }
 
-    public void update(List<AgreementClause> defaultClauses) {
-        this.defaultClauses = defaultClauses != null ? new ArrayList<>(defaultClauses) : new ArrayList<>();
+    public void update(AgreementTemplate template) {
+        this.template = template != null ? template : AgreementTemplate.starter();
     }
 }

@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-import { defaultApiBaseUrl, resolveDefaultApiBaseUrl } from "@/config/api";
+import { defaultApiBaseUrl, normalizeApiBaseUrl, resolveDefaultApiBaseUrl } from "@/config/api";
 import type { ThemeMode } from "@/theme/colors";
 
 type AppConfigState = {
@@ -18,7 +18,10 @@ const appConfigSlice = createSlice({
   initialState,
   reducers: {
     setApiBaseUrl(state, action: PayloadAction<string>) {
-      state.apiBaseUrl = action.payload;
+      // Normalised on the way IN, so what the store holds is always safe to
+      // concatenate. A value typed into a dev settings box is exactly where a
+      // stray space comes from.
+      state.apiBaseUrl = normalizeApiBaseUrl(action.payload);
     },
     resetApiBaseUrl(state) {
       state.apiBaseUrl = resolveDefaultApiBaseUrl();

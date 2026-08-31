@@ -29,6 +29,13 @@ public class BillingCycleNotificationEventListener {
 
     @ApplicationModuleListener
     public void onBillingCycleGenerated(BillingCycleGeneratedEvent event) {
+        // A guest stay has no account, so there is nobody to tell. Returning
+        // here is the whole answer: this listener exists only to notify the
+        // tenant, and a daily stay is managed with the guest in person.
+        if (event.tenantUserId() == null) {
+            return;
+        }
+
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
         data.put("tenancyId", event.tenancyId().toString());
@@ -65,6 +72,13 @@ public class BillingCycleNotificationEventListener {
      */
     @ApplicationModuleListener
     public void onPaidManually(BillingCyclePaidManuallyEvent event) {
+        // A guest stay has no account, so there is nobody to tell. Returning
+        // here is the whole answer: this listener exists only to notify the
+        // tenant, and a daily stay is managed with the guest in person.
+        if (event.tenantUserId() == null) {
+            return;
+        }
+
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
         data.put("manualPaymentId", event.manualPaymentId().toString());
@@ -91,6 +105,13 @@ public class BillingCycleNotificationEventListener {
 
     @ApplicationModuleListener
     public void onBillingLateFeeApplied(BillingLateFeeAppliedEvent event) {
+        // A guest stay has no account, so there is nobody to tell. Returning
+        // here is the whole answer: this listener exists only to notify the
+        // tenant, and a daily stay is managed with the guest in person.
+        if (event.tenantUserId() == null) {
+            return;
+        }
+
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
         data.put("lineItemId", event.lineItemId().toString());

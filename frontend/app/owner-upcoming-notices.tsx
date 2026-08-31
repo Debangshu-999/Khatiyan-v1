@@ -322,7 +322,7 @@ function DelaySheet({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Same shell as AddClauseSheet: the sheet needs maxHeight plus a
           shrinkable ScrollView or its content runs off the bottom of the
           screen, and Expo 56 Android needs the KAV to lift it. */}

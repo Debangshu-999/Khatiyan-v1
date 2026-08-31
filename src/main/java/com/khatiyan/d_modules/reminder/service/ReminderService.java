@@ -15,6 +15,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -69,6 +70,18 @@ public class ReminderService {
             NotificationPriority notificationPriority,
             NotificationDeliveryMode deliveryMode,
             NotificationAudience audience) {
+        // Checked here rather than left to the NOT NULL constraint. A reminder
+        // with no recipient is always a caller's mistake, and letting it reach
+        // the insert failed at flush time inside a batch — the stack pointed at
+        // the transaction commit rather than at whoever built the row, and the
+        // startup catch-up runs on ApplicationReadyEvent, so it took the whole
+        // application down with it. Fail where the mistake was made.
+        if (recipientUserId == null) {
+            throw new ValidationException(
+                    "A reminder needs a recipient. Skip stays with no account instead of scheduling one: "
+                            + reminderKey);
+        }
+
         return transactionTemplate.execute(status -> {
             Optional<ReminderRecord> existing = reminderRecordRepository.findByReminderKey(reminderKey);
             if (existing.isPresent()) {

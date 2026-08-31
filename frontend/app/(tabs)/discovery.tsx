@@ -3,13 +3,12 @@ import { ActivityIndicator, Animated, BackHandler, Easing, RefreshControl, Scrol
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Compass, Search } from "lucide-react-native";
+import { Compass, Home, Search } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonScreen } from "@/components/skeleton";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
@@ -23,6 +22,7 @@ import {
 } from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
 import { PropertyProfile } from "@/features/discovery/components/property-profile";
+import { PropertyProfileSkeleton } from "@/features/discovery/components/property-profile-skeleton";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -317,8 +317,12 @@ export default function DiscoveryScreen() {
     }
   }
   if (selectedPropertyId) {
+    // formSurface, the lighter ground this screen had before the app-wide
+    // shade. A profile is mostly one large photograph and a stack of white
+    // cards; the deeper grey put a heavy band either side of the image and made
+    // the page compete with the picture it exists to show.
     return (
-      <LinearGradient colors={[colors.primarySoft, colors.background, colors.background]} style={{ flex: 1 }}>
+      <LinearGradient colors={[colors.primarySoft, colors.formSurface, colors.formSurface]} style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
           {/* A plain ScrollView, so it has to bring its own RefreshControl —
               ScreenScrollView supplies one everywhere else, which is why the
@@ -345,9 +349,7 @@ export default function DiscoveryScreen() {
                 at and the refresh read as the screen reloading from scratch.
                 isLoading is only the first fetch, when there is nothing to keep
                 on screen anyway. */}
-            {detailQuery.isLoading ? (
-              <SkeletonScreen tiles={0} rows={2} />
-            ) : null}
+            {detailQuery.isLoading ? <PropertyProfileSkeleton /> : null}
 
             {detailQuery.data ? (
               <PropertyProfile property={detailQuery.data} onBack={() => setSelectedPropertyId(null)} />
@@ -621,16 +623,14 @@ function EmptySearchPrompt() {
         <Animated.View
           style={{
             alignItems: "center",
-            borderColor: colors.ink,
             borderRadius: 999,
-            borderWidth: 1,
             height: 104,
             justifyContent: "center",
             transform: [{ translateY: iconTranslateY }],
             width: 104,
           }}
         >
-          <Search color={colors.ink} size={44} strokeWidth={2.4} />
+          <Search color={colors.ink} size={62} strokeWidth={2.4} />
         </Animated.View>
       </View>
       <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg }}>

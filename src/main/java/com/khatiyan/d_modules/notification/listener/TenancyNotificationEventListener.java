@@ -48,17 +48,22 @@ public class TenancyNotificationEventListener {
         data.put("roomNumber", room.roomNumber());
         data.put("startDate", event.startDate().toString());
 
-        notificationModule.notifyUser(
-                event.userId(),
-                "Tenancy started",
-                "Your tenancy has started at " + property.name() + ".",
-                NotificationCategory.TENANCY,
-                NotificationPriority.NORMAL,
-                NotificationSubtype.TENANCY_STARTED,
-                event.tenancyId(),
-                data,
-                NotificationDeliveryMode.IN_APP_AND_PUSH,
-                NotificationAudience.TENANT);
+        // A daily guest has no account, so there is nobody to tell. Skipping is
+        // the correct outcome and not a gap: the stay is management-side by
+        // design, and the owner is still told below.
+        if (event.userId() != null) {
+            notificationModule.notifyUser(
+                    event.userId(),
+                    "Tenancy started",
+                    "Your tenancy has started at " + property.name() + ".",
+                    NotificationCategory.TENANCY,
+                    NotificationPriority.NORMAL,
+                    NotificationSubtype.TENANCY_STARTED,
+                    event.tenancyId(),
+                    data,
+                    NotificationDeliveryMode.IN_APP_AND_PUSH,
+                    NotificationAudience.TENANT);
+        }
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
@@ -145,7 +150,12 @@ public class TenancyNotificationEventListener {
     private Map<String, String> baseTenancyData(UUID tenancyId, UUID tenantUserId, PropertyResponse property) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("tenancyId", tenancyId.toString());
-        data.put("tenantUserId", tenantUserId.toString());
+        // Absent on a guest stay, which has no account. Omitted rather than
+        // written as "null", because a client reading this map wants to know
+        // there is no tenant to open, not to be handed the string.
+        if (tenantUserId != null) {
+            data.put("tenantUserId", tenantUserId.toString());
+        }
         data.put("propertyId", property.id().toString());
         data.put("propertyName", property.name());
         return data;

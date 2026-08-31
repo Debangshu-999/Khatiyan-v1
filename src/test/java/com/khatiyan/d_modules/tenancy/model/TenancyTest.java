@@ -8,6 +8,9 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
+import com.khatiyan.a_auth.model.Gender;
+import com.khatiyan.c_shared.exception.ValidationException;
+
 class TenancyTest {
 
     @Test
@@ -46,14 +49,15 @@ class TenancyTest {
     void dailyTenancyMustBeLessThanThirtyDays() {
         LocalDate startDate = LocalDate.of(2026, 6, 1);
 
-        assertThatThrownBy(() -> Tenancy.startDaily(
-                UUID.randomUUID(),
+        assertThatThrownBy(() -> Tenancy.startDailyGuest(
+                "TEN-2026-000001",
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 1_000_00,
                 startDate,
-                startDate.plusDays(30)))
+                startDate.plusDays(30),
+                guest()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Daily tenancy must be less than 30 days");
     }
@@ -132,6 +136,69 @@ class TenancyTest {
         // engine charged a full penalty here through an off-by-one.
         assertThat(tenancy.isWithinTerm(LocalDate.of(2026, 9, 1))).isFalse();
         assertThat(tenancy.isWithinTerm(LocalDate.of(2026, 10, 1))).isFalse();
+    }
+
+    @Test
+    void aDailyStayIsRecordedAgainstAGuestAndNotAnAccount() {
+        Tenancy stay = dailyGuestStay();
+
+        assertThat(stay.getBillingType()).isEqualTo(TenancyBillingType.DAILY);
+        assertThat(stay.getUserId()).isNull();
+        assertThat(stay.hasTenantAccount()).isFalse();
+        assertThat(stay.isGuestStay()).isTrue();
+        assertThat(stay.guestDisplayName()).isEqualTo("Ravi Menon");
+        assertThat(stay.getGuestPhone()).isEqualTo("+919007433360");
+        assertThat(stay.getGuestAge()).isEqualTo(29);
+        assertThat(stay.getGuestGender()).isEqualTo(Gender.MALE);
+    }
+
+    @Test
+    void aMonthlyTenancyStillHasAnAccountBehindIt() {
+        Tenancy tenancy = monthlyTenancy();
+
+        assertThat(tenancy.hasTenantAccount()).isTrue();
+        assertThat(tenancy.isGuestStay()).isFalse();
+        // Nothing to print from the row: the name lives on the account, which is
+        // the only place it can still be changed.
+        assertThat(tenancy.guestDisplayName()).isNull();
+    }
+
+    @Test
+    void aTenancyNeedsEitherAnAccountOrGuestDetails() {
+        assertThatThrownBy(() -> Tenancy.builder()
+                .referenceCode("TEN-2026-000002")
+                .propertyId(UUID.randomUUID())
+                .roomId(UUID.randomUUID())
+                .createdByUserId(UUID.randomUUID())
+                .billingType(TenancyBillingType.DAILY)
+                .dailyRatePaise(1_000_00L)
+                .startDate(LocalDate.of(2026, 6, 1))
+                .plannedEndDate(LocalDate.of(2026, 6, 3))
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("either a tenant account or guest details");
+    }
+
+    private static Tenancy dailyGuestStay() {
+        return Tenancy.startDailyGuest(
+                "TEN-2026-000001",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                1_000_00,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 3),
+                guest());
+    }
+
+    private static GuestDetails guest() {
+        return new GuestDetails(
+                "Ravi Menon",
+                "+919007433360",
+                null,
+                "12 Nandidurga Road, Bengaluru 560046",
+                29,
+                Gender.MALE);
     }
 
     private static Tenancy monthlyTenancy() {

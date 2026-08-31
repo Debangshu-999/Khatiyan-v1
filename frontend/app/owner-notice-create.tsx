@@ -31,7 +31,7 @@ import {
   useUpdateRecurringNoticeMutation,
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PRIORITIES: NoticePriority[] = ["NORMAL", "IMPORTANT", "URGENT", "EMERGENCY"];
@@ -640,7 +640,7 @@ function DateTimeField({
       style={{
         backgroundColor: colors.surfaceRaised,
         borderColor: error ? colors.danger : colors.border,
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: error ? 1.5 : 1,
         gap: spacing.sm,
         padding: spacing.md,

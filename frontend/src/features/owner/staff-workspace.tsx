@@ -81,7 +81,7 @@ import {
   type StaffCategory,
   type StaffMember,
 } from "@/store/services/staff-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // Two tabs, not three. History is not a peer of Team and Salary — it is the
@@ -182,8 +182,8 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
           <Card>
             <View style={{ gap: spacing.sm }}>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-                <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 48, justifyContent: "center", width: 48 }}>
-                  <BriefcaseBusiness color={colors.ink} size={22} strokeWidth={2.1} />
+                <View style={{ alignItems: "center", borderRadius: 14, height: 48, justifyContent: "center", width: 48 }}>
+                  <BriefcaseBusiness color={colors.ink} size={30} strokeWidth={2.1} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>{employment.fullName}</Text>
@@ -217,8 +217,8 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
       <Section title={`${directory.length} staff member${directory.length === 1 ? "" : "s"}`}>
         {directory.length ? directory.map((member) => (
           <View key={member.referenceCode} style={rowCardStyle(colors)}>
-            <View style={{ alignItems: "center", borderColor: colors.ink, borderCurve: "continuous", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
-              <UsersRound color={colors.ink} size={20} strokeWidth={2.1} />
+            <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
+              <UsersRound color={colors.ink} size={28} strokeWidth={2.1} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{member.categoryName}</Text>
@@ -565,25 +565,48 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
         <View
           style={{
             alignItems: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderColor: colors.border,
+            // White, with the page's own lift. On surfaceSunken it was four
+            // points off the page colour and dissolved into it — that tone is
+            // for panels INSIDE a card, and this one sits on the page.
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
             borderCurve: "continuous",
-            borderRadius: 16,
+            borderRadius: radii.card,
             borderWidth: 1,
-            flexDirection: "row",
-            gap: spacing.md,
-            justifyContent: "space-between",
-            paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.md,
+            elevation: 3,
+            gap: spacing.sm,
+            padding: spacing.lg,
+            shadowColor: colors.shadow,
+            shadowOffset: { height: 4, width: 0 },
+            shadowOpacity: 1,
+            shadowRadius: 12,
           }}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={[type.bodyStrong, { color: colors.ink }]}>Total payable this month</Text>
-            <Text style={[type.caption, { color: colors.muted }]}>Opened months plus projected pay</Text>
-          </View>
-          <Text style={{ color: colors.primary, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], }}>
+          {/* The figure leads, stacked rather than squeezed beside the label.
+              Side by side it had to share the row with two lines of text and
+              could not be given the size it deserves — this is the number the
+              screen exists to answer. */}
+          {/* Same size, more presence: colour and weight rather than points.
+              On `kicker` it was the palest text in the palette sitting above
+              the largest figure on the screen, so it read as a footnote to its
+              own number. */}
+          <Text style={[type.eyebrow, { color: colors.inkSoft, fontFamily: fonts.sansBold }]}>
+            Payable this month
+          </Text>
+          <Text
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.display,
+              fontSize: 32,
+              fontVariant: ["tabular-nums"],
+              letterSpacing: -0.5,
+            }}
+          >
             {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
           </Text>
+          <Text style={[type.caption, { color: colors.muted }]}>Opened months plus projected pay</Text>
         </View>
       ) : null}
 
@@ -634,7 +657,7 @@ function SalaryAccountDetailCard({
   onRecordPay?: () => void;
   readOnly?: boolean;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const { account, months } = detail;
   const currentMonth = months.find((month) => month.payrollMonth === firstOfMonth());
   const currentMonthOpened = Boolean(currentMonth);
@@ -700,32 +723,33 @@ function SalaryAccountDetailCard({
         ) : null}
       </View>
 
-      {/* Collapsed by default and sitting on its own surface: the months stack
-          up over a long employment, and expanded they bury the actions above.
-          The count on the header is what most visits actually need. */}
-      <View
-        style={{
-          backgroundColor: colors.surfaceRaised,
-          borderCurve: "continuous",
-          borderRadius: 16,
-          gap: spacing.sm,
-          marginTop: spacing.sm,
-          padding: spacing.md,
-        }}
-      >
+      {/* Collapsed by default: the months stack up over a long employment and
+          expanded they bury the actions above. The panel that used to hold
+          them is gone — it inset every month card by its own padding, so the
+          history read as narrower than the account it belongs to. The header
+          rule is the whole affordance now, and the cards run the full width. */}
+      <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
         <AnimatedPressable
           accessibilityRole="button"
           accessibilityState={{ expanded: payHistoryOpen }}
           onPress={() => setPayHistoryOpen((current) => !current)}
-          style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+          style={{
+            alignItems: "center",
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            paddingTop: spacing.sm,
+          }}
         >
-          <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
-            Pay history · {months.length}
+          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+            Pay history
           </Text>
+          <Text style={[type.caption, { color: colors.muted }]}>{months.length}</Text>
           {payHistoryOpen ? (
-            <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
+            <ChevronUp color={colors.inkSoft} size={18} strokeWidth={2.2} />
           ) : (
-            <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
+            <ChevronDown color={colors.inkSoft} size={18} strokeWidth={2.2} />
           )}
         </AnimatedPressable>
 
@@ -733,24 +757,63 @@ function SalaryAccountDetailCard({
           const editable = !readOnly && month.paidAmountPaise === 0;
           const lastPayment = month.paymentStatus === "PAID" ? latestPayment(month) : null;
           return (
-            <View key={month.payrollMonth} style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 14, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
+            <View
+              key={month.payrollMonth}
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderCurve: "continuous",
+                borderRadius: radii.card,
+                borderWidth: 1,
+                gap: spacing.md,
+                padding: spacing.lg,
+              }}
+            >
               <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ gap: 2 }}>
-                  <Text style={[type.bodyStrong, { color: colors.ink }]}>{formatMonth(month.payrollMonth)}</Text>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+                    {formatMonth(month.payrollMonth)}
+                  </Text>
                   <Text style={[type.caption, { color: colors.muted }]}>Opened {formatDayMonth(month.openedOn)}</Text>
                 </View>
                 <View style={{ alignItems: "flex-end", gap: 2 }}>
                   <Text style={[type.caption, { color: month.paymentStatus === "PAID" ? colors.successText : colors.warningText, fontWeight: "800" }]}>{month.paymentStatus.replaceAll("_", " ")}</Text>
                   {lastPayment ? (
-                    <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "right" }]}>{formatPaidDateTime(lastPayment)}</Text>
+                    <View style={{ alignItems: "flex-end" }}>
+                      {/* Weighted, because this is when money left the account —
+                          at caption weight in muted it read as filler beside
+                          the status it sits under. */}
+                      <Text
+                        style={{
+                          color: colors.inkSoft,
+                          fontFamily: fonts.sansSemiBold,
+                          fontSize: 11.5,
+                          textAlign: "right",
+                        }}
+                      >
+                        {paidDateTimeParts(lastPayment).date}
+                      </Text>
+                      <Text
+                        style={{
+                          color: colors.muted,
+                          fontFamily: fonts.sansMedium,
+                          fontSize: 11.5,
+                          textAlign: "right",
+                        }}
+                      >
+                        {paidDateTimeParts(lastPayment).time}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
               </View>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <AmountMetric label="Gross" value={formatMoneyPaise(month.grossAmountPaise)} />
-                <AmountMetric label="Net" value={formatMoneyPaise(month.netAmountPaise)} />
-                <AmountMetric label="Paid" value={formatMoneyPaise(month.paidAmountPaise)} />
-              </View>
+
+              {/* A receipt, not three tiles. Gross, what was added, what was
+                  taken off, then the line they total to — read down, the
+                  arithmetic is visible. Side by side the three numbers looked
+                  like three unrelated facts and left "why is net not gross?"
+                  unanswered. */}
+              <PayReceipt month={month} />
               {month.adjustments.map((adjustment) => (
                 <View key={adjustment.id} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                   <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
@@ -777,6 +840,7 @@ function SalaryAccountDetailCard({
 
         {payHistoryOpen && months.length ? (
           <PaginationBar
+            compact
             hasNext={payHistorySafePage + 1 < payHistoryPages}
             hasPrevious={payHistorySafePage > 0}
             onNext={() => setPayHistoryPage(payHistorySafePage + 1)}
@@ -803,8 +867,8 @@ function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; 
   const meta = kind === "MANAGER" ? "Manager · Daily" : `${(person as StaffMember).categoryName} · Daily`;
   return (
     <View style={rowCardStyle(colors)}>
-      <View style={{ alignItems: "center", borderColor: colors.ink, borderCurve: "continuous", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
-        <Icon color={colors.ink} size={20} strokeWidth={2.1} />
+      <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
+        <Icon color={colors.ink} size={28} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
@@ -921,7 +985,10 @@ function PayslipsSheet({
 
 const PAYSLIPS_PER_PAGE = 10;
 const HISTORY_PER_PAGE = 10;
-const PAY_MONTHS_PER_PAGE = 6;
+// One month per page. Six at a time made the section a long scroll inside a
+// card, and the arrows already exist — stepping through them one at a time is
+// what the pager is for, and it keeps each month's receipt readable in full.
+const PAY_MONTHS_PER_PAGE = 1;
 
 function PayslipList({
   emptyDescription,
@@ -1111,7 +1178,7 @@ function HistoryCard({ item, propertyId }: { item: EmployeeHistoryItem; property
 function HistoryNote({ label, value }: { label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 3, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: 3, padding: spacing.md }}>
       <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
       <Text style={[type.body, { color: colors.ink }]}>{value}</Text>
     </View>
@@ -1206,56 +1273,6 @@ function CategoryFilterBar({
   );
 }
 
-function CategoryRow({
-  active,
-  label,
-  onDelete,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onDelete?: () => void;
-  onPress: () => void;
-}) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.ink : "transparent",
-        borderColor: active ? colors.ink : colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        flexDirection: "row",
-      }}
-    >
-      <AnimatedPressable
-        accessibilityRole="button"
-        accessibilityState={{ selected: active }}
-        onPress={onPress}
-        style={{ flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.md }}
-      >
-        <Text style={[type.bodyStrong, { color: active ? colors.surface : colors.ink }]}>{label}</Text>
-      </AnimatedPressable>
-      {onDelete ? (
-        <AnimatedPressable
-          accessibilityLabel={`Delete ${label} category`}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onDelete}
-          style={{ alignItems: "center", alignSelf: "stretch", justifyContent: "center", paddingHorizontal: spacing.md }}
-        >
-          {/* On a selected row the fill is colors.ink, so the glyph takes
-              colors.surface instead — danger red on that ground is unreadable in
-              one theme or the other, and an illegible delete is worse than an
-              uncoloured one. Every unselected row shows it red. */}
-          <Trash2 color={active ? colors.surface : colors.danger} size={16} strokeWidth={2.2} />
-        </AnimatedPressable>
-      ) : null}
-    </View>
-  );
-}
 
 
 function ManagerCard({ entry, onEdit, onOpen }: { entry: ManagerDirectoryEntry; onEdit: () => void; onOpen: () => void }) {
@@ -1264,8 +1281,8 @@ function ManagerCard({ entry, onEdit, onOpen }: { entry: ManagerDirectoryEntry; 
   return (
     <View style={rowCardStyle(colors)}>
       <AnimatedPressable onPress={onOpen} style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ alignItems: "center", borderColor: colors.ink, borderCurve: "continuous", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
-          <BriefcaseBusiness color={colors.ink} size={20} strokeWidth={2.1} />
+        <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
+          <BriefcaseBusiness color={colors.ink} size={28} strokeWidth={2.1} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{employment?.referenceCode ?? "Manager"}</Text>
@@ -1295,7 +1312,7 @@ function ManagerDetailModal({ entry, onClose, onEdit, onPermissions, onRemove, o
   return (
     <Sheet onClose={onClose} title="Manager details">
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 30, borderWidth: 1, height: 60, justifyContent: "center", width: 60 }}>
+        <View style={{ alignItems: "center", borderRadius: 30, height: 60, justifyContent: "center", width: 60 }}>
           <BriefcaseBusiness color={colors.ink} size={28} strokeWidth={2.1} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
@@ -1376,8 +1393,8 @@ function PersonCard({ icon: Icon, meta, onPress, subtitle, title }: { icon: type
   const { colors, type } = useTheme();
   return (
     <AnimatedPressable onPress={onPress} style={rowCardStyle(colors)}>
-      <View style={{ alignItems: "center", borderColor: colors.ink, borderCurve: "continuous", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
-        <Icon color={colors.ink} size={20} strokeWidth={2.1} />
+      <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
+        <Icon color={colors.ink} size={28} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
@@ -1386,6 +1403,78 @@ function PersonCard({ icon: Icon, meta, onPress, subtitle, title }: { icon: type
       </View>
       <ChevronRight color={colors.muted} size={18} />
     </AnimatedPressable>
+  );
+}
+
+/**
+ * One month's pay, as a receipt.
+ *
+ * <p>Additions and deductions are summed from the month's own adjustments
+ * rather than inferred from gross-minus-net: the difference between those two
+ * is a single number that cannot say whether it was one deduction or four, and
+ * this list is the thing an employee queries.
+ */
+function PayReceipt({ month }: { month: SalaryMonth }) {
+  const { colors, fonts, type } = useTheme();
+
+  const additions = month.adjustments
+    .filter((adjustment) => adjustment.adjustmentType === "ADDITION")
+    .reduce((total, adjustment) => total + adjustment.amountPaise, 0);
+  const deductions = month.adjustments
+    .filter((adjustment) => adjustment.adjustmentType !== "ADDITION")
+    .reduce((total, adjustment) => total + adjustment.amountPaise, 0);
+
+  return (
+    <View style={{ gap: 6 }}>
+      <ReceiptLine label="Gross" value={formatMoneyPaise(month.grossAmountPaise)} />
+      <ReceiptLine
+        label="Additions"
+        tone={additions > 0 ? "credit" : undefined}
+        value={`${additions > 0 ? "+ " : ""}${formatMoneyPaise(additions)}`}
+      />
+      <ReceiptLine
+        label="Deductions"
+        tone={deductions > 0 ? "debit" : undefined}
+        value={`${deductions > 0 ? "− " : ""}${formatMoneyPaise(deductions)}`}
+      />
+
+      <View style={{ backgroundColor: colors.border, height: 1, marginVertical: 2 }} />
+
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>Net</Text>
+        <Text
+          style={{
+            color: colors.ink,
+            fontFamily: fonts.display,
+            fontSize: 17,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {formatMoneyPaise(month.netAmountPaise)}
+        </Text>
+      </View>
+
+    </View>
+  );
+}
+
+function ReceiptLine({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone?: "credit" | "debit";
+  value: string;
+}) {
+  const { colors, type } = useTheme();
+  const amountColor = tone === "credit" ? colors.successText : tone === "debit" ? colors.danger : colors.inkSoft;
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>{label}</Text>
+      <Text style={[type.caption, { color: amountColor, fontVariant: ["tabular-nums"] }]}>{value}</Text>
+    </View>
   );
 }
 
@@ -1828,10 +1917,20 @@ function latestPayment(month: SalaryMonth): SalaryPayment | null {
 // Payment date (the chosen pay date) plus the time it was recorded, e.g.
 // "12 Jun 2026 · 3:45 PM". No "Paid" prefix — this line sits directly under the
 // PAID status pill, which has already said it.
-function formatPaidDateTime(payment: SalaryPayment) {
-  const date = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${payment.paidOn}T00:00:00`));
-  const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true, minute: "2-digit" }).format(new Date(payment.recordedAt));
-  return `${date} · ${time}`;
+/**
+ * The two halves of when a payment was recorded, kept apart.
+ *
+ * <p>Joined with a separator they wrapped mid-date in the corner of a card,
+ * which is where the space is tightest. Two lines put the break where it
+ * belongs, and the date — the half anyone is actually looking for — stays whole.
+ */
+function paidDateTimeParts(payment: SalaryPayment) {
+  return {
+    date: new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" })
+      .format(new Date(`${payment.paidOn}T00:00:00`)),
+    time: new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true, minute: "2-digit" })
+      .format(new Date(payment.recordedAt)),
+  };
 }
 
 function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { account: SalaryAccountDetail; editing?: { payrollMonth: string; adjustment: SalaryAdjustment } | null; onClose: () => void; onSaved: (value: SalaryAccountDetail) => void; propertyId: string }) {
@@ -2148,7 +2247,7 @@ function Sheet({
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           {/* The sheet's own panel. NOT a PinnedFooter — it happens to use the
@@ -2252,3 +2351,64 @@ function formatDate(value: string) { return new Intl.DateTimeFormat("en-IN", { d
 function formatMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(new Date(`${value}T00:00:00`)); }
 
 function errorMessage(error: unknown, fallback: string) { if (typeof error === "object" && error && "data" in error) { const data = (error as { data?: { message?: unknown } }).data; if (typeof data?.message === "string" && data.message.trim()) { const message = data.message.trim(); if (!/request body|malformed|json parse|deserialize|date.*parse/i.test(message)) return message; } } return fallback; }
+
+/**
+ * One category in the picker, with its delete.
+ *
+ * <p>Renders through the app's shared picker row, so a category list looks like
+ * every other list of options. It used to fill the selected row solid ink, which
+ * was this screen answering "which one is chosen" in its own private language.
+ *
+ * <p>The delete is passed as the row's `action`, which places it outside the
+ * row's pressable — tapping it cannot also select the category it removes.
+ */
+function CategoryRow({
+  active,
+  label,
+  onDelete,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onDelete?: () => void;
+  onPress: () => void;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: active ? colors.ink : "transparent",
+        borderColor: active ? colors.ink : colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        flexDirection: "row",
+      }}
+    >
+      <AnimatedPressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        onPress={onPress}
+        style={{ flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.md }}
+      >
+        <Text style={[type.bodyStrong, { color: active ? colors.surface : colors.ink }]}>{label}</Text>
+      </AnimatedPressable>
+      {onDelete ? (
+        <AnimatedPressable
+          accessibilityLabel={`Delete ${label} category`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onDelete}
+          style={{ alignItems: "center", alignSelf: "stretch", justifyContent: "center", paddingHorizontal: spacing.md }}
+        >
+          {/* On a selected row the fill is colors.ink, so the glyph takes
+              colors.surface instead — danger red on that ground is unreadable in
+              one theme or the other, and an illegible delete is worse than an
+              uncoloured one. Every unselected row shows it red. */}
+          <Trash2 color={active ? colors.surface : colors.danger} size={16} strokeWidth={2.2} />
+        </AnimatedPressable>
+      ) : null}
+    </View>
+  );
+}

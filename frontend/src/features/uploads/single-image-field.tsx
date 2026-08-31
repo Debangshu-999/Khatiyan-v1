@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, ImagePlus, X } from "lucide-react-native";
+import { Camera, ImagePlus, Trash2 } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
-import { uploadAsset, type UploadTarget } from "@/features/uploads/upload-asset";
+import { uploadAsset, UploadError, type UploadTarget } from "@/features/uploads/upload-asset";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -71,8 +71,14 @@ export function SingleImageField({
       );
       onChange(uploaded.url);
     } catch (uploadError) {
+      // Only OUR copy reaches the modal. Any other failure — a rejected fetch,
+      // a JSON parse over an error page — carries developer text, so it goes to
+      // the log and the person gets a sentence they can act on.
+      if (!(uploadError instanceof UploadError)) {
+        console.error("Image upload failed", uploadError);
+      }
       opErrors.failFromServer(
-        uploadError instanceof Error && uploadError.message
+        uploadError instanceof UploadError
           ? uploadError.message
           : "Could not upload the image. Try again.",
       );
@@ -124,23 +130,9 @@ export function SingleImageField({
         {label}
       </Text>
 
-      {uploading ? (
-        <View style={rowStyle}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
-            Uploading...
-          </Text>
-        </View>
-      ) : url ? (
-        <View style={rowStyle}>
-          <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
-            {attachedLabel}
-          </Text>
-          <IconButton accessibilityLabel="Remove image" icon={X} onPress={() => onChange("")} />
-        </View>
-      ) : null}
-
+      {/* The two ways IN come first, then what they produced. The attachment
+          used to sit above them, which put the result before the choice and
+          pushed the buttons down the screen the moment a file landed. */}
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <ActionButton
           disabled={busy}
@@ -157,6 +149,38 @@ export function SingleImageField({
           variant="secondary"
         />
       </View>
+
+      {/* Both states share this slot, so finishing an upload swaps the row in
+          place instead of moving anything. */}
+      {uploading ? (
+        <View style={rowStyle}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
+            Uploading...
+          </Text>
+        </View>
+      ) : url ? (
+        <View
+          style={{
+            ...rowStyle,
+            // Sunken rather than a tint. jadeSoft is two points off white and
+            // reads as nothing (see colors.ts), and primarySoft is banned as a
+            // fill — this is the app's own "sits inside something" tone and it
+            // is the one that actually separates the result from the buttons
+            // above it.
+            backgroundColor: colors.surfaceSunken,
+            borderColor: colors.borderStrong,
+          }}
+        >
+          <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
+          <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
+            {attachedLabel}
+          </Text>
+          {/* A bin, not a cross. A cross beside an attachment reads as "close
+              this", and the only thing it could close is the row itself. */}
+          <IconButton accessibilityLabel="Remove image" icon={Trash2} onPress={() => onChange("")} />
+        </View>
+      ) : null}
 
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />

@@ -1,8 +1,9 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View } from "react-native";
-import { Building2, Pin, type LucideProps } from "lucide-react-native";
+import { Pin, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -98,7 +99,7 @@ export default function OwnerScreen() {
 
       {!propertiesQuery.isFetching && properties.length === 0 ? (
         <EmptyState
-          icon={Building2}
+          icon={PropertyIcon}
           title="Create a property first"
           description="Owner services unlock after at least one property exists."
         />
@@ -122,7 +123,7 @@ export default function OwnerScreen() {
             </Card>
           ) : (
             <EmptyState
-              icon={Building2}
+              icon={PropertyIcon}
               title="Select a property from Home"
               description="You own multiple properties. Pick the active property on Home before opening owner services."
             />
@@ -208,15 +209,13 @@ function ServiceCard({
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.ink,
-            borderWidth: 1,
             borderRadius: 12,
             height: 42,
             justifyContent: "center",
             width: 42,
           }}
         >
-          <Icon color={colors.ink} size={20} strokeWidth={2.2} />
+          <Icon color={colors.ink} size={29} strokeWidth={1.8} />
         </View>
         <View style={{ flex: 1, gap: spacing.xs }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>

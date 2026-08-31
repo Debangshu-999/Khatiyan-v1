@@ -2,7 +2,7 @@ import { Modal, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { StatusIcon } from "@/components/status-icon";
-import { spacing } from "@/theme/spacing";
+import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -28,7 +28,7 @@ export function AlertModal({ message, onClose }: { message: string; onClose: () 
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -49,7 +49,7 @@ export function AlertModal({ message, onClose }: { message: string; onClose: () 
             gap: spacing.md,
             // Narrower than the screen: a short refusal stretched full width
             // reads as a page rather than an interruption.
-            maxWidth: 330,
+            maxWidth: DIALOG_MAX_WIDTH,
             padding: spacing.lg,
             width: "100%",
           }}

@@ -1,12 +1,30 @@
 import { Platform } from "react-native";
 
 import { store } from "@/store/store";
+import { normalizeApiBaseUrl } from "@/config/api";
 
 /**
  * What every picker in the app produces, reduced to what an upload needs.
  * `expo-image-picker` and `expo-document-picker` name these fields differently,
  * so callers normalise once here rather than each remembering which is which.
  */
+/**
+ * An upload failure whose message was written for a person to read.
+ *
+ * <p>The point is telling OUR copy apart from an accident. Everything thrown
+ * deliberately in this file names the file and says what to do; everything else
+ * — a fetch that rejects, a JSON.parse over an HTML error page, a null
+ * dereference — carries developer text that must never reach a modal. Callers
+ * show the message only when it is one of these, so a new failure mode degrades
+ * to a clean sentence instead of leaking "Unexpected token < in JSON".
+ */
+export class UploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadError";
+  }
+}
+
 export type PickedAsset = {
   name: string;
   /** Local device URI from the picker. */
@@ -32,6 +50,7 @@ export type UploadTarget =
   | "PAYMENT_PROOF"
   | "PROFILE_PHOTO"
   | "PROPERTY_IMAGE"
+  | "ROOM_TYPE_IMAGE"
   | "LOCAL_PLACE_PHOTO"
   | "NOTICE_IMAGE"
   | "NOTICE_DOCUMENT"
@@ -69,7 +88,7 @@ export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Pro
   const signature = await requestSignature(target);
 
   if (!asset.uri) {
-    throw new Error(`"${asset.name}" has no file to upload.`);
+    throw new UploadError(`"${asset.name}" has no file to upload.`);
   }
 
   // Checked here as well as at Cloudinary, because a rejected upload costs a
@@ -83,11 +102,11 @@ export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Pro
   const extension = fileExtension(asset);
   const allowed = signature.allowedFormats ? signature.allowedFormats.split(",").map((format) => format.trim()) : [];
   if (extension && allowed.length > 0 && !allowed.includes(extension)) {
-    throw new Error(`"${asset.name}" is a .${extension} file. Allowed: ${allowed.join(", ")}.`);
+    throw new UploadError(`"${asset.name}" is a .${extension} file. Allowed: ${allowed.join(", ")}.`);
   }
   const maxBytes = signature.maxBytes ?? 0;
   if (asset.size != null && maxBytes > 0 && asset.size > maxBytes) {
-    throw new Error(
+    throw new UploadError(
       `"${asset.name}" is ${formatBytes(asset.size)}. The limit is ${formatBytes(maxBytes)}.`,
     );
   }
@@ -113,10 +132,10 @@ export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Pro
     try {
       blob = await (await fetch(asset.uri)).blob();
     } catch {
-      throw new Error(`Could not read "${asset.name}" from your device.`);
+      throw new UploadError(`Could not read "${asset.name}" from your device.`);
     }
     if (blob.size === 0) {
-      throw new Error(`"${asset.name}" is empty.`);
+      throw new UploadError(`"${asset.name}" is empty.`);
     }
     form.append("file", blob, fileName);
   } else {
@@ -159,7 +178,7 @@ export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Pro
       platform: Platform.OS,
       target,
     });
-    throw new Error(`Could not upload "${asset.name}". Please try again.`);
+    throw new UploadError(`Could not upload "${asset.name}". Please try again.`);
   }
 
   if (status < 200 || status >= 300) {
@@ -168,13 +187,23 @@ export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Pro
     // they COULD act on — a bad format, an oversized file — was already caught
     // above, before the bytes were sent.
     console.error(`Cloudinary upload failed (${status}) for "${asset.name}": ${responseText}`);
-    throw new Error(`Could not upload "${asset.name}". Please try again.`);
+    throw new UploadError(`Could not upload "${asset.name}". Please try again.`);
   }
 
-  const body = JSON.parse(responseText) as { secure_url?: string; public_id?: string };
+  // Parsed defensively. A tunnel or proxy that returns an HTML interstitial
+  // instead of Cloudinary's JSON used to surface here as "Unexpected token <
+  // in JSON at position 0" — in a modal, to an owner.
+  let body: { secure_url?: string; public_id?: string };
+  try {
+    body = JSON.parse(responseText) as { secure_url?: string; public_id?: string };
+  } catch (parseError) {
+    console.error(`Upload response was not JSON for "${asset.name}": ${responseText.slice(0, 200)}`, parseError);
+    throw new UploadError(`Could not upload "${asset.name}". Please try again.`);
+  }
 
   if (!body.secure_url || !body.public_id) {
-    throw new Error("Upload succeeded but returned no URL");
+    console.error(`Upload response carried no URL for "${asset.name}": ${responseText.slice(0, 200)}`);
+    throw new UploadError(`Could not upload "${asset.name}". Please try again.`);
   }
 
   return { publicId: body.public_id, url: body.secure_url };
@@ -265,23 +294,40 @@ function postMultipart(endpoint: string, form: FormData): Promise<{ status: numb
 async function requestSignature(target: UploadTarget): Promise<UploadSignature> {
   const state = store.getState();
   const token = state.auth.accessToken;
-  const baseUrl = state.appConfig.apiBaseUrl;
+  // Normalised here as well as at the source. This is the one caller that
+  // builds its URL by hand rather than going through the RTK base query, so it
+  // is the one that breaks silently if a bad value ever reaches the store.
+  const baseUrl = normalizeApiBaseUrl(state.appConfig.apiBaseUrl);
 
-  const response = await fetch(`${baseUrl}/api/v1/uploads/signature`, {
-    body: JSON.stringify({ target }),
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    method: "POST",
-  });
+  // Wrapped because this fetch is built by hand: a malformed base URL rejects
+  // with a parse error rather than an HTTP status, and that message is not one
+  // to show anybody.
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/v1/uploads/signature`, {
+      body: JSON.stringify({ target }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      method: "POST",
+    });
+  } catch (networkError) {
+    console.error(`Upload signature request could not be sent to ${baseUrl}`, networkError);
+    throw new UploadError("Could not reach the server to start the upload. Check your connection and try again.");
+  }
 
   if (!response.ok) {
     console.error(`Upload signature request failed (${response.status}) for target ${target}`);
-    throw new Error("Could not start the upload. Try again.");
+    throw new UploadError("Could not start the upload. Try again.");
   }
 
-  return (await response.json()) as UploadSignature;
+  try {
+    return (await response.json()) as UploadSignature;
+  } catch (parseError) {
+    console.error(`Upload signature response was not JSON for target ${target}`, parseError);
+    throw new UploadError("Could not start the upload. Try again.");
+  }
 }
 
 /** Pickers do not always report a type; the extension is the next best source. */

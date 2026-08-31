@@ -426,7 +426,7 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* "padding" on BOTH platforms: Android is edge-to-edge (Expo 56), where
           adjustResize never resizes the modal window — without this the
           keyboard slides over the sheet instead of lifting it. */}

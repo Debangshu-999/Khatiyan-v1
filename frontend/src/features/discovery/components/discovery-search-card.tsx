@@ -362,7 +362,7 @@ function LocationFilterModal<T>({
     : items;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={visible}>
       <View
         style={{
           backgroundColor: "rgba(15, 23, 42, 0.35)",

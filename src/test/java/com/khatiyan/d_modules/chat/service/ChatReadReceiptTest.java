@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
@@ -129,7 +130,9 @@ class ChatReadReceiptTest {
 
     private void givenThread(ChatThread thread, List<UUID> memberIds, List<ChatReadState> states) {
         when(chatAccessService.requireReadable(any(), any())).thenReturn(thread);
-        when(chatMessageRepository.findLatest(any(), any())).thenReturn(List.of());
+        // anyLong(), not any(): the clear-mark argument is a primitive, and an
+        // object matcher there unboxes a null.
+        when(chatMessageRepository.findLatestAfter(any(), anyLong(), any())).thenReturn(List.of());
         when(authModule.findByIds(any())).thenReturn(Map.of());
         when(chatThreadMemberRepository.findByThreadId(thread.getId()))
                 .thenReturn(memberIds.stream()

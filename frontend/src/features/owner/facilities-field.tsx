@@ -8,7 +8,6 @@ import {
   BookOpen,
   Brush,
   Cctv,
-  Check,
   ChevronRight,
   CircleParking,
   CookingPot,
@@ -295,16 +294,20 @@ function FacilitiesPickerModal({
                   accessibilityLabel="Add custom facility"
                   accessibilityRole="button"
                   onPress={addCustom}
+                  // Outlined with an ink glyph, matching the amenity picker:
+                  // fills are for status, outlines for actions.
                   style={{
                     alignItems: "center",
-                    backgroundColor: draft.trim() ? colors.primary : colors.neutralSoft,
+                    borderColor: draft.trim() ? colors.ink : colors.border,
+                    borderCurve: "continuous",
                     borderRadius: 14,
+                    borderWidth: 1.5,
                     height: 50,
                     justifyContent: "center",
                     width: 50,
                   }}
                 >
-                  <Plus color={draft.trim() ? colors.onPrimary : colors.muted} size={22} strokeWidth={2.6} />
+                  <Plus color={draft.trim() ? colors.ink : colors.kicker} size={20} strokeWidth={2.6} />
                 </AnimatedPressable>
               </View>
 
@@ -377,8 +380,10 @@ function FacilityTile({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surface,
-        borderColor: active ? colors.primary : colors.border,
+        // The app's selection green, not a pale blue wash: primarySoft is not a
+        // fill anywhere, and this was the last place still using it as one.
+        backgroundColor: active ? colors.jadeSoft : colors.surface,
+        borderColor: active ? colors.jade : colors.border,
         borderRadius: 16,
         borderWidth: active ? 1.5 : 1,
         gap: spacing.xs,
@@ -388,24 +393,9 @@ function FacilityTile({
         width,
       }}
     >
-      {active ? (
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.primary,
-            borderRadius: 999,
-            height: 18,
-            justifyContent: "center",
-            position: "absolute",
-            right: 6,
-            top: 6,
-            width: 18,
-          }}
-        >
-          <Check color={colors.onPrimary} size={12} strokeWidth={3} />
-        </View>
-      ) : null}
-      <Icon color={active ? colors.primary : colors.muted} size={24} strokeWidth={2} />
+      {/* No corner badge. A filled blue disc was a second, louder answer to a
+          question the tile's own fill and border already answer. */}
+      <Icon color={active ? colors.ink : colors.muted} size={24} strokeWidth={2} />
       <Text numberOfLines={2} style={[type.caption, { color: active ? colors.ink : colors.muted, fontWeight: "700", textAlign: "center" }]}>
         {label}
       </Text>

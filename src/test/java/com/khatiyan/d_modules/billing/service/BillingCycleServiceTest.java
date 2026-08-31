@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.a_auth.model.UserRole;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -398,6 +400,74 @@ class BillingCycleServiceTest {
     }
 
     /** The mocks createFirstCycle needs, shared by the tests that only assert status. */
+    /**
+     * A daily guest stay, end to end. This is the shape that broke twice in a
+     * row and that no test covered: the cycle is born UNPAID rather than
+     * UPCOMING, and it carries no tenant user at all.
+     *
+     * <p>The first failure was onboarding trying to ACTIVATE a cycle that was
+     * already payable ("Only an upcoming billing cycle can be activated"). The
+     * second was the DAILY_STAY line refusing to exist without a tenant user
+     * ("Billing line tenancy identifiers are required") — the column had been
+     * made nullable but the domain invariant still demanded one.
+     */
+    @Test
+    void createFirstCycleForAGuestStayNeedsNoAccountAndOpensPayable() {
+        TenancyResponse stay = dailyGuestTenancy();
+        when(referenceCodeGenerator.nextCode("BIL")).thenReturn("BIL-2026-000009");
+        when(tenancyModule.findById(TENANCY_ID)).thenReturn(Optional.of(stay));
+        when(billingCycleRepository.existsByTenancyIdAndCycleNumber(TENANCY_ID, 1)).thenReturn(false);
+        // Only for naming the room on the response. Note what is NOT stubbed:
+        // no billing policy, because a daily cycle has no grace days or late-fee
+        // rate to read, and no account lookup.
+        when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(room());
+        when(billingCycleRepository.save(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(billingCycleRepository.saveAndFlush(any(BillingCycle.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(lineItemRepository.save(any(BillingCycleLineItem.class))).thenAnswer(invocation -> {
+            BillingCycleLineItem lineItem = invocation.getArgument(0);
+            savedLineItems.add(lineItem);
+            return lineItem;
+        });
+        when(lineItemRepository.findPendingByTenancyIdBefore(eq(TENANCY_ID), any(), any())).thenReturn(List.of());
+        when(lineItemRepository.findByBillingCycleId(any())).thenAnswer(invocation -> lineItemsFor(invocation.getArgument(0)));
+
+        BillingCycleResponse response = billingCycleService.createFirstCycle(ACTOR_ID, TENANCY_ID);
+
+        // Payable from the moment it exists. A daily stay is billed for the
+        // whole stay at once, so there is no editable window to open.
+        assertThat(response.status()).isEqualTo(BillingCycleStatus.UNPAID);
+        assertThat(response.tenantUserId()).isNull();
+        // The name came off the tenancy, not from an account lookup — which is
+        // why authModule is never touched on this path.
+        assertThat(response.tenantNameSnapshot()).isEqualTo("Ravi Menon");
+        // Three nights: 1 June to 3 June inclusive.
+        assertThat(response.totalAmountPaise()).isEqualTo(3_000_00);
+        assertThat(response.lineItems())
+                .extracting(lineItem -> lineItem.type())
+                .containsExactly(BillingCycleLineItemType.DAILY_STAY);
+
+        verify(tenancyModule).markBillingStarted(TENANCY_ID);
+        verify(eventPublisher).publishEvent(any(BillingCycleGeneratedEvent.class));
+        verifyNoInteractions(authModule);
+    }
+
+    private static TenancyResponse dailyGuestTenancy() {
+        TenancyResponse base = monthlyTenancy();
+        return new TenancyResponse(
+                base.id(), base.referenceCode(),
+                // No account: the whole point of a guest stay.
+                null,
+                "Ravi Menon", "+919007433360", false, false,
+                base.propertyId(), base.roomId(), base.createdByUserId(),
+                TenancyBillingType.DAILY,
+                null, null, 1_000_00L,
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 3), null,
+                base.status(), base.createdAt(), base.billingStarted(), base.tosAccepted(),
+                base.fixedTerm(), base.agreementValidityMonths(), base.agreementEndDate(),
+                base.earlyExitRule(), base.idCheckConfirmed(), base.idCheckedAt(),
+                true, null, "12 Nandidurga Road, Bengaluru 560046", 29, Gender.MALE);
+    }
+
     private void stubFirstCycleCreation(TenancyResponse tenancy) {
         when(referenceCodeGenerator.nextCode("BIL")).thenReturn("BIL-2026-000001");
         when(tenancyModule.findById(TENANCY_ID)).thenReturn(Optional.of(tenancy));
@@ -424,8 +494,9 @@ class BillingCycleServiceTest {
                 base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
                 base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
                 base.dailyRatePaise(), startDate, base.plannedEndDate(), base.endDate(), base.status(),
-                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
-                base.agreementEndDate(), base.earlyExitRule(), base.idCheckConfirmed(), base.idCheckedAt());
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(), base.agreementValidityMonths(),
+                base.agreementEndDate(), base.earlyExitRule(), base.idCheckConfirmed(), base.idCheckedAt(),
+                base.guestStay(), base.guestEmail(), base.guestAddress(), base.guestAge(), base.guestGender());
     }
 
     private static TenancyResponse monthlyTenancy() {
@@ -451,6 +522,13 @@ class BillingCycleServiceTest {
                 null,
                 false,
                 true,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                // Not a guest stay: this fixture is an account-backed monthly tenancy.
                 false,
                 null,
                 null,
@@ -493,6 +571,9 @@ class BillingCycleServiceTest {
                 RoomType.SINGLE,
                 RoomConditioning.NON_AC,
                 12_000_00L,
+                null,
+                Set.of(),
+                Set.of(),
                 RoomStatus.VACANT,
                 true,
                 null,

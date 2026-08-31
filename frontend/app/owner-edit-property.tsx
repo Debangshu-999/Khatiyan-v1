@@ -3,11 +3,11 @@ import { KeyboardAvoidingView, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft } from "lucide-react-native";
 
-import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
+import { UnderlineTabs } from "@/components/underline-tabs";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -25,6 +25,8 @@ import {
   rupeesToPaise,
 } from "@/features/owner/owner-ui";
 import { PropertyImagesSection } from "@/features/property/property-images-section";
+import { ROOM_TYPE_INTRO } from "@/features/property/room-type-board";
+import { RoomTypesSection } from "@/features/property/room-types-section";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -47,6 +49,7 @@ import {
   type BathroomType,
   type MealType,
   type NoticePeriod,
+  useListRoomMoldsQuery,
   type OwnerProperty,
   type PgFor,
   type PreferredTenantType,
@@ -82,7 +85,7 @@ export default function OwnerEditPropertyScreen() {
 
   if (!property) {
     return (
-      <View style={{ backgroundColor: colors.background, flex: 1, padding: spacing.lg }}>
+      <View style={{ backgroundColor: colors.formSurface, flex: 1, padding: spacing.lg }}>
         <EmptyState
           title="No active property selected"
           description="Choose the property you want to edit from Home."
@@ -129,6 +132,23 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [electricityIncluded, setElectricityIncluded] = useState(Boolean(property.electricityIncluded));
   const [bathroomType, setBathroomType] = useState<BathroomType>(property.bathroomType ?? "COMMON");
   const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>(property.availableSharingTypes ?? []);
+  const [tab, setTab] = useState<EditTab>("basics");
+
+  // Same cache entry RoomTypesSection reads, so this costs no extra request —
+  // the screen needs it to answer for the occupancies at save time.
+  const moldsQuery = useListRoomMoldsQuery({ propertyId: property.id }, { skip: !property.id });
+
+  /**
+   * Occupancies offered with nothing behind them.
+   *
+   * <p>Ticking a sharing type in Rooms is a claim the property makes; a room of
+   * that size cannot be created until a type exists to cut it from. Saving with
+   * the claim and no type would advertise a size the app itself cannot build.
+   */
+  const occupanciesWithoutTypes = availableSharingTypes.filter(
+    (occupancy) =>
+      !(moldsQuery.data ?? []).some((mold) => mold.active && mold.sharingType === occupancy),
+  );
   const [facilities, setFacilities] = useState<PropertyFacility[]>(property.facilities);
   const [customFacilities, setCustomFacilities] = useState<string[]>(property.customFacilities);
   const [deposit, setDeposit] = useState(paiseToRupees(property.standardDepositPaise));
@@ -251,6 +271,17 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       return;
     }
 
+    if (occupanciesWithoutTypes.length > 0) {
+      // A refusal, not a field error: there is no field to put it under, and
+      // the fix is on another tab. Modal, then land them where the work is.
+      const named = occupanciesWithoutTypes.map((option) => humanizeToken(option).toLowerCase()).join(", ");
+      form.failFromServer(
+        `Every occupancy you offer needs at least one room type. Add one for: ${named}.`,
+      );
+      setTab("types");
+      return;
+    }
+
     const depositPaise = rupeesToPaise(deposit);
     const acRatePaise = offersDailyStays ? rupeesToPaise(acRate) : null;
     const nonAcRatePaise = offersDailyStays ? rupeesToPaise(nonAcRate) : null;
@@ -282,6 +313,14 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     });
     // The deposit re-check is the type narrowing the validate map cannot express.
     if (!cleared || depositPaise == null) {
+      // Sections are tabs now, so a blamed field can be on a tab nobody is
+      // looking at — Save would refuse and the reason would be one screen away
+      // with nothing on this one to explain it. Go to the first offender.
+      const blamed = (Object.keys(form.errors) as EditField[])[0];
+      const owner = blamed ? TAB_OF_FIELD[blamed] : null;
+      if (owner && owner !== tab) {
+        setTab(owner);
+      }
       return;
     }
 
@@ -328,7 +367,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   }
 
   return (
-    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+    <View style={{ backgroundColor: colors.formSurface, flex: 1 }}>
       {unsaved.dialog}
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
@@ -339,8 +378,12 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
             <View
               style={{
                 alignItems: "center",
-                borderBottomColor: colors.border,
-                borderBottomWidth: 1,
+                // Matches the rule under the tabs below it. These two lines
+                // divide the screen into its header, its navigation and its
+                // content; drawn as hairlines they read as incidental borders
+                // rather than as that structure.
+                borderBottomColor: colors.borderStrong,
+                borderBottomWidth: 2,
                 flexDirection: "row",
                 justifyContent: "space-between",
                 paddingBottom: spacing.md,
@@ -359,17 +402,31 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               </View>
             </View>
 
+            {/* Flush under the header, with no gap of its own. The selected
+                tab is a tinted body running from the header's rule down to the
+                tabs' own — a strip of page colour above it would leave the
+                selection floating between two lines instead of joining them. */}
+            <View style={{ paddingHorizontal: spacing.lg }}>
+              <UnderlineTabs active={tab} bleed={spacing.lg} onChange={setTab} options={EDIT_TABS} tone="strong" />
+            </View>
+
             <ScrollView
               contentContainerStyle={{
                 gap: spacing.lg,
-                padding: spacing.lg,
                 paddingBottom: PINNED_FOOTER_CLEARANCE,
+                paddingHorizontal: spacing.lg,
+                // Tighter than the sides. The tab strip already leaves a gap
+                // below its rule, and a full gutter on top of that pushed the
+                // section title into the middle of the screen with nothing
+                // between it and the tabs but air.
+                paddingTop: spacing.sm,
               }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               style={{ flexShrink: 1 }}
             >
-              <ModalSection eyebrow="Basics" title="Name & location">
+              {tab === "basics" ? (
+              <ModalSection title="Name & location">
                 <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="Property name" value={name} required />
                 <LocationPinCard
                   addressSummary={addressSummaryLine(area, city, pincode)}
@@ -388,8 +445,10 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 </View>
                 <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} error={form.errors.pincode} onChangeText={(next) => { setPincode(next); form.clearField("pincode"); }} placeholder="Pincode" value={pincode} required />
               </ModalSection>
+              ) : null}
 
-              <ModalSection eyebrow="Setup" title="Rooms & inclusions">
+              {tab === "rooms" ? (
+              <ModalSection title="Rooms & inclusions">
                 <SingleOptionPicker
                   label="Property type"
                   required
@@ -433,7 +492,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   required
                   onChange={setAvailableSharingTypes}
                   options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
-                  title="Available sharing types"
+                  title="Choose occupancies"
                   value={availableSharingTypes}
                 />
 
@@ -444,8 +503,33 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   onChangeFacilities={setFacilities}
                 />
               </ModalSection>
+              ) : null}
 
-              <ModalSection eyebrow="Money" title="Pricing & policy">
+              {tab === "types" ? (
+              <ModalSection title="Room types">
+                <View style={{ gap: 4 }}>
+                  {ROOM_TYPE_INTRO.map((line) => (
+                    <Text key={line} style={[type.body, { color: colors.muted }]}>
+                      {"• "}
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+
+                {/* Saves as it goes, like the images below it — a room type is
+                    not a field of the property, and making it wait for Save
+                    would let an owner edit a type, discard the form, and have no
+                    way to tell which of the two had happened. */}
+                <RoomTypesSection
+                  occupancies={availableSharingTypes}
+                  onChanged={() => setPhotosTouched(true)}
+                  propertyId={property.id}
+                />
+              </ModalSection>
+              ) : null}
+
+              {tab === "pricing" ? (
+              <ModalSection title="Pricing & policy">
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
                     <FormInput keyboardType="decimal-pad" label="Std. deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="Amount" prefix="₹" value={deposit} required />
@@ -508,13 +592,16 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   </View>
                 ) : null}
               </ModalSection>
+              ) : null}
 
               {/* Saved immediately, unlike the fields above. The property already
                   exists, so an image has somewhere to belong the moment it
                   uploads — there is nothing to batch it into. */}
-              <ModalSection eyebrow="Photos" title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
+              {tab === "photos" ? (
+              <ModalSection title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
                 <PropertyImagesSection onChanged={() => setPhotosTouched(true)} propertyId={property.id} />
               </ModalSection>
+              ) : null}
 
             </ScrollView>
           </View>
@@ -552,23 +639,70 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   );
 }
 
-function ModalSection({ children, eyebrow, title, trailing }: { children: ReactNode; eyebrow: string; title: string; trailing?: ReactNode }) {
-  const { colors, fonts, type } = useTheme();
+/**
+ * One tab's worth of the form, straight on the page.
+ *
+ * <p>No card, matching registration. With one section on screen at a time the
+ * card was never separating it from anything — it only took an 18pt gutter of
+ * its own on top of the scroll view's, which the fields inside then gave up
+ * again, leaving the inputs narrower than the button under them.
+ */
+/**
+ * The parts of a property, as tabs rather than one long scroll.
+ *
+ * <p>Editing is not registering. Registration is a sequence — you walk it once,
+ * in order, and a wizard is right for that. Editing is arriving to change ONE
+ * thing, and a single sheet made that a scroll past four sections you did not
+ * come for. Tabs put every part one tap away.
+ */
+type EditTab = "basics" | "rooms" | "types" | "pricing" | "photos";
+
+/** Which tab a field lives on, so a refusal can go to where the fix is. */
+const TAB_OF_FIELD: Record<EditField, EditTab> = {
+  acRate: "pricing",
+  address: "basics",
+  area: "basics",
+  city: "basics",
+  deposit: "pricing",
+  graceDays: "pricing",
+  name: "basics",
+  nonAcRate: "pricing",
+  pincode: "basics",
+  state: "basics",
+};
+
+const EDIT_TABS: { label: string; value: EditTab }[] = [
+  { label: "Basics", value: "basics" },
+  { label: "Rooms", value: "rooms" },
+  { label: "Types", value: "types" },
+  { label: "Pricing", value: "pricing" },
+  { label: "Photos", value: "photos" },
+];
+
+/**
+ * One tab's worth of the form, straight on the page.
+ *
+ * <p>No card, matching registration. With one section on screen at a time the
+ * card was never separating it from anything — it only took an 18pt gutter of
+ * its own on top of the scroll view's, which the fields inside then gave up
+ * again, leaving the inputs narrower than the button under them.
+ */
+function ModalSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
+  const { colors, fonts } = useTheme();
   return (
-    <Card>
+    <View style={{ gap: spacing.md }}>
+      {/* No eyebrow. It named the section — "Basics", "Money" — which is the
+          job the tab above it now does, and two labels for one section left the
+          reader deciding which was the heading. The title takes the weight the
+          pair used to carry between them. */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.accent }]}>
-            {eyebrow}
-          </Text>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
-            {title}
-          </Text>
-        </View>
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
+          {title}
+        </Text>
         {trailing}
       </View>
       <View style={{ gap: spacing.md }}>{children}</View>
-    </Card>
+    </View>
   );
 }
 

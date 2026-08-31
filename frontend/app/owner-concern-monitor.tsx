@@ -4,6 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Activity, AlertCircle, CheckCircle2, Clock3, Eye, RotateCcw } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
@@ -52,7 +53,7 @@ export default function OwnerConcernMonitorScreen() {
       />
 
       {!propertyId ? (
-        <EmptyState icon={AlertCircle} title="No property selected" description="Open this screen from a selected owner property." />
+        <EmptyState icon={PropertyIcon} title="No property selected" description="Open this screen from a selected owner property." />
       ) : null}
 
       {propertyId ? (

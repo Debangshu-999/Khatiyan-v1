@@ -76,7 +76,7 @@ export function ImageCaptionDialog({
     // system bars, and the KeyboardAvoidingView then measures the keyboard
     // against a taller frame than the one it pads — the dialog rises and never
     // comes back down.
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View
           style={{

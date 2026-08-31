@@ -90,7 +90,12 @@ public class NudgeService {
     public List<NudgeCandidateResponse> listCandidates(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
 
-        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId);
+        // Guest stays cannot be nudged. A nudge is a push notification to the
+        // tenant's app, and a daily guest holds no account to receive one — a
+        // row for them would be a button that can never do anything.
+        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
+                .filter(tenancy -> tenancy.userId() != null)
+                .toList();
         if (tenancies.isEmpty()) {
             return List.of();
         }

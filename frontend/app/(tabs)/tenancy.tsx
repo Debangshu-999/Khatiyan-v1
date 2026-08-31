@@ -36,7 +36,7 @@ import {
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
 import { useAppSelector } from "@/store/hooks";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function TenancyScreen() {
@@ -164,7 +164,8 @@ export default function TenancyScreen() {
               <SkeletonCard />
             ) : payableBills.length === 0 ? (
               <EmptyState
-                icon={ReceiptText}
+                icon={ReceiptText}
+
                 title="No bills due"
                 description="Bills to pay appear here. Rent cycles and any one-off charges are listed separately."
               />
@@ -257,7 +258,8 @@ export default function TenancyScreen() {
         </>
       ) : (
         <EmptyState
-          icon={DoorOpen}
+          icon={DoorOpen}
+
           title="No current stay"
           description="Current tenancy and billing details appear when you have an active stay. Request history stays visible below."
         />
@@ -367,7 +369,7 @@ function TenancyOverviewCard({
           style={{
             backgroundColor: colors.surfaceRaised,
             borderColor: colors.border,
-            borderRadius: 14,
+            borderRadius: radii.card,
             borderWidth: 1,
             overflow: "hidden",
           }}
@@ -426,7 +428,7 @@ function TenancyStat({
       style={{
         backgroundColor: colors.surfaceRaised,
         borderColor: colors.border,
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: spacing.xs,

@@ -11,10 +11,11 @@ import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-import { NOTICE_PERIOD_LABELS, ROOM_TYPES } from "@/store/services/property-api";
+import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
 import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
 import { EnquireAction } from "./enquire-action";
 import { PropertyMediaCarousel } from "./property-media-carousel";
+import { RoomTypeShowcase } from "./room-type-showcase";
 
 type PropertyProfileProps = {
   property: PropertyDiscoveryDetail;
@@ -47,16 +48,6 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
   // No manager contacts on the wire yet — the listing has nowhere to add them.
   // Declared here so the section below is written once and lights up the moment
   // the API carries them, rather than being retrofitted around a heading.
-  // By occupancy — single, double, triple, and so on up to dormitory. The API
-  // returns a set, so the order it arrives in is arbitrary and a list that reads
-  // "triple, single, four sharing" makes the reader sort it themselves.
-  //
-  // Keyed off ROOM_TYPES rather than a second hardcoded order, which would drift
-  // from it the first time a sharing type is added.
-  const sharingTypes = [...property.availableSharingTypes].sort(
-    (left, right) => ROOM_TYPES.indexOf(left) - ROOM_TYPES.indexOf(right),
-  );
-
   // The listing decides who is reachable: the owner comes through only when the
   // listing shows them, and a manager comes through because somebody chose to
   // list them on the Property contacts card.
@@ -98,11 +89,11 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
       </View>
 
       {/* Property image slider */}
-      {/* Full-bleed: the profile sits inside the screen's spacing.lg horizontal
-          padding, so the carousel cancels it with a negative margin of the same
-          size. Square corners — the photo meets the screen edge, and a radius
-          there reads as a card that failed to fit. */}
-      <View style={{ marginHorizontal: -spacing.lg, overflow: "hidden" }}>
+      {/* Inside the screen's gutter, not bleeding past it. Edge to edge the
+          photo ran into the two cards above and below it, which both stop at
+          the gutter — the picture read as a band across the page rather than
+          as the property's own image. */}
+      <View style={{ borderCurve: "continuous", borderRadius: 16, overflow: "hidden" }}>
         <PropertyMediaCarousel
           captions={(property.images ?? []).map((image) => image.caption)}
           imageUrls={imageUrls}
@@ -203,28 +194,21 @@ export function PropertyProfile({ property, onBack }: PropertyProfileProps) {
               // wrap to two lines there and read as one long word. It sits in the
               // grid's own footer so it stays inside the table's boundary with
               // the rest of stay preferences.
-              footer={
-                <>
-                  <Text style={[type.eyebrow, { color: colors.muted }]}>
-                    Sharing options
-                  </Text>
-                  {sharingTypes.length > 0 ? (
-                    sharingTypes.map((sharingType) => (
-                      <View key={sharingType} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                        <View style={{ backgroundColor: colors.kicker, borderRadius: 999, height: 4, width: 4 }} />
-                        <Text style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 20 }}>
-                          {humanizeToken(sharingType)}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 20 }}>
-                      Not listed
-                    </Text>
-                  )}
-                </>
-              }
+              // No sharing-options footer. It listed the shapes on offer as
+              // words; the Room types section above says the same thing with a
+              // price, a bed count and a photograph attached to each.
             />
+          </Section>
+
+          {/* Directly under stay preferences, which is where the old "Sharing
+              options" list lived. Same place in the reading order, except each
+              type now carries what a bed costs, how many there are, what comes
+              with it and what it looks like. */}
+          {/* Always shown, even with nothing published. The section carries its
+              own empty state, and one that disappears leaves a reader unable to
+              tell "no rooms listed" from "this page is missing a bit". */}
+          <Section title="Room types">
+            <RoomTypeShowcase roomTypes={property.roomTypes ?? []} />
           </Section>
 
           <Section title="Contacts">
@@ -369,8 +353,11 @@ type DetailItem = { label: string; value: string };
 function DetailGrid({ footer, rows }: { footer?: ReactNode; rows: DetailItem[][] }) {
   const { colors } = useTheme();
 
+  // borderStrong, not border. These grids are the only outlined boxes on a page
+  // of filled cards, and at the lightest hairline the table read as a set of
+  // loose rows rather than one bounded thing.
   return (
-    <View style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, overflow: "hidden" }}>
+    <View style={{ borderColor: colors.borderStrong, borderRadius: 14, borderWidth: 1, overflow: "hidden" }}>
       {rows.map((row, rowIndex) => (
         <View
           key={row.map((item) => item.label).join("-")}
@@ -402,7 +389,7 @@ function DetailCell({ item, showDivider }: { item: DetailItem; showDivider: bool
   return (
     <View
       style={{
-        borderRightColor: colors.border,
+        borderRightColor: colors.borderStrong,
         borderRightWidth: showDivider ? 1 : 0,
         flex: 1,
         gap: 4,

@@ -51,7 +51,7 @@ import {
   type ExpenseEntryType,
   type RecurringExpense,
 } from "@/store/services/expense-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 20;
@@ -117,7 +117,8 @@ export default function OwnerExpensesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={Wallet}
+            icon={Wallet}
+
             title="No property selected"
             description="Choose an active property from Home before opening the expense tracker."
           />
@@ -415,7 +416,7 @@ function budgetStatusTone(key: BudgetStatusKey) {
 function StatusValueTile({ color, hint, label, value }: { color: string; hint?: string; label: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 12, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
       <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
         {label}
       </Text>
@@ -600,7 +601,7 @@ function ExpenseRow({
   const canReverse = expense.entryType !== "REVERSAL" && !expense.reversed;
 
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: spacing.sm, opacity: expense.reversed ? 0.6 : 1, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, opacity: expense.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
@@ -916,7 +917,7 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
         ) : null}
         <View style={{ gap: spacing.sm }}>
           {items.map((item) => (
-            <View key={item.id} style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
+            <View key={item.id} style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
                   {item.paidTo}

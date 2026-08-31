@@ -185,10 +185,19 @@ export const type = {
     fontSize: 12.5,
     letterSpacing: 0,
   } satisfies TextStyle,
+  /**
+   * The name of a form field, above the box it names.
+   *
+   * <p>Bold and a size up from a caption. At medium weight and 13px it sat
+   * lighter than the value typed underneath it, so a column of six fields read
+   * as six answers with faint annotations rather than six questions. The label
+   * is what somebody scans to find the field they want; it has to survive being
+   * read at arm's length.
+   */
   label: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    letterSpacing: 0.1,
+    fontFamily: fonts.sansBold,
+    fontSize: 14.5,
+    letterSpacing: 0,
   } satisfies TextStyle,
   /** Numbers on a metric tile: extra-bold, tight, and column-aligned. */
   metric: {

@@ -26,6 +26,7 @@ import com.khatiyan.d_modules.discovery.model.PropertyDiscoveryProfile;
 import com.khatiyan.d_modules.discovery.repository.PropertyDiscoveryProfileRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
@@ -223,6 +224,10 @@ public class PropertyDiscoveryService {
                 property.state(),
                 property.pincode());
         Long startingRoomRentPaise = propertyModule.findLowestActiveRoomRentPaise(propertyId);
+        // What a bed in each type actually costs — the thing a prospective
+        // tenant is comparing between properties, and the reason the listing
+        // carries more than a list of sharing sizes.
+        List<RoomMoldResponse> roomTypes = propertyModule.listPublicRoomTypes(propertyId);
         UserSummaryResponse owner = authModule.findById(property.ownerId())
                 .orElse(null);
 
@@ -244,7 +249,8 @@ public class PropertyDiscoveryService {
                         .filter(contact -> !contact.owner() || profile.isShowOwnerContact())
                         .toList(),
                 propertyImageService.imageUrlsFor(propertyId),
-                propertyImageService.imagesFor(propertyId));
+                propertyImageService.imagesFor(propertyId),
+                roomTypes);
     }
 
     // Owner/manager side discovery profile management

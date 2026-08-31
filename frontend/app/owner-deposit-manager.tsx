@@ -44,7 +44,7 @@ import {
 } from "@/store/services/billing-api";
 import type { TenancyStatus, TenancySummary } from "@/store/services/tenancy-api";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type CorrectionMode = "add" | "deduct";
@@ -185,7 +185,8 @@ export default function OwnerDepositManagerScreen() {
 
       {!property ? (
         <EmptyState
-          icon={Landmark}
+          icon={Landmark}
+
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select the property you want to manage deposits for."
         />
@@ -222,7 +223,8 @@ export default function OwnerDepositManagerScreen() {
           {selectedTenancy && !pickerOpen ? (
             selectedTenancy.billingType === "DAILY" ? (
               <EmptyState
-                icon={Wallet}
+                icon={Wallet}
+
                 title="No deposit for daily stays"
                 description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
               />
@@ -239,7 +241,8 @@ export default function OwnerDepositManagerScreen() {
               />
             ) : (
               <EmptyState
-                icon={Landmark}
+                icon={Landmark}
+
                 title="Deposit not opened yet"
                 description="A deposit account opens automatically once this tenant's first monthly cycle is paid."
               />
@@ -670,13 +673,13 @@ function CorrectionModal({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 20,
+            borderRadius: radii.card,
             borderWidth: 1,
             gap: spacing.md,
             maxWidth: 440,

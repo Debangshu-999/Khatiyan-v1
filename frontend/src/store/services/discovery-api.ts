@@ -1,5 +1,5 @@
 import { api } from "@/store/api";
-import type { BathroomType, MealType, PgFor, PreferredTenantType, RoomType } from "@/store/services/property-api";
+import type { BathroomType, MealType, PgFor, PreferredTenantType, RoomMold, RoomType } from "@/store/services/property-api";
 import type { NoticePeriod } from "@/store/services/property-api";
 
 export type PageResponse<T> = {
@@ -34,6 +34,8 @@ export type PropertyDiscoveryCard = {
   electricityIncluded: boolean;
   bathroomType: BathroomType;
   availableSharingTypes: RoomType[];
+  /** Each type on offer, with its rent, beds, amenities and photos. */
+  roomTypes: RoomMold[];
   facilities: string[];
   customFacilities: string[];
   standardDepositPaise: number;
@@ -474,6 +476,12 @@ export const discoveryApi = api.injectEndpoints({
       invalidatesTags: ["Discovery"],
     }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {

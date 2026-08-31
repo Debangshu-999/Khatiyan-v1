@@ -153,11 +153,16 @@ public class ExitSettlementService {
                     .orElse(ManualPaymentMethod.CASH);
             // The proof rides on this one payment. There is exactly one bill and
             // one payment for the whole exit however many charges fed into it,
-            // so a single photo is the honest granularity.
+            // so a single photo is the honest granularity — the exit screen
+            // still collects one, even though a payment can now carry two.
             billingCycleService.recordManualPayment(
                     actorUserId,
                     bill.id(),
-                    new RecordManualPaymentRequest(method, null, request.proofImageUrl(), "Collected at move-out"));
+                    new RecordManualPaymentRequest(
+                            method,
+                            null,
+                            request.proofImageUrl() == null ? List.of() : List.of(request.proofImageUrl()),
+                            "Collected at move-out"));
         }
 
         log.info(

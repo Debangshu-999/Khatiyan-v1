@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Check, DoorOpen, Info, Plus, Trash2 } from "lucide-react-native";
+import { Check, DoorOpen, Plus, Trash2 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -14,12 +14,12 @@ import { Section } from "@/components/section";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { rupeesLabel } from "@/features/compliance/clause-values";
+import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -55,14 +55,14 @@ export default function OwnerExitPoliciesScreen() {
   // Editable draft, seeded from the server copy once it arrives.
   const [damageCharges, setDamageCharges] = useState<PropertyDamageCharge[] | null>(null);
   const [checklist, setChecklist] = useState<string[] | null>(null);
-  const [prematureExit, setPrematureExit] = useState<string | null>(null);
-  const [prematureInfoOpen, setPrematureInfoOpen] = useState(false);
-
+  // The premature-exit policy is NOT edited here any more. It moved to the
+  // agreement screen, under the indefinite term it qualifies — the two halves of
+  // "how does this tenancy end" were split across two screens, so neither read
+  // as a whole rule.
   useEffect(() => {
     if (policiesQuery.data && damageCharges === null && checklist === null) {
       setDamageCharges(policiesQuery.data.damageCharges);
       setChecklist(policiesQuery.data.exitChecklist);
-      setPrematureExit(policiesQuery.data.prematureExitPolicy ?? "");
     }
   }, [checklist, damageCharges, policiesQuery.data]);
 
@@ -83,12 +83,10 @@ export default function OwnerExitPoliciesScreen() {
         {
           checklist: saved.exitChecklist,
           damages: saved.damageCharges.map(damageKey),
-          premature: saved.prematureExitPolicy,
         },
         {
           checklist,
           damages: damageCharges.map(damageKey),
-          premature: prematureExit,
         },
       )
     ) {
@@ -102,7 +100,7 @@ export default function OwnerExitPoliciesScreen() {
         payload: {
           damageCharges,
           exitChecklist: checklist,
-          prematureExitPolicy: prematureExit?.trim() ? prematureExit.trim() : null,
+          permittedDeductions: policiesQuery.data?.permittedDeductions ?? [],
         },
       }).unwrap();
       toast.success("Exit policies saved.");
@@ -134,7 +132,7 @@ export default function OwnerExitPoliciesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={DoorOpen}
+            icon={DoorOpen}
             title="No property selected"
             description="Choose an active property from Home before managing its exit policies."
           />
@@ -151,39 +149,6 @@ export default function OwnerExitPoliciesScreen() {
               </Card>
             </Section>
 
-            <Section
-              title="Premature exit"
-              trailing={
-                <AnimatedPressable
-                  accessibilityLabel="About the premature exit policy"
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setPrematureInfoOpen(true)}
-                >
-                  <Info color={colors.muted} size={16} strokeWidth={2.2} />
-                </AnimatedPressable>
-              }
-            >
-              <Card>
-                {readOnly ? (
-                  <Text style={[type.policy, { color: colors.ink }]}>
-                    {prematureExit?.trim() || "No premature exit policy is set."}
-                  </Text>
-                ) : (
-                  <FormInput
-                    label="What an early departure costs"
-                    multiline
-                    onChangeText={setPrematureExit}
-                    placeholder="e.g. One month's rent, taken from the deposit."
-                    value={prematureExit ?? ""}
-                  />
-                )}
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                  Your words, shown in the agreement.
-                </Text>
-              </Card>
-            </Section>
-
             <Section title="Move-out checklist">
               <Card>
                 <ChecklistEditor checklist={checklist} onChange={setChecklist} readOnly={readOnly} />
@@ -194,22 +159,6 @@ export default function OwnerExitPoliciesScreen() {
 
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
-
-      {prematureInfoOpen ? (
-        <ConfirmDialog
-          acknowledgeOnly
-          bullets={[
-            "Applies only to open-ended agreements.",
-            "A fixed term uses its own early-exit rule instead.",
-            "Nothing is charged automatically — a person applies it when ending the tenancy.",
-          ]}
-          confirmLabel="Got it"
-          message="What a tenant owes for leaving before serving notice."
-          onCancel={() => setPrematureInfoOpen(false)}
-          onConfirm={() => setPrematureInfoOpen(false)}
-          title="Premature exit"
-        />
-      ) : null}
 
       {ready ? (
         <PinnedFooter>
@@ -272,7 +221,7 @@ function DamageChargesEditor({
             {item.name}
           </Text>
           <Text style={[type.caption, { color: colors.muted, fontVariant: ["tabular-nums"] }]}>
-            {rupeesLabel(item.chargePaise)}
+            {formatMoneyPaise(item.chargePaise)}
           </Text>
           <AnimatedPressable
             accessibilityLabel={`Remove ${item.name}`}

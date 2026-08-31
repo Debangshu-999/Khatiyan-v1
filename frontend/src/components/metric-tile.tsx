@@ -17,8 +17,12 @@ type MetricTileProps = {
 export function MetricTile({ dense = false, hint, label, tone = "default", value }: MetricTileProps) {
   const { colors, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
-  const backgroundColor = tone === "primary" ? colors.jadeSoft : colors.surface;
-  const borderColor = tone === "primary" ? colors.jadeSoft : colors.borderStrong;
+  // Every tile is a white card; the tone lives in the number alone. A filled
+  // green tile beside a white one read as two different KINDS of statistic
+  // rather than the same statistic with a good value, and a row of them turned
+  // the summary into the loudest thing on a screen that is mostly a list.
+  const backgroundColor = colors.surface;
+  const borderColor = colors.borderStrong;
   const fontSize = dense ? 19 : 28;
 
   return (

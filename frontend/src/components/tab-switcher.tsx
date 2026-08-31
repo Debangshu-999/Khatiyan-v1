@@ -18,14 +18,13 @@ export type TabOption<T extends string> = {
  * box inside a box. The track still carries no padding and clips its children,
  * so a segment fills the control's full boundary corner to corner.
  *
- * <p><b>Selection is weight and a rule, not a slab.</b> It used to fill the
- * selected segment with solid ink and invert the text. On a screen that is
- * otherwise hairlines and white — notices, billing — that made the switcher the
- * heaviest thing present, pulling the eye to a control rather than to the
- * content it filters. Now the selected segment takes a quiet raised fill, ink
- * text at bold weight, and a 2px rule along its bottom edge. The rule is what
- * makes the state unmistakable at a glance; the fill alone would be too subtle,
- * and the slab was too loud.
+ * <p><b>Selection is a fill and a rule.</b> It used to fill the selected segment
+ * with solid ink and invert the text. On a screen that is otherwise hairlines
+ * and white — notices, billing — that made the switcher the heaviest thing
+ * present, pulling the eye to a control rather than to the content it filters.
+ * The steel blue is quieter than ink while still reading as chosen from across
+ * the room, and the 2px rule along the bottom edge is what makes the state
+ * unmistakable at a glance; the fill alone would be too subtle.
  */
 export function TabSwitcher<T extends string>({
   active,
@@ -63,7 +62,11 @@ export function TabSwitcher<T extends string>({
             onPress={() => onChange(option.value)}
             style={{
               alignItems: "center",
-              backgroundColor: selected ? colors.surfaceRaised : "transparent",
+              // The same fill the underline tabs use, so the app has one
+              // answer to "this one is selected" rather than two. A pale tint
+              // read as a hole in the track; a filled segment with inverted
+              // text reads as a choice from across the room.
+              backgroundColor: selected ? colors.tabSelected : "transparent",
               flex: 1,
               justifyContent: "center",
               minHeight: 42,
@@ -73,7 +76,7 @@ export function TabSwitcher<T extends string>({
             <Text
               numberOfLines={1}
               style={{
-                color: selected ? colors.ink : colors.muted,
+                color: selected ? colors.onTabSelected : colors.muted,
                 fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
                 fontSize: 13,
                 textAlign: "center",
@@ -86,7 +89,9 @@ export function TabSwitcher<T extends string>({
                 sat outside would break the track's own hairline. */}
             <View
               style={{
-                backgroundColor: selected ? colors.ink : "transparent",
+                // Darker than the fill, so the rule still reads on it rather
+                // than disappearing into the segment it underlines.
+                backgroundColor: selected ? colors.tabSelectedDeep : "transparent",
                 bottom: 0,
                 height: 2,
                 left: 0,

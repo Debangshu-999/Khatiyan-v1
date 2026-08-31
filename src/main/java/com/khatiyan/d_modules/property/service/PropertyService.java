@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
@@ -78,6 +79,15 @@ public class PropertyService {
      */
     @Transactional
     public PropertyResponse createProperty(UUID ownerId, CreatePropertyRequest request) {
+        // Checked here rather than only in the app: the screen hides the button
+        // at the cap, but the endpoint is the thing that has to be true.
+        long live = propertyRepository.countByOwnerIdAndActiveTrue(ownerId);
+        if (live >= Property.MAX_ACTIVE_PER_OWNER) {
+            throw new ValidationException(
+                    "You can have at most " + Property.MAX_ACTIVE_PER_OWNER
+                            + " active properties. Deactivate one to register another.");
+        }
+
         Property property = Property.create(
                 referenceCodeGenerator.nextCode("PROP"),
                 ownerId,
@@ -243,7 +253,11 @@ public class PropertyService {
                         .map(input -> PropertyDamageCharge.of(input.name(), input.chargePaise()))
                         .toList();
 
-        property.updateExitPolicies(damageCharges, request.exitChecklist(), request.prematureExitPolicy());
+        // The premature-exit policy is deliberately NOT touched here. It is
+        // edited on the agreement screen, beside the term it belongs to, and
+        // this request does not carry it — so replacing it from a screen that
+        // does not show it would clear whatever the owner wrote there.
+        property.updateExitPolicies(damageCharges, request.exitChecklist(), request.permittedDeductions());
 
         log.info(
                 "Property exit policies updated propertyId={} actorUserId={} damageCharges={} checklistItems={}",
@@ -251,6 +265,30 @@ public class PropertyService {
                 actorUserId,
                 damageCharges.size(),
                 property.getExitChecklist().size());
+
+        return PropertyExitPolicyResponse.from(property);
+    }
+
+    /**
+     * The premature-exit policy alone.
+     *
+     * <p>Separate from {@link #updateExitPolicies} because that one replaces every
+     * policy it carries. This field is now written from the agreement screen,
+     * which holds none of the others.
+     */
+    @Transactional
+    public PropertyExitPolicyResponse updatePrematureExitPolicy(
+            UUID actorUserId, UUID propertyId, String prematureExitPolicy) {
+        Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property", propertyId));
+
+        property.updatePrematureExitPolicy(prematureExitPolicy);
+
+        log.info(
+                "Premature exit policy updated propertyId={} actorUserId={} set={}",
+                propertyId,
+                actorUserId,
+                property.getPrematureExitPolicy() != null);
 
         return PropertyExitPolicyResponse.from(property);
     }

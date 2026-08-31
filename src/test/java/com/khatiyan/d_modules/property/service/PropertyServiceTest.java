@@ -1,8 +1,10 @@
 package com.khatiyan.d_modules.property.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
@@ -64,6 +67,32 @@ class PropertyServiceTest {
     @BeforeEach
     void setUp() {
         propertyService = new PropertyService(propertyRepository, propertyManagerRepository, eventPublisher, discoveryModule, referenceCodeGenerator);
+    }
+
+    @Test
+    void anOwnerAtTheCapCannotRegisterAnother() {
+        when(propertyRepository.countByOwnerIdAndActiveTrue(OWNER_ID))
+                .thenReturn((long) Property.MAX_ACTIVE_PER_OWNER);
+
+        assertThatThrownBy(() -> propertyService.createProperty(OWNER_ID, createPropertyRequest()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Deactivate one");
+
+        // Nothing written, and no reference code burned on a property that was
+        // never created — the generator hands out a fresh number per call.
+        verify(propertyRepository, never()).save(any(Property.class));
+        verify(referenceCodeGenerator, never()).nextCode(any());
+    }
+
+    @Test
+    void oneBelowTheCapStillRegisters() {
+        when(propertyRepository.countByOwnerIdAndActiveTrue(OWNER_ID))
+                .thenReturn((long) Property.MAX_ACTIVE_PER_OWNER - 1);
+        when(referenceCodeGenerator.nextCode("PROP")).thenReturn("PROP-2026-000004");
+        when(propertyRepository.save(any(Property.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(propertyService.createProperty(OWNER_ID, createPropertyRequest()).referenceCode())
+                .isEqualTo("PROP-2026-000004");
     }
 
     @Test

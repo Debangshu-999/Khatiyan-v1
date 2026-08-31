@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertCircle, Activity, Clock3, Eye, Image as ImageIcon, X, Lock } from "lucide-react-native";
+import { Activity, AlertCircle, Clock3, Eye, Image as ImageIcon, Lock, X } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -148,7 +150,7 @@ export default function OwnerConcernsScreen() {
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
-        <EmptyState icon={AlertCircle} title="No property selected" description="Concerns are scoped to the active owner property." />
+        <EmptyState icon={PropertyIcon} title="No property selected" description="Concerns are scoped to the active owner property." />
       ) : null}
 
       {selectedProperty ? (
@@ -249,7 +251,8 @@ export default function OwnerConcernsScreen() {
               // shows is why it is empty, since a view-only manager can never
               // take a concern up and so can never have a personal queue.
               <EmptyState
-                icon={Lock}
+                icon={Lock}
+
                 title="You cannot take up concerns"
                 description="Your access to concerns is view-only, so nothing can be assigned to you here. Ask the property owner if you need to work on them."
               />
@@ -471,12 +474,13 @@ function HistoryModal({
   propertyId: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const query = useListPropertyConcernHistoryQuery({ page, propertyId, size: 20 });
   const pageData = query.data;
   const sorted = useMemo(() => sortLatest(pageData?.items ?? []), [pageData]);
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -488,6 +492,9 @@ function HistoryModal({
             gap: spacing.md,
             maxHeight: "88%",
             padding: spacing.lg,
+            // The modal now draws under the navigation bar, so the sheet has to
+            // clear it itself — every other sheet gets this from SheetShell.
+            paddingBottom: insets.bottom + spacing.lg,
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>

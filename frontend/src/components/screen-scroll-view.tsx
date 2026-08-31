@@ -24,6 +24,16 @@ type ScreenScrollViewProps = ScrollViewProps & {
   children: ReactNode;
   centerContent?: boolean;
   background?: ReactNode;
+  /**
+   * Paints the screen as one flat colour instead of the app's gradient wash.
+   *
+   * <p>For screens that are a surface rather than a page — chat, where bubbles
+   * need plain ground behind them. It has to be a prop rather than a background
+   * node because the safe-area strips are painted by the SafeAreaView itself: an
+   * absolutely positioned child sits inside the padding box and leaves the inset
+   * at the top and bottom showing the page colour.
+   */
+  surface?: string;
   onRefresh?: () => Promise<void> | void;
   // False disables pull-to-refresh entirely (e.g. auth screens, where a
   // refresh spinner makes no sense and the pull gesture feels like scrolling).
@@ -37,9 +47,11 @@ type ScreenScrollViewProps = ScrollViewProps & {
 export function ScreenScrollView({
   children,
   background,
+  surface,
   centerContent = false,
   contentContainerStyle,
   onRefresh,
+  onScroll,
   refreshable = true,
   scrollOnlyWhenNeeded = false,
   safeAreaEdges,
@@ -118,7 +130,7 @@ export function ScreenScrollView({
   const resolvedSafeAreaEdges: Edge[] = safeAreaEdges ?? (Platform.OS === "web" ? [] : ["top", "bottom"]);
   // Every screen gets the shared ambient gradient unless it supplies its own
   // (e.g. the auth hero). Foreground content scrolls over a transparent layer.
-  const resolvedBackground = background ?? <AppBackground />;
+  const resolvedBackground = background ?? (surface ? null : <AppBackground />);
   // Tab screens sit under the floating (absolute) tab bar, so their content
   // needs extra bottom clearance to scroll out from beneath it. Stack screens
   // pushed over the tabs don't show the bar, so they keep the normal padding.
@@ -162,7 +174,7 @@ export function ScreenScrollView({
   }
 
   return (
-    <SafeAreaView edges={resolvedSafeAreaEdges} style={{ backgroundColor: colors.background, flex: 1 }}>
+    <SafeAreaView edges={resolvedSafeAreaEdges} style={{ backgroundColor: surface ?? colors.background, flex: 1 }}>
       <View
         pointerEvents="none"
         style={{
@@ -178,8 +190,13 @@ export function ScreenScrollView({
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        // Pulled out of the prop spread and called through, rather than left to
+        // `{...props}` — which lands LAST, so a caller passing onScroll used to
+        // replace this handler outright and silently stop the offset tracking
+        // that pull-to-refresh depends on.
         onScroll={(event) => {
           scrollOffset.current = event.nativeEvent.contentOffset.y;
+          onScroll?.(event);
         }}
         scrollEventThrottle={16}
         automaticallyAdjustKeyboardInsets

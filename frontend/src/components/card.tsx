@@ -1,7 +1,7 @@
 import { PropsWithChildren } from "react";
 import { View, type ViewStyle } from "react-native";
 
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type CardProps = PropsWithChildren<{
@@ -29,7 +29,7 @@ export function Card({ children, style, tone = "default" }: CardProps) {
           backgroundColor,
           borderColor,
           borderCurve: "continuous",
-          borderRadius: 20,
+          borderRadius: radii.card,
           borderWidth: 1,
           gap: spacing.md,
           padding: spacing.lg,

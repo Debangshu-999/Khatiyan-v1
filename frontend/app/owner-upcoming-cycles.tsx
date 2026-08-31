@@ -15,7 +15,7 @@ import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import type { UpcomingBillingCycle } from "@/store/services/billing-api";
 import { useListUpcomingPropertyCyclesQuery } from "@/store/services/billing-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 8;
@@ -55,7 +55,8 @@ export default function OwnerUpcomingCyclesScreen() {
 
       {!property ? (
         <EmptyState
-          icon={CalendarClock}
+          icon={CalendarClock}
+
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select a property to view its upcoming billing cycles."
         />
@@ -65,7 +66,8 @@ export default function OwnerUpcomingCyclesScreen() {
             <SkeletonCard />
           ) : items.length === 0 ? (
             <EmptyState
-              icon={CalendarClock}
+              icon={CalendarClock}
+
               title={`All cycles generated for ${monthName}`}
               description="Every active monthly tenancy has already been billed for this month. New upcoming dates appear once the month rolls over. Daily stays are billed once for the whole stay."
             />
@@ -112,7 +114,7 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,

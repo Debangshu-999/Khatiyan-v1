@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -135,10 +136,10 @@ public class TenancyModule {
             Long rentAmountPaise,
             Long depositAmountPaise,
             LocalDate startDate,
-            boolean idCheckConfirmed) {
+            IdCheckDeclarationInput idCheck) {
         return tenancyService.onboardPending(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
-                rentAmountPaise, depositAmountPaise, startDate, idCheckConfirmed);
+                rentAmountPaise, depositAmountPaise, startDate, idCheck);
     }
 
     /** Activates a pending tenancy after the tenant accepted the agreement. */

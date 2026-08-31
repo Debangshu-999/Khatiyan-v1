@@ -17,7 +17,7 @@ import { useToast } from "@/components/toast";
 import type { ConcernCategory } from "@/store/services/concern-api";
 import { uploadAssets } from "@/features/uploads/upload-asset";
 import { useCreateConcernMutation } from "@/store/services/concern-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const CONCERN_CATEGORIES = [
@@ -322,7 +322,7 @@ function PhotoAttachmentSection({
       style={{
         backgroundColor: colors.surfaceRaised,
         borderColor: colors.border,
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,

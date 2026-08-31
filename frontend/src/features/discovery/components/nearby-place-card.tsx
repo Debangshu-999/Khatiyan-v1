@@ -6,7 +6,7 @@ import { Info, MapPin, Navigation, Pencil, Phone, Star, Trash2 } from "lucide-re
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import type { PropertyLocalPlace } from "@/store/services/discovery-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type NearbyPlaceCardProps = {
@@ -41,7 +41,7 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
   }
 
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>

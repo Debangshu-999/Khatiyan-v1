@@ -104,6 +104,22 @@ public class ValkeyOtpStore {
         return count == null ? 0L : count;
     }
 
+    /**
+     * Seconds until this phone's request budget resets.
+     *
+     * <p>Read from the counter key's own TTL rather than assumed from the
+     * window length: the window starts at the FIRST request, so somebody
+     * refused on their third has already used part of it. Telling them to wait
+     * the full fifteen minutes would be wrong by however long they had been
+     * going.
+     *
+     * @return remaining seconds, or 0 when the key is gone or has no expiry
+     */
+    public long requestWindowRemainingSeconds(String phone) {
+        Long ttl = valkeyTemplate.getExpire(rateKey(phone));
+        return ttl == null || ttl < 0 ? 0L : ttl;
+    }
+
     private String otpKey(String phone, OtpPurpose purpose) {
         return OTP_KEY_PREFIX + purpose.name() + ":" + phone;
     }

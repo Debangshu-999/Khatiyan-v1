@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Info, X } from "lucide-react-native";
 
+import { emailProblem } from "@/features/forms/email-validation";
 import { SessionLimitModal } from "@/features/auth/session-limit-modal";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -22,7 +23,6 @@ import {
   errorBody,
   errorCode,
   errorMessage,
-  isValidEmail,
   isValidPhone,
   isValidPin,
   LinkButton,
@@ -344,8 +344,9 @@ export function AuthScreen() {
     // Recovery email is optional now that every account starts role-less (the
     // owner/tenant choice moves to the post-login landing); a typed value must
     // still be a valid email.
-    if (signupEmail.trim() && !isValidEmail(signupEmail)) {
-      showFieldErrors({ email: "Enter a valid recovery email, or leave it blank." });
+    const signupEmailIssue = emailProblem(signupEmail, null);
+    if (signupEmailIssue) {
+      showFieldErrors({ email: signupEmailIssue });
       return;
     }
     if (!fullName.trim()) {
@@ -513,12 +514,9 @@ export function AuthScreen() {
 
   async function handleEmailLoginRequest() {
     clearFieldErrors();
-    if (!loginEmail.trim()) {
-      showFieldErrors({ email: "Enter your email address." });
-      return;
-    }
-    if (!isValidEmail(loginEmail)) {
-      showFieldErrors({ email: "Enter a valid verified email address." });
+    const loginEmailIssue = emailProblem(loginEmail, "Enter your email address.");
+    if (loginEmailIssue) {
+      showFieldErrors({ email: loginEmailIssue });
       return;
     }
     try {
@@ -620,7 +618,7 @@ export function AuthScreen() {
       ) : null}
 
       {activateInfoOpen ? (
-        <Modal animationType="fade" onRequestClose={() => setActivateInfoOpen(false)} transparent visible>
+        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setActivateInfoOpen(false)} statusBarTranslucent transparent visible>
           <Pressable
             onPress={() => setActivateInfoOpen(false)}
             style={{
@@ -667,7 +665,7 @@ export function AuthScreen() {
           actions to the bottom via marginTop:"auto" inside this stretched column. */}
       <View
         style={{
-          backgroundColor: colors.background,
+          backgroundColor: colors.authSurface,
           borderTopLeftRadius: 26,
           borderTopRightRadius: 26,
           flexGrow: 1,

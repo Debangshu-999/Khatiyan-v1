@@ -39,7 +39,9 @@ public class BillingCycleLineItem extends BaseEntity {
     @Column(name = "tenancy_id", nullable = false)
     private UUID tenancyId;
 
-    @Column(name = "tenant_user_id", nullable = false)
+    // Null on a guest stay, which has no account. The bill it belongs to
+    // carries the payer's name.
+    @Column(name = "tenant_user_id")
     private UUID tenantUserId;
 
     @Column(name = "property_id", nullable = false)
@@ -99,7 +101,11 @@ public class BillingCycleLineItem extends BaseEntity {
             int displayOrder) {
         validateAmount(amountPaise);
         validateAmount(settlementAmountPaise);
-        if (tenancyId == null || tenantUserId == null || propertyId == null) {
+        // tenantUserId is deliberately NOT required. It is a denormalisation that
+        // serves the tenant's own "my bills" queries, and a daily guest has no
+        // account for it to point at. What actually identifies a line is the
+        // tenancy it belongs to and the property that raised it.
+        if (tenancyId == null || propertyId == null) {
             throw new ValidationException("Billing line tenancy identifiers are required");
         }
         if (displayOrder <= 0) {

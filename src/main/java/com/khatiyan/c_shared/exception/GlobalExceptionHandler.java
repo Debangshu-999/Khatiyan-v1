@@ -1,5 +1,7 @@
 package com.khatiyan.c_shared.exception;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,6 +36,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidation(ValidationException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    /**
+     * 429, carrying how long to wait.
+     *
+     * <p>The body mirrors the shape ApiRateLimitFilter already writes, so a
+     * client reads {@code retryAfterSeconds} the same way whichever limiter
+     * refused it.
+     */
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, Object>> handleTooManyRequests(TooManyRequestsException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "RATE_LIMITED");
+        body.put("message", e.getMessage());
+        body.put("retryAfterSeconds", e.retryAfterSeconds());
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header("Retry-After", String.valueOf(e.retryAfterSeconds()))
+            .body(body);
     }
 
     @ExceptionHandler(ForbiddenException.class)

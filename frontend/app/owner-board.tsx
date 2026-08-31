@@ -29,7 +29,7 @@ import {
   type BoardCategory,
   type BoardItem,
 } from "@/store/services/property-board-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function OwnerBoardScreen() {
@@ -69,7 +69,8 @@ export default function OwnerBoardScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={ClipboardList}
+          icon={ClipboardList}
+
           title="No active property selected"
           description="Choose the property whose board you want to manage from Home."
         />
@@ -95,7 +96,8 @@ export default function OwnerBoardScreen() {
 
           {categories.length === 0 ? (
             <EmptyState
-              icon={ClipboardList}
+              icon={ClipboardList}
+
               title="No categories yet"
               description="Create a category (e.g. Rules, Timings, Contacts) before adding board items."
             />
@@ -104,7 +106,8 @@ export default function OwnerBoardScreen() {
               const categoryItems = items.filter((item) => item.categoryId === category.id);
               return (
                 <Section
-                  key={category.id}
+                  key={category.id}
+
                   title={category.name}
                 >
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -267,10 +270,10 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
@@ -353,10 +356,10 @@ function ItemModal({
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}

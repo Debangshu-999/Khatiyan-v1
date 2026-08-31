@@ -16,6 +16,7 @@ import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomActivityResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.api.dto.ManagerPermissionsResponse;
@@ -23,6 +24,7 @@ import com.khatiyan.d_modules.property.model.ManagerAccessLevel;
 import com.khatiyan.d_modules.property.model.ManagerResource;
 import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyService;
+import com.khatiyan.d_modules.property.service.RoomMoldService;
 import com.khatiyan.d_modules.property.service.RoomService;
 
 /**
@@ -39,16 +41,19 @@ public class PropertyModule {
     private final PropertyService propertyService;
     private final PropertyManagerService propertyManagerService;
     private final ManagerAccessPolicy managerAccessPolicy;
+    private final RoomMoldService roomMoldService;
 
     public PropertyModule(
             RoomService roomService,
             PropertyService propertyService,
             PropertyManagerService propertyManagerService,
-            ManagerAccessPolicy managerAccessPolicy) {
+            ManagerAccessPolicy managerAccessPolicy,
+            RoomMoldService roomMoldService) {
         this.roomService = roomService;
         this.propertyService = propertyService;
         this.propertyManagerService = propertyManagerService;
         this.managerAccessPolicy = managerAccessPolicy;
+        this.roomMoldService = roomMoldService;
     }
 
     public PropertyResponse getActiveProperty(UUID propertyId) {
@@ -113,6 +118,11 @@ public class PropertyModule {
 
     public Long findLowestActiveRoomRentPaise(UUID propertyId) {
         return roomService.findLowestActiveRoomRentPaise(propertyId);
+    }
+
+    /** The room types a property offers, for its public listing. */
+    public List<RoomMoldResponse> listPublicRoomTypes(UUID propertyId) {
+        return roomMoldService.listPublicTypes(propertyId);
     }
 
     public void ensureCanManageProperty(UUID actorUserId, UUID propertyId) {

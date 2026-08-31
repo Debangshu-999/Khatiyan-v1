@@ -33,7 +33,7 @@ import {
   type ManagerAccessLevel,
   type ManagerResource,
 } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type Draft = Partial<Record<ManagerResource, ManagerAccessLevel>>;
@@ -120,7 +120,8 @@ export default function OwnerManagerPermissionsScreen() {
       <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
         <ScreenHeader onBack={() => router.back()} eyebrow="Access" title="Manager" italicTail="permissions." />
         <EmptyState
-          icon={ShieldCheck}
+          icon={ShieldCheck}
+
           title="No manager selected"
           description="Open this from a manager in the Staff workspace."
         />
@@ -160,7 +161,8 @@ export default function OwnerManagerPermissionsScreen() {
 
         {permissionsQuery.data ? (
           <>
-            <Section
+            <Section
+
               title="What they can access"
               trailing={
                 <AnimatedPressable
@@ -198,7 +200,8 @@ export default function OwnerManagerPermissionsScreen() {
 
         {!permissionsQuery.isLoading && permissionsQuery.isError ? (
           <EmptyState
-            icon={ShieldCheck}
+            icon={ShieldCheck}
+
             title="Could not load permissions"
             description="Only the property owner can view or change manager permissions."
           />
@@ -268,7 +271,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
   // bar and the button at its foot becomes untappable. The billing rules sheet
   // omits it and sits correctly.
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -298,7 +301,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
             {rules.map((rule, index) => (
               <View
                 key={rule.title}
-                style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: 4, padding: spacing.md }}
+                style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
               >
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                   <View
@@ -450,7 +453,7 @@ function ModuleCard({
                           backgroundColor: colors.surfaceSunken,
                           borderColor: colors.border,
                           borderCurve: "continuous",
-                          borderRadius: 14,
+                          borderRadius: radii.card,
                           borderWidth: 1,
                           gap: 4,
                           paddingHorizontal: spacing.md,

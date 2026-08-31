@@ -132,6 +132,16 @@ public class Property extends BaseEntity {
     public static final int MAX_RENT_GRACE_DAYS = 10;
 
     /**
+     * How many live properties one owner may hold.
+     *
+     * <p>Counted over ACTIVE properties only, so deactivating one frees a slot.
+     * The cap is on what an owner is running, not on what they have ever
+     * registered — and a deactivated property still exists, with its rooms and
+     * its history, so nothing is lost by the trade.
+     */
+    public static final int MAX_ACTIVE_PER_OWNER = 4;
+
+    /**
      * How much notice a tenant must give. An enum rather than a day count —
      * see {@link NoticePeriod} for why the distinction matters.
      */
@@ -211,6 +221,26 @@ public class Property extends BaseEntity {
     @OrderColumn(name = "display_order")
     @Column(name = "label", nullable = false, length = MAX_EXIT_CHECKLIST_ITEM_LENGTH)
     private List<String> exitChecklist = new ArrayList<>();
+
+    /**
+     * What the security deposit may be used for at move-out.
+     *
+     * <p>Moved here from the agreement's clause set, where it was per-tenancy
+     * negotiable — which produced deeds at one address that disagreed about what a
+     * deposit covers. It belongs beside the damage schedule and the checklist:
+     * all three answer what happens when a tenant leaves.
+     *
+     * <p>A Set, not a List: these are unordered categories, and the deed prints
+     * them in the enum's own order so every agreement reads the same way.
+     */
+    @ElementCollection
+    @CollectionTable(
+            name = "property_permitted_deductions",
+            schema = "property",
+            joinColumns = @JoinColumn(name = "property_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false, length = 30)
+    private Set<DeductionCategory> permittedDeductions = new HashSet<>();
 
     private Property(String referenceCode, UUID ownerId, String name, String address, String area, String city,
                      String state,
@@ -544,9 +574,24 @@ public class Property extends BaseEntity {
     public void updateExitPolicies(
             List<PropertyDamageCharge> damageCharges,
             List<String> exitChecklist,
-            String prematureExitPolicy) {
-        this.prematureExitPolicy = clean(prematureExitPolicy);
+            Set<DeductionCategory> permittedDeductions) {
+        this.permittedDeductions.clear();
+        if (permittedDeductions != null) {
+            this.permittedDeductions.addAll(permittedDeductions);
+        }
         updateExitPolicies(damageCharges, exitChecklist);
+    }
+
+    /**
+     * What leaving without serving notice costs, on its own.
+     *
+     * <p>Written from the agreement screen, beside the term it qualifies — which
+     * is why it is not a parameter of {@link #updateExitPolicies} any more. That
+     * method replaces every policy it is given, and a screen holding only this
+     * one field would have cleared the rest.
+     */
+    public void updatePrematureExitPolicy(String prematureExitPolicy) {
+        this.prematureExitPolicy = clean(prematureExitPolicy);
     }
 
     public void updateExitPolicies(List<PropertyDamageCharge> damageCharges, List<String> exitChecklist) {

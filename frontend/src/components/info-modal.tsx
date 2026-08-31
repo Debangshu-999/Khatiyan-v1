@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { spacing } from "@/theme/spacing";
+import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -26,7 +26,7 @@ export function InfoModal({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <Pressable
         onPress={onClose}
         style={{
@@ -47,6 +47,7 @@ export function InfoModal({
             borderWidth: 1,
             gap: spacing.sm,
             maxHeight: "80%",
+            maxWidth: DIALOG_MAX_WIDTH,
             padding: spacing.lg,
             width: "100%",
           }}

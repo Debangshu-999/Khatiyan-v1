@@ -32,6 +32,8 @@ import com.khatiyan.a_auth.api.dto.SetPinRequest;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.api.dto.UpdateRecoveryEmailRequest;
 import com.khatiyan.a_auth.api.dto.UpdateUserProfileRequest;
+import com.khatiyan.a_auth.api.dto.UpdateUserIdentityRequest;
+import com.khatiyan.a_auth.api.dto.UserIdentityResponse;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.api.dto.VerifyOtpRequest;
 import com.khatiyan.a_auth.firebase.FirebaseAuthService;
@@ -39,6 +41,8 @@ import com.khatiyan.a_auth.firebase.dto.FirebaseRegisterRequest;
 import com.khatiyan.a_auth.firebase.dto.FirebaseSetPinRequest;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.service.AuthService;
+import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.http.ClientIpResolver;
 import com.khatiyan.a_auth.api.dto.UserSessionResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 
@@ -56,12 +60,15 @@ import jakarta.validation.Valid;
 public class AuthController {
 
     private final AuthService authService;
+    private final ClientIpResolver clientIpResolver;
     private final FirebaseAuthService firebaseAuthService;
 
     public AuthController(
             AuthService authService,
+            ClientIpResolver clientIpResolver,
             FirebaseAuthService firebaseAuthService) {
         this.authService = authService;
+        this.clientIpResolver = clientIpResolver;
         this.firebaseAuthService = firebaseAuthService;
     }
 
@@ -247,13 +254,28 @@ public class AuthController {
         return authService.getProfile(user.userId());
     }
 
-    private String clientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
+    /**
+     * The identity details an agreement names this person by.
+     *
+     * <p>A separate read from {@code /me} on purpose: the summary is returned
+     * wherever a person is mentioned anywhere in the app, and a permanent address
+     * and a date of birth do not belong in a chat row.
+     */
+    @GetMapping("/me/identity")
+    public UserIdentityResponse getIdentity(@AuthenticationPrincipal UserPrincipal user) {
+        return authService.findIdentity(user.userId())
+                .orElseThrow(() -> new NotFoundException("User", user.userId()));
+    }
 
-        return request.getRemoteAddr();
+    @PatchMapping("/me/identity")
+    public UserIdentityResponse updateIdentity(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody UpdateUserIdentityRequest request) {
+        return authService.updateIdentity(user.userId(), request);
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        return clientIpResolver.resolve(request);
     }
 }
 

@@ -37,8 +37,6 @@ import {
 import { isDepositCredit } from "@/store/services/billing-api";
 import type { DepositAccount } from "@/store/services/billing-api";
 import { useGetPropertyExitPoliciesQuery } from "@/store/services/property-api";
-import { useGetTenancyAgreementQuery } from "@/store/services/compliance-api";
-import { earlyExitRule as ruleOfClause } from "@/features/compliance/clause-values";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import type {
   ExitCharge,
@@ -106,20 +104,18 @@ export default function OwnerEndTenancyScreen() {
   const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || isDaily });
   const deposit = depositQuery.data ?? null;
 
-  // The rule is read from the agreement, not from the copy stamped on the
-  // tenancy. Stamping happens once, at acceptance; editing the agreement
-  // afterwards never re-stamps, so the tenancy's copy silently goes stale and
-  // the screen would quote a rule nobody agreed to. The agreement is the record
-  // of what the tenant actually signed, so it is what gets applied here.
-  const agreementQuery = useGetTenancyAgreementQuery(tenancyId, { skip: !tenancyId });
-  const validityClause = useMemo(
-    () =>
-      (agreementQuery.data?.clauses ?? []).find(
-        (clause) => clause.systemType === "VALIDITY" || clause.systemType === "LOCK_IN",
-      ) ?? null,
-    [agreementQuery.data],
-  );
-  const agreementRule = validityClause ? ruleOfClause(validityClause).trim() : "";
+  // Read off the TENANCY, not out of the agreement's prose.
+  //
+  // This used to dig the rule out of the VALIDITY clause's machine-readable
+  // value, guarding against the tenancy's copy going stale — the deed was
+  // stamped onto the tenancy at ACCEPTANCE, so amending the agreement afterwards
+  // left the two disagreeing.
+  //
+  // That drift is now structurally impossible: the term is stamped at
+  // ONBOARDING, and amending a pending deed re-assembles it FROM the tenancy.
+  // The tenancy is the source and the document follows it, so there is one value
+  // and this screen reads the one being enforced.
+  const agreementRule = tenancy?.earlyExitRule?.trim() ?? "";
 
   const cyclesQuery = useListManagedTenancyBillingCyclesQuery(tenancyId, { skip: !tenancyId });
   // Every bill counts — rent cycles AND one-off bills. Mirrors the backend exit
@@ -323,7 +319,7 @@ export default function OwnerEndTenancyScreen() {
           <SkeletonCard />
         ) : !tenancy ? (
           <EmptyState
-            icon={DoorOpen}
+            icon={DoorOpen}
             title="Tenancy unavailable"
             description="This tenancy could not be loaded for the selected property."
           />
@@ -1287,7 +1283,7 @@ function SheetShell({
   const { colors, type } = useTheme();
 
   return (
-    <Modal animationType="slide" onRequestClose={onRequestClose} transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onRequestClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{

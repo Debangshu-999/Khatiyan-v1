@@ -1,7 +1,8 @@
 import { api } from "@/store/api";
 
 export type PropertyType = "PG" | "HOSTEL" | "APARTMENT" | "SOCIETY";
-export type RoomType = "SINGLE" | "DOUBLE" | "TRIPLE" | "FOUR_SHARING" | "FIVE_SHARING" | "DORMITORY";
+/** Occupancy is 1–4, then a dormitory for anything larger. */
+export type RoomType = "SINGLE" | "DOUBLE" | "TRIPLE" | "FOUR_SHARING" | "DORMITORY";
 export type RoomStatus = "VACANT" | "PARTIALLY_OCCUPIED" | "OCCUPIED" | "MAINTENANCE";
 export type RoomConditioning = "AC" | "NON_AC";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
@@ -9,6 +10,13 @@ export type PgFor = "MALE" | "FEMALE" | "ANYONE";
 export type PreferredTenantType = "STUDENT" | "PROFESSIONAL" | "ANYONE";
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER";
 export type BathroomType = "ATTACHED" | "COMMON";
+/**
+ * What comes with a room.
+ *
+ * <p>Deliberately has no AC constant. Conditioning is the mold's variant, and a
+ * second copy of it in this list could contradict it.
+ */
+export type RoomAmenity = "CUPBOARD" | "ATTACHED_TOILET" | "TV" | "GEYSER" | "BEDDING";
 
 export type PropertyFacility =
   | "WIFI"
@@ -51,13 +59,17 @@ export const PROPERTY_FACILITIES: PropertyFacility[] = [
   "LAUNDRY_SERVICE",
 ];
 
-export const ROOM_TYPES: RoomType[] = ["SINGLE", "DOUBLE", "TRIPLE", "FOUR_SHARING", "FIVE_SHARING", "DORMITORY"];
+export const ROOM_TYPES: RoomType[] = ["SINGLE", "DOUBLE", "TRIPLE", "FOUR_SHARING", "DORMITORY"];
 export const ROOM_CONDITIONINGS: RoomConditioning[] = ["AC", "NON_AC"];
 export const PROPERTY_TYPES: PropertyType[] = ["PG", "HOSTEL", "APARTMENT", "SOCIETY"];
 export const PG_FOR_OPTIONS: PgFor[] = ["ANYONE", "MALE", "FEMALE"];
 export const PREFERRED_TENANT_OPTIONS: PreferredTenantType[] = ["ANYONE", "STUDENT", "PROFESSIONAL"];
 export const MEAL_TYPES: MealType[] = ["BREAKFAST", "LUNCH", "DINNER"];
 export const BATHROOM_TYPES: BathroomType[] = ["ATTACHED", "COMMON"];
+/** Mirrors Property.MAX_ACTIVE_PER_OWNER. Counted over ACTIVE properties only. */
+export const MAX_OWNER_PROPERTIES = 4;
+
+export const ROOM_AMENITIES: RoomAmenity[] = ["CUPBOARD", "ATTACHED_TOILET", "TV", "GEYSER", "BEDDING"];
 
 /**
  * How much notice a tenant must give before leaving.
@@ -145,10 +157,16 @@ export type OwnerProperty = {
 export type OwnerRoom = {
   id: string;
   propertyId: string;
+  /** The type it was cut from. Null for rooms that predate types. */
+  moldId: string | null;
+  amenities: RoomAmenity[];
+  customAmenities: string[];
   roomNumber: string;
   floor: string | null;
   capacity: number;
   occupiedCount: number;
+  /** Beds held for approved room changes that have not transferred yet. */
+  reservedCount: number;
   availableVacancies: number;
   roomType: RoomType;
   conditioning: RoomConditioning;
@@ -270,12 +288,28 @@ export type PropertyDamageCharge = { name: string; chargePaise: number };
 export type PropertyExitPolicy = {
   damageCharges: PropertyDamageCharge[];
   exitChecklist: string[];
+  /** What the deposit may be used for at move-out. */
+  permittedDeductions: DeductionCategory[];
   /**
    * What leaving before serving notice costs, in the owner's words. Null when
    * none is written. Only reaches an agreement on an INDEFINITE term — a fixed
-   * term prices early departure through its own validity rule instead.
+   * term prices early departure through its own rule instead.
+   *
+   * <p>READ here, but written from the agreement screen, beside the term it
+   * qualifies. It is not part of `UpdateExitPoliciesPayload` for that reason:
+   * that request replaces everything it carries, so sending it from a screen
+   * that does not show it would clear whatever the owner wrote.
    */
   prematureExitPolicy: string | null;
+};
+
+export type DeductionCategory = "DAMAGE" | "UNPAID_DUES" | "CLEANING" | "UTILITIES";
+
+/** What the exit-policies screen may write. Deliberately without the term rules. */
+export type UpdateExitPoliciesPayload = {
+  damageCharges: PropertyDamageCharge[];
+  exitChecklist: string[];
+  permittedDeductions: DeductionCategory[];
 };
 
 
@@ -311,6 +345,69 @@ export type ManagerPermissions = {
   owner: boolean;
   // Always complete — every resource is present, NONE included.
   levels: Record<ManagerResource, ManagerAccessLevel>;
+};
+
+/**
+ * A room type the property offers — one sharing size in one AC variant.
+ *
+ * <p>A template, not a parent: rooms copy from it and then diverge, so editing
+ * the rent here never reprices rooms already cut from it.
+ */
+export type RoomMold = {
+  id: string;
+  propertyId: string;
+  sharingType: RoomType;
+  conditioning: RoomConditioning;
+  bedCount: number;
+  baseRentPaise: number;
+  amenities: RoomAmenity[];
+  customAmenities: string[];
+  /** First one first: the order is which photo a listing shows. */
+  images: RoomTypeImage[];
+  active: boolean;
+  /** How many rooms were cut from it — what makes retiring one a decision. */
+  roomCount: number;
+};
+
+export type RoomTypeImage = { url: string; publicId: string | null };
+
+/**
+ * One room to create, cut from a type.
+ *
+ * <p>Null rent and null amenities mean "the type's". Rent is a default on a
+ * mold and rooms are expected to diverge from it, so setting it here is no
+ * different from editing the room a minute later.
+ */
+export type RoomSpec = {
+  moldId: string;
+  roomNumber: string;
+  floor: string | null;
+  baseRentPaise: number | null;
+  amenities: RoomAmenity[] | null;
+  customAmenities: string[] | null;
+};
+
+/**
+ * Cutting rooms from types — one or sixty, of one kind or several.
+ *
+ * <p>A list of specs rather than one type and a list of numbers: a floor is
+ * rarely uniform, and two singles, a double and a dormitory is an ordinary
+ * landing. Sending that as four requests would give up the one guarantee this
+ * endpoint makes, which is that the whole batch lands or none of it does.
+ */
+export type CreateRoomsFromMoldPayload = {
+  rooms: RoomSpec[];
+};
+
+export type SaveRoomMoldPayload = {
+  sharingType: RoomType;
+  conditioning: RoomConditioning;
+  /** Null for SINGLE–FOUR_SHARING, which carry their own count. */
+  bedCount: number | null;
+  baseRentPaise: number;
+  amenities: RoomAmenity[];
+  customAmenities: string[];
+  images: RoomTypeImage[];
 };
 
 export const propertyApi = api.injectEndpoints({
@@ -408,6 +505,87 @@ export const propertyApi = api.injectEndpoints({
     }),
 
     /** What the CALLER may do here. Drives which sections the app renders. */
+    listRoomMolds: builder.query<RoomMold[], { propertyId: string; includeRetired?: boolean }>({
+      query: ({ includeRetired, propertyId }) => ({
+        params: includeRetired ? { includeRetired: true } : undefined,
+        url: `/api/v1/properties/${propertyId}/room-molds`,
+      }),
+      providesTags: ["Property"],
+    }),
+
+    createRoomMold: builder.mutation<RoomMold, { propertyId: string; payload: SaveRoomMoldPayload }>({
+      query: ({ payload, propertyId }) => ({
+        body: payload,
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/room-molds`,
+      }),
+      invalidatesTags: ["Property"],
+    }),
+
+    updateRoomMold: builder.mutation<RoomMold, { propertyId: string; moldId: string; payload: SaveRoomMoldPayload }>({
+      query: ({ moldId, payload, propertyId }) => ({
+        body: payload,
+        method: "PUT",
+        url: `/api/v1/properties/${propertyId}/room-molds/${moldId}`,
+      }),
+      invalidatesTags: ["Property"],
+    }),
+
+    // Retires rather than deletes: rooms already cut from it keep pointing here.
+    retireRoomMold: builder.mutation<void, { propertyId: string; moldId: string }>({
+      query: ({ moldId, propertyId }) => ({
+        method: "DELETE",
+        url: `/api/v1/properties/${propertyId}/room-molds/${moldId}`,
+      }),
+      invalidatesTags: ["Property"],
+    }),
+
+    restoreRoomMold: builder.mutation<void, { propertyId: string; moldId: string }>({
+      query: ({ moldId, propertyId }) => ({
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/room-molds/${moldId}/restore`,
+      }),
+      invalidatesTags: ["Property"],
+    }),
+
+    createRoomsFromMold: builder.mutation<OwnerRoom[], { propertyId: string; payload: CreateRoomsFromMoldPayload }>({
+      query: ({ payload, propertyId }) => ({
+        body: payload,
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/rooms/from-mold`,
+      }),
+      invalidatesTags: ["Property", "Tenancy"],
+    }),
+
+    /**
+     * Moves a room onto a different type.
+     *
+     * <p>Re-takes the bed count, rent and amenities from the new mold, so
+     * anything the caller also wants changed has to be written AFTER this, not
+     * before — the recut would overwrite it.
+     */
+    recutRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; moldId: string }>({
+      query: ({ moldId, propertyId, roomId }) => ({
+        body: { moldId },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/rooms/${roomId}/recut`,
+      }),
+      invalidatesTags: ["Property", "Tenancy"],
+    }),
+
+    /** Replaces the room's list wholesale — a partial update could not remove the last one. */
+    updateRoomAmenities: builder.mutation<
+      OwnerRoom,
+      { propertyId: string; roomId: string; amenities: RoomAmenity[]; customAmenities: string[] }
+    >({
+      query: ({ amenities, customAmenities, propertyId, roomId }) => ({
+        body: { amenities, customAmenities },
+        method: "PUT",
+        url: `/api/v1/properties/${propertyId}/rooms/${roomId}/amenities`,
+      }),
+      invalidatesTags: ["Property"],
+    }),
+
     getMyPropertyPermissions: builder.query<ManagerPermissions, string>({
       query: (propertyId) => `/api/v1/properties/${propertyId}/my-permissions`,
       providesTags: ["Property"],
@@ -468,7 +646,10 @@ export const propertyApi = api.injectEndpoints({
       providesTags: ["Property"],
     }),
 
-    updatePropertyExitPolicies: builder.mutation<PropertyExitPolicy, { propertyId: string; payload: PropertyExitPolicy }>({
+    updatePropertyExitPolicies: builder.mutation<
+      PropertyExitPolicy,
+      { propertyId: string; payload: UpdateExitPoliciesPayload }
+    >({
       query: ({ payload, propertyId }) => ({
         body: payload,
         method: "PATCH",
@@ -476,18 +657,52 @@ export const propertyApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Property", "Compliance"],
     }),
+
+    /**
+     * The premature-exit policy alone, written from the agreement screen.
+     *
+     * <p>Its own endpoint because the exit-policies update REPLACES every policy
+     * it carries — schedule, checklist, deductions. Writing this one field
+     * through it from a screen holding none of the others would clear all three.
+     */
+    updatePrematureExitPolicy: builder.mutation<
+      PropertyExitPolicy,
+      { propertyId: string; prematureExitPolicy: string }
+    >({
+      query: ({ prematureExitPolicy, propertyId }) => ({
+        body: { prematureExitPolicy },
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/premature-exit-policy`,
+      }),
+      invalidatesTags: ["Property", "Compliance"],
+    }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {
   useAddPropertyManagerMutation,
   useCreatePropertyMutation,
+  useCreateRoomMoldMutation,
+  useCreateRoomsFromMoldMutation,
+  useRecutRoomMutation,
+  useUpdateRoomAmenitiesMutation,
+  useListRoomMoldsQuery,
+  useRestoreRoomMoldMutation,
+  useRetireRoomMoldMutation,
+  useUpdateRoomMoldMutation,
   useCreateRoomMutation,
   useCreateRoomsBulkMutation,
   useDeactivateRoomMutation,
   useGetPropertyExitPoliciesQuery,
   useGetPropertyQuery,
   useListMyPropertiesQuery,
+  useUpdatePrematureExitPolicyMutation,
   useUpdatePropertyExitPoliciesMutation,
   useLazyLookupManagerQuery,
   useListAllPropertyRoomsQuery,

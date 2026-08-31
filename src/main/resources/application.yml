@@ -286,6 +286,16 @@ app:
     room-change-execution-cron: ${TENANCY_ROOM_CHANGE_EXECUTION_CRON:0 12 0 * * *}
     room-change-execution-zone: ${TENANCY_ROOM_CHANGE_EXECUTION_ZONE:Asia/Kolkata}
     room-change-execution-batch-size: ${TENANCY_ROOM_CHANGE_EXECUTION_BATCH_SIZE:50}
+  security:
+    # Addresses of proxies WE put in front of the app. X-Forwarded-For is
+    # honoured only when the immediate peer is one of these; with the list empty
+    # the header is ignored and the socket address is used, which is the only
+    # truthful answer for a directly exposed app.
+    #
+    # Set this the moment a load balancer goes in front, or every recorded
+    # address becomes the balancer's own.
+    trusted-proxies: ${TRUSTED_PROXIES:}
+
   billing:
     monthly-cycle-generation-cron: ${BILLING_MONTHLY_CYCLE_GENERATION_CRON:0 15 0 * * *}
     monthly-cycle-generation-zone: ${BILLING_MONTHLY_CYCLE_GENERATION_ZONE:Asia/Kolkata}

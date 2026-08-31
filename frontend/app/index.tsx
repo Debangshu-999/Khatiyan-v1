@@ -4,7 +4,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { loadAppSettings } from "@/config/app-settings-storage";
 import { useAppSelector } from "@/store/hooks";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function IndexRoute() {
@@ -29,7 +29,7 @@ export default function IndexRoute() {
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.background,
+          backgroundColor: colors.authSurface,
           flex: 1,
           gap: spacing.lg,
           justifyContent: "center",
@@ -41,7 +41,7 @@ export default function IndexRoute() {
             alignItems: "center",
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 14,
+            borderRadius: radii.card,
             borderWidth: 1,
             height: 64,
             justifyContent: "center",

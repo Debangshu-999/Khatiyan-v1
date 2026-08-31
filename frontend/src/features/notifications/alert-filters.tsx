@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { ScrollView, Text } from "react-native";
-import { Bell, Building2, CreditCard, KeyRound, Megaphone, ShieldAlert, UserRound, Wallet } from "lucide-react-native";
+import { Bell, CreditCard, KeyRound, Megaphone, ShieldAlert, UserRound, Wallet } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -36,7 +37,7 @@ const ALERT_ICONS = {
   concern: ShieldAlert,
   notice: Megaphone,
   other: Bell,
-  property: Building2,
+  property: PropertyIcon,
   tenancy: KeyRound,
 } as const;
 

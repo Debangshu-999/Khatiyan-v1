@@ -536,7 +536,7 @@ function DocumentPreviewModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -634,7 +634,7 @@ function ImageSlideshowModal({
   const width = Dimensions.get("window").width;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: "rgba(8, 12, 20, 0.94)", flex: 1 }}>
         <SafeAreaView edges={["top"]} />
 

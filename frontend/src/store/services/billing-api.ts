@@ -149,7 +149,7 @@ export type ManualPaymentMethod = "CASH" | "UPI" | "CARD" | "CHEQUE" | "OTHER";
 export type RecordManualPaymentPayload = {
   method: ManualPaymentMethod;
   referenceText?: string | null;
-  proofImageUrl?: string | null;
+  proofImageUrls?: string[] | null;
   note?: string | null;
 };
 
@@ -167,7 +167,7 @@ export type ManualPayment = {
   amountPaise: number;
   method: ManualPaymentMethod;
   referenceText: string | null;
-  proofImageUrl: string | null;
+  proofImageUrls: string[];
   note: string | null;
   collectedByUserId: string;
   collectedAt: string;
@@ -437,6 +437,12 @@ export const billingApi = api.injectEndpoints({
       ],
     }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {

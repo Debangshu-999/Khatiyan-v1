@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Building2, Home, ShieldCheck, type LucideProps } from "lucide-react-native";
+import { Home, ShieldCheck, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
@@ -152,7 +153,7 @@ function AccountChoiceCard({ account, onPress }: { account: AccountType; onPress
 
 function iconFor(account: AccountType): ComponentType<LucideProps> {
   if (account === "owner") {
-    return Building2;
+    return PropertyIcon;
   }
   if (account === "manager") {
     return ShieldCheck;

@@ -8,7 +8,7 @@ type LucideIcon = ComponentType<LucideProps>;
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { StatusPill } from "@/components/status-pill";
 import { tapHaptic } from "@/lib/haptics";
-import { spacing } from "@/theme/spacing";
+import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -113,10 +113,17 @@ export function ActionButton({
   icon?: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
-  variant?: "primary" | "secondary" | "danger" | "outline";
+  /**
+   * "danger" is the outlined red used inline, where a destructive control sits
+   * among others and must not shout. "dangerFilled" is for a confirmation
+   * dialog, where it is the answer to a question already asked and the weight
+   * is the point.
+   */
+  variant?: "primary" | "secondary" | "danger" | "outline" | "dangerFilled";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
+  const dangerFilled = variant === "dangerFilled";
   const danger = variant === "danger";
   const neutral = variant === "secondary";
   // Outlined: no fill at all and a full-strength ink border, matching the
@@ -124,12 +131,24 @@ export function ActionButton({
   // a surface fill with a soft border, which disappears on a card of the same
   // colour and reads as a tinted block rather than a button.
   const outline = variant === "outline";
-  const foreground = disabled ? colors.muted : danger ? colors.danger : neutral || outline ? colors.ink : primary ? colors.onPrimary : colors.primary;
+  const foreground = disabled
+    ? colors.muted
+    : dangerFilled
+      ? "#FFFFFF"
+      : danger
+        ? colors.danger
+        : neutral || outline
+          ? colors.ink
+          : primary
+            ? colors.onPrimary
+            : colors.primary;
   const backgroundColor = disabled
     ? colors.neutralSoft
-    : primary
-      ? colors.primary
-      : outline
+    : dangerFilled
+      ? colors.danger
+      : primary
+        ? colors.primary
+        : outline
         ? "transparent"
         : danger || neutral
           ? colors.surface
@@ -141,7 +160,7 @@ export function ActionButton({
       onPress={() => {
         // A little physical confirmation when committing an action; quiet
         // secondary buttons stay silent.
-        if (primary || danger) {
+        if (primary || danger || dangerFilled) {
           tapHaptic();
         }
         onPress();
@@ -155,7 +174,7 @@ export function ActionButton({
         // read as translucent because nothing marked where it stopped.
         borderColor: disabled
           ? colors.borderStrong
-          : danger
+          : danger || dangerFilled
             ? colors.danger
             : outline
               ? colors.ink
@@ -229,8 +248,17 @@ export function FormInput({
   prefix,
   required,
   value,
+  disabled,
 }: {
   autoCapitalize?: "characters" | "none" | "sentences" | "words";
+  /**
+   * Greys the field and refuses input, for an answer that is not yet
+   * answerable — a room number before the room type that numbers it.
+   *
+   * <p>Shown rather than hidden: a field that appears once something else is
+   * chosen makes the form jump and hides how much is left to fill in.
+   */
+  disabled?: boolean;
   // Inline validation message; tints the field and label red while present.
   error?: string;
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
@@ -250,8 +278,23 @@ export function FormInput({
   const [focused, setFocused] = useState(false);
   // Constant border width so focusing never nudges the layout; the colour does
   // the talking — danger wins over focus, focus wins over rest.
-  const borderColor = error ? colors.danger : focused ? colors.primary : colors.borderStrong;
-  const labelColor = error ? colors.danger : focused ? colors.primary : colors.inkSoft;
+  const borderColor = disabled
+    ? colors.border
+    : error
+      ? colors.danger
+      : focused
+        ? colors.primary
+        : colors.borderStrong;
+  // A slate grey at rest. Near-black competed with the value inside the box —
+  // two dark lines stacked, and no way to tell at a glance which was the
+  // question. Focus and error still take it over.
+  const labelColor = disabled
+    ? colors.kicker
+    : error
+      ? colors.danger
+      : focused
+        ? colors.primary
+        : colors.muted;
 
   const errorText = error ? (
     <Text style={[type.caption, { color: colors.danger }]}>
@@ -271,7 +314,7 @@ export function FormInput({
         <View
           style={{
             alignItems: "center",
-            backgroundColor: colors.surface,
+            backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
             borderColor,
             borderCurve: "continuous",
             borderRadius: 14,
@@ -285,6 +328,7 @@ export function FormInput({
             {prefix}
           </Text>
           <AppTextInput
+            editable={!disabled}
             autoCapitalize={autoCapitalize}
             keyboardType={keyboardType}
             maxLength={maxLength}
@@ -318,6 +362,7 @@ export function FormInput({
         <RequiredMark required={required} />
       </Text>
       <AppTextInput
+        editable={!disabled}
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
         maxLength={maxLength}
@@ -329,7 +374,7 @@ export function FormInput({
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
         style={{
-          backgroundColor: colors.surface,
+          backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
           borderColor,
           borderCurve: "continuous",
           borderRadius: 14,
@@ -365,8 +410,13 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={{
-        backgroundColor: active ? (square ? colors.ink : colors.primary) : colors.surface,
-        borderColor: active ? (square ? colors.ink : colors.primary) : colors.borderStrong,
+        // Square is the segmented look, and it takes the app's selection green
+        // rather than a solid ink slab: a row of these sat on a form as the
+        // darkest thing present, pulling the eye to a control instead of to
+        // what it was answering. The pill keeps its solid primary — it is a
+        // single choice acting as a button, not one segment among several.
+        backgroundColor: active ? (square ? colors.jadeSoft : colors.primary) : colors.surface,
+        borderColor: active ? (square ? colors.jade : colors.primary) : colors.borderStrong,
         borderRadius: square ? 0 : 999,
         borderWidth: 1,
         justifyContent: "center",
@@ -375,7 +425,7 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
         paddingVertical: 9,
       }}
     >
-      <Text style={{ color: active ? (square ? colors.surface : colors.onPrimary) : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
+      <Text style={{ color: active && !square ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -432,7 +482,7 @@ export function NoticeBar({
         borderBottomWidth: 5,
         borderColor: colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
@@ -488,16 +538,16 @@ export function ConfirmDialog({
 }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 20,
+            borderRadius: radii.card,
             borderWidth: 1,
             gap: spacing.md,
-            maxWidth: 420,
+            maxWidth: DIALOG_MAX_WIDTH,
             padding: spacing.lg,
             width: "100%",
           }}
@@ -532,7 +582,11 @@ export function ConfirmDialog({
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             {acknowledgeOnly ? null : <ActionButton label="Cancel" onPress={onCancel} variant="secondary" />}
-            <ActionButton label={confirmLabel} onPress={onConfirm} variant={destructive ? "danger" : "primary"} />
+            <ActionButton
+              label={confirmLabel}
+              onPress={onConfirm}
+              variant={destructive ? "dangerFilled" : "primary"}
+            />
           </View>
         </View>
       </View>

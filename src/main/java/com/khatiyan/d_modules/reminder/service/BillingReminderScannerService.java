@@ -46,6 +46,14 @@ public class BillingReminderScannerService {
         List<BillingCycleResponse> cycles = billingModule.findCyclesDueBetweenForReminders(today, today.plusDays(3));
 
         for (BillingCycleResponse cycle : cycles) {
+            // A daily guest stay has no account, so this bill has no tenant to
+            // remind. The owner already knows about it — they raised it and
+            // they will mark it paid — and there is no app for a reminder to
+            // arrive in.
+            if (cycle.tenantUserId() == null) {
+                continue;
+            }
+
             long daysUntilDue = ChronoUnit.DAYS.between(today, cycle.rentDueDate());
             if (!UPCOMING_DUE_REMINDER_DAYS.contains(daysUntilDue)) {
                 continue;
@@ -91,6 +99,13 @@ public class BillingReminderScannerService {
         List<BillingCycleResponse> cycles = billingModule.findOverdueCyclesForReminders();
 
         for (BillingCycleResponse cycle : cycles) {
+            // Same as above: no account, nobody to remind. A guest bill cannot
+            // reach OVERDUE anyway (see docs/modules/billing.md), so this is a
+            // belt-and-braces guard rather than a live path.
+            if (cycle.tenantUserId() == null) {
+                continue;
+            }
+
             String tenantReminderKey = "BILL_OVERDUE:TENANT:%s:%s:%s".formatted(
                     cycle.id(),
                     cycle.tenantUserId(),

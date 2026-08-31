@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, View, type DimensionValue } from "react-native";
 
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // Calm loading placeholder: a sunken block that breathes (opacity pulse, native
@@ -36,7 +36,7 @@ export function SkeletonRow() {
         backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
@@ -76,7 +76,7 @@ export function SkeletonTiles({ count = 2 }: { count?: number }) {
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderCurve: "continuous",
-            borderRadius: 12,
+            borderRadius: radii.card,
             borderWidth: 1,
             flex: 1,
             gap: spacing.xs,
@@ -113,7 +113,7 @@ export function SkeletonCard() {
         backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 20,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.lg,

@@ -169,7 +169,7 @@ function ToastViewport({
       animationType="none"
       // The hardware back button clears the toasts rather than doing nothing,
       // for the same reason the backdrop does.
-      onRequestClose={onDismissAll}
+      navigationBarTranslucent onRequestClose={onDismissAll}
       statusBarTranslucent
       transparent
       visible={toasts.length > 0}

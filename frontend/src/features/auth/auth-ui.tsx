@@ -24,10 +24,6 @@ export function isValidPhone(value: string) {
   return /^(\+91)?\d{10}$/.test(value.trim());
 }
 
-export function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
 export function isValidPin(value: string) {
   return /^\d{6}$/.test(value);
 }
@@ -96,7 +92,7 @@ export function AuthAlertModal({ message, onClose }: { message: string; onClose:
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{

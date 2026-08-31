@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -187,5 +188,20 @@ public class ChatController {
             @PathVariable UUID threadId) {
         chatService.closeThread(user.userId(), threadId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Removes a conversation from the caller's own list.
+     *
+     * <p>DELETE, because that is what it is from the caller's side. Nothing is
+     * erased: the other person keeps the whole conversation, and reopening this
+     * one starts it empty rather than restoring it.
+     */
+    @DeleteMapping("/threads/{threadId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteThreadForMe(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID threadId) {
+        chatService.deleteThreadForMe(user.userId(), threadId);
     }
 }

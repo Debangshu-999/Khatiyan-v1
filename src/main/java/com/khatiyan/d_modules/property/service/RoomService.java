@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.property.service;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -19,6 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.PageRequest;
 
+import com.khatiyan.d_modules.property.model.RoomMold;
+import com.khatiyan.d_modules.property.api.dto.UpdateRoomAmenitiesRequest;
+import com.khatiyan.d_modules.property.api.dto.RecutRoomRequest;
+import com.khatiyan.d_modules.property.api.dto.CreateRoomsFromMoldRequest;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.exception.ForbiddenException;
@@ -58,6 +64,7 @@ public class RoomService {
 
     private final PropertyRepository propertyRepository;
     private final RoomRepository roomRepository;
+    private final RoomMoldService roomMoldService;
     private final RoomActivityRepository roomActivityRepository;
     private final PropertyManagerService propertyManagerService;
     private final PropertyAccessPolicy propertyAccessPolicy;
@@ -67,6 +74,7 @@ public class RoomService {
     public RoomService(
             PropertyRepository propertyRepository,
             RoomRepository roomRepository,
+            RoomMoldService roomMoldService,
             RoomActivityRepository roomActivityRepository,
             PropertyManagerService propertyManagerService,
             PropertyAccessPolicy propertyAccessPolicy,
@@ -74,6 +82,7 @@ public class RoomService {
             ApplicationEventPublisher eventPublisher) {
         this.propertyRepository = propertyRepository;
         this.roomRepository = roomRepository;
+        this.roomMoldService = roomMoldService;
         this.roomActivityRepository = roomActivityRepository;
         this.propertyManagerService = propertyManagerService;
         this.propertyAccessPolicy = propertyAccessPolicy;
@@ -301,6 +310,119 @@ public class RoomService {
     }
 
     /**
+     * Cuts rooms from molds — one or many, of one kind or several.
+     *
+     * <p><b>All or nothing on a clash.</b> The older bulk path silently skipped
+     * numbers that already existed and reported a count, which left somebody
+     * looking at "8 of 10 created" with no way to learn which two. Half a floor
+     * created is worse than none: the refusal names the conflicts and nothing is
+     * written.
+     */
+    @Transactional
+    public List<RoomResponse> createRoomsFromMold(
+            UUID actorUserId, UUID propertyId, CreateRoomsFromMoldRequest request) {
+
+        Property property = getManageableActiveProperty(actorUserId, propertyId);
+
+        List<CreateRoomsFromMoldRequest.RoomSpec> specs = request.rooms().stream()
+                .filter(spec -> spec.roomNumber() != null && !spec.roomNumber().isBlank())
+                .toList();
+        if (specs.isEmpty()) {
+            throw new ValidationException("Enter at least one room number");
+        }
+
+        // Within the request as well as against the database — a typed list can
+        // repeat itself, and the insert would fail halfway with the first half
+        // already committed.
+        Set<String> seen = new LinkedHashSet<>();
+        Set<String> duplicated = specs.stream()
+                .map(spec -> spec.roomNumber().trim())
+                .filter(number -> !seen.add(number))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!duplicated.isEmpty()) {
+            throw new ValidationException("Repeated room number" + plural(duplicated) + ": " + join(duplicated));
+        }
+
+        Set<String> taken = seen.stream()
+                .filter(number -> roomRepository.existsByPropertyIdAndRoomNumberAndActiveTrue(propertyId, number))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!taken.isEmpty()) {
+            throw new ValidationException("Room number" + plural(taken) + " already in use: " + join(taken));
+        }
+
+        // Resolved once per distinct mold, not once per room: a floor of thirty
+        // rooms from two types would otherwise load the same two molds thirty
+        // times, and each load is also the check that it belongs to THIS
+        // property.
+        Map<UUID, RoomMold> molds = new LinkedHashMap<>();
+        for (CreateRoomsFromMoldRequest.RoomSpec spec : specs) {
+            molds.computeIfAbsent(spec.moldId(), id -> roomMoldService.requireActive(propertyId, id));
+        }
+
+        List<Room> rooms = specs.stream()
+                .map(spec -> Room.fromMold(
+                        molds.get(spec.moldId()),
+                        spec.roomNumber().trim(),
+                        spec.floor(),
+                        spec.baseRentPaise(),
+                        spec.amenities(),
+                        spec.customAmenities()))
+                .toList();
+        List<Room> saved = roomRepository.saveAll(rooms);
+
+        log.info("Rooms cut from molds propertyId={} molds={} count={} actorUserId={}",
+                property.getId(), molds.size(), saved.size(), actorUserId);
+
+        return saved.stream().map(RoomResponse::from).toList();
+    }
+
+    /**
+     * Moves a room onto a different mold.
+     *
+     * <p>Upgrading a room — non-AC to AC, double to triple — without deleting it
+     * and losing its number, its occupancy and its activity trail. The model
+     * refuses to shrink a room below the people already in it; see
+     * {@code Room.recut}.
+     */
+    @Transactional
+    public RoomResponse recutRoom(UUID actorUserId, UUID propertyId, UUID roomId, RecutRoomRequest request) {
+        getManageableActiveProperty(actorUserId, propertyId);
+        Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+        // Room.recut already refuses to shrink below the beds in use. This is
+        // the wider rule: a recut also rewrites the rent, the conditioning and
+        // the amenities, so it changes what an occupant is renting even when
+        // the bed count happens to fit.
+        requireNobodyInIt(room, "changed to another type");
+        RoomMold mold = roomMoldService.requireActive(propertyId, request.moldId());
+
+        room.recut(mold);
+        log.info("Room recut roomId={} propertyId={} moldId={} actorUserId={}",
+                roomId, propertyId, mold.getId(), actorUserId);
+
+        return RoomResponse.from(room);
+    }
+
+    /** One room's own amenity list, after the mold's defaults were copied in. */
+    @Transactional
+    public RoomResponse updateRoomAmenities(
+            UUID actorUserId, UUID propertyId, UUID roomId, UpdateRoomAmenitiesRequest request) {
+
+        getManageableActiveProperty(actorUserId, propertyId);
+        Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+
+        room.updateAmenities(request.amenities(), request.customAmenities());
+        return RoomResponse.from(room);
+    }
+
+    private static String plural(Set<String> values) {
+        return values.size() == 1 ? "" : "s";
+    }
+
+    private static String join(Set<String> values) {
+        return String.join(", ", values);
+    }
+
+    /**
      * Allows a property manager to mark an empty room available or under maintenance.
      */
     @Transactional
@@ -314,6 +436,10 @@ public class RoomService {
 
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        // Marking an occupied room out of service would take beds out from
+        // under the people in them, and the vacancy figures the whole property
+        // is read by would stop adding up.
+        requireNobodyInIt(room, "taken out of service");
 
         if (status == RoomStatus.OCCUPIED) {
             throw new ValidationException("Room cannot be manually marked as occupied");
@@ -388,6 +514,7 @@ public class RoomService {
     public RoomResponse updateRoom(UUID actorUserId, UUID propertyId, UUID roomId, UpdateRoomRequest request) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        requireNobodyInIt(room, "edited");
         ensureRoomNumberIsAvailableForUpdate(propertyId, roomId, request.roomNumber());
 
         room.updateDetails(
@@ -415,6 +542,10 @@ public class RoomService {
     public void deactivateRoom(UUID actorUserId, UUID propertyId, UUID roomId) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        // Room.deactivate refuses an occupied room already; this says the same
+        // thing in the same words as the other three, and counts reserved beds
+        // — somebody with an approved room change is moving in.
+        requireNobodyInIt(room, "deactivated");
 
         room.deactivate();
 
@@ -715,5 +846,30 @@ public class RoomService {
                 room.getOccupiedCount(),
                 room.getAvailableVacancies(),
                 room.getStatus());
+    }
+
+    /**
+     * Refuses to change a room somebody is living in.
+     *
+     * <p>Its number is on a signed agreement, its type is what the tenant
+     * agreed to rent, and its rent is what they were quoted. Editing any of
+     * that under an occupant changes the terms of a live tenancy from the
+     * property side, silently — which is a thing the tenancy module exists to
+     * make impossible.
+     *
+     * <p>Reserved beds count. A bed held for an approved room change has a
+     * person moving into it who has already been told what they are getting.
+     *
+     * <p>The capacity check in {@code Room.updateDetails} stays: it guards a
+     * narrower case on a path this does not cover.
+     */
+    private static void requireNobodyInIt(Room room, String verb) {
+        int taken = room.getOccupiedCount() + room.getReservedCount();
+        if (taken > 0) {
+            throw new ValidationException(
+                    "Room " + room.getRoomNumber() + " cannot be " + verb + " while "
+                            + taken + (taken == 1 ? " bed is" : " beds are")
+                            + " occupied or reserved. Move or check out the tenants first.");
+        }
     }
 }

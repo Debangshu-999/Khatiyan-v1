@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
-import { AgreementClauseList } from "@/features/compliance/agreement-clause-list";
+import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { useGetMyAgreementQuery } from "@/store/services/compliance-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -38,7 +38,7 @@ export default function TenancyAgreementViewScreen() {
         </>
       ) : !agreement ? (
         <EmptyState
-          icon={FileSignature}
+          icon={FileSignature}
           title="No agreement on file"
           description="This tenancy does not have an accepted agreement."
         />
@@ -54,7 +54,11 @@ export default function TenancyAgreementViewScreen() {
             </Card>
           ) : null}
           <View style={{ gap: spacing.md }}>
-            <AgreementClauseList clauses={agreement.clauses} />
+            <AgreementDocument
+              acceptedAt={agreement.acceptedAt}
+              clauses={agreement.clauses}
+              preamble={agreement.preamble}
+            />
           </View>
         </>
       )}

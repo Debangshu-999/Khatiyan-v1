@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.khatiyan.c_shared.http.ClientIpResolver;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 
 import jakarta.servlet.FilterChain;
@@ -31,14 +32,17 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
 
     private final ApiRateLimitProperties properties;
     private final RateLimitService rateLimitService;
+    private final ClientIpResolver clientIpResolver;
     private final ObjectMapper objectMapper;
 
     public ApiRateLimitFilter(
             ApiRateLimitProperties properties,
             RateLimitService rateLimitService,
+            ClientIpResolver clientIpResolver,
             ObjectMapper objectMapper) {
         this.properties = properties;
         this.rateLimitService = rateLimitService;
+        this.clientIpResolver = clientIpResolver;
         this.objectMapper = objectMapper;
     }
 
@@ -130,18 +134,15 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Shared with every other caller, and no longer trusting the header blindly.
+     *
+     * <p>The old version returned the first X-Forwarded-For entry whatever the
+     * peer was, which let anybody put themselves in someone else's rate-limit
+     * bucket — or in nobody's, by sending a fresh value each time.
+     */
     private String clientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-
-        return request.getRemoteAddr();
+        return clientIpResolver.resolve(request);
     }
 
     private void writeRateLimitedResponse(HttpServletResponse response, long retryAfterSeconds) throws IOException {

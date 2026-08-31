@@ -1,4 +1,5 @@
 import { api } from "@/store/api";
+import type { Gender } from "@/store/services/auth-api";
 import type { Page } from "@/store/pagination";
 import type { NoticePeriod } from "@/store/services/property-api";
 
@@ -90,7 +91,8 @@ export type EndTenancyPayload = {
 export type TenancySummary = {
   id: string;
   referenceCode: string;
-  userId: string;
+  /** Null on a daily guest stay, which has no account behind it. */
+  userId: string | null;
   tenantName: string | null;
   tenantPhone: string | null;
   tenantPhoneVerified: boolean;
@@ -119,6 +121,20 @@ export type TenancySummary = {
   // Null on tenancies onboarded before the declaration was required.
   idCheckConfirmed?: boolean | null;
   idCheckedAt?: string | null;
+  /**
+   * A daily stay recorded against a guest register rather than an account.
+   *
+   * <p>Read this rather than testing userId for null: what it changes is
+   * behaviour, not just a missing value. There is nobody to notify, nobody to
+   * message, and no tenant-side view of the stay.
+   */
+  guestStay: boolean;
+  /** Optional even on a guest stay — a walk-in often has no reason to give one. */
+  guestEmail: string | null;
+  guestAddress: string | null;
+  /** Stated at check-in and never recomputed. */
+  guestAge: number | null;
+  guestGender: Gender | null;
 };
 
 export type TenantPropertySummary = {
@@ -299,27 +315,63 @@ export type ApproveExitRequestPayload = {
   adminNotes?: string | null;
 };
 
+/**
+ * What the account already holds, for the onboarding form to prefill.
+ *
+ * <p>A non-null field is rendered READ-ONLY and never written back. An owner
+ * filling in an onboarding form is not editing somebody else's profile, and
+ * letting them overwrite an address its owner had chosen would be a quiet way to
+ * do exactly that.
+ */
+export type TenantPrefill = {
+  permanentAddress: string | null;
+  permanentAddressPincode: string | null;
+  dateOfBirth: string | null;
+  gender: Gender | null;
+};
+
 export type TenantLookup = {
   exists: boolean;
   fullName: string | null;
   activeTenant: boolean;
   canOnboard: boolean;
   message: string;
+  /** Null for a phone with no account — everything is entered fresh. */
+  prefill: TenantPrefill | null;
 };
 
-export type OnboardTenantPayload = {
-  tenantPhone: string;
-  tenantName?: string | null;
+/**
+ * Books a daily stay for a guest who will never open the app.
+ *
+ * <p>No phone lookup and no account at the end of it. What the owner fills in
+ * is a register entry — the same details a hotel desk takes — written straight
+ * onto the tenancy.
+ *
+ * <p>Monthly tenancies do not come through here. They carry an agreement, so
+ * they go through onboardTenantWithAgreement instead.
+ */
+export type OnboardDailyStayPayload = {
   propertyId: string;
   roomId: string;
-  billingType?: TenancyBillingType;
-  rentAmountPaise?: number | null;
-  depositAmountPaise?: number | null;
   startDate: string;
-  plannedEndDate?: string | null;
-  // The owner declaring they checked the tenant's ID proof and photograph.
+  /** Checkout day. Required — a daily stay is priced by its length. */
+  plannedEndDate: string;
+  guestName: string;
+  guestPhone: string;
+  /** The one field the owner may leave blank. */
+  guestEmail?: string | null;
+  guestAddress: string;
+  /** Age as stated at check-in, not a date of birth. */
+  guestAge: number;
+  guestGender: Gender;
+  // The owner declaring they checked the guest's ID proof and photograph.
   // The server rejects onboarding without it.
-  idCheckConfirmed: boolean;
+  /** Confirmed, which document, and its last four digits — all three or none. */
+  idCheck: {
+    confirmed: boolean;
+    documentType: string | null;
+    lastFour: string;
+  };
 };
 
 export type TenancyOnboardingResult = {
@@ -339,7 +391,7 @@ export const tenancyApi = api.injectEndpoints({
       }),
     }),
 
-    onboardTenant: builder.mutation<TenancyOnboardingResult, OnboardTenantPayload>({
+    onboardDailyStay: builder.mutation<TenancyOnboardingResult, OnboardDailyStayPayload>({
       query: (body) => ({ body, method: "POST", url: "/api/v1/tenancies" }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
@@ -514,6 +566,12 @@ export const tenancyApi = api.injectEndpoints({
       invalidatesTags: ["Tenancy", "Notification", "BillingCycle", "Deposit", "Expense"],
     }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {
@@ -536,7 +594,7 @@ export const {
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
   useListPropertyTenanciesQuery,
-  useOnboardTenantMutation,
+  useOnboardDailyStayMutation,
   useRejectExitRequestMutation,
   useRejectRoomChangeRequestMutation,
 } = tenancyApi;

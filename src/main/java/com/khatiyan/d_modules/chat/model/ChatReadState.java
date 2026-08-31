@@ -44,6 +44,15 @@ public class ChatReadState extends BaseEntity {
     @Column(name = "last_read_seq", nullable = false)
     private long lastReadSeq;
 
+    /**
+     * Everything at or below this is gone, for this person only.
+     *
+     * <p>Zero means nothing has been cleared, which is every row until somebody
+     * deletes a conversation.
+     */
+    @Column(name = "cleared_at_seq", nullable = false)
+    private long clearedAtSeq;
+
     private ChatReadState(UUID threadId, UUID userId, long lastReadSeq) {
         this.id = UUID.randomUUID();
         this.threadId = threadId;
@@ -66,5 +75,23 @@ public class ChatReadState extends BaseEntity {
         if (seq > this.lastReadSeq) {
             this.lastReadSeq = seq;
         }
+    }
+
+    /**
+     * Clears the conversation up to a point, for this person.
+     *
+     * <p>Forward only, like {@link #advanceTo}: clearing is a thing that
+     * happened, and a later delete of a shorter thread must not un-hide what an
+     * earlier one already put away.
+     *
+     * <p>The read mark moves with it. Without that the thread would come back
+     * the moment it was cleared and be unread as well, because every message it
+     * is hiding would still count as never seen.
+     */
+    public void clearUpTo(long seq) {
+        if (seq > this.clearedAtSeq) {
+            this.clearedAtSeq = seq;
+        }
+        advanceTo(seq);
     }
 }

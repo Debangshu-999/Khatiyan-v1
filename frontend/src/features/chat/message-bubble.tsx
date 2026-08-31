@@ -1,8 +1,9 @@
 import { useRef } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import { FileText } from "lucide-react-native";
+import { Ban, FileText } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { selectHaptic } from "@/lib/haptics";
 import { messageStamp } from "@/features/chat/chat-time";
 import type { ChatMessage } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
@@ -119,7 +120,7 @@ export function MessageBubble({
   seenBy?: number;
 }) {
   const { colors, fonts, type } = useTheme();
-  const rowRef = useRef<View>(null);
+  const bubbleRef = useRef<View>(null);
   const mine = message.mine;
   const attachmentsOnly = message.attachments.length > 0 && !message.body;
   /**
@@ -130,19 +131,22 @@ export function MessageBubble({
    * gesture that reaches Delete stopped working on exactly the messages that
    * have something to delete.
    */
-  const handleLongPress = () =>
-    rowRef.current?.measureInWindow((_x, y, _width, height) => onLongPress?.({ height, y }));
+  const handleLongPress = () => {
+    // The bubble, not the row around it. The row also contains the "Seen" line
+    // underneath, and measuring that pushed the menu down by its height —
+    // leaving a gap under exactly the message most likely to be held, since the
+    // receipt only appears on the newest one.
+    bubbleRef.current?.measureInWindow((_x, y, _width, height) => {
+      selectHaptic();
+      onLongPress?.({ height, y });
+    });
+  };
 
   const images = message.attachments.filter((attachment) => attachment.kind === "IMAGE");
   const files = message.attachments.filter((attachment) => attachment.kind === "FILE");
   const seen = mine && !pending && seenBy !== undefined && seenBy > 0;
 
   return (
-    // A plain wrapper purely to hold the ref: AnimatedPressable does not forward
-    // one, and the menu needs this row measured in WINDOW coordinates — the row
-    // is inside a ScrollView, so its own layout offset says nothing about where
-    // it currently is on screen.
-    <View collapsable={false} ref={rowRef}>
     <AnimatedPressable
       accessibilityRole="text"
       disabled={!onLongPress}
@@ -155,7 +159,14 @@ export function MessageBubble({
       }}
     >
       <View style={{ alignItems: mine ? "flex-end" : "flex-start", maxWidth: MAX_BUBBLE_WIDTH }}>
+        {/* `collapsable={false}` keeps this a real view on Android so it can be
+            measured; the menu needs its position in WINDOW coordinates, and a
+            layout offset inside a ScrollView says nothing about where it
+            currently is on screen. AnimatedPressable does not forward a ref, so
+            the measurement is taken here rather than on the pressable. */}
         <View
+          collapsable={false}
+          ref={bubbleRef}
           style={{
             // Green for what you said, white for what was said to you.
             // Alignment carries the same fact, but only once a thread is wide
@@ -305,9 +316,23 @@ export function MessageBubble({
             ) : null}
 
             {message.deleted ? (
-              <Text style={[type.caption, { color: colors.muted, fontStyle: "italic" }]}>
-                Message deleted
-              </Text>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+                <Ban color={colors.muted} size={13} strokeWidth={2.2} />
+                {/* fontFamily deliberately cleared. Android does NOT synthesise
+                    an italic for a named family — it needs a real italic file,
+                    and no Inter Italic is loaded — so `fontStyle` against
+                    type.caption's Inter Medium silently did nothing. Dropping
+                    the family lets the system face slant it. Loading an Inter
+                    Italic for two words was the alternative. */}
+                <Text
+                  style={[
+                    type.caption,
+                    { color: colors.muted, fontFamily: undefined, fontStyle: "italic" },
+                  ]}
+                >
+                  Message deleted
+                </Text>
+              </View>
             ) : null}
 
             {/* No delivery word. The stamp is the confirmation: a message that
@@ -343,6 +368,5 @@ export function MessageBubble({
         ) : null}
       </View>
     </AnimatedPressable>
-    </View>
   );
 }

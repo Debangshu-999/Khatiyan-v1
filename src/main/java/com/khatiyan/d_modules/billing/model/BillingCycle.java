@@ -43,7 +43,14 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "tenancy_id", nullable = false)
     private UUID tenancyId;
 
-    @Column(name = "tenant_user_id", nullable = false)
+    /**
+     * Who this bill is for, or null when the stay has no account behind it.
+     *
+     * <p>A daily guest never signs in, so there is no tenant-side view for this
+     * bill to appear in and nothing for this column to point at. What names the
+     * payer is {@link #tenantNameSnapshot}, stamped at creation either way.
+     */
+    @Column(name = "tenant_user_id")
     private UUID tenantUserId;
 
     @Column(name = "tenant_name_snapshot", nullable = false, length = 120)

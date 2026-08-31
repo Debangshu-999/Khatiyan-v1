@@ -235,7 +235,9 @@ class ExitSettlementServiceTest {
 
         ArgumentCaptor<RecordManualPaymentRequest> paid = ArgumentCaptor.forClass(RecordManualPaymentRequest.class);
         verify(billingCycleService).recordManualPayment(eq(ACTOR), any(), paid.capture());
-        assertThat(paid.getValue().proofImageUrl()).isEqualTo("https://cdn.example.com/proof.jpg");
+        // The exit screen still collects one photo, but a payment now carries a
+        // list — so the single URL arrives as a one-element list.
+        assertThat(paid.getValue().proofImageUrls()).containsExactly("https://cdn.example.com/proof.jpg");
     }
 
     /** An older client that sends no method must not block an exit. */

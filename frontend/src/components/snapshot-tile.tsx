@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 import { Text, View } from "react-native";
 import { ArrowDownRight, ArrowUpRight, Minus, type LucideProps } from "lucide-react-native";
 
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type SnapshotTone = "default" | "primary" | "danger";
@@ -51,7 +51,7 @@ export function SnapshotTile({ count, delta, icon: Icon, label, lowerIsBetter, t
         backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
         gap: spacing.xs,

@@ -123,6 +123,40 @@ class BillingCycleTest {
                 .isTrue();
     }
 
+    /**
+     * A daily stay is billed for the whole stay in one go, so its cycle opens
+     * payable rather than waiting to be activated. Onboarding used to activate
+     * any cycle whose period had started, which threw on every daily stay
+     * beginning today — the state it asks for is the state it is already in.
+     */
+    @Test
+    void aDailyCycleOpensPayableAndHasNothingToActivate() {
+        BillingCycle cycle = dailyCycle(LocalDate.of(2026, 6, 1));
+
+        assertThat(cycle.getStatus()).isEqualTo(BillingCycleStatus.UNPAID);
+        assertThat(cycle.isUpcoming()).isFalse();
+        assertThatThrownBy(() -> cycle.activate(50_00))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Only an upcoming billing cycle can be activated");
+    }
+
+    private static BillingCycle dailyCycle(LocalDate startDate) {
+        LocalDate checkoutDate = startDate.plusDays(2);
+        return BillingCycle.create(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "Test Guest",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                TenancyBillingType.DAILY,
+                1,
+                startDate,
+                checkoutDate,
+                checkoutDate,
+                BillingCollectionTiming.CYCLE_START,
+                0);
+    }
+
     private static BillingCycle monthlyCycle(int cycleNumber, LocalDate periodStartDate) {
         return BillingCycle.create(
                 UUID.randomUUID(),

@@ -35,7 +35,9 @@ export function FacilityOverviewGrid({ facilities }: { facilities: string[] }) {
     <View style={{ gap: spacing.sm }}>
       <View
         style={{
-          borderColor: colors.border,
+          // Matches the detail grids on the same screen — the outlined boxes
+          // on this page all take the stronger hairline.
+          borderColor: colors.borderStrong,
           borderRadius: 14,
           borderWidth: 1,
           overflow: "hidden",

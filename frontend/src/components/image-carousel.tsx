@@ -112,7 +112,7 @@ export function Lightbox({
   const scrollX = useRef(new Animated.Value(0)).current;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: "#000000", flex: 1 }}>
         <SafeAreaView edges={["top"]} style={{ zIndex: 2 }}>
           <View
@@ -169,8 +169,26 @@ export function Lightbox({
               ))}
             </Animated.ScrollView>
           ) : null}
-      <Dashes count={images.length} scrollX={scrollX} width={width} />
         </View>
+
+        {/* The lower edge of the frame. The picture stops here instead of
+            bleeding into the gesture bar, which on a dark photo left no way to
+            tell where the image ended and the phone began.
+
+            A count rather than the dashes the inline carousel uses: eight
+            pictures is eight dashes of three pixels, which says "several" and
+            nothing more. Someone in a full-screen viewer is working through a
+            set and wants to know where in it they are. */}
+        <SafeAreaView
+          edges={["bottom"]}
+          style={{ borderTopColor: "rgba(255,255,255,0.14)", borderTopWidth: 1 }}
+        >
+          <View style={{ alignItems: "center", paddingVertical: spacing.sm + 2 }}>
+            <Text style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: "600" }}>
+              {images.length > 1 ? `${index + 1} / ${images.length}` : ""}
+            </Text>
+          </View>
+        </SafeAreaView>
 
         {menuOpen && actions?.length ? (
           <Pressable

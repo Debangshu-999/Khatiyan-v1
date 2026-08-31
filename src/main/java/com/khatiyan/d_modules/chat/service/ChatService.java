@@ -130,12 +130,23 @@ public class ChatService {
     public List<ChatThreadResponse> listTenantSection(UUID actorUserId, UUID propertyId) {
         chatAccessService.requireTeamAccess(actorUserId, propertyId);
 
-        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId);
+        // Guest stays are left out of the roster entirely. A daily guest has no
+        // account and no app, so a row for them would be a conversation that can
+        // never have a second person in it — and tapping it would try to open a
+        // thread against a tenant who does not exist.
+        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
+                .filter(tenancy -> tenancy.userId() != null)
+                .toList();
         Map<UUID, ChatThread> byTenancy = new HashMap<>();
         for (ChatThread thread :
                 chatThreadRepository.findSection(propertyId, ChatThreadKind.TEAM, ChatThreadOrigin.TENANCY)) {
             byTenancy.put(thread.getOriginId(), thread);
         }
+
+        // A cleared thread is dropped rather than filtered later, so the
+        // roster row falls back to "tap to start a conversation" — which is
+        // exactly what deleting it was meant to leave behind.
+        byTenancy.values().removeIf(thread -> isCleared(actorUserId, thread));
 
         Map<UUID, Long> readPositions = readPositionsFor(actorUserId, byTenancy.values());
         Map<UUID, Long> receipts =
@@ -177,7 +188,7 @@ public class ChatService {
                         .stream()
                         .filter(thread -> chatAccessService.isMember(actorUserId, thread.getId()))
                         .toList();
-        return describe(actorUserId, threads);
+        return describe(actorUserId, stillVisibleTo(actorUserId, threads));
     }
 
     /**
@@ -189,7 +200,8 @@ public class ChatService {
      */
     @Transactional(readOnly = true)
     public List<ChatThreadResponse> listEnquirySection(UUID actorUserId, UUID propertyId) {
-        return describe(actorUserId, chatThreadRepository.findEnquirySectionFor(propertyId, actorUserId));
+        return describe(actorUserId, stillVisibleTo(
+                actorUserId, chatThreadRepository.findEnquirySectionFor(propertyId, actorUserId)));
     }
 
     /**
@@ -198,7 +210,8 @@ public class ChatService {
      */
     @Transactional(readOnly = true)
     public List<ChatThreadResponse> listMine(UUID actorUserId) {
-        return describe(actorUserId, chatThreadRepository.findForMember(actorUserId));
+        return describe(actorUserId, stillVisibleTo(
+                actorUserId, chatThreadRepository.findForMember(actorUserId)));
     }
 
     // ------------------------------------------------------------------
@@ -216,6 +229,13 @@ public class ChatService {
     public ChatThread openTeamThread(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = tenancyModule.findById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId.toString()));
+
+        // Refused outright rather than null-guarded past: there is no second
+        // party to this thread. A daily guest holds no account, so nothing they
+        // need is handled through the app — it is handled with them in person.
+        if (tenancy.userId() == null) {
+            throw new ValidationException("This is a guest stay, so there is nobody to message here.");
+        }
 
         boolean isTenant = tenancy.userId().equals(actorUserId);
         if (!isTenant) {
@@ -325,6 +345,11 @@ public class ChatService {
         }
         if (management) {
             for (TenancyResponse tenancy : tenancyModule.findActiveByPropertyId(propertyId)) {
+                // Same reason as the roster above: a guest stay has nobody to
+                // put in a contact list.
+                if (tenancy.userId() == null) {
+                    continue;
+                }
                 people.put(tenancy.userId(), tenancy.tenantName());
                 roles.put(tenancy.userId(), "TENANT");
             }
@@ -360,9 +385,16 @@ public class ChatService {
     public ChatMessagePageResponse listMessages(UUID actorUserId, UUID threadId, Long afterSeq) {
         ChatThread thread = chatAccessService.requireReadable(actorUserId, threadId);
 
+        // Everything at or below the reader's clear mark is invisible TO THEM.
+        // Applied here rather than at the repository so both the opening page
+        // and the poll obey it, and neither can be reached around by passing a
+        // lower cursor from the client.
+        long clearedAt = clearedPositionOf(actorUserId, threadId);
         List<ChatMessage> messages = afterSeq == null
-                ? new ArrayList<>(chatMessageRepository.findLatest(threadId, PageRequest.of(0, PAGE_SIZE)))
-                : chatMessageRepository.findAfter(threadId, afterSeq, PageRequest.of(0, PAGE_SIZE));
+                ? new ArrayList<>(chatMessageRepository.findLatestAfter(
+                        threadId, clearedAt, PageRequest.of(0, PAGE_SIZE)))
+                : chatMessageRepository.findAfter(
+                        threadId, Math.max(afterSeq, clearedAt), PageRequest.of(0, PAGE_SIZE));
 
         if (afterSeq == null) {
             // findLatest reads newest-first so the page is the RECENT fifty
@@ -458,13 +490,22 @@ public class ChatService {
     /** Hides one of your own messages from both sides. */
     @Transactional
     public void deleteMessage(UUID actorUserId, UUID threadId, UUID messageId) {
-        chatAccessService.requireReadable(actorUserId, threadId);
+        ChatThread thread = chatAccessService.requireReadable(actorUserId, threadId);
 
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .filter(candidate -> candidate.getThreadId().equals(threadId))
                 .orElseThrow(() -> new NotFoundException("Message", messageId.toString()));
 
         message.deleteBy(actorUserId, Instant.now());
+
+        // The list keeps its own copy of the newest message so a page of rows
+        // costs one query. That copy was written when the message was sent, so
+        // without this the conversation reads "Message deleted" while the list
+        // still shows what it said.
+        if (message.getSeq() != null && message.getSeq().equals(thread.getLastMessageSeq())) {
+            thread.noteLastMessageWithdrawn(message.preview());
+        }
+
         log.info("Chat message deleted threadId={} messageId={}", threadId, messageId);
     }
 
@@ -487,7 +528,7 @@ public class ChatService {
      */
     @Transactional(readOnly = true)
     public long countUnread(UUID actorUserId) {
-        List<ChatThread> mine = chatThreadRepository.findForMember(actorUserId);
+        List<ChatThread> mine = stillVisibleTo(actorUserId, chatThreadRepository.findForMember(actorUserId));
         Map<UUID, Long> positions = readPositionsFor(actorUserId, mine);
         return mine.stream().filter(thread -> isUnread(thread, positions)).count();
     }
@@ -522,9 +563,91 @@ public class ChatService {
         log.info("Chat enquiry thread closed threadId={} actorUserId={}", threadId, actorUserId);
     }
 
+    /**
+     * Deletes a conversation for one person, and for nobody else.
+     *
+     * <p>A soft delete in the strict sense: no row is removed, no message is
+     * touched, and the other side's copy is unchanged. What is written is a mark
+     * on the reader's own read-state row saying how far the thread had got, and
+     * both the list and the message page read past it.
+     *
+     * <p>That single mark also answers "what if they start again with the same
+     * person". They get the same thread — the pair key guarantees there can only
+     * be one — but it opens empty, because the page starts after the mark.
+     * Creating a second thread row instead would have meant either abandoning
+     * the pair key or leaving an orphan nobody can reach.
+     *
+     * <p>Deliberately available on every kind of thread, unlike
+     * {@link #closeThread}. Closing an enquiry ends it for both parties and is a
+     * decision about the conversation; this is a decision about one person's own
+     * list, and there is no thread somebody should be forced to keep looking at.
+     */
+    @Transactional
+    public void deleteThreadForMe(UUID actorUserId, UUID threadId) {
+        ChatThread thread = chatAccessService.requireReadable(actorUserId, threadId);
+        long head = thread.getLastMessageSeq() == null ? 0L : thread.getLastMessageSeq();
+
+        readStateFor(threadId, actorUserId).clearUpTo(head);
+        log.info("Chat thread cleared for one reader threadId={} actorUserId={} throughSeq={}",
+                threadId,
+                actorUserId,
+                head);
+    }
+
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * Drops the threads this person has deleted.
+     *
+     * <p>A cleared thread comes back on its own once its head moves past the
+     * mark, which is what makes a new message from the other side reappear
+     * without anything having to un-hide it.
+     */
+    private List<ChatThread> stillVisibleTo(UUID actorUserId, List<ChatThread> threads) {
+        if (threads.isEmpty()) {
+            return threads;
+        }
+
+        Map<UUID, Long> cleared = clearedPositionsFor(actorUserId, threads);
+        return threads.stream()
+                .filter(thread -> !isCleared(thread, cleared.getOrDefault(thread.getId(), 0L)))
+                .toList();
+    }
+
+    private boolean isCleared(UUID actorUserId, ChatThread thread) {
+        return isCleared(thread, clearedPositionOf(actorUserId, thread.getId()));
+    }
+
+    private boolean isCleared(ChatThread thread, long clearedAt) {
+        if (clearedAt <= 0L) {
+            return false;
+        }
+
+        Long head = thread.getLastMessageSeq();
+        return head == null || head <= clearedAt;
+    }
+
+    private long clearedPositionOf(UUID actorUserId, UUID threadId) {
+        return chatReadStateRepository.findByThreadIdAndUserId(threadId, actorUserId)
+                .map(ChatReadState::getClearedAtSeq)
+                .orElse(0L);
+    }
+
+    /** Clear marks for a set of threads in one query, mirroring readPositionsFor. */
+    private Map<UUID, Long> clearedPositionsFor(UUID userId, List<ChatThread> threads) {
+        List<UUID> ids = threads.stream().map(ChatThread::getId).toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, Long> cleared = new HashMap<>();
+        for (ChatReadState state : chatReadStateRepository.findByUserIdAndThreadIdIn(userId, ids)) {
+            cleared.put(state.getThreadId(), state.getClearedAtSeq());
+        }
+        return cleared;
+    }
 
     /**
      * Two buckets, both on the sender.

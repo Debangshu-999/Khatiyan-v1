@@ -86,7 +86,8 @@ export type ChatThread = {
   counterpartPhotoUrl: string | null;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
-  lastMessageKind: "TEXT" | "IMAGE" | "FILE" | null;
+  /** DELETED is not an attachment kind — it says the newest message was withdrawn. */
+  lastMessageKind: "TEXT" | "IMAGE" | "FILE" | "DELETED" | null;
   lastMessageSeq: number;
   unread: boolean;
   counterpartLastReadSeq: number;
@@ -287,16 +288,35 @@ export const chatApi = api.injectEndpoints({
       invalidatesTags: ["Chat", "ChatUnread"],
     }),
 
+    /**
+     * Removes a conversation from this reader's list, and nobody else's.
+     *
+     * <p>Invalidates the unread badge as well as the list: a thread deleted
+     * while it still had something unread in it was still being counted by the
+     * tab dot, which then pointed at a row that was no longer there.
+     */
+    deleteChatThread: builder.mutation<void, string>({
+      query: (threadId) => ({ method: "DELETE", url: `${base}/threads/${threadId}` }),
+      invalidatesTags: ["Chat", "ChatUnread"],
+    }),
+
     closeChatThread: builder.mutation<void, string>({
       query: (threadId) => ({ method: "POST", url: `${base}/threads/${threadId}/close` }),
       invalidatesTags: ["Chat"],
     }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {
   useCloseChatThreadMutation,
   useDeleteChatMessageMutation,
+  useDeleteChatThreadMutation,
   useEditChatMessageMutation,
   useGetChatMessagesQuery,
   useGetChatUnreadCountQuery,

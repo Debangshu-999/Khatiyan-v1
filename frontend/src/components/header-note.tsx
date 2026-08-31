@@ -43,8 +43,11 @@ export function HeaderNote({ children, delay = 120 }: { children: string; delay?
           width: 3,
         }}
       />
+      {/* Not selectable. This is a screen's own description — nobody copies it,
+          and a long press anywhere near it put a selection handle and a
+          clipboard bar over the page. Selectable text is for values somebody
+          might need elsewhere: a reference code, an amount, a clause. */}
       <Animated.Text
-        selectable
         style={[
           type.body,
           {

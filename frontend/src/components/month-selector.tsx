@@ -95,7 +95,7 @@ function MonthGridModal({
   const thisMonthIndex = Number(now.slice(5, 7)) - 1;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
@@ -202,18 +202,21 @@ function RoundIconButton({
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
+      // A small grey disc, the same treatment as the header back and close
+      // buttons. Outlined at 40pt these were two ink-bordered boxes flanking
+      // the month, which gave stepping through months the same weight as the
+      // month itself.
       style={{
         alignItems: "center",
-        borderColor: colors.ink,
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 40,
+        backgroundColor: colors.surfaceSunken,
+        borderRadius: 999,
+        height: 30,
         justifyContent: "center",
         opacity: disabled ? 0.35 : 1,
-        width: 40,
+        width: 30,
       }}
     >
-      <Icon color={colors.ink} size={20} strokeWidth={2.2} />
+      <Icon color={colors.inkSoft} size={16} strokeWidth={2.4} />
     </AnimatedPressable>
   );
 }

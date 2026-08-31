@@ -232,6 +232,17 @@ function CreateCategoryModal({
 }
 
 /** One category in the sheet, with its own delete when it is removable. */
+
+/**
+ * One category in the picker, with its delete.
+ *
+ * <p>Renders through the app's shared picker row, so a category list looks like
+ * every other list of options. It used to fill the selected row solid ink — this
+ * screen answering "which one is chosen" in its own private language.
+ *
+ * <p>The delete is the row's `action`, which places it outside the row's own
+ * pressable: tapping it cannot also select the category it removes.
+ */
 function CategoryRow({
   active,
   label,

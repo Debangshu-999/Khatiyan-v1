@@ -16,8 +16,15 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.d_modules.property.api.dto.CreateRoomsFromMoldRequest;
+import com.khatiyan.d_modules.property.api.dto.RecutRoomRequest;
+import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
+import com.khatiyan.d_modules.property.api.dto.SaveRoomMoldRequest;
+import com.khatiyan.d_modules.property.api.dto.UpdateRoomAmenitiesRequest;
+import com.khatiyan.d_modules.property.service.RoomMoldService;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.AddPropertyManagerRequest;
 import com.khatiyan.d_modules.property.api.dto.CreatePropertyRequest;
@@ -31,6 +38,7 @@ import com.khatiyan.d_modules.property.api.dto.ManagerPermissionsResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdateManagerPermissionsRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.ShiftManagerRequest;
+import com.khatiyan.d_modules.property.api.dto.UpdatePrematureExitPolicyRequest;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyExitPolicyRequest;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdatePropertyRequest;
@@ -60,6 +68,7 @@ public class PropertyController {
 
     private final PropertyService propertyService;
     private final RoomService roomService;
+    private final RoomMoldService roomMoldService;
     private final PropertyManagerService propertyManagerService;
     private final ManagerAccessPolicy managerAccessPolicy;
     private final PropertyAccessPolicy propertyAccessPolicy;
@@ -67,11 +76,13 @@ public class PropertyController {
     public PropertyController(
             PropertyService propertyService,
             RoomService roomService,
+            RoomMoldService roomMoldService,
             PropertyManagerService propertyManagerService,
             ManagerAccessPolicy managerAccessPolicy,
             PropertyAccessPolicy propertyAccessPolicy) {
         this.propertyService = propertyService;
         this.roomService = roomService;
+        this.roomMoldService = roomMoldService;
         this.propertyManagerService = propertyManagerService;
         this.managerAccessPolicy = managerAccessPolicy;
         this.propertyAccessPolicy = propertyAccessPolicy;
@@ -146,6 +157,28 @@ public class PropertyController {
             @Valid @RequestBody UpdatePropertyExitPolicyRequest request) {
         managerAccessPolicy.ensureCanManage(user.userId(), propertyId, ManagerResource.TENANCY_RULES);
         return propertyService.updateExitPolicies(user.userId(), propertyId, request);
+    }
+
+    /**
+     * The premature-exit policy alone, edited from the agreement screen.
+     *
+     * <p>Its own endpoint rather than a field on the exit-policy update, because
+     * that one REPLACES every policy it carries — damage schedule, checklist,
+     * deductions. Writing this one field through it from a screen that holds none
+     * of the others would clear all three the moment somebody saved.
+     *
+     * <p>It moved to the agreement screen because it belongs beside the term: it
+     * is what an indefinite agreement charges for leaving without notice, and
+     * splitting the two halves of "how does this tenancy end" across two screens
+     * meant neither read as a whole rule.
+     */
+    @PatchMapping("/{propertyId}/premature-exit-policy")
+    public PropertyExitPolicyResponse updatePrematureExitPolicy(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody UpdatePrematureExitPolicyRequest request) {
+        managerAccessPolicy.ensureCanManage(user.userId(), propertyId, ManagerResource.TENANCY_RULES);
+        return propertyService.updatePrematureExitPolicy(user.userId(), propertyId, request.prematureExitPolicy());
     }
 
     @PostMapping("/{propertyId}/managers")
@@ -256,6 +289,89 @@ public class PropertyController {
                 .status(HttpStatus.CREATED)
                 .location(URI.create("/api/v1/properties/" + propertyId + "/rooms/" + response.id()))
                 .body(response);
+    }
+
+    // ------------------------------------------------------------------
+    // Room molds — the shapes rooms are cut from
+    // ------------------------------------------------------------------
+
+    @GetMapping("/{propertyId}/room-molds")
+    public List<RoomMoldResponse> listRoomMolds(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeRetired) {
+        return roomMoldService.list(user.userId(), propertyId, includeRetired);
+    }
+
+    @PostMapping("/{propertyId}/room-molds")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RoomMoldResponse createRoomMold(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody SaveRoomMoldRequest request) {
+        return roomMoldService.create(user.userId(), propertyId, request);
+    }
+
+    @PutMapping("/{propertyId}/room-molds/{moldId}")
+    public RoomMoldResponse updateRoomMold(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID moldId,
+            @Valid @RequestBody SaveRoomMoldRequest request) {
+        return roomMoldService.update(user.userId(), propertyId, moldId, request);
+    }
+
+    /**
+     * Retires a mold rather than deleting it.
+     *
+     * <p>DELETE because that is what it is from the owner's side — the type
+     * stops being offered. The rooms already cut from it keep pointing at it,
+     * because the mold is what says what they are.
+     */
+    @DeleteMapping("/{propertyId}/room-molds/{moldId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void retireRoomMold(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID moldId) {
+        roomMoldService.retire(user.userId(), propertyId, moldId);
+    }
+
+    @PostMapping("/{propertyId}/room-molds/{moldId}/restore")
+    public void restoreRoomMold(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID moldId) {
+        roomMoldService.restore(user.userId(), propertyId, moldId);
+    }
+
+    /** One or many rooms from one mold. All or nothing on a number clash. */
+    @PostMapping("/{propertyId}/rooms/from-mold")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<RoomResponse> createRoomsFromMold(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody CreateRoomsFromMoldRequest request) {
+        return roomService.createRoomsFromMold(user.userId(), propertyId, request);
+    }
+
+    /** Moves an existing room onto a different mold — the upgrade path. */
+    @PostMapping("/{propertyId}/rooms/{roomId}/recut")
+    public RoomResponse recutRoom(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID roomId,
+            @Valid @RequestBody RecutRoomRequest request) {
+        return roomService.recutRoom(user.userId(), propertyId, roomId, request);
+    }
+
+    @PutMapping("/{propertyId}/rooms/{roomId}/amenities")
+    public RoomResponse updateRoomAmenities(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @PathVariable UUID roomId,
+            @Valid @RequestBody UpdateRoomAmenitiesRequest request) {
+        return roomService.updateRoomAmenities(user.userId(), propertyId, roomId, request);
     }
 
     @PostMapping("/{propertyId}/rooms/bulk")

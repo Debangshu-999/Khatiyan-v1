@@ -147,7 +147,11 @@ export default function OwnerTenancyWorkspaceScreen() {
         tenantPhoneVerified: tenancy.tenantPhoneVerified ? "true" : "false",
         tenantProfileCompleted: tenancy.tenantProfileCompleted ? "true" : "false",
         tenancyId: tenancy.id,
-        userId: tenancy.userId,
+        // A daily guest stay has no account, so there is no user to pass on.
+        // Sent as the flag rather than an absent param, because the detail
+        // screen has to say "no account" rather than leave a field blank.
+        guestStay: tenancy.guestStay ? "true" : "false",
+        userId: tenancy.userId ?? "",
       },
     });
   }
@@ -175,7 +179,8 @@ export default function OwnerTenancyWorkspaceScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={UsersRound}
+          icon={UsersRound}
+
           title="No active property selected"
           description="Go to Home and choose the property whose tenancies you want to manage."
         />
@@ -308,7 +313,8 @@ export default function OwnerTenancyWorkspaceScreen() {
               // A panel, not a destination — so it explains rather than refusing
               // to open something the manager is already looking at.
               <EmptyState
-                icon={Lock}
+                icon={Lock}
+
                 title="You cannot view tenancies"
                 description="The property owner has not given you access to the stay list. Ask them if you need it."
               />
@@ -322,7 +328,8 @@ export default function OwnerTenancyWorkspaceScreen() {
 
               {isError ? (
                 <EmptyState
-                  icon={UsersRound}
+                  icon={UsersRound}
+
                   title="Could not load tenancies"
                   description="Refresh the screen and try again."
                 />
@@ -330,7 +337,8 @@ export default function OwnerTenancyWorkspaceScreen() {
 
               {!isLoading && !isError && visiblePage?.items.length === 0 ? (
                 <EmptyState
-                  icon={UsersRound}
+                  icon={UsersRound}
+
                   title={committedQuery ? "No tenancies found" : "No active tenancies"}
                   description={
                     committedQuery
@@ -412,7 +420,8 @@ export default function OwnerTenancyWorkspaceScreen() {
 
         {!pastTenanciesQuery.isFetching && (pastTenancies?.items.length ?? 0) === 0 ? (
           <EmptyState
-            icon={History}
+            icon={History}
+
             title="No past tenancies"
             description="Completed and inactive tenancies appear here after a stay ends."
           />

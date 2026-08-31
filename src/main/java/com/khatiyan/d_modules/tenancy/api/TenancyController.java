@@ -24,7 +24,7 @@ import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateRoomChangeRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.CreateTenancyRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.CreateDailyStayRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
@@ -81,14 +81,20 @@ public class TenancyController {
         return tenancyService.lookupTenant(phone, propertyId);
     }
 
+    /**
+     * Books a daily stay. Creates no account — see
+     * {@code TenancyService.onboardDailyGuest}.
+     *
+     * <p>Monthly tenancies are not reachable here. They are agreement-backed and
+     * go through the compliance module's onboarding endpoint.
+     */
     @PostMapping
-    public ResponseEntity<TenancyOnboardingResponse> createTenancy(
+    public ResponseEntity<TenancyOnboardingResponse> createDailyStay(
             @AuthenticationPrincipal UserPrincipal user,
-            @Valid @RequestBody CreateTenancyRequest req) {
-        TenancyOnboardingResponse body = tenancyService.onboard(
-                user.userId(), req.tenantPhone(), req.tenantName(), req.propertyId(), req.roomId(),
-                req.resolvedBillingType(), req.rentAmountPaise(), req.depositAmountPaise(),
-                req.startDate(), req.plannedEndDate(), req.idCheckConfirmed());
+            @Valid @RequestBody CreateDailyStayRequest req) {
+        TenancyOnboardingResponse body = tenancyService.onboardDailyGuest(
+                user.userId(), req.propertyId(), req.roomId(),
+                req.startDate(), req.plannedEndDate(), req.toGuestDetails(), req.idCheck());
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)

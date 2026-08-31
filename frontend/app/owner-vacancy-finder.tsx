@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AirVent, BedDouble, Building2, CalendarClock, Check, ChevronDown, Filter, IndianRupee, Layers, RotateCcw, Search } from "lucide-react-native";
+import { AirVent, BedDouble, CalendarClock, Check, ChevronDown, Filter, IndianRupee, Layers, RotateCcw, Search } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -250,7 +251,7 @@ export default function OwnerVacancyFinderScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Building2}
+          icon={PropertyIcon}
           title="No active property selected"
           description="Choose the property whose rooms you want to search from Home."
         />

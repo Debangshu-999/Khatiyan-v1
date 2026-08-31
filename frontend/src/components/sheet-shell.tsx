@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
-import { Animated, Dimensions, Easing, KeyboardAvoidingView, Modal, PanResponder, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
@@ -31,6 +31,39 @@ export function SheetShell({
 }) {
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
+
+  /**
+   * The keyboard's height, measured — on Android only.
+   *
+   * <p>`KeyboardAvoidingView behavior="padding"` is broken on Android under
+   * edge-to-edge (mandatory since SDK 53). It infers the keyboard height by
+   * comparing screen height to window height, and edge-to-edge makes the window
+   * span the whole display — so the number is wrong, and on DISMISSAL its padding
+   * does not return to zero. That is the bug where a sheet stays shoved up the
+   * screen after the keyboard closes.
+   *
+   * <p>iOS keeps the avoider, where it works correctly. `ScreenScrollView` solves
+   * the same problem the same way; this is the sheet's copy of it.
+   */
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const onShow = Keyboard.addListener("keyboardDidShow", (event) =>
+      // Minus the safe-area inset: on a gesture-navigation device the keyboard's
+      // reported height already includes that strip, and counting it twice lifts
+      // the sheet a nav-bar's height too far.
+      setKeyboardInset(Math.max(0, event.endCoordinates.height - insets.bottom)),
+    );
+    const onHide = Keyboard.addListener("keyboardDidHide", () => setKeyboardInset(0));
+
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [insets.bottom]);
   // Far enough to be off-screen from any starting point, and the distance a
   // dismissing drag travels. The sheet itself is at most 92% of this.
   const travel = Dimensions.get("window").height;
@@ -111,66 +144,90 @@ export function SheetShell({
   ).current;
 
   return (
-    <Modal animationType={dismissOnDrag ? "none" : "slide"} onRequestClose={dismiss} transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+    <Modal animationType={dismissOnDrag ? "none" : "slide"} navigationBarTranslucent onRequestClose={dismiss} statusBarTranslucent transparent visible>
+      {/* The backdrop is absolute and OUTSIDE the keyboard avoider, not a flex
+          child of it. As a child its height was the window minus the keyboard
+          padding, so dismissing the keyboard animated that padding to zero and
+          the backdrop's layout trailed it by a frame — uncovering a strip at the
+          bottom of the screen and flashing the page behind the sheet. Only the
+          sheet needs to move for the keyboard; the dimming never does.
+
+          pointerEvents="none" because nothing here is tappable — the sheet is
+          closed by its X, not by the backdrop — and an absolute layer over the
+          whole window would otherwise sit on top of the sheet's own touches. */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          backgroundColor: colors.overlay,
+          bottom: 0,
+          left: 0,
+          opacity: dismissOnDrag
+            ? offset.interpolate({ extrapolate: "clamp", inputRange: [0, travel], outputRange: [1, 0] })
+            : 1,
+          position: "absolute",
+          right: 0,
+          top: 0,
+        }}
+      />
+
+      <KeyboardAvoidingView
+        // Android drives itself from the measured inset below; handing it
+        // "padding" too would apply the lift twice.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, justifyContent: "flex-end" }}
+      >
         <Animated.View
           style={{
-            backgroundColor: colors.overlay,
-            flex: 1,
-            justifyContent: "flex-end",
-            opacity: dismissOnDrag
-              ? offset.interpolate({ extrapolate: "clamp", inputRange: [0, travel], outputRange: [1, 0] })
-              : 1,
+            transform: [{ translateY: offset }],
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            borderWidth: 1,
+            // Lifted clear of the keyboard rather than padded behind it, so the
+            // sheet's rounded bottom edge stays visible sitting on top of it.
+            marginBottom: keyboardInset,
+            maxHeight: "92%",
+            // The safe-area inset is the nav bar's. With the keyboard up the
+            // keyboard covers it, so applying both leaves a dead strip.
+            paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.sm,
           }}
         >
-          <Animated.View
-            style={{
-              transform: [{ translateY: offset }],
-              backgroundColor: colors.surface,
-              borderColor: colors.borderStrong,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              borderWidth: 1,
-              maxHeight: "92%",
-              paddingBottom: insets.bottom + spacing.md,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.sm,
-            }}
-          >
-            {/* The whole head of the sheet is the handle, not just the 4px bar:
-                a grabber that thin is a target you miss. The close button still
-                works inside it — a Pressable is deeper in the tree, so it is
-                asked about the touch first and wins. */}
-            <View {...(dismissOnDrag ? drag.panHandlers : {})}>
-              <View style={{ alignItems: "center", marginTop: -spacing.xs, paddingBottom: spacing.xs, paddingTop: spacing.xs }}>
-                <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
-              </View>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-                <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
-                  {title}
-                </Text>
-                <AnimatedPressable
-                  accessibilityLabel="Close"
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={dismiss}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.surfaceSunken,
-                    borderRadius: 999,
-                    height: 32,
-                    justifyContent: "center",
-                    width: 32,
-                  }}
-                >
-                  <X color={colors.ink} size={16} strokeWidth={2.4} />
-                </AnimatedPressable>
-              </View>
+          {/* The whole head of the sheet is the handle, not just the 4px bar:
+              a grabber that thin is a target you miss. The close button still
+              works inside it — a Pressable is deeper in the tree, so it is
+              asked about the touch first and wins. */}
+          <View {...(dismissOnDrag ? drag.panHandlers : {})}>
+            <View style={{ alignItems: "center", marginTop: -spacing.xs, paddingBottom: spacing.xs, paddingTop: spacing.xs }}>
+              <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
             </View>
-            <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {children}
-            </ScrollView>
-          </Animated.View>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
+                {title}
+              </Text>
+              <AnimatedPressable
+                accessibilityLabel="Close"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={dismiss}
+                style={{
+                  alignItems: "center",
+                  backgroundColor: colors.surfaceSunken,
+                  borderRadius: 999,
+                  height: 32,
+                  justifyContent: "center",
+                  width: 32,
+                }}
+              >
+                <X color={colors.ink} size={16} strokeWidth={2.4} />
+              </AnimatedPressable>
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {children}
+          </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>

@@ -5,6 +5,5 @@ public enum SharingType {
     DOUBLE,
     TRIPLE,
     FOUR_SHARING,
-    FIVE_SHARING,
     DORMITORY
 }

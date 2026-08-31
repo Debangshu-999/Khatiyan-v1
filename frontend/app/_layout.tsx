@@ -112,6 +112,9 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-room-types" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-add-rooms" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-edit-room" options={{ headerShown: false }} />
         <Stack.Screen name="owner-register-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
         <Stack.Screen name="owner-vacancy-finder" options={{ headerShown: false }} />

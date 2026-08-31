@@ -36,7 +36,7 @@ import {
   type PnlLine,
   type PnlStatement,
 } from "@/store/services/pnl-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const PAGE_SIZE = 20;
@@ -78,7 +78,8 @@ export default function OwnerPnlScreen() {
 
         {!property ? (
           <EmptyState
-            icon={TrendingUp}
+            icon={TrendingUp}
+
             title="No property selected"
             description="Choose an active property from Home before opening the P&L statement."
           />
@@ -213,7 +214,7 @@ function NetHero({ statement }: { statement: PnlStatement }) {
 function MiniStat({ color, label, sub, value }: { color: string; label: string; sub?: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
+    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
       <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
         {label}
       </Text>

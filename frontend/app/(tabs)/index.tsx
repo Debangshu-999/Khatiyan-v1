@@ -5,57 +5,10 @@ import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import {
-  AlertCircle,
-  AlertTriangle,
-  Banknote,
-  BedDouble,
-  BedSingle,
-  Bell,
-  Ban,
-  Building2,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ChevronRight,
-  ClipboardList,
-  Clock,
-  Copy,
-  Compass,
-  DoorClosed,
-  DoorOpen,
-  FileText,
-  Home,
-  KeyRound,
-  Landmark,
-  LocateFixed,
-  LogOut,
-  MapPin,
-  Megaphone,
-  Navigation,
-  PiggyBank,
-  Pin,
-  Receipt,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Settings,
-  ShieldCheck,
-  UserRound,
-  TrendingUp,
-  UserMinus,
-  UserPlus,
-  Users,
-  Wallet,
-  Activity,
-  Radar,
-  Waves,
-  Wrench,
-  X,
-  type LucideProps,
-} from "lucide-react-native";
+import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock, Compass, Copy, DoorClosed, DoorOpen, FileText, Home, KeyRound, Landmark, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
+import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -113,7 +66,7 @@ import { clearActiveAccount } from "@/store/slices/account-slice";
 import { clearSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function HomeScreen() {
@@ -473,7 +426,7 @@ function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owne
   return (
     <GradientCtaCard
       description="Onboard tenants, manage tenancies, billing, notices, concerns and discovery."
-      icon={Building2}
+      icon={PropertyIcon}
       kicker={`${role} workspace`}
       onPress={onPress}
       title="Open workspace"
@@ -694,7 +647,7 @@ function LatestEventsModal({
   const groups = useMemo(() => groupActivityByDay(visible), [visible]);
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         {/* Full screen width, edge to edge: this is a feed, and side gutters
             cost it room without making it easier to read. */}
@@ -933,7 +886,7 @@ function ActivityNoPropertyState() {
           width: 62,
         }}
       >
-        <Building2 color={colors.kicker} size={26} strokeWidth={2} />
+        <PropertyIcon color={colors.kicker} size={26} strokeWidth={2} />
       </View>
       <Text
         style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
@@ -1010,7 +963,7 @@ function TenantHome({
     <>
       <Card>
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <IconBadge icon={Building2} />
+          <IconBadge icon={PropertyIcon} />
           <View style={{ flex: 1, gap: spacing.sm }}>
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
@@ -1221,7 +1174,7 @@ function OwnerHome({
   if (properties.length === 0) {
     return (
       <EmptyState
-        icon={Building2}
+        icon={PropertyIcon}
         title={account === "manager" ? "No assigned properties" : "No property yet"}
         description={
           account === "manager"
@@ -1346,7 +1299,7 @@ function DashboardTab({
             tone="primary"
             value={`${compactMoneyPaise(money.collectedThisMonthPaise)}/${compactMoneyPaise(money.billedThisMonthPaise).replace("₹", "")}`}
           />
-          <DashboardSnapshotBox active={openSnapshot === "property"} icon={DoorOpen} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
+          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyIcon} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
           {/* Spent OVER budget, the same shape as Collection. Spend alone says
               nothing: ₹40,000 is a good month or a disaster depending entirely
@@ -2073,8 +2026,8 @@ function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; prope
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }}>
-              <Megaphone color={colors.ink} size={22} strokeWidth={2.2} />
+            <View style={{ alignItems: "center", borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
+              <Megaphone color={colors.ink} size={30} strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
@@ -2123,8 +2076,8 @@ function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; proper
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }}>
-              <Wallet color={colors.ink} size={22} strokeWidth={2.2} />
+            <View style={{ alignItems: "center", borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
+              <Wallet color={colors.ink} size={30} strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
@@ -2164,7 +2117,7 @@ function istMonthStart() {
 function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: string; label: string; value: string; valueColor?: string; valueSans?: boolean }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
+    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
       <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
         {label}
       </Text>
@@ -2293,10 +2246,8 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.ink,
             borderCurve: "continuous",
             borderRadius: 12,
-            borderWidth: 1,
             height: 38,
             justifyContent: "center",
             width: 38,
@@ -2459,8 +2410,12 @@ function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupa
 
   return (
     <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
-        <View style={{ gap: 2 }}>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
+        {/* Names what the number is about. Three snapshot cards sit in a row on
+            this screen and the figures alone do not say which is the property's
+            and which is the money's. */}
+        <PropertyIcon color={colors.kicker} size={30} />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>
             Occupancy rate
           </Text>
@@ -2592,7 +2547,7 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
           listings.map((property) => (
             <SummaryRow
               key={property.propertyId}
-              icon={Building2}
+              icon={PropertyIcon}
               kicker={property.city}
               title={property.name}
               body={`${property.address}  /  ${property.startingRoomRentPaise ? formatMoneyPaise(property.startingRoomRentPaise) : "Rent on profile"}`}
@@ -2624,11 +2579,11 @@ function NonTenantHome({ onNavigate }: { onNavigate: (href: "/discovery" | "/acc
 
       <Section title="What unlocks after tenancy">
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <ModuleChip icon={Building2} label="Property" />
+          <ModuleChip icon={PropertyIcon} label="Property" />
           <ModuleChip icon={KeyRound} label="Tenancy" />
           <ModuleChip icon={FileText} label="Notices" />
           <ModuleChip icon={AlertCircle} label="Concerns" />
-          <ModuleChip icon={ShieldCheck} label="Property board" />
+          <ModuleChip icon={PropertyIcon} label="Property board" />
         </View>
       </Section>
     </>
@@ -2724,21 +2679,12 @@ function OwnerPropertyPicker({
         {/* Outlined container, ink glyph, no fill — a tinted tile inside an
             ink-bordered card is a box in a box, and a blue glyph on a blue
             ground was the least legible thing on the card. */}
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.ink,
-            borderCurve: "continuous",
-            borderRadius: 12,
-            // Matches the card's hairline. At 1.5 against a 1px card the tile
-            // read as the heavier of the two, which inverts the hierarchy.
-            borderWidth: 1,
-            height: 42,
-            justifyContent: "center",
-            width: 42,
-          }}
-        >
-          <Building2 color={colors.ink} size={20} strokeWidth={2.2} />
+        {/* No box around it. The mark is two buildings already — a frame drew a
+            third, and boxing a glyph inside a card inside a page is one edge
+            too many. Without the border it can take the tile's full width
+            instead of sitting shrunk in the middle of it. */}
+        <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+          <PropertyIcon color={colors.ink} size={34} />
         </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
           {/* Ink, not the usual kicker grey. These two lines now sit on a
@@ -2779,7 +2725,7 @@ function OwnerPropertyPicker({
             // Matches the card it drops out of, which is now a hairline too.
             borderColor: colors.borderStrong,
             borderCurve: "continuous",
-            borderRadius: 16,
+            borderRadius: radii.card,
             borderWidth: 1,
             // No padding, and clip the children: this is what lets a selected
             // row fill the panel corner to corner. Padded rows with their own
@@ -2873,7 +2819,7 @@ function CurrentLocationCard({
             alignItems: "center",
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            borderRadius: 14,
+            borderRadius: radii.card,
             borderWidth: 1,
             height: 44,
             justifyContent: "center",
@@ -2924,8 +2870,6 @@ function IconBadge({ icon: Icon }: { icon: ComponentType<LucideProps> }) {
     <View
       style={{
         alignItems: "center",
-        borderColor: colors.ink,
-        borderWidth: 1,
         borderRadius: 14,
         height: 44,
         justifyContent: "center",

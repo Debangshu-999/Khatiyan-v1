@@ -5,7 +5,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { tenancyStatusLabel, type TenancySummary } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type OwnerTenancyListTab = "active" | "past";
@@ -24,7 +24,7 @@ export function TenancyListTabs({
   ];
 
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderCurve: "continuous", borderRadius: 16, flexDirection: "row", padding: 5 }}>
+    <View style={{ backgroundColor: colors.surfaceSunken, borderCurve: "continuous", borderRadius: radii.card, flexDirection: "row", padding: 5 }}>
       {tabs.map((tab) => {
         const selected = activeTab === tab.value;
         return (
@@ -162,23 +162,20 @@ export function ActiveTenancyCard({
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end", gap: 4 }}>
-                <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]}>
-                  {tenancyStatusLabel(tenancy.status)}
-                </Text>
+                {/* Silent while the agreement is unsigned. "Pending agreement"
+                    and "Agreement unsigned" are the same fact in two voices, and
+                    stacking them made the card look like it was reporting two
+                    different problems. The chip wins because it also says what
+                    to do about it. */}
+                {awaitingAgreement ? null : (
+                  <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]}>
+                    {tenancyStatusLabel(tenancy.status)}
+                  </Text>
+                )}
                 {pastDue ? (
                   <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
                     <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, }}>
                       Past due
-                    </Text>
-                  </View>
-                ) : null}
-                {/* A chip as well as the status line, because the status reads
-                    like every other status and this one is a task: nothing bills
-                    and nobody moves in until it is signed. */}
-                {awaitingAgreement ? (
-                  <View style={{ backgroundColor: colors.warningSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-                    <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 11, }}>
-                      Agreement unsigned
                     </Text>
                   </View>
                 ) : null}
@@ -216,6 +213,25 @@ export function ActiveTenancyCard({
             variant="danger"
           />
         </View>
+
+        {/* Beside the only thing anyone can do about it, rather than up in the
+            header with the reference code. It is a task, not a status: nothing
+            bills and nobody moves in until it is signed. */}
+        <View style={{ alignItems: "flex-start" }}>
+          <View
+            style={{
+              backgroundColor: colors.warningSoft,
+              borderRadius: 999,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 2,
+            }}
+          >
+            <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 11 }}>
+              Agreement unsigned
+            </Text>
+          </View>
+        </View>
+
         <Text style={[type.caption, { color: colors.muted }]}>
           Frees the bed. Nothing has been billed yet.
         </Text>
@@ -280,20 +296,10 @@ export function PastTenancyCard({ roomLabel, tenancy }: { roomLabel: string | nu
 function IconBox({ icon: Icon, muted = false }: { icon: typeof BedDouble; muted?: boolean }) {
   const { colors } = useTheme();
   return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: muted ? colors.surfaceSunken : colors.primarySoft,
-        borderColor: colors.border,
-        borderCurve: "continuous",
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 42,
-        justifyContent: "center",
-        width: 42,
-      }}
-    >
-      <Icon color={muted ? colors.muted : colors.primary} size={20} strokeWidth={2.2} />
+    // No tile. The pale blue fill was the last one of its kind in the app, and
+    // with the border gone the glyph can take the space the box was holding.
+    <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+      <Icon color={muted ? colors.muted : colors.ink} size={30} strokeWidth={1.8} />
     </View>
   );
 }

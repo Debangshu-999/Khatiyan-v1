@@ -30,7 +30,7 @@ import {
 } from "@/store/services/concern-api";
 import { useAppSelector } from "@/store/hooks";
 import { useListPropertyManagersQuery, type PropertyManager } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type DetailMode = "property" | "taken" | "history";
@@ -280,9 +280,9 @@ function AssignConcernModal({
 }) {
   const { colors, type } = useTheme();
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: spacing.md, maxHeight: "78%", padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, maxHeight: "78%", padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: spacing.xxs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>

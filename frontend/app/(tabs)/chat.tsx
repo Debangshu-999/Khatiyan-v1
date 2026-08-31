@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MessageCircle, MessageCirclePlus } from "lucide-react-native";
+import { MessageCircle, MessageCirclePlus, Trash2 } from "lucide-react-native";
 
 /**
  * Clearance for the floating button: the tab bar's own height plus whatever
@@ -18,6 +18,7 @@ import { useAvailableAccounts } from "@/features/account/accounts";
 import { ContactPicker } from "@/features/chat/contact-picker";
 import { TenantPicker } from "@/features/chat/tenant-picker";
 import { ThreadRow } from "@/features/chat/thread-row";
+import { useDeleteThreadSelection } from "@/features/chat/use-delete-thread-selection";
 import { errorMessage } from "@/features/forms/server-error";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
@@ -85,6 +86,7 @@ export default function ChatScreen() {
 // ---------------------------------------------------------------------------
 
 function ManagementChats() {
+  const selection = useDeleteThreadSelection();
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();
   const toast = useToast();
@@ -169,7 +171,7 @@ function ManagementChats() {
 
   if (!property) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.chatSurface}>
         <EmptyState
           description="Choose an active property from Home to see its conversations."
           icon={MessageCircle}
@@ -189,14 +191,19 @@ function ManagementChats() {
         await Promise.all([tenants.refetch(), mine.refetch(), enquiries.refetch()]);
       }}
       safeAreaEdges={["top", "bottom"]}
+      surface={colors.chatSurface}
     >
-      <View style={{ gap: 2 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.3 }}>
-          Chats
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-          {property.name}
-        </Text>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.3 }}>
+            Chats
+          </Text>
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+            {property.name}
+          </Text>
+        </View>
+
+        <DeleteThreadButton selection={selection} />
       </View>
 
       {/* Pills rather than tabs: Enquiries is empty until that module is wired,
@@ -204,16 +211,16 @@ function ManagementChats() {
           unselected pill reads as a place you have not gone. */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
         <SectionPill
-          count={tenants.data?.filter((thread) => thread.unread).length ?? 0}
-          label="Tenants"
-          onPress={() => setSection("TENANTS")}
-          selected={section === "TENANTS"}
-        />
-        <SectionPill
           count={mine.data?.filter((thread) => thread.unread).length ?? 0}
           label="My chats"
           onPress={() => setSection("MINE")}
           selected={section === "MINE"}
+        />
+        <SectionPill
+          count={tenants.data?.filter((thread) => thread.unread).length ?? 0}
+          label="Tenants"
+          onPress={() => setSection("TENANTS")}
+          selected={section === "TENANTS"}
         />
         <SectionPill
           count={enquiries.data?.filter((thread) => thread.unread).length ?? 0}
@@ -238,10 +245,6 @@ function ManagementChats() {
         <View
           style={{
             backgroundColor: colors.surface,
-            // Top only. Every row draws its own rule underneath, so a border
-            // here as well would double the line at the foot of the list.
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
             // Cancels the screen gutter so the rows run edge to edge. A list of
             // conversations is the screen, not a card sitting on it, and a
             // rounded box around it turns each row into an entry in a widget.
@@ -250,7 +253,14 @@ function ManagementChats() {
         >
           {threads.map((thread, at) => (
             <View key={thread.id ?? thread.originId ?? String(at)}>
-              <ThreadRow onPress={() => void openThread(thread)} thread={thread} />
+              <ThreadRow
+                onLongPress={thread.id ? () => selection.select(thread.id!) : undefined}
+                onPress={() =>
+                  selection.selectedId ? selection.clear() : void openThread(thread)
+                }
+                selected={selection.selectedId === thread.id}
+                thread={thread}
+              />
             </View>
           ))}
         </View>
@@ -289,6 +299,7 @@ function ManagementChats() {
           roles={["OWNER", "MANAGER", "TENANT"]}
         />
       ) : null}
+      {selection.dialog}
     </View>
   );
 }
@@ -414,6 +425,7 @@ function SectionPill({
 // ---------------------------------------------------------------------------
 
 function PersonalChats() {
+  const selection = useDeleteThreadSelection();
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();
   const toast = useToast();
@@ -517,10 +529,23 @@ function PersonalChats() {
         await threadsQuery.refetch();
       }}
       safeAreaEdges={["top", "bottom"]}
+      surface={colors.chatSurface}
     >
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.3 }}>
-        Chats
-      </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <Text
+          style={{
+            color: colors.ink,
+            flex: 1,
+            fontFamily: fonts.display,
+            fontSize: 26,
+            letterSpacing: -0.3,
+          }}
+        >
+          Chats
+        </Text>
+
+        <DeleteThreadButton selection={selection} />
+      </View>
 
       {threadsQuery.isLoading ? <SkeletonCard /> : null}
 
@@ -548,7 +573,9 @@ function PersonalChats() {
         >
           {pinned ? (
             <ThreadRow
-              onPress={() => void openPinned()}
+              onLongPress={pinned.id ? () => selection.select(pinned.id!) : undefined}
+              onPress={() => (selection.selectedId ? selection.clear() : void openPinned())}
+              selected={selection.selectedId === pinned.id}
               subtitle="Property management team"
               thread={pinned}
             />
@@ -556,12 +583,19 @@ function PersonalChats() {
           {others.map((thread) => (
             <ThreadRow
               key={thread.id ?? thread.originId}
-              onPress={() =>
-                thread.id &&
-                router.push(
-                  threadRoute(thread.id, thread, thread.origin === "ENQUIRY" ? "Enquiry" : null),
-                )
-              }
+              onLongPress={thread.id ? () => selection.select(thread.id!) : undefined}
+              onPress={() => {
+                if (selection.selectedId) {
+                  selection.clear();
+                  return;
+                }
+                if (thread.id) {
+                  router.push(
+                    threadRoute(thread.id, thread, thread.origin === "ENQUIRY" ? "Enquiry" : null),
+                  );
+                }
+              }}
+              selected={selection.selectedId === thread.id}
               subtitle={thread.origin === "ENQUIRY" ? "Enquiry" : null}
               thread={thread}
             />
@@ -587,6 +621,41 @@ function PersonalChats() {
           title="Message management"
         />
       ) : null}
+      {selection.dialog}
     </View>
+  );
+}
+
+/**
+ * The bin, beside the screen title.
+ *
+ * <p>Present only while a conversation is held. A delete control standing
+ * permanently next to a heading reads as "delete all of this", and there is
+ * nothing on this screen that should offer that.
+ */
+function DeleteThreadButton({
+  selection,
+}: {
+  selection: ReturnType<typeof useDeleteThreadSelection>;
+}) {
+  const { colors } = useTheme();
+
+  if (!selection.selectedId) {
+    return null;
+  }
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Delete conversation"
+      accessibilityRole="button"
+      hitSlop={10}
+      onPress={selection.ask}
+      // Bare, and sitting a little low so it reads against the title's baseline
+      // rather than its ascender. A ring around it looked like a control that is
+      // always there, when it only appears while a row is held.
+      style={{ marginTop: 6, padding: 2 }}
+    >
+      <Trash2 color={colors.danger} size={19} strokeWidth={2.2} />
+    </AnimatedPressable>
   );
 }

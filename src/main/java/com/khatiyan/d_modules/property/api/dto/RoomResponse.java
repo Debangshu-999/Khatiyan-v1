@@ -1,9 +1,11 @@
 package com.khatiyan.d_modules.property.api.dto;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.property.model.Room;
+import com.khatiyan.d_modules.property.model.RoomAmenity;
 import com.khatiyan.d_modules.property.model.RoomConditioning;
 import com.khatiyan.d_modules.property.model.RoomStatus;
 import com.khatiyan.d_modules.property.model.RoomType;
@@ -24,6 +26,16 @@ public record RoomResponse(
     RoomType roomType,
     RoomConditioning conditioning,
     long baseRentPaise,
+    /**
+     * The type this room was cut from, or null for one that predates types.
+     *
+     * <p>The edit form has to open on the type a room already is, and a change
+     * of type there is a recut rather than a field update.
+     */
+    UUID moldId,
+    /** The room's own list, which may have diverged from its type's. */
+    Set<RoomAmenity> amenities,
+    Set<String> customAmenities,
     RoomStatus status,
     boolean active,
     String maintenanceReason,
@@ -55,6 +67,9 @@ public record RoomResponse(
             room.getRoomType(),
             room.getConditioning(),
             room.getBaseRent().paise(),
+            room.getMoldId(),
+            Set.copyOf(room.getAmenities()),
+            Set.copyOf(room.getCustomAmenities()),
             room.getStatus(),
             room.isCurrentlyActive(),
             room.getMaintenanceReason(),

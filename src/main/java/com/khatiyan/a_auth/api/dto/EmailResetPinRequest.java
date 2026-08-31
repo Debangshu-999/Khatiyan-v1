@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record EmailResetPinRequest(
-    @NotBlank @Email @Size(max = 254) String email,
+    @NotBlank @Email(message = "Enter a valid email address") @Size(max = 254) String email,
     @NotBlank @Pattern(regexp = "\\d{6}") String otp,
     @NotBlank @Pattern(regexp = "\\d{6}") String newPin
 ) {}

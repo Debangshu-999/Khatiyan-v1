@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.khatiyan.d_modules.discovery.model.PropertyDiscoveryProfile;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.NoticePeriod;
@@ -85,7 +86,19 @@ public record PropertyDiscoveryDetailResponse(
          * <p>Separate from {@code imageUrls} rather than replacing it: the
          * search cards read that flat list and have nowhere to show a caption.
          */
-        List<PropertyImageResponse> images
+        List<PropertyImageResponse> images,
+        /**
+         * The room types on offer, with what each costs and comes with.
+         *
+         * <p>`availableSharingTypes` above says a property offers doubles; this
+         * says an AC double is eleven thousand a bed and has a geyser. That is
+         * the difference between a listing somebody can browse and one they can
+         * choose from.
+         *
+         * <p>Active types only — a retired one is a type the owner has stopped
+         * offering, and advertising it would be a lie.
+         */
+        List<RoomMoldResponse> roomTypes
 ) {
 
     public static PropertyDiscoveryDetailResponse from(
@@ -99,7 +112,8 @@ public record PropertyDiscoveryDetailResponse(
             String ownerEmail,
             List<PropertyContactResponse> contacts,
             List<String> imageUrls,
-            List<PropertyImageResponse> images) {
+            List<PropertyImageResponse> images,
+            List<RoomMoldResponse> roomTypes) {
         return new PropertyDiscoveryDetailResponse(
                 property.id(),
                 property.ownerId(),
@@ -141,7 +155,8 @@ public record PropertyDiscoveryDetailResponse(
                 profile.isShowManagerContact(),
                 contacts == null ? List.of() : contacts,
                 imageUrls == null ? List.of() : imageUrls,
-                images == null ? List.of() : images);
+                images == null ? List.of() : images,
+                roomTypes == null ? List.of() : roomTypes);
     }
 
     private static boolean hasPositiveDailyRate(Long value) {

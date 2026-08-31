@@ -1,207 +1,130 @@
 package com.khatiyan.d_modules.compliance.service;
 
-import java.text.NumberFormat;
 import java.util.ArrayList;
-import java.util.EnumSet;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 
 import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.compliance.model.AgreementClause;
-import com.khatiyan.d_modules.compliance.model.ClauseKind;
-import com.khatiyan.d_modules.compliance.model.SystemClauseType;
-import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
-import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
-import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
+import com.khatiyan.d_modules.compliance.model.CustomClauseSpec;
+import com.khatiyan.d_modules.compliance.model.MainClauseType;
+import com.khatiyan.d_modules.compliance.model.MiscClauseType;
 
 /**
- * Composes the full per-tenancy clause list from its three sources of truth:
+ * Turns a template and a set of facts into the finished, numbered deed.
  *
- * <ol>
- *   <li><b>Tenancy</b> — {@code RENT} (room selection) and
- *       {@code SECURITY_DEPOSIT} (entered or property default at creation);</li>
- *   <li><b>Property policy</b> — {@code NOTICE_PERIOD}, {@code GRACE_DAYS},
- *       {@code LATE_FEE} (billing), plus {@code DAMAGE_CATALOG} and
- *       {@code EXIT_PREREQUISITES} (the property's exit policies), all owned by
- *       the property module;</li>
- *   <li><b>Compliance settings</b> — the property's default clause set
- *       (validity, permitted deductions) plus custom prose clauses.</li>
- * </ol>
+ * <p>Three jobs and no others: decide which clauses survive, put them in order,
+ * and number them. The words belong to {@link MainClauseTemplates} and
+ * {@link MiscClauseType}; this class never writes prose, which is what keeps
+ * "which clauses appear" reviewable separately from "what they say".
  *
- * <p>System rules are not editable inside an agreement — uniformity comes from
- * deriving them here at assembly time instead of copying editable values.
- *
- * <p>Two exceptions, both applied before assembly by
- * {@code TenancyAgreementService#withTenancyOverrides}: {@code VALIDITY} and
- * {@code ALLOWED_DEDUCTIONS} may be varied per tenancy at onboarding, because a
- * term and what a deposit covers are genuinely negotiated per tenant. Those
- * arrive here already folded into a COPY of the property's defaults, so this
- * class still sees one clause set and the stored property template is never
- * touched. Everything else stays uniform across the property.
- *
- * <p>Custom prose clauses may also vary per tenancy (via {@code customOverrides}).
+ * <p>Order is always: the surviving main run with custom clauses spliced into it,
+ * then the miscellaneous clauses as their own section, numbered from 1 again.
+ * Miscellaneous are never interleaved — a term the owner opted into is not one of
+ * the terms the deed is built from.
  */
 @Component
 public class AgreementAssembler {
 
-    // Clause types never taken from stored compliance settings: everything
-    // derived here from property/tenancy state — the billing-policy rules, the
-    // property exit policies (damage schedule + move-out checklist) — plus
-    // CLEANING_FEE, which was dropped from authoring but old rows may still carry.
-    private static final Set<SystemClauseType> EXCLUDED_SETTINGS_TYPES = EnumSet.of(
-            SystemClauseType.RENT,
-            SystemClauseType.SECURITY_DEPOSIT,
-            SystemClauseType.NOTICE_PERIOD,
-            SystemClauseType.GRACE_DAYS,
-            SystemClauseType.LATE_FEE,
-            SystemClauseType.DAMAGE_CATALOG,
-            SystemClauseType.EXIT_PREREQUISITES,
-            SystemClauseType.CLEANING_FEE);
+    private final MainClauseTemplates templates;
 
-    public List<AgreementClause> assemble(
-            PropertyResponse property,
-            PropertyBillingPolicyResponse billingPolicy,
-            PropertyExitPolicyResponse exitPolicy,
-            long rentAmountPaise,
-            long depositAmountPaise,
-            List<AgreementClause> propertyDefaultClauses,
-            List<AgreementClause> customOverrides) {
+    public AgreementAssembler(MainClauseTemplates templates) {
+        this.templates = templates;
+    }
 
+    /**
+     * The finished deed, as two independently numbered sections.
+     *
+     * <p>The main run — surviving main clauses with custom ones spliced in —
+     * numbers 1..n. The miscellaneous clauses then start again at 1 under their
+     * own heading, as the reference deed does.
+     *
+     * <p>They are a separate section rather than a continuation because they are a
+     * different KIND of term: the main run is what this agreement is built from,
+     * and the miscellaneous clauses are options the owner added on top. Numbering
+     * them 16, 17 would present them as equal parts of the same instrument.
+     *
+     * <p>{@code displayOrder} is therefore the clause's number WITHIN ITS SECTION,
+     * not its position in the document. A reader groups by
+     * {@link AgreementClause#getKind()} and renders each section's own sequence.
+     */
+    public List<AgreementClause> assemble(AgreementTemplate template, DeedFacts facts) {
+        List<AgreementClause> mainRun = surviving(template, facts);
+        List<AgreementClause> ordered = splice(mainRun, template.customClauses());
+
+        // Numbered once, over the finished main run. Numbering as we go would have
+        // to be redone by every splice, and the number a clause carries is the one
+        // printed on the signed document.
+        for (int at = 0; at < ordered.size(); at += 1) {
+            ordered.get(at).setDisplayOrder(at + 1);
+        }
+
+        int miscNumber = 1;
+        for (MiscClauseType misc : template.miscClauses()) {
+            ordered.add(AgreementClause.misc(misc, miscNumber));
+            miscNumber += 1;
+        }
+        return ordered;
+    }
+
+    /**
+     * The main clauses that actually appear.
+     *
+     * <p>Two independent reasons one may not: the owner EXCLUDED it, which is a
+     * stored choice they can undo, or the facts make it VACUOUS — the
+     * deposit-payment clause with no deposit — which is decided here and is not
+     * offered back, because there is nothing to restore.
+     */
+    private List<AgreementClause> surviving(AgreementTemplate template, DeedFacts facts) {
         List<AgreementClause> clauses = new ArrayList<>();
-        int order = 0;
-
-        clauses.add(AgreementClause.system(SystemClauseType.RENT, "Monthly rent",
-                "Monthly rent is " + rupees(rentAmountPaise) + ", payable each billing cycle.",
-                Map.of("amountPaise", rentAmountPaise), order++));
-
-        clauses.add(AgreementClause.system(SystemClauseType.SECURITY_DEPOSIT, "Security deposit",
-                depositAmountPaise > 0
-                        ? "A refundable security deposit of " + rupees(depositAmountPaise) + " is payable at the start of the tenancy."
-                        : "No security deposit is collected for this tenancy.",
-                Map.of("amountPaise", depositAmountPaise), order++));
-
-        // Omitted entirely on a fixed term. Notice exists to warn of a departure
-        // nobody knew about; a fixed term's last day was agreed on day one, so
-        // the system ignores notice for it. Printing the clause anyway would have
-        // the agreement promise something the behaviour contradicts — in the one
-        // document that is meant to record what both sides actually agreed.
-        //
-        // Reads the enum's own label, so it says "one month's notice" rather than
-        // "30 days'" — one month from 15 Jan is 15 Feb, 30 days is 14 Feb, and
-        // the agreement must not promise the wrong one.
-        if (!hasFixedTerm(propertyDefaultClauses)) {
-            clauses.add(AgreementClause.system(SystemClauseType.NOTICE_PERIOD, "Notice period",
-                    "Either party may end this tenancy by giving notice of " + property.noticePeriod().label() + ".",
-                    Map.of("noticePeriod", property.noticePeriod().name()), order++));
-        }
-
-        // The mirror image of the notice clause above: notice and a premature-exit
-        // charge both belong to an open-ended stay, and neither applies to a
-        // fixed term, whose last day was agreed on day one and whose early
-        // departure is priced by the VALIDITY clause instead.
-        if (!hasFixedTerm(propertyDefaultClauses)
-                && property.prematureExitPolicy() != null
-                && !property.prematureExitPolicy().isBlank()) {
-            clauses.add(AgreementClause.system(SystemClauseType.PREMATURE_EXIT, "Leaving without notice",
-                    property.prematureExitPolicy().trim(),
-                    Map.of("policy", property.prematureExitPolicy().trim()), order++));
-        }
-
-        clauses.add(AgreementClause.system(SystemClauseType.GRACE_DAYS, "Rent grace period",
-                billingPolicy.rentGraceDays() > 0
-                        ? "Rent carries a grace period of " + billingPolicy.rentGraceDays()
-                                + " days after the cycle due date."
-                        : "Rent is due on the cycle due date, with no grace period.",
-                Map.of("days", billingPolicy.rentGraceDays()), order++));
-
-        long lateFeePerDayPaise = billingPolicy.rentLateFeePerDayPaise() != null
-                ? billingPolicy.rentLateFeePerDayPaise()
-                : 0L;
-        clauses.add(AgreementClause.system(SystemClauseType.LATE_FEE, "Late fee",
-                lateFeePerDayPaise > 0
-                        ? "A late fee of " + rupees(lateFeePerDayPaise) + " per day applies to rent unpaid after the grace period."
-                        : "No late fee is charged on delayed rent.",
-                Map.of("perDayPaise", lateFeePerDayPaise), order++));
-
-        // Property exit policies — the damage-charge schedule and move-out
-        // checklist, owned by the property so every tenancy reads the same rates.
-        List<Map<String, Object>> damageItems = damageItems(exitPolicy);
-        clauses.add(AgreementClause.system(SystemClauseType.DAMAGE_CATALOG, "Damage charges",
-                damageItems.isEmpty()
-                        ? "No pre-agreed damage charges; any damage charge must be evidenced at move-out."
-                        : "Damage beyond normal wear is charged per the property's damage schedule (" + damageItems.size()
-                                + " item" + (damageItems.size() == 1 ? "" : "s") + ").",
-                Map.of("items", damageItems), order++));
-
-        List<String> checklist = exitPolicy != null && exitPolicy.exitChecklist() != null
-                ? exitPolicy.exitChecklist()
-                : List.of();
-        clauses.add(AgreementClause.system(SystemClauseType.EXIT_PREREQUISITES, "Move-out checklist",
-                checklist.isEmpty()
-                        ? "No exit prerequisites are required before the deposit is settled."
-                        : "Before the deposit is settled: " + String.join(", ", checklist) + ".",
-                Map.of("checklist", checklist), order++));
-
-        // Compliance-owned system rules — uniform per property, never per tenancy.
-        for (AgreementClause clause : nonNull(propertyDefaultClauses)) {
-            if (clause.getKind() == ClauseKind.SYSTEM && !EXCLUDED_SETTINGS_TYPES.contains(clause.getSystemType())) {
-                clauses.add(AgreementClause.system(
-                        clause.getSystemType(), clause.getHeading(), clause.getBody(), clause.getValue(), order++));
+        for (MainClauseType type : MainClauseType.values()) {
+            if (!template.includes(type)) {
+                continue;
             }
+            Optional<AgreementClause> rendered = templates.render(type, facts, 0);
+            rendered.ifPresent(clauses::add);
         }
-
-        // Custom prose — the per-tenancy override when given, else the property set.
-        List<AgreementClause> customSource = customOverrides != null
-                ? customOverrides
-                : nonNull(propertyDefaultClauses).stream().filter(c -> c.getKind() == ClauseKind.CUSTOM).toList();
-        for (AgreementClause clause : customSource) {
-            clauses.add(AgreementClause.custom(clause.getHeading(), clause.getBody(), order++));
-        }
-
         return clauses;
     }
 
     /**
-     * Whether the property's clause set carries a fixed agreement term.
+     * Places each custom clause at its requested position in the main run.
      *
-     * <p>Read off the VALIDITY clause rather than passed in, so the assembler
-     * stays a pure function of the clause sources it already receives. LOCK_IN is
-     * accepted too — agreements signed before the rename keep the old name.
+     * <p>Positions are 1-based against the SURVIVING list and are read against the
+     * list as it was before any splicing — so two custom clauses do not shift each
+     * other, and dropping a main clause cannot orphan one. A position past the end
+     * lands after the whole main run, which is also where a clause written for a
+     * slot that no longer exists ends up rather than being lost.
+     *
+     * <p>Ties keep their stored order: two clauses both asking for position four
+     * appear at four and five, in the order the owner wrote them.
      */
-    private static boolean hasFixedTerm(List<AgreementClause> propertyDefaultClauses) {
-        return nonNull(propertyDefaultClauses).stream()
-                .filter(clause -> clause.getKind() == ClauseKind.SYSTEM)
-                .filter(clause -> clause.getSystemType() == SystemClauseType.VALIDITY
-                        || clause.getSystemType() == SystemClauseType.LOCK_IN)
-                .anyMatch(clause -> {
-                    Map<String, Object> value = clause.getValue();
-                    if (value == null) {
-                        return false;
-                    }
-                    Object months = value.containsKey("validityMonths")
-                            ? value.get("validityMonths")
-                            : value.get("months");
-                    return months instanceof Number number && number.intValue() > 0;
-                });
-    }
+    private List<AgreementClause> splice(List<AgreementClause> mainRun, List<CustomClauseSpec> customClauses) {
+        List<CustomClauseSpec> sorted = new ArrayList<>(customClauses);
+        sorted.sort(Comparator.comparingInt(spec -> Math.max(1, spec.position())));
 
-    private static List<Map<String, Object>> damageItems(PropertyExitPolicyResponse exitPolicy) {
-        if (exitPolicy == null || exitPolicy.damageCharges() == null) {
-            return List.of();
+        List<AgreementClause> result = new ArrayList<>();
+        int nextCustom = 0;
+
+        for (int slot = 1; slot <= mainRun.size(); slot += 1) {
+            while (nextCustom < sorted.size() && Math.max(1, sorted.get(nextCustom).position()) <= slot) {
+                result.add(toClause(sorted.get(nextCustom)));
+                nextCustom += 1;
+            }
+            result.add(mainRun.get(slot - 1));
         }
-        return exitPolicy.damageCharges().stream()
-                .map(charge -> Map.<String, Object>of("name", charge.name(), "chargePaise", charge.chargePaise()))
-                .toList();
+
+        while (nextCustom < sorted.size()) {
+            result.add(toClause(sorted.get(nextCustom)));
+            nextCustom += 1;
+        }
+        return result;
     }
 
-    private static List<AgreementClause> nonNull(List<AgreementClause> clauses) {
-        return clauses != null ? clauses : List.of();
-    }
-
-    private static String rupees(long paise) {
-        return "₹" + NumberFormat.getIntegerInstance(Locale.forLanguageTag("en-IN")).format(paise / 100);
+    private static AgreementClause toClause(CustomClauseSpec spec) {
+        return AgreementClause.custom(spec.heading(), spec.body(), 0);
     }
 }

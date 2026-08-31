@@ -16,6 +16,8 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
+import com.khatiyan.a_auth.model.Gender;
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.audit.BaseEntity;
 
 /**
@@ -46,7 +48,19 @@ public class Tenancy extends BaseEntity {
     @Column(name = "reference_code", nullable = false, length = 40, unique = true)
     private String referenceCode;
 
-    @Column(name = "user_id", nullable = false)
+    /**
+     * The tenant's account, or null on a daily stay recorded as a guest.
+     *
+     * <p>A monthly tenant signs an agreement and uses the app for the length of
+     * the stay, so they always have one. A guest staying a few nights never
+     * signs in, so provisioning an account for them created a login nobody
+     * would use and a person the app would then try to notify. Those stays
+     * carry {@link #guestName} and the fields below it instead.
+     *
+     * <p>Daily tenancies onboarded before that change still have a user here
+     * and still behave as they did.
+     */
+    @Column(name = "user_id")
     private UUID userId;
 
     @Column(name = "property_id", nullable = false)
@@ -124,21 +138,79 @@ public class Tenancy extends BaseEntity {
     @Column(name = "id_checked_at")
     private Instant idCheckedAt;
 
-    /** Records the owner's declaration at onboarding. Never set on the tenant's behalf. */
-    public void confirmIdCheck(UUID actorUserId, Instant at) {
+    /**
+     * Which document was produced, and its last four digits.
+     *
+     * <p>Together with the flag above these are the whole declaration. Stored
+     * here for the operational view; a frozen copy also goes into the
+     * attestation, which is the one that has to stand up.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "id_document_type", length = 24)
+    private IdDocumentType idDocumentType;
+
+    @Column(name = "id_last_four", length = 4)
+    private String idLastFour;
+
+    // The guest register for an account-less daily stay. All set together or
+    // all null — see GuestDetails, which is the only thing that writes them.
+    @Column(name = "guest_name", length = 120)
+    private String guestName;
+
+    @Column(name = "guest_phone", length = 20)
+    private String guestPhone;
+
+    @Column(name = "guest_email")
+    private String guestEmail;
+
+    @Column(name = "guest_address")
+    private String guestAddress;
+
+    @Column(name = "guest_age")
+    private Integer guestAge;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "guest_gender", length = 20)
+    private Gender guestGender;
+
+    /**
+     * Records the owner's declaration at onboarding. Never set on the tenant's behalf.
+     *
+     * <p>All four fields or none. A confirmation without the document that was
+     * checked is the claim V6104's constraint exists to refuse, and writing one
+     * here would only move the failure to the insert.
+     */
+    public void confirmIdCheck(UUID actorUserId, Instant at, IdDocumentType documentType, String lastFour) {
+        if (documentType == null || lastFour == null) {
+            throw new ValidationException("An ID check needs the document type and its last four digits");
+        }
+
         this.idCheckConfirmed = true;
         this.idCheckedByUserId = actorUserId;
         this.idCheckedAt = at;
+        this.idDocumentType = documentType;
+        this.idLastFour = lastFour;
     }
 
     @Builder
     private Tenancy(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
             TenancyBillingType billingType, Long rentAmountPaise, Long depositAmountPaise,
             Long dailyRatePaise, LocalDate startDate,
-            LocalDate plannedEndDate) {
+            LocalDate plannedEndDate, GuestDetails guest) {
+        if (userId == null && guest == null) {
+            throw new ValidationException("A tenancy needs either a tenant account or guest details");
+        }
         this.id = UUID.randomUUID();
         this.referenceCode = referenceCode;
         this.userId = userId;
+        if (guest != null) {
+            this.guestName = guest.name();
+            this.guestPhone = guest.phone();
+            this.guestEmail = guest.email();
+            this.guestAddress = guest.address();
+            this.guestAge = guest.age();
+            this.guestGender = guest.gender();
+        }
         this.propertyId = propertyId;
         this.roomId = roomId;
         this.createdByUserId = createdByUserId;
@@ -203,33 +275,27 @@ public class Tenancy extends BaseEntity {
     }
 
     /**
-     * Creates a temporary daily tenancy. The daily rate is copied from the
-     * property at creation time so later property rate edits do not change this
-     * guest stay.
+     * Creates a daily stay with no account behind it — the standard path now.
+     *
+     * <p>Nothing here provisions a user, so nothing about this stay is visible
+     * to the person occupying the bed: no login, no notifications, no chat
+     * thread, no agreement to accept. The owner raises the bill and marks it
+     * paid, and everything else is handled in person. That is the whole point —
+     * a two-night guest should not have to set up an app to sleep somewhere.
      */
-    public static Tenancy startDaily(UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
-            long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate) {
-        return startDaily(
-                "TEN-LOCAL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
-                userId,
-                propertyId,
-                roomId,
-                createdByUserId,
-                dailyRatePaise,
-                startDate,
-                plannedEndDate);
-    }
-
-    public static Tenancy startDaily(String referenceCode, UUID userId, UUID propertyId, UUID roomId, UUID createdByUserId,
-            long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate) {
+    public static Tenancy startDailyGuest(String referenceCode, UUID propertyId, UUID roomId,
+            UUID createdByUserId, long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate,
+            GuestDetails guest) {
         if (dailyRatePaise <= 0) {
             throw new IllegalArgumentException("Daily rate must be positive");
+        }
+        if (guest == null) {
+            throw new ValidationException("Guest details are required for a daily stay");
         }
         validateDailyStayDates(startDate, plannedEndDate);
 
         return Tenancy.builder()
                 .referenceCode(referenceCode)
-                .userId(userId)
                 .propertyId(propertyId)
                 .roomId(roomId)
                 .createdByUserId(createdByUserId)
@@ -237,7 +303,35 @@ public class Tenancy extends BaseEntity {
                 .dailyRatePaise(dailyRatePaise)
                 .startDate(startDate)
                 .plannedEndDate(plannedEndDate)
+                .guest(guest)
                 .build();
+    }
+
+    /**
+     * Whether anybody can sign in and see this stay.
+     *
+     * <p>False for a guest-recorded daily stay. Callers that notify, message or
+     * serve a tenant-facing view check this rather than null-testing
+     * {@link #getUserId()}, so the reason for skipping reads as the reason it
+     * actually is.
+     */
+    public boolean hasTenantAccount() {
+        return userId != null;
+    }
+
+    /** A guest-recorded stay: no account, details held on the row itself. */
+    public boolean isGuestStay() {
+        return userId == null;
+    }
+
+    /**
+     * The name to print on anything this stay produces.
+     *
+     * <p>Null when an account holds it — the caller resolves that from auth,
+     * which is where a tenant's name can still change.
+     */
+    public String guestDisplayName() {
+        return guestName;
     }
 
     public void end(LocalDate endDate, String reason) {

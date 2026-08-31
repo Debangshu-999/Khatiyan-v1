@@ -12,6 +12,41 @@ export type AuthUser = {
   profileCompleted: boolean;
 };
 
+/**
+ * TRANSGENDER is listed because Indian forms are expected to — NALSA (2014)
+ * requires a third option on official records. UNDECLARED is a deliberate answer
+ * rather than the absence of one: someone who picks it has been asked and
+ * declined, where null means they were never asked.
+ */
+export type Gender = "MALE" | "FEMALE" | "TRANSGENDER" | "OTHER" | "UNDECLARED";
+
+/**
+ * The particulars a deed names a person by.
+ *
+ * <p>`agreementReady` is what the onboarding gate reads: a name, a VERIFIED
+ * email, and a permanent address. Age and gender are excluded — they are
+ * optional on a profile and the deed omits them when absent.
+ */
+export type UserIdentity = {
+  id: string;
+  fullName: string;
+  phone: string;
+  email: string | null;
+  emailVerified: boolean;
+  permanentAddress: string | null;
+  permanentAddressPincode: string | null;
+  dateOfBirth: string | null;
+  gender: Gender | null;
+  agreementReady: boolean;
+};
+
+export type UpdateIdentityBody = {
+  permanentAddress?: string | null;
+  permanentAddressPincode?: string | null;
+  dateOfBirth?: string | null;
+  gender?: Gender | null;
+};
+
 export type TokenResponse = {
   accessToken: string;
   tokenType: "Bearer";
@@ -56,6 +91,24 @@ export const authApi = api.injectEndpoints({
       query: (body) => ({ url: "/api/v1/auth/me", method: "PATCH", body }),
       invalidatesTags: ["Profile"],
     }),
+    /**
+     * The identity details an agreement names this person by.
+     *
+     * <p>A separate read from `/me` on purpose: the user summary is returned
+     * wherever a person is mentioned anywhere in the app, and a permanent address
+     * and a date of birth do not belong in a chat row.
+     */
+    getMyIdentity: builder.query<UserIdentity, void>({
+      query: () => "/api/v1/auth/me/identity",
+      providesTags: ["Profile"],
+    }),
+
+    /** Blanks CLEAR here — this is the person editing their own record. */
+    updateMyIdentity: builder.mutation<UserIdentity, UpdateIdentityBody>({
+      query: (body) => ({ url: "/api/v1/auth/me/identity", method: "PATCH", body }),
+      invalidatesTags: ["Profile"],
+    }),
+
     getEmailRecoveryStatus: builder.query<EmailRecoveryStatus, void>({
       query: () => "/api/v1/auth/me/email",
       providesTags: ["Profile"],
@@ -127,6 +180,12 @@ export const authApi = api.injectEndpoints({
       invalidatesTags: ["Profile"],
     }),
   }),
+  // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
+  // sees endpoints it already registered and logs an error for each one — two
+  // dozen of them behind a red overlay, none of them real. Allowed in dev for
+  // that reason; "throw" in production, where the module runs once and a second
+  // registration really would be a duplicate name.
+  overrideExisting: __DEV__ ? true : "throw",
 });
 
 export const {
@@ -135,6 +194,7 @@ export const {
   useConfirmEmailPinResetMutation,
   useConfirmPinResetMutation,
   useGetEmailRecoveryStatusQuery,
+  useGetMyIdentityQuery,
   useGetProfileQuery,
   useLazyGetProfileQuery,
   useListSessionsQuery,
@@ -148,6 +208,7 @@ export const {
   useRequestPinResetMutation,
   useRevokeSessionMutation,
   useSetPinMutation,
+  useUpdateMyIdentityMutation,
   useUpdateProfileMutation,
   useUpdateRecoveryEmailMutation,
   useVerifyEmailPinResetMutation,

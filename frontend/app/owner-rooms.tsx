@@ -1,13 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 // Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Bed,
+  AirVent,
   BedDouble,
+  Fan,
   CalendarDays,
   ChevronDown,
   ChevronUp,
@@ -18,11 +21,11 @@ import {
   Plus,
   RotateCcw,
   Settings2,
-  Snowflake,
   Trash2,
   X,
 } from "lucide-react-native";
 
+import { PropertyIcon } from "@/components/property-icon";
 import { AlertModal } from "@/components/alert-modal";
 import { SheetShell } from "@/components/sheet-shell";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -55,8 +58,6 @@ import { useAppSelector } from "@/store/hooks";
 import {
   ROOM_CONDITIONINGS,
   ROOM_TYPES,
-  useCreateRoomMutation,
-  useCreateRoomsBulkMutation,
   useDeactivateRoomMutation,
   useListAllPropertyRoomsQuery,
   useListMyPropertiesQuery,
@@ -64,7 +65,6 @@ import {
   useReactivateRoomMutation,
   useUpdateRoomMaintenanceMutation,
   useUpdateRoomMutation,
-  type CreateRoomBulkPayload,
   type CreateRoomPayload,
   type OwnerProperty,
   type OwnerRoom,
@@ -73,7 +73,7 @@ import {
   type RoomType,
 } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type RoomFormState = {
@@ -86,13 +86,11 @@ type RoomFormState = {
   rent: string;
 };
 
-const emptyForm: RoomFormState = { capacity: "1", conditioning: "NON_AC", floor: "", prefix: "", rent: "", roomNumber: "", roomType: "SINGLE" };
 
 // Default bed count implied by a room type. DORMITORY is variable, so it is
 // left out and the existing capacity is kept when that type is chosen.
 const CAPACITY_BY_TYPE: Partial<Record<RoomType, number>> = {
   DOUBLE: 2,
-  FIVE_SHARING: 5,
   FOUR_SHARING: 4,
   SINGLE: 1,
   TRIPLE: 3,
@@ -147,9 +145,17 @@ export default function OwnerRoomsScreen() {
   const [deactivateRoom] = useDeactivateRoomMutation();
   const [reactivateRoom] = useReactivateRoomMutation();
 
-  const [addOpen, setAddOpen] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [editRoom, setEditRoom] = useState<OwnerRoom | null>(null);
+  // Editing opens a screen, so nothing is held here — the room id goes in the
+  // route and the screen reads it from the same list this one does.
+  function openEditRoom(room: OwnerRoom) {
+    if (!selectedProperty) {
+      return;
+    }
+    router.push({
+      params: { propertyId: selectedProperty.id, roomId: room.id },
+      pathname: "/owner-edit-room",
+    });
+  }
   const [statusRoom, setStatusRoom] = useState<OwnerRoom | null>(null);
   const [maintenanceEditRoom, setMaintenanceEditRoom] = useState<OwnerRoom | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OwnerRoom | null>(null);
@@ -229,7 +235,8 @@ export default function OwnerRoomsScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={BedDouble}
+          icon={BedDouble}
+
           title="No active property selected"
           description="Choose the property whose rooms you want to manage from Home."
         />
@@ -247,13 +254,29 @@ export default function OwnerRoomsScreen() {
             <MetricTile label="Occupied / partial" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
           </View>
 
+          {/* Both paths kept. One room is the common act and wants one field;
+              thirty is a different frame of mind and wants a series or a pasted
+              list. They open the same screen in different modes, so the request
+              underneath — and its rules about numbering and clashes — is one. */}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton disabled={!canManageRooms} icon={Plus} label="Add room" onPress={() => setAddOpen(true)} />
+            <ActionButton
+              disabled={!canManageRooms}
+              icon={Plus}
+              label="Add room"
+              onPress={() =>
+                router.push({ params: { propertyId: selectedProperty.id }, pathname: "/owner-add-rooms" })
+              }
+            />
             <ActionButton
               disabled={!canManageRooms}
               icon={Layers}
               label="Bulk add"
-              onPress={() => setBulkOpen(true)}
+              onPress={() =>
+                router.push({
+                  params: { mode: "bulk", propertyId: selectedProperty.id },
+                  pathname: "/owner-add-rooms",
+                })
+              }
               variant="secondary"
             />
           </View>
@@ -262,7 +285,8 @@ export default function OwnerRoomsScreen() {
             <SkeletonCard />
           ) : allRooms.length === 0 ? (
             <EmptyState
-              icon={BedDouble}
+              icon={BedDouble}
+
               title="No rooms yet"
               description="Add rooms one by one, or bulk-create a numbered range."
             />
@@ -270,7 +294,8 @@ export default function OwnerRoomsScreen() {
             <>
               <FloorSelector active={activeFloor} floors={floors} onSelect={setSelectedFloor} />
               {activeFloor != null ? (
-                <Section
+                <Section
+
                   title={activeFloor ? `Floor ${activeFloor}` : "Unassigned"}
                   trailing={
                     <FloorFilters
@@ -300,7 +325,7 @@ export default function OwnerRoomsScreen() {
                             currentUserId && (currentUserId === room.maintenanceMarkedByUserId || currentUserId === ownerId),
                           )}
                           onDelete={() => setPendingDelete(room)}
-                          onEdit={() => setEditRoom(room)}
+                          onEdit={() => openEditRoom(room)}
                           onEditMaintenance={() => setMaintenanceEditRoom(room)}
                           onReactivate={() => setPendingReactivate(room)}
                           onStatus={() => setStatusRoom(room)}
@@ -315,9 +340,6 @@ export default function OwnerRoomsScreen() {
         </>
       ) : null}
 
-      {addOpen && selectedProperty ? <AddRoomModal onClose={() => setAddOpen(false)} propertyId={selectedProperty.id} /> : null}
-      {bulkOpen && selectedProperty ? <BulkRoomModal onClose={() => setBulkOpen(false)} propertyId={selectedProperty.id} /> : null}
-      {editRoom && selectedProperty ? <EditRoomModal onClose={() => setEditRoom(null)} propertyId={selectedProperty.id} room={editRoom} /> : null}
       {statusRoom && selectedProperty ? <StatusModal onClose={() => setStatusRoom(null)} propertyId={selectedProperty.id} room={statusRoom} /> : null}
       {maintenanceEditRoom && selectedProperty ? (
         <EditMaintenanceModal onClose={() => setMaintenanceEditRoom(null)} propertyId={selectedProperty.id} room={maintenanceEditRoom} />
@@ -457,36 +479,54 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-        Floor
-      </Text>
+      {/* The floor you are looking at, stated rather than labelled. "Floor"
+          above a field saying "Ground" was two lines to say one thing; the name
+          takes the weight instead, and what it does — switch — is the button
+          on the right rather than a chevron hanging off the end of a form
+          field. The glyph is the building, not a staircase: this picks WHICH
+          floor of the property, and stairs are the way between them. */}
       <Pressable
+        accessibilityLabel={`Floor ${floorLabel(active)}. Change floor`}
         accessibilityRole="button"
         onPress={() => setOpen(true)}
         style={{
           alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
-          minHeight: 48,
-          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.xs,
         }}
       >
-        <MaterialCommunityIcons color={colors.kicker} name="stairs" size={19} />
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
-          {floorLabel(active)}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
-          {floors.length} floor{floors.length === 1 ? "" : "s"}
-        </Text>
-        <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
+        {/* Unboxed and full size, as on the Home property picker. A ringed
+            glyph drew a circle around a mark that is already two shapes. */}
+        <PropertyIcon color={colors.ink} size={34} />
+
+        <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+            {floorLabel(active)}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {floors.length} floor{floors.length === 1 ? "" : "s"} in this property
+          </Text>
+        </View>
+
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            flexDirection: "row",
+            gap: 4,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 6,
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>Switch</Text>
+          <ChevronDown color={colors.inkSoft} size={14} strokeWidth={2.4} />
+        </View>
       </Pressable>
 
       {open ? (
-        <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible>
+        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
           <Pressable
             onPress={() => setOpen(false)}
             style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
@@ -647,6 +687,9 @@ function RoomCard({
   const { colors, fonts, type } = useTheme();
   const [showInfo, setShowInfo] = useState(false);
   const isAc = room.conditioning === "AC";
+  // Reserved counts: a bed held for an approved room change has somebody
+  // moving into it who has already been told what they are getting.
+  const occupiedOrHeld = room.occupiedCount + room.reservedCount;
   const isDeactivated = !room.active;
   const isMaintenance = room.active && room.status === "MAINTENANCE";
   const statusLabel = isDeactivated ? "Deactivated" : humanizeToken(room.status);
@@ -682,7 +725,12 @@ function RoomCard({
                 <View
                   style={{
                     alignItems: "center",
-                    backgroundColor: isAc ? colors.primarySoft : colors.surfaceSunken,
+                    // One ground for both. A blue-filled AC chip beside a grey
+                    // non-AC one made the variant look like a status; it is a
+                    // fact about the room, and the pair should differ by their
+                    // glyph, not by how loud they are. (Blue as a fill is out
+                    // everywhere in the app regardless.)
+                    backgroundColor: colors.surfaceSunken,
                     borderRadius: 999,
                     flexDirection: "row",
                     gap: 4,
@@ -690,8 +738,14 @@ function RoomCard({
                     paddingVertical: 4,
                   }}
                 >
-                  {isAc ? <Snowflake color={colors.primary} size={13} strokeWidth={2.4} /> : null}
-                  <Text style={[type.caption, { color: isAc ? colors.primaryDeep : colors.muted, fontWeight: "800" }]}>
+                  {/* The same two glyphs the room types use, so a vent and a fan
+                      mean the same thing wherever they appear. */}
+                  {isAc ? (
+                    <AirVent color={colors.inkSoft} size={13} strokeWidth={2.2} />
+                  ) : (
+                    <Fan color={colors.inkSoft} size={13} strokeWidth={2.2} />
+                  )}
+                  <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "800" }]}>
                     {isAc ? "AC" : "Non-AC"}
                   </Text>
                 </View>
@@ -725,16 +779,49 @@ function RoomCard({
             ))}
           </View>
 
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Rent" value={formatMoneyPaise(room.baseRentPaise)} hint="Per bed/month" />
-            <MetricTile label="Vacancy" value={String(room.availableVacancies)} hint={`${room.occupiedCount}/${room.capacity} filled`} tone={room.availableVacancies > 0 ? "primary" : "default"} />
+          {/* One line, not two tiles. Rent and vacancy were a pair of cards
+              stacked under a grid of bed tiles — three boxed things in one
+              card, and the two facts a reader actually scans for were the
+              least legible of them. The price takes the weight it deserves;
+              the vacancy is a pill beside it, green only when there is
+              something to let. */}
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            {/* Two Texts side by side, not a caption nested in a display line.
+                Nested, the small tail sits on the big line's baseline metrics
+                and Android clips its descenders — the same way "per bed /
+                month" was being cut off on the room type card. */}
+            <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, gap: 4 }}>
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.4 }}
+              >
+                {formatMoneyPaise(room.baseRentPaise)}
+              </Text>
+              <Text style={[type.caption, { color: colors.muted }]}>per bed</Text>
+            </View>
+
           </View>
+
+          {/* What the room comes with, at a glance. The list already answers
+              "how full" and "how much"; this is the third question anybody asks
+              about a room and it was only reachable by opening the edit form. */}
+          <RoomAmenityStrip amenities={room.amenities} custom={room.customAmenities} />
         </View>
 
         {isDeactivated ? (
           <View style={{ flexDirection: "row" }}>
             <ActionButton disabled={!canManage} icon={RotateCcw} label="Reactivate" onPress={onReactivate} />
           </View>
+        ) : occupiedOrHeld > 0 ? (
+          // Hidden, not disabled. Every one of these is refused by the server
+          // while somebody is in the room — the number is on their agreement,
+          // the type is what they agreed to rent — so offering them greyed out
+          // would be three controls that can never be pressed. The line says
+          // what would make them available again.
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {occupiedOrHeld} {occupiedOrHeld === 1 ? "bed is" : "beds are"} occupied or reserved. Move or check out
+            the tenants to edit, change status or deactivate this room.
+          </Text>
         ) : (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ActionButton disabled={!canManage} icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
@@ -751,7 +838,7 @@ function RoomCard({
       </View>
 
       {showInfo ? (
-        <Modal animationType="fade" onRequestClose={() => setShowInfo(false)} transparent visible>
+        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setShowInfo(false)} statusBarTranslucent transparent visible>
           <Pressable
             onPress={() => setShowInfo(false)}
             style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
@@ -1074,27 +1161,12 @@ function buildRoomPayload(form: RoomFormState): {
   };
 }
 
-// Reports the outcome of a bulk create: the backend silently skips room numbers
-// that already exist, so diff the requested numbers against what came back.
-function bulkResultMessage(expected: string[], created: OwnerRoom[]): string {
-  const createdSet = new Set(created.map((room) => room.roomNumber));
-  const skipped = expected.filter((number) => !createdSet.has(number));
-  const createdCount = created.length;
-
-  if (skipped.length === 0) {
-    return `All ${createdCount} room${createdCount === 1 ? "" : "s"} created.`;
-  }
-  if (createdCount === 0) {
-    return `No rooms created  -  ${skipped.length} already exist: ${skipped.join(", ")}.`;
-  }
-  return `Created ${createdCount} room${createdCount === 1 ? "" : "s"}. Skipped ${skipped.length} (already exist): ${skipped.join(", ")}.`;
-}
 
 function ModalShell({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
@@ -1124,151 +1196,8 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
   );
 }
 
-function AddRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId: string }) {
-  const { colors, type } = useTheme();
-  const toast = useToast();
-  const [form, setFormState] = useState<RoomFormState>(emptyForm);
-  const setForm = (patch: Partial<RoomFormState>) => setFormState((current) => ({ ...current, ...patch }));
-  const fieldErrors = useFormErrors<RoomField>();
-  const [pendingPayload, setPendingPayload] = useState<CreateRoomPayload | null>(null);
-  const [createRoom, { isLoading }] = useCreateRoomMutation();
 
-  // Validate up front; a valid form opens the confirmation dialog instead of
-  // submitting straight away.
-  function review() {
-    if (isLoading) {
-      return;
-    }
-    const { errors, payload } = buildRoomPayload(form);
-    if (!fieldErrors.validate(errors) || !payload) {
-      return;
-    }
-    setPendingPayload(payload);
-  }
 
-  async function confirm() {
-    if (!pendingPayload) {
-      return;
-    }
-    const payload = pendingPayload;
-    setPendingPayload(null);
-    try {
-      await createRoom({ payload, propertyId }).unwrap();
-      onClose();
-      toast.success(`Room ${payload.roomNumber} created.`);
-    } catch (caught) {
-      // Stay open: the room number is the likely culprit and it is on screen.
-      fieldErrors.failFromServer(errorMessage(caught));
-    }
-  }
-
-  return (
-    <ModalShell onClose={onClose} title="Add room">
-      <RoomScroll>
-        <RoomFieldset errors={fieldErrors.errors} form={form} onClearField={fieldErrors.clearField} setForm={setForm} />
-      </RoomScroll>
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton
-          disabled={isLoading || fieldErrors.blocked}
-          label={isLoading ? "Creating" : "Create room"}
-          onPress={review}
-        />
-      </View>
-
-      {fieldErrors.serverError ? (
-        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
-      ) : null}
-
-      {pendingPayload ? (
-        <ConfirmDialog
-          confirmLabel="Yes, create"
-          message={`Create room ${pendingPayload.roomNumber} on floor ${pendingPayload.floor} at ${formatMoneyPaise(pendingPayload.baseRentPaise)} per bed/month?`}
-          onCancel={() => setPendingPayload(null)}
-          onConfirm={() => void confirm()}
-          title="Create this room?"
-        />
-      ) : null}
-    </ModalShell>
-  );
-}
-
-function EditRoomModal({ onClose, propertyId, room }: { onClose: () => void; propertyId: string; room: OwnerRoom }) {
-  const { colors, type } = useTheme();
-  const [form, setFormState] = useState<RoomFormState>({
-    capacity: String(room.capacity),
-    conditioning: room.conditioning,
-    floor: room.floor ?? "",
-    prefix: "",
-    rent: String(Math.round(room.baseRentPaise / 100)),
-    roomNumber: room.roomNumber,
-    roomType: room.roomType,
-  });
-  const setForm = (patch: Partial<RoomFormState>) => setFormState((current) => ({ ...current, ...patch }));
-  const fieldErrors = useFormErrors<RoomField>();
-  const toast = useToast();
-  const [updateRoom, { isLoading }] = useUpdateRoomMutation();
-
-  // What the room held when the sheet opened, for the no-changes guard.
-  const initial = {
-    capacity: String(room.capacity),
-    conditioning: room.conditioning,
-    floor: room.floor ?? "",
-    rent: String(Math.round(room.baseRentPaise / 100)),
-    roomNumber: room.roomNumber,
-    roomType: room.roomType,
-  };
-
-  async function submit() {
-    if (isLoading) {
-      return;
-    }
-    const { errors, payload } = buildRoomPayload(form);
-    if (!fieldErrors.validate(errors) || !payload) {
-      return;
-    }
-
-    const { prefix: _prefix, ...current } = form;
-    if (isUnchanged(initial, current)) {
-      toast.warning("No changes have been made.");
-      return;
-    }
-
-    try {
-      await updateRoom({ payload, propertyId, roomId: room.id }).unwrap();
-      onClose();
-      toast.success(`Room ${payload.roomNumber} updated.`);
-    } catch (caught) {
-      fieldErrors.failFromServer(errorMessage(caught));
-    }
-  }
-
-  return (
-    <ModalShell onClose={onClose} title={`Edit room ${room.roomNumber}`}>
-      <RoomScroll>
-        <RoomFieldset
-          errors={fieldErrors.errors}
-          form={form}
-          onClearField={fieldErrors.clearField}
-          setForm={setForm}
-          showPrefix={false}
-        />
-      </RoomScroll>
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton
-          disabled={isLoading || fieldErrors.blocked}
-          label={isLoading ? "Saving" : "Save changes"}
-          onPress={() => void submit()}
-        />
-      </View>
-
-      {fieldErrors.serverError ? (
-        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
-      ) : null}
-    </ModalShell>
-  );
-}
-
-type BulkMode = "range" | "custom";
 
 /** What a closed custom-list row shows in place of its form. */
 function customRoomSummary(room: RoomFormState) {
@@ -1283,292 +1212,6 @@ function customRoomSummary(room: RoomFormState) {
     .join(" · ");
 }
 
-function BulkRoomModal({ onClose, propertyId }: { onClose: () => void; propertyId: string }) {
-  const { colors, fonts, type } = useTheme();
-  const [mode, setMode] = useState<BulkMode>("range");
-
-  // Serial-range state.
-  const [prefix, setPrefix] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [form, setFormState] = useState<RoomFormState>(emptyForm);
-  const setForm = (patch: Partial<RoomFormState>) => setFormState((current) => ({ ...current, ...patch }));
-
-  // Custom-list state.
-  const [customRooms, setCustomRooms] = useState<RoomFormState[]>([{ ...emptyForm }]);
-  // One row open at a time. Ten rooms of open form is a wall to scroll past,
-  // and the row being filled loses its own heading somewhere above the fold.
-  // -1 means every row is closed.
-  const [expandedRow, setExpandedRow] = useState(0);
-  const updateCustom = (index: number, patch: Partial<RoomFormState>) =>
-    setCustomRooms((current) => current.map((room, i) => (i === index ? { ...room, ...patch } : room)));
-  const addCustom = () => {
-    // Length before the append, so the new row is the one that opens.
-    setExpandedRow(customRooms.length);
-    setCustomRooms((current) => [...current, { ...emptyForm }]);
-  };
-  const removeCustom = (index: number) => {
-    setCustomRooms((current) => current.filter((_, i) => i !== index));
-    // Row errors are keyed by index, and removing a row shifts every index
-    // after it, so a kept error would then be pointing at the wrong room.
-    setRowErrors({});
-    setExpandedRow((current) => (current === index ? -1 : current > index ? current - 1 : current));
-  };
-
-  const fieldErrors = useFormErrors<RoomField | "range" | "rooms">();
-  // The repeater validates N rooms, so an error has to say WHICH row it means.
-  // A single form-level line naming "Room 3" made the reader count cards.
-  const [rowErrors, setRowErrors] = useState<Record<number, Partial<Record<RoomField, string>>>>({});
-  const [pending, setPending] = useState<{ count: number; expected: string[]; payload: CreateRoomBulkPayload } | null>(null);
-  const toast = useToast();
-  const [createRoomsBulk, { isLoading }] = useCreateRoomsBulkMutation();
-
-  const startNumber = Number(start);
-  const endNumber = Number(end);
-  const rangeCount = Number.isInteger(startNumber) && Number.isInteger(endNumber) && endNumber >= startNumber ? endNumber - startNumber + 1 : 0;
-  const submitLabel = mode === "range" ? `Create ${rangeCount || ""} room${rangeCount === 1 ? "" : "s"}`.trim() : `Create ${customRooms.length} room${customRooms.length === 1 ? "" : "s"}`;
-
-  // Validate and build the request, returning what would be created. Returns
-  // null after surfacing an inline error so the modal stays open to fix it.
-  function prepareRange(): { count: number; expected: string[]; payload: CreateRoomBulkPayload } | null {
-    const capacity = Number(form.capacity);
-    const baseRentPaise = rupeesToPaise(form.rent);
-    const problems = {
-      ...(Number.isInteger(startNumber) && Number.isInteger(endNumber) && endNumber >= startNumber
-        ? {}
-        : { range: "Enter a valid start and end number." }),
-      ...(form.floor.trim() ? {} : { floor: "Enter a floor." }),
-      ...(Number.isInteger(capacity) && capacity >= 1 ? {} : { capacity: "Capacity must be at least 1." }),
-      ...(baseRentPaise == null ? { rent: "Enter a valid base rent." } : {}),
-    };
-    if (!fieldErrors.validate(problems) || baseRentPaise == null) {
-      return null;
-    }
-    const expected: string[] = [];
-    for (let number = startNumber; number <= endNumber; number += 1) {
-      expected.push(`${prefix.trim()}${number}`);
-    }
-    return {
-      count: expected.length,
-      expected,
-      payload: {
-        ranges: [
-          {
-            baseRentPaise,
-            capacity,
-            conditioning: form.conditioning,
-            endNumber,
-            floor: form.floor.trim(),
-            prefix: prefix.trim(),
-            roomType: form.roomType,
-            startNumber,
-          },
-        ],
-      },
-    };
-  }
-
-  function prepareCustom(): { count: number; expected: string[]; payload: CreateRoomBulkPayload } | null {
-    const rooms: CreateRoomPayload[] = [];
-    const foundRowErrors: Record<number, Partial<Record<RoomField, string>>> = {};
-
-    // Every row checked, not just up to the first bad one — otherwise a sheet
-    // of ten rooms is corrected ten submits at a time.
-    customRooms.forEach((room, index) => {
-      const { errors, payload } = buildRoomPayload(room);
-      if (payload) {
-        rooms.push(payload);
-      } else {
-        foundRowErrors[index] = errors;
-      }
-    });
-
-    setRowErrors(foundRowErrors);
-    const badRows = Object.keys(foundRowErrors);
-    if (badRows.length > 0) {
-      // A closed row hides its own errors, so open the first one that failed
-      // rather than blocking submit with nothing visible to fix.
-      setExpandedRow(Number(badRows[0]));
-      return null;
-    }
-    if (rooms.length === 0) {
-      fieldErrors.validate({ rooms: "Add at least one room." });
-      return null;
-    }
-    return { count: rooms.length, expected: rooms.map((room) => room.roomNumber), payload: { rooms } };
-  }
-
-  function review() {
-    if (isLoading) {
-      return;
-    }
-    const prepared = mode === "range" ? prepareRange() : prepareCustom();
-    if (prepared) {
-      setPending(prepared);
-    }
-  }
-
-  async function confirm() {
-    if (!pending) {
-      return;
-    }
-    const { expected, payload } = pending;
-    setPending(null);
-    try {
-      const created = await createRoomsBulk({ payload, propertyId }).unwrap();
-      onClose();
-      toast.success(bulkResultMessage(expected, created));
-    } catch (caught) {
-      fieldErrors.failFromServer(errorMessage(caught) || "Could not create rooms. Please try again.");
-    }
-  }
-
-  return (
-    <ModalShell onClose={onClose} title="Bulk add rooms">
-      <RoomScroll>
-        <View style={{ gap: spacing.xs }}>
-          <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-            Method
-          </Text>
-          <View style={{ flexDirection: "row", gap: spacing.xs }}>
-            <ChoiceButton active={mode === "range"} label="Serial range" onPress={() => setMode("range")} />
-            <ChoiceButton active={mode === "custom"} label="Custom list" onPress={() => setMode("custom")} />
-          </View>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {mode === "range"
-              ? "Generate a numbered range of identical rooms."
-              : "Add a list of rooms, each with its own details."}
-          </Text>
-        </View>
-
-        {mode === "range" ? (
-          <>
-            <FormInput label="Prefix (optional)" onChangeText={setPrefix} placeholder="R, A-..." value={prefix} />
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                <FormInput keyboardType="number-pad" label="Start number" onChangeText={setStart} placeholder="101" value={start} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <FormInput keyboardType="number-pad" label="End number" onChangeText={setEnd} placeholder="110" value={end} />
-              </View>
-            </View>
-            <FormInput label="Floor" onChangeText={(value) => setForm({ floor: value })} placeholder="Ground, 1, 2..." value={form.floor} />
-            <RoomTypePicker onChange={(value) => setForm(roomTypePatch(value))} value={form.roomType} />
-            {form.roomType === "DORMITORY" ? (
-              <FormInput
-                error={fieldErrors.errors.capacity}
-                keyboardType="number-pad"
-                label="Beds in this dormitory"
-                onChangeText={(value) => setForm({ capacity: value })}
-                placeholder="8"
-                value={form.capacity}
-              />
-            ) : null}
-            <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
-            <FormInput keyboardType="decimal-pad" label="Base rent" onChangeText={(value) => setForm({ rent: value })} placeholder="0" prefix="₹" value={form.rent} />
-            {rangeCount > 0 ? (
-              <Text style={[type.caption, { color: colors.primary }]}>
-                Will create {rangeCount} room{rangeCount === 1 ? "" : "s"}{prefix.trim() ? ` (${prefix.trim()}${startNumber}...${prefix.trim()}${endNumber})` : ""}.
-              </Text>
-            ) : null}
-          </>
-        ) : (
-          <>
-            {customRooms.map((room, index) => {
-              const expanded = expandedRow === index;
-              const failed = Boolean(rowErrors[index]);
-              return (
-                <View
-                  key={index}
-                  style={{
-                    borderColor: failed && !expanded ? colors.danger : colors.border,
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    gap: expanded ? spacing.md : 0,
-                    padding: spacing.md,
-                  }}
-                >
-                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded }}
-                      onPress={() => setExpandedRow(expanded ? -1 : index)}
-                      style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm }}
-                    >
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16, letterSpacing: -0.2 }}>
-                          Room {index + 1}
-                        </Text>
-                        {/* A closed row has to be identifiable without opening
-                            it, so the summary stands in for the form. */}
-                        {expanded ? null : (
-                          <Text numberOfLines={1} style={[type.caption, { color: failed ? colors.danger : colors.muted }]}>
-                            {failed ? "Needs attention" : customRoomSummary(room)}
-                          </Text>
-                        )}
-                      </View>
-                      {expanded ? (
-                        <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
-                      ) : (
-                        <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
-                      )}
-                    </Pressable>
-                    {customRooms.length > 1 ? (
-                      <IconButton accessibilityLabel={`Remove room ${index + 1}`} icon={Trash2} onPress={() => removeCustom(index)} />
-                    ) : null}
-                  </View>
-                  {expanded ? (
-                    <RoomFieldset
-                      errors={rowErrors[index]}
-                      form={room}
-                      onClearField={(field) =>
-                        setRowErrors((current) => {
-                          if (!current[index]?.[field]) {
-                            return current;
-                          }
-                          const next = { ...current, [index]: { ...current[index] } };
-                          delete next[index][field];
-                          return next;
-                        })
-                      }
-                      setForm={(patch) => updateCustom(index, patch)}
-                    />
-                  ) : null}
-                </View>
-              );
-            })}
-            <ActionButton icon={Plus} label="Add another room" onPress={addCustom} variant="secondary" />
-          </>
-        )}
-
-        {/* Range bounds and "add at least one room" have no single input to sit
-            under, so they stay here — beneath the controls they describe. */}
-        <FieldError message={fieldErrors.errors.range ?? fieldErrors.errors.rooms} />
-      </RoomScroll>
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton
-          disabled={isLoading || fieldErrors.blocked || Object.keys(rowErrors).length > 0}
-          label={isLoading ? "Creating" : submitLabel}
-          onPress={review}
-        />
-      </View>
-
-      {fieldErrors.serverError ? (
-        <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} />
-      ) : null}
-
-      {pending ? (
-        <ConfirmDialog
-          confirmLabel="Yes, create"
-          message={`Create ${pending.count} room${pending.count === 1 ? "" : "s"}? Room numbers that already exist will be skipped.`}
-          onCancel={() => setPending(null)}
-          onConfirm={() => void confirm()}
-          title="Create these rooms?"
-        />
-      ) : null}
-    </ModalShell>
-  );
-}
 
 function StatusModal({ onClose, propertyId, room }: { onClose: () => void; propertyId: string; room: OwnerRoom }) {
   const { colors, type } = useTheme();
@@ -1630,7 +1273,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
             style={{
               backgroundColor: colors.surfaceSunken,
               borderColor: colors.danger,
-              borderRadius: 12,
+              borderRadius: radii.card,
               borderWidth: 1,
               gap: spacing.xs,
               padding: spacing.md,

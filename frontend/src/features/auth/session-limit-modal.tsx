@@ -37,7 +37,7 @@ export function SessionLimitModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",

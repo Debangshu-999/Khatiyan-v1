@@ -10,6 +10,7 @@ import { useTheme } from "@/theme/use-theme";
  * by the backend {@link import("@/store/pagination").Page} flags.
  */
 export function PaginationBar({
+  compact,
   hasNext,
   hasPrevious,
   onNext,
@@ -18,6 +19,14 @@ export function PaginationBar({
   totalElements,
   totalPages,
 }: {
+  /**
+   * Just "3 / 12", with no word "Page" and no running total.
+   *
+   * <p>For a pager that steps through single items rather than pages of a list.
+   * "Page 3 of 12" over "47 total" is describing a list, and reads as a
+   * miscount when each step shows exactly one thing.
+   */
+  compact?: boolean;
   hasNext: boolean;
   hasPrevious: boolean;
   onNext: () => void;
@@ -34,11 +43,13 @@ export function PaginationBar({
       <PagerButton disabled={!hasPrevious} icon={ChevronLeft} label="Prev" onPress={onPrevious} />
       <View style={{ alignItems: "center", gap: 1 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
-          Page {currentPage} of {Math.max(totalPages, 1)}
+          {compact ? `${currentPage} / ${Math.max(totalPages, 1)}` : `Page ${currentPage} of ${Math.max(totalPages, 1)}`}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
-          {totalElements} total
-        </Text>
+        {compact ? null : (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {totalElements} total
+          </Text>
+        )}
       </View>
       <PagerButton disabled={!hasNext} icon={ChevronRight} iconTrailing label="Next" onPress={onNext} />
     </View>

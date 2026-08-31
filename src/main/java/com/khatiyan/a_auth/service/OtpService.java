@@ -1,5 +1,6 @@
 package com.khatiyan.a_auth.service;
 
+import java.util.Optional;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -9,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.exception.TooManyRequestsException;
 import com.khatiyan.a_auth.model.OtpDeliveryChannel;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.model.OtpRequest;
@@ -62,7 +64,12 @@ public class OtpService {
         try {
             long requestCount = valkeyOtpStore.incrementRequestCount(phone, RATE_LIMIT_WINDOW);
             if (requestCount > MAX_RECENT_REQUESTS) {
-                throw new ValidationException("Too many OTP requests. Please try again later");
+                // With the remaining seconds, so the screen can count down and
+                // re-enable itself. "Try again later" leaves somebody tapping a
+                // button to discover whether later has arrived.
+                throw new TooManyRequestsException(
+                        "Too many requests",
+                        valkeyOtpStore.requestWindowRemainingSeconds(phone));
             }
 
             valkeyOtpStore.saveOtp(phone, purpose, otpHash, now, OTP_TTL);
@@ -211,7 +218,10 @@ public class OtpService {
         long recentPhoneOtpCount = otpRepository.countByPhoneAndCreatedAtAfter(phone, since);
 
         if (recentPhoneOtpCount >= MAX_RECENT_REQUESTS) {
-            throw new ValidationException("Too many OTP requests. Please try again later");
+            throw new TooManyRequestsException(
+                    "Too many requests",
+                    secondsUntilWindowFrees(
+                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, since), now));
         }
 
         if (requestIpAddress == null || requestIpAddress.isBlank()) {
@@ -220,8 +230,27 @@ public class OtpService {
 
         long recentIpOtpCount = otpRepository.countByRequestIpAddressAndCreatedAtAfter(requestIpAddress, since);
         if (recentIpOtpCount >= MAX_RECENT_IP_REQUESTS) {
-            throw new ValidationException("Too many OTP requests from this device. Please try again later");
+            throw new TooManyRequestsException(
+                    "Too many requests from this device",
+                    secondsUntilWindowFrees(
+                            otpRepository.findFirstByRequestIpAddressAndCreatedAtAfterOrderByCreatedAtAsc(
+                                    requestIpAddress, since),
+                            now));
         }
+    }
+
+    /**
+     * How long until the oldest request in the window falls out of it.
+     *
+     * <p>Falls back to the whole window when the row cannot be found, which
+     * over-states the wait rather than under-stating it — a screen that
+     * re-enables early sends the caller into a second refusal.
+     */
+    private static long secondsUntilWindowFrees(Optional<OtpRequest> oldest, Instant now) {
+        return oldest
+                .map(request -> Duration.between(now, request.getCreatedAt().plus(RATE_LIMIT_WINDOW)).toSeconds())
+                .filter(seconds -> seconds > 0)
+                .orElse(RATE_LIMIT_WINDOW.toSeconds());
     }
 
     private void recordDatabaseFailedAttempt(String phone, OtpPurpose purpose) {

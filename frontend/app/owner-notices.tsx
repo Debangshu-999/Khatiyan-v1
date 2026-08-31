@@ -50,7 +50,7 @@ import {
   useUpdateRecurringNoticeMutation,
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type NoticeView = "normal" | "recurring";
@@ -155,7 +155,8 @@ export default function OwnerNoticesScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          description="Notices are scoped to the active owner property."
+          description="Notices are scoped to the active owner property."
+
           icon={Megaphone}
           title="No property selected"
         />
@@ -198,7 +199,8 @@ export default function OwnerNoticesScreen() {
                 ))
               ) : (
                 <EmptyState
-                  description="Recurring notice schedules will appear here."
+                  description="Recurring notice schedules will appear here."
+
                   icon={CalendarClock}
                   title="No recurring notices"
                 />
@@ -218,7 +220,8 @@ export default function OwnerNoticesScreen() {
               ))
             ) : (
               <EmptyState
-                description="Published property notices will appear here."
+                description="Published property notices will appear here."
+
                 icon={Megaphone}
                 title="No notices found"
               />
@@ -394,7 +397,7 @@ function DateTimeField({
       style={{
         backgroundColor: colors.surfaceRaised,
         borderColor: colors.border,
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,

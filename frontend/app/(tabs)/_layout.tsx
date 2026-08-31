@@ -1,8 +1,9 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type ComponentType, type ReactNode } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, Pressable, Text, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Bell, Building2, Compass, Home, KeyRound, MessageCircle, ShieldCheck, UserRound } from "lucide-react-native";
+import { Bell, Compass, Home, KeyRound, MessageCircle, ShieldCheck, UserRound, Wrench, type LucideProps } from "lucide-react-native";
+
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
@@ -69,7 +70,9 @@ function TabIcon({
   // Expo Router types this as ColorValue, which is wider than a hex string.
   color: ColorValue;
   focused: boolean;
-  icon: typeof Home;
+  // Any icon-shaped component, not one specific lucide export: the property
+  // tab draws its own SVG, which is a plain function component.
+  icon: ComponentType<LucideProps>;
 }) {
   const { colors } = useTheme();
 
@@ -366,12 +369,17 @@ export default function TabLayout() {
         name="owner"
         options={{
           headerShown: false,
-          title: isManagerAccount ? "Manager" : "Owner",
-          tabBarLabel: isManagerAccount ? "MANAGER" : "OWNER",
+          // Named for the job, not the role. "Owner" and "Manager" told you
+          // which account you were in — which the account switcher already
+          // says — where every other tab is named for what is behind it.
+          title: "Manage",
+          tabBarLabel: "MANAGE",
           href: showOwnerTab ? undefined : null,
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon color={color} focused={focused} icon={isManagerAccount ? ShieldCheck : Building2} />
-          ),
+          // A spanner, not the property mark. Every other tab here is a verb —
+          // what you go there to do — and the property glyph names a THING,
+          // which is why it belongs on the selector and the module headers
+          // rather than in the navigation.
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Wrench} />,
         }}
       />
       {/* Off the tab bar. Notifications open from the bell on Home, which is

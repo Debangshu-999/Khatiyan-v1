@@ -70,6 +70,12 @@ public class BillingNotificationEventListener {
     }
 
     private boolean shouldNotifyTenant(BillingLineItemNotificationEvent event) {
+        // A guest stay has no account to notify. Checked here rather than at the
+        // top of the listener so every reason to stay quiet reads in one place.
+        if (event.tenantUserId() == null) {
+            return false;
+        }
+
         return event.type() == BillingCycleLineItemType.EXTRA_CHARGE
                 || event.type() == BillingCycleLineItemType.DISCOUNT
                 || event.type() == BillingCycleLineItemType.LATE_FEE;

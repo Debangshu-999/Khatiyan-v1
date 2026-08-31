@@ -30,6 +30,7 @@ import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.service.PropertyService;
+import com.khatiyan.d_modules.property.service.RoomMoldService;
 import com.khatiyan.d_modules.property.service.RoomService;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,11 +48,15 @@ class PropertyModuleTest {
     @Mock
     private ManagerAccessPolicy managerAccessPolicy;
 
+    @Mock
+    private RoomMoldService roomMoldService;
+
     private PropertyModule propertyModule;
 
     @BeforeEach
     void setUp() {
-        propertyModule = new PropertyModule(roomService, propertyService, propertyManagerService, managerAccessPolicy);
+        propertyModule = new PropertyModule(
+                roomService, propertyService, propertyManagerService, managerAccessPolicy, roomMoldService);
     }
 
     @Test
@@ -149,6 +154,9 @@ class PropertyModuleTest {
                 RoomType.DOUBLE,
                 RoomConditioning.NON_AC,
                 12_000_00,
+                null,
+                Set.of(),
+                Set.of(),
                 RoomStatus.VACANT,
                 true,
                 null,

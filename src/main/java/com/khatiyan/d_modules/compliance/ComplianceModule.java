@@ -5,12 +5,19 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.compliance.api.dto.AcceptAgreementRequest;
+import com.khatiyan.d_modules.compliance.api.dto.AgreementDeedResponse;
+import com.khatiyan.d_modules.compliance.api.dto.AgreementPreviewQuery;
+import com.khatiyan.d_modules.compliance.api.dto.AgreementSigningChallengeResponse;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementResponse;
+import com.khatiyan.d_modules.compliance.api.dto.OnboardingReadinessResponse;
 import com.khatiyan.d_modules.compliance.api.dto.PropertyAgreementSettingsResponse;
 import com.khatiyan.d_modules.compliance.api.dto.TenancyAgreementResponse;
 import com.khatiyan.d_modules.compliance.api.dto.UpdateAgreementCustomClausesRequest;
 import com.khatiyan.d_modules.compliance.model.AgreementClause;
+import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
+import com.khatiyan.d_modules.compliance.model.PropertyAgreementSettings;
 import com.khatiyan.d_modules.compliance.service.AgreementService;
 import com.khatiyan.d_modules.compliance.service.TenancyAgreementService;
 
@@ -34,27 +41,41 @@ public class ComplianceModule {
 
     // ---- Property agreement settings ------------------------------------
 
+    /**
+     * Composed from both services rather than one.
+     *
+     * <p>{@code AgreementService} owns persistence and knows nothing of property
+     * policy; rendering the deed needs the property, its billing rules and its
+     * exit policies. Giving the settings service those dependencies would have
+     * made it a second assembler.
+     */
     public PropertyAgreementSettingsResponse getPropertyAgreementSettings(UUID actorUserId, UUID propertyId) {
-        return PropertyAgreementSettingsResponse.from(
-                agreementService.getOrSeedPropertySettings(actorUserId, propertyId));
+        PropertyAgreementSettings settings = agreementService.getOrSeedPropertySettings(actorUserId, propertyId);
+        return PropertyAgreementSettingsResponse.of(settings, tenancyAgreementService.previewTemplate(settings));
     }
 
     public PropertyAgreementSettingsResponse updatePropertyAgreementSettings(
-            UUID actorUserId, UUID propertyId, List<AgreementClause> defaultClauses) {
-        return PropertyAgreementSettingsResponse.from(
-                agreementService.updatePropertySettings(actorUserId, propertyId, defaultClauses));
+            UUID actorUserId, UUID propertyId, AgreementTemplate template) {
+        PropertyAgreementSettings settings =
+                agreementService.updatePropertySettings(actorUserId, propertyId, template);
+        return PropertyAgreementSettingsResponse.of(settings, tenancyAgreementService.previewTemplate(settings));
     }
 
     // ---- Per-tenancy agreements ------------------------------------------
 
-    public List<AgreementClause> previewAgreement(
-            UUID actorUserId, UUID propertyId, Long rentAmountPaise, Long depositAmountPaise) {
-        return tenancyAgreementService.preview(actorUserId, propertyId, rentAmountPaise, depositAmountPaise);
+    public AgreementDeedResponse previewAgreement(UUID actorUserId, AgreementPreviewQuery query) {
+        return tenancyAgreementService.preview(actorUserId, query);
+    }
+
+    /** Whether a tenant can be onboarded here yet — read by the screen's gate. */
+    public OnboardingReadinessResponse onboardingReadiness(UUID actorUserId, UUID propertyId) {
+        return tenancyAgreementService.onboardingReadiness(actorUserId, propertyId);
     }
 
     public OnboardTenancyWithAgreementResponse onboardTenancyWithAgreement(
-            UUID actorUserId, OnboardTenancyWithAgreementRequest request) {
-        TenancyAgreementService.OnboardResult result = tenancyAgreementService.onboardWithAgreement(actorUserId, request);
+            UUID actorUserId, OnboardTenancyWithAgreementRequest request, String clientIp, UUID sessionJti) {
+        TenancyAgreementService.OnboardResult result =
+                tenancyAgreementService.onboardWithAgreement(actorUserId, request, clientIp, sessionJti);
         return new OnboardTenancyWithAgreementResponse(
                 result.tenantAccountCreated(),
                 result.tenancy(),
@@ -66,18 +87,25 @@ public class ComplianceModule {
                 tenancyAgreementService.getForManagedTenancy(actorUserId, tenancyId));
     }
 
-    public TenancyAgreementResponse updateTenancyAgreementCustomClauses(
+    public TenancyAgreementResponse updateTenancyAgreementTemplate(
             UUID actorUserId, UUID tenancyId, UpdateAgreementCustomClausesRequest request) {
         return TenancyAgreementResponse.from(
-                tenancyAgreementService.updateCustomClauses(actorUserId, tenancyId, request.customClauses()));
+                tenancyAgreementService.updateTemplate(actorUserId, tenancyId, request.template()));
     }
 
     public TenancyAgreementResponse getMyAgreement(UUID tenantUserId) {
         return TenancyAgreementResponse.from(tenancyAgreementService.getMyAgreement(tenantUserId));
     }
 
-    public TenancyAgreementResponse acceptMyAgreement(UUID tenantUserId) {
-        return TenancyAgreementResponse.from(tenancyAgreementService.accept(tenantUserId));
+    /** Sends the signing code and returns what is being signed. */
+    public AgreementSigningChallengeResponse startAgreementSigning(UUID tenantUserId, String clientIp) {
+        return tenancyAgreementService.startSigning(tenantUserId, clientIp);
+    }
+
+    public TenancyAgreementResponse acceptMyAgreement(
+            UUID tenantUserId, AcceptAgreementRequest request, String clientIp, UUID sessionJti) {
+        return TenancyAgreementResponse.from(
+                tenancyAgreementService.accept(tenantUserId, request, clientIp, sessionJti));
     }
 
     public void declineMyAgreement(UUID tenantUserId) {

@@ -1,7 +1,9 @@
 import type { ComponentType } from "react";
 
 import type { ManagerResource } from "@/store/services/property-api";
-import { AlertCircle, Banknote, BriefcaseBusiness, Megaphone, UsersRound, Wrench, type LucideProps } from "lucide-react-native";
+import { AlertCircle, Banknote, BriefcaseBusiness, Megaphone, UsersRound, type LucideProps } from "lucide-react-native";
+
+import { PropertyIcon } from "@/components/property-icon";
 
 export type OwnerModuleKey =
   | "tenancy"
@@ -57,7 +59,10 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     description: "Property settings, room inventory (single & bulk), facilities and board.",
-    icon: Wrench,
+    // The property mark, not a spanner. A spanner says "settings", which is one
+    // of four things behind this tile — and it is now the Manage tab's own
+    // icon, so the module and the tab it lives in were wearing the same glyph.
+    icon: PropertyIcon,
     key: "property",
     resources: ["PROPERTY_SETTINGS", "ROOMS", "PROPERTY_BOARD", "NEARBY_PLACES"],
     route: "/owner-property",
