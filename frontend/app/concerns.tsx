@@ -18,6 +18,8 @@ import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/s
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
 export default function ConcernsScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{ createdConcern?: string }>();
@@ -47,7 +49,6 @@ export default function ConcernsScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView>
         <ScreenHeader
-          eyebrow="Tenant workspace"
           title="Concerns,"
           italicTail="tracked."
           subtitle="Current concerns, history and concern actions for your active tenancy."
@@ -71,7 +72,8 @@ export default function ConcernsScreen() {
               <ConcernOverviewCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
             ))
           ) : (
-            <EmptyState
+            <EmptyState
+
               title="No open concerns"
               description="New concerns and in-progress issues will appear here."
             />
@@ -89,7 +91,7 @@ export default function ConcernsScreen() {
               ))
           ) : (
             <EmptyState
-              icon={CheckCircle2}
+              artwork={CONCERN_EMPTY_ILLUSTRATION}
               title="No concern history"
               description="Resolved or closed concerns will be kept here for reference."
             />

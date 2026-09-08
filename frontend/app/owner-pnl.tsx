@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ActivityIndicator, Linking, Platform, Text, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Platform, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { Download, FileText, Plus, Receipt, TrendingUp, Undo2, Wallet } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ArrowLeft, ArrowRight, ChartNoAxesCombined, Download, FileText, Plus, Receipt, ReceiptIndianRupee, Scale, TrendingUp, Undo2, Wallet, WalletCards } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -36,14 +37,20 @@ import {
   type PnlLine,
   type PnlStatement,
 } from "@/store/services/pnl-api";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_EXPENSE_ILLUSTRATION = require("../assets/workspace/No-Expense_512x512.png");
+
 const PAGE_SIZE = 20;
+const PNL_HEADER_ILLUSTRATION = require("../assets/workspace/pnl-header.png");
+const PNL_PROFIT_ILLUSTRATION = require("../assets/workspace/pnl-profit.png");
+const PNL_LOSS_ILLUSTRATION = require("../assets/workspace/pnl-loss.png");
 
 export default function OwnerPnlScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
+  const { colors } = useTheme();
   // The report export fails outside any form — a modal is the only place for it.
   const reportErrors = useFormErrors<never>();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -61,19 +68,57 @@ export default function OwnerPnlScreen() {
   const trendQuery = useGetPnlTrendQuery({ propertyId, month, months: 6 }, { skip });
   const incomeQuery = useListIncomeQuery({ propertyId, month, page, size: PAGE_SIZE }, { skip });
 
+  /**
+   * A reversal folded into the row it undoes, so the pair reads as one entry
+   * rather than two cards saying opposite things — the expense ledger's own
+   * treatment, which this list was missing.
+   *
+   * <p>Only when BOTH are on this page. The ledger is paginated and a correction
+   * can land on a different page from the entry it corrects — folding across
+   * that boundary would silently drop the reversal from the list entirely, which
+   * is worse than showing it on its own.
+   */
+  const incomeRows = useMemo(() => {
+    const items = incomeQuery.data?.items ?? [];
+    const onThisPage = new Set(items.map((item) => item.id));
+    const foldable = (item: IncomeEntry) =>
+      item.entryType === "REVERSAL" && item.reversesIncomeId != null && onThisPage.has(item.reversesIncomeId);
+
+    const reversalByOriginal = new Map<string, IncomeEntry>();
+    items.filter(foldable).forEach((item) => reversalByOriginal.set(item.reversesIncomeId!, item));
+
+    return items
+      .filter((item) => !foldable(item))
+      .map((entry) => ({ entry, reversal: reversalByOriginal.get(entry.id) }));
+  }, [incomeQuery.data?.items]);
+
   const statement = statementQuery.data;
   const trend = trendQuery.data;
   const incomePage = incomeQuery.data;
 
   return (
     <>
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+      <ScreenScrollView
+        background={
+          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+            <LinearGradient
+              colors={[colors.primarySoft, colors.surface]}
+              end={{ x: 0.5, y: 1 }}
+              locations={[0, 1]}
+              start={{ x: 0.5, y: 0 }}
+              style={{ height: 230 }}
+            />
+          </View>
+        }
+        contentContainerStyle={{ paddingTop: spacing.xs }}
+        safeAreaEdges={["top", "bottom"]}
+        surface={colors.surface}
+      >
         <ScreenHeader
-          onBack={() => router.back()}
-          eyebrow="Owner tool"
-          title="Profit"
+          artwork={PNL_HEADER_ILLUSTRATION}
           italicTail="& loss."
           subtitle={property ? `Income, expenses and net for ${property.name}.` : "Select a property from Home to view P&L."}
+          title="Profit"
         />
 
         {!property ? (
@@ -99,13 +144,11 @@ export default function OwnerPnlScreen() {
                   </Section>
                 ) : null}
 
-                <Section title="P&L tools">
-                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <ToolBox icon={Plus} label="Add income" onPress={() => setSheet("add-income")} />
-                    <ToolBox icon={FileText} label="Summary report" onPress={() => setSheet("report")} />
-                    <ToolBox icon={Receipt} label="View bills" onPress={() => router.push("/owner-billing")} />
-                  </View>
-                </Section>
+                <PnlToolsGrid
+                  onAddIncome={() => setSheet("add-income")}
+                  onOpenBills={() => router.push("/owner-billing")}
+                  onOpenReport={() => setSheet("report")}
+                />
 
                 <Breakdown
                   accent
@@ -130,12 +173,17 @@ export default function OwnerPnlScreen() {
                   {incomeQuery.isFetching && !incomePage ? <SkeletonList rows={3} /> : null}
 
                   {incomePage && incomePage.items.length === 0 ? (
-                    <EmptyState icon={Wallet} title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
+                    <EmptyState artwork={NO_EXPENSE_ILLUSTRATION} title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
                   ) : null}
 
                   <View style={{ gap: spacing.sm }}>
-                    {incomePage?.items.map((entry) => (
-                      <IncomeRow entry={entry} key={entry.id} onReverse={() => setReverseTarget(entry)} />
+                    {incomeRows.map(({ entry, reversal }) => (
+                      <IncomeRow
+                        entry={entry}
+                        key={entry.id}
+                        onReverse={() => setReverseTarget(entry)}
+                        reversal={reversal}
+                      />
                     ))}
                   </View>
 
@@ -189,20 +237,56 @@ function NetHero({ statement }: { statement: PnlStatement }) {
   return (
     <Card>
       <View style={{ gap: spacing.md }}>
-        <View style={{ gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            {profit ? "Net profit" : "Net loss"}
-          </Text>
-          <MoneyText animate color={accent} paise={Math.abs(statement.netPaise)} size={32} weight="700" />
-          <Text style={[type.caption, { color: colors.muted }]}>
-            {profit ? "What you kept after expenses this month" : "You spent more than you earned this month"}
-          </Text>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 104 }}>
+          <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
+            <Text style={[type.eyebrow, { color: accent }]}>
+              {profit ? "Net profit" : "Net loss"}
+            </Text>
+            <MoneyText animate color={accent} paise={Math.abs(statement.netPaise)} size={36} weight="700" />
+            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+              {profit ? "What you kept after expenses this month" : "What you lost after expenses this month"}
+            </Text>
+          </View>
+
+          <Image
+            accessibilityIgnoresInvertColors
+            accessible={false}
+            resizeMode="contain"
+            source={profit ? PNL_PROFIT_ILLUSTRATION : PNL_LOSS_ILLUSTRATION}
+            style={{ height: 96, width: 132 }}
+          />
         </View>
 
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MiniStat color={colors.jade} label="Income" sub={incomeComposition(statement)} value={formatMoneyPaise(statement.totalIncomePaise)} />
-          <MiniStat color={colors.danger} label="Expense" sub="This month" value={formatMoneyPaise(statement.expensePaise)} />
-          <MiniStat color={accent} label="Net" sub={`Cash: ${signedMoney(statement.netRealizedPaise)}`} value={signedMoney(statement.netPaise)} />
+        <View style={{ borderColor: colors.border, borderRadius: 16, borderWidth: 1, paddingHorizontal: spacing.md }}>
+          <PnlSummaryRow
+            leftIcon={WalletCards}
+            rightColor={colors.jade}
+            rightIcon={ArrowLeft}
+            sub={incomeComposition(statement)}
+            title="Income"
+            value={formatMoneyPaise(statement.totalIncomePaise)}
+            valueColor={colors.jade}
+          />
+          <View style={{ backgroundColor: colors.border, height: 1 }} />
+          <PnlSummaryRow
+            leftColor={colors.danger}
+            leftIcon={ReceiptIndianRupee}
+            rightColor={colors.danger}
+            rightIcon={ArrowRight}
+            sub="This month"
+            title="Expense"
+            value={formatMoneyPaise(statement.expensePaise)}
+            valueColor={colors.danger}
+          />
+          <View style={{ backgroundColor: colors.border, height: 1 }} />
+          <PnlSummaryRow
+            leftIcon={ChartNoAxesCombined}
+            rightIcon={Scale}
+            sub={`Cash: ${signedMoney(statement.netRealizedPaise)}`}
+            title="Net"
+            value={signedMoney(statement.netPaise)}
+            valueColor={accent}
+          />
         </View>
 
         <CollectionStatus uncollectedPaise={statement.billUncollectedPaise} />
@@ -211,21 +295,52 @@ function NetHero({ statement }: { statement: PnlStatement }) {
   );
 }
 
-function MiniStat({ color, label, sub, value }: { color: string; label: string; sub?: string; value: string }) {
+function PnlSummaryRow({
+  leftColor,
+  leftIcon: LeftIcon,
+  rightColor,
+  rightIcon: RightIcon,
+  sub,
+  title,
+  value,
+  valueColor,
+}: {
+  leftColor?: string;
+  leftIcon: typeof WalletCards;
+  rightColor?: string;
+  rightIcon: typeof TrendingUp;
+  sub: string;
+  title: string;
+  value: string;
+  valueColor: string;
+}) {
   const { colors, fonts, type } = useTheme();
+
   return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 14, fontVariant: ["tabular-nums"], }} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
-      {sub ? (
-        <Text style={[type.caption, { color: colors.kicker, fontSize: 10 }]} numberOfLines={2}>
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, minHeight: 82, paddingVertical: spacing.sm }}>
+      <View style={{ alignItems: "center", justifyContent: "center", width: 42 }}>
+        <LeftIcon color={leftColor ?? colors.primary} size={31} strokeWidth={2} />
+      </View>
+
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <Text style={[type.caption, { color: colors.kicker, fontSize: 11, fontWeight: "800", letterSpacing: 1.1, textTransform: "uppercase" }]}>
+          {title}
+        </Text>
+        <Text
+          adjustsFontSizeToFit
+          numberOfLines={1}
+          style={{ color: valueColor, fontFamily: fonts.sansBold, fontSize: 20, fontVariant: ["tabular-nums"] }}
+        >
+          {value}
+        </Text>
+        <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
           {sub}
         </Text>
-      ) : null}
+      </View>
+
+      <View style={{ alignItems: "center", justifyContent: "center", width: 38 }}>
+        <RightIcon color={rightColor ?? colors.primary} size={28} strokeWidth={2} />
+      </View>
     </View>
   );
 }
@@ -233,9 +348,9 @@ function MiniStat({ color, label, sub, value }: { color: string; label: string; 
 function CollectionStatus({ uncollectedPaise }: { uncollectedPaise: number }) {
   const { colors, type } = useTheme();
   const pending = uncollectedPaise > 0;
-  const dot = pending ? colors.warningText : colors.jade;
+  const dot = pending ? colors.primary : colors.jade;
   return (
-    <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+    <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
       <View style={{ backgroundColor: dot, borderRadius: 999, height: 8, width: 8 }} />
       <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
         {pending ? `Collection pending · ${formatMoneyPaise(uncollectedPaise)} yet to be collected` : "All bills collected"}
@@ -243,7 +358,6 @@ function CollectionStatus({ uncollectedPaise }: { uncollectedPaise: number }) {
     </View>
   );
 }
-
 // "Rent + other bills + custom" — only the parts actually present this month.
 function incomeComposition(s: PnlStatement) {
   const parts: string[] = [];
@@ -329,23 +443,73 @@ function Breakdown({
   );
 }
 
-function ToolBox({ icon: Icon, label, onPress }: { icon: typeof Plus; label: string; onPress: () => void }) {
+function PnlToolsGrid({
+  onAddIncome,
+  onOpenBills,
+  onOpenReport,
+}: {
+  onAddIncome: () => void;
+  onOpenBills: () => void;
+  onOpenReport: () => void;
+}) {
+  const { colors } = useTheme();
+  const tools = [
+    { icon: Plus, key: "income", label: "Add income", onPress: onAddIncome },
+    { icon: FileText, key: "report", label: "Summary report", onPress: onOpenReport },
+    { icon: Receipt, key: "bills", label: "View bills", onPress: onOpenBills },
+  ];
+
+  return (
+    <Card style={{ flexDirection: "row", gap: 0, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm }}>
+      {tools.map((tool, index) => (
+        <View key={tool.key} style={{ alignItems: "stretch", flex: 1, flexDirection: "row" }}>
+          {index > 0 ? (
+            <View
+              style={{
+                alignSelf: "center",
+                backgroundColor: colors.borderStrong,
+                height: 62,
+                opacity: 0.65,
+                width: 1,
+              }}
+            />
+          ) : null}
+          <PnlToolTile icon={tool.icon} label={tool.label} onPress={tool.onPress} />
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function PnlToolTile({ icon: Icon, label, onPress }: { icon: typeof Plus; label: string; onPress: () => void }) {
   const { colors, fonts } = useTheme();
+
   return (
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
-      style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 96, paddingHorizontal: spacing.xs, paddingVertical: spacing.md }}
+      style={{ alignItems: "center", flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 88, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm }}
     >
-      <Icon color={colors.primary} size={30} strokeWidth={2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, textAlign: "center" }} numberOfLines={2}>
+      <Icon color={colors.primary} size={32} strokeWidth={1.9} />
+      <Text
+        numberOfLines={2}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
+      >
         {label}
       </Text>
     </AnimatedPressable>
   );
 }
-
-function IncomeRow({ entry, onReverse }: { entry: IncomeEntry; onReverse: () => void }) {
+function IncomeRow({
+  entry,
+  onReverse,
+  reversal,
+}: {
+  entry: IncomeEntry;
+  onReverse: () => void;
+  /** The entry that undoes this one, when it is on the same page. */
+  reversal?: IncomeEntry;
+}) {
   const { colors, fonts, type } = useTheme();
   const negative = entry.amountPaise < 0;
   const canReverse = entry.entryType !== "REVERSAL" && !entry.reversed;
@@ -391,6 +555,30 @@ function IncomeRow({ entry, onReverse }: { entry: IncomeEntry; onReverse: () => 
         <Text style={[type.caption, { color: colors.muted }]}>
           {entry.description}
         </Text>
+      ) : null}
+
+      {/* The correction, inside the same card and below a rule. As its own card
+          the ledger showed two entries with opposing amounts and no visible link
+          between them — you had to match the source and the date by eye to see
+          that one undid the other. */}
+      {reversal ? (
+        <>
+          <View style={{ backgroundColor: colors.borderStrong, height: 1 }} />
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Undo2 color={colors.danger} size={14} strokeWidth={2.2} />
+            <View style={{ flex: 1, gap: 1 }}>
+              <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]}>
+                Reversed {formatDate(reversal.receivedDate)}
+              </Text>
+              {reversal.description ? (
+                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+                  {reversal.description}
+                </Text>
+              ) : null}
+            </View>
+            <MoneyText color={colors.danger} paise={reversal.amountPaise} weight="700" />
+          </View>
+        </>
       ) : null}
     </View>
   );

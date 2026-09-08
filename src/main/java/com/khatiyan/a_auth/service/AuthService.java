@@ -94,6 +94,17 @@ public class AuthService {
         this.recoveryEmailChangeNotifier = recoveryEmailChangeNotifier;
     }
 
+    /**
+     * The canonical form of an Indian mobile number.
+     *
+     * <p>Public so {@code AuthModule} can hand it to modules that store a phone
+     * without provisioning an account — guest stays. The rule itself stays in
+     * {@link PhoneNumberNormalizer}.
+     */
+    public String normalizePhone(String rawPhone) {
+        return phoneNumberNormalizer.normalize(rawPhone);
+    }
+
     /** Where this account is signed in, current session flagged. */
     @Transactional(readOnly = true)
     public List<UserSessionResponse> listSessions(UUID userId, UUID callerSessionId) {
@@ -188,29 +199,75 @@ public class AuthService {
     }
 
     /**
+     * Slows account creation down, per number and per address.
+     *
+     * <p>
+     * <b>The IP limit is the one that does the work.</b> A phone-keyed bucket
+     * cannot stop enumeration, because every probe uses a different number and
+     * so starts on a full bucket. The address doing the walking is the only
+     * thing all those requests have in common. The phone key is here for the
+     * other case: somebody hammering sign-up at one number.
+     *
+     * <p>
+     * <b>No lockout, unlike login.</b> A failed sign-in is somebody working on
+     * one account, which is why escalation is right there. A register call is
+     * either a real person making an account or a stranger reading a range, and
+     * freezing a number for a day helps with neither — it would only hand an
+     * attacker a way to keep a real person from signing up.
+     *
+     * <p>
+     * Checked BEFORE the account lookup, so a registered and an unregistered
+     * number hit the same wall at the same count. A limiter that only applied
+     * to numbers with rows would be the login oracle again in a new place.
+     */
+    private void checkRegistrationRateLimits(String normalizedPhone, String requestIpAddress) {
+        int windowSeconds = (int) Duration.ofMinutes(15).toSeconds();
+
+        rateLimitService.consumeOrThrow(
+                "rl:auth:register:phone:" + normalizedPhone,
+                5,
+                windowSeconds,
+                "Too many sign-up attempts for this number. Please try again later.");
+
+        if (requestIpAddress != null && !requestIpAddress.isBlank()) {
+            rateLimitService.consumeOrThrow(
+                    "rl:auth:register:ip:" + requestIpAddress,
+                    20,
+                    windowSeconds,
+                    "Too many sign-up attempts from this device. Please try again later.");
+        }
+    }
+
+    /**
      * Creates a self-registered normal user and starts first PIN setup
      * verification.
      */
     @Transactional
     public void registerUser(String phone, String email, String fullName, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        checkRegistrationRateLimits(normalizedPhone, requestIpAddress);
 
-        // A provisioned tenant already has a USER account but no PIN. Let them
-        // "sign up" by resuming first PIN setup instead of erroring, optionally
-        // upgrading their placeholder name to the one they provided.
+        // An account with no PIN can be several things — a tenant or a manager
+        // an owner provisioned, or somebody who started signing up and walked
+        // away. All four leave an identical row, so the shape is all there is to
+        // go on. Whichever it is, the right answer to "sign me up" is to carry
+        // on from where it was left rather than to refuse.
         Optional<User> existing = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
         if (existing.isPresent()) {
             User user = existing.get();
             if (user.getRole() == UserRole.USER && !user.hasPin()) {
-                // Resume first PIN setup for a provisioned, not-yet-activated
-                // tenant. The user-submitted signup name becomes the final
-                // profile name before PIN setup completes.
-                user.updateProfile(fullName.trim());
-                if (email != null && !email.isBlank()) {
-                    user.updateRecoveryEmail(email);
-                }
-                // Tenant creation is SMS-only: no email OTP (email is optional and
-                // set later in profile).
+                // NOTHING IS WRITTEN HERE. The name and email travel with the
+                // PIN instead and land in setPIN once the code is verified.
+                //
+                // They used to be applied right here, which meant a public
+                // endpoint that knows only a phone number could rename a
+                // provisioned tenant and replace their recovery email —
+                // clearing emailVerified with it, so a verified address and the
+                // reset path depending on it both went. No takeover: the code
+                // still went to the real number. Defacement, and free.
+                //
+                // Tenant creation is SMS-only: no email OTP (email is optional
+                // and set later in profile).
                 otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
                 return;
             }
@@ -279,6 +336,32 @@ public class AuthService {
      */
     @Transactional
     public void registerOwner(String phone, String email, String fullName, String requestIpAddress) {
+        String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        checkRegistrationRateLimits(normalizedPhone, requestIpAddress);
+
+        // The same resume the tenant path gets, and it was missing. An owner who
+        // started signing up and abandoned it before setting a PIN was told
+        // "already exists" on every retry, forever — their only way in was the
+        // provisioned-account door, which nothing pointed them at.
+        //
+        // Role-matched on purpose. Resuming any PIN-less account here would let
+        // anyone turn a provisioned TENANT into an owner by signing up with
+        // their number.
+        Optional<User> existing = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
+        if (existing.isPresent()) {
+            User user = existing.get();
+            if (user.getRole() == UserRole.OWNER && !user.hasPin()) {
+                otpService.issue(
+                        user.getPhone(),
+                        user.getEmail(),
+                        requestIpAddress,
+                        OtpPurpose.LOGIN,
+                        OtpDeliveryChannel.SMS_AND_EMAIL);
+                return;
+            }
+            throw new ValidationException("A user with this phone number already exists");
+        }
+
         User user = registerNewAccount(phone, email, fullName, UserRole.OWNER);
 
         otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS_AND_EMAIL);
@@ -310,20 +393,27 @@ public class AuthService {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
         Optional<User> found = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
 
-        // Deliberately silent in both refusal cases, and deliberately NOT a
-        // 404 or a "you already have a PIN" error.
+        // Silent in EVERY refusal case. Not a 404, not a "you already have a
+        // PIN", not a different latency — one 202 for every number on earth.
         //
         // A caller who gets a different answer per number can walk a range and
         // learn which ones hold accounts, and which of those are still waiting
-        // to be set up — an unclaimed account is exactly what an attacker wants
-        // to find. Every outcome here returns 202, so the response says nothing
-        // about the number. The person who really owns it learns the difference
-        // from the SMS arriving or not.
+        // to be set up. An unclaimed account is exactly what is worth
+        // social-engineering an OTP out of. The person who really owns the
+        // number learns the difference from the SMS arriving or not.
         //
-        // The has-PIN case also stops a real bug: without it, anyone could make
-        // us text a setup code to an account that is already set up, and the
-        // holder would only discover the dead end after typing the code, since
-        // setPIN refuses them at the end.
+        // The has-PIN branch used to answer "This number is already set up."
+        // — deliberately, to save a real owner from waiting on an SMS that was
+        // never coming. Changed 2026-09-06 by the user, who would rather that
+        // owner hit a dead end than have the endpoint confirm, one number at a
+        // time, which accounts are live. The cost is real and is accepted: type
+        // your own set-up number here and you reach an OTP screen that nothing
+        // ever arrives for.
+        //
+        // The has-PIN check still has to happen. Without it anyone could make
+        // us text a setup code to an account that is already set up, and setPIN
+        // refuses at the end anyway — so the code would be a live OTP sent to
+        // someone who cannot use it.
         if (found.isEmpty()) {
             log.info("PIN setup OTP skipped: no active account for that number");
             return;
@@ -331,14 +421,8 @@ public class AuthService {
 
         User user = found.get();
         if (user.hasPin()) {
-            // Told plainly, unlike the not-found case. The two bits are not
-            // worth the same: "this number is waiting to be set up" is what an
-            // attacker wants, because an unclaimed account is the one worth
-            // social-engineering an OTP out of. "This number is already set up"
-            // buys them nothing and saves a real person from waiting on an SMS
-            // that is never coming.
-            log.info("PIN setup OTP refused userId={} reason=pin-already-set", user.getId());
-            throw new ValidationException("This number is already set up.");
+            log.info("PIN setup OTP skipped userId={} reason=pin-already-set", user.getId());
+            return;
         }
 
         otpService.issue(user.getPhone(), requestIpAddress, OtpPurpose.LOGIN, channel);
@@ -565,7 +649,7 @@ public class AuthService {
      * returns a JWT.
      */
     @Transactional
-    public TokenResponse setPIN(String phone, String otp, String pin) {
+    public TokenResponse setPIN(String phone, String otp, String pin, String fullName, String email) {
         User user = findActiveByPhone(phone);
 
         if (user.hasPin()) {
@@ -573,6 +657,25 @@ public class AuthService {
         }
 
         otpService.verifyAndConsumeOTP(user.getPhone(), OtpPurpose.LOGIN, otp);
+
+        // AFTER the code, never before. Holding the number is the only thing
+        // that authorises writing to this account, and this line is where that
+        // becomes true. Registration deliberately writes neither.
+        //
+        // Only when the name actually CHANGES. updateProfile also flips
+        // profileCompleted, which owners read as "this person has finished
+        // setting themselves up" — and a fresh signup stored this exact name at
+        // registration a minute ago, so applying it again would mark every new
+        // account complete before its owner had filled in anything. A resume is
+        // the case that differs: there the stored name is the placeholder the
+        // property owner typed, and adopting it IS the completion.
+        if (fullName != null && !fullName.isBlank() && !fullName.trim().equals(user.getFullName())) {
+            user.updateProfile(fullName.trim());
+        }
+        if (email != null && !email.isBlank()) {
+            user.updateRecoveryEmail(email);
+        }
+
         user.setPin(pinService.hashPIN(pin));
 
         eventPublisher.publishEvent(new PinChangedEvent(user.getId()));

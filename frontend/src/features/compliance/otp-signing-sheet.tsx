@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
 import { AppTextInput } from "@/components/app-text-input";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -43,6 +44,7 @@ export function OtpSigningSheet({
   sentTo: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const [otp, setOtp] = useState("");
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
 
@@ -61,10 +63,13 @@ export function OtpSigningSheet({
 
   return (
     <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Expo 56 Android is edge-to-edge, where adjustResize no longer resizes
-          the modal window — KeyboardAvoidingView with "padding" is what lifts
-          the sheet above the keyboard on BOTH platforms. */}
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      {/* iOS keeps the platform avoider, where it works. Android measures the
+          keyboard itself and lifts the sheet by margin: "padding" there is
+          broken under edge-to-edge — it infers the height from screen minus
+          window, edge-to-edge makes the window the whole display, and the
+          padding never returns to zero on dismissal, which left the sheet
+          shoved up the screen after the keyboard closed. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -74,6 +79,7 @@ export function OtpSigningSheet({
               borderTopRightRadius: 24,
               borderWidth: 1,
               gap: spacing.md,
+              marginBottom: keyboardInset,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}

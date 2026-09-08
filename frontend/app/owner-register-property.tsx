@@ -7,6 +7,7 @@ import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { WizardHeader } from "@/components/wizard-header";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
+import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { FieldHint } from "@/components/field-hint";
 import { AlertModal } from "@/components/alert-modal";
@@ -29,14 +30,7 @@ import { useToast } from "@/components/toast";
 import { AddPhotoTarget, PhotoRow, UploadProgress } from "@/features/property/photo-list";
 import { uploadAssets, type UploadedAsset } from "@/features/uploads/upload-asset";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
-import {
-  ActionButton,
-  BackButton,
-  ChoiceButton,
-  FormInput,
-  humanizeToken,
-  rupeesToPaise,
-} from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, FormInput, humanizeToken, rupeesToPaise } from "@/features/owner/owner-ui";
 import { useAppDispatch } from "@/store/hooks";
 import {
   BATHROOM_TYPES,
@@ -150,6 +144,7 @@ export default function OwnerRegisterPropertyScreen() {
     return () => clearTimeout(timer);
   }, [form.clearField, typesError]);
 
+  const wizardHeader = usePinnedWizardHeader();
   const stepIndex = REGISTER_STEPS.indexOf(step);
   const previousStep = stepIndex > 0 ? REGISTER_STEPS[stepIndex - 1] : null;
   const lastStep = stepIndex === REGISTER_STEPS.length - 1;
@@ -492,18 +487,34 @@ export default function OwnerRegisterPropertyScreen() {
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       {unsaved.dialog}
-      <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }} surface={colors.formSurface}>
-      <WizardHeader
-        accentWord="property"
-        onBack={previousStep ? () => setStep(previousStep) : undefined}
-        // Plain back. useUnsavedChanges intercepts it and asks when there is
-        // something to lose — a dialog here as well would ask twice, and would
-        // ask on a step the person had not typed anything into.
-        onClose={() => router.back()}
-        step={stepIndex}
-        title="Register a"
-        totalSteps={REGISTER_STEPS.length}
-      />
+      {/* Held still while the form scrolls under it: the step count and the bar
+          answer "where am I and how much is left", which is asked precisely when
+          someone has scrolled far enough to have pushed the answer off screen. */}
+      <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange}>
+        <WizardHeader
+          accentWord="property"
+          onBack={previousStep ? () => setStep(previousStep) : undefined}
+          // Plain back. useUnsavedChanges intercepts it and asks when there is
+          // something to lose — a dialog here as well would ask twice, and would
+          // ask on a step the person had not typed anything into.
+          onClose={() => router.back()}
+          step={stepIndex}
+          title="Register a"
+          totalSteps={REGISTER_STEPS.length}
+        />
+      </PinnedWizardHeader>
+
+      <ScreenScrollView
+        // Cleared by the measured header rather than a guessed number — the
+        // header is not the same height on every step. lg, not sm: the panel is
+        // an object with a curved edge, and content arriving right against that
+        // curve reads as clipped rather than as passing beneath it.
+        contentContainerStyle={{
+          paddingBottom: PINNED_FOOTER_CLEARANCE,
+          paddingTop: wizardHeader.contentInset + spacing.xl,
+        }}
+        surface={colors.formSurface}
+      >
 
       {step === "basics" ? (
       <FormSection eyebrow="Basics" title="Name & location">

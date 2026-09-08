@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.property.service;
 import java.time.LocalDate;
 import java.time.Period;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,6 +44,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class PropertyManagerService {
+
+    /** Day boundaries are Indian, like every other date rule in the app. */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
 
     private final PropertyService propertyService;
     private final PropertyRepository propertyRepository;
@@ -130,7 +135,7 @@ public class PropertyManagerService {
                             "Existing user - will be assigned as a manager.");
                 })
                 .orElseGet(() -> new ManagerLookupResponse(false, null, false, true,
-                        "New user - an account will be created and assigned."));
+                        "An account will be created and assigned."));
     }
 
     /**
@@ -205,6 +210,31 @@ public class PropertyManagerService {
             String referenceCode,
             ManagerEmploymentDetails employment) {
         PropertyManager manager = managerByReference(propertyId, referenceCode);
+
+        // Frozen once they have actually started, not from the moment the record
+        // exists. Salary accrues FROM the start date and is CALCULATED by the
+        // structure, so changing either after the fact rewrites what was owed
+        // for periods that may already have been paid. Before the date arrives
+        // nothing has accrued, and a hire date typed a day early is an ordinary
+        // correction rather than a rewrite of history.
+        //
+        // Enforced here rather than in StaffService, which hands this an
+        // employment record without ever loading the current one to compare
+        // against — the check belongs where the stored values are.
+        LocalDate startedOn = manager.getEmploymentStartDate();
+        boolean hasStarted = startedOn != null && !startedOn.isAfter(LocalDate.now(IST));
+
+        if (hasStarted && !startedOn.equals(employment.employmentStartDate())) {
+            throw new ValidationException(
+                    "This manager has already started, so their start date can no longer be changed — their salary "
+                            + "is worked out from it.");
+        }
+        if (hasStarted && manager.getSalaryStructure() != employment.salaryStructure()) {
+            throw new ValidationException(
+                    "This manager has already started, so their pay structure can no longer be changed between "
+                            + "monthly and daily.");
+        }
+
         manager.updateEmployment(employment);
         eventPublisher.publishEvent(new ManagerEmploymentUpdatedEvent(propertyId, manager.getManagerUserId(), actorUserId));
         return toEmploymentResponse(manager);

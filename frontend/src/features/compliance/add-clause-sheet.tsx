@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Plus, X } from "lucide-react-native";
 
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { ActionButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { spacing } from "@/theme/spacing";
@@ -18,6 +19,7 @@ import { useTheme } from "@/theme/use-theme";
  */
 export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, body: string) => void; onClose: () => void }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const [heading, setHeading] = useState("");
   const [body, setBody] = useState("");
   const form = useFormErrors<"body" | "heading">();
@@ -35,10 +37,13 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Expo 56 Android is edge-to-edge, where adjustResize no longer resizes
-          the modal window — KeyboardAvoidingView with "padding" is what lifts
-          the sheet above the keyboard on BOTH platforms. */}
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      {/* iOS keeps the platform avoider, where it works. Android measures the
+          keyboard itself and lifts the sheet by margin: "padding" there is
+          broken under edge-to-edge — it infers the height from screen minus
+          window, edge-to-edge makes the window the whole display, and the
+          padding never returns to zero on dismissal, which left the sheet
+          shoved up the screen after the keyboard closed. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -47,6 +52,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              marginBottom: keyboardInset,
               maxHeight: "92%",
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,

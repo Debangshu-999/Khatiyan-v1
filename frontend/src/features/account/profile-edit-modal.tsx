@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
@@ -10,6 +10,7 @@ import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { FieldError } from "@/components/field-error";
 import { useToast } from "@/components/toast";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -40,6 +41,7 @@ export function ProfileEditModal({
   onSave: (value: string) => Promise<void>;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const toast = useToast();
   const [value, setValue] = useState(initialValue);
   const form = useFormErrors<"value">();
@@ -96,7 +98,7 @@ export function ProfileEditModal({
           padding: spacing.lg,
         }}
       >
-        <KeyboardAvoidingView behavior="padding" style={{ maxWidth: 520, width: "100%" }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ marginBottom: keyboardInset, maxWidth: 520, width: "100%" }}>
           <Card style={{ borderRadius: 18, gap: spacing.md }}>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>

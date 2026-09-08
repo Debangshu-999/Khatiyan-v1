@@ -1,10 +1,11 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, PropsWithChildren, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Switch,
   Text,
   View,
@@ -12,7 +13,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppTextInput } from "@/components/app-text-input";
 import { CodeField } from "@/features/auth/auth-ui";
-import { AlertTriangle, BellRing, Fingerprint, Mail, Moon, ShieldCheck, Smartphone, X, type LucideProps } from "lucide-react-native";
+import {
+  AlertTriangle,
+  BellRing,
+  CalendarDays,
+  ChevronRight,
+  Fingerprint,
+  Hash,
+  Mail,
+  MapPin,
+  Moon,
+  ShieldCheck,
+  Smartphone,
+  User,
+  X,
+  type LucideProps,
+} from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { saveSession } from "@/auth/session-storage";
@@ -27,6 +43,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Section } from "@/components/section";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -151,18 +168,21 @@ export default function AccountSettingsScreen() {
             </Section>
 
             <Section title="PIN">
-              <SettingsRow
-                icon={DialpadIcon}
-                title="Change PIN"
-                description="Use current PIN, verify OTP, then choose a new PIN."
-                onPress={() => setPinModalMode("change")}
-              />
-              <SettingsRow
-                icon={ShieldCheck}
-                title="Forgot PIN"
-                description="Recover with OTP verification and set a fresh PIN."
-                onPress={() => setPinModalMode("forgot")}
-              />
+              <Card>
+                <SettingsRow
+                  icon={DialpadIcon}
+                  title="Change PIN"
+                  description="Use current PIN, verify OTP, then choose a new PIN."
+                  onPress={() => setPinModalMode("change")}
+                />
+                <Divider />
+                <SettingsRow
+                  icon={ShieldCheck}
+                  title="Forgot PIN"
+                  description="Recover with OTP verification and set a fresh PIN."
+                  onPress={() => setPinModalMode("forgot")}
+                />
+              </Card>
             </Section>
 
             <Section title="Signed-in devices">
@@ -319,12 +339,12 @@ function ProfileCard({
         <X color={colors.ink} size={16} strokeWidth={2.4} />
       </AnimatedPressable>
 
-      <View style={{ alignItems: "center", gap: spacing.sm }}>
+      {/* A row, not a centred column. Stacked and centred, the avatar and two
+          lines of text took the whole first screen before a single control —
+          this card is a reminder of whose settings these are, not a portrait. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, paddingRight: 40 }}>
         {photoUrl ? (
-          <Image
-            source={{ uri: photoUrl }}
-            style={{ borderRadius: 999, height: 84, width: 84 }}
-          />
+          <Image source={{ uri: photoUrl }} style={{ borderRadius: 999, height: 60, width: 60 }} />
         ) : (
           // Same treatment as the profile screen's avatar: an outlined ring
           // with ink initials. The tinted disc read as a coloured tile behind a
@@ -335,12 +355,12 @@ function ProfileCard({
               borderColor: colors.border,
               borderRadius: 999,
               borderWidth: 1,
-              height: 84,
+              height: 60,
               justifyContent: "center",
-              width: 84,
+              width: 60,
             }}
           >
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 30, letterSpacing: 0.5 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: 0.5 }}>
               {initials || "?"}
             </Text>
           </View>
@@ -349,16 +369,14 @@ function ProfileCard({
         {/* Read-only. This card is an identity reminder at the top of settings;
             the name, photo and email are all edited on the profile screen,
             where they are the subject rather than a header. */}
-        <Text
-          numberOfLines={1}
-          style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21 }}
-        >
-          {fullName || "Add your name"}
-        </Text>
-
-        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
-          {phone}
-        </Text>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 19 }}>
+            {fullName || "Add your name"}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
+            {phone}
+          </Text>
+        </View>
       </View>
 
       <Divider />
@@ -397,6 +415,7 @@ function PinVerificationModal({
   const pinErrors = useFormErrors<never>();
 
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const toast = useToast();
   const [step, setStep] = useState<PinFlowStep>("details");
   const [currentPin, setCurrentPin] = useState("");
@@ -541,12 +560,14 @@ function PinVerificationModal({
           padding: spacing.lg,
         }}
       >
-        {/* "padding" on both platforms: Expo 56 Android is edge-to-edge, where
-            adjustResize no longer resizes the modal window, so leaving Android
-            undefined let the keyboard sit over the buttons. */}
+        {/* iOS keeps the platform avoider. Android measures the keyboard and
+            lifts the card by margin — "padding" there is broken under
+            edge-to-edge, where it never returns to zero and left the card
+            stranded up the screen after the keyboard closed. */}
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{
+            marginBottom: keyboardInset,
             maxWidth: 520,
             width: "100%",
           }}
@@ -659,47 +680,28 @@ function SettingsRow({
   const { colors, fonts, type } = useTheme();
 
   return (
+    // A row, not a card. Two of these are one decision ("the PIN") and used to
+    // be two bordered panels stacked with a gap between them, which read as two
+    // unrelated screens. They live in a single Card now, split by a hairline.
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        gap: spacing.md,
-        padding: spacing.lg,
-      }}
+      style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.ink,
-            borderWidth: 1,
-            borderRadius: 10,
-            height: 40,
-            justifyContent: "center",
-            width: 40,
-          }}
-        >
-          <Icon color={colors.ink} size={18} strokeWidth={2} />
-        </View>
-        <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 18,
-            }}
-          >
-            {title}
-          </Text>
-          <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
-            {description}
-          </Text>
-        </View>
+      <View style={{ alignItems: "center", width: 24 }}>
+        <Icon color={colors.ink} size={19} strokeWidth={2} />
       </View>
+      <View style={{ flex: 1, gap: spacing.xxs }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          {title}
+        </Text>
+        <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+          {description}
+        </Text>
+      </View>
+      {/* The row opens something. Without a chevron it looked identical to the
+          preference rows beside it, which do not go anywhere. */}
+      <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
   );
 }
@@ -719,30 +721,17 @@ function PreferenceRow({
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderWidth: 1,
-          borderRadius: 10,
-          height: 40,
-          justifyContent: "center",
-          width: 40,
-        }}
-      >
-        <Icon color={colors.ink} size={18} strokeWidth={2} />
+      {/* Bare glyph. The outlined 40px box made every row look like a button,
+          on a screen where the only thing you can press is the control on the
+          right. */}
+      <View style={{ alignItems: "center", width: 24 }}>
+        <Icon color={colors.ink} size={19} strokeWidth={2} />
       </View>
       <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text
-          style={{
-            color: colors.ink,
-            fontFamily: fonts.display,
-            fontSize: 18,
-          }}
-        >
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
+        <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
           {description}
         </Text>
       </View>
@@ -929,6 +918,24 @@ function IdentityCard() {
     setGender(held.gender);
   }, [identityQuery.data?.id]);
 
+  /**
+   * Whether anything actually differs from the stored copy.
+   *
+   * <p>The button was always live, so the only answer to "did that save" was
+   * pressing it again and getting the same toast. Comparing against the server
+   * copy rather than tracking edits means typing a character and deleting it
+   * leaves the button off, which is the honest answer.
+   *
+   * <p>Trimmed on both sides because the save trims before sending — trailing
+   * whitespace is not a change anyone made.
+   */
+  const held = identityQuery.data;
+  const isDirty =
+    address.trim() !== (held?.permanentAddress ?? "") ||
+    pincode.trim() !== (held?.permanentAddressPincode ?? "") ||
+    dob.trim() !== (held?.dateOfBirth ?? "") ||
+    gender !== (held?.gender ?? null);
+
   const save = async () => {
     // A PIN code is either six digits or absent. Half of one is neither, and it
     // is the only field here the server will refuse.
@@ -958,7 +965,13 @@ function IdentityCard() {
         gender are optional, and are left off the agreement when blank.
       </Text>
 
+      {/* The icon rides on each field's LABEL rather than in a column beside
+          it. Wrapped in a row, every input started where its icon ended, so the
+          boxes sat indented from the paragraph above and from each other's
+          labels. On the label line they mark the field and the inputs keep one
+          left margin. */}
       <FormInput
+        icon={MapPin}
         label="Permanent address"
         multiline
         onChangeText={setAddress}
@@ -967,6 +980,7 @@ function IdentityCard() {
       />
       <FormInput
         error={form.errors.pincode}
+        icon={Hash}
         keyboardType="number-pad"
         label="PIN code"
         maxLength={6}
@@ -980,12 +994,12 @@ function IdentityCard() {
       {/* No "(optional)" suffix. The paragraph above already says which fields
           are optional, and repeating it on every label makes the required ones
           look like an oversight rather than a rule. */}
-      <DateOfBirthField onChange={setDob} value={dob} />
+      <DateOfBirthField icon={CalendarDays} onChange={setDob} value={dob} />
 
-      <GenderPicker onChange={setGender} value={gender} />
+      <GenderPicker icon={User} onChange={setGender} value={gender} />
 
       <ActionButton
-        disabled={saveState.isLoading || form.blocked}
+        disabled={saveState.isLoading || form.blocked || !isDirty}
         label="Save details"
         onPress={() => void save()}
       />

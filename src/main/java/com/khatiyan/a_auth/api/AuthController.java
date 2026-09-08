@@ -122,7 +122,7 @@ public class AuthController {
 
     @PostMapping("/pin/set")
     public TokenResponse setPin(@Valid @RequestBody SetPinRequest request) {
-        return authService.setPIN(request.phone(), request.otp(), request.pin());
+        return authService.setPIN(request.phone(), request.otp(), request.pin(), request.fullName(), request.email());
     }
 
     @PostMapping("/email/login/request")

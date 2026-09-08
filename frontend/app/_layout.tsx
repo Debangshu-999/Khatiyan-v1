@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { Provider } from "react-redux";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
@@ -104,6 +105,8 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payment-history" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-payment-claims" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-payment-details" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenant-bills" options={{ headerShown: false }} />
         <Stack.Screen name="owner-upcoming-cycles" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
@@ -122,6 +125,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-pnl" options={{ headerShown: false }} />
         <Stack.Screen name="owner-local-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-nearby-places" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-add-manager" options={{ headerShown: false }} />
         <Stack.Screen name="owner-staff" options={{ headerShown: false }} />
         <Stack.Screen name="owner-manager-permissions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy-agreement" options={{ headerShown: false }} />
@@ -181,6 +185,13 @@ function ThemedRootStack() {
         />
         <Stack.Screen
           name="tenancy-billing-cycle"
+          options={{
+            headerShown: false,
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
+          name="tenancy-bills"
           options={{
             headerShown: false,
             presentation: "card",
@@ -259,11 +270,17 @@ export { ScreenErrorFallback as ErrorBoundary };
 export default function RootLayout() {
   return (
     <Provider store={store}>
-      <SafeAreaProvider>
-        <ToastProvider>
-          <ThemedRootStack />
-        </ToastProvider>
-      </SafeAreaProvider>
+      {/* Outermost, because gesture-handler's Android implementation only sees
+          touches inside this view. The sheet's pull-to-dismiss is the first
+          thing in the app to use it, and without this the gesture silently
+          never fires there — no error, just nothing happening. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <ToastProvider>
+            <ThemedRootStack />
+          </ToastProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     </Provider>
   );
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Check, DoorOpen, Plus, Trash2 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -34,7 +33,6 @@ import { useTheme } from "@/theme/use-theme";
 // checklist. These apply to EVERY monthly tenancy at deposit settlement (with or
 // without an agreement) and are read into agreements by the compliance module.
 export default function OwnerExitPoliciesScreen() {
-  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -115,14 +113,12 @@ export default function OwnerExitPoliciesScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
       >
         <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
-        badge={readOnly ? <ViewOnlyChip /> : null}
-          title="Exit"
+          badge={readOnly ? <ViewOnlyChip /> : null}
           italicTail="policies."
+          title="Exit"
           subtitle={
             property
               ? `The damage charges and move-out checklist used when a tenancy at ${property.name} ends.`
@@ -139,7 +135,7 @@ export default function OwnerExitPoliciesScreen() {
         ) : policiesQuery.isLoading || damageCharges === null || checklist === null ? (
           <>
             <SkeletonCard />
-            <SkeletonList />
+            <SkeletonList rows={3} />
           </>
         ) : (
           <>
@@ -235,7 +231,7 @@ function DamageChargesEditor({
 
       <FormInput label="Item" onChangeText={setName} placeholder="e.g. Mattress, Study chair, Door lock" value={name} />
       <FormInput keyboardType="number-pad" label="Damage charge" onChangeText={setAmount} placeholder="0" prefix="₹" value={amount} />
-      <ActionButton disabled={readOnly} icon={Plus} label="Add item" onPress={addItem} variant="secondary" />
+      <ActionButton disabled={readOnly} icon={Plus} label="Add item" onPress={addItem} variant="primary" />
     </View>
   );
 }
@@ -319,7 +315,7 @@ function ChecklistEditor({
       )}
 
       <FormInput label="Add a checklist item" onChangeText={setDraft} placeholder="e.g. Keys returned" value={draft} />
-      <ActionButton disabled={readOnly} icon={Plus} label="Add to checklist" onPress={addEntry} variant="secondary" />
+      <ActionButton disabled={readOnly} icon={Plus} label="Add to checklist" onPress={addEntry} variant="primary" />
     </View>
   );
 }

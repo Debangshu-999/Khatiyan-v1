@@ -271,6 +271,36 @@ public class StaffService {
         StaffCategory category = activeCategory(request.categoryId(), propertyId);
         validateEmploymentDates(request.employmentStartDate(), request.employmentEndDate());
 
+        // Frozen once they have actually started, not from the moment the record
+        // exists. Salary accrues FROM this date — see SalaryAccountService's
+        // monthly earned calculation — so moving it after the fact rewrites what
+        // was owed for periods that may already have been paid. Before the date
+        // arrives nothing has accrued, and a hire date entered a day early is an
+        // ordinary correction rather than a rewrite of history.
+        //
+        // Refused rather than quietly ignored: a client that thinks it changed
+        // this and was told nothing would show the owner a date the server never
+        // stored.
+        LocalDate startedOn = member.getEmploymentStartDate();
+        boolean hasStarted = !startedOn.isAfter(LocalDate.now(IST));
+
+        if (hasStarted && !startedOn.equals(request.employmentStartDate())) {
+            throw new ValidationException(
+                    "This member has already started, so their start date can no longer be changed — their salary "
+                            + "is worked out from it. End this record and create a new one if the date was wrong.");
+        }
+
+        // Same rule, same reason. The structure is not a term of employment, it
+        // is the METHOD the pay is calculated by: flipping a started member from
+        // monthly to daily recomputes every period they have already been paid
+        // for on a different basis. The RATE stays editable — a raise is an
+        // ordinary thing to record and does not rewrite past months.
+        if (hasStarted && member.getSalaryStructure() != request.salaryStructure()) {
+            throw new ValidationException(
+                    "This member has already started, so their pay structure can no longer be changed between "
+                            + "monthly and daily. End this record and create a new one on the other structure.");
+        }
+
         member.updateDetails(
                 category.getId(),
                 requiredText(request.fullName(), "Staff member name"),

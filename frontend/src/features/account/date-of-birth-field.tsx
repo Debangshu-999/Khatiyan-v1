@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { Platform, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { CalendarDays, X } from "lucide-react-native";
+import { CalendarDays, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
@@ -25,11 +25,14 @@ const EARLIEST = new Date(1920, 0, 1);
  */
 export function DateOfBirthField({
   disabled,
+  icon: Icon,
   label = "Date of birth",
   onChange,
   value,
 }: {
   disabled?: boolean;
+  /** A glyph on the label line, so the field below still spans full width. */
+  icon?: ComponentType<LucideProps>;
   label?: string;
   /** ISO `YYYY-MM-DD`, or empty to clear. */
   onChange: (value: string) => void;
@@ -43,7 +46,13 @@ export function DateOfBirthField({
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>{label}</Text>
+      {/* `muted`, matching FormInput's label at rest. This was `inkSoft`, two
+          shades darker, so a form mixing this field with a FormInput showed two
+          different label colours down one column. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {Icon ? <Icon color={colors.muted} size={15} strokeWidth={2.2} /> : null}
+        <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+      </View>
 
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <AnimatedPressable

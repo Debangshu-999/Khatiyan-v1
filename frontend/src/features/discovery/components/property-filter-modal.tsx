@@ -1,10 +1,22 @@
-import { useRef, useState } from "react";
-import { Modal, PanResponder, ScrollView, Text, TextInput, View } from "react-native";
+import { useRef, useState, type ComponentType } from "react";
+import { Modal, PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
+import {
+  Bath,
+  BedDouble,
+  GraduationCap,
+  Mars,
+  Search,
+  UsersRound,
+  UtensilsCrossed,
+  Venus,
+  Wallet,
+  X,
+  Zap,
+  type LucideProps,
+} from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { OptionPicker } from "@/components/option-picker";
 import {
   BATHROOM_TYPES,
   MEAL_TYPES,
@@ -21,14 +33,20 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { humanizeToken } from "../discovery-format";
-import { DiscoveryButton } from "./discovery-button";
+
+type LucideIcon = ComponentType<LucideProps>;
+
+const PG_FOR_ICONS: Record<PgFor, LucideIcon> = {
+  ANYONE: UsersRound,
+  FEMALE: Venus,
+  MALE: Mars,
+};
 
 export type PropertyFilterState = {
   pgFor: PgFor | null;
   minRentPaise: number | null;
   maxRentPaise: number | null;
   preferredFor: PreferredTenantType | null;
-  foodIncluded: boolean | null;
   mealTypes: MealType[];
   electricityIncluded: boolean | null;
   bathroomType: BathroomType | null;
@@ -38,7 +56,6 @@ export type PropertyFilterState = {
 export const emptyPropertyFilters: PropertyFilterState = {
   bathroomType: null,
   electricityIncluded: null,
-  foodIncluded: null,
   maxRentPaise: null,
   mealTypes: [],
   minRentPaise: null,
@@ -61,7 +78,6 @@ export function countActivePropertyFilters(filters: PropertyFilterState) {
   if (filters.pgFor && filters.pgFor !== "ANYONE") count += 1;
   if (filters.minRentPaise !== null || filters.maxRentPaise !== null) count += 1;
   if (filters.preferredFor && filters.preferredFor !== "ANYONE") count += 1;
-  if (filters.foodIncluded !== null) count += 1;
   if (filters.mealTypes.length > 0) count += 1;
   if (filters.electricityIncluded !== null) count += 1;
   if (filters.bathroomType !== null) count += 1;
@@ -86,9 +102,15 @@ export function PropertyFilterModal({
 
   function toggleMeal(meal: MealType) {
     const exists = filters.mealTypes.includes(meal);
+    update({ mealTypes: exists ? filters.mealTypes.filter((item) => item !== meal) : [...filters.mealTypes, meal] });
+  }
+
+  function toggleSharing(sharing: RoomType) {
+    const exists = filters.sharingTypes.includes(sharing);
     update({
-      foodIncluded: true,
-      mealTypes: exists ? filters.mealTypes.filter((item) => item !== meal) : [...filters.mealTypes, meal],
+      sharingTypes: exists
+        ? filters.sharingTypes.filter((item) => item !== sharing)
+        : [...filters.sharingTypes, sharing],
     });
   }
 
@@ -104,48 +126,72 @@ export function PropertyFilterModal({
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: 26,
-            borderTopRightRadius: 26,
-            maxHeight: "90%",
+            backgroundColor: colors.surfaceRaised,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            maxHeight: "94%",
             overflow: "hidden",
           }}
         >
           <View
             style={{
+              alignSelf: "center",
+              backgroundColor: colors.borderStrong,
+              borderRadius: 999,
+              height: 5,
+              marginTop: spacing.sm,
+              width: 42,
+            }}
+          />
+          <View
+            style={{
               alignItems: "center",
-              borderBottomColor: colors.border,
-              borderBottomWidth: 1,
               flexDirection: "row",
               justifyContent: "space-between",
-              padding: spacing.lg,
+              paddingBottom: spacing.md,
+              paddingHorizontal: spacing.lg,
+              paddingTop: spacing.md,
             }}
           >
-            <View>
+            <View style={{ flex: 1, gap: 2 }}>
               <Text
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.display,
-                  fontSize: 22,
-                  letterSpacing: -0.2,
+                  fontSize: 24,
+                  letterSpacing: -0.45,
                 }}
               >
                 Property filters
               </Text>
-              <Text style={[type.caption, { color: colors.muted }]}>
+              <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
                 Refine listed PG and hostel profiles
               </Text>
             </View>
-            <AnimatedPressable accessibilityLabel="Close filters" accessibilityRole="button" onPress={onClose}>
-              <X color={colors.muted} size={24} strokeWidth={2.4} />
+            <AnimatedPressable
+              accessibilityLabel="Close filters"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onClose}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.neutralSoft,
+                borderRadius: 999,
+                height: 46,
+                justifyContent: "center",
+                width: 46,
+              }}
+            >
+              <X color={colors.muted} size={22} strokeWidth={2.3} />
             </AnimatedPressable>
           </View>
 
           <ScrollView
             contentContainerStyle={{
-              gap: spacing.lg,
-              padding: spacing.lg,
-              paddingBottom: 120 + insets.bottom,
+              gap: spacing.md,
+              paddingBottom: 116 + insets.bottom,
+              paddingHorizontal: spacing.md,
+              paddingTop: spacing.xs,
             }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -153,15 +199,26 @@ export function PropertyFilterModal({
             {/* "PG for" understated the results. Discovery draws from every
                 visible profile with no property-type restriction, so hostels
                 come back alongside PGs — the heading has to cover both. */}
-            <FilterSection title="PG/Hostel for">
+            <FilterSection
+              description="Who can stay at this property?"
+              icon={UsersRound}
+              title="PG/Hostel for"
+            >
               <ChoiceGrid
+                getIcon={(option) => PG_FOR_ICONS[option]}
+                getLabel={(option) => (option === "ANYONE" ? "Any" : humanizeToken(option))}
                 options={PG_FOR_OPTIONS}
                 selected={filters.pgFor ?? "ANYONE"}
                 onSelect={(value) => update({ pgFor: value === "ANYONE" ? null : value })}
               />
             </FilterSection>
 
-            <FilterSection title="Budget">
+            <FilterSection
+              contentStyle={{ marginLeft: 0 }}
+              description="Set your preferred monthly budget"
+              icon={Wallet}
+              title="Budget"
+            >
               <RentRange
                 maxRupees={filters.maxRentPaise === null ? 0 : Math.round(filters.maxRentPaise / 100)}
                 minRupees={filters.minRentPaise === null ? 0 : Math.round(filters.minRentPaise / 100)}
@@ -174,48 +231,47 @@ export function PropertyFilterModal({
               />
             </FilterSection>
 
-            <FilterSection title="Preferred for">
+            <FilterSection
+              description="Who is this property suitable for?"
+              icon={GraduationCap}
+              title="Preferred for"
+            >
               <ChoiceGrid
+                getLabel={(option) => (option === "PROFESSIONAL" ? "Working" : humanizeToken(option))}
                 options={PREFERRED_TENANT_OPTIONS}
                 selected={filters.preferredFor ?? "ANYONE"}
                 onSelect={(value) => update({ preferredFor: value === "ANYONE" ? null : value })}
               />
             </FilterSection>
 
-            <FilterSection title="Food">
-              <BooleanChoice
-                value={filters.foodIncluded}
-                onChange={(value) => update({ foodIncluded: value, mealTypes: value ? filters.mealTypes : [] })}
+            <FilterSection
+              description="Which meals should be included?"
+              icon={UtensilsCrossed}
+              title="Meals included"
+            >
+              <MultiChoiceGrid
+                onToggle={toggleMeal}
+                options={MEAL_TYPES}
+                selected={filters.mealTypes}
               />
-              {filters.foodIncluded ? (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                  {MEAL_TYPES.map((meal) => (
-                    <FilterChip
-                      key={meal}
-                      label={humanizeToken(meal)}
-                      selected={filters.mealTypes.includes(meal)}
-                      onPress={() => toggleMeal(meal)}
-                    />
-                  ))}
-                  <FilterChip
-                    label="All meals"
-                    selected={filters.mealTypes.length === MEAL_TYPES.length}
-                    onPress={() =>
-                      update({
-                        foodIncluded: true,
-                        mealTypes: filters.mealTypes.length === MEAL_TYPES.length ? [] : [...MEAL_TYPES],
-                      })
-                    }
-                  />
-                </View>
-              ) : null}
             </FilterSection>
 
-            <FilterSection title="Electricity included">
-              <BooleanChoice value={filters.electricityIncluded} onChange={(value) => update({ electricityIncluded: value })} />
+            <FilterSection
+              description="Is electricity included in the rent?"
+              icon={Zap}
+              title="Electricity included"
+            >
+              <BooleanChoice
+                value={filters.electricityIncluded}
+                onChange={(value) => update({ electricityIncluded: value })}
+              />
             </FilterSection>
 
-            <FilterSection title="Bathroom type">
+            <FilterSection
+              description="Choose the bathroom arrangement"
+              icon={Bath}
+              title="Bathroom type"
+            >
               <ChoiceGrid
                 options={["ANY", ...BATHROOM_TYPES]}
                 selected={filters.bathroomType ?? "ANY"}
@@ -223,15 +279,28 @@ export function PropertyFilterModal({
               />
             </FilterSection>
 
-            <FilterSection title="Room sharing">
-              <OptionPicker
-                emptyLabel="Any sharing"
-                label="Sharing options"
-                onChange={(sharingTypes) => update({ sharingTypes })}
-                options={ROOM_TYPES.map((sharingType) => ({ label: humanizeToken(sharingType), value: sharingType }))}
-                title="Room sharing"
-                value={filters.sharingTypes}
-              />
+            <FilterSection
+              description="Select one or more room occupancies"
+              icon={BedDouble}
+              title="Room sharing"
+            >
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                <FilterChip
+                  columns={2}
+                  label="Any sharing"
+                  onPress={() => update({ sharingTypes: [] })}
+                  selected={filters.sharingTypes.length === 0}
+                />
+                {ROOM_TYPES.map((sharingType) => (
+                  <FilterChip
+                    columns={2}
+                    key={sharingType}
+                    label={humanizeToken(sharingType)}
+                    onPress={() => toggleSharing(sharingType)}
+                    selected={filters.sharingTypes.includes(sharingType)}
+                  />
+                ))}
+              </View>
             </FilterSection>
           </ScrollView>
 
@@ -244,15 +313,20 @@ export function PropertyFilterModal({
               flexDirection: "row",
               gap: spacing.sm,
               left: 0,
-              paddingBottom: insets.bottom + spacing.lg,
-              paddingHorizontal: spacing.lg,
+              paddingBottom: insets.bottom + spacing.md,
+              paddingHorizontal: spacing.md,
               paddingTop: spacing.md,
               position: "absolute",
               right: 0,
             }}
           >
-            <DiscoveryButton label="Reset" muted onPress={onReset} style={{ flex: 1 }} />
-            <DiscoveryButton label="Search" onPress={() => onApply(filters)} style={{ flex: 1.4 }} />
+            <FilterFooterButton label="Reset" muted onPress={onReset} style={{ flex: 1 }} />
+            <FilterFooterButton
+              icon={Search}
+              label="Search"
+              onPress={() => onApply(filters)}
+              style={{ flex: 1.1 }}
+            />
           </View>
         </View>
       </View>
@@ -260,24 +334,83 @@ export function PropertyFilterModal({
   );
 }
 
-function FilterSection({ children, title }: { children: React.ReactNode; title: string }) {
-  const { colors, type } = useTheme();
+function FilterSection({
+  children,
+  contentStyle,
+  description,
+  icon: Icon,
+  title,
+}: {
+  children: React.ReactNode;
+  contentStyle?: ViewStyle;
+  description: string;
+  icon: LucideIcon;
+  title: string;
+}) {
+  const { colors, fonts, type } = useTheme();
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        {title}
-      </Text>
-      {children}
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 16,
+        borderWidth: 1,
+        elevation: 1,
+        gap: spacing.sm,
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 3, width: 0 },
+        shadowOpacity: 0.28,
+        shadowRadius: 9,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.neutralSoft,
+            borderRadius: 999,
+            height: 48,
+            justifyContent: "center",
+            width: 48,
+          }}
+        >
+          <Icon color={colors.inkSoft} size={23} strokeWidth={2.2} />
+        </View>
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text
+            style={[
+              type.eyebrow,
+              {
+                color: colors.inkSoft,
+                fontFamily: fonts.sansBold,
+                fontSize: 11.5,
+                letterSpacing: 0.65,
+              },
+            ]}
+          >
+            {title}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 17 }]}>
+            {description}
+          </Text>
+        </View>
+      </View>
+      <View style={[{ marginLeft: 62 }, contentStyle]}>{children}</View>
     </View>
   );
 }
 
 function ChoiceGrid<T extends string>({
+  getIcon,
+  getLabel,
   onSelect,
   options,
   selected,
 }: {
+  getIcon?: (value: T) => LucideIcon;
+  getLabel?: (value: T) => string;
   onSelect: (value: T) => void;
   options: T[];
   selected: T;
@@ -285,7 +418,36 @@ function ChoiceGrid<T extends string>({
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {options.map((option) => (
-        <FilterChip key={option} label={option === "ANY" ? "Any" : humanizeToken(option)} selected={option === selected} onPress={() => onSelect(option)} />
+        <FilterChip
+          icon={getIcon?.(option)}
+          key={option}
+          label={getLabel?.(option) ?? (option === "ANY" ? "Any" : humanizeToken(option))}
+          onPress={() => onSelect(option)}
+          selected={option === selected}
+        />
+      ))}
+    </View>
+  );
+}
+
+function MultiChoiceGrid<T extends string>({
+  onToggle,
+  options,
+  selected,
+}: {
+  onToggle: (value: T) => void;
+  options: T[];
+  selected: T[];
+}) {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+      {options.map((option) => (
+        <FilterChip
+          key={option}
+          label={humanizeToken(option)}
+          onPress={() => onToggle(option)}
+          selected={selected.includes(option)}
+        />
       ))}
     </View>
   );
@@ -301,7 +463,19 @@ function BooleanChoice({ onChange, value }: { onChange: (value: boolean | null) 
   );
 }
 
-function FilterChip({ label, onPress, selected }: { label: string; onPress: () => void; selected: boolean }) {
+function FilterChip({
+  columns = 3,
+  icon: Icon,
+  label,
+  onPress,
+  selected,
+}: {
+  columns?: 2 | 3;
+  icon?: LucideIcon;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -310,19 +484,84 @@ function FilterChip({ label, onPress, selected }: { label: string; onPress: () =
       accessibilityState={{ selected }}
       onPress={onPress}
       style={{
-        backgroundColor: selected ? colors.ink : colors.surfaceRaised,
-        borderColor: selected ? colors.ink : colors.border,
-        // Square by intent: these read as a set of switches, and the rounded
-        // pill shape made them compete with the app's actual pill badges.
-        borderRadius: 0,
+        alignItems: "center",
+        backgroundColor: selected ? colors.inkSoft : colors.surface,
+        borderColor: selected ? colors.inkSoft : colors.border,
+        borderRadius: 12,
         borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: 10,
+        flexBasis: columns === 2 ? "46%" : "28%",
+        flexDirection: "row",
+        flexGrow: 1,
+        flexShrink: 1,
+        gap: spacing.xs,
+        justifyContent: "center",
+        minHeight: 48,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
       }}
     >
-      {/* fontFamily, not fontWeight — the loaded families carry their own
-          weight, and asking for 900 on top gets synthetic bolding on Android. */}
-      <Text style={[type.caption, { color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold }]}>
+      {Icon ? <Icon color={selected ? colors.surface : colors.inkSoft} size={17} strokeWidth={2.3} /> : null}
+      <Text
+        numberOfLines={1}
+        style={[
+          type.caption,
+          {
+            color: selected ? colors.surface : colors.ink,
+            fontFamily: fonts.sansBold,
+            fontSize: label.length > 11 ? 10.25 : label.length > 8 ? 11.25 : 12.5,
+            textAlign: "center",
+          },
+        ]}
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
+function FilterFooterButton({
+  icon: Icon,
+  label,
+  muted = false,
+  onPress,
+  style,
+}: {
+  icon?: LucideIcon;
+  label: string;
+  muted?: boolean;
+  onPress: () => void;
+  style?: ViewStyle;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[
+        {
+          alignItems: "center",
+          backgroundColor: muted ? colors.surface : colors.primary,
+          borderColor: colors.primary,
+          borderRadius: 14,
+          borderWidth: 1.5,
+          flexDirection: "row",
+          gap: spacing.sm,
+          justifyContent: "center",
+          minHeight: 52,
+          paddingHorizontal: spacing.md,
+        },
+        style,
+      ]}
+    >
+      {Icon ? <Icon color={muted ? colors.primary : colors.onPrimary} size={21} strokeWidth={2.3} /> : null}
+      <Text
+        style={{
+          color: muted ? colors.primary : colors.onPrimary,
+          fontFamily: fonts.displaySoft,
+          fontSize: 15,
+        }}
+      >
         {label}
       </Text>
     </AnimatedPressable>
@@ -377,8 +616,34 @@ function RentRange({
       />
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            flex: 1,
+            minHeight: 62,
+            paddingHorizontal: spacing.md,
+            paddingTop: spacing.sm,
+            position: "relative",
+          }}
+        >
+          <Text
+            style={[
+              type.caption,
+              {
+                backgroundColor: colors.surface,
+                color: colors.muted,
+                fontFamily: fonts.sansMedium,
+                left: spacing.sm,
+                paddingHorizontal: spacing.xs,
+                position: "absolute",
+                top: -9,
+                zIndex: 1,
+              },
+            ]}
+          >
             Min
           </Text>
           <TextInput
@@ -393,21 +658,43 @@ function RentRange({
             placeholder="0"
             placeholderTextColor={colors.kicker}
             style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: 12,
-              borderWidth: 1,
               color: colors.ink,
               fontFamily: fonts.sansBold,
-              fontSize: 15,
-              minHeight: 44,
-              paddingHorizontal: spacing.md,
+              fontSize: 16,
+              minHeight: 32,
+              padding: 0,
             }}
             value={minRupees > 0 ? String(minRupees) : ""}
           />
         </View>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            flex: 1,
+            minHeight: 62,
+            paddingHorizontal: spacing.md,
+            paddingTop: spacing.sm,
+            position: "relative",
+          }}
+        >
+          <Text
+            style={[
+              type.caption,
+              {
+                backgroundColor: colors.surface,
+                color: colors.muted,
+                fontFamily: fonts.sansMedium,
+                left: spacing.sm,
+                paddingHorizontal: spacing.xs,
+                position: "absolute",
+                top: -9,
+                zIndex: 1,
+              },
+            ]}
+          >
             Max
           </Text>
           <TextInput
@@ -419,15 +706,11 @@ function RentRange({
             placeholder="Any"
             placeholderTextColor={colors.kicker}
             style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: 12,
-              borderWidth: 1,
               color: colors.ink,
               fontFamily: fonts.sansBold,
-              fontSize: 15,
-              minHeight: 44,
-              paddingHorizontal: spacing.md,
+              fontSize: 16,
+              minHeight: 32,
+              padding: 0,
             }}
             value={maxRupees > 0 ? String(maxRupees) : ""}
           />
@@ -473,15 +756,26 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
 
   const ratio = (value - RENT_MIN) / (RENT_MAX - RENT_MIN);
   const filledWidth = Math.max(ratio * trackWidth, 0);
-  const thumbLeft = Math.min(Math.max(ratio * trackWidth - 9, 0), Math.max(trackWidth - 18, 0));
+  const thumbSize = 24;
+  const thumbLeft = Math.min(
+    Math.max(ratio * trackWidth - thumbSize / 2, 0),
+    Math.max(trackWidth - thumbSize, 0),
+  );
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+    <View
+      style={{
+        backgroundColor: colors.primarySoft,
+        borderRadius: 14,
+        gap: spacing.sm,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ gap: 1 }}>
+        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansMedium }]}>
           Up to
         </Text>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.3 }}>
+        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.display, fontSize: 29, letterSpacing: -0.65 }}>
           {value === 0 ? "Any rent" : `₹${value.toLocaleString("en-IN")}`}
         </Text>
       </View>
@@ -498,30 +792,32 @@ function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; v
             width: filledWidth,
           }}
         />
-        {/* An upright capsule rather than a ringed circle: it is taller than the
-            track it rides, so it reads as a grip rather than a dot sitting on a
-            line, and the extra height is what the thumb is actually caught by. */}
         <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.ink,
             borderRadius: 999,
             borderWidth: 2,
-            height: 30,
+            elevation: 4,
+            height: thumbSize,
             left: thumbLeft,
             position: "absolute",
-            width: 18,
+            shadowColor: "#000000",
+            shadowOffset: { height: 3, width: 0 },
+            shadowOpacity: 0.22,
+            shadowRadius: 3,
+            width: thumbSize,
           }}
         >
           <View
             style={{
-              backgroundColor: colors.borderStrong,
+              backgroundColor: colors.ink,
               borderRadius: 999,
-              height: 12,
+              height: 8,
               left: "50%",
               marginLeft: -1,
               position: "absolute",
-              top: 7,
+              top: 6,
               width: 2,
             }}
           />

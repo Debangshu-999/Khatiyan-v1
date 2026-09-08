@@ -1,27 +1,29 @@
-import { useCallback, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
+import { Children, Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
-import { ArrowLeftRight, Banknote, BriefcaseBusiness, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, Trash2, UsersRound, WalletCards, X } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ArrowLeft, ArrowLeftRight, Banknote, BriefcaseBusiness, Building2, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
+import { MoneyIcon } from "@/components/artwork-icon";
 import { FieldError } from "@/components/field-error";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { PaginationBar } from "@/components/pagination-bar";
-import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { TabSwitcher } from "@/components/tab-switcher";
-import { ActionButton, BackButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { ALL_DAYS_MASK, WEEKDAYS, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { MANAGEABLE_MODULES, fullAccessLevels } from "@/features/owner/manager-access-model";
 import { useAppSelector } from "@/store/hooks";
@@ -84,6 +86,12 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_SALARY_ILLUSTRATION = require("../../../assets/workspace/No-Salary_1_512x512.png");
+
+const NO_PERSON_ILLUSTRATION = require("../../../assets/workspace/No-Person_512x512.png");
+
+const NO_BILL_ILLUSTRATION = require("../../../assets/workspace/No-Bill_512x436.png");
+
 // Two tabs, not three. History is not a peer of Team and Salary — it is the
 // past tense of each, so it lives as a card at the bottom of whichever tab it
 // belongs to rather than as a third destination.
@@ -103,8 +111,145 @@ type EndTarget = {
   salaryStructure: SalaryStructure;
 };
 
+// The Manage screen's staff tile artwork, not a header-only variant. Reaching
+// this screen from that card and being met by a different drawing of the same
+// thing read as having arrived somewhere else.
+const STAFF_HEADER_ILLUSTRATION = require("../../../assets/workspace/staff-module.png");
+const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/workspace/staff-history.png");
+const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/workspace/payroll-payment-history.png");
+const PAYROLL_PAYABLE_WALLET_ILLUSTRATION = require("../../../assets/workspace/payroll-payable-wallet.png");
+
+function StaffScreenBackground() {
+  const { colors } = useTheme();
+
+  return (
+    <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+      <LinearGradient
+        colors={[colors.primarySoft, colors.surface]}
+        end={{ x: 0.5, y: 1 }}
+        locations={[0, 1]}
+        start={{ x: 0.5, y: 0 }}
+        style={{ height: 260 }}
+      />
+    </View>
+  );
+}
+
+function StaffHeader({ propertyName }: { propertyName: string }) {
+  return (
+    <ScreenHeader
+      italicTail="management."
+      subtitle={`Staff workspace for ${propertyName}.`}
+      artwork={STAFF_HEADER_ILLUSTRATION}
+      title="Staff"
+    />
+  );
+}
+
+function StaffGroupCard({
+  actionLabel,
+  children,
+  onAction,
+  title,
+}: {
+  actionLabel?: string;
+  children: React.ReactNode;
+  onAction?: () => void;
+  title: string;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <Card style={{ padding: spacing.md }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <Text numberOfLines={1} style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}>
+          {title}
+        </Text>
+        {actionLabel && onAction ? (
+          <AnimatedPressable
+            accessibilityLabel={actionLabel}
+            accessibilityRole="button"
+            onPress={onAction}
+            style={{
+              alignItems: "center",
+              borderColor: colors.primary,
+              borderRadius: 11,
+              borderWidth: 1,
+              flexDirection: "row",
+              gap: 4,
+              minHeight: 34,
+              paddingHorizontal: spacing.sm,
+            }}
+          >
+            <Plus color={colors.primary} size={15} strokeWidth={2.1} />
+            <Text numberOfLines={1} style={[type.caption, { color: colors.primary, fontSize: 12, fontWeight: "700" }]}>
+              {actionLabel}
+            </Text>
+          </AnimatedPressable>
+        ) : null}
+      </View>
+      {children}
+    </Card>
+  );
+}
+
+function SalaryFilterButton({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: active ? colors.primarySoft : colors.surface,
+        borderColor: active ? colors.primarySoft : colors.border,
+        borderCurve: "continuous",
+        borderRadius: 999,
+        borderWidth: 1,
+        flex: 1,
+        justifyContent: "center",
+        minHeight: 42,
+        paddingHorizontal: spacing.xs,
+      }}
+    >
+      <Text
+        numberOfLines={1}
+        style={[
+          type.caption,
+          {
+            color: active ? colors.primaryDeep : colors.muted,
+            fontFamily: fonts.sansSemiBold,
+            fontSize: 12,
+          },
+        ]}
+      >
+        {label}
+      </Text>
+      <View
+        style={{
+          backgroundColor: active ? colors.primary : "transparent",
+          borderRadius: 999,
+          height: 2.5,
+          marginTop: 3,
+          width: 18,
+        }}
+      />
+    </AnimatedPressable>
+  );
+}
 export function StaffWorkspace() {
   const router = useRouter();
+  const { colors } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const properties = useListMyPropertiesQuery().data ?? [];
@@ -114,10 +259,9 @@ export function StaffWorkspace() {
 
   if (!property) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}
+      <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} surface={colors.surface}
       contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
     >
-        <BackButton onPress={() => router.back()} />
         <EmptyState icon={UsersRound} title="Choose a property" description="Select one of your properties from Home to manage its team." />
       </ScreenScrollView>
     );
@@ -125,22 +269,26 @@ export function StaffWorkspace() {
 
   // Managers get a read-only view of their own record + a redacted directory.
   if (!isOwner) {
-    return <ManagerStaffView onBack={() => router.back()} property={property} />;
+    return <ManagerStaffView property={property} />;
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <BackButton onPress={() => router.back()} />
-      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
+    <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+      <StaffHeader propertyName={property.name} />
 
-      <TabSwitcher
-        active={tab}
-        onChange={setTab}
-        options={[
-          { label: "Team", value: "TEAM" },
-          { label: "Payroll", value: "SALARY" },
-        ]}
-      />
+      {/* A little clear of the header. The header's artwork hangs below its
+          text, so the container's own gap left the switcher sitting against the
+          illustration rather than under the heading. */}
+      <View style={{ marginTop: spacing.sm }}>
+        <TabSwitcher
+          active={tab}
+          onChange={setTab}
+          options={[
+            { icon: UsersRound, label: "Team", value: "TEAM" },
+            { icon: Banknote, label: "Payroll", value: "SALARY" },
+          ]}
+        />
+      </View>
 
       {tab === "TEAM" ? (
         <>
@@ -150,11 +298,7 @@ export function StaffWorkspace() {
       ) : (
         <>
           <SalaryTracker property={property} />
-          {/* Nudged down: the tracker's last section ends short, so without this
-              the card floats in the middle of the gap rather than closing it. */}
-          <View style={{ marginTop: spacing.lg }}>
-            <SalaryHistoryCard property={property} />
-          </View>
+          <SalaryHistoryCard property={property} />
         </>
       )}
     </ScreenScrollView>
@@ -163,17 +307,17 @@ export function StaffWorkspace() {
 
 // Read-only staff view for an assigned manager: their own employment record and
 // salary account, plus a redacted staff directory. No editing anywhere.
-function ManagerStaffView({ onBack, property }: { onBack: () => void; property: OwnerProperty }) {
+function ManagerStaffView({ property }: { property: OwnerProperty }) {
   const { colors, type } = useTheme();
   const employmentQuery = useGetMyManagerEmploymentQuery(property.id);
   const salaryQuery = useGetMySalaryAccountQuery(property.id);
-  const directory = useListStaffDirectoryQuery(property.id).data ?? [];
+  const directoryQuery = useListStaffDirectoryQuery(property.id);
+  const directory = directoryQuery.data ?? [];
   const employment = employmentQuery.data;
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }}>
-      <BackButton onPress={onBack} />
-      <ScreenHeader title="Staff" italicTail="management." subtitle={property.name} />
+    <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+      <StaffHeader propertyName={property.name} />
 
       <Section title="My employment">
         {employmentQuery.isLoading ? (
@@ -210,24 +354,36 @@ function ManagerStaffView({ onBack, property }: { onBack: () => void; property: 
         ) : salaryQuery.data ? (
           <SalaryAccountDetailCard detail={salaryQuery.data} readOnly />
         ) : (
-          <EmptyState description="The owner has not opened a salary account for you yet." icon={WalletCards} title="No salary account yet" />
+          <EmptyState description="The owner has not opened a salary account for you yet." artwork={NO_SALARY_ILLUSTRATION} title="No salary account yet" />
         )}
       </Section>
 
       <Section title={`${directory.length} staff member${directory.length === 1 ? "" : "s"}`}>
-        {directory.length ? directory.map((member) => (
-          <View key={member.referenceCode} style={rowCardStyle(colors)}>
-            <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
-              <UsersRound color={colors.ink} size={28} strokeWidth={2.1} />
+        {directoryQuery.isLoading ? (
+          <SkeletonList rows={3} />
+        ) : directory.length ? (
+          <PersonScroller count={directory.length}>
+            {directory.map((member) => (
+            <View key={member.referenceCode} style={rowCardStyle(colors)}>
+              <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
+                <UsersRound color={colors.ink} size={28} strokeWidth={2.1} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{member.categoryName}</Text>
+                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{member.fullName}</Text>
+                {/* Whether they work here, not whether their ID was checked. The
+                    redacted manager view carries no dates, so this is the coarser
+                    of the two answers — but it is at least an answer about their
+                    employment. */}
+                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+                  {member.active ? "Active" : "Ended"}
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{member.categoryName}</Text>
-              <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{member.fullName}</Text>
-              <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{member.identityVerificationStatus.replaceAll("_", " ")}</Text>
-            </View>
-          </View>
-        )) : (
-          <EmptyState description="No staff members have been added to this property yet." icon={UsersRound} title="No staff members" />
+            ))}
+          </PersonScroller>
+        ) : (
+          <EmptyState description="No staff members have been added to this property yet." artwork={NO_PERSON_ILLUSTRATION} title="No staff members" />
         )}
       </Section>
     </ScreenScrollView>
@@ -242,16 +398,27 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
   const router = useRouter();
   const toast = useToast();
   const categories = useListStaffCategoriesQuery(property.id).data ?? [];
-  const managerEmployment = useListManagerEmploymentQuery(property.id).data ?? [];
-  const assignments = useListPropertyManagersQuery(property.id).data ?? [];
-  const members = useListStaffMembersQuery({ propertyId: property.id }).data ?? [];
+  const managerEmploymentQuery = useListManagerEmploymentQuery(property.id);
+  const assignmentsQuery = useListPropertyManagersQuery(property.id);
+  const membersQuery = useListStaffMembersQuery({ propertyId: property.id });
+  const managerEmployment = managerEmploymentQuery.data ?? [];
+  const assignments = assignmentsQuery.data ?? [];
+  const members = membersQuery.data ?? [];
+  /**
+   * Each list's OWN wait.
+   *
+   * <p>"No managers assigned" and "still asking the server" are not the same
+   * thing, and the empty state was standing in for both — so every visit began
+   * by telling the owner they had no staff, then contradicted itself.
+   */
+  const managersLoading = assignmentsQuery.isLoading || managerEmploymentQuery.isLoading;
+  const membersLoading = membersQuery.isLoading;
   const allProperties = useListMyPropertiesQuery().data ?? [];
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const [deactivateCategory] = useDeactivateStaffCategoryMutation();
   const [shiftManager] = useShiftPropertyManagerMutation();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
-  const [addManagerOpen, setAddManagerOpen] = useState(false);
   const [pendingAccess, setPendingAccess] = useState<{ managerUserId: string; name: string } | null>(null);
   const [memberEditor, setMemberEditor] = useState<StaffMember | null | "NEW">(null);
   const [managerEditor, setManagerEditor] = useState<ManagerEmployment | null>(null);
@@ -307,20 +474,21 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
   return (
     <View style={{ gap: spacing.lg }}>
 
-      <Section title={`${managerEntries.length} assigned`} trailing={<View style={{ width: 148 }}><ActionButton compact icon={Plus} label="Add manager" onPress={() => setAddManagerOpen(true)} variant="secondary" /></View>}>
-        {managerEntries.length ? managerEntries.map((entry) => (
-          <ManagerCard
-            entry={entry}
-            key={entry.assignment.id}
-            onEdit={() => entry.employment ? setManagerEditor(entry.employment) : toast.show("Employment details are still loading. Pull down to refresh.")}
-            onOpen={() => setManagerDetail(entry)}
-          />
-        )) : (
-          <EmptyState description="Assign a real app user as a manager for this property." icon={BriefcaseBusiness} title="No managers assigned" />
+      <StaffGroupCard actionLabel="Add manager" onAction={() => router.push("/owner-add-manager")} title="Managers">
+        {managersLoading ? (
+          <SkeletonList rows={2} />
+        ) : managerEntries.length ? (
+          <PersonScroller count={managerEntries.length} divided>
+            {managerEntries.map((entry) => (
+              <ManagerCard entry={entry} key={entry.assignment.id} onOpen={() => setManagerDetail(entry)} />
+            ))}
+          </PersonScroller>
+        ) : (
+          <EmptyState description="Assign a real app user as a manager for this property." artwork={NO_PERSON_ILLUSTRATION} title="No managers assigned" />
         )}
-      </Section>
+      </StaffGroupCard>
 
-      <Section title={`${filteredMembers.length} tracked`} trailing={<View style={{ width: 144 }}><ActionButton icon={Plus} label="Add member" onPress={() => setMemberEditor("NEW")} variant="secondary" /></View>}>
+      <StaffGroupCard actionLabel="Add member" onAction={() => setMemberEditor("NEW")} title="Tracked staff">
         {/* One control instead of a wall of chips. Categories grow without
             limit, and every chip carried its own delete button — wrapped over
             three or four rows that read as clutter rather than as a filter. The
@@ -332,31 +500,29 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
           onSelect={setSelectedCategory}
           selected={selectedCategory}
         />
-        {filteredMembers.length ? filteredMembers.map((member) => (
-          <PersonCard
-            key={member.referenceCode}
-            icon={UsersRound}
-            meta={`${member.referenceCode} - ${member.categoryName}`}
-            title={member.fullName}
-            subtitle={`${salaryRateLabel(member.salaryStructure, member.salaryRatePaise)} - ${member.identityVerificationStatus}`}
-            onPress={() => setMemberEditor(member)}
-          />
-        )) : (
-          <EmptyState description="Create a personnel record to track employment and manual salary history." icon={UsersRound} title={selectedCategory ? `No ${selectedCategory.toLowerCase()} staff` : "No staff members added"} />
+        {membersLoading ? (
+          <SkeletonList rows={3} />
+        ) : filteredMembers.length ? (
+          <PersonScroller count={filteredMembers.length} divided>
+            {filteredMembers.map((member) => (
+              <PersonCard
+                divided
+                key={member.referenceCode}
+                icon={UsersRound}
+                meta={`${member.referenceCode} · ${humanizeToken(member.categoryName)}`}
+                title={member.fullName}
+                salary={salaryRateLabel(member.salaryStructure, member.salaryRatePaise)}
+                status={employmentStatus(member)}
+                onPress={() => setMemberEditor(member)}
+              />
+            ))}
+          </PersonScroller>
+        ) : (
+          <EmptyState description="Create a personnel record to track employment and manual salary history." artwork={NO_PERSON_ILLUSTRATION} title={selectedCategory ? `No ${selectedCategory.toLowerCase()} staff` : "No staff members added"} />
         )}
-      </Section>
+      </StaffGroupCard>
 
       {createCategoryOpen ? <CreateCategoryModal onClose={() => setCreateCategoryOpen(false)} propertyId={property.id} /> : null}
-      {addManagerOpen ? (
-        <AddManagerModal
-          onAssigned={(assigned) => {
-            setAddManagerOpen(false);
-            setPendingAccess(assigned);
-          }}
-          onClose={() => setAddManagerOpen(false)}
-          propertyId={property.id}
-        />
-      ) : null}
       {pendingAccess ? (
         <ManagerAccessModal manager={pendingAccess} onClose={() => setPendingAccess(null)} propertyId={property.id} />
       ) : null}
@@ -454,9 +620,12 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
 
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
-  const managers = useListManagerEmploymentQuery(property.id).data ?? [];
-  const members = useListStaffMembersQuery({ propertyId: property.id }).data ?? [];
-  const accounts = useListSalaryAccountsQuery(property.id).data ?? [];
+  const managersQuery = useListManagerEmploymentQuery(property.id);
+  const membersQuery = useListStaffMembersQuery({ propertyId: property.id });
+  const accountsQuery = useListSalaryAccountsQuery(property.id);
+  const managers = managersQuery.data ?? [];
+  const members = membersQuery.data ?? [];
+  const accounts = accountsQuery.data ?? [];
   const salaryTotal = useGetSalaryTotalQuery(property.id).data;
   const [openStaffAccount, staffAccountState] = useOpenStaffSalaryAccountMutation();
   const [openManagerAccount, managerAccountState] = useOpenManagerSalaryAccountMutation();
@@ -468,6 +637,15 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [pendingDeleteAdjustment, setPendingDeleteAdjustment] = useState<{ payrollMonth: string; adjustmentId: string } | null>(null);
   const loading = staffAccountState.isLoading || managerAccountState.isLoading;
+  /**
+   * Whether the DIRECTORY is still arriving.
+   *
+   * <p>Distinct from {@link loading}, which is a mutation's — opening someone's
+   * salary account. The list's placeholder was gated on that, so it appeared
+   * while a card was being created and never once while the list itself
+   * loaded, which is the only time anybody is waiting for it.
+   */
+  const directoryLoading = managersQuery.isLoading || membersQuery.isLoading || accountsQuery.isLoading;
 
   const accountByHolder = useMemo(() => new Map(accounts.map((account) => [account.holderReferenceCode, account])), [accounts]);
 
@@ -508,46 +686,64 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
 
   return (
     <View style={{ gap: spacing.lg }}>
-      <Section title="Salary accounts">
+      <StaffGroupCard title="Salary accounts">
         {!selected ? (
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ChoiceButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
-            <ChoiceButton active={filter === "MANAGER"} label="Managers" onPress={() => setFilter("MANAGER")} />
-            <ChoiceButton active={filter === "STAFF"} label="Other staff" onPress={() => setFilter("STAFF")} />
-          </View>
+          <>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <SalaryFilterButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
+              <SalaryFilterButton active={filter === "MANAGER"} label="Managers" onPress={() => setFilter("MANAGER")} />
+              <SalaryFilterButton active={filter === "STAFF"} label="Other staff" onPress={() => setFilter("STAFF")} />
+            </View>
+            {/* The same rule that separates the rows below, so the filters and
+                the list read as one thing. Full bleed, which is why it cancels
+                the card's padding rather than sitting inside it.
+
+                The negative marginTop cancels most of the Card's own gap. A
+                Fragment is not a flex item, so its two children are spaced by
+                the card's 14pt like any other pair — which left the rule
+                floating between the filters and the list instead of closing the
+                filters off. */}
+            <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: -spacing.md, marginTop: -spacing.sm }} />
+          </>
         ) : null}
         {/* Only when there is nothing to stand in for. Rendering it alongside
             the cards put placeholder rows above real content, which reads as two
             extra accounts rather than as loading. A refetch dims the list
             instead — the data is already on screen, it is just going stale. */}
-        {loading && shownPeople.length === 0 ? <SkeletonList rows={2} /> : null}
-        {shownPeople.map((target) => {
-          // Daily-wage employees never get a salary account — we just show their
-          // computed payable for the current month (working days × daily rate).
-          if (target.person.salaryStructure === "DAILY") {
-            return <DailyPayableCard key={`${target.kind}-${target.person.referenceCode}`} kind={target.kind} person={target.person} />;
-          }
-          const account = accountByHolder.get(target.person.referenceCode);
-          const isSelected = selected?.account.holderReferenceCode === target.person.referenceCode;
-          return (
-            <PersonCard
-              key={`${target.kind}-${target.person.referenceCode}`}
-              icon={target.kind === "MANAGER" ? BriefcaseBusiness : UsersRound}
-              meta={target.kind === "MANAGER" ? "Manager" : target.person.categoryName}
-              title={target.person.fullName}
-              subtitle={`${salaryRateLabel(target.person.salaryStructure, target.person.salaryRatePaise)}${account ? "  ·  Account open" : ""}`}
-              onPress={() => (isSelected ? setSelected(null) : void selectPerson(target))}
-            />
-          );
-        })}
+        {(directoryLoading || loading) && shownPeople.length === 0 ? <SkeletonList rows={3} /> : null}
+        <DividedRows>
+          {shownPeople.map((target) => {
+            // Daily-wage employees never get a salary account — we just show their
+            // computed payable for the current month (working days × daily rate).
+            if (target.person.salaryStructure === "DAILY") {
+              return <DailyPayableCard key={`${target.kind}-${target.person.referenceCode}`} kind={target.kind} person={target.person} />;
+            }
+            const account = accountByHolder.get(target.person.referenceCode);
+            const isSelected = selected?.account.holderReferenceCode === target.person.referenceCode;
+            return (
+              <PersonCard
+                key={`${target.kind}-${target.person.referenceCode}`}
+                icon={target.kind === "MANAGER" ? BriefcaseBusiness : UsersRound}
+                meta={target.kind === "MANAGER" ? "Manager" : target.person.categoryName}
+                title={target.person.fullName}
+                divided
+                subtitle={salaryRateLabel(target.person.salaryStructure, target.person.salaryRatePaise)}
+                // A chip, like every other status on these rows. Appended to the
+                // subtitle it was a fact hiding inside a sentence about pay.
+                status={account ? "Account open" : undefined}
+                onPress={() => (isSelected ? setSelected(null) : void selectPerson(target))}
+              />
+            );
+          })}
+        </DividedRows>
         {!selected && !visiblePeople.length ? (
           <EmptyState
             description="Salary accounts become available after a manager or staff member has been added."
-            icon={WalletCards}
+            artwork={NO_PERSON_ILLUSTRATION}
             title={people.length ? "Nobody in this filter" : "Add a manager or staff member first"}
           />
         ) : null}
-      </Section>
+      </StaffGroupCard>
 
       {selected ? (
         <SalaryAccountDetailCard
@@ -562,52 +758,37 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
       ) : null}
 
       {salaryTotal ? (
-        <View
-          style={{
-            alignItems: "center",
-            // White, with the page's own lift. On surfaceSunken it was four
-            // points off the page colour and dissolved into it — that tone is
-            // for panels INSIDE a card, and this one sits on the page.
-            backgroundColor: colors.surface,
-            borderColor: colors.borderStrong,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            borderWidth: 1,
-            elevation: 3,
-            gap: spacing.sm,
-            padding: spacing.lg,
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 4, width: 0 },
-            shadowOpacity: 1,
-            shadowRadius: 12,
-          }}
-        >
-          {/* The figure leads, stacked rather than squeezed beside the label.
-              Side by side it had to share the row with two lines of text and
-              could not be given the size it deserves — this is the number the
-              screen exists to answer. */}
-          {/* Same size, more presence: colour and weight rather than points.
-              On `kicker` it was the palest text in the palette sitting above
-              the largest figure on the screen, so it read as a footnote to its
-              own number. */}
-          <Text style={[type.eyebrow, { color: colors.inkSoft, fontFamily: fonts.sansBold }]}>
-            Payable this month
-          </Text>
-          <Text
-            adjustsFontSizeToFit
-            numberOfLines={1}
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 32,
-              fontVariant: ["tabular-nums"],
-              letterSpacing: -0.5,
-            }}
-          >
-            {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>Opened months plus projected pay</Text>
-        </View>
+        <Card style={{ padding: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            <View style={{ flex: 1, gap: spacing.xs }}>
+              <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>
+                Payable this month
+              </Text>
+              <Text
+                adjustsFontSizeToFit
+                numberOfLines={1}
+                style={{
+                  color: colors.primaryDeep,
+                  fontFamily: fonts.display,
+                  fontSize: 28,
+                  fontVariant: ["tabular-nums"],
+                  letterSpacing: -0.4,
+                }}
+              >
+                {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
+              </Text>
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                Opened months plus projected pay
+              </Text>
+            </View>
+            <Image
+              accessibilityIgnoresInvertColors
+              resizeMode="contain"
+              source={PAYROLL_PAYABLE_WALLET_ILLUSTRATION}
+              style={{ height: 84, width: 104 }}
+            />
+          </View>
+        </Card>
       ) : null}
 
       {selected && monthOpen ? <OpenMonthModal account={selected} onClose={() => setMonthOpen(false)} onSaved={setSelected} propertyId={property.id} /> : null}
@@ -665,15 +846,10 @@ function SalaryAccountDetailCard({
   // so those actions are blocked until the next month is opened.
   const currentMonthPaid = currentMonth?.paymentStatus === "PAID";
   const [payHistoryOpen, setPayHistoryOpen] = useState(false);
-  const [payHistoryPage, setPayHistoryPage] = useState(0);
-  // Client-side: the detail response already carries every month, so paging
-  // here is only about how many land on screen at once.
-  const payHistoryPages = Math.max(1, Math.ceil(months.length / PAY_MONTHS_PER_PAGE));
-  const payHistorySafePage = Math.min(payHistoryPage, payHistoryPages - 1);
-  const visibleMonths = months.slice(
-    payHistorySafePage * PAY_MONTHS_PER_PAGE,
-    (payHistorySafePage + 1) * PAY_MONTHS_PER_PAGE,
-  );
+  const [payHistoryShown, setPayHistoryShown] = useState(PAY_MONTHS_PER_PAGE);
+  // Client-side: the detail response already carries every month, so this is
+  // only about how many land on screen at once.
+  const visibleMonths = months.slice(0, payHistoryShown);
 
   return (
     <Card>
@@ -684,7 +860,7 @@ function SalaryAccountDetailCard({
             <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 20 }]}>{account.holderName}</Text>
             <Text style={[type.caption, { color: colors.muted }]}>{account.categoryName}  ·  {salaryRateLabel(account.salaryStructure, account.salaryRatePaise)}</Text>
           </View>
-          {onClose ? <IconButton accessibilityLabel="Close salary account" icon={X} onPress={onClose} /> : null}
+          {onClose ? <IconButton accessibilityLabel="Close salary account" filled icon={X} onPress={onClose} /> : null}
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <AmountMetric label="Gross to date" value={formatMoneyPaise(account.grossPayToDatePaise)} />
@@ -835,19 +1011,13 @@ function SalaryAccountDetailCard({
           );
         }) : null}
         {payHistoryOpen && !months.length ? (
-          <EmptyState description="Open a payroll month to track additions, deductions, and manual payments." icon={Banknote} title="No salary month opened" />
+          <EmptyState description="Open a payroll month to track additions, deductions, and manual payments." artwork={NO_SALARY_ILLUSTRATION} title="No salary month opened" />
         ) : null}
 
-        {payHistoryOpen && months.length ? (
-          <PaginationBar
-            compact
-            hasNext={payHistorySafePage + 1 < payHistoryPages}
-            hasPrevious={payHistorySafePage > 0}
-            onNext={() => setPayHistoryPage(payHistorySafePage + 1)}
-            onPrevious={() => setPayHistoryPage(Math.max(0, payHistorySafePage - 1))}
-            page={payHistorySafePage}
-            totalElements={months.length}
-            totalPages={payHistoryPages}
+        {payHistoryOpen && months.length > payHistoryShown ? (
+          <ListMoreButton
+            label={`Show ${Math.min(months.length - payHistoryShown, PAY_MONTHS_PER_PAGE)} more`}
+            onPress={() => setPayHistoryShown((current) => current + PAY_MONTHS_PER_PAGE)}
           />
         ) : null}
       </View>
@@ -866,7 +1036,7 @@ function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; 
   const Icon = kind === "MANAGER" ? BriefcaseBusiness : UsersRound;
   const meta = kind === "MANAGER" ? "Manager · Daily" : `${(person as StaffMember).categoryName} · Daily`;
   return (
-    <View style={rowCardStyle(colors)}>
+    <View style={PERSON_ROW_STYLE}>
       <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
         <Icon color={colors.ink} size={28} strokeWidth={2.1} />
       </View>
@@ -897,19 +1067,45 @@ function TeamHistoryCard({ property }: { property: OwnerProperty }) {
   return (
     <>
       <Card>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>Team history</Text>
-          <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>View past employees</Text>
-          <Text style={[type.body, { color: colors.muted }]}>
-            Everyone who has left this property, with their service span, settlement and payslips.
-          </Text>
-          <ActionButton
-            icon={Clock3}
-            label={`${total} record${total === 1 ? "" : "s"}`}
-            onPress={() => setOpen(true)}
-            variant="secondary"
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <Clock3 color={colors.primary} size={18} strokeWidth={2.1} />
+              <Text style={[type.body, { color: colors.muted }]}>Team history</Text>
+            </View>
+            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>View past employees</Text>
+            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+              Everyone who has left this property, with their service span, settlement and payslips.
+            </Text>
+          </View>
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="contain"
+            source={STAFF_HISTORY_ILLUSTRATION}
+            style={{ height: 78, width: 98 }}
           />
         </View>
+        <AnimatedPressable
+          accessibilityRole="button"
+          onPress={() => setOpen(true)}
+          style={{
+            alignItems: "center",
+            borderColor: colors.primary,
+            borderRadius: 13,
+            borderWidth: 1,
+            flexDirection: "row",
+            justifyContent: "center",
+            minHeight: 46,
+            paddingHorizontal: spacing.md,
+            position: "relative",
+          }}
+        >
+          <Clock3 color={colors.primary} size={17} strokeWidth={2.1} />
+          <Text style={[type.bodyStrong, { color: colors.primary, marginLeft: spacing.xs }]}>
+            {total} record{total === 1 ? "" : "s"}
+          </Text>
+          <ChevronRight color={colors.primary} size={20} strokeWidth={2.2} style={{ position: "absolute", right: spacing.md }} />
+        </AnimatedPressable>
       </Card>
 
       {open ? (
@@ -920,7 +1116,6 @@ function TeamHistoryCard({ property }: { property: OwnerProperty }) {
     </>
   );
 }
-
 /** The same treatment for salary: every payment made at this property. */
 function SalaryHistoryCard({ property }: { property: OwnerProperty }) {
   const { colors, type } = useTheme();
@@ -931,30 +1126,66 @@ function SalaryHistoryCard({ property }: { property: OwnerProperty }) {
   return (
     <>
       <Card>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>Payment history</Text>
-          <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>View payments</Text>
-          <Text style={[type.body, { color: colors.muted }]}>
-            Every salary payment recorded at this property, newest first.
-          </Text>
-          <ActionButton
-            icon={Clock3}
-            label={`${total} payment${total === 1 ? "" : "s"}`}
-            onPress={() => setOpen(true)}
-            variant="secondary"
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <Clock3 color={colors.primary} size={18} strokeWidth={2.1} />
+              <Text style={[type.body, { color: colors.muted }]}>Payment history</Text>
+            </View>
+            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
+              View payments
+            </Text>
+            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+              Every salary payment recorded at this property, newest first.
+            </Text>
+          </View>
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="contain"
+            source={PAYROLL_PAYMENT_HISTORY_ILLUSTRATION}
+            style={{ height: 78, width: 98 }}
           />
         </View>
+        <AnimatedPressable
+          accessibilityRole="button"
+          onPress={() => setOpen(true)}
+          style={{
+            alignItems: "center",
+            borderColor: colors.primary,
+            borderRadius: 13,
+            borderWidth: 1,
+            flexDirection: "row",
+            justifyContent: "center",
+            minHeight: 46,
+            paddingHorizontal: spacing.md,
+            position: "relative",
+          }}
+        >
+          <Clock3 color={colors.primary} size={17} strokeWidth={2.1} />
+          <Text style={[type.bodyStrong, { color: colors.primary, marginLeft: spacing.xs }]}>
+            {total} payment{total === 1 ? "" : "s"}
+          </Text>
+          <ChevronRight
+            color={colors.primary}
+            size={20}
+            strokeWidth={2.2}
+            style={{ position: "absolute", right: spacing.md }}
+          />
+        </AnimatedPressable>
       </Card>
 
       {open ? (
         <SheetShell onClose={() => setOpen(false)} title="Payment history">
-          <PayslipList emptyDescription="Salary payments recorded at this property will appear here." payslips={query.data ?? []} showHolder />
+          <PayslipList
+            emptyDescription="Salary payments recorded at this property will appear here."
+            payslips={query.data ?? []}
+            showHolder
+          />
         </SheetShell>
       ) : null}
     </>
   );
 }
-
 /**
  * One employee's payslips. Never paid is a normal state for a new or unpaid
  * employee, so it gets an empty state rather than being treated as an error.
@@ -1001,23 +1232,30 @@ function PayslipList({
   payslips: SalaryPayslip[];
   showHolder?: boolean;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   // The endpoint returns the property's whole history in one response, so the
   // paging is client-side. A busy property accumulates a payment per employee
   // per month, which is a very long sheet by the second year.
-  const [page, setPage] = useState(0);
+  /**
+   * How many payslips are on screen, grown rather than paged.
+   *
+   * <p>
+   * A pager suits a table somebody navigates; a payment history is read
+   * downwards, and arrows made the reader carry which page they were on. The
+   * list extends instead and the count sits at its foot.
+   */
+  const [shown, setShown] = useState(PAYSLIPS_PER_PAGE);
 
   if (loading) {
     return <SkeletonList rows={3} />;
   }
 
   if (payslips.length === 0) {
-    return <EmptyState description={emptyDescription} icon={ReceiptText} title="No payslips available" />;
+    return <EmptyState artwork={NO_BILL_ILLUSTRATION} description={emptyDescription} title="No payslips available" />;
   }
 
-  const totalPages = Math.ceil(payslips.length / PAYSLIPS_PER_PAGE);
-  const safePage = Math.min(page, totalPages - 1);
-  const visible = payslips.slice(safePage * PAYSLIPS_PER_PAGE, (safePage + 1) * PAYSLIPS_PER_PAGE);
+  const visible = payslips.slice(0, shown);
+  const remaining = payslips.length - visible.length;
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -1046,19 +1284,142 @@ function PayslipList({
         </Card>
       ))}
 
-      {/* Always shown: on a single page the arrows are inert but the total is
-          not, and a bar that vanishes below the page size reads as pagination
-          that failed to render rather than pagination that was not needed. */}
-      <PaginationBar
-        hasNext={safePage + 1 < totalPages}
-        hasPrevious={safePage > 0}
-        onNext={() => setPage(safePage + 1)}
-        onPrevious={() => setPage(Math.max(0, safePage - 1))}
-        page={safePage}
-        totalElements={payslips.length}
-        totalPages={totalPages}
-      />
+      {/* The list's foot either way: more to come, or the total. Without it
+          the last payslip just stops, and there is no telling a finished list
+          from one that has more behind it. */}
+      {remaining > 0 ? (
+        <AnimatedPressable
+          accessibilityLabel={`Show ${Math.min(remaining, PAYSLIPS_PER_PAGE)} more payslips`}
+          accessibilityRole="button"
+          onPress={() => setShown((current) => current + PAYSLIPS_PER_PAGE)}
+          style={{
+            alignItems: "center",
+            borderColor: colors.border,
+            borderRadius: 12,
+            borderWidth: 1,
+            justifyContent: "center",
+            minHeight: 44,
+          }}
+        >
+          <Text style={[type.caption, { color: colors.primary, fontFamily: fonts.sansBold }]}>
+            Show {Math.min(remaining, PAYSLIPS_PER_PAGE)} more
+          </Text>
+        </AnimatedPressable>
+      ) : (
+        <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
+          {payslips.length === 1 ? "1 payslip" : `${payslips.length} payslips`}
+        </Text>
+      )}
     </View>
+  );
+}
+
+/**
+ * The foot of a growing list.
+ *
+ * <p>Shared by the payroll months, the payslips and the employee history, so a
+ * list that extends looks the same wherever it does — the three used to end in
+ * three different controls.
+ */
+function ListMoreButton({ busy = false, label, onPress }: { busy?: boolean; label: string; onPress: () => void }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ busy }}
+      disabled={busy}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        borderColor: colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        justifyContent: "center",
+        minHeight: 44,
+      }}
+    >
+      {busy ? (
+        <ActivityIndicator color={colors.muted} />
+      ) : (
+        <Text style={[type.caption, { color: colors.primary, fontFamily: fonts.sansBold }]}>{label}</Text>
+      )}
+    </AnimatedPressable>
+  );
+}
+
+/** Roughly one person card, used to cap a section at five of them. */
+const PERSON_CARD_HEIGHT = 96;
+
+/** The same, for a divided list: no border, no gap, so a row is shorter. */
+const PERSON_ROW_HEIGHT = 84;
+
+/** How many fit before the section starts scrolling instead of growing. */
+const PERSON_CARDS_BEFORE_SCROLL = 5;
+
+/**
+ * A section of people that stops growing at five cards and scrolls instead.
+ *
+ * <p>
+ * Managers and tracked staff both sit in one card on a screen that already
+ * scrolls, so a property with twenty staff pushed everything below it — the
+ * payroll, the history — out of reach behind a wall of near-identical rows.
+ * Capped, the screen keeps its shape however many people there are.
+ *
+ * <p>
+ * Below the cap it renders as a plain stack: a ScrollView that never scrolls
+ * still swallows the parent's drag on Android, so short lists must not have
+ * one at all.
+ */
+/**
+ * People separated by a rule instead of boxed one by one.
+ *
+ * <p>Between, never after: a trailing rule sits on the card's own padding and
+ * reads as the list having one more row that failed to load.
+ */
+function DividedRows({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
+
+  return (
+    <>
+      {Children.toArray(children).map((child, index) => (
+        <Fragment key={index}>
+          {index > 0 ? (
+            <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: -spacing.md }} />
+          ) : null}
+          {child}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+function PersonScroller({
+  children,
+  count,
+  divided = false,
+}: {
+  children: ReactNode;
+  count: number;
+  /** Separate the people with a rule instead of a gap between cards. */
+  divided?: boolean;
+}) {
+  const rowHeight = divided ? PERSON_ROW_HEIGHT : PERSON_CARD_HEIGHT;
+  const content = divided ? <DividedRows>{children}</DividedRows> : children;
+
+  if (count <= PERSON_CARDS_BEFORE_SCROLL) {
+    return <View style={{ gap: divided ? 0 : spacing.sm }}>{content}</View>;
+  }
+
+  return (
+    <ScrollView
+      contentContainerStyle={{ gap: divided ? 0 : spacing.sm }}
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+      style={{ maxHeight: rowHeight * PERSON_CARDS_BEFORE_SCROLL }}
+    >
+      {content}
+    </ScrollView>
   );
 }
 
@@ -1068,12 +1429,36 @@ function monthLabel(iso: string) {
 }
 
 function EmployeeHistory({ property }: { property: OwnerProperty }) {
-  const { colors } = useTheme();
+  const { colors, type } = useTheme();
   const [page, setPage] = useState(0);
   // 10 a page, matching the payslip list — 20 made a single wall of cards.
   const query = useListEmployeeHistoryQuery({ page, propertyId: property.id, size: HISTORY_PER_PAGE });
   const pageData = query.data;
-  const items = pageData?.items ?? [];
+
+  /**
+   * Every page seen so far, appended.
+   *
+   * <p>The query returns one page keyed on its number, so reading `data` alone
+   * shows page three and nothing before it. Page 0 REPLACES rather than
+   * appends — that is what a refetch produces, and appending there would list
+   * the same people twice.
+   */
+  const [loadedItems, setLoadedItems] = useState<EmployeeHistoryItem[]>([]);
+
+  useEffect(() => {
+    if (!pageData) {
+      return;
+    }
+    setLoadedItems((current) => {
+      if (pageData.page === 0) {
+        return pageData.items;
+      }
+      const seen = new Set(current.map((item) => `${item.holderType}-${item.referenceCode}`));
+      return [...current, ...pageData.items.filter((item) => !seen.has(`${item.holderType}-${item.referenceCode}`))];
+    });
+  }, [pageData]);
+
+  const items = loadedItems;
   // isLoading is only true on the FIRST fetch. Re-opening the sheet after the
   // cache is invalidated leaves isLoading false with no data yet, which rendered
   // "No past employees" for a frame before the rows arrived. Anything in flight
@@ -1087,26 +1472,31 @@ function EmployeeHistory({ property }: { property: OwnerProperty }) {
         title={knownTotal === undefined ? "Loading…" : `${knownTotal} record${knownTotal === 1 ? "" : "s"}`}
       >
         {loading ? (
-          <SkeletonCard />
+          <SkeletonList rows={3} />
         ) : items.length ? (
-          <View style={{ gap: spacing.sm, opacity: query.isFetching ? 0.6 : 1 }}>
+          <View style={{ gap: spacing.sm }}>
             {items.map((item) => (
               <HistoryCard item={item} key={`${item.holderType}-${item.referenceCode}`} propertyId={property.id} />
             ))}
           </View>
         ) : (
-          <EmptyState description="Employees you end will appear here with their service span, settlement, and exit review." icon={BriefcaseBusiness} title="No past employees yet" />
+          <EmptyState description="Employees you end will appear here with their service span, settlement, and exit review." artwork={NO_PERSON_ILLUSTRATION} title="No past employees yet" />
         )}
-        {pageData && pageData.totalElements > 0 ? (
-          <PaginationBar
-            hasNext={pageData.hasNext}
-            hasPrevious={pageData.hasPrevious}
-            onNext={() => setPage((current) => current + 1)}
-            onPrevious={() => setPage((current) => Math.max(0, current - 1))}
-            page={pageData.page}
-            totalElements={pageData.totalElements}
-            totalPages={pageData.totalPages}
-          />
+        {/* The list extends rather than pages. A record of past employees is
+            read downwards, and arrows made the reader carry which page they
+            were on. */}
+        {items.length > 0 ? (
+          pageData?.hasNext ? (
+            <ListMoreButton
+              busy={query.isFetching}
+              label={`Show ${HISTORY_PER_PAGE} more`}
+              onPress={() => setPage((current) => current + 1)}
+            />
+          ) : (
+            <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
+              {items.length === 1 ? "1 record" : `${items.length} records`}
+            </Text>
+          )
         ) : null}
       </Section>
     </View>
@@ -1165,7 +1555,7 @@ function HistoryCard({ item, propertyId }: { item: EmployeeHistoryItem; property
           <SheetShell onClose={() => setPayslipsOpen(false)} title={`Payslips — ${item.fullName}`}>
             <EmptyState
               description={`${item.fullName} never had a salary account opened, so no payslips exist.`}
-              icon={ReceiptText}
+              artwork={NO_BILL_ILLUSTRATION}
               title="No payslips available"
             />
           </SheetShell>
@@ -1220,11 +1610,12 @@ function CategoryFilterBar({
           borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
+          minHeight: 60,
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm,
         }}
       >
-        <Filter color={colors.kicker} size={16} strokeWidth={2.2} />
+        <Filter color={colors.kicker} size={19} strokeWidth={2.2} />
         <View style={{ flex: 1 }}>
           <Text style={[type.caption, { color: colors.kicker }]}>Category</Text>
           <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
@@ -1275,29 +1666,51 @@ function CategoryFilterBar({
 
 
 
-function ManagerCard({ entry, onEdit, onOpen }: { entry: ManagerDirectoryEntry; onEdit: () => void; onOpen: () => void }) {
+/**
+ * A manager in the directory.
+ *
+ * <p>The WHOLE row opens them. It used to carry a pencil beside the chevron,
+ * which split the row into two targets for one person and duplicated an action
+ * the detail sheet already offers — so a tap near the right edge did something
+ * different from a tap in the middle.
+ */
+function ManagerCard({ entry, onOpen }: { entry: ManagerDirectoryEntry; onOpen: () => void }) {
   const { colors, type } = useTheme();
   const { assignment, employment } = entry;
   return (
-    <View style={rowCardStyle(colors)}>
-      <AnimatedPressable onPress={onOpen} style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
-          <BriefcaseBusiness color={colors.ink} size={28} strokeWidth={2.1} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{employment?.referenceCode ?? "Manager"}</Text>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{assignment.managerFullName}</Text>
+    <AnimatedPressable
+      accessibilityLabel={`Open ${assignment.managerFullName}`}
+      accessibilityRole="button"
+      onPress={onOpen}
+      style={PERSON_ROW_STYLE}
+    >
+      <BriefcaseBusiness color={colors.primary} size={30} strokeWidth={2} />
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{employment?.referenceCode ?? "Manager"}</Text>
+        <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{assignment.managerFullName}</Text>
+        {/* The same line staff carry: what they are paid, then where they are
+            in their employment. A manager whose start date has not arrived is
+            assigned but not yet working, and nothing on the row said so. */}
+        {employment ? (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+            <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>
+              {salaryRateLabel(employment.salaryStructure, employment.salaryRatePaise)}
+            </Text>
+            <Text style={[type.caption, { color: colors.muted }]}>·</Text>
+            <PersonStatusChip label={employmentStatus(employment)} />
+          </View>
+        ) : (
           <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-            {employment ? salaryRateLabel(employment.salaryStructure, employment.salaryRatePaise) : assignment.managerPhone}
+            {assignment.managerPhone}
           </Text>
-        </View>
-        <ChevronRight color={colors.muted} size={18} />
-      </AnimatedPressable>
-      <IconButton accessibilityLabel={`Edit employment for ${assignment.managerFullName}`} icon={Pencil} onPress={onEdit} />
-    </View>
+        )}
+      </View>
+      <View style={staffRoundButtonStyle(colors)}>
+        <ChevronRight color={colors.ink} size={18} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
   );
 }
-
 function ManagerDetailModal({ entry, onClose, onEdit, onPermissions, onRemove, onShift, shiftTargets }: {
   entry: ManagerDirectoryEntry;
   onClose: () => void;
@@ -1375,6 +1788,41 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 // Shared lift so the staff row cards float off the background like the rest of
 // the app's clickable cards.
+/**
+ * A person as a ROW in a list, not a card in a stack.
+ *
+ * <p>
+ * Full card width: the negative margin cancels `StaffGroupCard`'s padding so the
+ * row and the rule under it run edge to edge, while the matching padding keeps
+ * the content lined up with the heading above. No border, no fill and no corner
+ * of its own — the card it sits in is already the surface, and a box inside a
+ * box drew two frames around one person.
+ */
+/**
+ * Where someone is in their employment, as a chip on their row.
+ *
+ * <p>One treatment for every state on purpose. The word carries the meaning and
+ * the chip only says "this is a status" — colouring "Not started" differently
+ * from "Active" would rank them, and neither is a problem to be flagged.
+ */
+function PersonStatusChip({ label }: { label: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.accentSoft, borderRadius: 999, flexShrink: 0, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
+      <Text style={[type.caption, { color: colors.warningText, fontSize: 10, fontWeight: "700" }]}>{label}</Text>
+    </View>
+  );
+}
+
+const PERSON_ROW_STYLE = {
+  alignItems: "center" as const,
+  flexDirection: "row" as const,
+  gap: spacing.sm,
+  marginHorizontal: -spacing.md,
+  paddingHorizontal: spacing.md,
+  paddingVertical: spacing.md,
+};
+
 function rowCardStyle(colors: { surface: string; borderStrong: string }) {
   return {
     alignItems: "center" as const,
@@ -1389,23 +1837,76 @@ function rowCardStyle(colors: { surface: string; borderStrong: string }) {
   };
 }
 
-function PersonCard({ icon: Icon, meta, onPress, subtitle, title }: { icon: typeof UsersRound; meta: string; onPress: () => void; subtitle: string; title: string }) {
+/**
+ * The chevron at the end of a person's row.
+ *
+ * <p>No ring. Once the rows lost their boxes the outlined circle was the only
+ * frame left on the line, so it read as a button sitting on a list rather than
+ * as the row's own affordance. The size stays: it is the touch target.
+ */
+function staffRoundButtonStyle(_colors: { surface: string; borderStrong: string }) {
+  return {
+    alignItems: "center" as const,
+    height: 38,
+    justifyContent: "center" as const,
+    width: 38,
+  };
+}
+
+function PersonCard({
+  divided = false,
+  icon: Icon,
+  meta,
+  onPress,
+  salary,
+  status,
+  subtitle,
+  title,
+}: {
+  /**
+   * Render as a row in a divided list rather than as its own card.
+   *
+   * <p>Opt in, because this component is also the salary-accounts list, which
+   * is still a stack of cards. One list changing shape must not drag the other
+   * with it.
+   */
+  divided?: boolean;
+  icon: typeof UsersRound;
+  meta: string;
+  onPress: () => void;
+  salary?: string;
+  status?: string;
+  subtitle?: string;
+  title: string;
+}) {
   const { colors, type } = useTheme();
+  const detail = salary ?? subtitle ?? "";
+
   return (
-    <AnimatedPressable onPress={onPress} style={rowCardStyle(colors)}>
-      <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
-        <Icon color={colors.ink} size={28} strokeWidth={2.1} />
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
+    <AnimatedPressable
+      onPress={onPress}
+      style={divided ? PERSON_ROW_STYLE : [rowCardStyle(colors), { minHeight: 96 }]}
+    >
+      <Icon color={colors.primary} size={32} strokeWidth={2} />
+      <View style={{ flex: 1, gap: 3 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{title}</Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{subtitle}</Text>
+        <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{title}</Text>
+        {status ? (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+            <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</Text>
+            <Text style={[type.caption, { color: colors.muted }]}>·</Text>
+            <PersonStatusChip label={status} />
+          </View>
+        ) : (
+          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{detail}</Text>
+        )}
       </View>
-      <ChevronRight color={colors.muted} size={18} />
+      <View style={staffRoundButtonStyle(colors)}>
+        <ChevronRight color={colors.ink} size={18} strokeWidth={2.2} />
+      </View>
     </AnimatedPressable>
   );
 }
-
 /**
  * One month's pay, as a receipt.
  *
@@ -1533,11 +2034,11 @@ function CreateCategoryModal({ onClose, propertyId }: { onClose: () => void; pro
  * <p>
  * While the permissions screen is open this modal is hidden rather than
  * unmounted — a React Native Modal is a separate window and would otherwise
- * cover the screen it just pushed. On return it re-reads the manager's grants:
+ * cover the screen it just pushed. It STAYS hidden until the grants come back:
  * if the owner saved something, there is nothing left to ask and it closes
- * itself; if they backed out without saving, the two paths are still there.
+ * itself, and only a return with nothing granted brings the question back.
  */
-function ManagerAccessModal({
+export function ManagerAccessModal({
   manager,
   onClose,
   propertyId,
@@ -1563,12 +2064,19 @@ function ManagerAccessModal({
       if (!configuring) {
         return;
       }
-      setConfiguring(false);
+      // Stays hidden until the answer arrives. Clearing `configuring` first
+      // painted this modal for however long the refetch took, so an owner who
+      // had just finished setting permissions watched the question they had
+      // already answered come back before it closed itself.
       void permissionsQuery.refetch().then((result) => {
         const levels = result.data?.levels ?? {};
         if (Object.values(levels).some((level) => level && level !== "NONE")) {
           onClose();
+          return;
         }
+        // Nothing was granted, so they backed out without saving and the two
+        // paths are still the question worth asking.
+        setConfiguring(false);
       });
     }, [configuring, onClose, permissionsQuery]),
   );
@@ -1639,118 +2147,9 @@ function ManagerAccessModal({
   );
 }
 
-function AddManagerModal({
-  onAssigned,
-  onClose,
-  propertyId,
-}: {
-  onAssigned: (manager: { managerUserId: string; name: string }) => void;
-  onClose: () => void;
-  propertyId: string;
-}) {
-  const toast = useToast();
-  const [phone, setPhone] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [salaryStructure, setSalaryStructure] = useState<SalaryStructure>("MONTHLY");
-  const [salary, setSalary] = useState("");
-  const [benefits, setBenefits] = useState("");
-  const [startDate, setStartDate] = useState(today());
-  const [notes, setNotes] = useState("");
-  const [lookup, setLookup] = useState<ManagerLookup | null>(null);
-  const mgrErrors = useFormErrors<"phone" | "fullName" | "salary" | "startDate">();
-  const [runLookup, lookupState] = useLazyLookupManagerQuery();
-  const [addManager, state] = useAddPropertyManagerMutation();
-
-  function changePhone(value: string) {
-    setPhone(value);
-    setFullName("");
-    setLookup(null);
-    mgrErrors.clearAll();
-  }
-
-  async function doLookup() {
-    if (!mgrErrors.validate(/^\d{10,15}$/.test(phone.trim()) ? {} : { phone: "Enter a valid phone number." })) {
-      return;
-    }
-    try {
-      const result = await runLookup({ phone: phone.trim(), propertyId }).unwrap();
-      setLookup(result);
-      if (result.exists && result.fullName) setFullName(result.fullName);
-    } catch (error) {
-      mgrErrors.failFromServer(errorMessage(error, "Could not look up this phone number. Try again."));
-    }
-  }
-
-  async function submit() {
-    const salaryRatePaise = rupeesToPaise(salary);
-    // The lookup gate belongs on the phone field: it is that number that has
-    // not been checked, or has come back ineligible.
-    const problems = {
-      ...(lookup?.eligible
-        ? {}
-        : { phone: lookup?.message ?? "Look up the phone number before assigning a manager." }),
-      ...(fullName.trim() ? {} : { fullName: "Enter the manager's name." }),
-      ...(salaryRatePaise ? {} : { salary: "Enter a valid amount." }),
-      ...(startDate ? {} : { startDate: "Pick a working start date." }),
-    };
-    if (!mgrErrors.validate(problems) || !salaryRatePaise) {
-      return;
-    }
-    try {
-      const created = await addManager({
-        propertyId,
-        payload: {
-          phone: phone.trim(),
-          fullName: fullName.trim(),
-          dateOfBirth: dateOfBirth || null,
-          salaryStructure,
-          salaryRatePaise,
-          benefitsSummary: benefits,
-          employmentStartDate: startDate,
-          employmentEndDate: null,
-          employmentNotes: notes,
-        },
-      }).unwrap();
-      // A new manager holds NO permissions: absence is NONE, so they can see the
-      // workspace and open nothing. Closing here would leave the owner with a
-      // manager who cannot work and no hint why, so the decision is made now.
-      onAssigned({ managerUserId: created.managerUserId, name: fullName.trim() });
-      toast.show("Manager assigned. Now choose their access.");
-    } catch (error) {
-      mgrErrors.failFromServer(errorMessage(error, "Could not assign the manager. Check the details and try again."));
-    }
-  }
-
-  return (
-    <Sheet onClose={onClose} title="Assign manager">
-      <FormInput error={mgrErrors.errors.phone} keyboardType="phone-pad" label="Phone number" onChangeText={(next) => { changePhone(next); mgrErrors.clearField("phone"); }} placeholder="10-digit phone" value={phone} />
-      <ActionButton disabled={lookupState.isFetching} icon={Search} label={lookupState.isFetching ? "Looking up" : "Look up"} onPress={() => void doLookup()} variant="secondary" />
-      {lookup ? <ManagerLookupResult lookup={lookup} /> : null}
-      {lookup?.eligible ? (
-        <>
-          <FormInput error={mgrErrors.errors.fullName} label="Full name" onChangeText={(next) => { setFullName(next); mgrErrors.clearField("fullName"); }} placeholder="Manager name" value={fullName} />
-          <DatePickerField clearable label="Date of birth" onChange={setDateOfBirth} value={dateOfBirth} />
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
-            <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
-          </View>
-          <FormInput error={mgrErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); mgrErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
-          <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
-          <DatePickerField label="Working start date" onChange={(next) => { setStartDate(next); mgrErrors.clearField("startDate"); }} value={startDate} />
-          <FieldError message={mgrErrors.errors.startDate} />
-          <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
-        </>
-      ) : null}
-      {mgrErrors.serverError ? <AlertModal message={mgrErrors.serverError} onClose={mgrErrors.dismissServerError} /> : null}
-      {lookup?.eligible ? <ActionButton disabled={state.isLoading || mgrErrors.blocked} icon={Plus} label={state.isLoading ? "Assigning" : "Assign manager"} onPress={() => void submit()} /> : null}
-    </Sheet>
-  );
-}
-
 function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { categories: StaffCategory[]; member: StaffMember | null; onClose: () => void; onEnd?: () => void; propertyId: string }) {
   const toast = useToast();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [categoryId, setCategoryId] = useState(categories.find((category) => category.name === member?.categoryName)?.id ?? categories[0]?.id ?? "");
   const [fullName, setFullName] = useState(member?.fullName ?? "");
   const [birthDate, setBirthDate] = useState(member?.dateOfBirth ?? "");
@@ -1763,6 +2162,14 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
   const [createMember, createState] = useCreateStaffMemberMutation();
   const [updateMember, updateState] = useUpdateStaffMemberMutation();
   const fieldErrors = useFormErrors<"category" | "fullName" | "salary" | "startDate" | "workingDays">();
+  /**
+   * Whether this member has actually started working.
+   *
+   * <p>Gates the two fields that decide how their pay is CALCULATED — the start
+   * date and the monthly/daily structure. A new record, or one starting next
+   * week, has accrued nothing yet and is still free to correct.
+   */
+  const hasStarted = Boolean(member && member.employmentStartDate <= istToday());
   const saving = createState.isLoading || updateState.isLoading;
   const dailyEstPaise = workingDaysInCurrentMonth(workingDaysMask) * (rupeesToPaise(salary) ?? 0);
   async function submit() {
@@ -1805,8 +2212,60 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
       <FieldError message={fieldErrors.errors.category} />
       <FormInput error={fieldErrors.errors.fullName} label="Full name" onChangeText={(next) => { setFullName(next); fieldErrors.clearField("fullName"); }} placeholder="Staff member name" value={fullName} />
       <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
-      <View style={{ flexDirection: "row", gap: spacing.sm }}><ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} /><ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} /></View>
-      <FormInput error={fieldErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); fieldErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
+      {/* One row: the structure and the rate are one decision read together —
+          "daily at ₹150" — and stacked they read as two unrelated questions with
+          the answer to the first changing the label of the second.
+
+          A picker rather than the two chips, so the halves are the same kind of
+          object at the same height. Two chips squeezed into half a row would sit
+          shorter than the field beside them.
+
+          The structure is LOCKED once they have started, like the start date and
+          for the same reason: it is not a term, it is the METHOD their pay is
+          worked out by, and flipping a started member from monthly to daily
+          recomputes every period they have already been paid for on a different
+          basis. The rate stays editable either way — a raise is an ordinary
+          thing to record and rewrites nothing. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1 }}>
+          {hasStarted ? (
+            <View style={{ gap: 6 }}>
+              <Text style={[type.label, { color: colors.muted }]}>Pay structure</Text>
+              <View
+                style={{
+                  backgroundColor: colors.surfaceSunken,
+                  borderColor: colors.border,
+                  borderCurve: "continuous",
+                  borderRadius: 14,
+                  borderWidth: 1.5,
+                  justifyContent: "center",
+                  minHeight: 50,
+                  paddingHorizontal: spacing.md,
+                }}
+              >
+                <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>
+                  {salaryStructure === "DAILY" ? "Daily" : "Monthly"}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <SingleOptionPicker
+              centered
+              label="Pay structure"
+              onChange={(next) => setSalaryStructure(next)}
+              options={[
+                { label: "Monthly", value: "MONTHLY" as const },
+                { label: "Daily", value: "DAILY" as const },
+              ]}
+              showIcon={false}
+              value={salaryStructure}
+            />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <FormInput error={fieldErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); fieldErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
+        </View>
+      </View>
       {salaryStructure === "DAILY" ? (
         <>
           <WeekdayPicker mask={workingDaysMask} onChange={(next) => { setWorkingDaysMask(next); fieldErrors.clearField("workingDays"); }} />
@@ -1817,7 +2276,37 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
         </>
       ) : null}
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
-      <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
+      {/* Locked once they have actually started, not from the moment the record
+          exists. Salary accrues FROM this date — SalaryAccountService computes
+          each month's earned amount against it — so moving it afterwards
+          rewrites what was owed for periods that may already have been paid.
+          Before the date arrives nothing has accrued, and a hire date typed a
+          day early is an ordinary correction. Shown rather than hidden once
+          locked, because it is a term of their employment and the owner still
+          needs to read it. */}
+      {hasStarted ? (
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>Working start date</Text>
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderColor: colors.border,
+              borderRadius: 14,
+              borderWidth: 1,
+              justifyContent: "center",
+              minHeight: 52,
+              paddingHorizontal: spacing.md,
+            }}
+          >
+            <Text style={[type.body, { color: colors.inkSoft }]}>{startDate}</Text>
+          </View>
+          <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
+            Fixed now they have started, because salary is worked out from it.
+          </Text>
+        </View>
+      ) : (
+        <DatePickerField label="Working start date" onChange={setStartDate} value={startDate} />
+      )}
       <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
       <ActionButton disabled={saving || fieldErrors.blocked} icon={Pencil} label={saving ? "Saving" : "Save member"} onPress={() => void submit()} />
       {fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}
@@ -1836,6 +2325,11 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
   const [notes, setNotes] = useState(manager.employmentNotes);
   const empErrors = useFormErrors<"salary" | "startDate">();
   const [updateManager, state] = useUpdateManagerEmploymentMutation();
+  const { colors, fonts, type } = useTheme();
+  // The same rule the staff editor uses: what decides how pay is CALCULATED is
+  // fixed once it has started calculating. A manager with no start date on
+  // record has certainly not started.
+  const hasStarted = Boolean(manager.employmentStartDate && manager.employmentStartDate <= istToday());
 
   async function submit() {
     const salaryRatePaise = rupeesToPaise(salary);
@@ -1872,16 +2366,113 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
   }
 
   return (
-    <Sheet onClose={onClose} subtitle={manager.fullName} title="Edit manager employment">
-      <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <ChoiceButton active={salaryStructure === "MONTHLY"} label="Monthly" onPress={() => setSalaryStructure("MONTHLY")} />
-        <ChoiceButton active={salaryStructure === "DAILY"} label="Daily" onPress={() => setSalaryStructure("DAILY")} />
+    <Sheet onClose={onClose} title="Edit manager employment">
+      {/* The name in the form rather than as the sheet's subtitle. A person's
+          record should open with who it is about, in the same column as
+          everything else about them.
+
+          Read-only, because it is not stored here: a manager's name lives on
+          their USER ACCOUNT, which they may also use as a tenant or an owner
+          elsewhere. Editing it from one property's staff screen would rename
+          them everywhere, including in agreements and chats they are part of. */}
+      <View style={{ gap: 6 }}>
+        <Text style={[type.label, { color: colors.muted }]}>Full name</Text>
+        <View
+          style={{
+            backgroundColor: colors.surfaceSunken,
+            borderColor: colors.border,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            borderWidth: 1.5,
+            justifyContent: "center",
+            minHeight: 50,
+            paddingHorizontal: spacing.md,
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>
+            {manager.fullName}
+          </Text>
+        </View>
+        <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
+          Set on their own account, so only they can change it.
+        </Text>
       </View>
-      <FormInput error={empErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); empErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
+
+      <DatePickerField clearable label="Date of birth" onChange={setBirthDate} value={birthDate} />
+
+      {/* Structure and rate on one row — one decision read together, "daily at
+          ₹150". The structure locks once they have started, for the same reason
+          the start date does. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1 }}>
+          {hasStarted ? (
+            <View style={{ gap: 6 }}>
+              <Text style={[type.label, { color: colors.muted }]}>Pay structure</Text>
+              <View
+                style={{
+                  backgroundColor: colors.surfaceSunken,
+                  borderColor: colors.border,
+                  borderCurve: "continuous",
+                  borderRadius: 14,
+                  borderWidth: 1.5,
+                  justifyContent: "center",
+                  minHeight: 50,
+                  paddingHorizontal: spacing.md,
+                }}
+              >
+                <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>
+                  {salaryStructure === "DAILY" ? "Daily" : "Monthly"}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <SingleOptionPicker
+              centered
+              label="Pay structure"
+              onChange={(next) => setSalaryStructure(next)}
+              options={[
+                { label: "Monthly", value: "MONTHLY" as const },
+                { label: "Daily", value: "DAILY" as const },
+              ]}
+              showIcon={false}
+              value={salaryStructure}
+            />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <FormInput error={empErrors.errors.salary} keyboardType="decimal-pad" label={salaryStructure === "DAILY" ? "Daily rate" : "Monthly salary"} onChangeText={(next) => { setSalary(next); empErrors.clearField("salary"); }} placeholder="0" prefix="₹" value={salary} />
+        </View>
+      </View>
+
       <FormInput label="Benefits provided" multiline onChangeText={setBenefits} placeholder="Optional benefits" value={benefits} />
-      <DatePickerField label="Working start date" onChange={(next) => { setStartDate(next); empErrors.clearField("startDate"); }} value={startDate} />
-      <FieldError message={empErrors.errors.startDate} />
+
+      {hasStarted ? (
+        <View style={{ gap: 6 }}>
+          <Text style={[type.label, { color: colors.muted }]}>Working start date</Text>
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderColor: colors.border,
+              borderCurve: "continuous",
+              borderRadius: 14,
+              borderWidth: 1.5,
+              justifyContent: "center",
+              minHeight: 50,
+              paddingHorizontal: spacing.md,
+            }}
+          >
+            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>{startDate}</Text>
+          </View>
+          <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
+            Fixed now they have started, because salary is worked out from it.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <DatePickerField label="Working start date" onChange={(next) => { setStartDate(next); empErrors.clearField("startDate"); }} value={startDate} />
+          <FieldError message={empErrors.errors.startDate} />
+        </>
+      )}
       <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional employment notes" value={notes} />
       {empErrors.serverError ? <AlertModal message={empErrors.serverError} onClose={empErrors.dismissServerError} /> : null}
       <ActionButton disabled={state.isLoading || empErrors.blocked} icon={Pencil} label={state.isLoading ? "Saving" : "Save manager employment"} onPress={() => void submit()} />
@@ -2186,7 +2777,7 @@ function EndEmploymentSheet({
   );
 }
 
-function DatePickerField({ clearable = false, label, onChange, value }: { clearable?: boolean; label: string; onChange: (value: string) => void; value: string }) {
+export function DatePickerField({ clearable = false, label, onChange, value }: { clearable?: boolean; label: string; onChange: (value: string) => void; value: string }) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
   const selectedDate = value ? new Date(`${value}T12:00:00`) : new Date();
@@ -2204,7 +2795,7 @@ function DatePickerField({ clearable = false, label, onChange, value }: { cleara
         <AnimatedPressable onPress={() => setOpen(true)} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flex: 1, minHeight: 52, justifyContent: "center", paddingHorizontal: spacing.md }}>
           <Text style={[type.body, { color: value ? colors.ink : colors.muted }]}>{value || "Select date"}</Text>
         </AnimatedPressable>
-        {clearable && value ? <IconButton accessibilityLabel={`Clear ${label}`} icon={X} onPress={() => onChange("")} /> : null}
+        {clearable && value ? <IconButton accessibilityLabel={`Clear ${label}`} filled icon={X} onPress={() => onChange("")} /> : null}
       </View>
       {open ? <DateTimePicker display="default" maximumDate={label === "Date of birth" ? new Date() : undefined} mode="date" onChange={update} value={selectedDate} /> : null}
     </View>
@@ -2245,10 +2836,11 @@ function Sheet({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           {/* The sheet's own panel. NOT a PinnedFooter — it happens to use the
               same bottom-inset expression, but this is the surface the content
@@ -2260,8 +2852,9 @@ function Sheet({
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              marginBottom: keyboardInset,
               maxHeight: "92%",
-              paddingBottom: insets.bottom + spacing.md,
+              paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
@@ -2291,6 +2884,42 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
 function salaryRateLabel(structure: SalaryStructure, amountPaise: number) { return `${formatMoneyPaise(amountPaise)}${structure === "DAILY" ? " / day" : " / month"}`; }
 // Format a Date as a local YYYY-MM-DD. toISOString() would convert to UTC and
 // roll the date back a day for timezones ahead of UTC (e.g. IST).
+/**
+ * Whether a staff member is working here, from their dates.
+ *
+ * <p>
+ * <b>Not {@code identityVerificationStatus}.</b> The card used to show that,
+ * unlabelled, in the slot a reader takes for employment state — so every member
+ * read "Not started" for ever, including ones who started months ago. Nothing in
+ * the app moves that field either: document verification is shelved with the
+ * payments work, and there is no control anywhere that changes it, so it could
+ * only ever say one thing.
+ *
+ * <p>
+ * ISO dates compare as strings, and "today" is Indian: the backend's day
+ * boundaries are IST, and a device in another zone must not decide someone
+ * starts tomorrow when the server says they started today.
+ */
+function employmentStatus(member: Pick<StaffMember, "active" | "employmentEndDate" | "employmentStartDate">) {
+  const todayIst = istToday();
+  if (member.employmentStartDate > todayIst) {
+    return "Not started";
+  }
+  if (!member.active || (member.employmentEndDate && member.employmentEndDate < todayIst)) {
+    return "Ended";
+  }
+  return "Active";
+}
+
+function istToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+  }).format(new Date());
+}
+
 function toLocalIso(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

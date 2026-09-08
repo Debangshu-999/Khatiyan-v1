@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { BedDouble, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
 
+import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
 import { ActionCard } from "@/components/action-card";
 import { AlertModal } from "@/components/alert-modal";
@@ -23,18 +24,7 @@ import { SkeletonCard } from "@/components/skeleton";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { PropertyContactsSection } from "@/features/property/property-contacts-section";
 import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
-import {
-  ActionButton,
-  BackButton,
-  ChoiceButton,
-  FormInput,
-  IconButton,
-  formatDepositPaise,
-  formatMoneyPaise,
-  humanizeToken,
-  rupeesToPaise,
-  ViewOnlyChip,
-} from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, FormInput, IconButton, formatDepositPaise, formatMoneyPaise, humanizeToken, rupeesToPaise, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -95,11 +85,10 @@ export default function OwnerPropertyScreen() {
   const startingRentPaise = lowestActiveRoomRentPaise(roomsQuery.data ?? []);
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       {/* The chip shares the back row rather than taking one of its own: it
           qualifies the whole screen, so it belongs level with the way out. */}
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <BackButton onPress={() => router.back()} />
         {!canManageSettings ? <ViewOnlyChip /> : null}
       </View>
 
@@ -109,7 +98,8 @@ export default function OwnerPropertyScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={PropertyIcon}
+          icon={PropertyIcon}
+
           title="No active property selected"
           description="Choose the property you want to manage from Home."
         />
@@ -122,7 +112,7 @@ export default function OwnerPropertyScreen() {
                 This card IS the property; every other card on the screen is a
                 part of it, and the glyph is what says which is which. */}
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-              <PropertyIcon color={colors.ink} size={34} />
+              <PropertyArtwork size={34} />
             <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {selectedProperty.referenceCode}  /  {humanizeToken(selectedProperty.type)}
@@ -451,7 +441,6 @@ function EditListingDetailsSheet({
     </SheetShell>
   );
 }
-
 
 function open(router: ReturnType<typeof useGuardedRouter>, route: PropertyRoute) {
   router.push(route);

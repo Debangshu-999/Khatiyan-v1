@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { Filter } from "lucide-react-native";
+import { ChevronDown, Filter } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
@@ -27,6 +27,153 @@ export type FilterBubbleOption<T extends string> = {
  * "Billing · 12" the next re-flows the whole row, and the number is what the
  * reader is scanning for.
  */
+/**
+ * A sideways-scrolling strip of tabs, each carrying its own count.
+ *
+ * <p>
+ * The notice board's row, lifted out so the screens that copied it cannot drift
+ * from it. Soft-blue fill and a short underline bar on the chosen one, the
+ * count inside the label.
+ *
+ * <p>
+ * <b>The count is in the pill, not in a heading above it.</b> Those screens all
+ * carried an "N requests" section title that only ever described the filter
+ * already selected — so the number moved when a tab was tapped, and the other
+ * tabs gave no hint of what tapping them would find. With the counts on the
+ * tabs the whole picture is on one line and the heading is redundant.
+ *
+ * <p>
+ * Scrolling rather than equal columns: four filters in a fixed row leave each
+ * about eighty points, which is not enough for "Needs action (12)" and clipped
+ * every label on a real phone.
+ */
+export function CountTabPills<T extends string>({
+  compact = false,
+  onChange,
+  options,
+  value,
+}: {
+  /**
+   * A shorter pill, for a strip that shares a row with a heading rather than
+   * owning one. Same shape and the same selected treatment — only the height,
+   * the type size and the underline shrink.
+   */
+  compact?: boolean;
+  onChange: (value: T) => void;
+  /**
+   * `count` is optional: some lists are paginated per filter on the server and
+   * genuinely do not know how many the other tabs hold. Those render the label
+   * alone rather than a guess — a wrong number on a filter is worse than none.
+   *
+   * <p>`chevron` marks a tab that OPENS something rather than selecting a
+   * value — the nearby-places category tab, which raises the picker. The arrow
+   * is the only thing telling the reader that tapping it asks a question
+   * instead of filtering on the spot.
+   */
+  options: { chevron?: boolean; count?: number; label: string; value: T }[];
+  value: T;
+}) {
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        alignItems: "center",
+        gap: spacing.sm,
+        // Trailing room, so the last pill never sits flush against the edge it
+        // scrolls under.
+        paddingRight: spacing.md,
+      }}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      // flexShrink:0 as well as flexGrow:0 — grow alone stops it expanding but
+      // leaves it shrinkable, and a column then compresses the strip and clips
+      // the pills' descenders.
+      style={{ flexGrow: 0, flexShrink: 0 }}
+    >
+      {options.map((option) => (
+        <CountTabPill
+          active={option.value === value}
+          chevron={option.chevron}
+          compact={compact}
+          count={option.count}
+          key={option.value}
+          label={option.label}
+          onPress={() => onChange(option.value)}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+function CountTabPill({
+  active,
+  chevron = false,
+  compact = false,
+  count,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  chevron?: boolean;
+  compact?: boolean;
+  count?: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const inkColor = active ? colors.primaryDeep : colors.muted;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={count == null ? label : `${label}, ${count}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
+        borderCurve: "continuous",
+        borderRadius: 999,
+        // Sized to its own label, not to a quarter of the row. flexShrink:0 as
+        // well, or the strip squeezes the pills back to the width that clipped
+        // them in the first place.
+        flexShrink: 0,
+        justifyContent: "center",
+        minHeight: compact ? 30 : 42,
+        paddingHorizontal: compact ? spacing.sm : spacing.md,
+      }}
+      // No tap lock: switching filters in quick succession must not drop taps.
+      tapLockMs={0}
+    >
+      {/* A row, so the arrow sits beside the label rather than under it — the
+          pill is a column, with the underline bar as its second child. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+        <Text
+          style={[
+            type.caption,
+            {
+              color: inkColor,
+              fontFamily: fonts.sansSemiBold,
+              fontSize: compact ? 11.5 : 12.5,
+            },
+          ]}
+        >
+          {count == null ? label : `${label} (${count})`}
+        </Text>
+        {chevron ? <ChevronDown color={inkColor} size={compact ? 12 : 14} strokeWidth={2.4} /> : null}
+      </View>
+      <View
+        style={{
+          backgroundColor: active ? colors.primary : "transparent",
+          borderRadius: 999,
+          height: compact ? 2 : 2.5,
+          marginTop: compact ? 2 : 3,
+          width: compact ? 14 : 18,
+        }}
+      />
+    </AnimatedPressable>
+  );
+}
+
 export function FilterPillRow<T extends string>({
   inset,
   onChange,

@@ -27,7 +27,7 @@ import { clearStoredSession, saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
-import { SkeletonCard } from "@/components/skeleton";
+import { Skeleton, SkeletonList } from "@/components/skeleton";
 import { Lightbox } from "@/components/image-carousel";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
@@ -39,6 +39,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { accountDescription, accountLabel, useAvailableAccounts, type AccountType } from "@/features/account/accounts";
+import { EnquiryReplySettings } from "@/features/account/enquiry-reply-settings";
 import { ProfileEditModal, type ProfileEditField } from "@/features/account/profile-edit-modal";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { uploadAsset } from "@/features/uploads/upload-asset";
@@ -49,7 +50,7 @@ import { MAX_OWNER_PROPERTIES, useListMyPropertiesQuery } from "@/store/services
 import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-slice";
 import { clearSession, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /** The pencil beside the profile name, and the spacer that balances it. */
@@ -290,7 +291,6 @@ export default function AccountScreen() {
       contentContainerStyle={{ paddingBottom: 60 + spacing.md }}
     >
       <ScreenHeader
-        // eyebrow="Account"
         title={user?.activeTenant ? "Tenant" : "Your"}
         italicTail="profile."
         subtitle="Your identity, account access and saved details."
@@ -345,43 +345,50 @@ export default function AccountScreen() {
         <SectionTitle title="Personal information" />
         <Card
           style={{
-            // No negative margin. Pulling the card past the screen's content
-            // column put its edge within a few points of the device edge, and no
-            // amount of internal padding could buy back the gap that lost — the
-            // card simply had nowhere to breathe. It now sits on the screen's own
-            // gutter like every other card, with Card's default padding inside.
             borderRadius: 12,
-            gap: spacing.md,
+            gap: 0,
+            overflow: "hidden",
+            padding: 0,
           }}
         >
-          {/* Four short facts in a 2×2, above the two long ones. Each is a word
-              or two, so a full-width row per fact left most of the line empty and
-              pushed the phone and email — the fields anyone actually came here to
-              read — below the fold. */}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            {/* Account status, not workspace access — the access level is
-                already stated under the name, and repeating it here spent one of
-                four slots saying something the reader had just been told. */}
-            <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row" }}>
+            <View style={{ minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, width: "48%" }}>
               <ReadonlyField label="Account status" value={user?.active ? "Active" : "Inactive"} />
             </View>
-            <View style={{ flex: 1 }}>
+            <View
+              style={{
+                alignSelf: "stretch",
+                backgroundColor: colors.border,
+                marginVertical: spacing.md,
+                width: 1,
+              }}
+            />
+            <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
               <CompletionField
                 complete={profileCompletion.complete}
                 onExplain={() => setCompletionInfoOpen(true)}
               />
             </View>
           </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <View style={{ flex: 1 }}>
-              {/* "Not set", not a dash. A dash reads as a value the field holds;
-                  these are simply unanswered. */}
+
+          <Divider style={{ marginHorizontal: spacing.lg }} />
+
+          <View style={{ flexDirection: "row" }}>
+            <View style={{ minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, width: "48%" }}>
               <ReadonlyField
                 label="Gender"
                 value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View
+              style={{
+                alignSelf: "stretch",
+                backgroundColor: colors.border,
+                marginVertical: spacing.md,
+                width: 1,
+              }}
+            />
+            <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
               <ReadonlyField
                 label="Date of birth"
                 value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
@@ -389,72 +396,107 @@ export default function AccountScreen() {
             </View>
           </View>
 
-          {/* Verification sits INSIDE the phone field, as it does for email. It
-              is a fact about that value, and as its own row it read as a separate
-              thing to keep track of. */}
-          {/* The flag and dial code as their own segment behind a divider —
-              the same treatment the auth screen's PhoneField uses, so a number
-              is presented the way it was asked for. */}
-          <ReadonlyField
-            label="Registered phone"
-            prefix={<DialCodePrefix />}
-            status={user?.phoneVerified ? "Verified" : "Not verified"}
-            value={formatPhone(user?.phone)}
-          />
+          <Divider style={{ marginHorizontal: spacing.lg }} />
 
-          {emailRecoveryQuery.data?.email ? (
-            // Verified reads as a state; unverified offers the action instead of
-            // announcing itself. There is no "Unverified" label — a Verify link
-            // says the same thing and does something about it.
+          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
             <ReadonlyField
-              label="Email"
-              onEdit={() => setProfileEdit("email")}
-              onStatusPress={emailRecoveryQuery.data.verified ? undefined : () => void sendVerificationLink()}
-              status={
-                emailRecoveryQuery.data.verified
-                  ? "Verified"
-                  : requestEmailVerificationState.isLoading
-                    ? "Sending…"
-                    : "Verify"
-              }
-              value={emailRecoveryQuery.data.email}
+              hideStatusDivider
+              label="Registered phone"
+              prefix={<DialCodePrefix />}
+              status={user?.phoneVerified ? "Verified" : "Not verified"}
+              value={formatPhone(user?.phone)}
             />
-          ) : (
-            <View style={{ gap: spacing.xs }}>
-              <Text style={[type.caption, { color: colors.kicker }]}>Email</Text>
-              <AppTextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                onChangeText={(next) => {
-                  setEmailDraft(next);
-                  form.clearField("email");
-                }}
-                placeholder="Add your email"
-                placeholderTextColor={colors.muted}
-                value={emailDraft}
-                style={{ backgroundColor: colors.surfaceRaised, borderColor: form.errors.email ? colors.danger : colors.border, borderRadius: 12, borderWidth: form.errors.email ? 1.5 : 1, color: colors.ink, fontFamily: fonts.sans, minHeight: 46, paddingHorizontal: spacing.md }}
-              />
-              <FieldError message={form.errors.email} />
-              <ActionButton
-                disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked}
-                icon={MailCheck}
-                label={updateRecoveryEmailState.isLoading ? "Adding email…" : "Add email"}
-                onPress={() => void saveRecoveryEmail()}
-                variant="secondary"
-              />
-            </View>
-          )}
-          {/* Always shown, unlike the optional two above. This one is REQUIRED to
-              onboard a tenant, so a blank row is information — it is the field
-              standing between an owner and their first agreement. */}
-          <AddressField
-            pincode={identity?.permanentAddressPincode ?? null}
-            value={identity?.permanentAddress ?? null}
-          />
+          </View>
 
-          <ReadonlyField label="Account reference" value={shortId(user?.id)} mono />
+          <Divider style={{ marginHorizontal: spacing.lg }} />
+
+          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+            {/* Before either branch. "No email yet" and "still asking" are not
+                the same thing, and the form is what the app shows for the
+                first — so every load flashed "Add your email" and an Add email
+                button at people who already have one. */}
+            {emailRecoveryQuery.isLoading ? (
+              <View style={{ gap: spacing.xs }}>
+                <Text style={[type.caption, { color: colors.muted }]}>Email</Text>
+                <Skeleton height={20} width="62%" />
+              </View>
+            ) : emailRecoveryQuery.data?.email ? (
+              <ReadonlyField
+                label="Email"
+                onEdit={() => setProfileEdit("email")}
+                onStatusPress={emailRecoveryQuery.data.verified ? undefined : () => void sendVerificationLink()}
+                status={
+                  emailRecoveryQuery.data.verified
+                    ? "Verified"
+                    : requestEmailVerificationState.isLoading
+                      ? "Sending…"
+                      : "Verify"
+                }
+                value={emailRecoveryQuery.data.email}
+              />
+            ) : (
+              <View style={{ gap: spacing.xs }}>
+                <Text style={[type.caption, { color: colors.muted }]}>Email</Text>
+                <AppTextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  onChangeText={(next) => {
+                    setEmailDraft(next);
+                    form.clearField("email");
+                  }}
+                  placeholder="Add your email"
+                  placeholderTextColor={colors.muted}
+                  value={emailDraft}
+                  style={{
+                    backgroundColor: colors.surfaceRaised,
+                    borderColor: form.errors.email ? colors.danger : colors.border,
+                    borderRadius: 12,
+                    borderWidth: form.errors.email ? 1.5 : 1,
+                    color: colors.ink,
+                    fontFamily: fonts.sans,
+                    minHeight: 46,
+                    paddingHorizontal: spacing.md,
+                  }}
+                />
+                <FieldError message={form.errors.email} />
+                <ActionButton
+                  disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked}
+                  icon={MailCheck}
+                  label={updateRecoveryEmailState.isLoading ? "Adding email…" : "Add email"}
+                  onPress={() => void saveRecoveryEmail()}
+                  variant="secondary"
+                />
+              </View>
+            )}
+          </View>
+
+          <Divider style={{ marginHorizontal: spacing.lg }} />
+
+          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+            <AddressField
+              pincode={identity?.permanentAddressPincode ?? null}
+              value={identity?.permanentAddress ?? null}
+            />
+          </View>
+
+          <Divider style={{ marginHorizontal: spacing.lg }} />
+
+          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+            <ReadonlyField label="Account reference" value={shortId(user?.id)} />
+          </View>
         </Card>
+      </View>
+
+      {/* Directly under the card holding the phone and email, because this is
+          the section that says who is allowed to use them. Splitting the two
+          across screens would put the detail in one place and the permission
+          over it in another. */}
+      {/* md, not sm: the box under this heading is bordered, so at sm its top
+          edge sat almost on the section rule and read as one doubled line. */}
+      <View style={{ gap: spacing.md }}>
+        <SectionTitle title="Enquiry replies" />
+        <EnquiryReplySettings />
       </View>
 
       {/* Always rendered. Hiding it when there is only one account left people
@@ -505,8 +547,10 @@ export default function AccountScreen() {
               per property made three properties look like three unrelated
               things. The place sits opposite its name rather than under it, so
               the eye can run down either column on its own. */}
+          {/* A list of properties, so a list-shaped ghost. One card stood in
+              for however many rows were about to arrive. */}
           {ownerPropertiesQuery.isFetching && ownerPropertyCount === 0 ? (
-            <SkeletonCard />
+            <SkeletonList rows={2} />
           ) : ownerPropertyCount === 0 ? null : (
             <Card style={{ gap: 0, padding: 0 }}>
               {ownerPropertiesQuery.data?.map((property, index) => (
@@ -824,14 +868,6 @@ function ProfileAvatar({
   );
 }
 
-/**
- * Section heading for this screen.
- *
- * <p>Delegates to the shared {@link Section} so the profile carries the same
- * kicker / serif title / ruled margin as every other screen. It used to draw a
- * lone terracotta line of bold sans, which was the only heading style in the
- * app that looked like this.
- */
 function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode }) {
   return <Section title={title} trailing={trailing} />;
 }
@@ -849,6 +885,7 @@ function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode
  * loaded family gets synthetic bolding on Android.
  */
 function ReadonlyField({
+  hideStatusDivider,
   label,
   mono,
   onEdit,
@@ -857,33 +894,28 @@ function ReadonlyField({
   status,
   value,
 }: {
+  hideStatusDivider?: boolean;
   label: string;
   mono?: boolean;
-  /** Renders a pencil inside the field that opens the editor for this value. */
   onEdit?: () => void;
-  /** Makes `status` a link — used for "Verify", which is an action, not a state. */
   onStatusPress?: () => void;
-  /** An adornment before the value — the phone's flag and dial code. */
   prefix?: ReactNode;
   status?: string;
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const statusColor =
+    status === "Verified" ? colors.jade : onStatusPress ? colors.primary : colors.muted;
+
   return (
     <View style={{ gap: spacing.xxs }}>
-      <Text style={[type.caption, { color: colors.kicker }]}>{label}</Text>
+      <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: radii.card,
-          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
-          minHeight: 48,
-          paddingHorizontal: spacing.md,
+          minHeight: 24,
         }}
       >
         {prefix}
@@ -899,22 +931,30 @@ function ReadonlyField({
           {value}
         </Text>
         {onEdit ? (
-          <AnimatedPressable accessibilityLabel={`Edit ${label.toLowerCase()}`} accessibilityRole="button" hitSlop={10} onPress={onEdit}>
+          <AnimatedPressable
+            accessibilityLabel={'Edit ' + label.toLowerCase()}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onEdit}
+          >
             <Pencil color={colors.kicker} size={15} strokeWidth={2.2} />
           </AnimatedPressable>
         ) : null}
-        {/* A hairline and plain text, not a tinted chip. Inside a field the
-            status qualifies the value beside it; a green pill made it read as a
-            separate badge sitting in the box. */}
         {status ? (
           <>
-            <View style={{ alignSelf: "stretch", backgroundColor: colors.border, marginVertical: spacing.sm, width: 1 }} />
+            {hideStatusDivider ? null : (
+              <View style={{ alignSelf: "stretch", backgroundColor: colors.border, width: 1 }} />
+            )}
             {onStatusPress ? (
               <AnimatedPressable accessibilityRole="button" hitSlop={8} onPress={onStatusPress}>
-                <Text style={[type.caption, { color: colors.primary, fontFamily: fonts.sansBold }]}>{status}</Text>
+                <Text style={[type.caption, { color: statusColor, fontFamily: fonts.sansBold }]}>
+                  {status}
+                </Text>
               </AnimatedPressable>
             ) : (
-              <Text style={[type.caption, { color: colors.muted }]}>{status}</Text>
+              <Text style={[type.caption, { color: statusColor, fontFamily: fonts.sansBold }]}>
+                {status}
+              </Text>
             )}
           </>
         ) : null}
@@ -945,14 +985,12 @@ function AccountRow({ account, active, onPress }: { account: AccountType; active
       <View
         style={{
           alignItems: "center",
-          backgroundColor: active ? colors.ink : colors.surfaceRaised,
-          borderRadius: 12,
           height: 42,
           justifyContent: "center",
           width: 42,
         }}
       >
-        <Icon color={active ? colors.surface : colors.inkSoft} size={19} strokeWidth={2.2} />
+        <Icon color={colors.ink} size={30} strokeWidth={1.8} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16, }}>
@@ -1127,9 +1165,7 @@ function CompletionField({ complete, onExplain }: { complete: boolean; onExplain
   return (
     <View style={{ gap: spacing.xxs }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-        <Text style={[type.caption, { color: colors.kicker }]}>Profile completion</Text>
-        {/* Only when there is something to explain. An info icon beside a
-            finished state invites a tap that says "nothing to do". */}
+        <Text style={[type.caption, { color: colors.muted }]}>Profile completion</Text>
         {complete ? null : (
           <AnimatedPressable
             accessibilityLabel="What is missing from my profile"
@@ -1142,34 +1178,17 @@ function CompletionField({ complete, onExplain }: { complete: boolean; onExplain
         )}
       </View>
 
-      {/* The same box every other field on this card uses. Rendered as bare text
-          it was the one value floating outside a field, which read as a caption
-          rather than as a fact the account holds. */}
-      <View
+      <Text
+        numberOfLines={1}
         style={{
-          alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: 12,
-          borderWidth: 1,
-          flexDirection: "row",
-          minHeight: 48,
-          paddingHorizontal: spacing.md,
+          color: complete ? colors.ink : colors.danger,
+          fontFamily: fonts.sansBold,
+          fontSize: 15,
+          minHeight: 24,
         }}
       >
-        <Text
-          numberOfLines={1}
-          style={{
-            color: complete ? colors.ink : colors.danger,
-            flex: 1,
-            fontFamily: fonts.sansBold,
-            fontSize: 15,
-          }}
-        >
-          {complete ? "Complete" : "Incomplete"}
-        </Text>
-      </View>
+        {complete ? "Complete" : "Incomplete"}
+      </Text>
     </View>
   );
 }
@@ -1187,26 +1206,12 @@ function AddressField({ pincode, value }: { pincode: string | null; value: strin
 
   return (
     <View style={{ gap: spacing.xxs }}>
-      <Text style={[type.caption, { color: colors.kicker }]}>Permanent address</Text>
-      {/* Deliberately BIGGER than the other fields, not matched to them. An
-          address is the one value here that runs to several lines, and a 48pt
-          box shared with every one-word fact truncated the field most likely to
-          be checked against a document. */}
-      <View
-        style={{
-          backgroundColor: colors.surfaceSunken,
-          borderCurve: "continuous",
-          borderRadius: 8,
-          gap: 2,
-          minHeight: 84,
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.md,
-        }}
-      >
+      <Text style={[type.caption, { color: colors.muted }]}>Permanent address</Text>
+      <View style={{ gap: 2 }}>
         <Text
           style={{
             color: held ? colors.ink : colors.muted,
-            fontFamily: held ? fonts.sansMedium : fonts.sans,
+            fontFamily: held ? fonts.sansBold : fonts.sans,
             fontSize: 14,
             lineHeight: 20,
           }}

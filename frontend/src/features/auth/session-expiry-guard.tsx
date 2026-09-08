@@ -17,10 +17,13 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
  * The app looked broken rather than signed out, and the only way through was a
  * pull-to-refresh that happened to bounce someone to the sign-in screen.
  *
- * <p>Now the first refused request clears the credentials and this says so.
- * The screen already on display keeps its data — there is no value in blanking
- * what someone is reading — but nothing new will load, so the announcement is
- * immediate rather than waiting for a navigation.
+ * <p>Now the first refused request clears the credentials, sends the person to
+ * the sign-in screen, and says why once they are there. The dialog used to open
+ * over whatever screen they were on and only navigate once dismissed — which
+ * left it floating above a workspace full of data that no longer loaded, and
+ * made "OK" read as an acknowledgement rather than the thing that moved them.
+ * Signed out means signed out, and the screen behind the message should be the
+ * one they are being sent to.
  *
  * <p>Mounted once at the root, above the navigator, so it can speak from any
  * screen. Anywhere lower would unmount mid-redirect and take the dialog with
@@ -49,7 +52,16 @@ export function SessionExpiryGuard() {
     dispatch(clearActiveAccount());
     dispatch(setPinnedOwnerModules([]));
     void clearStoredSession();
-  }, [dispatch, expired]);
+
+    // Straight to sign-in, with the message following them there. Only if there
+    // is somewhere to go: a token can be refused while the sign-in screen is
+    // already up — a stale request finishing after a sign-out, say — and
+    // replacing a route with itself still runs the stack transition, so the auth
+    // screen slid in over the top of itself.
+    if (pathname !== "/auth") {
+      router.replace("/auth");
+    }
+  }, [dispatch, expired, pathname, router]);
 
   if (!showing) {
     return null;
@@ -66,16 +78,9 @@ export function SessionExpiryGuard() {
       // screen of stale data with the explanation gone and no way to get it
       // back, which is the state this whole guard exists to end.
       onCancel={() => {}}
-      onConfirm={() => {
-        setShowing(false);
-        // Only if there is somewhere to go. A token can be refused while the
-        // sign-in screen is already up — a stale request finishing after a
-        // sign-out, say — and replacing a route with itself still runs the
-        // stack transition, so the auth screen slid in over the top of itself.
-        if (pathname !== "/auth") {
-          router.replace("/auth");
-        }
-      }}
+      // Nothing but dismissal left to do — the navigation has already happened,
+      // so OK closes the message on the screen it was always going to end on.
+      onConfirm={() => setShowing(false)}
       title="Your session has expired"
     />
   );

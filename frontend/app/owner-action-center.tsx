@@ -12,12 +12,14 @@ import { LedgerRow } from "@/components/ledger-row";
 import { Skeleton, SkeletonRow } from "@/components/skeleton";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { BackButton, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const ALL_CAUGHT_UP_ILLUSTRATION = require("../assets/workspace/All-Caught-Up_512x512.png");
 
 type ActionRoute =
   | "/owner-billing"
@@ -79,9 +81,8 @@ export default function OwnerActionCenterScreen() {
   const activeLabel = FILTERS.find((entry) => entry.key === filter)?.label ?? "All";
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Owner tool"
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <ScreenHeader
         title="Action"
         italicTail="center."
         subtitle="Everything that needs your attention in one continuous list. Filter by topic or scan them all."
@@ -89,7 +90,8 @@ export default function OwnerActionCenterScreen() {
 
       {!selectedPropertyId ? (
         <EmptyState
-          icon={Check}
+          icon={Check}
+
           title="No property selected"
           description="Choose an active property from Home before opening the action center."
         />
@@ -117,7 +119,7 @@ export default function OwnerActionCenterScreen() {
 
           {visibleItems.length === 0 ? (
             <EmptyState
-              icon={Check}
+              artwork={ALL_CAUGHT_UP_ILLUSTRATION}
               title={filter === "all" ? "You're all caught up" : `No ${activeLabel.toLowerCase()} actions`}
               description={
                 filter === "all"

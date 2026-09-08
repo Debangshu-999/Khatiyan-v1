@@ -1,9 +1,19 @@
 import { Text, View } from "react-native";
-import { AlertTriangle, CalendarDays, CheckCircle2, ReceiptText, TimerReset } from "lucide-react-native";
+import type { ComponentType } from "react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  ReceiptText,
+  RefreshCw,
+  WalletCards,
+  XCircle,
+  type LucideProps,
+} from "lucide-react-native";
 
-import { Card } from "@/components/card";
-import { StatusPill } from "@/components/status-pill";
 import { billTitle, type BillingCycle } from "@/store/services/billing-api";
+import { GhostText } from "@/components/skeleton-boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -84,6 +94,12 @@ export function billingCycleStatusDisplay(cycle: BillingCycle): {
   if (cycle.status === "CANCELLED") {
     return { label: "Cancelled", tone: "muted" };
   }
+  // Its own label rather than a humanized enum name. "Confirmation Pending"
+  // reads as a system state; the owner needs to know a person is waiting on
+  // them, and the tenant needs to know the bill is not theirs to act on.
+  if (cycle.status === "CONFIRMATION_PENDING") {
+    return { label: "Confirming", tone: "warning" };
+  }
   return { label: humanizeToken(cycle.status), tone: "primary" };
 }
 
@@ -141,13 +157,17 @@ export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: nu
 
   return (
     <View style={{ gap: 2 }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
+      <GhostText ghostWidth={72} style={[type.eyebrow, { color: colors.kicker }]}>
         Total payable
-      </Text>
+      </GhostText>
       <View style={{ alignItems: "flex-end", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: size, letterSpacing: -0.3 }} numberOfLines={1}>
+        <GhostText
+          ghostWidth={108}
+          numberOfLines={1}
+          style={{ color: colors.ink, fontFamily: fonts.display, fontSize: size, letterSpacing: -0.3 }}
+        >
           {formatMoney(cycle.totalAmountPaise)}
-        </Text>
+        </GhostText>
         {discount ? (
           <>
             <Text
@@ -168,88 +188,247 @@ export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: nu
   );
 }
 
-export function BillStatusPill({ cycle }: { cycle: BillingCycle }) {
-  const statusDisplay = billingCycleStatusDisplay(cycle);
-  const tone: "success" | "danger" | "warning" | "neutral" | "primary" =
-    statusDisplay.tone === "success"
-      ? "success"
-      : statusDisplay.tone === "danger"
-        ? "danger"
-        : statusDisplay.tone === "warning"
-          ? "warning"
-          : statusDisplay.tone === "muted"
-            ? "neutral"
-            : "primary";
-  return <StatusPill label={statusDisplay.label} tone={tone} />;
-}
-
-export function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
-  const { colors, type } = useTheme();
-  const status = billingCycleStatusDisplay(cycle);
-  const tone =
-    status.tone === "success"
-      ? colors.successText
-      : status.tone === "danger"
-        ? colors.danger
-        : status.tone === "warning"
-          ? colors.warningText
-          : status.tone === "muted"
-            ? colors.muted
-            : colors.primary;
-  const Icon = status.tone === "success" ? CheckCircle2 : status.tone === "danger" || status.tone === "warning" ? AlertTriangle : TimerReset;
-  const backgroundColor = status.tone === "warning" ? colors.warningSoft : colors.surfaceSunken;
+/**
+ * The status chip both bill lists use.
+ *
+ * <p>One component on purpose. The billing cards drew the plain caps-on-tint
+ * pill while the payment history drew a tinted chip with a leading icon, so the
+ * same cycle in the same state looked like two different kinds of thing
+ * depending on which screen you reached it from.
+ *
+ * <p>The icon is not decoration: these chips sit in a list you scan, and the
+ * glyph is what separates "Paid" from "Late Pay" before the colour registers.
+ */
+/**
+ * Exported for the payment-claims screen, which shows the same kind of thing —
+ * a settled/waiting/refused state on a row of money — and had drifted onto the
+ * app's caps-on-tint {@code StatusPill} instead. Two chip shapes for one idea
+ * made a claim and the bill it pays look like different species.
+ */
+export function BillingStatusBadge({
+  background,
+  color,
+  icon: Icon,
+  label,
+}: {
+  background: string;
+  color: string;
+  icon: ComponentType<LucideProps>;
+  label: string;
+}) {
+  const { fonts } = useTheme();
 
   return (
+    // Sizes to its label and nothing more. A MarqueeText here expanded to fill
+    // the row it sits in — it wants a width to scroll within — which stretched
+    // the chip across the whole billing card and squeezed the reference code
+    // beside it out of sight. A plain Text is what the payment history always
+    // used, and why that list rendered correctly.
     <View
       style={{
         alignItems: "center",
-        backgroundColor,
-        borderColor: tone,
+        alignSelf: "flex-start",
+        backgroundColor: background,
         borderRadius: 999,
-        borderWidth: 1,
         flexDirection: "row",
+        flexShrink: 0,
         gap: 4,
         paddingHorizontal: spacing.sm,
         paddingVertical: 5,
       }}
     >
-      <Icon color={tone} size={13} strokeWidth={2.4} />
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
-        {status.label}
+      <Icon color={color} size={13} strokeWidth={2.3} />
+      <Text numberOfLines={1} style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>
+        {label}
       </Text>
     </View>
   );
 }
 
+export function BillStatusPill({ cycle }: { cycle: BillingCycle }) {
+  const { colors } = useTheme();
+  const statusDisplay = billingCycleStatusDisplay(cycle);
+
+  // Keeps the billing statuses — "Late Pay", "Not generated", anything
+  // humanized off the enum — and only borrows the payment history's SHAPE. The
+  // two lists answer different questions and their labels should not be forced
+  // to match, just their treatment.
+  const display =
+    statusDisplay.tone === "success"
+      ? { background: colors.successSoft, color: colors.successText, icon: CheckCircle2 }
+      : statusDisplay.tone === "warning"
+        ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3 }
+        : statusDisplay.tone === "danger"
+          ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle }
+          : statusDisplay.tone === "muted"
+            ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle }
+            // Everything still owing shares the blue, so the ICON is what tells
+            // them apart — a clock for a bill whose date has not arrived, a
+            // wallet for one that is waiting to be paid. Both landed on the
+            // wallet before this, which made Upcoming and Unpaid identical
+            // chips. Matches the payment history exactly.
+            : {
+                background: colors.primarySoft,
+                color: colors.primaryDeep,
+                icon: cycle.status === "UPCOMING" ? Clock3 : WalletCards,
+              };
+
+  return (
+    <BillingStatusBadge
+      background={display.background}
+      color={display.color}
+      icon={display.icon}
+      label={statusDisplay.label}
+    />
+  );
+}
+
+type PaymentHistoryVisualState = "CANCELLED" | "LATE" | "OVERDUE" | "PAID" | "UNPAID" | "UPCOMING";
+
+function dayNumber(value: string) {
+  const [year, month, day] = dateOnlyKey(value).split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+}
+
+function istTodayKey() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+}
+
+function daysBetween(from: string, to: string) {
+  return dayNumber(to) - dayNumber(from);
+}
+
+export function paymentLateDays(cycle: BillingCycle) {
+  if (!cycle.paidAt) {
+    return 0;
+  }
+  return Math.max(0, daysBetween(cycle.rentDueDate, cycle.paidAt));
+}
+
+function paymentHistoryVisualState(cycle: BillingCycle): PaymentHistoryVisualState {
+  if (cycle.status === "PAID") {
+    return paymentLateDays(cycle) > 0 ? "LATE" : "PAID";
+  }
+  if (cycle.status === "CANCELLED") {
+    return "CANCELLED";
+  }
+
+  const dueInDays = daysBetween(istTodayKey(), cycle.rentDueDate);
+  if (cycle.status === "UPCOMING" || dueInDays > 0) {
+    return "UPCOMING";
+  }
+  if (cycle.status === "OVERDUE" || dueInDays < 0) {
+    return "OVERDUE";
+  }
+  return "UNPAID";
+}
+
+export function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
+  const { colors, fonts } = useTheme();
+  const state = paymentHistoryVisualState(cycle);
+  const display =
+    state === "PAID"
+      ? { background: colors.successSoft, color: colors.successText, icon: CheckCircle2, label: "Paid" }
+      : state === "LATE"
+        ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3, label: "Late" }
+        : state === "UPCOMING"
+          ? { background: colors.primarySoft, color: colors.primaryDeep, icon: Clock3, label: "Upcoming" }
+          : state === "OVERDUE"
+            ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle, label: "Overdue" }
+            : state === "CANCELLED"
+              ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle, label: "Cancelled" }
+              : { background: colors.primarySoft, color: colors.primaryDeep, icon: WalletCards, label: "Unpaid" };
+  return (
+    <BillingStatusBadge
+      background={display.background}
+      color={display.color}
+      icon={display.icon}
+      label={display.label}
+    />
+  );
+}
+
 export function InfoBlock({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, fonts, type } = useTheme();
+
   return (
     <View
       style={{
         backgroundColor: colors.surfaceSunken,
         borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: radii.card,
+        borderRadius: 12,
         borderWidth: 1,
         flex: 1,
         gap: 2,
-        padding: spacing.sm,
+        minWidth: 0,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
       }}
     >
       <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
       <Text
+        numberOfLines={1}
         style={{
-          color: strong ? colors.primary : colors.ink,
-          fontFamily: strong ? fonts.display : fonts.sans,
+          color: colors.ink,
+          fontFamily: strong ? fonts.display : fonts.sansBold,
           fontSize: strong ? 19 : 13,
-          fontWeight: "800",
+          fontVariant: ["tabular-nums"],
           lineHeight: strong ? 23 : 18,
         }}
-        numberOfLines={1}
       >
         {value}
+      </Text>
+    </View>
+  );
+}
+
+function PaymentTimingFooter({ cycle }: { cycle: BillingCycle }) {
+  const { colors, fonts } = useTheme();
+  const state = paymentHistoryVisualState(cycle);
+  const dueDelta = daysBetween(istTodayKey(), cycle.rentDueDate);
+  const lateDays = paymentLateDays(cycle);
+
+  const display =
+    state === "LATE"
+      ? {
+          color: colors.warningText,
+          icon: Clock3,
+          label: `Paid ${lateDays} day${lateDays === 1 ? "" : "s"} late`,
+        }
+      : state === "PAID"
+        ? { color: colors.successText, icon: CheckCircle2, label: "Paid on time" }
+        : state === "UPCOMING"
+          ? {
+              color: colors.primaryDeep,
+              icon: Clock3,
+              label: dueDelta <= 0 ? "Due today" : `In ${dueDelta} day${dueDelta === 1 ? "" : "s"}`,
+            }
+          : state === "OVERDUE"
+            ? {
+                color: colors.danger,
+                icon: AlertTriangle,
+                label: `${Math.abs(dueDelta)} day${Math.abs(dueDelta) === 1 ? "" : "s"} overdue`,
+              }
+            : state === "CANCELLED"
+              ? { color: colors.muted, icon: XCircle, label: "Bill cancelled" }
+              : { color: colors.primaryDeep, icon: WalletCards, label: "Payment due today" };
+  const Icon = display.icon;
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: 5, justifyContent: "center" }}>
+      <Icon color={display.color} size={13} strokeWidth={2.2} />
+      <Text
+        style={{
+          color: display.color,
+          fontFamily: fonts.sansBold,
+          fontSize: 11,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {display.label}
       </Text>
     </View>
   );
@@ -261,113 +440,117 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
   const tenantName = cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`;
 
   return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.primarySoft,
-              borderColor: colors.border,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              borderWidth: 1,
-              height: 46,
-              justifyContent: "center",
-              width: 46,
-            }}
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: radii.card,
+        borderWidth: 1,
+        gap: spacing.md,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 40 }}>
+          <ReceiptText color={colors.ink} size={28} strokeWidth={2} />
+        </View>
+
+        <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
+              {cycle.referenceCode}
+            </Text>
+            <PaymentStatusBadge cycle={cycle} />
+          </View>
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 24 }}
           >
-            <ReceiptText color={colors.primary} size={21} strokeWidth={2.3} />
-          </View>
-
-          <View style={{ flex: 1, gap: spacing.xxs }}>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
-                {cycle.referenceCode}
-              </Text>
-              <PaymentStatusBadge cycle={cycle} />
-            </View>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
-              {tenantName}
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
-              {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
-            </Text>
-          </View>
+            {tenantName}
+          </Text>
+          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
+          </Text>
         </View>
-
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <InfoBlock label="Amount" strong value={formatMoney(cycle.totalAmountPaise)} />
-          <InfoBlock label="Due date" value={formatFullDate(cycle.rentDueDate)} />
-        </View>
-        <InfoBlock label="Payment date" value={cycle.paidAt ? formatDateTime(cycle.paidAt) : "Not paid yet"} />
       </View>
-    </Card>
+
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <InfoBlock label="Amount" strong value={formatMoney(cycle.totalAmountPaise)} />
+        <InfoBlock label="Due date" value={formatFullDate(cycle.rentDueDate)} />
+      </View>
+      <InfoBlock label="Payment date" value={cycle.paidAt ? formatFullDate(cycle.paidAt) : "Not paid yet"} />
+
+      <PaymentTimingFooter cycle={cycle} />
+    </View>
   );
 }
 
 // Read-only bill card: reference, status, tenant, amount, due date, period.
 export function BillCard({ cycle }: { cycle: BillingCycle }) {
   const { colors, fonts, type } = useTheme();
-  const mutable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const tenantName = cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}`;
+  const overdue = cycle.status === "OVERDUE";
 
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.md }}>
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: radii.card,
+        borderWidth: 1,
+        gap: spacing.md,
+        padding: spacing.md,
+      }}
+    >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: mutable ? colors.primarySoft : colors.surfaceSunken,
-            borderColor: colors.border,
-            borderRadius: radii.card,
-            borderWidth: 1,
-            height: 44,
-            justifyContent: "center",
-            width: 44,
-          }}
-        >
-          <ReceiptText color={mutable ? colors.primary : colors.kicker} size={20} strokeWidth={2.2} />
+        <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 40 }}>
+          <ReceiptText color={colors.ink} size={29} strokeWidth={2} />
         </View>
 
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
-              {cycle.referenceCode}
-            </Text>
-            <BillStatusPill cycle={cycle} />
-          </View>
-          {/* Due date rides with the tenant name, not with the total. Once a
-              bill carries a discount the total line grows a struck-through
-              price and a percentage chip, and sharing a row with the date
-              pushed the date off the card entirely. */}
-          {/* Top-aligned: the date block is two lines tall, and aligning to its
-              END dragged the tenant name down to meet its baseline. */}
+        <View style={{ flex: 1, gap: spacing.md, minWidth: 0 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text
-              numberOfLines={2}
-              style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
-            >
-              {tenantName}
-            </Text>
-            <View style={{ alignItems: "flex-end", gap: 3 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Due date
+            <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+              <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
+                {cycle.referenceCode}
               </Text>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                <CalendarDays color={cycle.status === "OVERDUE" ? colors.danger : colors.muted} size={14} strokeWidth={2.3} />
-                <Text style={{ color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 14, }}>
-                  {formatDate(cycle.rentDueDate)}
-                </Text>
+              <Text
+                numberOfLines={2}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
+              >
+                {tenantName}
+              </Text>
+            </View>
+
+            <View style={{ alignItems: "flex-end", gap: spacing.sm }}>
+              <PaymentStatusBadge cycle={cycle} />
+              <View style={{ alignItems: "flex-end", gap: 3 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>Due date</Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                  <CalendarDays color={overdue ? colors.danger : colors.ink} size={15} strokeWidth={2.2} />
+                  <Text
+                    style={{
+                      color: overdue ? colors.danger : colors.ink,
+                      fontFamily: fonts.sansBold,
+                      fontSize: 14,
+                    }}
+                  >
+                    {formatDate(cycle.rentDueDate)}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
 
-          <BillTotal cycle={cycle} />
+          <BillTotal cycle={cycle} size={30} />
 
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
-          </Text>
+          <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <RefreshCw color={colors.primary} size={17} strokeWidth={2.1} />
+            <Text numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
+              {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
+            </Text>
+          </View>
         </View>
       </View>
     </View>

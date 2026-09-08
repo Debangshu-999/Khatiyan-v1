@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { ArchiveRestore, Bell, BellOff, ChevronRight } from "lucide-react-native";
+import { Bell, BellOff, ChevronRight } from "lucide-react-native";
 import { useGetNudgeUnreadCountQuery, NUDGE_REFETCH_OPTIONS } from "@/store/services/nudge-api";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
-import { BackButton } from "@/features/owner/owner-ui";
+
 import { PullUpSleeve } from "@/features/notifications/pull-up-sleeve";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
@@ -30,6 +30,8 @@ import {
 } from "@/store/services/notification-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const CONCERN_EMPTY_ILLUSTRATION = require("../../assets/workspace/concern-empty_state.png");
 
 /** First screenful, and how many more arrive each time the reader reaches the end. */
 /**
@@ -60,8 +62,35 @@ export default function NotificationsScreen() {
   const [topic, setTopic] = useState<AlertTopic>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  /**
+   * Which alerts were unread when this visit began.
+   *
+   * <p>
+   * Opening the screen marks everything read, so without this snapshot the
+   * ring would clear before the reader's eyes had reached it and there would
+   * be no way to tell what had arrived since last time. The server is told
+   * immediately; the ring is drawn from what WAS unread on arrival, and is
+   * gone by the next visit. That is the whole model: the bell carries "there
+   * is something new", and opening the screen answers it.
+   */
+  const [unreadOnArrival, setUnreadOnArrival] = useState<Set<string>>(new Set());
+  /**
+   * Bumped on every focus, so the capture below re-runs per VISIT.
+   *
+   * <p>Keying it off `loading` alone was not enough: the second visit reads
+   * from cache, so `isLoading` never flips and the effect never fired — the
+   * previous visit's snapshot survived and its rings came back on a queue that
+   * had been read minutes ago.
+   */
+  const [visitId, setVisitId] = useState(0);
+  // Guards the capture to once per visit, since the effect also has to wait
+  // for a first load that may finish after focus.
+  const arrivalCaptured = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
+      arrivalCaptured.current = false;
+      setVisitId((current) => current + 1);
       void recentQuery.refetch();
       void olderQuery.refetch();
       // Refetch identities are stable for this hook instance.
@@ -73,7 +102,6 @@ export default function NotificationsScreen() {
   const scopedOlder = (olderQuery.data ?? []).filter(inPropertyScope);
 
   const topicCounts = countByTopic(scopedRecent);
-  const unreadCount = [...scopedRecent, ...scopedOlder].filter((notification) => !notification.readAt).length;
   const olderCount = scopedOlder.length;
 
   // Property switches re-scope the queue; collapse back to one screenful.
@@ -121,6 +149,13 @@ export default function NotificationsScreen() {
     }
   }
 
+  /**
+   * Marks the whole visible queue read.
+   *
+   * <p>No longer a button. "Mark read" was a control that existed only to
+   * undo a state the act of looking had already resolved — and it vanished
+   * the instant it worked, reflowing the header around itself.
+   */
   async function handleMarkAllRead() {
     try {
       if (isManagement && selectedProperty) {
@@ -138,6 +173,24 @@ export default function NotificationsScreen() {
 
   const loading = recentQuery.isLoading || olderQuery.isLoading;
 
+  useEffect(() => {
+    if (loading || arrivalCaptured.current) {
+      return;
+    }
+    arrivalCaptured.current = true;
+
+    const unread = [...scopedRecent, ...scopedOlder].filter((notification) => !notification.readAt);
+    if (unread.length === 0) {
+      setUnreadOnArrival(new Set());
+      return;
+    }
+    setUnreadOnArrival(new Set(unread.map((notification) => notification.recipientId)));
+    void handleMarkAllRead();
+    // Once per visit, and not keyed off the arrays — those are rebuilt on
+    // every render and would re-capture forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, visitId]);
+
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
@@ -151,23 +204,16 @@ export default function NotificationsScreen() {
         safeAreaEdges={["top", "bottom"]}
         scrollEventThrottle={16}
       >
-      {/* Notifications left the tab bar and now open from the bell on Home, so
-          they need a way back the way every other pushed screen has one.
-
-          Nudges sits on the far right of that row. Mark read sits beside the
-          title, and is always rendered — it used to exist only while something
-          was unread, so the control vanished the instant it worked and the
-          header reflowed around it. It greys out now instead. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <BackButton onPress={() => router.back()} />
-        <NudgesPill isManagement={isManagement} />
-      </View>
+      {/* Nudges sits beside the title, in the slot Mark read used to hold.
+          Its own row above the header was a strip of nothing with one pill in
+          it, and the pill is a sibling of the heading rather than a thing that
+          happens before it. */}
       <ScreenHeader
         title="Notifications"
-        trailing={<MarkAllReadButton disabled={unreadCount === 0} onPress={() => void handleMarkAllRead()} />}
+        trailing={<NudgesPill isManagement={isManagement} />}
         subtitle={
           isManagement && selectedProperty
-            ? `Notifications for ${selectedProperty.name}. Switch property from Home to see its own queue.`
+            ? `Notifications for ${selectedProperty.name}.`
             : user?.activeTenant
               ? "Your tenancy notifications in one queue — filter by topic below."
               : "Notifications will appear here once your tenancy or property workspace is active."
@@ -178,7 +224,8 @@ export default function NotificationsScreen() {
 
       {recentQuery.isError ? (
         <EmptyState
-          icon={BellOff}
+          icon={BellOff}
+
           title="Couldn't load alerts"
           description="Check your backend connection, then pull down to try again."
         />
@@ -190,7 +237,7 @@ export default function NotificationsScreen() {
 
           {queueItems.length === 0 ? (
             <EmptyState
-              icon={Bell}
+              artwork={CONCERN_EMPTY_ILLUSTRATION}
               title="Nothing in the queue"
               description={
                 topic === "all"
@@ -206,6 +253,7 @@ export default function NotificationsScreen() {
                     key={notification.recipientId}
                     notification={notification}
                     onPress={() => void handleNotificationPress(notification.recipientId, Boolean(notification.readAt))}
+                    unread={unreadOnArrival.has(notification.recipientId)}
                   />
                 ))}
               </View>
@@ -233,44 +281,6 @@ export default function NotificationsScreen() {
         <PullUpSleeve count={olderCount} onOpen={() => router.push("/notifications-older")} />
       ) : null}
     </View>
-  );
-}
-
-/**
- * Mark-all-read, always on screen.
- *
- * <p>It used to render only while something was unread, which meant the control
- * vanished the instant it worked — and reappeared later somewhere the reader
- * was not looking. Greyed and inert says the same thing without moving.
- */
-function MarkAllReadButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-  const tint = disabled ? colors.muted : colors.primary;
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Mark all alerts as read"
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        borderColor: disabled ? colors.border : colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 5,
-      }}
-    >
-      <ArchiveRestore color={tint} size={13} strokeWidth={2.2} />
-      <Text style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 0.4 }}>
-        Mark read
-      </Text>
-    </AnimatedPressable>
   );
 }
 
@@ -304,11 +314,11 @@ function NudgesPill({ isManagement }: { isManagement: boolean }) {
         borderWidth: 1,
         flexDirection: "row",
         gap: 3,
-        // Height matched to BackButton. It used to carry BackButton's negative
-        // bottom margin too, to line the two up as centred siblings — but the
-        // row is flex-start now and the pill sits above Mark read, so that -10
-        // was eating the 6px column gap and overlapping the button below it.
         height: 30,
+        // Nudged down to sit on the title's baseline rather than its cap line.
+        // A pill top-aligned with a display-size heading reads as floating
+        // above it.
+        marginTop: spacing.xs,
         paddingHorizontal: spacing.sm,
       }}
     >

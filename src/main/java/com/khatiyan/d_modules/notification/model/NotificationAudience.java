@@ -43,12 +43,18 @@ public enum NotificationAudience {
                     // an exit request.
                     TENANCY_ROOM_CHANGE_REQUESTED,
                     // Someone asking about the property is the owner's to answer.
-                    ENQUIRY_RECEIVED -> MANAGEMENT;
+                    ENQUIRY_RECEIVED,
+                    // A tenant claiming they paid is a decision the owner has to
+                    // make against their bank statement.
+                    PAYMENT_CLAIM_RAISED -> MANAGEMENT;
             case CONCERN_UNDER_REVIEW, CONCERN_IN_PROGRESS, CONCERN_RELEASED,
                     CONCERN_RESOLVED, TENANCY_EXIT_APPROVED, TENANCY_EXIT_REJECTED,
                     TENANCY_EXIT_EXECUTED, NOTICE_PUBLISHED, BILLING_CYCLE_GENERATED,
                     BILLING_LATE_FEE_APPLIED, BILLING_LINE_ITEM_CHANGED,
                     PAYMENT_SUCCEEDED, PAYMENT_FAILED,
+                    // The owner could not find their payment — the tenant's
+                    // answer to "has my rent gone through".
+                    PAYMENT_CLAIM_REJECTED,
                     // The outcome of a withdrawal is the tenant's answer to "am I
                     // still leaving", so it belongs in their workspace.
                     TENANCY_EXIT_WITHDRAWAL_APPROVED, TENANCY_EXIT_WITHDRAWAL_REJECTED,
@@ -73,6 +79,11 @@ public enum NotificationAudience {
                     CHAT_MESSAGE_RECEIVED,
                     USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
                     TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
+                    // Dual-audience by definition: whichever side did NOT
+                    // cancel is the side that needs telling, and all three
+                    // routes have a different one. The listener names the
+                    // audience per recipient group.
+                    TENANCY_CANCELLED,
                     // Dual-audience: the tenant needs to know they have moved
                     // and what their rent becomes; the owner needs the bed
                     // change reflected in their workspace.

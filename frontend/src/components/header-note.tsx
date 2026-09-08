@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { Animated, Easing, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 
@@ -10,7 +10,11 @@ import { useTheme } from "@/theme/use-theme";
 // mount entrance: the rule wipes in from the top while the text fades and
 // slides in beside it, so the supporting copy reads as intentional rather than
 // loose body text.
-export function HeaderNote({ children, delay = 120 }: { children: string; delay?: number }) {
+/**
+ * @param children usually a string, but a node so a description can emphasise
+ *     one word — a tenant's name, say — without leaving the note's styling.
+ */
+export function HeaderNote({ children, delay = 120 }: { children: ReactNode; delay?: number }) {
   const { colors, type } = useTheme();
   const progress = useRef(new Animated.Value(0)).current;
 

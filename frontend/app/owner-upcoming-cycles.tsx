@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Text, View, type ViewStyle } from "react-native";
+import { Image, Text, View, type ViewStyle } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarClock } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+
+import { Banknote, BedDouble, CalendarClock, Clock3 } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
+import { HeaderNote } from "@/components/header-note";
 import { PaginationBar } from "@/components/pagination-bar";
-import { ScreenHeader } from "@/components/screen-header";
+
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
 import { SkeletonCard } from "@/components/skeleton";
@@ -18,10 +20,13 @@ import { useListUpcomingPropertyCyclesQuery } from "@/store/services/billing-api
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+
 const PAGE_SIZE = 8;
+const BILLING_HEADER_ILLUSTRATION = require("../assets/workspace/billing-header.png");
 
 export default function OwnerUpcomingCyclesScreen() {
-  const router = useGuardedRouter();
+
   const { colors, type } = useTheme();
   const params = useLocalSearchParams<{ month?: string }>();
   const month = typeof params.month === "string" && params.month ? params.month : istCurrentMonth();
@@ -40,18 +45,23 @@ export default function OwnerUpcomingCyclesScreen() {
   const items = pageData?.items ?? [];
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader
-        onBack={() => router.back()}
-        eyebrow={`Owner billing · ${monthName}`}
-        title="Upcoming"
-        italicTail="cycles."
-        subtitle={
-          property
-            ? `Cycles still to be generated in ${monthName} for each active monthly tenancy in ${property.name}.`
-            : `Cycles still to be generated in ${monthName} for each active monthly tenancy.`
-        }
-      />
+    <ScreenScrollView
+      background={
+        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+          <LinearGradient
+            colors={[colors.primarySoft, colors.surface]}
+            end={{ x: 0.5, y: 1 }}
+            locations={[0, 1]}
+            start={{ x: 0.5, y: 0 }}
+            style={{ height: 220 }}
+          />
+        </View>
+      }
+      contentContainerStyle={{ paddingTop: spacing.xs }}
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+    >
+      <UpcomingCyclesHeader monthName={monthName} propertyName={property?.name ?? null} />
 
       {!property ? (
         <EmptyState
@@ -62,12 +72,13 @@ export default function OwnerUpcomingCyclesScreen() {
         />
       ) : (
         <>
+          <MonthDivider label={monthName} />
+
           {upcomingQuery.isFetching && items.length === 0 ? (
             <SkeletonCard />
           ) : items.length === 0 ? (
             <EmptyState
-              icon={CalendarClock}
-
+              artwork={NO_BILL_ILLUSTRATION}
               title={`All cycles generated for ${monthName}`}
               description="Every active monthly tenancy has already been billed for this month. New upcoming dates appear once the month rolls over. Daily stays are billed once for the whole stay."
             />
@@ -102,6 +113,61 @@ export default function OwnerUpcomingCyclesScreen() {
   );
 }
 
+function UpcomingCyclesHeader({ monthName, propertyName }: { monthName: string; propertyName: string | null }) {
+  const { colors, type } = useTheme();
+
+  return (
+    <View style={{ minHeight: 100, position: "relative" }}>
+      <View style={{ gap: spacing.sm, paddingRight: 138 }}>
+        <Text
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+          numberOfLines={1}
+          style={[type.brand, { color: colors.ink, fontSize: 29, lineHeight: 35 }]}
+        >
+          Upcoming
+          <Text style={[type.brandItalic, { color: colors.accent, fontSize: 29, lineHeight: 35 }]}> cycles.</Text>
+        </Text>
+        <HeaderNote>
+          {propertyName
+            ? "Cycles scheduled for " + monthName + " at " + propertyName + "."
+            : "Cycles scheduled for " + monthName + "."}
+        </HeaderNote>
+      </View>
+
+      <Image
+        accessibilityIgnoresInvertColors
+        resizeMode="contain"
+        source={BILLING_HEADER_ILLUSTRATION}
+        style={{ height: 100, position: "absolute", right: 0, top: -4, width: 150 }}
+      />
+    </View>
+  );
+}
+
+function MonthDivider({ label }: { label: string }) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ backgroundColor: colors.borderStrong, flex: 1, height: 1 }} />
+      <View
+        style={{
+          backgroundColor: colors.primarySoft,
+          borderRadius: 999,
+          paddingHorizontal: spacing.md,
+          paddingVertical: 5,
+        }}
+      >
+        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.8 }}>
+          {label.toUpperCase()}
+        </Text>
+      </View>
+      <View style={{ backgroundColor: colors.borderStrong, flex: 1, height: 1 }} />
+    </View>
+  );
+}
+
 function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
   const { colors, fonts, type } = useTheme();
   const days = daysUntil(item.nextCycleStartDate);
@@ -121,20 +187,8 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.primarySoft,
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: 14,
-            borderWidth: 1,
-            height: 44,
-            justifyContent: "center",
-            width: 44,
-          }}
-        >
-          <CalendarClock color={colors.primary} size={20} strokeWidth={2.2} />
+        <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+          <CalendarClock color={colors.primary} size={28} strokeWidth={2.1} />
         </View>
 
         <View style={{ flex: 1, gap: 2 }}>
@@ -147,11 +201,22 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
             </Text>
             {item.tenancyEndDate != null ? <StatusPill label="On notice" tone="warning" /> : null}
           </View>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-            {[item.roomNumber ? `Room ${item.roomNumber}` : null, item.tenancyReferenceCode, `${formatMoneyPaise(item.baseAmountPaise)}/mo`]
-              .filter(Boolean)
-              .join(" · ")}
+          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            {item.tenancyReferenceCode}
           </Text>
+
+          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: 4 }}>
+            {item.roomNumber ? (
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                <BedDouble color={colors.muted} size={14} strokeWidth={2.1} />
+                <Text style={[type.caption, { color: colors.ink }]}>Room {item.roomNumber}</Text>
+              </View>
+            ) : null}
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+              <Banknote color={colors.muted} size={14} strokeWidth={2.1} />
+              <Text style={[type.caption, { color: colors.ink }]}>{formatMoneyPaise(item.baseAmountPaise)} / month</Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -199,7 +264,8 @@ function DueChip({ days, suppressed }: { days: number; suppressed: boolean }) {
   const backgroundColor = suppressed ? colors.surfaceSunken : days <= 3 ? colors.jadeSoft : colors.primarySoft;
 
   return (
-    <View style={{ backgroundColor, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+    <View style={{ alignItems: "center", backgroundColor, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+      <Clock3 color={color} size={12} strokeWidth={2.2} />
       <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"], }}>
         {label}
       </Text>

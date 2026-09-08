@@ -1,4 +1,5 @@
 import { api } from "@/store/api";
+import type { PaymentIntentDigest } from "@/store/services/payment-intent-api";
 
 export type DashboardProperty = {
   propertyId: string;
@@ -142,6 +143,13 @@ export type OwnerDashboard = {
   attention: AttentionSummary;
   budget: BudgetAttention;
   concerns: ConcernQueueSummary;
+  /**
+   * UPI payment claims waiting on the owner.
+   *
+   * <p>Its own block rather than another count on `attention`: the tile shows
+   * three figures, and that summary is a list of single numbers.
+   */
+  paymentIntents: PaymentIntentDigest;
   recentActivity: RecentActivityItem[];
   monthlyTrends: MonthlyTrendPoint[];
   generatedAt: string;

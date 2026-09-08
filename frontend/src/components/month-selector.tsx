@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft, ChevronRight, X } from "lucide-react-native";
+import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
@@ -52,7 +52,13 @@ export function MonthSelector({
       >
         <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={() => onChange(shiftMonth(value, -1))} />
 
-        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setGridOpen(true)}>
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => setGridOpen(true)}
+          style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}
+        >
+          <CalendarDays color={colors.ink} size={19} strokeWidth={2.1} />
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>{monthLabel(value)}</Text>
         </Pressable>
 

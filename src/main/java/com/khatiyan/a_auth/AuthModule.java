@@ -38,6 +38,20 @@ public class AuthModule {
         return authService.findByIds(userIds);
     }
 
+    /**
+     * The one canonical phone format, for modules that store a number without
+     * creating an account for it.
+     *
+     * <p>Exists for guest stays. Their phone never passes through auth, so it
+     * was stored exactly as typed while every account number was normalized —
+     * the same person's number then read two different ways depending on which
+     * kind of stay they were on. Exposed here rather than copied, so there stays
+     * exactly one definition of what an Indian mobile number looks like.
+     */
+    public String normalizePhone(String rawPhone) {
+        return authService.normalizePhone(rawPhone);
+    }
+
     public Optional<UserSummaryResponse> findByPhone(String phone) {
         return authService.findByPhone(phone);
     }

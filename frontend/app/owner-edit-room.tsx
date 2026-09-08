@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useHardwareBack } from "@/components/use-hardware-back";
 import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -167,17 +168,26 @@ export default function OwnerEditRoomScreen() {
     }
   }
 
+
+  // The guard follows the device button. Without this a hardware back walked
+  // away from unsaved edits without asking, which is the whole thing the guard
+  // exists to prevent.
+  useHardwareBack(
+    useCallback(() => {
+      unsaved.guard(() => router.back());
+      return true;
+    }, [router, unsaved]),
+  );
+
   return (
     <>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg }}
         surface={colors.formSurface}
       >
         <ScreenHeader
-          eyebrow="Rooms"
           italicTail={room ? `room ${room.roomNumber}.` : "room."}
-          onBack={() => unsaved.guard(() => router.back())}
           subtitle="Changing the type re-cuts the room from it, keeping its number and its history."
           title="Edit"
         />

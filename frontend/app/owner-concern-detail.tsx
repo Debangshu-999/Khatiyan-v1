@@ -14,7 +14,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
-import { ActionButton, BackButton, FormInput, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import {
   type ConcernStatus,
@@ -32,6 +32,8 @@ import { useAppSelector } from "@/store/hooks";
 import { useListPropertyManagersQuery, type PropertyManager } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
 
 type DetailMode = "property" | "taken" | "history";
 
@@ -172,10 +174,9 @@ export default function OwnerConcernDetailScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        badge={!canAct ? <ViewOnlyChip /> : null} onBack={() => router.back()}
-        eyebrow="Concerns"
+        badge={!canAct ? <ViewOnlyChip /> : null}
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."
         subtitle="Review the concern, keep the tenant updated, and resolve it."
@@ -293,7 +294,7 @@ function AssignConcernModal({
 
           {loading ? <Text style={[type.body, { color: colors.muted }]}>Loading managers...</Text> : null}
           {!loading && managers.length === 0 ? (
-            <EmptyState icon={UserRoundPlus} title="No active managers" description="Add a manager to this property before assigning concerns." />
+            <EmptyState artwork={NO_PERSON_ILLUSTRATION} title="No active managers" description="Add a manager to this property before assigning concerns." />
           ) : null}
           {!loading && managers.length > 0 ? (
             <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -414,8 +415,6 @@ function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
     </Card>
   );
 }
-
-
 
 function FactTile({ label, tone, value, wide }: { label: string; tone: BadgeTone; value: string; wide?: boolean }) {
   const { colors, type } = useTheme();

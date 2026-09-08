@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronDown, Compass, MapPinned, Plus, Star, X } from "lucide-react-native";
+import { Text, View } from "react-native";
+import { ChevronDown, Compass, MapPinned, Plus, Star } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,6 +10,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { SkeletonList } from "@/components/skeleton";
 import { useAvailableAccounts } from "@/features/account/accounts";
@@ -24,9 +24,7 @@ import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, FormInput, IconButton,
-  ViewOnlyChip,
-} from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -41,6 +39,8 @@ import {
 import type { OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NO_LOCATION_ILLUSTRATION = require("../assets/workspace/No-Location_512x512.png");
 
 export default function OwnerLocalPlacesScreen() {
   // Deleting is refused by the server; there is no field to correct.
@@ -85,13 +85,11 @@ export default function OwnerLocalPlacesScreen() {
         safeAreaEdges={property ? ["top"] : ["top", "bottom"]}
         contentContainerStyle={{
           paddingBottom: property ? PINNED_FOOTER_CLEARANCE : undefined,
-          paddingTop: 0,
+          paddingTop: spacing.sm,
         }}
       >
         <ScreenHeader
-        onBack={() => router.back()}
         badge={!canManagePlaces ? <ViewOnlyChip /> : null}
-          eyebrow="Discovery"
           title="Nearby"
           italicTail="places."
           subtitle={
@@ -103,7 +101,8 @@ export default function OwnerLocalPlacesScreen() {
 
         {!property ? (
           <EmptyState
-            icon={Compass}
+            icon={Compass}
+
             title="No property selected"
             description="Choose an active property from Home before curating nearby places."
           />
@@ -116,7 +115,7 @@ export default function OwnerLocalPlacesScreen() {
 
               {!placesQuery.isFetching && places.length === 0 ? (
                 <EmptyState
-                  icon={MapPinned}
+                  artwork={NO_LOCATION_ILLUSTRATION}
                   title="No nearby places added"
                   description="Add the metro station, hospital, market or gym around your property — pinned places show tenants real distances."
                 />
@@ -300,7 +299,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
 
   return (
     <>
-      <Sheet onClose={onClose} title={editing ? "Edit place" : "Add nearby place"}>
+      <SheetShell onClose={onClose} title={editing ? "Edit place" : "Add nearby place"}>
         <FormInput
           autoCapitalize="words"
           error={form.errors.name}
@@ -397,7 +396,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
         {form.serverError ? (
           <AlertModal message={form.serverError} onClose={form.dismissServerError} />
         ) : null}
-      </Sheet>
+      </SheetShell>
 
       <CategoryPickerModal
         categories={taxonomy}
@@ -419,45 +418,6 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
         />
       ) : null}
     </>
-  );
-}
-
-function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
-  const { colors, fonts } = useTheme();
-  const insets = useSafeAreaInsets();
-  return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* "padding" on BOTH platforms: Android is edge-to-edge (Expo 56), where
-          adjustResize never resizes the modal window — without this the
-          keyboard slides over the sheet instead of lifting it. */}
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              borderWidth: 1,
-              maxHeight: "92%",
-              paddingBottom: insets.bottom + spacing.md,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.lg,
-            }}
-          >
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
-                {title}
-              </Text>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
-            </View>
-            <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {children}
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
   );
 }
 

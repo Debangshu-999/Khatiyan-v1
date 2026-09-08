@@ -19,6 +19,7 @@ type ActionCardProps = {
   icon?: ComponentType<LucideProps>;
   // When > 0, renders a red attention badge with the count next to the arrow.
   badge?: number;
+  borderRadius?: number;
   onPress?: () => void;
   tone?: "default" | "primary";
 };
@@ -26,7 +27,7 @@ type ActionCardProps = {
 // Press-target card with a tracked-out kicker, a serif title, and a quiet
 // affordance arrow at the corner so it reads as navigable without a noisy
 // "Open" button.
-export function ActionCard({ badge, description, flush, icon: Icon, meta, onPress, title, tone = "default" }: ActionCardProps) {
+export function ActionCard({ badge, borderRadius, description, flush, icon: Icon, meta, onPress, title, tone = "default" }: ActionCardProps) {
   const { colors, fonts, type } = useTheme();
   const badgeLabel = badge != null && badge > 0 ? (badge > 99 ? "99+" : String(badge)) : null;
   const isPrimary = tone === "primary";
@@ -88,7 +89,7 @@ export function ActionCard({ badge, description, flush, icon: Icon, meta, onPres
           backgroundColor: flush ? "transparent" : backgroundColor,
           borderColor: flush ? "transparent" : borderColor,
           borderCurve: "continuous",
-          borderRadius: 20,
+          borderRadius: borderRadius ?? 20,
           borderWidth: flush ? 0 : 1,
           padding: spacing.lg,
           ...(Icon ? { alignItems: "flex-start", flexDirection: "row" as const, gap: spacing.md } : { gap: spacing.sm }),

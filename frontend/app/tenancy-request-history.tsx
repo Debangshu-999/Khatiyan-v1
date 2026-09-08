@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Clock, DoorOpen, FileClock, History, Repeat, Undo2, UserRound, type LucideProps } from "lucide-react-native";
+import { Clock, DoorOpen, FileClock, History, LockOpen, Repeat, Undo2, UserRound, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -15,7 +15,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { FilterBubbles } from "@/components/filter-bubbles";
-import { SkeletonCard } from "@/components/skeleton";
+import { SkeletonList } from "@/components/skeleton";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { AlertModal } from "@/components/alert-modal";
@@ -44,8 +44,11 @@ import {
   type TenancyExitRequest,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { metricFontSize } from "@/theme/metric-size";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 type RequestKind = "EXIT" | "ROOM_CHANGE";
 
@@ -75,10 +78,8 @@ export default function TenancyRequestHistoryScreen() {
   const scopedRoomChanges = scopeToTenancy(roomChangeQuery.data ?? [], params);
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
         title="Your"
         italicTail="requests."
         subtitle="Raise, follow and act on your exit and room change requests."
@@ -134,7 +135,8 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
     <View style={{ gap: spacing.lg }}>
       <OverviewTiles counts={counts} />
 
-      <Section
+      <Section
+
         title={`${active.length} request${active.length === 1 ? "" : "s"}`}
         trailing={
           <FilterBubbles
@@ -165,10 +167,10 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
         />
 
         {loading && requests.length === 0 ? (
-          <SkeletonCard />
+          <SkeletonList rows={2} />
         ) : active.length === 0 ? (
           <EmptyState
-            icon={DoorOpen}
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
             title={filter === "unattended" ? "Nothing awaiting a reply" : "No active exit requests"}
             description="A request stays here until it expires — including after it is decided."
           />
@@ -185,7 +187,7 @@ function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExi
       <Section title="Exit request history">
         {history.length === 0 ? (
           <EmptyState
-            icon={FileClock}
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
             title="No past exit requests"
             description="Requests move here once they expire."
           />
@@ -230,7 +232,8 @@ function RoomChangeTab({
     <View style={{ gap: spacing.lg }}>
       <OverviewTiles counts={counts} />
 
-      <Section
+      <Section
+
         title={`${active.length} request${active.length === 1 ? "" : "s"}`}
         trailing={
           <FilterBubbles
@@ -258,10 +261,10 @@ function RoomChangeTab({
         />
 
         {loading && requests.length === 0 ? (
-          <SkeletonCard />
+          <SkeletonList rows={2} />
         ) : active.length === 0 ? (
           <EmptyState
-            icon={Repeat}
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
             title={filter === "unattended" ? "Nothing awaiting a reply" : "No active room change requests"}
             description="A room change closes as soon as it is decided — there is no withdrawal window."
           />
@@ -278,7 +281,7 @@ function RoomChangeTab({
       <Section title="Room change request history">
         {history.length === 0 ? (
           <EmptyState
-            icon={FileClock}
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
             title="No past room change requests"
             description="Requests move here once they are decided or expire."
           />
@@ -300,12 +303,14 @@ function OverviewTiles({ counts }: { counts: { active: number; expired: number; 
     <View style={{ flexDirection: "row", gap: spacing.sm }}>
       <SummaryTile
         hint="Still open"
+        icon={LockOpen}
         label="Active"
         tone={counts.active > 0 ? "primary" : "default"}
         value={String(counts.active)}
       />
       <SummaryTile
         hint={`${counts.expired} expired`}
+        icon={FileClock}
         label="Total"
         value={String(counts.total)}
       />
@@ -659,33 +664,74 @@ function TabButton({
 
 function SummaryTile({
   hint,
+  icon: Icon,
   label,
   tone = "default",
   value,
 }: {
   hint: string;
+  icon: ComponentType<LucideProps>;
   label: string;
   tone?: "default" | "primary";
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const isPrimary = tone === "primary";
+  const accent = tone === "primary" ? colors.primary : colors.ink;
 
   return (
     <View
       style={{
-        backgroundColor: isPrimary ? colors.primarySoft : colors.surface,
-        borderColor: isPrimary ? colors.primary : colors.border,
-        borderRadius: 16,
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
         borderWidth: 1,
+        elevation: 2,
         flex: 1,
-        gap: 2,
+        gap: spacing.xs,
+        // Centred, because tiles in a row stretch to the tallest of them.
+        justifyContent: "center",
         padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24 }}>{value}</Text>
-      <Text style={[type.caption, { color: colors.muted }]}>{hint}</Text>
+      {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the
+          label and number stacked beside it — the billing, concern and tenancy
+          tiles' exact layout. Above the label the glyph made these two the
+          tallest things on the screen and read as a different KIND of figure
+          from the same counts elsewhere. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+        </View>
+
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            {label}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: accent,
+              fontFamily: fonts.display,
+              fontSize: metricFontSize(value, 23),
+              fontVariant: ["tabular-nums"],
+              lineHeight: metricFontSize(value, 23) + 5,
+            }}
+          >
+            {value}
+          </Text>
+        </View>
+      </View>
+
+      {/* Under the row on the tile's full width — beside a 38pt glyph the hint
+          had half a tile and wrapped, leaving one tile taller than its pair. */}
+      <Text numberOfLines={2} style={[type.caption, { color: colors.kicker, fontSize: 11, lineHeight: 15 }]}>
+        {hint}
+      </Text>
     </View>
   );
 }

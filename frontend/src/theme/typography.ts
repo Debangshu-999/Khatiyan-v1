@@ -64,17 +64,36 @@ export const type = {
     fontFamily: fonts.display,
     letterSpacing: -0.4,
   } satisfies TextStyle,
-  /** The serif, for screen headers and brand moments. */
+  /**
+   * Screen headers, in the app's display face.
+   *
+   * <p>
+   * <b>No longer the serif.</b> Headers ran in a serif with the accent word set
+   * in serif italic, which read as a magazine masthead sitting on top of an
+   * interface built entirely in Plus Jakarta Sans — a different voice on every
+   * screen from the one the screen itself speaks in. The deposit account header
+   * had been written in the display face by hand and was plainly the better
+   * answer, so it becomes the rule.
+   *
+   * <p>
+   * The two-tone colouring is untouched: the first word stays ink, the accent
+   * word stays accent. Only the letterforms change.
+   */
   brand: {
-    fontFamily: fonts.brand,
-    fontWeight: "500",
-    letterSpacing: -0.4,
+    fontFamily: fonts.display,
+    letterSpacing: -0.7,
   } satisfies TextStyle,
+  /**
+   * The accent half of a screen header.
+   *
+   * <p>Same face and tracking as {@link brand}, not an italic — the colour is
+   * what separates the two words, and it already does that on its own. An
+   * italic in a face with no true italic cut was being synthesised by the
+   * platform anyway, which slanted the glyphs without redrawing them.
+   */
   brandItalic: {
-    fontFamily: fonts.brand,
-    fontStyle: "italic",
-    fontWeight: "400",
-    letterSpacing: -0.3,
+    fontFamily: fonts.display,
+    letterSpacing: -0.7,
   } satisfies TextStyle,
   /**
    * The app's ONE uppercase style — eyebrows, status pills, overlines, tab

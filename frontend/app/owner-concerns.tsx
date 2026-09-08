@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, Clock3, Eye, Image as ImageIcon, Lock, X } from "lucide-react-native";
+import { Activity, AlertCircle, ArrowUp, Building2, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
+
+import { Image, type ImageSourcePropType } from "react-native";
 
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -10,12 +12,13 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
+import { HeaderGradient } from "@/components/header-gradient";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   type ConcernSummary,
@@ -53,6 +56,11 @@ function myTabHeadingText(tab: MyTab) {
   if (tab === "reopened") return "Reopened concerns";
   return "Resolved by me";
 }
+
+const CONCERN_HEADER_ILLUSTRATION = require("../assets/workspace/concern-header.png");
+const CONCERN_MONITOR_ILLUSTRATION = require("../assets/workspace/concern-monitor.png");
+const CONCERN_HISTORY_ILLUSTRATION = require("../assets/workspace/concern-history.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 export default function OwnerConcernsScreen() {
   const router = useGuardedRouter();
@@ -140,13 +148,14 @@ export default function OwnerConcernsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    // Header artwork means the gradient — see HeaderGradient.
+    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        badge={!canWorkConcerns ? <ViewOnlyChip /> : null} onBack={() => router.back()}
-        eyebrow="Owner concern"
+        badge={!canWorkConcerns ? <ViewOnlyChip /> : null}
         title="Concern"
-        italicTail="queue."
-        subtitle={selectedProperty ? `Review and resolve concerns for ${selectedProperty.name}.` : "Select a property from Home first."}
+        italicTail="queues."
+        subtitle={selectedProperty ? `Concern workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
+        artwork={CONCERN_HEADER_ILLUSTRATION}
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -159,61 +168,58 @@ export default function OwnerConcernsScreen() {
             <Text style={[type.eyebrow, { color: colors.kicker }]}>
               Concern overview
             </Text>
-            <Card>
-              <View style={{ gap: spacing.sm }}>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <MetricTile label="Open" value={String(propertyAvailableRaw.length)} hint="Unassigned" tone={propertyAvailableRaw.length > 0 ? "primary" : "default"} />
-                  <MetricTile label="In review" value={String(myInReview.length)} hint="Assigned to me" tone={myInReview.length > 0 ? "primary" : "default"} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <MetricTile label="In progress" value={String(myInProgress.length)} hint="Being handled" />
-                  <MetricTile label="Escalated" value={String(propertyEscalatedRaw.length)} hint="Needs owner" tone={propertyEscalatedRaw.length > 0 ? "danger" : "default"} />
-                </View>
-                <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <MetricTile label="Resolved" value={String(resolvedThisWeek)} hint="This week" />
-                  <MetricTile label="Reopened" value={String(myReopened.length)} hint="Needs re-handling" tone={myReopened.length > 0 ? "primary" : "default"} />
-                </View>
+            {/* Six tiles, two to a row, each headed by its own glyph. Three
+                across squeezed a two-word label and a count into a third of the
+                screen; two across gives every tile the same width and lets the
+                number lead.
+
+                No card around them. A Card holding six cards put a surface
+                inside a surface, and the tiles already carry their own border
+                and lift. */}
+            <View style={{ gap: spacing.sm }}>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <MetricTile icon={FileText} iconPlacement="side" label="Open" value={String(propertyAvailableRaw.length)} hint="Unassigned" tone={propertyAvailableRaw.length > 0 ? "primary" : "default"} />
+                <MetricTile icon={Clock3} iconPlacement="side" label="In review" value={String(myInReview.length)} hint="Assigned to me" tone={myInReview.length > 0 ? "primary" : "default"} />
               </View>
-            </Card>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <MetricTile icon={Cog} iconPlacement="side" label="In progress" value={String(myInProgress.length)} hint="Being handled" />
+                <MetricTile icon={ArrowUp} iconPlacement="side" label="Escalated" value={String(propertyEscalatedRaw.length)} hint="Needs owner" tone={propertyEscalatedRaw.length > 0 ? "danger" : "default"} />
+              </View>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <MetricTile icon={CheckCircle2} iconPlacement="side" label="Resolved" value={String(resolvedThisWeek)} hint="This week" />
+                <MetricTile icon={RefreshCw} iconPlacement="side" label="Reopened" value={String(myReopened.length)} hint="Needs re-handling" tone={myReopened.length > 0 ? "primary" : "default"} />
+              </View>
+            </View>
           </View>
 
+          {/* Two cards, one under the other, not one card with a rule down the
+              middle of it. They lead to different screens and read as different
+              offers — sharing a surface made the second look like a footnote to
+              the first. Stacked rather than side by side: at half a phone's
+              width the title wraps to three lines and the artwork has nowhere
+              to sit. */}
           {activeAccount === "owner" ? (
-            <Card>
-              <View style={{ gap: spacing.sm }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern monitor</Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
-                  Track active concern progress
-                </Text>
-                <Text style={[type.body, { color: colors.muted }]}>
-                  Under review, in progress, reopened, and resolved-window concerns only.
-                </Text>
-                <ActionButton
-                  icon={Activity}
-                  label="Open monitor"
-                  onPress={() => router.push({ pathname: "/owner-concern-monitor", params: { propertyId: selectedProperty.id } })}
-                  variant="secondary"
-                />
+            <>
+              <ConcernRouteCard
+                artwork={CONCERN_MONITOR_ILLUSTRATION}
+                buttonIcon={Activity}
+                buttonLabel="Open monitor"
+                description="Under review, in progress, reopened, and resolved-window concerns only."
+                eyebrow="Concern monitor"
+                onPress={() => router.push({ pathname: "/owner-concern-monitor", params: { propertyId: selectedProperty.id } })}
+                title="Track active concern progress"
+              />
 
-                {/* History sits with the monitor rather than under the queues:
-                    both are ways of looking BACK at concerns, where the queues
-                    below are the ones still needing work. */}
-                <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xs }} />
-
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern history</Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
-                  View past concerns
-                </Text>
-                <Text style={[type.body, { color: colors.muted }]}>
-                  Resolved and closed concerns for this property, regardless of who handled them.
-                </Text>
-                <ActionButton
-                  icon={Clock3}
-                  label={`${historyQuery.data?.totalElements ?? 0} history items`}
-                  onPress={() => setPropertyHistoryOpen(true)}
-                  variant="secondary"
-                />
-              </View>
-            </Card>
+              <ConcernRouteCard
+                artwork={CONCERN_HISTORY_ILLUSTRATION}
+                buttonIcon={Clock3}
+                buttonLabel={`${historyQuery.data?.totalElements ?? 0} history items`}
+                description="Resolved and closed concerns for this property, regardless of who handled them."
+                eyebrow="Concern history"
+                onPress={() => setPropertyHistoryOpen(true)}
+                title="View past concerns"
+              />
+            </>
           ) : null}
 
           <Section title="Concern queues">
@@ -231,7 +237,7 @@ export default function OwnerConcernsScreen() {
                       <ConcernCard actionLabel="Review" concern={concern} key={concern.id} onPress={() => openConcern(concern, "property")} />
                     ))
                   ) : (
-                    <EmptyState icon={AlertCircle} title="No property concerns" description="Available and escalated tenant concerns will appear here." />
+                    <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No property concerns" description="Available and escalated tenant concerns will appear here." />
                   )}
                   {propertyConcerns.length > 0 ? (
                     <PaginationBar
@@ -276,7 +282,7 @@ export default function OwnerConcernsScreen() {
                       />
                     ))
                   ) : (
-                    <EmptyState icon={Clock3} title="No concerns in this queue" description="Concerns you take up will appear here." />
+                    <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No concerns in this queue" description="Concerns you take up will appear here." />
                   )}
                   {myVisibleConcerns.length > 0 ? (
                     <PaginationBar
@@ -314,13 +320,12 @@ function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void
       active={tab}
       onChange={onChange}
       options={[
-        { label: "Property", value: "property" },
-        { label: "My concerns", value: "mine" },
+        { icon: Building2, label: "Property", value: "property" },
+        { icon: UserRound, label: "My concerns", value: "mine" },
       ]}
     />
   );
 }
-
 
 function TabChip({
   active,
@@ -426,6 +431,56 @@ function QueueWindow({ children, loading }: { children: React.ReactNode; loading
   return <View style={{ gap: spacing.md }}>{loading ? <SkeletonCard /> : children}</View>;
 }
 
+/**
+ * One of the two ways of looking back at concerns.
+ *
+ * <p>Written once and used twice. The monitor and the history were two copies
+ * of the same layout inside one card, which is how they drifted into slightly
+ * different type sizes and button variants.
+ */
+function ConcernRouteCard({
+  artwork,
+  buttonIcon,
+  buttonLabel,
+  description,
+  eyebrow,
+  onPress,
+  title,
+}: {
+  artwork: ImageSourcePropType;
+  buttonIcon: typeof Activity;
+  buttonLabel: string;
+  description: string;
+  eyebrow: string;
+  onPress: () => void;
+  title: string;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <Card>
+      {/* Artwork beside the words, not above them. Above, it pushed the title
+          into the middle of the card and left the eyebrow floating at the top
+          on its own. */}
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>{eyebrow}</Text>
+          <Text style={[type.display, { color: colors.ink, fontSize: 20, lineHeight: 25 }]}>{title}</Text>
+        </View>
+        <Image
+          accessibilityIgnoresInvertColors
+          resizeMode="contain"
+          source={artwork}
+          style={{ height: 76, width: 76 }}
+        />
+      </View>
+
+      <Text style={[type.body, { color: colors.muted }]}>{description}</Text>
+
+      <ActionButton icon={buttonIcon} label={buttonLabel} onPress={onPress} variant="secondary" />
+    </Card>
+  );
+}
 
 function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
   const { colors, type } = useTheme();
@@ -509,7 +564,7 @@ function HistoryModal({
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
               {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => onOpen(concern)} />) : null}
-              {sorted.length === 0 ? <EmptyState icon={Clock3} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
+              {sorted.length === 0 ? <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
             </ScrollView>
           )}
           {pageData && pageData.totalElements > 0 ? (

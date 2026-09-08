@@ -3,7 +3,6 @@ import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Eye, FileSignature, Plus, X } from "lucide-react-native";
 
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
@@ -54,7 +53,6 @@ const MAX_VALIDITY_MONTHS = 12;
  * the exit-policies screen, which split one rule across two places.
  */
 export default function OwnerTenancyAgreementScreen() {
-  const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const saveErrors = useFormErrors<never>();
@@ -153,16 +151,14 @@ export default function OwnerTenancyAgreementScreen() {
         // opaque.
         contentContainerStyle={{
           paddingBottom: (footerHeight || PINNED_FOOTER_CLEARANCE) + spacing.xl,
-          paddingTop: 0,
+          paddingTop: spacing.sm,
         }}
         onScroll={(event) => setScrollY(event.nativeEvent.contentOffset.y)}
         safeAreaEdges={["top"]}
       >
         <ScreenHeader
           badge={readOnly ? <ViewOnlyChip /> : null}
-          eyebrow="Tenancy"
           italicTail="agreement."
-          onBack={() => router.back()}
           subtitle={
             property
               ? `Every monthly tenancy at ${property.name} runs on these terms. The tenant accepts them before the stay begins.`
@@ -180,7 +176,7 @@ export default function OwnerTenancyAgreementScreen() {
         ) : settingsQuery.isLoading || draft === null ? (
           <>
             <SkeletonCard />
-            <SkeletonList />
+            <SkeletonList rows={3} />
           </>
         ) : (
           <>
@@ -206,11 +202,8 @@ export default function OwnerTenancyAgreementScreen() {
                   value={fixedTerm ? "FIXED" : "INDEFINITE"}
                 />
 
-                {/* Near full-bleed. The screen pads its content by spacing.lg,
-                    which is pulled back here so the card sits close to the device
-                    edges — with an almost-square radius it reads as a band the
-                    toggle opened, rather than a floating card in a column of
-                    other cards. */}
+                {/* Keep the expanded form on the same horizontal grid as the
+                    two term options above it. */}
                 <View
                   style={{
                     backgroundColor: colors.surface,
@@ -218,7 +211,7 @@ export default function OwnerTenancyAgreementScreen() {
                     borderRadius: 4,
                     borderWidth: 1,
                     gap: spacing.md,
-                    marginHorizontal: -(spacing.lg - 4),
+                    marginHorizontal: 0,
                     paddingHorizontal: spacing.md,
                     paddingVertical: spacing.md,
                   }}
@@ -408,7 +401,7 @@ export default function OwnerTenancyAgreementScreen() {
               </AnimatedPressable>
             </View>
 
-            <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+            <ScreenScrollView>
               <AgreementDocument
                 clauses={previewQuery.data.clauses}
                 preamble={previewQuery.data.preamble}

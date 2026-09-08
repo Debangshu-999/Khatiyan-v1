@@ -64,9 +64,24 @@ export function useAvailableAccounts(): AccountAvailability {
 
   return {
     accounts,
-    // Settle once the first request finishes (success OR error). Using
-    // `data === undefined` here would spin forever if the query errors.
-    loading: Boolean(auth.accessToken) && (propertiesQuery.isLoading || propertiesQuery.isUninitialized),
+    /**
+     * Whether the account picture is still being assembled.
+     *
+     * <p>
+     * Settles once the first request finishes (success OR error). Using
+     * `data === undefined` here would spin forever if the query errors.
+     *
+     * <p>
+     * <b>Unhydrated auth counts as loading.</b> The token is read from storage
+     * asynchronously, so on every cold start there is a window where
+     * `accessToken` is null and this returned false — during which a signed-in
+     * owner was shown the signed-out home, and no loading state could appear
+     * because nothing believed anything was loading. That window is exactly
+     * when a skeleton is wanted.
+     */
+    loading:
+      !auth.hydrated
+      || (Boolean(auth.accessToken) && (propertiesQuery.isLoading || propertiesQuery.isUninitialized)),
     managedProperties,
     ownedProperties,
   };

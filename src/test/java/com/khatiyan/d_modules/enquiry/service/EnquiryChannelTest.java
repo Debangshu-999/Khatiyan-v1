@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.enquiry.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -19,8 +20,15 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
  * the owner's respond sheet — and the respond endpoint validates against it. If
  * it were computed twice the two would drift, and the drift would surface as an
  * owner promising an email to an address nobody has proved they can read.
+ *
+ * <p>The list answers two questions at once: can this channel carry a reply, and
+ * did the enquirer agree to it. Either one failing withholds the channel, so the
+ * tests below come in two halves.
  */
 class EnquiryChannelTest {
+
+    private static final Set<EnquiryResponseChannel> BOTH =
+            Set.of(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL);
 
     private static UserSummaryResponse user(String phone, String email, boolean emailVerified) {
         return new UserSummaryResponse(
@@ -37,10 +45,12 @@ class EnquiryChannelTest {
                 true);
     }
 
-    /** A verified phone is a precondition of having an account, so it is always offered. */
+    // ---- Can the channel carry a reply -----------------------------------
+
+    /** A verified phone is a precondition of having an account, so it always works. */
     @Test
-    void alwaysOffersCallBack() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", null, false));
+    void offersCallBackWhenConsented() {
+        var channels = EnquiryService.reachableChannels(user("+919000000000", null, false), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .containsExactly(EnquiryResponseChannel.CALL_BACK);
@@ -49,7 +59,7 @@ class EnquiryChannelTest {
 
     @Test
     void offersEmailOnlyWhenVerified() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true));
+        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL);
@@ -61,8 +71,8 @@ class EnquiryChannelTest {
      * proved they can read, and offering it sends the owner's reply nowhere.
      */
     @Test
-    void withholdsAnUnverifiedEmail() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", false));
+    void withholdsAnUnverifiedEmailEvenWhenConsented() {
+        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", false), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .containsExactly(EnquiryResponseChannel.CALL_BACK);
@@ -70,7 +80,7 @@ class EnquiryChannelTest {
 
     @Test
     void treatsABlankEmailAsAbsent() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "   ", true));
+        var channels = EnquiryService.reachableChannels(user("+919000000000", "   ", true), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .containsExactly(EnquiryResponseChannel.CALL_BACK);
@@ -79,7 +89,9 @@ class EnquiryChannelTest {
     /** Chat is not a channel anyone can be reached on until chat exists. */
     @Test
     void neverOffersChat() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true));
+        var channels = EnquiryService.reachableChannels(
+                user("+919000000000", "anita@example.com", true),
+                Set.of(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL, EnquiryResponseChannel.CHAT));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .doesNotContain(EnquiryResponseChannel.CHAT);
@@ -87,8 +99,45 @@ class EnquiryChannelTest {
 
     @Test
     void handlesAMissingUser() {
-        assertThat(EnquiryService.reachableChannels(null)).isEmpty();
+        assertThat(EnquiryService.reachableChannels(null, BOTH)).isEmpty();
         assertThat(EnquiryService.emailChannelState(null)).isEqualTo(EmailChannelState.NOT_REGISTERED);
+    }
+
+    // ---- Did the enquirer agree ------------------------------------------
+
+    /**
+     * The whole point of the consent work. The number is on the account and
+     * dialable, and it is still withheld — a working detail nobody offered is
+     * not a channel.
+     */
+    @Test
+    void withholdsAWorkingPhoneThatWasNotConsentedTo() {
+        var channels = EnquiryService.reachableChannels(
+                user("+919000000000", "anita@example.com", true),
+                Set.of(EnquiryResponseChannel.EMAIL));
+
+        assertThat(channels).extracting(ReachableChannelResponse::channel)
+                .containsExactly(EnquiryResponseChannel.EMAIL);
+    }
+
+    @Test
+    void withholdsAVerifiedEmailThatWasNotConsentedTo() {
+        var channels = EnquiryService.reachableChannels(
+                user("+919000000000", "anita@example.com", true),
+                Set.of(EnquiryResponseChannel.CALL_BACK));
+
+        assertThat(channels).extracting(ReachableChannelResponse::channel)
+                .containsExactly(EnquiryResponseChannel.CALL_BACK);
+    }
+
+    /**
+     * Nothing consented means nothing reachable, which is what stops an enquiry
+     * being raised at all until chat gives it a reply path of its own.
+     */
+    @Test
+    void offersNothingWithoutConsent() {
+        assertThat(EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true), Set.of()))
+                .isEmpty();
     }
 
     // The footnote tells the enquirer to fix the one thing that is missing —

@@ -1,4 +1,5 @@
 import type { PropertyDiscoveryCard } from "@/store/services/discovery-api";
+import { MEAL_TYPES } from "@/store/services/property-api";
 
 import type { PropertyFilterState } from "./components/property-filter-modal";
 import { humanizeToken } from "./discovery-format";
@@ -31,21 +32,15 @@ export function computeFilterMatches(filters: PropertyFilterState, property: Pro
   if (filters.preferredFor && filters.preferredFor !== "ANYONE") {
     active += 1;
     if (property.preferredFor === filters.preferredFor || property.preferredFor === "ANYONE") {
-      tags.push(humanizeToken(filters.preferredFor));
-    }
-  }
-
-  if (filters.foodIncluded !== null) {
-    active += 1;
-    if (property.foodIncluded === filters.foodIncluded) {
-      tags.push(filters.foodIncluded ? "Food included" : "No food");
+      tags.push(filters.preferredFor === "PROFESSIONAL" ? "Working" : humanizeToken(filters.preferredFor));
     }
   }
 
   if (filters.mealTypes.length > 0) {
     active += 1;
-    if (filters.mealTypes.every((meal) => property.includedMeals.includes(meal))) {
-      tags.push(filters.mealTypes.map(humanizeToken).join(", "));
+    if (property.foodIncluded && filters.mealTypes.every((meal) => property.includedMeals.includes(meal))) {
+      const allMealsSelected = MEAL_TYPES.every((meal) => filters.mealTypes.includes(meal));
+      tags.push(allMealsSelected ? "All meals" : filters.mealTypes.map(humanizeToken).join(", "));
     }
   }
 

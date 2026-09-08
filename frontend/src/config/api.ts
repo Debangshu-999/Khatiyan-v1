@@ -61,7 +61,7 @@ export function normalizeApiBaseUrl(value: string) {
 }
 
 export function resolveDefaultApiBaseUrl() {
-  return normalizeApiBaseUrl("");
+  return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
 }
 
 export const defaultApiBaseUrl = resolveDefaultApiBaseUrl();

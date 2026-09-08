@@ -20,6 +20,14 @@ public enum NotificationSubtype {
     // Tenancy lifecycle.
     TENANCY_STARTED,
     TENANCY_ENDED,
+    /**
+     * A pending tenancy cancelled before it ever started.
+     *
+     * <p>One subtype for all three routes. Which route it was travels in the
+     * payload and in the sentence, because a reader wants the difference in
+     * words rather than as a category they have to learn.
+     */
+    TENANCY_CANCELLED,
     TENANCY_ROOM_TRANSFERRED,
 
     // Tenancy exit request workflow.
@@ -73,6 +81,13 @@ public enum NotificationSubtype {
     PAYMENT_FAILED,
     // Owner-facing: rent was collected but could not be deposited to their bank.
     PAYOUT_FAILED,
+
+    // A tenant says they paid by UPI and is waiting to be believed. RAISED is
+    // the owner's to act on; REJECTED is the tenant's answer when the owner
+    // could not find the money. There is no APPROVED: verifying a claim marks
+    // the bill paid, which already notifies the tenant.
+    PAYMENT_CLAIM_RAISED,
+    PAYMENT_CLAIM_REJECTED,
 
     // Expense budget (management-facing): the recurring default was edited, a
     // monthly raise was added, or month-to-date spend crossed a threshold.

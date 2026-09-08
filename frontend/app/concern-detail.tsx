@@ -4,11 +4,12 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
-  useWindowDimensions,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { useLocalSearchParams } from "expo-router";
@@ -20,6 +21,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import {
   type ConcernStatus,
   type ConcernSummary,
@@ -28,7 +30,7 @@ import {
   useReopenConcernMutation,
 } from "@/store/services/concern-api";
 import { radii, spacing } from "@/theme/spacing";
-import { BackButton } from "@/features/owner/owner-ui";
+
 import { useTheme } from "@/theme/use-theme";
 
 // Tenant-side concern detail — read-only mirror of the owner concern detail:
@@ -90,9 +92,8 @@ export default function ConcernDetailScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Concerns"
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <ScreenHeader
         title={concern?.referenceCode ?? "Concern"}
         italicTail="details."
         subtitle="Track the status, updates and resolution of your concern."
@@ -463,10 +464,11 @@ function ReopenConcernModal({
   reason: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View
           style={{
             alignItems: "center",
@@ -474,6 +476,9 @@ function ReopenConcernModal({
             flex: 1,
             justifyContent: "center",
             padding: spacing.lg,
+            // Shrinks the centring box so the dialog rises with the
+            // keyboard rather than sitting behind it.
+            paddingBottom: spacing.lg + keyboardInset,
           }}
         >
           <View
@@ -583,7 +588,6 @@ function ReopenConcernModal({
     </Modal>
   );
 }
-
 
 function tonePalette(tone: BadgeTone, colors: ReturnType<typeof useTheme>["colors"]) {
   const palette: Record<BadgeTone, { bg: string; border: string; fg: string }> = {

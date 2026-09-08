@@ -7,12 +7,11 @@ import { openDialer } from "@/lib/dial";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { FilterBubbles } from "@/components/filter-bubbles";
+import { CountTabPills } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
-import { SkeletonCard } from "@/components/skeleton";
+import { SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -26,6 +25,10 @@ import {
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const ENQUIRIES_ILLUSTRATION = require("../assets/workspace/enquiries.png");
+
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 type EnquiryFilter = "new" | "all";
 
@@ -87,15 +90,13 @@ export default function OwnerEnquiriesScreen() {
 
   return (
     <ScreenScrollView
-      contentContainerStyle={{ paddingTop: 0 }}
       onScroll={handleScroll}
       safeAreaEdges={["top", "bottom"]}
       scrollEventThrottle={16}
     >
       <ScreenHeader
-        eyebrow="Owner tool"
+        artwork={ENQUIRIES_ILLUSTRATION}
         italicTail="received."
-        onBack={() => router.back()}
         subtitle={
           selectedProperty
             ? `People asking about ${selectedProperty.name} from its public profile.`
@@ -113,21 +114,28 @@ export default function OwnerEnquiriesScreen() {
       ) : null}
 
       {selectedProperty ? (
-        <Section
-          title={`${visible.length} ${visible.length === 1 ? "enquiry" : "enquiries"}`}
-          trailing={
-            <FilterBubbles
-              onChange={changeFilter}
-              options={[
-                { count: openCount, label: "New", value: "new" as const },
-                { label: "All", value: "all" as const },
-              ]}
-              value={effectiveFilter}
-            />
-          }
-        >
+        <View style={{ gap: spacing.md }}>
+          {/* No "n enquiries" heading. It only ever counted the filter already
+              chosen, so the number moved when a tab was tapped and the other
+              tab gave no hint of what it held. The tabs carry their own counts,
+              which is the whole picture on one line. */}
+          <CountTabPills
+            onChange={changeFilter}
+            options={[
+              // All leads, as on every other filter strip in the app — the
+              // widest set first, then the narrowing of it. The screen still
+              // OPENS on New when anything is unanswered; where a tab sits and
+              // which one is selected are separate questions.
+              { count: enquiries.length, label: "All", value: "all" as const },
+              { count: openCount, label: "New", value: "new" as const },
+            ]}
+            value={effectiveFilter}
+          />
           {enquiriesQuery.isFetching && enquiries.length === 0 ? (
-            <SkeletonCard />
+            // Enquiry-shaped: a name row, the message, and the Respond
+            // button — three of them, because one card standing in for a list
+            // reserves a fraction of the height that arrives.
+            <SkeletonList action body={2} rows={3} />
           ) : visible.length === 0 ? (
             <EmptyState
               description={
@@ -135,7 +143,7 @@ export default function OwnerEnquiriesScreen() {
                   ? "Nothing is waiting on you."
                   : "People who find this property in discovery can ask a question from its profile."
               }
-              icon={MessageSquare}
+              artwork={CONCERN_EMPTY_ILLUSTRATION}
               title={enquiries.length > 0 ? "All answered" : "No enquiries yet"}
             />
           ) : (
@@ -157,7 +165,7 @@ export default function OwnerEnquiriesScreen() {
               ) : null}
             </>
           )}
-        </Section>
+        </View>
       ) : null}
 
       {responding ? (
@@ -168,6 +176,12 @@ export default function OwnerEnquiriesScreen() {
             setResponding(null);
             // Accurate about what happened: the app handed off to the dialer or
             // mail client. Nothing was sent to the enquirer from in here.
+            if (channel === "CHAT") {
+              // Nothing to confirm: the chat itself opens, which is the whole
+              // answer. A toast over a conversation says less than the
+              // conversation does.
+              return;
+            }
             toast.show(channel === "EMAIL" ? "Marked as emailed." : "Marked as called.", "success");
           }}
         />
@@ -341,7 +355,7 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
               <Phone color={colors.jade} size={13} strokeWidth={2.4} />
             )}
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
-              {response.channel === "EMAIL" ? "Emailed" : "Called"}
+              {response.channel === "EMAIL" ? "Emailed" : response.channel === "CHAT" ? "Chatted" : "Called"}
             </Text>
           </View>
           <Text style={[type.caption, { color: colors.kicker }]}>
@@ -368,6 +382,7 @@ function RespondSheet({
   onResponded: (channel: EnquiryResponseChannel) => void;
 }) {
   const { colors, type } = useTheme();
+  const router = useGuardedRouter();
   const [error, setError] = useState<string | null>(null);
   const [respond] = useRespondToEnquiryMutation();
 
@@ -382,6 +397,32 @@ function RespondSheet({
    * fails the owner is still mid-call, so it is logged into the error line
    * rather than blocking anything.
    */
+  /**
+   * Answers in chat: opens the conversation, then goes to it.
+   *
+   * <p>
+   * The order is the opposite of the phone and email paths, and has to be. There
+   * the hand-off IS the reply and the record is a note about it, so the dialer
+   * opens first and a failed write is swallowed. Here the write is what CREATES
+   * the conversation — there is nothing to navigate to until the server answers,
+   * so a failure has to stop and say so rather than push an empty screen.
+   */
+  async function chooseChat() {
+    setError(null);
+
+    try {
+      const detail = await respond({ channel: "CHAT", enquiryId: enquiry.id, note: null }).unwrap();
+      if (!detail.chatThreadId) {
+        setError("The conversation could not be opened. Try again.");
+        return;
+      }
+      onResponded("CHAT");
+      router.push(`/chat/${detail.chatThreadId}?title=${encodeURIComponent(enquiry.enquirerName ?? "Enquiry")}`);
+    } catch {
+      setError("Could not start the chat. Try again.");
+    }
+  }
+
   async function choose(channel: EnquiryResponseChannel, target: string | undefined) {
     setError(null);
 
@@ -433,15 +474,20 @@ function RespondSheet({
         subtitle={emailChannel?.target ?? `${firstName(enquiry.enquirerName)} has no verified email`}
       />
 
-      {/* Rendered, never enabled. Leaving it out entirely would make the feature
-          look absent rather than pending. */}
+      {/* Always available, unlike the two above. Chat needs no phone number
+          and no verified address, so it is the one reply that works however
+          little the enquirer chose to share — which is what makes declining the
+          other two a real choice rather than a way to go unanswerable. */}
       <ChannelOption
-        available={false}
-        dashed
+        available
         icon={MessageSquare}
-        label="Chat"
-        onPress={() => undefined}
-        subtitle="Coming soon"
+        label={enquiry.chatThreadId ? "Open chat" : "Chat"}
+        onPress={() => void chooseChat()}
+        subtitle={
+          enquiry.chatThreadId
+            ? "Continue the conversation"
+            : `Message ${firstName(enquiry.enquirerName)} inside the app`
+        }
       />
 
       {error ? (

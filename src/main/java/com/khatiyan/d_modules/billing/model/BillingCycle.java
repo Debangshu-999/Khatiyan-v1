@@ -40,6 +40,19 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "reference_code", nullable = false, length = 40, unique = true)
     private String referenceCode;
 
+    /**
+     * Where to put the bill back if a payment claim is rejected.
+     *
+     * <p>
+     * Null except while CONFIRMATION_PENDING. Without it a rejection would have
+     * to guess between UNPAID and OVERDUE, and guessing UNPAID would hand the
+     * tenant a cleared overdue flag for making a claim that turned out to be
+     * wrong.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_before_confirmation", length = 24)
+    private BillingCycleStatus statusBeforeConfirmation;
+
     @Column(name = "tenancy_id", nullable = false)
     private UUID tenancyId;
 
@@ -437,6 +450,44 @@ public class BillingCycle extends BaseEntity {
         if (nextPeriodStartDate.isAfter(periodEndDate)) {
             this.status = BillingCycleStatus.UNPAID;
         }
+    }
+
+    /**
+     * A tenant has claimed payment and the owner has not ruled yet.
+     *
+     * <p>
+     * Remembers which of UNPAID or OVERDUE it came from, so a rejection puts it
+     * back where it was rather than quietly clearing an overdue flag the tenant
+     * never earned their way out of.
+     *
+     * <p>
+     * The cycle is NOT paid here and no money is counted. It also leaves the
+     * late-fee sweeps behind, since both select only UNPAID and OVERDUE — that
+     * is the freeze, and it costs nothing but this status.
+     */
+    public void markConfirmationPending() {
+        if (status != BillingCycleStatus.UNPAID && status != BillingCycleStatus.OVERDUE) {
+            throw new ValidationException("Only a live bill can be sent for payment confirmation");
+        }
+        this.statusBeforeConfirmation = status;
+        this.status = BillingCycleStatus.CONFIRMATION_PENDING;
+    }
+
+    /**
+     * The owner could not find the payment. Back to where it was.
+     *
+     * <p>
+     * Nothing to unwind: no metric counted this bill while it waited, because
+     * every collected figure filters on PAID. The next late-fee recalculation
+     * charges the days that passed, because that sweep recomputes from the due
+     * date rather than adding to a running total.
+     */
+    public void revertConfirmation() {
+        if (status != BillingCycleStatus.CONFIRMATION_PENDING) {
+            throw new ValidationException("This bill is not awaiting payment confirmation");
+        }
+        this.status = statusBeforeConfirmation == null ? BillingCycleStatus.UNPAID : statusBeforeConfirmation;
+        this.statusBeforeConfirmation = null;
     }
 
     public void markPaid(Instant paidAt) {

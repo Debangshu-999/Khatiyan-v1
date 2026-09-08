@@ -29,7 +29,7 @@ export default function OwnerRoomTypesScreen() {
     <>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
         surface={colors.formSurface}
       >
         <WizardHeader accentWord="types" onClose={() => router.back()} step={null} title="Room" totalSteps={0} />

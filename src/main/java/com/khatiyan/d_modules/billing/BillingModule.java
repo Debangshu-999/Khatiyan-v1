@@ -22,7 +22,9 @@ import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
+import com.khatiyan.d_modules.billing.api.dto.PaymentIntentDigestResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
+import com.khatiyan.d_modules.billing.service.PaymentIntentService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
 import com.khatiyan.d_modules.billing.service.ExitSettlementService;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -42,16 +44,19 @@ public class BillingModule {
     private final BillingCycleLineItemService billingCycleLineItemService;
     private final DepositManagerService depositManagerService;
     private final ExitSettlementService exitSettlementService;
+    private final PaymentIntentService paymentIntentService;
 
     public BillingModule(
             BillingCycleService billingCycleService,
             BillingCycleLineItemService billingCycleLineItemService,
             DepositManagerService depositManagerService,
-            ExitSettlementService exitSettlementService) {
+            ExitSettlementService exitSettlementService,
+            PaymentIntentService paymentIntentService) {
         this.billingCycleService = billingCycleService;
         this.billingCycleLineItemService = billingCycleLineItemService;
         this.depositManagerService = depositManagerService;
         this.exitSettlementService = exitSettlementService;
+        this.paymentIntentService = paymentIntentService;
     }
 
     public BillingCycleResponse createFirstCycle(UUID actorUserId, UUID tenancyId) {
@@ -116,6 +121,10 @@ public class BillingModule {
             UUID billingCycleId,
             RecordManualPaymentRequest request) {
         return billingCycleService.recordManualPayment(actorUserId, billingCycleId, request);
+    }
+
+    public byte[] renderReceiptPdf(UUID actorUserId, UUID billingCycleId) {
+        return billingCycleService.renderReceiptPdf(actorUserId, billingCycleId);
     }
 
     public List<ManualPaymentResponse> listManualPayments(UUID actorUserId, UUID billingCycleId) {
@@ -292,6 +301,17 @@ public class BillingModule {
 
     public DepositAccountResponse getManagedDepositAccount(UUID actorUserId, UUID tenancyId) {
         return depositManagerService.getForManagedTenancy(actorUserId, tenancyId);
+    }
+
+    /**
+     * UPI payment claims waiting on the owner — the Live digest tile.
+     *
+     * <p>Unguarded like the other {@code ...ForDashboard} reads: the dashboard
+     * has already established who is looking before it assembles anything, and
+     * re-checking per counter would be a query per card for a known answer.
+     */
+    public PaymentIntentDigestResponse getPaymentIntentDigestForDashboard(UUID propertyId) {
+        return paymentIntentService.digestFor(propertyId);
     }
 
     /** Count of deposit accounts awaiting settlement on a property (action center). */

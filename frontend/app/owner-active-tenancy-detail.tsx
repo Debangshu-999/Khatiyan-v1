@@ -1,21 +1,27 @@
+import type { PropsWithChildren, ReactNode } from "react";
+import { useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { openDialer } from "@/lib/dial";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ChevronRight, Info, MessageCircle, Phone, Settings } from "lucide-react-native";
+import { ChevronRight, Info, MessageCircle, Phone } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+// Written here, now shared — the tenant's side of a stay renders the same rows.
+import { CardRule, FieldPair, FieldRow, FlatCard, ReadonlyField } from "@/components/field-card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { useToast } from "@/components/toast";
+import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useGetManagedTenancyDepositQuery } from "@/store/services/billing-api";
 import { useAppSelector } from "@/store/hooks";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import { useListTenantThreadsQuery, useOpenTeamThreadMutation, type ChatThread } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -41,7 +47,6 @@ export default function OwnerActiveTenancyDetailScreen() {
     userId?: string;
   }>();
   const { colors, fonts, type } = useTheme();
-  const toast = useToast();
   // Both refusals here happen on tap, with nothing on screen to correct.
   const opErrors = useFormErrors<never>();
   // A daily guest has no account, so the three "is this person set up" fields
@@ -74,12 +79,35 @@ export default function OwnerActiveTenancyDetailScreen() {
   );
   const tenancy = tenanciesQuery.data?.find((item) => item.id === tenancyId) ?? null;
 
+  // The Tenants roster, which carries a row per tenancy whether or not a
+  // conversation exists behind it. Skipped for a guest — there is no account to
+  // hold a thread, and asking would be a query whose answer cannot be used.
+  const tenantThreadsQuery = useListTenantThreadsQuery(selectedPropertyId ?? "", {
+    skip: !selectedPropertyId || guestStay,
+  });
+  const existingThread = tenantThreadsQuery.data?.find((thread) => thread.originId === tenancyId) ?? null;
+  const [openTeamThread] = useOpenTeamThreadMutation();
+  const [confirmChat, setConfirmChat] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
   // Only a fixed term has an end date to state. An indefinite stay runs until
   // somebody gives notice, so both fields stay blank rather than inventing a
   // date from a notice period that has not been served.
   const fixedTerm = Boolean(tenancy?.fixedTerm);
   const agreedEndDate = fixedTerm ? tenancy?.endDate ?? tenancy?.agreementEndDate ?? null : null;
   const stayStartDate = tenancy?.startDate ?? (stringParam(params.startDate) || null);
+
+  /**
+   * The date this stay ends, whichever field actually holds it.
+   *
+   * <p>A daily stay always has a checkout, but it lives in `plannedEndDate` —
+   * `endDate` stays null while the stay is running. Reading only the fixed-term
+   * fields left every daily guest with a blank End date AND a blank Stay
+   * duration, on a stay whose whole point is that it ends on a known day.
+   */
+  const isDaily = billingType === "DAILY";
+  const plannedEndDate = stringParam(params.plannedEndDate) || tenancy?.plannedEndDate || null;
+  const stayEndDate = isDaily ? plannedEndDate : agreedEndDate;
 
   const depositEligible = billingType !== "DAILY";
   const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || !depositEligible });
@@ -109,25 +137,68 @@ export default function OwnerActiveTenancyDetailScreen() {
     openDialer(tenantPhone);
   }
 
+  /**
+   * The tenant's team thread, opened or created.
+   *
+   * <p>Creating one is a visible act — it puts a row in the property's Tenants
+   * list and can notify the tenant — so an existing conversation opens straight
+   * away and a new one asks first. The roster answers which case this is: a
+   * tenant with no conversation yet still has a row, with a null `id`.
+   */
   function handleChat() {
-    toast.info("Chat will be enabled later.");
+    // The server refuses this outright for a guest, and rightly: a guest stay
+    // has no account, so there is no second person to put in the thread.
+    if (guestStay) {
+      opErrors.failFromServer("This is a guest stay with no account, so there is nobody to chat with.");
+      return;
+    }
+    if (!tenancyId) {
+      opErrors.failFromServer("This tenancy has no conversation yet.");
+      return;
+    }
+    if (existingThread?.id) {
+      router.push(threadRoute(existingThread.id, existingThread));
+      return;
+    }
+    setConfirmChat(true);
+  }
+
+  async function startChat() {
+    setConfirmChat(false);
+    try {
+      const opened = await openTeamThread(tenancyId).unwrap();
+      if (opened.id) {
+        router.push(threadRoute(opened.id, opened));
+      }
+    } catch (error) {
+      opErrors.failFromServer(errorMessage(error) || "Could not start this conversation.");
+    }
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView
+      // The same opening band as the overhauled workspace screens: a pale blue
+      // wash fading into the page rather than a flat sheet.
+      background={
+        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+          <LinearGradient
+            colors={[colors.primarySoft, colors.surface]}
+            end={{ x: 0.5, y: 1 }}
+            locations={[0, 1]}
+            start={{ x: 0.5, y: 0 }}
+            style={{ height: 260 }}
+          />
+        </View>
+      }
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+    >
+      {/* No eyebrow row and no back arrow, matching the owner's own profile.
+          The way back is the device gesture. */}
       <ScreenHeader
-        // Nested under the tenancy workspace, so the eyebrow names the parent
-        // and carries the inline arrow — the same shape as the agreement screen
-        // reached from the same list. It had an eyebrow but no `onBack`, which
-        // is what left it with no back control at all.
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
         title="Tenant"
         italicTail="profile."
         subtitle="Stay, rent and contact details for this tenant."
-        trailing={
-          <HeaderIconButton label="Settings" onPress={() => toast.info("Tenant settings are not available yet.")} />
-        }
       />
 
       <View style={{ alignItems: "center", gap: spacing.md }}>
@@ -136,8 +207,11 @@ export default function OwnerActiveTenancyDetailScreen() {
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, }}>
             {tenantName}
           </Text>
+          {/* The reference code alone. The room already has its own field in
+              Rent details, and repeating it in brackets here made the code look
+              like it contained the room. */}
           <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
-            {params.referenceCode ?? "-"} {roomLabel !== "-" ? `(${roomLabel})` : ""}
+            {params.referenceCode ?? "-"}
           </Text>
         </View>
         <View style={{ flexDirection: "row", gap: spacing.sm, width: "100%" }}>
@@ -146,96 +220,142 @@ export default function OwnerActiveTenancyDetailScreen() {
         </View>
       </View>
 
+      {/* Flat cards with ruled rows, the same shape as the owner's own profile.
+          This screen used boxed values in a grid, so the two places that answer
+          "who is this person and what are their details" looked like different
+          products. */}
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Rent details" />
-        <Card style={{ padding: spacing.md }}>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ProfileInfoBox label="Start date" value={formatDate(stringParam(params.startDate))} />
-            <ProfileInfoBox label="Room" value={roomLabel} />
-          </View>
+        <FlatCard>
+          <FieldPair
+            left={<ReadonlyField label="Start date" value={formatDate(stringParam(params.startDate))} />}
+            right={<ReadonlyField label="Room" value={roomLabel} />}
+          />
+          <CardRule />
           {/* Blank for an indefinite agreement, on purpose — see above. */}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ProfileInfoBox label="End date" value={fixedTerm ? formatDate(agreedEndDate) : "-"} />
-            <ProfileInfoBox label="Stay duration" value={fixedTerm ? formatDuration(stayStartDate, agreedEndDate) : "-"} />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ProfileInfoBox label={billingType === "DAILY" ? "Daily rent" : "Monthly rent"} value={formatMoney(billingAmount)} />
-            <ProfileInfoBox
-              accent={!depositEligible || firstCyclePaid ? "default" : "danger"}
-              // Names what it opens. The box is a doorway into the deposit
-              // ledger, not a standalone figure — and every other screen calls
-              // that the deposit account.
+          <FieldPair
+            left={<ReadonlyField label={isDaily ? "Checkout" : "End date"} value={formatDate(stayEndDate)} />}
+            right={<ReadonlyField label="Stay duration" value={formatDuration(stayStartDate, stayEndDate)} />}
+          />
+          <CardRule />
+          <FieldRow>
+            <ReadonlyField
+              label={billingType === "DAILY" ? "Daily rent" : "Monthly rent"}
+              value={formatMoney(billingAmount)}
+            />
+          </FieldRow>
+          <CardRule />
+          <FieldRow>
+            {/* Names what it opens. The row is a doorway into the deposit
+                ledger, not a standalone figure — and every other screen calls
+                that the deposit account. */}
+            <ReadonlyField
               label="Deposit account"
               value={securityValue}
+              tone={!depositEligible || firstCyclePaid ? "default" : "danger"}
               {...(depositEligible
                 ? { onPress: openDepositManager }
                 : {
+                    // A dialog, not a toast. This explains WHY a field reads
+                    // "Not eligible", and a message that slides away on its own
+                    // is the wrong home for the answer to a question the reader
+                    // just asked by tapping.
                     onInfoPress: () =>
-                      toast.info("Daily tenancies are billed per night and do not carry a refundable security deposit."),
+                      setInfoMessage(
+                        "Daily tenancies are billed per night and do not carry a refundable security deposit.",
+                      ),
                   })}
             />
-          </View>
-        </Card>
+          </FieldRow>
+        </FlatCard>
       </View>
 
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenant details" />
-        <Card style={{ gap: spacing.sm, padding: spacing.md }}>
+        <FlatCard>
           {guestStay ? null : (
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <ProfileInfoBox label="Phone verified" value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"} />
-              <ProfileInfoBox label="Document verified" value="Pending" />
-            </View>
-          )}
-          <ReadonlyField label={guestStay ? "Guest name" : "Tenant name"} value={tenantName} />
-          <ReadonlyField label="Phone" value={tenantPhone || "-"} />
-          <ReadonlyField label="Tenant ID" value={stringParam(params.referenceCode) || shortId(stringParam(params.tenancyId))} mono />
-          {guestStay ? (
-            <ReadonlyField label="Account" value="No account, guest stay" />
-          ) : (
             <>
-              <ReadonlyField label="User ID" value={shortId(stringParam(params.userId))} mono />
-              <ReadonlyField label="Profile completion" value={params.tenantProfileCompleted === "true" ? "Complete" : "Basic"} />
+              <FieldPair
+                left={
+                  <ReadonlyField
+                    label="Phone verified"
+                    status={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"}
+                    value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"}
+                  />
+                }
+                right={<ReadonlyField label="Document verified" value="Pending" />}
+              />
+              <CardRule />
             </>
           )}
-        </Card>
+          <FieldRow>
+            <ReadonlyField label={guestStay ? "Guest name" : "Tenant name"} value={tenantName} />
+          </FieldRow>
+          <CardRule />
+          <FieldRow>
+            <ReadonlyField label="Phone" prefix={<DialCodePrefix />} value={formatLocalPhone(tenantPhone)} />
+          </FieldRow>
+          <CardRule />
+          <FieldRow>
+            <ReadonlyField
+              label="Tenant ID"
+              mono
+              value={stringParam(params.referenceCode) || shortId(stringParam(params.tenancyId))}
+            />
+          </FieldRow>
+          <CardRule />
+          {guestStay ? (
+            <FieldRow>
+              <ReadonlyField label="Account" value="No account, guest stay" />
+            </FieldRow>
+          ) : (
+            <FieldPair
+              left={<ReadonlyField label="User ID" mono value={shortId(stringParam(params.userId))} />}
+              right={
+                <ReadonlyField
+                  label="Profile completion"
+                  value={params.tenantProfileCompleted === "true" ? "Complete" : "Basic"}
+                />
+              }
+            />
+          )}
+        </FlatCard>
       </View>
 
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenancy details" />
-        <Card style={{ gap: spacing.sm, padding: spacing.md }}>
-          <ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />
-          <ReadonlyField label="Billing type" value={humanizeToken(billingType)} />
-          <ReadonlyField label="Billing started" value={params.billingStarted === "true" ? "Yes" : "No"} />
-          <ReadonlyField label="Planned checkout" value={formatDate(stringParam(params.plannedEndDate))} />
-          <ReadonlyField label="Internal tenancy ID" value={shortId(stringParam(params.tenancyId))} mono />
-        </Card>
+        <FlatCard>
+          <FieldPair
+            left={<ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />}
+            right={<ReadonlyField label="Billing type" value={humanizeToken(billingType)} />}
+          />
+          <CardRule />
+          <FieldPair
+            left={<ReadonlyField label="Billing started" value={params.billingStarted === "true" ? "Yes" : "No"} />}
+            right={
+              <ReadonlyField label="Planned checkout" value={formatDate(stringParam(params.plannedEndDate))} />
+            }
+          />
+          <CardRule />
+          <FieldRow>
+            <ReadonlyField label="Internal tenancy ID" mono value={shortId(stringParam(params.tenancyId))} />
+          </FieldRow>
+        </FlatCard>
       </View>
+      {confirmChat ? (
+        <ConfirmDialog
+          confirmLabel="Start chat"
+          message={`Do you want to start a chat with ${tenantName}?`}
+          onCancel={() => setConfirmChat(false)}
+          onConfirm={() => void startChat()}
+          title="Start a conversation"
+        />
+      ) : null}
+
+      {infoMessage ? <AlertModal message={infoMessage} onClose={() => setInfoMessage(null)} /> : null}
+
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
-  );
-}
-
-function HeaderIconButton({ label, onPress }: { label: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 22,
-        borderWidth: 1,
-        height: 44,
-        justifyContent: "center",
-        width: 44,
-      }}
-    >
-      <Settings color={colors.ink} size={20} strokeWidth={2.2} />
-    </AnimatedPressable>
   );
 }
 
@@ -310,77 +430,60 @@ function SectionTitle({ title }: { title: string }) {
   return <Section title={title} />;
 }
 
-function ProfileInfoBox({
-  accent = "default",
-  label,
-  onInfoPress,
-  onPress,
-  value,
-}: {
-  accent?: "default" | "danger" | "primary";
-  label: string;
-  onInfoPress?: () => void;
-  onPress?: () => void;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const valueColor = accent === "danger" ? colors.danger : accent === "primary" ? colors.primary : colors.ink;
-  const style = {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: onPress ? colors.primary : colors.border,
-    borderRadius: 12,
-    borderWidth: 1,
-    flex: 1,
-    gap: spacing.xs,
-    padding: spacing.md,
-  } as const;
-  const body = (
-    <>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.inkSoft, fontWeight: "700" }]}>
-          {label}
-        </Text>
-        {onPress ? <ChevronRight color={colors.primary} size={15} strokeWidth={2.2} /> : null}
-      </View>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text
-          style={{ color: valueColor, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 15, }}
-          numberOfLines={1}
-        >
-          {value}
-        </Text>
-        {onInfoPress ? (
-          <AnimatedPressable accessibilityLabel="Why" accessibilityRole="button" hitSlop={10} onPress={onInfoPress}>
-            <Info color={colors.muted} size={15} strokeWidth={2.2} />
-          </AnimatedPressable>
-        ) : null}
-      </View>
-    </>
-  );
-
-  return onPress ? (
-    <AnimatedPressable accessibilityRole="button" onPress={onPress} style={style}>
-      {body}
-    </AnimatedPressable>
-  ) : (
-    <View style={style}>{body}</View>
+/**
+ * The flag and "+91", set apart by a hairline.
+ *
+ * <p>The same chip the owner's own profile uses. Not a picker: every number in
+ * this app is Indian, the field is read-only, and a control offering one choice
+ * reads as something that failed to load.
+ */
+function DialCodePrefix() {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+      <Text style={{ fontSize: 16 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>+91</Text>
+      <View style={{ backgroundColor: colors.borderStrong, height: 20, marginLeft: spacing.xs, width: 1 }} />
+    </View>
   );
 }
 
-function ReadonlyField({ label, mono, value }: { label: string; mono?: boolean; value: string }) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "900", letterSpacing: 0.2 }]}>
-        {label}
-      </Text>
-      <View style={{ backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 46, paddingHorizontal: spacing.md }}>
-        <Text style={{ color: colors.ink, fontFamily: mono ? fonts.mono : fonts.sans, fontSize: 15, fontWeight: "700" }}>
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
+/**
+ * The number without its country code, grouped 5-5.
+ *
+ * <p>Takes the last ten digits rather than stripping a "+91" prefix, so it reads
+ * the same whether the stored value carries the code or not — guest phones were
+ * written without it for a long time.
+ */
+function formatLocalPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return phone.trim() || "-";
+  }
+  const local = digits.slice(-10);
+  return `${local.slice(0, 5)} ${local.slice(5)}`;
+}
+
+/**
+ * The chat route, with the header seeded from the thread we already hold.
+ *
+ * <p>Same shape as the chats tab builds, so a thread opened from here and the
+ * same thread opened from the list arrive with an identical header instead of
+ * one of them flashing a placeholder.
+ */
+function threadRoute(
+  threadId: string,
+  thread: Pick<ChatThread, "counterpartPhotoUrl" | "counterpartUserId" | "kind" | "title">,
+) {
+  const query = new URLSearchParams({ title: thread.title });
+  if (thread.counterpartPhotoUrl) {
+    query.set("photo", thread.counterpartPhotoUrl);
+  }
+  // Only when the other side is the PROPERTY rather than a person.
+  if (thread.kind === "TEAM" && thread.counterpartUserId === null) {
+    query.set("team", "1");
+  }
+  return `/chat/${threadId}?${query.toString()}`;
 }
 
 function initialsFor(name: string) {

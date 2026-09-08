@@ -10,6 +10,16 @@ import { useTheme } from "@/theme/use-theme";
 type Props = {
   notification: NotificationItem;
   onPress?: () => void;
+  /**
+   * Draws the unread ring regardless of what the server now says.
+   *
+   * <p>The notifications screen marks the whole queue read the moment it
+   * opens, so by the time this renders every {@code readAt} is set. The ring
+   * has to come from what was unread ON ARRIVAL, or the reader never sees
+   * which alerts were the new ones. Omitted elsewhere, where `readAt` is
+   * still the honest answer.
+   */
+  unread?: boolean;
 };
 
 type UrgencySignal = {
@@ -18,9 +28,9 @@ type UrgencySignal = {
   tone: "danger" | "warning";
 };
 
-export function NotificationRow({ notification, onPress }: Props) {
+export function NotificationRow({ notification, onPress, unread }: Props) {
   const { colors, fonts, type } = useTheme();
-  const isUnread = !notification.readAt;
+  const isUnread = unread ?? !notification.readAt;
   const urgency = urgencySignal(notification.priority);
   const details = notificationDetails(notification);
 
@@ -127,6 +137,16 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Room", data.roomNumber);
       add(details, "Tenancy ID", shortId(data.tenancyId));
       add(details, notification.subtype === "TENANCY_STARTED" ? "Start date" : "End date", formatDate(data.startDate ?? data.endDate));
+      break;
+    // No room number and no dates: the tenancy never started, so the only
+    // facts are which offer it was and who ended it. "Cancelled by" is the one
+    // that matters — the same row otherwise reads identically whether the
+    // tenant declined, the owner withdrew, or nobody acted at all.
+    case "TENANCY_CANCELLED":
+      add(details, "Property", data.propertyName);
+      add(details, "Cancelled by", data.cancelledBy);
+      add(details, "Reason", data.reason);
+      add(details, "Tenancy ID", shortId(data.tenancyId));
       break;
     case "TENANCY_ROOM_TRANSFERRED":
       add(details, "Property", data.propertyName);

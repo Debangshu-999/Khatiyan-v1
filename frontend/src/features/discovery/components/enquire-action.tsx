@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { MessageSquare } from "lucide-react-native";
+import { ChevronRight, MessageSquare } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -8,12 +8,15 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { AppTextInput } from "@/components/app-text-input";
 import { SheetShell } from "@/components/sheet-shell";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { EnquiryConsentModal } from "@/features/discovery/components/enquiry-consent-modal";
 import {
   describeEmailChannelGap,
   describeReachableChannel,
   ENQUIRY_MESSAGE_MAX_LENGTH,
+  useGetMyEnquiryChannelConsentsQuery,
   useGetMyEnquiryForPropertyQuery,
   useRaiseEnquiryMutation,
+  type EnquiryChannelConsents,
   type EnquiryReceipt,
 } from "@/store/services/enquiry-api";
 import { radii, spacing } from "@/theme/spacing";
@@ -30,13 +33,45 @@ import { useTheme } from "@/theme/use-theme";
  * <p>A fourth state is decided here: when the check itself fails, fall OPEN and
  * offer the button. See the comment on `checkFailed`.
  */
-export function EnquireAction({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
+export function EnquireAction({
+  profileCard = false,
+  propertyId,
+  propertyName,
+}: {
+  profileCard?: boolean;
+  propertyId: string;
+  propertyName: string;
+}) {
   const { colors, fonts, type } = useTheme();
   const [composing, setComposing] = useState(false);
+  const [consenting, setConsenting] = useState(false);
   const [receipt, setReceipt] = useState<EnquiryReceipt | null>(null);
 
   const myEnquiryQuery = useGetMyEnquiryForPropertyQuery(propertyId);
   const myEnquiry = myEnquiryQuery.data;
+
+  // Not property-scoped: the grant is a standing decision, so this is the same
+  // answer on every profile and the same one account settings edits.
+  const consentsQuery = useGetMyEnquiryChannelConsentsQuery();
+  const consents = consentsQuery.data;
+
+  /**
+   * The consent modal comes FIRST, before composing.
+   *
+   * <p>Asking at send time would let someone write a message and then be
+   * stopped, which turns a decision into an obstacle. Asked up front it is a
+   * decision about what happens next.
+   *
+   * <p>If the consent check itself failed, go straight to composing and let the
+   * server refuse — same reasoning as `checkFailed` below.
+   */
+  function startEnquiry() {
+    if (consents && !consents.anyGranted) {
+      setConsenting(true);
+      return;
+    }
+    setComposing(true);
+  }
 
   // Nothing at all while it loads: a button that appears and then disappears
   // once the answer arrives is worse than one that arrives a moment late.
@@ -60,8 +95,18 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
 
   return (
     <View style={{ gap: spacing.xs }}>
-      {canEnquire ? (
-        <ActionButton icon={MessageSquare} label="Enquire about this property" onPress={() => setComposing(true)} />
+      {profileCard ? (
+        <ProfileEnquiryCard
+          enabled={canEnquire}
+          helper={
+            canEnquire
+              ? "Property management can see your name and reply over chat and other channels selected by you."
+              : "The property has received your enquiry."
+          }
+          onPress={startEnquiry}
+        />
+      ) : canEnquire ? (
+        <ActionButton icon={MessageSquare} label="Enquire about this property" onPress={startEnquiry} />
       ) : (
         <View
           style={{
@@ -84,14 +129,26 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
         </View>
       )}
 
-      {canEnquire ? (
+      {canEnquire && !profileCard ? (
         <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-          They will see your name and phone so they can reply.
+          {describeWhatIsShared(consents)}
         </Text>
+      ) : null}
+
+      {consenting && consents ? (
+        <EnquiryConsentModal
+          consents={consents}
+          onClose={() => setConsenting(false)}
+          onGranted={() => {
+            setConsenting(false);
+            setComposing(true);
+          }}
+        />
       ) : null}
 
       {composing ? (
         <EnquirySheet
+          consents={consents}
           onClose={() => setComposing(false)}
           onSent={(sent) => {
             setComposing(false);
@@ -107,12 +164,92 @@ export function EnquireAction({ propertyId, propertyName }: { propertyId: string
   );
 }
 
+function ProfileEnquiryCard({
+  enabled,
+  helper,
+  onPress,
+}: {
+  enabled: boolean;
+  helper: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={enabled ? "Enquire about this property" : "Enquiry already sent"}
+      accessibilityRole="button"
+      disabled={!enabled}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.md,
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+      }}
+    >
+      <MessageSquare color={colors.inkSoft} size={26} strokeWidth={1.9} />
+      <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+        <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          Enquire about this property
+        </Text>
+        <Text
+          style={{
+            color: colors.muted,
+            fontFamily: fonts.sans,
+            fontSize: 11.5,
+            lineHeight: 16,
+          }}
+        >
+          {helper}
+        </Text>
+      </View>
+      <ChevronRight color={enabled ? colors.primary : colors.kicker} size={21} strokeWidth={2.2} />
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * What the property will actually be given, named rather than assumed.
+ *
+ * <p>This line used to promise "your name and phone" unconditionally, which was
+ * true only because the phone went over whether or not anyone offered it. Now it
+ * says what the enquirer's own grants say, so the sentence is a description
+ * instead of a claim.
+ */
+function sharedDetailNames(consents: EnquiryChannelConsents | undefined) {
+  // Locked channels are excluded: chat is always on and shares nothing, so
+  // naming it here would pad the sentence with something nobody handed over.
+  return (consents?.channels ?? [])
+    .filter((option) => option.granted && !option.locked)
+    .map((option) => (option.channel === "EMAIL" ? "email" : "phone"));
+}
+
+function describeWhatIsShared(consents: EnquiryChannelConsents | undefined) {
+  const names = sharedDetailNames(consents);
+  if (names.length === 0) {
+    return "You will pick how they may reply before sending.";
+  }
+  return `They will see your name and ${names.join(" and ")} so they can reply.`;
+}
+
 function EnquirySheet({
+  consents,
   onClose,
   onSent,
   propertyId,
   propertyName,
 }: {
+  consents: EnquiryChannelConsents | undefined;
   onClose: () => void;
   onSent: (receipt: EnquiryReceipt) => void;
   propertyId: string;
@@ -123,6 +260,7 @@ function EnquirySheet({
   const form = useFormErrors<"message">();
   const [raiseEnquiry, raiseState] = useRaiseEnquiryMutation();
 
+  const sharedNames = sharedDetailNames(consents);
   const trimmed = message.trim();
 
   async function submit() {
@@ -136,10 +274,18 @@ function EnquirySheet({
     }
   }
 
+  // animated, not dismissOnDrag — the payment-attempts sheet's entrance and
+  // fading backdrop, without the pan gesture, which would fight the message
+  // field's keyboard and the scroll under it.
   return (
-    <SheetShell onClose={onClose} title="Enquire">
+    <SheetShell animated onClose={onClose} title="Enquire">
+      {/* Names what was actually consented to rather than assuming phone. Someone
+          who declined the call-back should not be told their number is going
+          over on the very screen where they send the message. */}
       <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-        {propertyName} will see your name and phone so they can reply.
+        {sharedNames.length > 0
+          ? `${propertyName} will see your name and ${sharedNames.join(" and ")} so they can reply.`
+          : `${propertyName} will only be able to reply in the app.`}
       </Text>
 
       <View style={{ gap: spacing.xs }}>

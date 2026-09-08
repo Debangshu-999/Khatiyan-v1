@@ -1,5 +1,20 @@
 import { Image, Linking, Text, View } from "react-native";
-import { CalendarClock, CalendarDays, Eye, ImageOff, MapPin, Navigation, type LucideProps } from "lucide-react-native";
+import {
+  Bath,
+  BedDouble,
+  BriefcaseBusiness,
+  CalendarDays,
+  Check,
+  CircleCheck,
+  Eye,
+  GraduationCap,
+  ImageOff,
+  MapPin,
+  Navigation,
+  Utensils,
+  Zap,
+  type LucideProps,
+} from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { Card } from "@/components/card";
@@ -10,7 +25,7 @@ import { useTheme } from "@/theme/use-theme";
 
 import { computeFilterMatches, type FilterMatch, type MatchStrength } from "../discovery-match";
 import type { PropertyFilterState } from "./property-filter-modal";
-import { formatMoneyPaise, humanizeToken } from "../discovery-format";
+import { formatMoneyPaise } from "../discovery-format";
 
 type PropertyListingCardProps = {
   property: PropertyDiscoveryCard;
@@ -19,7 +34,7 @@ type PropertyListingCardProps = {
 };
 
 export function PropertyListingCard({ filters, property, onView }: PropertyListingCardProps) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const match = filters ? computeFilterMatches(filters, property) : null;
   const imageUri = property.imageUrls?.find(Boolean) ?? property.profileImageUrl ?? null;
   // Pincode included: it was the one part of an Indian address a reader looks
@@ -28,6 +43,9 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
     .filter(Boolean)
     .join(", ");
   const hasRent = property.startingRoomRentPaise != null && property.startingRoomRentPaise > 0;
+  const hasActiveMatch = Boolean(match && match.activeCount > 0);
+  const propertyNameFontSize = property.name.length > 34 ? 15 : property.name.length > 24 ? 17 : 19;
+  const propertyNameLineHeight = Math.round(propertyNameFontSize * 1.18);
 
   function openDirections() {
     if (property.directionsUrl) {
@@ -52,10 +70,7 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
   } as const;
 
   return (
-    // Gap surrendered to the sections below, which set their own rhythm around
-    // their dividers. Card padding stays — the photo is a thumbnail again, not
-    // something that runs to the edges.
-    <Card style={{ gap: 0 }}>
+    <Card style={{ gap: 0, padding: spacing.md }}>
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         {imageUri ? (
           <Image
@@ -64,10 +79,10 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
             style={{
               backgroundColor: colors.surfaceSunken,
               borderColor: colors.border,
-              borderRadius: 14,
+              borderRadius: 16,
               borderWidth: 1,
-              height: 72,
-              width: 72,
+              height: 104,
+              width: 104,
             }}
           />
         ) : (
@@ -76,83 +91,84 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               alignItems: "center",
               backgroundColor: colors.surfaceSunken,
               borderColor: colors.border,
-              borderRadius: 14,
+              borderCurve: "continuous",
+              borderRadius: 16,
               borderWidth: 1,
               gap: 3,
-              height: 72,
+              height: 104,
               justifyContent: "center",
-              width: 72,
+              width: 104,
             }}
           >
-            <ImageOff color={colors.kicker} size={22} strokeWidth={1.9} />
-            <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 9, letterSpacing: 0.4 }}>
+            <ImageOff color={colors.kicker} size={26} strokeWidth={1.9} />
+            <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.4 }}>
               No image
             </Text>
           </View>
         )}
 
-        <View style={{ flex: 1, gap: 5, justifyContent: "center", minWidth: 0 }}>
-          <View
-            style={{
-              alignSelf: "flex-start",
-              backgroundColor: colors.surfaceSunken,
-              borderRadius: 999,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 2,
-            }}
-          >
-            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 10.5, letterSpacing: 0.3 }}>
-              {humanizeToken(property.type)}
-            </Text>
-          </View>
+        <View
+          style={{
+            flex: 1,
+            height: 104,
+            justifyContent: "space-between",
+            minWidth: 0,
+            overflow: "hidden",
+          }}
+        >
           <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
             numberOfLines={2}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3, lineHeight: 24 }}
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.sansBold,
+              fontSize: propertyNameFontSize,
+              letterSpacing: -0.5,
+              lineHeight: propertyNameLineHeight,
+            }}
           >
             {property.name}
           </Text>
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
+            <MapPin color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 1 }} />
+            <Text
+              numberOfLines={2}
+              style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 11.5, lineHeight: 15 }}
+            >
+              {addressLine}
+            </Text>
+          </View>
+          {property.distanceKm != null ? (
+            <View
+              style={{
+                alignItems: "center",
+                alignSelf: "flex-start",
+                flexDirection: "row",
+                gap: 4,
+              }}
+            >
+              <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
+              <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+                {property.distanceKm < 1
+                  ? `${Math.round(property.distanceKm * 1000)} m`
+                  : `${property.distanceKm.toFixed(1)} km`}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      {/* Its own row, under the thumbnail rather than squeezed beside it: an
-          Indian address with a pincode does not fit the column left over next to
-          a 72px image, and wrapping it there pushed the card taller than putting
-          it here does.
-
-          No "ADDRESS" label — the pin says what the line is. Distance sits on the
-          same line because it is a fact ABOUT this address; as a tinted chip
-          elsewhere it left the reader to join the two up. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, marginTop: spacing.sm }}>
-        <MapPin color={colors.inkSoft} size={14} strokeWidth={2.4} style={{ marginTop: 2 }} />
-        <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 18 }}>
-          {addressLine}
-        </Text>
-        {property.distanceKm != null ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginTop: 1 }}>
-            <Navigation color={colors.jade} fill={colors.jade} size={10} strokeWidth={2} />
-            <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 12, fontVariant: ["tabular-nums"] }}>
-              {property.distanceKm < 1
-                ? `${Math.round(property.distanceKm * 1000)} m`
-                : `${property.distanceKm.toFixed(1)} km`}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      {/* Rent leads at display weight with the period beside it, the way every
-          listing app states a price; deposit follows quietly, because it is the
-          second question. Both were set in mono at one size, which read as a
-          spreadsheet and gave neither any priority. */}
-      <View style={[section, { alignItems: "flex-end", flexDirection: "row", gap: spacing.sm }]}>
+      <View style={[section, { alignItems: "stretch", flexDirection: "row", paddingHorizontal: spacing.xs }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13, marginBottom: 5 }}>
+            Rent from
+          </Text>
           {hasRent ? (
             <View style={{ alignItems: "baseline", flexDirection: "row", gap: 4 }}>
-              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
-                from
-              </Text>
               <Text
                 numberOfLines={1}
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, letterSpacing: -0.4 }}
+                style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: -0.5 }}
               >
                 {formatMoneyPaise(property.startingRoomRentPaise)}
               </Text>
@@ -161,26 +177,23 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               </Text>
             </View>
           ) : (
-            // One phrase, not "from Not set /month". A price expression built
-            // around a missing number reads as a bug, and every part of it —
-            // "from", the period — is a claim about a figure that isn't there.
             <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 15 }}>
               Rent on request
             </Text>
           )}
         </View>
-        <View style={{ alignItems: "flex-end", gap: 1 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        <View style={{ alignSelf: "stretch", backgroundColor: colors.border, marginHorizontal: spacing.md, width: 1 }} />
+        <View style={{ flex: 0.8, minWidth: 0 }}>
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13, marginBottom: 7 }}>
             Deposit
           </Text>
-          {/* "None" rather than the profile's "No deposit": this slot is sized
-              for a number and sits beside the rent, where the longer phrase
-              wraps. ₹0 is the one thing it must not say. */}
           <Text
+            numberOfLines={1}
             style={{
-              color: property.standardDepositPaise > 0 ? colors.inkSoft : colors.muted,
+              color: property.standardDepositPaise > 0 ? colors.ink : colors.muted,
               fontFamily: fonts.sansBold,
-              fontSize: 15,
+              fontSize: 20,
+              letterSpacing: -0.3,
             }}
           >
             {property.standardDepositPaise > 0 ? formatMoneyPaise(property.standardDepositPaise) : "None"}
@@ -188,24 +201,24 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
         </View>
       </View>
 
-      {match && match.activeCount > 0 ? (
+      {hasActiveMatch && match ? (
         <View style={section}>
           <MatchSummary match={match} />
         </View>
       ) : null}
 
-      <View style={[section, { alignItems: "center", flexDirection: "row", gap: spacing.xs }]}>
-        {property.dailyRentingAvailable ? (
-          <CalendarClock color={colors.jade} size={15} strokeWidth={2.2} />
-        ) : (
-          <CalendarDays color={colors.muted} size={15} strokeWidth={2.2} />
-        )}
-        <Text style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13 }}>
-          {property.dailyRentingAvailable ? "Daily renting available" : "Monthly renting only"}
-        </Text>
-      </View>
+      {property.dailyRentingAvailable ? (
+        <View
+          style={[section, { alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xs }]}
+        >
+          <CalendarDays color={colors.jade} size={18} strokeWidth={2.2} />
+          <Text style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
+            Daily renting available
+          </Text>
+        </View>
+      ) : null}
 
-      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
         <IconButton icon={Eye} label="View" muted onPress={onView} style={{ flex: 1 }} />
         <IconButton icon={DirectionsIcon} label="Directions" onPress={openDirections} style={{ flex: 1 }} />
       </View>
@@ -225,7 +238,7 @@ function DirectionsIcon({ color, size }: LucideProps) {
 }
 
 function MatchSummary({ match }: { match: FilterMatch }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts } = useTheme();
   return (
     <View style={{ gap: spacing.sm }}>
       <MatchMeter matched={match.matchedCount} strength={match.strength} total={match.activeCount} />
@@ -236,7 +249,7 @@ function MatchSummary({ match }: { match: FilterMatch }) {
           ))}
         </View>
       ) : (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>
           Outside your preferences, shown nearby.
         </Text>
       )}
@@ -254,29 +267,65 @@ function MatchSummary({ match }: { match: FilterMatch }) {
  * carries the verdict, and the words spell out what the fraction counts.
  */
 function MatchMeter({ matched, strength, total }: { matched: number; strength: MatchStrength | null; total: number }) {
-  const { colors, fonts, type } = useTheme();
-  const color = strength === "strong" ? colors.jade : strength === "moderate" ? colors.primary : colors.muted;
+  const { colors, fonts } = useTheme();
+  const color =
+    strength === "strong" ? colors.jade : strength === "moderate" ? colors.primary : colors.warningText;
+  const backgroundColor =
+    strength === "strong" ? colors.successSoft : strength === "moderate" ? colors.primarySoft : colors.warningSoft;
   const label = strength === "strong" ? "Strong match" : strength === "moderate" ? "Moderate match" : "Weak match";
 
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-      <View style={{ flexDirection: "row", gap: 3 }}>
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor,
+        borderRadius: 12,
+        flexDirection: "row",
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 9,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: color,
+          borderRadius: 999,
+          height: 26,
+          justifyContent: "center",
+          width: 26,
+        }}
+      >
+        <Check color="#FFFFFF" size={16} strokeWidth={3} />
+      </View>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+        numberOfLines={1}
+        style={{ color, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 11.5 }}
+      >
+        {label}
+      </Text>
+      <View style={{ flexDirection: "row", gap: 3, marginLeft: "auto" }}>
         {Array.from({ length: total }, (_unused, index) => (
           <View
             key={index}
             style={{
-              backgroundColor: index < matched ? color : colors.border,
-              borderRadius: 2,
-              height: 4,
-              width: 14,
+              backgroundColor: index < matched ? color : colors.borderStrong,
+              borderRadius: 999,
+              height: 8,
+              width: 8,
             }}
           />
         ))}
       </View>
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {label}
-      </Text>
-      <Text style={[type.caption, { color: colors.kicker }]}>
+      <View style={{ backgroundColor: colors.borderStrong, height: 22, width: 1 }} />
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+        numberOfLines={1}
+        style={{ color: colors.muted, flexShrink: 1, fontFamily: fonts.sansMedium, fontSize: 10.5 }}
+      >
         {matched} of {total} filter{total === 1 ? "" : "s"}
       </Text>
     </View>
@@ -292,21 +341,62 @@ function MatchMeter({ matched, strength, total }: { matched: number; strength: M
  */
 function FeatureTag({ label }: { label: string }) {
   const { colors, fonts } = useTheme();
+  const displayLabel = label.replace(/^PG for /, "");
 
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
+        alignItems: "center",
+        backgroundColor: colors.surfaceRaised,
+        borderColor: colors.border,
         borderRadius: 999,
         borderWidth: 1,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 3,
+        flexDirection: "row",
+        gap: 4,
+        paddingHorizontal: 7,
+        paddingVertical: 5,
       }}
     >
-      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
-        {label}
+      <FeatureIcon color={colors.inkSoft} label={label} />
+      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 11.25 }}>
+        {displayLabel}
       </Text>
     </View>
   );
+}
+
+function FeatureIcon({ color, label }: { color: string; label: string }) {
+  const normalized = label.toLowerCase();
+
+  if (normalized.includes("female")) {
+    return <MaterialCommunityIcons color={color} name="gender-female" size={15} />;
+  }
+  if (normalized.includes("male")) {
+    return <MaterialCommunityIcons color={color} name="gender-male" size={15} />;
+  }
+  if (normalized.includes("student")) {
+    return <GraduationCap color={color} size={13} strokeWidth={2.1} />;
+  }
+  if (normalized.includes("professional") || normalized.includes("working")) {
+    return <BriefcaseBusiness color={color} size={13} strokeWidth={2.1} />;
+  }
+  if (
+    normalized.includes("food") ||
+    normalized.includes("breakfast") ||
+    normalized.includes("lunch") ||
+    normalized.includes("dinner")
+  ) {
+    return <Utensils color={color} size={13} strokeWidth={2.1} />;
+  }
+  if (normalized.includes("electricity")) {
+    return <Zap color={color} size={13} strokeWidth={2.1} />;
+  }
+  if (normalized.includes("bathroom")) {
+    return <Bath color={color} size={13} strokeWidth={2.1} />;
+  }
+  if (normalized.includes("sharing")) {
+    return <BedDouble color={color} size={13} strokeWidth={2.1} />;
+  }
+
+  return <CircleCheck color={color} size={13} strokeWidth={2.1} />;
 }

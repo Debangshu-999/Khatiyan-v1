@@ -35,6 +35,7 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyCancellationRoute;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
 import com.khatiyan.d_modules.tenancy.model.GuestDetails;
@@ -248,7 +249,7 @@ public class TenancyService {
                     return TenantLookupResponse.existing(user.fullName(), false, true,
                             "Existing user - a new tenancy will be added.", prefillFor(user.id()));
                 })
-                .orElseGet(() -> TenantLookupResponse.newUser("New user - an account will be created."));
+                .orElseGet(() -> TenantLookupResponse.newUser("An account will be created."));
     }
 
     /**
@@ -294,6 +295,14 @@ public class TenancyService {
         if (guest == null) {
             throw new ValidationException("Guest details are required for a daily stay");
         }
+
+        // Same canonical form an account phone gets. Without this the guest path
+        // stored whatever was typed, so a guest's number came back as ten bare
+        // digits while every account tenant's carried +91 — and the screens that
+        // print the stored value showed a country code for one and none for the
+        // other. The onboarding form asks for the number under a +91 flag either
+        // way, so the code was always part of what the person entered.
+        guest = guest.withPhone(authModule.normalizePhone(guest.phone()));
 
         tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
 
@@ -421,7 +430,7 @@ public class TenancyService {
         if (!tenancy.getUserId().equals(tenantUserId)) {
             throw new ValidationException("Tenancy does not belong to current user");
         }
-        cancelPendingInternal(tenancy, reason);
+        cancelPendingInternal(tenancy, TenancyCancellationRoute.TENANT_DECLINED, tenantUserId, reason);
     }
 
     /**
@@ -438,7 +447,7 @@ public class TenancyService {
         Tenancy tenancy = tenancyRepository.findById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
-        cancelPendingInternal(tenancy, reason);
+        cancelPendingInternal(tenancy, TenancyCancellationRoute.MANAGEMENT_WITHDREW, actorUserId, reason);
     }
 
     /**
@@ -448,25 +457,33 @@ public class TenancyService {
     public void cancelPendingAsSystem(UUID tenancyId, String reason) {
         Tenancy tenancy = tenancyRepository.findById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
-        cancelPendingInternal(tenancy, reason);
+        cancelPendingInternal(tenancy, TenancyCancellationRoute.ACCEPTANCE_EXPIRED, null, reason);
     }
 
     // Cancels the pending tenancy and frees the reserved bed (the cancelled
     // event's BEFORE_COMMIT listener vacates the room). The user was never
     // marked an active tenant and billing never started, so nothing else needs
     // unwinding.
-    private void cancelPendingInternal(Tenancy tenancy, String reason) {
+    private void cancelPendingInternal(
+            Tenancy tenancy,
+            TenancyCancellationRoute route,
+            UUID actorUserId,
+            String reason) {
         tenancy.cancelPending(reason);
         eventPublisher.publishEvent(new TenancyCancelledEvent(
                 tenancy.getId(),
                 tenancy.getUserId(),
                 tenancy.getPropertyId(),
-                tenancy.getRoomId()));
+                tenancy.getRoomId(),
+                route,
+                actorUserId,
+                reason));
 
         log.info(
-                "Pending tenancy cancelled tenancyId={} userId={} reason={}",
+                "Pending tenancy cancelled tenancyId={} userId={} route={} reason={}",
                 tenancy.getId(),
                 tenancy.getUserId(),
+                route,
                 reason);
     }
 
@@ -565,7 +582,14 @@ public class TenancyService {
                 tenancy.getRoomId(),
                 endDate));
 
-        authModule.clearActiveTenant(tenancy.getUserId());
+        // A guest stay has no account, so there is no active-tenant flag to
+        // clear. Called unconditionally this reached findById(null), which
+        // Spring Data throws on rather than returning an empty Optional — so
+        // ending ANY daily guest stay failed with "The given id must not be
+        // null" and the stay could never be closed.
+        if (tenancy.hasTenantAccount()) {
+            authModule.clearActiveTenant(tenancy.getUserId());
+        }
 
         log.info(
                 "Tenancy ended tenancyId={} userId={} actorUserId={} propertyId={} roomId={} endDate={}",

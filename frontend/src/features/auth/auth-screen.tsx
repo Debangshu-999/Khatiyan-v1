@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { Modal, Pressable, Text, View } from "react-native";
+import { BackHandler, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Info, X } from "lucide-react-native";
@@ -452,7 +452,18 @@ export function AuthScreen() {
     }
 
     try {
-      const response = await setPinMutation({ phone: signupPhone, otp, pin: newPin }).unwrap();
+      // The name and email ride along with the PIN rather than being written at
+      // registration. Sent only from the signup door: someone arriving through
+      // the provisioned-account door typed neither, and blank values must not
+      // overwrite what the property owner recorded.
+      const response = await setPinMutation({
+        phone: signupPhone,
+        otp,
+        pin: newPin,
+        ...(setupOrigin === "signup"
+          ? { email: signupEmail.trim() || undefined, fullName: fullName.trim() || undefined }
+          : {}),
+      }).unwrap();
       await persistTokenSession(response);
     } catch (error) {
       setAlertMessage(errorMessage(error));
@@ -582,6 +593,75 @@ export function AuthScreen() {
     setStep("entry");
     resetTransientState();
   }
+
+  /**
+   * The device back button, walking the flow back one step at a time.
+   *
+   * <p>
+   * This screen is eight steps behind one route, so the navigator has nothing to
+   * pop — without this, back from the middle of a PIN reset left the app
+   * entirely, throwing away a verified code and a half-typed PIN.
+   *
+   * <p>
+   * <b>One step, not straight out.</b> Each step returns to the one that opened
+   * it, which is the same place that step's own visible control goes: the OTP
+   * screens back to the phone they were sent to, the PIN screens back to the
+   * code. The codes survive the trip — {@code verifyOtp} only peeks, and the
+   * real consumption happens later with the PIN, so a code is still live on the
+   * way back.
+   *
+   * <p>
+   * Returning false on the sign-in screen hands back to the system, which is the
+   * only step where leaving is the right answer. A visible Modal takes the press
+   * before this ever sees it, so an open dialog still closes first.
+   *
+   * <p>
+   * Android only in practice. {@code BackHandler} is a no-op on web, where the
+   * browser's own back button is the thing that moves.
+   */
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      switch (step) {
+        case "entry":
+          if (mode === "signup") {
+            goToLogin();
+            return true;
+          }
+          // Sign-in is the front door. Back from here leaves the app.
+          return false;
+        case "activate":
+        case "emailLogin":
+        case "resetRequest":
+          goToLogin();
+          return true;
+        case "setupOtp":
+          if (setupOrigin === "activate") {
+            backToActivate();
+          } else {
+            goToSignup();
+          }
+          return true;
+        case "setupPin":
+          setStep("setupOtp");
+          return true;
+        case "resetOtp":
+          setStep("resetRequest");
+          resetTransientState();
+          return true;
+        case "resetPin":
+          setStep("resetOtp");
+          return true;
+        default:
+          return false;
+      }
+    });
+
+    return () => subscription.remove();
+    // The handler closes over the step it is answering for, so it is rebuilt
+    // whenever that changes. The nav helpers are stable within a render and
+    // deliberately left out — listing them would re-register on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, setupOrigin, step]);
 
   const heroCopy = authHeroCopy(step, mode, { resetPhone, signupPhone });
   const [activateInfoOpen, setActivateInfoOpen] = useState(false);

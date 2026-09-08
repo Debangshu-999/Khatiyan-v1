@@ -2,7 +2,7 @@ import { Text, View } from "react-native";
 import { ArrowLeft, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { ProgressBar } from "@/components/progress-bar";
+import { StepProgress } from "@/components/step-progress";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -61,14 +61,7 @@ export function WizardHeader({
         </View>
       </View>
 
-      {step === null ? null : (
-        <View style={{ gap: 6 }}>
-          <ProgressBar color={colors.jade} height={4} ratio={(step + 1) / totalSteps} />
-          <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-            Step {step + 1} of {totalSteps}
-          </Text>
-        </View>
-      )}
+      {step === null ? null : <StepProgress step={step} totalSteps={totalSteps} />}
     </View>
   );
 }

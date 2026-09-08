@@ -31,6 +31,7 @@ import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
 import com.khatiyan.d_modules.billing.service.ExitSettlementService;
+import com.khatiyan.d_modules.billing.service.PaymentIntentService;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 
@@ -49,6 +50,9 @@ class BillingModuleTest {
     @Mock
     private ExitSettlementService exitSettlementService;
 
+    @Mock
+    private PaymentIntentService paymentIntentService;
+
     private BillingModule billingModule;
     private BillingCycleResponse billingCycleResponse;
     private BillingCycleLineItemResponse lineItemResponse;
@@ -60,7 +64,8 @@ class BillingModuleTest {
                 billingCycleService,
                 billingCycleLineItemService,
                 depositManagerService,
-                exitSettlementService);
+                exitSettlementService,
+                paymentIntentService);
         billingCycleResponse = billingCycleResponse();
         lineItemResponse = lineItemResponse();
         depositAccountResponse = depositAccountResponse();

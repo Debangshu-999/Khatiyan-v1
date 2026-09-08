@@ -7,14 +7,17 @@ import DateTimePicker, { type DateTimePickerEvent } from "@react-native-communit
 // Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
-  Bed,
   AirVent,
+  Bed,
   BedDouble,
-  Fan,
+  BedSingle,
   CalendarDays,
   ChevronDown,
   ChevronUp,
   Clock,
+  DoorClosed,
+  DoorOpen,
+  Fan,
   Info,
   Layers,
   Pencil,
@@ -22,10 +25,11 @@ import {
   RotateCcw,
   Settings2,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react-native";
 
-import { PropertyIcon } from "@/components/property-icon";
+import { PropertyArtwork } from "@/components/artwork-icon";
 import { AlertModal } from "@/components/alert-modal";
 import { SheetShell } from "@/components/sheet-shell";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -75,6 +79,10 @@ import {
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { CountTabPills } from "@/components/filter-bubbles";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
+
+const NO_BEDS_ILLUSTRATION = require("../assets/workspace/No-Beds_512x512.png");
 
 type RoomFormState = {
   prefix: string;
@@ -223,11 +231,9 @@ export default function OwnerRoomsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
         badge={!canManageRooms ? <ViewOnlyChip /> : null}
-        eyebrow="Property"
-        onBack={() => router.back()}
         title="Rooms"
         italicTail="and beds."
         subtitle="Floors, rooms and bed occupancy for this property."
@@ -245,13 +251,13 @@ export default function OwnerRoomsScreen() {
       {selectedProperty ? (
         <>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} tone="primary" />
-            <MetricTile label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
+            <MetricTile icon={DoorClosed} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} tone="primary" />
+            <MetricTile icon={BedDouble} iconPlacement="side" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile label="Out of service" value={String(maintenanceCount)} hint="Under maintenance" tone={maintenanceCount > 0 ? "danger" : "default"} />
-            <MetricTile label="Occupied / partial" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
+            <MetricTile icon={Wrench} iconPlacement="side" label="Out of service" value={String(maintenanceCount)} hint="Under maintenance" tone={maintenanceCount > 0 ? "danger" : "default"} />
+            <MetricTile icon={BedSingle} iconPlacement="side" label="Occupied / partial" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
           </View>
 
           {/* Both paths kept. One room is the common act and wants one field;
@@ -285,8 +291,7 @@ export default function OwnerRoomsScreen() {
             <SkeletonCard />
           ) : allRooms.length === 0 ? (
             <EmptyState
-              icon={BedDouble}
-
+              artwork={NO_BEDS_ILLUSTRATION}
               title="No rooms yet"
               description="Add rooms one by one, or bulk-create a numbered range."
             />
@@ -295,24 +300,46 @@ export default function OwnerRoomsScreen() {
               <FloorSelector active={activeFloor} floors={floors} onSelect={setSelectedFloor} />
               {activeFloor != null ? (
                 <Section
-
                   title={activeFloor ? `Floor ${activeFloor}` : "Unassigned"}
                   trailing={
-                    <FloorFilters
-                      active={roomFilter}
-                      counts={{ active: floorActiveCount, deactivated: floorDeactivatedCount, maintenance: floorMaintenanceCount }}
-                      onSelect={setRoomFilter}
+                    // The app's shared filter strip, in the slot the bespoke
+                    // chips held. Labels stay short — it shares the row with a
+                    // heading, so "Maint." is what fits.
+                    <CountTabPills
+                      compact
+                      onChange={setRoomFilter}
+                      options={[
+                        { count: floorActiveCount, label: "Active", value: "active" as const },
+                        { count: floorMaintenanceCount, label: "Maint.", value: "maintenance" as const },
+                        { count: floorDeactivatedCount, label: "Off", value: "deactivated" as const },
+                      ]}
+                      value={roomFilter}
                     />
                   }
                 >
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <MetricTile label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} tone="primary" />
-                    <MetricTile label="Occupied beds" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
+                    <MetricTile icon={DoorOpen} iconPlacement="side" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} tone="primary" />
+                    <MetricTile icon={BedDouble} iconPlacement="side" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
                   </View>
                   {visibleFloorRooms.length === 0 ? (
-                    <Text style={[type.caption, { color: colors.muted, paddingVertical: spacing.sm }]}>
-                      No {roomFilter} rooms on this floor.
-                    </Text>
+                    <EmptyState
+                      artwork={NO_BEDS_ILLUSTRATION}
+                      compact
+                      title={
+                        roomFilter === "active"
+                          ? "No rooms in service"
+                          : roomFilter === "maintenance"
+                            ? "Nothing under maintenance"
+                            : "No deactivated rooms"
+                      }
+                      description={
+                        roomFilter === "active"
+                          ? "Rooms on this floor that are in service will appear here."
+                          : roomFilter === "maintenance"
+                            ? "Rooms taken out of service for repairs appear here."
+                            : "Rooms you switch off stay here until you bring them back."
+                      }
+                    />
                   ) : (
                     <RoomCarousel
                       rooms={visibleFloorRooms}
@@ -411,60 +438,6 @@ function formatDateTime(iso: string | null | undefined) {
   return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}, ${hour12}:${minutes} ${period}`;
 }
 
-const ROOM_FILTERS: { key: RoomFilter; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "maintenance", label: "Maint." },
-  { key: "deactivated", label: "Off" },
-];
-
-// The per-floor Active / Maintenance / Deactivated filter chips with live counts,
-// shown to the right of the floor header.
-function FloorFilters({
-  active,
-  counts,
-  onSelect,
-}: {
-  active: RoomFilter;
-  counts: Record<RoomFilter, number>;
-  onSelect: (filter: RoomFilter) => void;
-}) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
-      {ROOM_FILTERS.map(({ key, label }) => {
-        const selected = key === active;
-        return (
-          <AnimatedPressable
-            accessibilityLabel={`${label} rooms: ${counts[key]}`}
-            accessibilityRole="button"
-            key={key}
-            onPress={() => onSelect(key)}
-            style={{
-              alignItems: "center",
-              backgroundColor: selected ? colors.primary : colors.surfaceSunken,
-              borderColor: selected ? colors.primary : colors.border,
-              borderCurve: "continuous",
-              borderRadius: 999,
-              borderWidth: 1,
-              flexDirection: "row",
-              gap: 4,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 5,
-            }}
-          >
-            <Text style={{ color: selected ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
-              {label}
-            </Text>
-            <Text style={{ color: selected ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5, }}>
-              {counts[key]}
-            </Text>
-          </AnimatedPressable>
-        );
-      })}
-    </View>
-  );
-}
 
 function floorLabel(floor: string | null) {
   if (floor == null) {
@@ -490,15 +463,28 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
         accessibilityRole="button"
         onPress={() => setOpen(true)}
         style={{
+          // On a card of its own. Bare on the page it read as a heading for the
+          // rooms below rather than a control, and there was nothing to say
+          // where the tappable area began or ended.
           alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: radii.card,
+          borderWidth: 1,
+          elevation: 2,
           flexDirection: "row",
           gap: spacing.sm,
-          paddingVertical: spacing.xs,
+          padding: spacing.md,
+          shadowColor: colors.shadow,
+          shadowOffset: { height: 2, width: 0 },
+          shadowOpacity: 1,
+          shadowRadius: 6,
         }}
       >
         {/* Unboxed and full size, as on the Home property picker. A ringed
             glyph drew a circle around a mark that is already two shapes. */}
-        <PropertyIcon color={colors.ink} size={34} />
+        <PropertyArtwork size={34} />
 
         <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
@@ -1164,10 +1150,11 @@ function buildRoomPayload(form: RoomFormState): {
 
 function ModalShell({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   const { colors, fonts } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -1176,8 +1163,9 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              marginBottom: keyboardInset,
               maxHeight: "92%",
-              paddingBottom: insets.bottom + spacing.md,
+              paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}

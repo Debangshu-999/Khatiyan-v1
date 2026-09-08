@@ -22,6 +22,8 @@ import { useListPropertyManagersQuery } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_PERSON_ILLUSTRATION = require("../../../assets/workspace/No-Person_512x512.png");
+
 /**
  * Who the listing tells a prospect to call.
  *
@@ -237,7 +239,7 @@ function ManagerPickerSheet({
 
       {!managersQuery.isLoading && available.length === 0 ? (
         <EmptyState
-          icon={Plus}
+          artwork={NO_PERSON_ILLUSTRATION}
           title="No managers to add"
           description="Every manager on this property is already listed, or the property has none yet."
         />

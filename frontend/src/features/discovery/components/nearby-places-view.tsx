@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { Text, View } from "react-native";
-import { ChevronDown, MapPinned, Search, SlidersHorizontal, X } from "lucide-react-native";
+import { useMemo, useState } from "react";
+import { Image, Text, View } from "react-native";
+import { MapPinned, Search, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
+import { CountTabPills } from "@/components/filter-bubbles";
 import { SkeletonList } from "@/components/skeleton";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -18,22 +19,31 @@ import { useTheme } from "@/theme/use-theme";
 
 import { useDebouncedValue } from "../use-debounced-value";
 import { CategoryPickerModal, type CategorySelection } from "./category-picker-modal";
-import { DiscoveryEmptyState } from "./discovery-empty-state";
 import { NearbyPlaceCard } from "./nearby-place-card";
+
+const NO_LOCATION_ILLUSTRATION = require("../../../../assets/workspace/No-Location_512x512.png");
 
 type NearbyPlacesViewProps = {
   mode: "tenant" | "admin";
   propertyId?: string;
 };
 
-// Shared nearby-places browser: a smart search box, an All / Select-a-category
-// filter (opening an accordion picker), and Direct / Related result sections.
+/** Which pill is lit. Category carries whatever the picker last returned. */
+type PlacesTab = "all" | "recommended" | "category";
+
+// Shared nearby-places browser: a smart search box, an All / Recommended /
+// Category filter strip (the last opening an accordion picker), and Direct /
+// Related result sections.
 export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
   const { colors, fonts, type } = useTheme();
   const isTenant = mode === "tenant";
   const location = useAppSelector((state) => state.location);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CategorySelection | null>(null);
+  // Its own flag rather than a third `CategorySelection` kind: recommended is
+  // the owner's opinion of a place, not a branch of the taxonomy, and folding
+  // it in would put it inside the category picker where nobody would find it.
+  const [recommendedOnly, setRecommendedOnly] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const debouncedQuery = useDebouncedValue(query, 300);
 
@@ -82,6 +92,9 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
   }, [result, subToCategory]);
 
   const inFilter = (place: PropertyLocalPlace) => {
+    if (recommendedOnly) {
+      return place.ownerRecommended;
+    }
     if (!filter) {
       return true;
     }
@@ -93,6 +106,16 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
   const direct = result.direct.filter(inFilter);
   const related = result.related.filter(inFilter);
   const loading = search.isLoading;
+
+  // Counts come off the WHOLE result, not the filtered one — a tab has to say
+  // what tapping it would find, and a count that only ever describes the
+  // selected tab tells the reader what they are already looking at.
+  const everything = [...result.direct, ...result.related];
+  const recommendedCount = everything.filter((place) => place.ownerRecommended).length;
+  const activeTab: PlacesTab = filter ? "category" : recommendedOnly ? "recommended" : "all";
+  // Anything narrowing the list. Drives the empty-state copy and whether there
+  // is a reset worth offering.
+  const narrowed = Boolean(filter) || recommendedOnly;
 
   return (
     <View style={{ gap: spacing.md }}>
@@ -129,31 +152,101 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
         ) : null}
       </View>
 
-      {/* Filter bubbles: All | Select a category */}
-      <View style={{ flexDirection: "row", gap: spacing.xs }}>
-        <FilterBubble active={!filter} label="All" onPress={() => setFilter(null)} />
-        <FilterBubble
-          active={Boolean(filter)}
-          icon={<SlidersHorizontal color={filter ? colors.primary : colors.inkSoft} size={13} strokeWidth={2.3} />}
-          label={filter ? filter.label : "Select a category"}
-          onPress={() => setPickerOpen(true)}
-          trailing={<ChevronDown color={filter ? colors.primary : colors.muted} size={14} strokeWidth={2.4} />}
-        />
-      </View>
+      {/* The app's shared count-tab strip, as on the notice board and the
+          request queues. Category is a tab that opens the picker instead of
+          selecting a value — tapping it always reopens, so a chosen category
+          can be swapped without going back through All first. */}
+      <CountTabPills<PlacesTab>
+        onChange={(next) => {
+          if (next === "category") {
+            setPickerOpen(true);
+            return;
+          }
+          setFilter(null);
+          setRecommendedOnly(next === "recommended");
+        }}
+        options={[
+          { count: everything.length, label: "All", value: "all" },
+          { count: recommendedCount, label: "Recommended", value: "recommended" },
+          // Once chosen the tab wears the category's own name, so the strip
+          // says what the list is showing without a second line under it.
+          { chevron: true, count: filter ? direct.length + related.length : undefined, label: filter ? filter.label : "Category", value: "category" },
+        ]}
+        value={activeTab}
+      />
 
       {loading ? <SkeletonList /> : null}
 
+      {/* The property search's own empty layout, not the sunken Discovery card:
+          a centred illustration, a centred heading, and a way out. The two
+          searches sit one tab apart and coming up empty is the same moment in
+          both, so it should look the same in both. */}
       {!loading && direct.length === 0 && related.length === 0 ? (
-        <DiscoveryEmptyState
-          title={hasQuery || filter ? "No matches found" : "No nearby places yet"}
-          description={
-            hasQuery || filter
+        <View
+          style={{
+            alignItems: "center",
+            gap: spacing.sm,
+            paddingBottom: spacing.sm,
+            paddingHorizontal: spacing.md,
+            paddingTop: spacing.sm,
+          }}
+        >
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="contain"
+            source={NO_LOCATION_ILLUSTRATION}
+            style={{ height: 144, width: 144 }}
+          />
+          <Text
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.display,
+              fontSize: 21,
+              letterSpacing: -0.25,
+              textAlign: "center",
+            }}
+          >
+            {hasQuery || narrowed ? "No matches found" : "No nearby places yet"}
+          </Text>
+          <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+            {hasQuery || narrowed
               ? "Nothing matched. Try a broader term or a different category."
               : isTenant
                 ? "Your property has not added nearby places yet."
-                : "Add landmarks, services and conveniences so tenants can find them here."
-          }
-        />
+                : "Add landmarks, services and conveniences so tenants can find them here."}
+          </Text>
+
+          {/* Only when something is actually narrowing the list. With no search
+              and no category there is nothing to undo, and a button that clears
+              an empty search is a dead control. */}
+          {hasQuery || narrowed ? (
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={() => {
+                setQuery("");
+                setFilter(null);
+                setRecommendedOnly(false);
+              }}
+              style={{
+                alignItems: "center",
+                borderColor: colors.primary,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                flexDirection: "row",
+                gap: spacing.sm,
+                justifyContent: "center",
+                marginTop: spacing.sm,
+                minHeight: 48,
+                paddingHorizontal: spacing.lg,
+              }}
+            >
+              <MapPinned color={colors.primary} size={19} strokeWidth={2.3} />
+              <Text style={{ color: colors.primary, fontFamily: fonts.displaySoft, fontSize: 15 }}>
+                Show all places
+              </Text>
+            </AnimatedPressable>
+          ) : null}
+        </View>
       ) : null}
 
       {!loading && (direct.length > 0 || related.length > 0) ? (
@@ -188,50 +281,16 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
         categoryCounts={categoryCounts}
         mode="filter"
         onClose={() => setPickerOpen(false)}
-        onSelect={(selection) => setFilter(selection)}
+        onSelect={(selection) => {
+          // The two are mutually exclusive: the strip lights one pill, so a
+          // category left on top of Recommended would show a list neither tab
+          // describes.
+          setRecommendedOnly(false);
+          setFilter(selection);
+        }}
         subcategoryCounts={subcategoryCounts}
         visible={pickerOpen}
       />
     </View>
-  );
-}
-
-function FilterBubble({
-  active,
-  icon,
-  label,
-  onPress,
-  trailing,
-}: {
-  active: boolean;
-  icon?: ReactNode;
-  label: string;
-  onPress: () => void;
-  trailing?: ReactNode;
-}) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surface,
-        borderColor: active ? colors.primary : colors.border,
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.md,
-        paddingVertical: 8,
-      }}
-    >
-      {icon}
-      <Text style={{ color: active ? colors.primary : colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12, }}>
-        {label}
-      </Text>
-      {trailing}
-    </AnimatedPressable>
   );
 }

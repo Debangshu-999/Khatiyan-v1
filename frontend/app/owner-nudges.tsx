@@ -38,6 +38,10 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
+const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
+
 type NudgeTab = "send" | "sent";
 
 const PAGE_SIZE = 6;
@@ -90,13 +94,10 @@ export default function OwnerNudgesScreen() {
   return (
     <ScreenScrollView
       // The nested-screen top position, shared with every other back-button screen.
-      contentContainerStyle={{ paddingTop: 0 }}
       safeAreaEdges={["top", "bottom"]}
     >
       <ScreenHeader
-        eyebrow="Notifications"
         italicTail="tenant."
-        onBack={() => router.back()}
         subtitle={
           selectedProperty
             ? "One-way — tenants cannot reply. Each tenant can be nudged once every 3 hours."
@@ -119,8 +120,8 @@ export default function OwnerNudgesScreen() {
             active={tab}
             onChange={setTab}
             options={[
-              { label: "Nudge", value: "send" as const },
-              { label: "Sent", value: "sent" as const },
+              { icon: BellRing, label: "Nudge", value: "send" as const },
+              { icon: Send, label: "Sent", value: "sent" as const },
             ]}
           />
 
@@ -143,7 +144,7 @@ export default function OwnerNudgesScreen() {
                       ? "No active tenant matches that name or room."
                       : "Nudges go to tenants who are currently staying. Onboard one first."
                   }
-                  icon={BellRing}
+                  artwork={NO_PERSON_ILLUSTRATION}
                   title={search.trim() ? "Nothing found" : "No active tenants"}
                 />
               ) : (
@@ -178,7 +179,7 @@ export default function OwnerNudgesScreen() {
               ) : sent.length === 0 ? (
                 <EmptyState
                   description="Nudges you and your managers send appear here for seven days."
-                  icon={Send}
+                  artwork={CONCERN_EMPTY_ILLUSTRATION}
                   title="Nothing sent"
                 />
               ) : (

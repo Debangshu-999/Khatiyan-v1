@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { type ComponentType, useMemo, useState } from "react";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
 import { errorMessage } from "@/features/forms/server-error";
@@ -7,7 +7,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarDays, Check, Clock, FileClock, FileText, History, Info, IndianRupee, Repeat2, UserRound, X } from "lucide-react-native";
+import { CalendarDays, Check, Clock, FileClock, FileText, History, IndianRupee, Info, LockOpen, Repeat2, UserRound, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -23,10 +23,9 @@ import {
 } from "@/features/tenancy/request-activity";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
-import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
-import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { CountTabPills } from "@/components/filter-bubbles";
+import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { ActionButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -36,8 +35,15 @@ import {
   useRejectRoomChangeRequestMutation,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
+import { metricFontSize } from "@/theme/metric-size";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { SearchField } from "@/components/search-field";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
+
+const ROOM_CHANGE_ARTWORK = require("../assets/workspace/room-change.png");
+
+const REQUEST_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 type ReviewMode = "approve" | "reject";
 
@@ -105,9 +111,8 @@ export default function OwnerRoomChangeRequestsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <BackButton onPress={() => router.back()} />
         {!canManageRoomChanges ? <ViewOnlyChip /> : null}
       </View>
 
@@ -127,17 +132,31 @@ export default function OwnerRoomChangeRequestsScreen() {
           <Card>
             <View style={{ gap: spacing.md }}>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <SummaryTile label="Active" value={String(activeRequests.length)} hint="Still open" tone={activeRequests.length > 0 ? "primary" : "default"} />
-                <SummaryTile label="Total" value={String(requests.length)} hint={`${expiredRequests.length} expired`} />
+                <SummaryTile icon={LockOpen} label="Active" value={String(activeRequests.length)} hint="Still open" tone={activeRequests.length > 0 ? "primary" : "default"} />
+                <SummaryTile icon={FileClock} label="Total" value={String(requests.length)} hint={`${expiredRequests.length} expired`} />
               </View>
 
               <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xs }} />
 
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Room change request history</Text>
-              <Text style={[type.body, { color: colors.muted }]}>
-                Requests that have expired and can no longer be acted on.
-              </Text>
+              {/* Text and artwork share a row: the illustration is the
+                  block's mark, and stacked above the heading it pushed the
+                  button off a phone screen entirely. */}
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+                  <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
+                  <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Room change request history</Text>
+                  <Text style={[type.body, { color: colors.muted }]}>
+                    Requests that have expired and can no longer be acted on.
+                  </Text>
+                </View>
+                <Image
+                  accessibilityIgnoresInvertColors
+                  accessible={false}
+                  resizeMode="contain"
+                  source={ROOM_CHANGE_ARTWORK}
+                  style={{ height: 96, width: 96 }}
+                />
+              </View>
               <ActionButton
                 icon={FileClock}
                 label={`${expiredRequests.length} past request${expiredRequests.length === 1 ? "" : "s"}`}
@@ -147,49 +166,45 @@ export default function OwnerRoomChangeRequestsScreen() {
             </View>
           </Card>
 
-          <Section title={`${activeRequests.length} request${activeRequests.length === 1 ? "" : "s"}`}>
-            <AppTextInput
+          <View style={{ gap: spacing.md }}>
+            {/* The shared search box, so this screen has the magnifier, the
+                clear button and the focus border every other search has. It was
+                a bare text input with none of them. */}
+            <SearchField
               autoCapitalize="characters"
               onChangeText={(next) => {
                 setSearch(next);
                 setActivePage(0);
               }}
               placeholder="Search by code, e.g. TRC-2026-000155"
-              placeholderTextColor={colors.kicker}
-              style={{
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: 14,
-                borderWidth: 1,
-                color: colors.ink,
-                minHeight: 48,
-                paddingHorizontal: spacing.md,
-              }}
               value={search}
             />
-            {/* Counts dropped from the pills: the heading above already states
-                how many the chosen filter matched, so carrying them here said
-                the same number twice. */}
-            <CollapsibleFilterBubbles
-              align="start"
+            {/* Counts on the pills, not in a heading. The heading said "4
+                requests", which was only ever the count of the filter already
+                chosen — so the number moved when a tab was tapped and the other
+                tabs gave no hint of what they held. */}
+            <CountTabPills
               onChange={(next) => {
                 setAttention(next);
                 setActivePage(0);
               }}
               options={[
-                { label: "Needs action", value: "unattended" as const },
-                { label: "Decided", value: "attended" as const },
-                { label: "All", value: "all" as const },
+                // All leads, as it does on every other filter strip in the app
+                // — the widest set first, then the narrowings of it. The screen
+                // still OPENS on "Needs action" when anything is waiting; where
+                // a tab sits and which one is selected are separate questions.
+                { count: liveRequests.length, label: "All", value: "all" as const },
+                { count: unattended.length, label: "Needs action", value: "unattended" as const },
+                { count: attended.length, label: "Decided", value: "attended" as const },
               ]}
               value={filter}
             />
 
             {requestsQuery.isFetching && requests.length === 0 ? (
-              <SkeletonCard />
+              <SkeletonList rows={2} />
             ) : activeRequests.length === 0 ? (
               <EmptyState
-                icon={Repeat2}
-
+                artwork={REQUEST_EMPTY_ILLUSTRATION}
                 title={filter === "unattended" ? "Nothing waiting on you" : "No decided requests"}
                 description={
                   filter === "unattended"
@@ -223,7 +238,7 @@ export default function OwnerRoomChangeRequestsScreen() {
                 ) : null}
               </View>
             )}
-          </Section>
+          </View>
         </>
       ) : null}
 
@@ -280,7 +295,7 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
             <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
           </View>
           {requests.length === 0 ? (
-            <EmptyState icon={Repeat2} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
+            <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
           ) : (
             <>
               <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -452,6 +467,7 @@ function RoomChangeReviewModal({
   request: TenancyRoomChangeRequest;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
   const [notes, setNotes] = useState("");
   // No required field on this sheet — the note is optional — so every failure
@@ -503,7 +519,7 @@ function RoomChangeReviewModal({
   return (
     <>
     <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -512,6 +528,7 @@ function RoomChangeReviewModal({
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              marginBottom: keyboardInset,
               maxHeight: "90%",
               paddingTop: spacing.lg,
             }}
@@ -661,18 +678,74 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
   );
 }
 
-function SummaryTile({ hint, label, tone = "default", value }: { hint: string; label: string; tone?: "default" | "primary"; value: string }) {
+function SummaryTile({
+  hint,
+  icon: Icon,
+  label,
+  tone = "default",
+  value,
+}: {
+  hint: string;
+  icon: ComponentType<LucideProps>;
+  label: string;
+  tone?: "default" | "primary";
+  value: string;
+}) {
   const { colors, fonts, type } = useTheme();
   const accent = tone === "primary" ? colors.primary : colors.ink;
+
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
-      <Text style={[type.caption, { color: colors.muted }]}>
-        {label}
-      </Text>
-      <Text style={{ color: accent, fontFamily: fonts.display, fontSize: 20, }}>
-        {value}
-      </Text>
-      <Text style={[type.caption, { color: colors.kicker }]}>
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        elevation: 2,
+        flex: 1,
+        gap: spacing.xs,
+        // Centred, because tiles in a row stretch to the tallest of them.
+        justifyContent: "center",
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
+      }}
+    >
+      {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the
+          label and number stacked beside it — the billing, concern and tenancy
+          tiles' exact layout. Above the label the glyph made these two the
+          tallest things on the screen and read as a different KIND of figure
+          from the same counts elsewhere. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+        </View>
+
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            {label}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: accent,
+              fontFamily: fonts.display,
+              fontSize: metricFontSize(value, 23),
+              fontVariant: ["tabular-nums"],
+              lineHeight: metricFontSize(value, 23) + 5,
+            }}
+          >
+            {value}
+          </Text>
+        </View>
+      </View>
+
+      {/* Under the row on the tile's full width — beside a 38pt glyph the hint
+          had half a tile and wrapped, leaving one tile taller than its pair. */}
+      <Text numberOfLines={2} style={[type.caption, { color: colors.kicker, fontSize: 11, lineHeight: 15 }]}>
         {hint}
       </Text>
     </View>

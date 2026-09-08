@@ -334,6 +334,15 @@ export type ManagerResource =
   | "NEARBY_PLACES"
   | "NOTICES"
   | "CONCERNS"
+  /**
+   * The property's shared conversations — the chat screen's Tenants section.
+   *
+   * <p>Deliberately absent from `ACCESS_MODULES`, so it never appears on the
+   * manager-permissions screen. It is granted from the chat screen's own access
+   * list instead, which is the only place an owner meets this decision. The
+   * resource exists here because that list reads and writes the same grant.
+   */
+  | "CHATS"
   | "VACANCY_FINDER";
 
 export type ManagerAccessLevel = "NONE" | "VIEW" | "MANAGE";
@@ -707,6 +716,7 @@ export const {
   useLazyLookupManagerQuery,
   useListAllPropertyRoomsQuery,
   useGetManagerPermissionsQuery,
+  useLazyGetManagerPermissionsQuery,
   useGetMyPropertyPermissionsQuery,
   useListPropertyManagersQuery,
   useReplaceManagerPermissionsMutation,

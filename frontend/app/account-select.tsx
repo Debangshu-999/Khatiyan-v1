@@ -80,7 +80,6 @@ export default function AccountSelectScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        eyebrow="Account access"
         title="Continue"
         italicTail="as."
         subtitle="Choose the workspace for this session."

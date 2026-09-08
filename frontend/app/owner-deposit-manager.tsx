@@ -1,18 +1,17 @@
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, BackHandler, Modal, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, BackHandler, Image, Modal, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path } from "react-native-svg";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, DoorOpen, History, Landmark, Minus, Plus, Wallet } from "lucide-react-native";
+import { AlertTriangle, CalendarDays, ChevronRight, ChevronUp, Clock, History, Landmark, Minus, Plus, UserRound, Wallet } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
-import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { StatusPill } from "@/components/status-pill";
-import { SkeletonScreen } from "@/components/skeleton";
+import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
@@ -20,6 +19,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAvailableAccounts } from "@/features/account/accounts";
+import { DepositAccountDetail, DepositAccountHeader, DepositAccountTenantCard } from "@/features/billing/deposit-account-ui";
 import {
   ActionButton,
   ConfirmDialog,
@@ -32,8 +32,6 @@ import {
   ViewOnlyChip,
 } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
-import { isDepositCredit } from "@/store/services/billing-api";
-import type { DepositAccount, DepositMovement } from "@/store/services/billing-api";
 import {
   useAddDepositCorrectionMutation,
   useDeductDepositCorrectionMutation,
@@ -46,10 +44,13 @@ import type { TenancyStatus, TenancySummary } from "@/store/services/tenancy-api
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { PropertyArtwork } from "@/components/artwork-icon";
+import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
 
 type CorrectionMode = "add" | "deduct";
 
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE"];
+const DEPOSIT_HEADER_ILLUSTRATION = require("../assets/workspace/deposit-header.png");
 
 export default function OwnerDepositManagerScreen() {
   const router = useGuardedRouter();
@@ -80,7 +81,7 @@ export default function OwnerDepositManagerScreen() {
   const [selectedTenancyId, setSelectedTenancyId] = useState<string | null>(
     typeof tenancyIdParam === "string" ? tenancyIdParam : null,
   );
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(!tenancyIdParam);
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const selectedTenancy = selectedTenancyId ? tenancyById.get(selectedTenancyId) ?? null : null;
 
@@ -111,6 +112,7 @@ export default function OwnerDepositManagerScreen() {
   const goBack = useCallback(() => {
     if (selectedTenancyId) {
       setSelectedTenancyId(null);
+      setPickerOpen(true);
       return true;
     }
     router.back();
@@ -126,6 +128,23 @@ export default function OwnerDepositManagerScreen() {
       return () => subscription.remove();
     }, [goBack]),
   );
+
+  /**
+   * Follows the route param when this screen is REUSED rather than mounted.
+   *
+   * <p>
+   * The deposit history navigates back to this screen with a tenancyId instead
+   * of pushing a second copy of it, so the param can change while the screen
+   * stays mounted — and `useState`'s initial value is read exactly once. Without
+   * this, opening an account from history returned to the picker with nothing
+   * selected.
+   */
+  useEffect(() => {
+    if (typeof tenancyIdParam === "string" && tenancyIdParam) {
+      setSelectedTenancyId(tenancyIdParam);
+      setPickerOpen(false);
+    }
+  }, [tenancyIdParam]);
 
   function chooseTenancy(tenancyId: string) {
     setSelectedTenancyId(tenancyId);
@@ -169,37 +188,53 @@ export default function OwnerDepositManagerScreen() {
   }
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader
-        badge={!canManageDeposits ? <ViewOnlyChip /> : null}
-        eyebrow={selectedTenancy ? "Deposit manager" : "Owner tool"}
-        onBack={goBack}
-        title="Deposit"
-        italicTail={selectedTenancy ? "account." : "manager."}
-        subtitle={
-          selectedTenancy
-            ? undefined
-            : "Pick an active tenancy to review its deposit ledger, add or deduct amounts, and settle on exit."
-        }
-      />
+    <ScreenScrollView
+      background={
+        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+          <LinearGradient
+            colors={[selectedTenancy ? colors.surface : "#F1F7FF", colors.surface]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={{ height: 420 }}
+          />
+        </View>
+      }
+      contentContainerStyle={{ paddingTop: spacing.xs }}
+      surface={colors.surface}
+    >
+      {selectedTenancy ? (
+        <DepositAccountHeader canManage={canManageDeposits} tenantName={selectedTenancy?.tenantName ?? null} />
+      ) : (
+        <ScreenHeader
+          artwork={DEPOSIT_HEADER_ILLUSTRATION}
+          badge={!canManageDeposits ? <ViewOnlyChip /> : null}
+          italicTail="manager."
+          subtitle={property ? `Deposit accounts workspace for ${property.name}.` : "Select a property on Home first."}
+          title="Deposit"
+        />
+      )}
 
       {!property ? (
         <EmptyState
-          icon={Landmark}
+          artworkNode={<DepositHistoryArtwork size={124} />}
 
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select the property you want to manage deposits for."
         />
       ) : (
         <>
-          <TenancyPicker
-            activeTenancies={activeTenancies}
-            loading={tenanciesQuery.isFetching && tenancies.length === 0}
-            onSelect={chooseTenancy}
-            onToggle={() => setPickerOpen((open) => !open)}
-            open={pickerOpen}
-            selectedTenancy={selectedTenancy}
-          />
+          {selectedTenancy ? (
+            <DepositAccountTenantCard tenancy={selectedTenancy} onPress={goBack} />
+          ) : (
+            <TenancyPicker
+              activeTenancies={activeTenancies}
+              loading={tenanciesQuery.isFetching && tenancies.length === 0}
+              onSelect={chooseTenancy}
+              onToggle={() => setPickerOpen((open) => !open)}
+              open={pickerOpen}
+              selectedTenancy={null}
+            />
+          )}
 
           {/* Only while nothing is open: the screen is either "choose someone"
               or "work on this account", never both. */}
@@ -223,7 +258,7 @@ export default function OwnerDepositManagerScreen() {
           {selectedTenancy && !pickerOpen ? (
             selectedTenancy.billingType === "DAILY" ? (
               <EmptyState
-                icon={Wallet}
+                artworkNode={<DepositHistoryArtwork size={124} />}
 
                 title="No deposit for daily stays"
                 description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
@@ -231,7 +266,8 @@ export default function OwnerDepositManagerScreen() {
             ) : depositQuery.isFetching && !deposit ? (
               <SkeletonScreen header={false} tiles={2} rows={2} />
             ) : deposit ? (
-              <DepositDetail
+              <DepositAccountDetail
+                key={deposit.id}
                 busy={addState.isLoading || deductState.isLoading || settleState.isLoading || closeState.isLoading}
                 canManage={canManageDeposits}
                 deposit={deposit}
@@ -241,7 +277,7 @@ export default function OwnerDepositManagerScreen() {
               />
             ) : (
               <EmptyState
-                icon={Landmark}
+                artworkNode={<DepositHistoryArtwork size={124} />}
 
                 title="Deposit not opened yet"
                 description="A deposit account opens automatically once this tenant's first monthly cycle is paid."
@@ -250,7 +286,7 @@ export default function OwnerDepositManagerScreen() {
           ) : null}
 
           {!selectedTenancy ? (
-            <HistoryEntryCard onPress={() => router.push("/owner-deposit-history")} />
+            <HistoryEntryCard onPress={() => router.navigate("/owner-deposit-history")} />
           ) : null}
         </>
       )}
@@ -322,269 +358,183 @@ function TenancyPicker({
       : "No active monthly tenancies on this property.";
 
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.md }}>
       <AnimatedPressable
         accessibilityRole="button"
+        accessibilityLabel={`${title}. ${open ? "Hide" : "Show"} active tenancies`}
+        accessibilityState={{ disabled: activeTenancies.length === 0, expanded: open }}
+        disabled={activeTenancies.length === 0}
         onPress={activeTenancies.length > 0 ? onToggle : undefined}
         style={{
+          // The history card's shape, so the two controls on this screen read
+          // as one family. The pale blue fill made the picker the loudest
+          // thing on the page and left the history card looking like the
+          // afterthought — when the picker is the thing you use first.
           alignItems: "center",
-          backgroundColor: selectedTenancy ? colors.surfaceRaised : colors.primarySoft,
-          // Ink in both states, matching the home property picker.
-          borderColor: colors.ink,
-          borderRadius: 18,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: 16,
           borderWidth: 1,
+          elevation: 1,
           flexDirection: "row",
           gap: spacing.md,
-          minHeight: 72,
+          // Shorter. At 126 the card was mostly air around two lines of text.
+          minHeight: 100,
+          overflow: "hidden",
           padding: spacing.md,
+          shadowColor: colors.primaryDeep,
+          shadowOffset: { height: 4, width: 0 },
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
         }}
       >
+        <Svg accessible={false} pointerEvents="none" width={190} height={65} viewBox="0 0 190 65" style={{ bottom: 0, position: "absolute", right: 0 }}>
+          <Path d="M0 65 C58 18 83 53 125 30 C151 16 170 5 190 0 V65 Z" fill={colors.primarySoft} />
+          <Path d="M62 65 C111 43 150 53 190 29 V65 Z" fill={colors.primary} opacity={0.08} />
+        </Svg>
         <View
           style={{
             alignItems: "center",
-            backgroundColor: selectedTenancy ? colors.primarySoft : colors.surface,
-            borderColor: colors.border,
-            borderRadius: 12,
-            borderWidth: 1,
-            height: 42,
+            height: 44,
             justifyContent: "center",
-            width: 42,
+            width: 44,
           }}
         >
-          <DoorOpen color={colors.primary} size={20} strokeWidth={2.2} />
+          {/* The property artwork with a person on it. A house with a rupee
+              inside read as "property value" rather than "whose deposit", which
+              is the one thing this control exists to choose.
+
+              The person is filled, not outlined: at 19pt against the artwork's
+              own detail an open glyph disappeared into it, and a solid shape
+              is the only thing that still reads as a person at that size. */}
+          <PropertyArtwork size={34} />
+          <UserRound
+            color={colors.primary}
+            fill={colors.primary}
+            size={19}
+            strokeWidth={1.6}
+            style={{ bottom: 0, position: "absolute", right: -2 }}
+          />
         </View>
-        <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text style={[type.eyebrow, { color: selectedTenancy ? colors.kicker : colors.primary }]}>
-            Active tenancy
-          </Text>
+        <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <Text
-            numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+            numberOfLines={2}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.3, lineHeight: 23 }}
           >
             {title}
           </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+          <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
             {subtitle}
           </Text>
         </View>
+        {/* Up when the list is open, not a rotated right-chevron. A 90-degree
+            rotation points DOWN, which says "there is more below" at the exact
+            moment the more is already showing — the arrow has to offer the way
+            back. */}
         {activeTenancies.length > 0 ? (
-          <ChevronDown color={colors.primary} size={20} strokeWidth={2.2} style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }} />
+          open ? (
+            <ChevronUp color={colors.muted} size={20} strokeWidth={2} />
+          ) : (
+            <ChevronRight color={colors.muted} size={20} strokeWidth={2} />
+          )
         ) : null}
       </AnimatedPressable>
 
-      {loading ? <ActivityIndicator color={colors.primary} /> : null}
+      {/* Two ghost rows, not a spinner. A lone ActivityIndicator said
+          "something is happening" and reserved none of the height the list was
+          about to take, so the page jumped when it landed. */}
+      {loading ? <SkeletonList rows={2} /> : null}
 
       {open && activeTenancies.length > 0 ? (
-        <View style={{ gap: spacing.sm }}>
-          {activeTenancies.map((tenancy) => {
-            const selected = tenancy.id === selectedTenancy?.id;
-            return (
-              <AnimatedPressable
-                accessibilityRole="button"
-                key={tenancy.id}
-                onPress={() => onSelect(tenancy.id)}
-                style={{
-                  alignItems: "center",
-                  // Same filled-ink selection as the home property picker this
-                  // control was built to mirror.
-                  backgroundColor: selected ? colors.ink : colors.surface,
-                  borderColor: selected ? colors.ink : colors.border,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  flexDirection: "row",
-                  gap: spacing.md,
-                  padding: spacing.md,
-                }}
-              >
-                <View style={{ flex: 1, gap: spacing.xxs }}>
-                  <Text style={[type.bodyStrong, { color: selected ? colors.surface : colors.ink }]}>
-                    {tenancy.tenantName ?? "Unnamed tenant"}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[type.caption, { color: selected ? colors.surface : colors.muted, opacity: selected ? 0.75 : 1 }]}
-                  >
-                    {tenancy.referenceCode} · {humanizeToken(tenancy.status)}
-                  </Text>
-                </View>
-                {/* The pill keeps its own surface, so it stays legible on the
-                    ink row without needing an inverted variant. */}
-                <StatusPill label={humanizeToken(tenancy.billingType)} tone="neutral" />
-              </AnimatedPressable>
-            );
-          })}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-/**
- * One open deposit account.
- *
- * <p>Status is read from the DEPOSIT, never the tenancy. The two diverge the
- * moment a stay ends — the tenancy is EXITED while the deposit sits
- * PENDING_SETTLEMENT — and the list card used to show the tenancy's, so an
- * account waiting to be settled still read "Active".
- *
- * <p>Shown once. It used to appear beside the balance, as a section label and
- * as a pill; three copies of one fact is three chances to disagree.
- */
-function DepositDetail({
-  busy,
-  canManage,
-  deposit,
-  onAdd,
-  onDeduct,
-  onSettle,
-}: {
-  busy: boolean;
-  canManage: boolean;
-  deposit: DepositAccount;
-  onAdd: () => void;
-  onDeduct: () => void;
-  onSettle: () => void;
-}) {
-  const { colors, type } = useTheme();
-  const pending = deposit.status === "PENDING_SETTLEMENT";
-  const settled = deposit.status === "SETTLED";
-  const payable = deposit.payableAtExit;
-
-  return (
-    <View style={{ gap: spacing.md }}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "flex-end" }}>
-        <StatusPill label={humanizeToken(deposit.status)} tone={pending ? "warning" : settled ? "neutral" : "success"} />
-      </View>
-
-      {/* The decision made at end-tenancy, restated where it is about to be
-          executed — settlement cannot revisit it, so the actor needs to see what
-          they are carrying out rather than choosing. */}
-      {pending ? (
-        <NoticeBar
-          message={
-            payable == null
-              ? "No payability decision was recorded when this tenancy ended, so this deposit cannot be settled here."
-              : payable
-                ? `Decided refundable at exit. ${formatMoneyPaise(deposit.currentBalancePaise)} to return.`
-                : "Decided not refundable at exit. Nothing is paid out."
-          }
-          title="Awaiting settlement"
-          tone="warning"
-        />
-      ) : null}
-
-      <Card>
-        <View style={{ flexDirection: "row" }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text selectable style={[type.metric, { color: colors.ink, fontSize: 24, lineHeight: 29 }]}>
-              {formatMoneyPaise(deposit.currentBalancePaise)}
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Balance
-            </Text>
-          </View>
-          <View style={{ alignItems: "flex-end", flex: 1, gap: 2 }}>
-            <Text style={[type.metric, { color: colors.ink, fontSize: 24, lineHeight: 29 }]}>
-              {deposit.movements.length}
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Movements
-            </Text>
-          </View>
-        </View>
-
-        {!settled ? (
-          <>
-            <Divider />
-            {pending ? (
-              <ActionButton
-                disabled={busy || !canManage || payable == null}
-                label={payable === false ? "Close account" : "Settle deposit"}
-                onPress={onSettle}
-                variant="danger"
-              />
-            ) : (
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <ActionButton disabled={busy || !canManage} icon={Plus} label="Add" onPress={onAdd} variant="secondary" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <ActionButton disabled={busy || !canManage} icon={Minus} label="Deduct" onPress={onDeduct} variant="secondary" />
-                </View>
-              </View>
-            )}
-          </>
-        ) : null}
-      </Card>
-
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        Movements
-      </Text>
-      {deposit.movements.length === 0 ? (
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          No movements yet.
-        </Text>
-      ) : (
-        <View style={{ gap: spacing.sm }}>
-          {deposit.movements.map((movement) => (
-            <MovementRow key={movement.id} movement={movement} />
+        <View style={{ gap: spacing.md }}>
+          {activeTenancies.map((tenancy) => (
+            <TenancyOptionRow
+              key={tenancy.id}
+              onSelect={onSelect}
+              selected={tenancy.id === selectedTenancy?.id}
+              tenancy={tenancy}
+            />
           ))}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
+
 
 /**
- * One ledger line: what it was, when, and which way the money went.
+ * One choosable tenancy.
  *
- * <p>No type pill. The sign and colour already say it, and the pill this
- * replaces was comparing against values the API never sends — so every row
- * rendered as a debit, credits included.
+ * <p>Lifted out of the picker so the loading state renders the SAME row rather
+ * than a drawing of one — see SkeletonBoundary.
  */
-function MovementRow({ movement }: { movement: DepositMovement }) {
-  const { colors, type } = useTheme();
-  const credit = isDepositCredit(movement.type);
+function TenancyOptionRow({
+  onSelect,
+  selected,
+  tenancy,
+}: {
+  onSelect: (tenancyId: string) => void;
+  selected: boolean;
+  tenancy: TenancySummary;
+}) {
+  const { colors, fonts, type } = useTheme();
 
   return (
-    <View
-      style={{
-        borderColor: colors.borderStrong,
-        borderRadius: 0,
-        borderWidth: 1,
-        flexDirection: "row",
-      }}
-    >
-      {/* The direction of the money, read before any text. Inside the border so
-          the rule is part of the row rather than a stripe beside it. */}
-      <View style={{ backgroundColor: credit ? colors.jade : colors.danger, width: 5 }} />
-      <View
-        style={{
-          alignItems: "center",
-          flex: 1,
-          flexDirection: "row",
-          gap: spacing.sm,
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-        }}
-      >
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text selectable style={[type.body, { color: colors.ink }]}>
-            {movement.reason}
-          </Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {formatDateTime(movement.createdAt)}
-          </Text>
-        </View>
-        <Text selectable style={[type.bodyStrong, { color: credit ? colors.jade : colors.danger }]}>
-          {credit ? "+ " : "− "}
-          {formatMoneyPaise(movement.amountPaise)}
-        </Text>
-      </View>
-    </View>
+        <AnimatedPressable
+          accessibilityRole="button"
+          accessibilityState={{ selected }}
+          accessibilityLabel={`Open deposit for ${tenancy.tenantName ?? "Unnamed tenant"}, ${tenancy.referenceCode}`}
+          key={tenancy.id}
+          onPress={() => onSelect(tenancy.id)}
+          style={{
+            alignItems: "center",
+            backgroundColor: selected ? "#F4F8FF" : colors.surface,
+            borderColor: selected ? "#CFE2FF" : colors.border,
+            borderRadius: 16,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            minHeight: 84,
+            padding: spacing.md,
+            shadowColor: colors.primaryDeep,
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: 0.05,
+            shadowRadius: 10,
+            elevation: 1,
+          }}
+        >
+          <UserRound color={colors.primary} size={28} strokeWidth={1.8} />
+          <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+              <Text
+                style={[type.bodyStrong, { color: colors.ink, flex: 1, fontFamily: fonts.displaySoft, fontSize: 16, lineHeight: 22, minWidth: 0 }]}
+              >
+                {tenancy.tenantName ?? "Unnamed tenant"}
+              </Text>
+              <View style={{ alignItems: "center", backgroundColor: "#EFF6FF", borderRadius: radii.pill, flexDirection: "row", gap: 4, paddingHorizontal: 8, paddingVertical: 5 }}>
+                  <CalendarDays color={colors.primary} size={12} strokeWidth={2} />
+                  <Text style={{ color: colors.primary, fontFamily: fonts.sansSemiBold, fontSize: 11, lineHeight: 15 }}>
+                    Monthly
+                  </Text>
+                </View>
+                          </View>
+            <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", columnGap: spacing.xs, rowGap: 3 }}>
+              <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
+                {tenancy.referenceCode}
+              </Text>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                  <View style={{ backgroundColor: tenancy.status === "ACTIVE" ? colors.jade : colors.warning, borderRadius: 3, height: 6, width: 6 }} />
+                  <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
+                    {humanizeToken(tenancy.status)}
+                  </Text>
+                </View>
+                          </View>
+          </View>
+          <ChevronRight color={colors.muted} size={18} strokeWidth={2} />
+        </AnimatedPressable>
   );
 }
+
 
 function HistoryEntryCard({ onPress }: { onPress: () => void }) {
   const { colors, fonts, type } = useTheme();
@@ -601,31 +551,30 @@ function HistoryEntryCard({ onPress }: { onPress: () => void }) {
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
-        padding: spacing.md,
+        minHeight: 126,
+        overflow: "hidden",
+        padding: spacing.lg,
+        shadowColor: colors.primaryDeep,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 1,
       }}
     >
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderWidth: 1,
-          borderRadius: 12,
-          height: 44,
-          justifyContent: "center",
-          width: 44,
-        }}
-      >
-        <History color={colors.ink} size={20} strokeWidth={2.2} />
-      </View>
-      <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.3 }}>
+      <Svg accessible={false} pointerEvents="none" width={190} height={65} viewBox="0 0 190 65" style={{ bottom: 0, position: "absolute", right: 0 }}>
+        <Path d="M0 65 C58 18 83 53 125 30 C151 16 170 5 190 0 V65 Z" fill={colors.primarySoft} />
+        <Path d="M62 65 C111 43 150 53 190 29 V65 Z" fill={colors.primary} opacity={0.08} />
+      </Svg>
+      <History color={colors.primary} size={38} strokeWidth={1.8} />
+      <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.3, lineHeight: 23 }}>
           Deposit manager history
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
           Search past and present deposit accounts, filter by status and open any ledger.
         </Text>
       </View>
-      <ChevronRight color={colors.kicker} size={20} strokeWidth={2.2} />
+      <ChevronRight color={colors.muted} size={20} strokeWidth={2} />
     </AnimatedPressable>
   );
 }

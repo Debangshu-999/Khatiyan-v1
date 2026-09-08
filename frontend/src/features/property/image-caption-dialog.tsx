@@ -4,12 +4,14 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
+  useWindowDimensions,
 } from "react-native";
 
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -54,6 +56,7 @@ export function ImageCaptionDialog({
   uris: string[];
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const { width } = useWindowDimensions();
   const listRef = useRef<FlatList<string>>(null);
   const [index, setIndex] = useState(0);
@@ -77,7 +80,7 @@ export function ImageCaptionDialog({
     // against a taller frame than the one it pads — the dialog rises and never
     // comes back down.
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View
           style={{
             alignItems: "center",
@@ -85,6 +88,9 @@ export function ImageCaptionDialog({
             flex: 1,
             justifyContent: "center",
             padding: spacing.lg,
+            // Shrinks the centring box so the dialog rises with the
+            // keyboard rather than sitting behind it.
+            paddingBottom: spacing.lg + keyboardInset,
           }}
         >
           <View

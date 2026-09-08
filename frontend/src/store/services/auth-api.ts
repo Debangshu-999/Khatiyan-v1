@@ -154,7 +154,16 @@ export const authApi = api.injectEndpoints({
     verifyOtp: builder.mutation<OtpVerifyResponse, { phone: string; otp: string; purpose: "LOGIN" | "PIN_RESET" }>({
       query: (body) => ({ url: "/api/v1/auth/otp/verify", method: "POST", body }),
     }),
-    setPin: builder.mutation<TokenResponse, { phone: string; otp: string; pin: string }>({
+    /**
+     * First PIN, plus the name and email that go with it.
+     *
+     * <p>`fullName` and `email` are optional and carry the SIGNUP form's values
+     * through to here. The server no longer applies them at registration: that
+     * endpoint knows nothing but a phone number, so writing there let anyone
+     * rename a provisioned tenant and clear their verified recovery address.
+     * They are applied once this call proves the caller holds the number.
+     */
+    setPin: builder.mutation<TokenResponse, { phone: string; otp: string; pin: string; fullName?: string; email?: string }>({
       query: (body) => ({ url: "/api/v1/auth/pin/set", method: "POST", body }),
       invalidatesTags: ["Profile"],
     }),

@@ -121,7 +121,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <ToastViewport onDismiss={dismiss} onDismissAll={dismissAll} toasts={toasts} />
+      {/* Mounted only while there is a toast, not merely hidden.
+          <p>On web this is what puts a toast in FRONT of an open sheet. React
+          Native Web's Modal creates its portal div the first time the component
+          renders and appends it to document.body, and those divs are all
+          position:fixed with no z-index — so the one appended LAST paints on
+          top. Left permanently mounted, this viewport's div was appended at app
+          start, before any sheet's, and every confirmation fired from inside a
+          sheet landed behind its dim. Mounting on demand appends it after
+          whatever is already open.
+          <p>Native was already right, for the same reason by a different
+          mechanism: an Android Modal shows its window when it becomes visible,
+          which is after the sheet's. */}
+      {toasts.length > 0 ? (
+        <ToastViewport onDismiss={dismiss} onDismissAll={dismissAll} toasts={toasts} />
+      ) : null}
     </ToastContext.Provider>
   );
 }
@@ -150,8 +164,11 @@ export function useToast() {
  * A tap while one is showing dismisses it and the next tap lands normally,
  * which is the behaviour a reader already expects from a toast.
  *
- * <p>{@code visible} follows the queue: a Modal left permanently mounted would
- * keep an empty window — and its touch grab — over the app forever.
+ * <p>The provider mounts this only while the queue has something in it, so
+ * there is never an empty window — and its touch grab — sitting over the app.
+ * Mounting on demand is also what keeps a toast in front of an open sheet on
+ * web, where stacking is decided by the order portals were appended to the
+ * document rather than by which window was shown last.
  */
 function ToastViewport({
   onDismiss,

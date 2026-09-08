@@ -4,41 +4,29 @@ export type ThemeMode = "light" | "dark";
 // selected states, and small accents.
 export const themes = {
   light: {
-    // Paper the cards sit ON, not a near-white that they vanish into. At
-    // #FAFAFB the page was three points off the surface colour, so a white card
-    // had no edge except its hairline border and every screen read as one flat
-    // sheet. Slate-tinted rather than neutral grey, to stay in the same family
-    // as the borders and muted text.
-    background: "#EEF1F5",
+    /**
+     * The page is white.
+     *
+     * <p>A slate grey (#EEF1F5) was tried app-wide to give white cards an edge,
+     * and reverted. The overhauled screens open with a pale-blue wash that fades
+     * downward into the page, and a tinted ground gave that fade nowhere to
+     * land — the band stopped dead against a second colour instead of
+     * dissolving. Cards take their edge from their border and shadow now.
+     */
+    background: "#FFFFFF",
 
     /**
-     * The signed-out screens, pinned to the old near-white.
+     * The signed-out screens, the long forms, and chat.
      *
-     * <p>Auth has no cards to lift off a page — it is one sheet under a colour
-     * band, and the grey that gives a card its edge everywhere else just made
-     * that sheet look dirty. A named token rather than a literal, so the two
-     * places using it stay in step and the reason travels with the value.
+     * <p>All three were escapes from the app-wide grey, so all three now equal
+     * `background`. Kept as named tokens rather than folded away: each marks a
+     * surface that has deliberately diverged from the page once already and may
+     * again, and a screen reaching for one of these says which ground it means.
      */
-    authSurface: "#FAFAFB",
-    /**
-     * The page under a long form: registration, editing, onboarding a tenant.
-     *
-     * <p>The value `background` held before the app-wide shade. A form is
-     * mostly white cards, and the deeper grey behind them turned every section
-     * into a floating panel — fine on a dashboard of tiles, wrong on a document
-     * you are filling in. Its own token so these flows can hold the lighter
-     * ground without the rest of the app losing the shade.
-     */
-    formSurface: "#FAFAFB",
-    /**
-     * Chat is white, not the page grey.
-     *
-     * <p>A conversation is bubbles on a ground, and the app-wide shade put a
-     * grey ground behind grey-bordered bubbles — the two competed and the
-     * thread lost its sense of being a surface you write on. Its own token
-     * rather than `surface` so the chat ground can move without dragging every
-     * card in the app with it, the same reason `authSurface` exists.
-     */
+    authSurface: "#FFFFFF",
+    /** The page under a long form: registration, editing, onboarding a tenant. */
+    formSurface: "#FFFFFF",
+    /** The ground a conversation's bubbles sit on. */
     chatSurface: "#FFFFFF",
 
     surface: "#FFFFFF",
@@ -95,9 +83,10 @@ export const themes = {
     neutralSoft: "#F1F5F9",
     neutralText: "#334155",
 
-    // Deepened when the page went grey. At 0.08 it was tuned for a near-white
-    // background, where a card's own edge did most of the work; against
-    // #EEF1F5 that reads as no shadow at all.
+    // Deepened from 0.08 when the page briefly went grey, and kept when it went
+    // back to white: on a white ground the shadow is most of what separates a
+    // card from the page, so the lighter value would leave the hairline border
+    // doing the job alone.
     shadow: "rgba(15, 23, 42, 0.16)",
     overlay: "rgba(15, 23, 42, 0.45)",
   },
@@ -106,9 +95,9 @@ export const themes = {
     surface: "#101010",
     surfaceRaised: "#171717",
     authSurface: "#0A0C12",
-    // Unchanged: only the light ground was ever deepened.
+    // Both sit on the dark page ground: the grey experiment and its revert were
+    // only ever a light-mode story.
     formSurface: "#050505",
-    // Unchanged from the dark page ground: only the light shade regressed.
     chatSurface: "#050505",
     surfaceSunken: "#080808",
     border: "#262626",

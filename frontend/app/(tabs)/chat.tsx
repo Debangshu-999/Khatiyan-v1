@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MessageCircle, MessageCirclePlus, Trash2 } from "lucide-react-native";
+import { MessageCircle, MessageCirclePlus, Trash2, UsersRound, type LucideProps } from "lucide-react-native";
 
 /**
  * Clearance for the floating button: the tab bar's own height plus whatever
@@ -15,11 +15,13 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
+import { ChatAccessListSheet } from "@/features/chat/chat-access-list-sheet";
 import { ContactPicker } from "@/features/chat/contact-picker";
 import { TenantPicker } from "@/features/chat/tenant-picker";
 import { ThreadRow } from "@/features/chat/thread-row";
 import { useDeleteThreadSelection } from "@/features/chat/use-delete-thread-selection";
 import { errorMessage } from "@/features/forms/server-error";
+import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -36,6 +38,8 @@ import {
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NO_CHATS_ILLUSTRATION = require("../../assets/workspace/No-Chats_512x512.png");
 
 type Section = "TENANTS" | "MINE" | "ENQUIRIES";
 
@@ -101,6 +105,36 @@ function ManagementChats() {
 
   const [section, setSection] = useState<Section>("TENANTS");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [accessListOpen, setAccessListOpen] = useState(false);
+
+  const isOwner = useAppSelector((state) => state.account.activeAccount) === "owner";
+  const permissions = usePropertyPermissions(propertyId);
+
+  /**
+   * Whether this account may work the property's tenant conversations.
+   *
+   * <p>
+   * The owner always may, and knows it locally, so there is nothing to wait for.
+   * A manager holds it only through the chat access list, which writes the CHATS
+   * grant the server already checks.
+   *
+   * <p>
+   * <b>Waits for `isReady` rather than assuming MANAGE</b>, which is the
+   * opposite of what `usePropertyPermissions` does elsewhere. There the
+   * optimistic answer stops a whole workspace blanking on a cold start. Here it
+   * would show a manager a Tenants pill, fire a request the server refuses, and
+   * then take the pill away again. Appearing a beat late is the better of the
+   * two.
+   */
+  const canSeeTenants = isOwner || (permissions.isReady && permissions.canManage("CHATS"));
+
+  // A manager without access must not be left standing on the section that
+  // opens by default.
+  useEffect(() => {
+    if (!canSeeTenants && section === "TENANTS") {
+      setSection("MINE");
+    }
+  }, [canSeeTenants, section]);
 
   // A conversation list is the one screen where stale is indistinguishable from
   // wrong: the cached copy has yesterday's previews, yesterday's unread flags
@@ -113,7 +147,10 @@ function ManagementChats() {
     pollingInterval: THREAD_LIST_POLL_MS,
     skip: !propertyId,
   };
-  const tenants = useListTenantThreadsQuery(propertyId, fresh);
+  // Not asked at all without access. The server refuses it, and this query
+  // polls, so a refusal would repeat every few seconds for as long as the
+  // screen is open.
+  const tenants = useListTenantThreadsQuery(propertyId, { ...fresh, skip: !propertyId || !canSeeTenants });
   const mine = useListPersonalThreadsQuery(propertyId, fresh);
   const enquiries = useListEnquiryThreadsQuery(propertyId, fresh);
   const [openTeamThread] = useOpenTeamThreadMutation();
@@ -216,12 +253,14 @@ function ManagementChats() {
           onPress={() => setSection("MINE")}
           selected={section === "MINE"}
         />
-        <SectionPill
-          count={tenants.data?.filter((thread) => thread.unread).length ?? 0}
-          label="Tenants"
-          onPress={() => setSection("TENANTS")}
-          selected={section === "TENANTS"}
-        />
+        {canSeeTenants ? (
+          <SectionPill
+            count={tenants.data?.filter((thread) => thread.unread).length ?? 0}
+            label="Tenants"
+            onPress={() => setSection("TENANTS")}
+            selected={section === "TENANTS"}
+          />
+        ) : null}
         <SectionPill
           count={enquiries.data?.filter((thread) => thread.unread).length ?? 0}
           label="Enquiries"
@@ -236,7 +275,7 @@ function ManagementChats() {
         <EmptyState
           compact
           description={emptyCopy(section)}
-          icon={MessageCircle}
+          artwork={NO_CHATS_ILLUSTRATION}
           title={emptyTitle(section)}
         />
       ) : null}
@@ -271,9 +310,28 @@ function ManagementChats() {
       {/* Pinned to the screen rather than the scroll content: a list you scroll
           to the bottom of should not scroll its own "start something new" away.
           Sits outside ScreenScrollView so the tab bar does not cover it. */}
-      {section !== "ENQUIRIES" ? (
-        <NewChatButton onPress={() => setPickerOpen(true)} />
-      ) : null}
+      <FloatingActions>
+        {section !== "ENQUIRIES" ? (
+          <FloatingAction
+            accessibilityLabel="Start a new chat"
+            icon={MessageCirclePlus}
+            label="New chat"
+            onPress={() => setPickerOpen(true)}
+          />
+        ) : null}
+        {/* Under New chat, and only here. Who may read the tenant desk is a
+            question about THIS list, so it is asked beside the list rather than
+            in a settings screen two taps away. Owner only, because granting is
+            never a manager to do. */}
+        {section === "TENANTS" && isOwner ? (
+          <FloatingAction
+            accessibilityLabel="Open the chat access list"
+            icon={UsersRound}
+            label="Access list"
+            onPress={() => setAccessListOpen(true)}
+          />
+        ) : null}
+      </FloatingActions>
 
       {/* Two pickers, because the sections open two different KINDS of thread.
           Tenants opens the shared team desk; My chats opens a private
@@ -299,53 +357,91 @@ function ManagementChats() {
           roles={["OWNER", "MANAGER", "TENANT"]}
         />
       ) : null}
+
+      {accessListOpen && propertyId ? (
+        <ChatAccessListSheet onClose={() => setAccessListOpen(false)} propertyId={propertyId} />
+      ) : null}
       {selection.dialog}
     </View>
   );
 }
 
 /**
- * The floating "New chat" action.
+ * The floating actions, stacked at the bottom right.
  *
- * <p>Bottom right, clear of the tab bar and whatever gesture inset sits under
- * it. Labelled rather than a bare plus: this screen has three sections and the
- * button does something slightly different in each, so a naked icon would be
- * asking the reader to guess.
+ * <p>
+ * One container anchored to the bottom rather than a bottom offset per button:
+ * the stack grows upward from a single point, so the last child always sits in
+ * the same place and adding one can never leave two buttons overlapping.
+ *
+ * <p>
+ * `box-none` so the space between and around the pills stays scrollable. An
+ * absolute layer over the list would otherwise swallow every touch in the
+ * bottom corner of the screen.
  */
-function NewChatButton({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
+function FloatingActions({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
 
   return (
+    <View
+      pointerEvents="box-none"
+      style={{
+        alignItems: "flex-end",
+        // Clear of the tab bar by more than a hair, so the two do not read
+        // as one stacked control.
+        bottom: TAB_BAR_HEIGHT_PX + insets.bottom + spacing.lg,
+        gap: spacing.sm,
+        position: "absolute",
+        right: spacing.md,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * One floating pill.
+ *
+ * <p>Labelled rather than a bare icon: this screen has three sections and two
+ * actions, and a naked glyph in the corner would be asking the reader to guess
+ * which one it is.
+ */
+function FloatingAction({
+  accessibilityLabel,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  accessibilityLabel: string;
+  icon: (props: LucideProps) => ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+
+  return (
     <AnimatedPressable
-      accessibilityLabel="Start a new chat"
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       onPress={onPress}
       style={{
         alignItems: "center",
         backgroundColor: colors.ink,
         borderRadius: 999,
-        // Clear of the tab bar by more than a hair, so the two do not read
-        // as one stacked control.
-        bottom: TAB_BAR_HEIGHT_PX + insets.bottom + spacing.lg,
         elevation: 4,
         flexDirection: "row",
         gap: 6,
         paddingHorizontal: spacing.md,
         paddingVertical: 11,
-        position: "absolute",
-        right: spacing.md,
         shadowColor: "#000",
         shadowOffset: { height: 2, width: 0 },
         shadowOpacity: 0.16,
         shadowRadius: 8,
       }}
     >
-      {/* The tab's own bubble with a plus in it, rather than a bare plus:
-          the button sits on a list of conversations, where a lone + could as
-          easily mean a new property or a new tenant. */}
-      <MessageCirclePlus color={colors.surface} size={18} strokeWidth={2.3} />
-      <Text style={{ color: colors.surface, fontSize: 13, fontWeight: "700" }}>New chat</Text>
+      <Icon color={colors.surface} size={18} strokeWidth={2.3} />
+      <Text style={{ color: colors.surface, fontSize: 13, fontWeight: "700" }}>{label}</Text>
     </AnimatedPressable>
   );
 }
@@ -552,7 +648,7 @@ function PersonalChats() {
       {nothingAtAll ? (
         <EmptyState
           description="Conversations with a property you rent, or about an enquiry you sent, appear here."
-          icon={MessageCircle}
+          artwork={NO_CHATS_ILLUSTRATION}
           title="No conversations yet"
         />
       ) : null}
@@ -608,7 +704,16 @@ function PersonalChats() {
       {/* Only a tenant has anyone to write to. A non-tenant user is here because
           somebody answered their enquiry, and there is nobody for them to start
           a conversation with — so the button is absent rather than disabled. */}
-      {tenancy ? <NewChatButton onPress={() => setPickerOpen(true)} /> : null}
+      {tenancy ? (
+        <FloatingActions>
+          <FloatingAction
+            accessibilityLabel="Start a new chat"
+            icon={MessageCirclePlus}
+            label="New chat"
+            onPress={() => setPickerOpen(true)}
+          />
+        </FloatingActions>
+      ) : null}
 
       {pickerOpen && tenancy ? (
         <ContactPicker

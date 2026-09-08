@@ -245,6 +245,19 @@ public class PropertyModule {
         return managerAccessPolicy.levelFor(actorUserId, propertyId, resource);
     }
 
+    /**
+     * Refuses anyone but the property's owner.
+     *
+     * <p>
+     * For decisions no grant can stand in for. Verifying a tenant's payment
+     * claim is one: it is checked against the owner's own bank statement, which
+     * a manager cannot see, so a manager approving one would be confirming
+     * receipt of money into an account they have no visibility of.
+     */
+    public void ensureOwner(UUID actorUserId, UUID propertyId) {
+        managerAccessPolicy.ensureOwner(actorUserId, propertyId);
+    }
+
     public void ensureCanView(UUID actorUserId, UUID propertyId, ManagerResource resource) {
         managerAccessPolicy.ensureCanView(actorUserId, propertyId, resource);
     }

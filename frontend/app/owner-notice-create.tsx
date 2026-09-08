@@ -19,7 +19,7 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
-import { ActionButton, BackButton, ChoiceButton, FormInput, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, FormInput, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   type CreateNoticePayload,
@@ -159,8 +159,6 @@ export default function OwnerNoticeCreateScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, seededId]);
 
-
-
   function toggleDayOfWeek(day: DayOfWeekName) {
     setDaysOfWeek((current) =>
       current.includes(day)
@@ -297,7 +295,6 @@ export default function OwnerNoticeCreateScreen() {
     });
   }
 
-
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       {unsaved.dialog}
@@ -307,7 +304,6 @@ export default function OwnerNoticeCreateScreen() {
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ alignItems: "flex-start", flex: 1 }}>
-          <BackButton onPress={() => router.back()} />
         </View>
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
           {isEditingTemplate ? "Edit Recurring" : "New Notice"}
@@ -353,7 +349,6 @@ export default function OwnerNoticeCreateScreen() {
                 required
                 value={body}
               />
-
 
             </View>
           </Card>

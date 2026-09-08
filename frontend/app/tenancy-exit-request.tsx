@@ -35,10 +35,8 @@ export default function TenancyExitRequestScreen() {
   const tenancy = activeTenancyQuery.data?.tenancy;
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
         title="Exit"
         italicTail="tenancy."
         subtitle="Serve your notice period and pick your last day. Management reviews the request."

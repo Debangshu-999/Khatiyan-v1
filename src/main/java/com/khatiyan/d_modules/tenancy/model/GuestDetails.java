@@ -69,6 +69,18 @@ public record GuestDetails(
         }
     }
 
+    /**
+     * The same entry with the phone in canonical form.
+     *
+     * <p>Normalizing cannot happen in the constructor: the rule lives in the
+     * auth module and a record's compact constructor has nothing to inject. So
+     * the service normalizes and rebuilds, and every validation here runs again
+     * over the result.
+     */
+    public GuestDetails withPhone(String normalizedPhone) {
+        return new GuestDetails(name, normalizedPhone, email, address, age, gender);
+    }
+
     private static String trimmedOrNull(String value) {
         if (value == null) {
             return null;

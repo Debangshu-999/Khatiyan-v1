@@ -7,20 +7,26 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryChannelConsentResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryReceiptResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.UpdateEnquiryChannelConsentsRequest;
+import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
+import com.khatiyan.d_modules.enquiry.service.EnquiryChannelConsentService;
 import com.khatiyan.d_modules.enquiry.service.EnquiryService;
 
 import jakarta.validation.Valid;
@@ -38,12 +44,48 @@ import jakarta.validation.Valid;
 public class EnquiryController {
 
     private final EnquiryService enquiryService;
+    private final EnquiryChannelConsentService consentService;
 
-    public EnquiryController(EnquiryService enquiryService) {
+    public EnquiryController(EnquiryService enquiryService, EnquiryChannelConsentService consentService) {
         this.enquiryService = enquiryService;
+        this.consentService = consentService;
     }
 
     // Enquirer side.
+
+    /**
+     * What this person has agreed to be contacted on.
+     *
+     * <p>Not property-scoped: the grant is a standing decision about them, so
+     * the consent modal on any property profile and the account settings screen
+     * read the same endpoint.
+     */
+    @GetMapping("/enquiries/channel-consents")
+    public EnquiryChannelConsentResponse myChannelConsents(@AuthenticationPrincipal UserPrincipal user) {
+        return consentService.myConsents(user.userId());
+    }
+
+    /** Replaces the live set — the consent modal's Save, and settings toggles. */
+    @PutMapping("/enquiries/channel-consents")
+    public EnquiryChannelConsentResponse updateChannelConsents(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody UpdateEnquiryChannelConsentsRequest request) {
+        return consentService.replace(user.userId(), request);
+    }
+
+    /**
+     * Withdraws one channel.
+     *
+     * <p>Its own route rather than a PUT with one fewer entry, so the account
+     * settings master switch cannot grant anything by accident — the operation
+     * that only ever takes access away is the one that cannot give it.
+     */
+    @DeleteMapping("/enquiries/channel-consents/{channel}")
+    public EnquiryChannelConsentResponse revokeChannelConsent(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable EnquiryResponseChannel channel) {
+        return consentService.revoke(user.userId(), channel);
+    }
 
     /** Whether the profile should offer the button, or say "Enquiry sent". */
     @GetMapping("/properties/{propertyId}/enquiries/me")

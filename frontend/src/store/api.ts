@@ -39,6 +39,13 @@ export const api = createApi({
       },
     });
 
+    // Dev-only artificial latency, so every loading state can be walked
+    // without a proxy. __DEV__ is checked as well as the value, so a stray
+    // non-zero setting could never reach a release build.
+    if (__DEV__ && state.appConfig.slowNetworkMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, state.appConfig.slowNetworkMs));
+    }
+
     const result = await baseQuery(args, apiContext, extraOptions);
 
     // A token we were holding has been refused — expired, or invalidated by a
@@ -83,7 +90,14 @@ export const api = createApi({
     // Separate from "Nudge" so reading the tenant's list can refresh the badge
     // without invalidating the list it just fetched.
     "NudgeUnread",
+    "PaymentIntent",
+    // Separate from "PaymentIntent" so an owner saving their UPI address does
+    // not invalidate the claims queue, and vice versa.
+    "PaymentDetails",
     "Enquiry",
+    // Separate from "Enquiry" so the consent modal saving does not invalidate
+    // the property's enquiry list on a screen the enquirer cannot even see.
+    "EnquiryConsent",
     "Session",
     "Chat",
     // Separate from "Chat" so opening a conversation can clear the tab badge

@@ -1,7 +1,7 @@
 import { useState, type ComponentType } from "react";
-import { Modal, Text, View, type ViewStyle } from "react-native";
+import { Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { StatusIcon, statusTonePalette, type StatusTone } from "@/components/status-icon";
+import { statusTonePalette, type StatusTone } from "@/components/status-icon";
 import { ArrowLeft, X, type LucideProps } from "lucide-react-native";
 type LucideIcon = ComponentType<LucideProps>;
 
@@ -10,6 +10,7 @@ import { StatusPill } from "@/components/status-pill";
 import { tapHaptic } from "@/lib/haptics";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { useIsSkeleton } from "@/components/skeleton-boundary";
 
 /**
  * Marks a screen a manager may read but not change.
@@ -60,6 +61,7 @@ export function IconButton({
   accessibilityLabel,
   bordered,
   disabled,
+  filled,
   icon: Icon,
   onPress,
 }: {
@@ -68,6 +70,11 @@ export function IconButton({
   // ActionButtons (same border, radius and 48px height) — used when the
   // icon button sits in an action row alongside them.
   bordered?: boolean;
+  // A sunken disc behind the glyph, for an icon button that sits ON a form
+  // rather than in a header — a clear button beside a field, a close on a card.
+  // Without a ground of its own a bare glyph next to an input reads as part of
+  // the input, and there is nothing to aim at.
+  filled?: boolean;
   // Greyed and inert, matching ActionButton. Needed since view-only permissions
   // landed: an icon button carrying a destructive action has to be able to say
   // "not yours" without vanishing from a row it shares with live controls.
@@ -84,7 +91,7 @@ export function IconButton({
       onPress={disabled ? undefined : onPress}
       style={{
         alignItems: "center",
-        backgroundColor: bordered ? colors.surface : "transparent",
+        backgroundColor: bordered ? colors.surface : filled ? colors.surfaceSunken : "transparent",
         borderColor: bordered ? colors.border : "transparent",
         borderRadius: bordered ? 14 : 18,
         borderWidth: bordered ? 1 : 0,
@@ -142,6 +149,9 @@ export function ActionButton({
           : primary
             ? colors.onPrimary
             : colors.primary;
+  // A ghost screen must not carry a live-looking control. Same footprint, so
+  // the layout it reserves is exact — only the fill and the label go.
+  const isSkeleton = useIsSkeleton();
   const backgroundColor = disabled
     ? colors.neutralSoft
     : dangerFilled
@@ -167,12 +177,14 @@ export function ActionButton({
       }}
       style={{
         alignItems: "center",
-        backgroundColor,
+        backgroundColor: isSkeleton ? colors.surfaceSunken : backgroundColor,
         // A disabled button still needs an edge. Its fill sits a shade off the
         // page colour, which is invisible on its own and more so inside a
         // PinnedFooter, where the gradient washes the whole strip — the button
         // read as translucent because nothing marked where it stopped.
-        borderColor: disabled
+        borderColor: isSkeleton
+          ? "transparent"
+          : disabled
           ? colors.borderStrong
           : danger || dangerFilled
             ? colors.danger
@@ -182,7 +194,11 @@ export function ActionButton({
                 ? colors.borderStrong
                 : "transparent",
         borderCurve: "continuous",
-        borderRadius: 14,
+        // radii.md, the card's own corner. At 14 the buttons were rounder than
+        // every card they sit inside, which reads as a pill trying to be a
+        // button; squaring them up to the surface they live on makes the two
+        // look like one system.
+        borderRadius: radii.md,
         borderWidth: 1,
         flex: 1,
         flexDirection: "row",
@@ -239,6 +255,7 @@ export function RequiredMark({ required }: { required?: boolean }) {
 export function FormInput({
   autoCapitalize = "sentences",
   error,
+  icon: Icon,
   keyboardType,
   label,
   maxLength,
@@ -246,6 +263,7 @@ export function FormInput({
   onChangeText,
   placeholder,
   prefix,
+  radius = 14,
   required,
   value,
   disabled,
@@ -261,6 +279,14 @@ export function FormInput({
   disabled?: boolean;
   // Inline validation message; tints the field and label red while present.
   error?: string;
+  /**
+   * A glyph on the LABEL line, left of the text.
+   *
+   * <p>On the label rather than inside the box on purpose: the input then still
+   * spans the full width of its column, so a stack of fields shares one left
+   * margin instead of each one starting wherever its icon ended.
+   */
+  icon?: ComponentType<LucideProps>;
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
   label: string;
   maxLength?: number;
@@ -270,6 +296,14 @@ export function FormInput({
   // Fixed adornment rendered INSIDE the field before the text (e.g. "₹" for
   // rupee amounts). Single-line fields only.
   prefix?: string;
+  /**
+   * Corner radius of the box, for a form that wants a crisper edge than the
+   * app's default 14.
+   *
+   * <p>A prop rather than a new default: changing it here would restyle every
+   * form in the app, and only the screen that asked for it should move.
+   */
+  radius?: number;
   /** Marks the label with a red asterisk. The form still does the validating. */
   required?: boolean;
   value: string;
@@ -296,6 +330,18 @@ export function FormInput({
         ? colors.primary
         : colors.muted;
 
+  // Built once and rendered by both branches below, so the prefixed and plain
+  // forms of this field cannot drift into two different label treatments.
+  const labelRow = (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+      {Icon ? <Icon color={labelColor} size={15} strokeWidth={2.2} /> : null}
+      <Text style={[type.label, { color: labelColor }]}>
+        {label}
+        <RequiredMark required={required} />
+      </Text>
+    </View>
+  );
+
   const errorText = error ? (
     <Text style={[type.caption, { color: colors.danger }]}>
       {error}
@@ -307,17 +353,14 @@ export function FormInput({
     // goes borderless, so the ₹ reads as part of the field.
     return (
       <View style={{ gap: 6 }}>
-        <Text style={[type.label, { color: labelColor }]}>
-          {label}
-          <RequiredMark required={required} />
-        </Text>
+        {labelRow}
         <View
           style={{
             alignItems: "center",
             backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
             borderColor,
             borderCurve: "continuous",
-            borderRadius: 14,
+            borderRadius: radius,
             borderWidth: 1.5,
             flexDirection: "row",
             minHeight: 50,
@@ -357,10 +400,7 @@ export function FormInput({
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: labelColor }]}>
-        {label}
-        <RequiredMark required={required} />
-      </Text>
+      {labelRow}
       <AppTextInput
         editable={!disabled}
         autoCapitalize={autoCapitalize}
@@ -377,7 +417,7 @@ export function FormInput({
           backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
           borderColor,
           borderCurve: "continuous",
-          borderRadius: 14,
+          borderRadius: radius,
           borderWidth: 1.5,
           color: colors.ink,
           fontFamily: fonts.sansMedium,
@@ -433,35 +473,21 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
 }
 
 /**
- * A squared-off status bar: hairline ink border, a thick coloured rule down the
- * inside of the left edge, and an outlined circular icon.
- *
- * <p>No tinted fill. A wash of colour behind a whole block reads as decoration
- * and gets skimmed; the weight sits in the left rule and the ringed glyph
- * instead, which is what carries the state at a glance.
- *
- * <p>Square corners on purpose — these are structural notices, not cards, and
- * the rounded card language elsewhere would make them look dismissible.
- */
-/**
  * A standing notice on the screen: a precaution to read while deciding, not
  * something to dismiss.
  *
- * <p>Built to match the toast — same status mark, same thick tone-coloured rule
- * along the bottom — only larger, because this one stays put and carries a
- * title. The two are the same voice at two volumes: a toast confirms something
- * that already happened, this warns about something about to.
- *
- * <p>Replaced a left-edge stripe with an outlined glyph, which read as a
- * quotation rule rather than a warning and shared nothing with the rest of the
- * feedback language.
+ * <p>The tone is carried by one quiet rule on the left. Keeping the title and
+ * message in one text column makes longer notices easier to scan and avoids
+ * putting a decorative status icon beside every heading.
  */
 export function NoticeBar({
   message,
+  messageStyle,
   title,
   tone = "success",
 }: {
   message: string;
+  messageStyle?: TextStyle;
   title: string;
   /** "info" is the blue one: an explanation rather than a precaution. */
   tone?: "success" | "warning" | "danger" | "info";
@@ -474,30 +500,20 @@ export function NoticeBar({
   return (
     <View
       style={{
-        alignItems: "center",
         backgroundColor: colors.surface,
-        borderBottomColor: fill,
-        // Thicker than the toast: this one is read at rest rather than caught
-        // in passing, and it has more height to balance against.
-        borderBottomWidth: 5,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.md,
+        borderLeftColor: fill,
+        borderLeftWidth: 4,
+        gap: spacing.xs,
+        paddingLeft: spacing.md,
+        paddingVertical: spacing.xs,
       }}
     >
-      <StatusIcon size={28} tone={statusTone} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
-          {title}
-        </Text>
-        <Text selectable style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-          {message}
-        </Text>
-      </View>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 0.8 }}>
+        {title}
+      </Text>
+      <Text selectable style={[type.caption, { color: colors.muted, lineHeight: 18 }, messageStyle]}>
+        {message}
+      </Text>
     </View>
   );
 }

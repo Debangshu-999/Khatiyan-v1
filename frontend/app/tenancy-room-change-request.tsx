@@ -1,34 +1,40 @@
-import { useMemo, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
-import { AppTextInput } from "@/components/app-text-input";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
-import { BedDouble } from "lucide-react-native";
+import { BedDouble, CalendarDays, Check } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { MetricTile } from "@/components/metric-tile";
+import { FieldError } from "@/components/field-error";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { AlertModal } from "@/components/alert-modal";
-import { FieldError } from "@/components/field-error";
+import { SkeletonCard } from "@/components/skeleton";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { SkeletonCard } from "@/components/skeleton";
+import { NoticeBar } from "@/features/owner/owner-ui";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { TenantRoomSummary } from "@/store/services/tenancy-api";
-import { useCreateRoomChangeRequestMutation, useGetMyActiveTenancyQuery, useListMyActivePropertyRoomsQuery } from "@/store/services/tenancy-api";
+import {
+  useCreateRoomChangeRequestMutation,
+  useGetMyActiveTenancyQuery,
+  useListMyActivePropertyRoomsQuery,
+} from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const UNASSIGNED_FLOOR = "Unassigned floor";
+const CURRENT_ROOM_ERROR = "This is your current room. Select a different room.";
+const SCREEN_DESCRIPTION = "Select a floor, choose an available room and share why you want to move.";
 
 /** Every field the submit check can point at. */
 type RequestField = "reason" | "room";
 
 export default function TenancyRoomChangeRequestScreen() {
   const router = useRouter();
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const form = useFormErrors<RequestField>();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const roomsQuery = useListMyActivePropertyRoomsQuery();
@@ -62,14 +68,34 @@ export default function TenancyRoomChangeRequestScreen() {
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null;
   const selectedRoomState = selectedRoom ? roomActionState(selectedRoom, currentRoomId) : null;
   const currentCycle = useMemo(() => {
-    const cycles = [...(cyclesQuery.data ?? [])].sort((left, right) => (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0));
+    const cycles = [...(cyclesQuery.data ?? [])].sort(
+      (left, right) => (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0),
+    );
     return cycles.find((cycle) => cycle.status !== "PAID" && cycle.status !== "CANCELLED") ?? cycles[0] ?? null;
   }, [cyclesQuery.data]);
+  const effectiveDate = currentCycle?.periodEndDate ?? null;
+
+  useEffect(() => {
+    if (form.errors.room !== CURRENT_ROOM_ERROR) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      form.clearField("room");
+      setSelectedRoomId((current) => (current === currentRoomId ? null : current));
+    }, 2000);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentRoomId, form.clearField, form.errors.room]);
 
   const selectRoom = (room: TenantRoomSummary) => {
+    if (selectedRoomId === room.id) {
+      setSelectedRoomId(null);
+      form.clearField("room");
+      return;
+    }
+
     setSelectedRoomId(room.id);
-    // An unusable room is a problem with the choice just made, so it is reported
-    // on the room list immediately rather than waiting for a submit.
     const state = roomActionState(room, currentRoomId);
     if (state.kind === "error") {
       form.validate({ ...form.errors, room: state.message });
@@ -108,48 +134,41 @@ export default function TenancyRoomChangeRequestScreen() {
   return (
     <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
       <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
         title="Room change"
         italicTail="request."
-        subtitle="Select a floor, choose an available room and share why you want to move."
+        subtitle={SCREEN_DESCRIPTION}
       />
 
       {activeTenancyQuery.isFetching || roomsQuery.isFetching ? (
         <SkeletonCard />
       ) : roomsQuery.error ? (
         <EmptyState
-          icon={BedDouble}
+          icon={BedDouble}
           title="Could not load rooms"
           description="Refresh after the backend is running with the latest tenant room endpoint."
         />
       ) : !activeTenancyQuery.data ? (
         <EmptyState
-          icon={BedDouble}
+          icon={BedDouble}
           title="No current stay"
           description="Room change requests can be raised only from an active tenancy."
         />
       ) : (
-        <Card>
-          <View style={{ gap: spacing.lg }}>
-            <Card tone="sunken">
-              <Text style={[type.body, { color: colors.muted }]}>
-                Current room: {activeTenancyQuery.data.room.roomNumber}
-                {activeTenancyQuery.data.room.floor ? ` · ${formatFloor(activeTenancyQuery.data.room.floor)}` : ""}
-              </Text>
-            </Card>
+        <View style={{ gap: spacing.xl }}>
+          <CurrentStayCard room={activeTenancyQuery.data.room} />
 
-            <SelectionGroup
-              label="Floor"
-              options={floors}
-              selected={resolvedFloor}
-              onSelect={(floor) => {
-                setSelectedFloor(floor);
-                setSelectedRoomId(null);
-                form.clearField("room");
-              }}
-            />
+          <SelectionGroup
+            label="Select a floor"
+            options={floors}
+            selected={resolvedFloor}
+            onSelect={(floor) => {
+              setSelectedFloor(floor);
+              setSelectedRoomId(null);
+              form.clearField("room");
+            }}
+          />
 
+          <View style={{ gap: spacing.sm }}>
             <RoomSelectionGroup
               currentRoomId={currentRoomId}
               rooms={roomsForFloor}
@@ -157,54 +176,134 @@ export default function TenancyRoomChangeRequestScreen() {
               onSelect={selectRoom}
             />
             <FieldError message={form.errors.room} />
-
-            {selectedRoom ? <RoomDetailsCard room={selectedRoom} state={selectedRoomState} /> : null}
-
-            <CycleRuleCard cycleEndDate={currentCycle?.periodEndDate ?? null} loading={cyclesQuery.isFetching} />
-
-            <FormField
-              error={form.errors.reason}
-              label="Reason"
-              maxLength={500}
-              multiline
-              onChangeText={(value) => {
-                setReason(value);
-                form.clearField("reason");
-              }}
-              placeholder="Why do you want to change rooms?"
-              value={reason}
-            />
-
-
-            <AnimatedPressable
-              accessibilityRole="button"
-              onPress={form.blocked ? undefined : submit}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.primary,
-                borderRadius: 14,
-                justifyContent: "center",
-                minHeight: 52,
-                opacity: form.blocked || selectedRoomState?.kind === "error" || createRoomChangeState.isLoading ? 0.65 : 1,
-                padding: spacing.md,
-              }}
-            >
-              {createRoomChangeState.isLoading ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
-                  Submit room change request
-                </Text>
-              )}
-            </AnimatedPressable>
           </View>
-        </Card>
+
+          <CycleRuleCard cycleEndDate={effectiveDate} loading={cyclesQuery.isFetching} />
+
+          {selectedRoom && selectedRoomState?.kind === "success" ? <SelectedRoomCard room={selectedRoom} /> : null}
+
+          <FormField
+            error={form.errors.reason}
+            label="Reason"
+            maxLength={500}
+            multiline
+            onChangeText={(value) => {
+              setReason(value);
+              form.clearField("reason");
+            }}
+            placeholder="Why do you want to change rooms?"
+            value={reason}
+          />
+
+          <NoticeBar
+            message="Your request will be reviewed by management before approval."
+            messageStyle={{ fontFamily: fonts.sans, fontSize: 13, lineHeight: 19 }}
+            title="REQUEST REVIEW"
+            tone="warning"
+          />
+          <EffectiveDateCard cycleEndDate={effectiveDate} loading={cyclesQuery.isFetching} />
+
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={form.blocked ? undefined : submit}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.primary,
+              borderCurve: "continuous",
+              borderRadius: 14,
+              justifyContent: "center",
+              minHeight: 56,
+              opacity:
+                form.blocked || selectedRoomState?.kind === "error" || createRoomChangeState.isLoading ? 0.65 : 1,
+              padding: spacing.md,
+            }}
+          >
+            {createRoomChangeState.isLoading ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                Submit room change request
+              </Text>
+            )}
+          </AnimatedPressable>
+        </View>
       )}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
   );
 }
 
+function CurrentStayCard({ room }: { room: TenantRoomSummary }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <Card
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        overflow: "hidden",
+        padding: 0,
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          backgroundColor: colors.tabSelected,
+          bottom: 0,
+          left: 0,
+          position: "absolute",
+          top: 0,
+          width: 5,
+        }}
+      />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, padding: spacing.md }}>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.neutralSoft,
+            borderRadius: 999,
+            height: 42,
+            justifyContent: "center",
+            width: 42,
+          }}
+        >
+          <BedDouble color={colors.ink} size={21} strokeWidth={1.9} />
+        </View>
+        <View style={{ flex: 1, gap: spacing.xxs }}>
+          <Text
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.sansBold,
+              fontSize: 13,
+              letterSpacing: 0.7,
+              textTransform: "uppercase",
+            }}
+          >
+            Current stay
+          </Text>
+          <View style={{ alignItems: "baseline", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
+              Room {room.roomNumber}
+            </Text>
+            <View
+              style={{
+                backgroundColor: colors.primarySoft,
+                borderRadius: 999,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.xxs,
+              }}
+            >
+              <Text style={[type.caption, { color: colors.primaryDeep }]}>
+                {room.floor ? formatFloor(room.floor) : UNASSIGNED_FLOOR}
+              </Text>
+            </View>
+          </View>
+          <Text style={[type.caption, { color: colors.muted }]}>You are currently staying here.</Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
 
 function SelectionGroup({
   label,
@@ -217,37 +316,54 @@ function SelectionGroup({
   options: string[];
   selected: string | null;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
+  const { width } = useWindowDimensions();
+  const optionWidth = Math.max(
+    84,
+    Math.min(116, (width - spacing.lg * 2 - spacing.sm * 2) / 3),
+  );
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        {label}
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+    <View style={{ gap: spacing.md }}>
+      <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18 }}>{label}</Text>
+      <ScrollView
+        horizontal
+        contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={optionWidth + spacing.sm}
+      >
         {options.map((option) => {
           const active = selected === option;
           return (
             <AnimatedPressable
               key={option}
               accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               onPress={() => onSelect(option)}
               style={{
-                backgroundColor: active ? colors.primarySoft : colors.surface,
-                borderColor: active ? colors.primary : colors.border,
+                alignItems: "center",
+                backgroundColor: active ? colors.tabSelected : colors.surface,
+                borderColor: active ? colors.tabSelected : colors.borderStrong,
+                borderCurve: "continuous",
                 borderRadius: 999,
                 borderWidth: 1,
+                justifyContent: "center",
+                minHeight: 48,
                 paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
+                width: optionWidth,
               }}
             >
-              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
+              <Text
+                numberOfLines={1}
+                style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}
+              >
                 {option === UNASSIGNED_FLOOR ? option : formatFloor(option)}
               </Text>
             </AnimatedPressable>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -266,35 +382,70 @@ function RoomSelectionGroup({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        Rooms available on this floor
-      </Text>
+    <View style={{ gap: spacing.md }}>
+      <View style={{ gap: spacing.xxs }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18 }}>Choose a new room</Text>
+        <Text style={[type.caption, { color: colors.muted }]}>Available rooms on this floor</Text>
+      </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         {rooms.map((room) => {
           const active = selectedRoomId === room.id;
           const current = room.id === currentRoomId;
-          const available = roomActionState(room, currentRoomId).kind === "success";
+          const state = roomActionState(room, currentRoomId);
+          const available = state.kind === "success";
           return (
             <AnimatedPressable
               key={room.id}
               accessibilityRole="button"
               onPress={() => onSelect(room)}
               style={{
-                backgroundColor: active ? colors.primarySoft : colors.surface,
-                borderColor: active ? colors.primary : colors.border,
-                borderRadius: 14,
+                backgroundColor: current ? colors.surfaceSunken : active ? colors.primarySoft : colors.surface,
+                borderColor: colors.border,
+                borderCurve: "continuous",
+                borderRadius: 12,
                 borderWidth: 1,
-                minWidth: 92,
-                padding: spacing.sm,
+                flexBasis: "47%",
+                maxWidth: "48.5%",
+                minHeight: 94,
+                padding: spacing.md,
+                shadowColor: colors.shadow,
+                shadowOffset: { height: 3, width: 0 },
+                shadowOpacity: current ? 0 : 0.65,
+                shadowRadius: 8,
               }}
             >
-              <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
-                {room.roomNumber}
-              </Text>
-              <Text style={[type.caption, { color: current ? colors.danger : available ? colors.primary : colors.kicker, fontWeight: "800" }]}>
-                {current ? "Current" : `${room.availableVacancies}/${room.capacity} free`}
-              </Text>
+              <View style={{ alignItems: "center", flexDirection: "row", flex: 1, justifyContent: "space-between" }}>
+                <View style={{ flex: 1, gap: spacing.xxs }}>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>{room.roomNumber}</Text>
+                  <Text
+                    style={[
+                      type.caption,
+                      {
+                        color: current ? colors.danger : available ? colors.primary : colors.muted,
+                        fontFamily: fonts.sansBold,
+                      },
+                    ]}
+                  >
+                    {current ? "Current room" : `${room.availableVacancies}/${room.capacity} free`}
+                  </Text>
+                </View>
+                {active && available ? (
+                  <View
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: colors.jade,
+                      borderRadius: 999,
+                      height: 28,
+                      justifyContent: "center",
+                      width: 28,
+                    }}
+                  >
+                    <Check color={colors.onPrimary} size={16} strokeWidth={2.8} />
+                  </View>
+                ) : (
+                  <BedDouble color={current ? colors.kicker : colors.inkSoft} size={25} strokeWidth={1.8} />
+                )}
+              </View>
             </AnimatedPressable>
           );
         })}
@@ -303,67 +454,75 @@ function RoomSelectionGroup({
   );
 }
 
-function RoomDetailsCard({ room, state }: { room: TenantRoomSummary; state: ReturnType<typeof roomActionState> | null }) {
-  const { colors, type } = useTheme();
-  const statusColor = state?.kind === "success" ? colors.primary : colors.danger;
-
-  return (
-    <Card tone="sunken">
-      <View style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MetricTile label="Occupancy" value={`${room.occupiedCount}/${room.capacity}`} hint={`${room.availableVacancies} vacancy${room.availableVacancies === 1 ? "" : "ies"}`} />
-          <MetricTile label="Rent" value={formatMoney(room.baseRentPaise)} hint="Base rent" tone="primary" />
-        </View>
-        <DetailLine label="Room type" value={humanizeToken(room.roomType)} />
-        <DetailLine label="Conditioning" value={humanizeToken(room.conditioning)} />
-        <DetailLine label="Status" value={humanizeToken(room.status)} />
-        <View style={{ borderColor: statusColor, borderRadius: 14, borderWidth: 1, padding: spacing.md }}>
-          <Text style={[type.eyebrow, { color: statusColor, textAlign: "center" }]}>
-            {state?.label ?? "Select a room"}
-          </Text>
-          {state?.message ? (
-            <Text style={[type.caption, { color: colors.muted, marginTop: spacing.xs, textAlign: "center" }]}>
-              {state.message}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </Card>
-  );
-}
-
 function CycleRuleCard({ cycleEndDate, loading }: { cycleEndDate: string | null; loading: boolean }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts } = useTheme();
+  const dateLabel = effectiveDateLabel(cycleEndDate, loading);
 
   return (
-    <Card tone="sunken">
-      <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          Execution rule
-        </Text>
-        <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
-          Effective on {loading ? "current cycle end" : cycleEndDate ? formatDate(cycleEndDate) : "current billing cycle end"}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
-          The request can be raised and approved anytime, but the room change executes on the last day of the current billing cycle before the next cycle is generated.
-        </Text>
+    <Card tone="sunken" style={{ backgroundColor: colors.warningSoft, borderWidth: 0 }}>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <CalendarDays color={colors.ink} size={25} strokeWidth={2} />
+        <View style={{ flex: 1, gap: spacing.sm }}>
+          <Text
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.sansBold,
+              fontSize: 14,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+            }}
+          >
+            Execution rule
+          </Text>
+          <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 16 }}>
+            Effective on {dateLabel}
+          </Text>
+          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19 }}>
+            The request can be raised and approved anytime, but the room change executes on the last day of the
+            current billing cycle before the next cycle is generated.
+          </Text>
+        </View>
       </View>
     </Card>
   );
 }
 
-function DetailLine({ label, value }: { label: string; value: string }) {
-  const { colors, type } = useTheme();
+function SelectedRoomCard({ room }: { room: TenantRoomSummary }) {
+  const { colors, fonts, type } = useTheme();
 
   return (
-    <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-        {label}
-      </Text>
-      <Text style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800", textAlign: "right" }]}>
-        {value}
-      </Text>
-    </View>
+    <Card tone="raised" style={{ borderColor: colors.borderStrong }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.lg }}>
+        <BedDouble color={colors.inkSoft} size={31} strokeWidth={1.8} />
+        <View style={{ flex: 1, gap: spacing.xxs }}>
+          <Text style={[type.eyebrow, { color: colors.muted }]}>Selected room</Text>
+          <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 19 }}>
+            Room {room.roomNumber} · <Text style={{ color: colors.primary }}>{room.availableVacancies}/{room.capacity} free</Text>
+          </Text>
+          <Text style={[type.body, { color: colors.muted }]}>
+            {room.floor ? formatFloor(room.floor) : UNASSIGNED_FLOOR}
+          </Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function EffectiveDateCard({ cycleEndDate, loading }: { cycleEndDate: string | null; loading: boolean }) {
+  const { colors, fonts, type } = useTheme();
+  const dateLabel = effectiveDateLabel(cycleEndDate, loading);
+
+  return (
+    <Card tone="raised" style={{ borderColor: colors.border }}>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <CalendarDays color={colors.inkSoft} size={25} strokeWidth={2} />
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.muted }]}>Effective date</Text>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>Effective on {dateLabel}</Text>
+          <Text style={[type.caption, { color: colors.muted }]}>If approved, your room change will take effect on this date.</Text>
+        </View>
+      </View>
+    </Card>
   );
 }
 
@@ -384,16 +543,14 @@ function FormField({
   placeholder: string;
   value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
 
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          {label}
-        </Text>
+        <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18 }}>{label}</Text>
         {maxLength ? (
-          <Text style={[type.caption, { color: colors.kicker }]}>
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13 }}>
             {value.length}/{maxLength}
           </Text>
         ) : null}
@@ -406,14 +563,15 @@ function FormField({
         placeholderTextColor={colors.kicker}
         style={{
           backgroundColor: colors.surface,
-          borderColor: error ? colors.danger : colors.border,
-          borderRadius: 14,
+          borderColor: error ? colors.danger : colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 12,
           borderWidth: error ? 1.5 : 1,
           color: colors.ink,
           fontFamily: fonts.sans,
           fontSize: 15,
-          minHeight: multiline ? 130 : 54,
-          padding: spacing.md,
+          minHeight: multiline ? 150 : 54,
+          padding: spacing.lg,
           textAlignVertical: multiline ? "top" : "center",
         }}
         value={value}
@@ -425,22 +583,48 @@ function FormField({
 
 function roomActionState(room: TenantRoomSummary, currentRoomId?: string) {
   if (room.id === currentRoomId) {
-    return { kind: "error" as const, label: "Not available for action", message: "This is your current room. Select a different room." };
+    return {
+      kind: "error" as const,
+      label: "Not available for action",
+      message: CURRENT_ROOM_ERROR,
+    };
   }
   if (!room.active) {
     return { kind: "error" as const, label: "Not available for action", message: "This room is not active." };
   }
   if (room.status === "MAINTENANCE") {
-    return { kind: "error" as const, label: "Not available for action", message: "This room is under maintenance." };
+    return {
+      kind: "error" as const,
+      label: "Not available for action",
+      message: "This room is under maintenance.",
+    };
   }
   if (room.availableVacancies <= 0) {
-    return { kind: "error" as const, label: "Not available for action", message: "This room has no vacancy right now." };
+    return {
+      kind: "error" as const,
+      label: "Not available for action",
+      message: "This room has no vacancy right now.",
+    };
   }
-  return { kind: "success" as const, label: "Available for action", message: "This room can be requested for transfer review." };
+  return {
+    kind: "success" as const,
+    label: "Available for action",
+    message: "This room can be requested for transfer review.",
+  };
+}
+
+function effectiveDateLabel(cycleEndDate: string | null, loading: boolean) {
+  if (loading) {
+    return "current cycle end";
+  }
+  return cycleEndDate ? formatDate(cycleEndDate) : "current billing cycle end";
 }
 
 function compareRooms(left: TenantRoomSummary, right: TenantRoomSummary) {
-  return compareFloorLabels(floorKey(left.floor), floorKey(right.floor)) || left.roomNumber.localeCompare(right.roomNumber, undefined, { numeric: true });
+  return (
+    compareFloorLabels(floorKey(left.floor), floorKey(right.floor)) ||
+    left.roomNumber.localeCompare(right.roomNumber, undefined, { numeric: true })
+  );
 }
 
 function floorKey(floor: string | null) {
@@ -459,14 +643,8 @@ function formatFloor(value: string) {
   return trimmed.toLowerCase().startsWith("floor") ? trimmed : `Floor ${trimmed}`;
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-IN", { currency: "INR", maximumFractionDigits: value % 100 === 0 ? 0 : 2, style: "currency" }).format(value / 100);
-}
-
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
-}
-
-function humanizeToken(value: string) {
-  return value.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
+    new Date(value),
+  );
 }

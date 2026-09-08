@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
 
@@ -11,6 +11,7 @@ import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
@@ -31,6 +32,8 @@ import {
 } from "@/store/services/property-board-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NO_CATEGORY_ILLUSTRATION = require("../assets/workspace/No-Category_512x512.png");
 
 export default function OwnerBoardScreen() {
   const router = useGuardedRouter();
@@ -57,11 +60,9 @@ export default function OwnerBoardScreen() {
   const [pendingDelete, setPendingDelete] = useState<{ kind: "category" | "item"; id: string; label: string } | null>(null);
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
         badge={!canManageBoard ? <ViewOnlyChip /> : null}
-        eyebrow="Property"
-        onBack={() => router.back()}
         title="Property"
         italicTail="board."
         subtitle="Categories and items shown on this property's board."
@@ -96,8 +97,7 @@ export default function OwnerBoardScreen() {
 
           {categories.length === 0 ? (
             <EmptyState
-              icon={ClipboardList}
-
+              artwork={NO_CATEGORY_ILLUSTRATION}
               title="No categories yet"
               description="Create a category (e.g. Rules, Timings, Contacts) before adding board items."
             />
@@ -239,6 +239,7 @@ function BoardItemCard({
 
 function CategoryModal({ category, onClose, propertyId }: { category: BoardCategory | null; onClose: () => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const [name, setName] = useState(category?.name ?? "");
   const [order, setOrder] = useState(category ? String(category.displayOrder) : "");
   const form = useFormErrors<"name">();
@@ -271,9 +272,9 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
@@ -318,6 +319,7 @@ function ItemModal({
   propertyId: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? initialCategoryId ?? categories[0]?.id ?? "");
   const [title, setTitle] = useState(item?.title ?? "");
   const [body, setBody] = useState(item?.body ?? "");
@@ -357,9 +359,9 @@ function ItemModal({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}

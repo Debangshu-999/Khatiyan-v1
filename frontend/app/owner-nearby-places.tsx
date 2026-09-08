@@ -10,6 +10,7 @@ import { useAvailableAccounts } from "@/features/account/accounts";
 import { ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
+import { spacing } from "@/theme/spacing";
 
 export default function OwnerNearbyPlacesScreen() {
   const router = useGuardedRouter();
@@ -20,11 +21,9 @@ export default function OwnerNearbyPlacesScreen() {
   const canManagePlaces = canManageResource("NEARBY_PLACES");
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        onBack={() => router.back()}
         badge={!canManagePlaces ? <ViewOnlyChip /> : null}
-        eyebrow="Property"
         title="Nearby"
         italicTail="places."
         subtitle={

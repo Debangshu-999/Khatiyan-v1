@@ -12,7 +12,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SegmentedChoice } from "@/components/segmented-choice";
-import { SkeletonCard } from "@/components/skeleton";
+import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -306,17 +306,18 @@ export default function OwnerEndTenancyScreen() {
 
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
-      <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
+      <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
         <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
           title="End"
           italicTail="tenancy."
           subtitle={tenancy ? `Check out ${tenancy.tenantName?.trim() || "the tenant"} and settle up.` : "Ending a tenancy."}
         />
 
         {loading ? (
-          <SkeletonCard />
+          <>
+            <SkeletonCard />
+            <SkeletonList rows={2} />
+          </>
         ) : !tenancy ? (
           <EmptyState
             icon={DoorOpen}

@@ -401,12 +401,20 @@ public class NotificationService {
     }
 
     /**
-     * Archives one notification for the authenticated user.
+     * Archives one notification for the authenticated user, and marks it read.
+     *
+     * <p>
+     * Filing something away is reading it. Left unread, an archived alert kept
+     * feeding the bell's badge from a queue the reader can no longer see, so
+     * the only way to clear the count was to un-archive and read it — and the
+     * badge is now the ONLY unread indicator the app has.
      */
     @Transactional
     public void archive(UUID userId, UUID recipientId) {
+        Instant now = Instant.now();
         NotificationRecipient recipient = getUserRecipient(userId, recipientId);
-        recipient.archive(Instant.now());
+        recipient.markRead(now);
+        recipient.archive(now);
 
         log.info("Notification archived recipientId={} userId={}", recipientId, userId);
     }

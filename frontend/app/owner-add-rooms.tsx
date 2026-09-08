@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useHardwareBack } from "@/components/use-hardware-back";
 import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronRight, Info, ListPlus, Plus, Rows3 } from "lucide-react-native";
@@ -248,22 +249,33 @@ export default function OwnerAddRoomsScreen() {
     }
   }
 
+
+  // The device back button steps out of a chosen path first, so picking the
+  // wrong one is one press to undo rather than a trip out of the screen and in
+  // again. Leaving entirely still goes through the unsaved guard. Without this
+  // the press unmounted the whole screen from inside a path.
+  useHardwareBack(
+    useCallback(() => {
+      if (path) {
+        setPath(null);
+        return true;
+      }
+      unsaved.guard(() => router.back());
+      return true;
+    }, [path, router, unsaved]),
+  );
+
   return (
     <>
       <ScreenScrollView
         safeAreaEdges={["top"]}
         // A gutter less than the full clearance: that constant assumes a screen
         // ending in a card, and this one ends in a row of chips.
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg }}
         surface={colors.formSurface}
       >
         <ScreenHeader
-          eyebrow="Rooms"
           italicTail={bulk ? "rooms." : "room."}
-          // Back steps out of a chosen path first, so picking the wrong one is
-          // one tap to undo rather than a trip out of the screen and in again.
-          // Leaving the screen entirely goes through the guard.
-          onBack={() => (path ? setPath(null) : unsaved.guard(() => router.back()))}
           subtitle={
             choosing
               ? "Two ways to add several at once. They are different enough to be worth choosing between."

@@ -1,23 +1,23 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarClock, Clock, Edit3, Info, Megaphone, Repeat2, X } from "lucide-react-native";
+import { Clock, Edit3, Info, Megaphone, Repeat2, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { CollapsibleFilterBubbles } from "@/components/filter-bubbles";
+import { CountTabPills } from "@/components/filter-bubbles";
 import { InfoModal } from "@/components/info-modal";
-import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import {
   ActionButton,
   FormInput,
@@ -38,6 +38,8 @@ import {
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NOTICE_EMPTY_ILLUSTRATION = require("../assets/workspace/No-Notice_512x512.png");
 
 type UpcomingFilter = "all" | "normal" | "recurring";
 
@@ -89,10 +91,8 @@ export default function OwnerUpcomingNoticesScreen() {
   });
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
-        eyebrow="Notices"
-        onBack={() => router.back()}
         badge={!canManageNotices ? <ViewOnlyChip /> : null}
         italicTail="soon."
         subtitle={
@@ -116,7 +116,8 @@ export default function OwnerUpcomingNoticesScreen() {
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          description="Upcoming notices are scoped to the active owner property."
+          description="Upcoming notices are scoped to the active owner property."
+
           icon={Megaphone}
           title="No property selected"
         />
@@ -124,15 +125,17 @@ export default function OwnerUpcomingNoticesScreen() {
 
       {selectedProperty ? (
         <>
-          <Section title={`${notices.length} ${notices.length === 1 ? "notice" : "notices"}`}>
-            {/* Under the heading rule, not beside the count — see owner-notices. */}
-            <CollapsibleFilterBubbles
-              align="start"
+          {/* No heading. It read "3 notices", which was the count of whatever
+              filter happened to be selected — so the number moved when a tab
+              was tapped and said nothing about the other two. The tabs carry
+              their own counts now, which is the whole picture on one line. */}
+          <View style={{ gap: spacing.md }}>
+            <CountTabPills
               onChange={setFilter}
               options={[
-                { label: "All", value: "all" as const },
-                { label: "Scheduled", value: "normal" as const },
-                { label: "Recurring", value: "recurring" as const },
+                { count: upcoming.length, label: "All", value: "all" as const },
+                { count: upcoming.filter((notice) => notice.recurringNoticeId === null).length, label: "Scheduled", value: "normal" as const },
+                { count: upcoming.filter((notice) => notice.recurringNoticeId !== null).length, label: "Recurring", value: "recurring" as const },
               ]}
               value={filter}
             />
@@ -151,6 +154,7 @@ export default function OwnerUpcomingNoticesScreen() {
               ))
             ) : (
               <EmptyState
+                artwork={NOTICE_EMPTY_ILLUSTRATION}
                 description={
                   filter === "recurring"
                     ? "No recurring notice is due in the next three hours."
@@ -158,11 +162,10 @@ export default function OwnerUpcomingNoticesScreen() {
                       ? "No scheduled notice is due in the next three hours."
                       : "Nothing upcoming. Notices appear here before tenants see them."
                 }
-                icon={CalendarClock}
                 title="All clear"
               />
             )}
-          </Section>
+          </View>
         </>
       ) : null}
 
@@ -276,6 +279,7 @@ function DelaySheet({
   onDelayed: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const [picked, setPicked] = useState<Date>(new Date(notice.visibleFrom));
   const [pickerOpen, setPickerOpen] = useState(false);
   // "time" is the only thing on this sheet, so a bad choice is a field error
@@ -326,7 +330,7 @@ function DelaySheet({
       {/* Same shell as AddClauseSheet: the sheet needs maxHeight plus a
           shrinkable ScrollView or its content runs off the bottom of the
           screen, and Expo 56 Android needs the KAV to lift it. */}
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
@@ -335,6 +339,7 @@ function DelaySheet({
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              marginBottom: keyboardInset,
               maxHeight: "92%",
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,

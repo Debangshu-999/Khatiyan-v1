@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import type { LucideProps } from "lucide-react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { CLIPBOARD_ANNOUNCES_ITSELF } from "@/lib/clipboard";
 import {
   ArrowLeft,
   Copy,
@@ -63,16 +64,6 @@ import { useTheme } from "@/theme/use-theme";
  * <p>Polls while it is open. The list is authoritative from the server; the
  * only local state is the draft and whichever message is being deleted.
  */
-/**
- * Whether the system already says "Copied" for us.
- *
- * <p>Android 13 shows its own clipboard confirmation whenever an app writes to
- * the clipboard, so a toast on top of it is the same word twice. Android 12 and
- * below show nothing at all, and those devices still need to be told — this is
- * a version gate rather than a straight removal for that reason.
- */
-const CLIPBOARD_ANNOUNCES_ITSELF = Platform.OS === "android" && Number(Platform.Version) >= 33;
-
 export default function ChatThreadScreen() {
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();

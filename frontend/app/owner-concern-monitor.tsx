@@ -12,10 +12,12 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, humanizeToken } from "@/features/owner/owner-ui";
 import { type ConcernSummary, useListPropertyConcernMonitorQuery } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 export default function OwnerConcernMonitorScreen() {
   const router = useGuardedRouter();
@@ -44,9 +46,8 @@ export default function OwnerConcernMonitorScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Concerns"
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <ScreenHeader
         title="Concern"
         italicTail="monitor."
         subtitle="Track assigned concerns and resolved concerns still inside the reopen window."
@@ -82,7 +83,7 @@ export default function OwnerConcernMonitorScreen() {
               </View>
             ) : (
               <EmptyState
-                icon={Activity}
+                artwork={CONCERN_EMPTY_ILLUSTRATION}
                 title="No concerns being monitored"
                 description="Assigned active concerns and resolved concerns in the reopen window will appear here."
               />

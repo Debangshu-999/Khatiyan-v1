@@ -42,6 +42,12 @@ export type EnquiryDetail = {
   /** Null unless registered and verified. */
   enquirerEmail: string | null;
   reachableChannels: ReachableChannel[];
+  /**
+   * The conversation this enquiry was answered in, if it was answered in one.
+   *
+   * <p>Null for phone and email replies, which happen outside the app entirely.
+   */
+  chatThreadId: string | null;
   /** The action log — every response, newest first. Empty while still open. */
   responses: EnquiryResponseView[];
 };
@@ -62,6 +68,38 @@ export type MyEnquiry = {
   blockedReason: string | null;
   openEnquiryId: string | null;
   openEnquiryAt: string | null;
+};
+
+/** One row of the consent modal's channel selector. */
+export type EnquiryChannelOption = {
+  channel: EnquiryResponseChannel;
+  /** The number or address this would share. Null when unavailable, and for chat. */
+  target: string | null;
+  /** False when there is nothing to share yet — an absent or unverified email. */
+  available: boolean;
+  granted: boolean;
+  /**
+   * True for a channel that is not the enquirer's to decide about.
+   *
+   * <p>Only CHAT. It shares nothing, so there is nothing to agree to and nothing
+   * to withdraw — it is drawn ticked and does not respond to a press. Never send
+   * a locked channel back in an update, the server refuses it.
+   */
+  locked: boolean;
+};
+
+/**
+ * What this person has agreed a property may contact them on.
+ *
+ * <p>Not property-scoped. The grant is a standing decision about them, so the
+ * modal on any profile and the account settings section read the same thing.
+ */
+export type EnquiryChannelConsents = {
+  channels: EnquiryChannelOption[];
+  emailChannelState: EmailChannelState;
+  /** What the enquire button checks to decide whether to open the modal. */
+  anyGranted: boolean;
+  termsVersion: string;
 };
 
 export const ENQUIRY_MESSAGE_MAX_LENGTH = 500;
@@ -104,6 +142,72 @@ export const enquiryApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Enquiry"],
     }),
+
+    getMyEnquiryChannelConsents: builder.query<EnquiryChannelConsents, void>({
+      query: () => "/api/v1/enquiries/channel-consents",
+      providesTags: ["EnquiryConsent"],
+    }),
+
+    /**
+     * Sends the whole set, not a delta.
+     *
+     * <p>`agreed` is the tick, and the server only demands it when the request
+     * ADDS a channel — so a revoke does not have to claim an agreement it is
+     * not making.
+     */
+    updateEnquiryChannelConsents: builder.mutation<
+      EnquiryChannelConsents,
+      { channels: EnquiryResponseChannel[]; agreed: boolean }
+    >({
+      query: ({ agreed, channels }) => ({
+        body: { agreed, channels },
+        method: "PUT",
+        url: "/api/v1/enquiries/channel-consents",
+      }),
+      /**
+       * Patched into the cache before the request goes out.
+       *
+       * <p>Without this a switch flickers on, off, then on again. A Switch is
+       * controlled by `granted`, so tapping it paints the new position, the very
+       * next render puts back the server's still-old value, and the refetch then
+       * paints it a third time. Three states for one decision.
+       *
+       * <p>Undone on failure, so a refused save snaps back rather than leaving a
+       * switch claiming a grant the server does not hold.
+       */
+      async onQueryStarted({ channels }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          enquiryApi.util.updateQueryData("getMyEnquiryChannelConsents", undefined, (draft) => {
+            for (const option of draft.channels) {
+              // Chat is never in the requested set and is always on. Reading it
+              // off `channels` would switch it off on every save.
+              if (option.locked) {
+                continue;
+              }
+              option.granted = option.available && channels.includes(option.channel);
+            }
+            draft.anyGranted = draft.channels.some((option) => option.granted && !option.locked);
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      // Enquiry too: the set decides what a NEW enquiry will carry, and the
+      // enquire button's caption reads from it.
+      invalidatesTags: ["EnquiryConsent", "Enquiry"],
+    }),
+
+    /** The account settings master switch. Can only ever take access away. */
+    revokeEnquiryChannelConsent: builder.mutation<EnquiryChannelConsents, EnquiryResponseChannel>({
+      query: (channel) => ({
+        method: "DELETE",
+        url: `/api/v1/enquiries/channel-consents/${channel}`,
+      }),
+      invalidatesTags: ["EnquiryConsent", "Enquiry"],
+    }),
   }),
   // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
   // sees endpoints it already registered and logs an error for each one — two
@@ -114,12 +218,23 @@ export const enquiryApi = api.injectEndpoints({
 });
 
 export const {
+  useGetMyEnquiryChannelConsentsQuery,
   useGetMyEnquiryForPropertyQuery,
   useGetOpenEnquiryCountQuery,
   useListPropertyEnquiriesQuery,
   useRaiseEnquiryMutation,
   useRespondToEnquiryMutation,
+  useRevokeEnquiryChannelConsentMutation,
+  useUpdateEnquiryChannelConsentsMutation,
 } = enquiryApi;
+
+/** "Phone call" / "Email", for the consent modal and the settings rows. */
+export function describeChannelName(channel: EnquiryResponseChannel) {
+  if (channel === "EMAIL") {
+    return "Email";
+  }
+  return channel === "CHAT" ? "Chat" : "Phone call";
+}
 
 /** "Callback on +91…" / "Email to anita@example.com", for the dialog bullets. */
 export function describeReachableChannel(channel: ReachableChannel) {
@@ -138,4 +253,19 @@ export function describeEmailChannelGap(state: EmailChannelState) {
   return state === "UNVERIFIED"
     ? "Verify your email to enable that channel for a revert back."
     : "Register and verify your email to enable that channel for a revert back.";
+}
+
+/**
+ * The same gap, as a row subtitle rather than a footnote.
+ *
+ * <p>The long form was written to sit under a dialog as a closing note. Dropped
+ * into a channel row it wrapped to two lines and pushed the row taller than the
+ * two beside it, and "for a revert back" reads as filler where the label above
+ * already says Email.
+ */
+export function describeEmailChannelGapShort(state: EmailChannelState) {
+  if (state === "AVAILABLE") {
+    return null;
+  }
+  return state === "UNVERIFIED" ? "Verify your email to use this" : "Add a verified email to use this";
 }

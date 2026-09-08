@@ -34,8 +34,10 @@ export function SetupOtpStep({
   onVerifyOtp: () => void;
   onEditPhone: () => void;
   // True when the person got here from the provisioned-account door. Only they
-  // can be waiting on a code that will never come, because that request stays
-  // silent when the number has no account — everyone else was told outright.
+  // can be waiting on a code that will never come: that request answers 202 for
+  // every number, whether it has no account, an account already set up, or one
+  // genuinely waiting. Nothing on this screen can tell them which, which is the
+  // point — so the line below points them at a person instead.
   activating?: boolean;
   otpError?: string;
   onBackToLogin: () => void;

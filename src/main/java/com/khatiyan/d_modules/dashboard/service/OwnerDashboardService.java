@@ -141,6 +141,7 @@ public class OwnerDashboardService {
         MoneySnapshot money = buildMoney(billing, cycles, activeTenancies, prevMonthStart, monthStart);
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
         long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
+        var paymentIntents = billingModule.getPaymentIntentDigestForDashboard(propertyId);
         AttentionSummary attention = buildAttention(
                 billing, concern, activeTenancies, exitRequests, roomChangeRequests, today, pendingDepositSettlements,
                 enquiryModule.countNewForProperty(propertyId),
@@ -169,6 +170,7 @@ public class OwnerDashboardService {
                 attention,
                 budget,
                 concernQueue,
+                paymentIntents,
                 recentActivity,
                 monthlyTrends,
                 Instant.now());

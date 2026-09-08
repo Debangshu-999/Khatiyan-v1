@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 import { View } from "react-native";
 
 import { KeyRound, Mail, ShieldCheck, UserPlus } from "lucide-react-native";
@@ -39,23 +39,17 @@ export function LoginStep({
 }) {
   return (
     <>
-      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} hideErrorText />
       {/* The alternative to the phone sits directly under the phone field: it is
           a choice about HOW you identify yourself, so it belongs next to the
-          identifier, not stranded among the submit actions.
-
-          The validation line shares this row rather than sitting under the field.
-          Under it, appearing on a failed submit pushed the chip — and everything
-          below it — down a line, so the form jumped at the exact moment the
-          reader was looking for what went wrong. These messages are short enough
-          to sit beside the chip without meeting it. */}
-      <FieldRowWithChip error={phoneError}>
+          identifier, not stranded among the submit actions. */}
+      <FieldWithError error={phoneError}>
+        <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} hideErrorText />
         <AuthChipLink align="auto" icon={Mail} label="Use verified email" onPress={onEmailLogin} />
-      </FieldRowWithChip>
-      <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry error={pinError} hideErrorText />
-      <FieldRowWithChip error={pinError}>
+      </FieldWithError>
+      <FieldWithError error={pinError}>
+        <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry error={pinError} hideErrorText />
         <AuthChipLink align="auto" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
-      </FieldRowWithChip>
+      </FieldWithError>
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
         {/* Both are ways OUT of this form, so they sit together on one row
@@ -70,19 +64,37 @@ export function LoginStep({
 }
 
 /**
- * One row holding a field's validation line and the chip link that follows it.
+ * A field, its validation line, and the chip link that belongs to it.
  *
- * <p>The chip keeps its place whether or not there is an error, so a failed
- * submit changes the text on screen without moving anything. The message takes
- * the remaining width and wraps rather than shoving the chip off the edge.
+ * <p>
+ * <b>The error and the chip share one row, tucked close under the input.</b>
+ * The row's height comes from the chip, which is taller than a line of text, so
+ * the message appears into space that already exists and nothing on the screen
+ * moves — not the chip, not the buttons below it. That matters at exactly the
+ * moment it happens: a failed submit is when the reader is looking for what
+ * went wrong, and a form that jumps then is a form that hides its own answer.
+ *
+ * <p>
+ * The gap is 6 rather than the form's usual 14, which is what puts the message
+ * under the box it belongs to instead of floating between two fields.
+ *
+ * <p>
+ * The message takes the remaining width and wraps rather than pushing the chip
+ * off the edge. All four this screen can produce fit one line at any phone
+ * width.
  */
-function FieldRowWithChip({ children, error }: { children: ReactNode; error?: string }) {
+function FieldWithError({ children, error }: { children: ReactNode; error?: string }) {
+  const [field, chip] = Children.toArray(children);
+
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-      <View style={{ flex: 1 }}>
-        <FieldError message={error} />
+    <View style={{ gap: spacing.xs }}>
+      {field}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <View style={{ flex: 1 }}>
+          <FieldError message={error} />
+        </View>
+        {chip}
       </View>
-      {children}
     </View>
   );
 }

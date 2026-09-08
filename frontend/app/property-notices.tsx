@@ -15,6 +15,8 @@ import { useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NOTICE_EMPTY_ILLUSTRATION = require("../assets/workspace/No-Notice_512x512.png");
+
 export default function PropertyNoticesScreen() {
   const { colors, type } = useTheme();
   const router = useGuardedRouter();
@@ -22,10 +24,8 @@ export default function PropertyNoticesScreen() {
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority);
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Property"
-        onBack={() => router.back()}
         title="Notices,"
         italicTail="published."
         subtitle="Active announcements for your current property, including notices generated from recurring schedules."
@@ -38,7 +38,7 @@ export default function PropertyNoticesScreen() {
           notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)
         ) : (
           <EmptyState
-            icon={Bell}
+            artwork={NOTICE_EMPTY_ILLUSTRATION}
             title="No active notices"
             description="Published property notices will appear here when they are visible to tenants."
           />

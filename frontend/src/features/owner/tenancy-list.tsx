@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { BedDouble, CalendarDays, LogOut, UserRound, UserRoundMinus } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, UserRound, UserRoundMinus, XCircle } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -56,18 +56,11 @@ export function TenancyListTabs({
 }
 
 /**
- * The card's only navigation: the tenant's name, opening their profile.
- *
- * <p>The name and the glyph are one target rather than the glyph alone. A 19px
- * icon is a small thing to hit on a phone, and the name beside it is the thing
- * a person is actually reaching for — so the row is the button and the glyph
- * is what marks it as one.
- *
- * <p>A bare solid glyph: no ring, no second icon. Composing a person with a
- * small eye inside a 32px ring put two marks in a space that fits one; they
- * overlapped and read as a smudge at the size the card actually renders.
+ * The tenant identity block is the card's explicit navigation target. Keeping
+ * the profile action named avoids making the destructive card surface itself
+ * tappable, while the larger block remains easy to hit.
  */
-function TenantNameButton({ name, onPress }: { name: string; onPress: () => void }) {
+function TenantNameButton({ name, onPress, phone }: { name: string; onPress: () => void; phone: string | null }) {
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -76,21 +69,26 @@ function TenantNameButton({ name, onPress }: { name: string; onPress: () => void
       accessibilityRole="button"
       hitSlop={8}
       onPress={onPress}
-      style={{ alignSelf: "flex-start", gap: 1 }}
+      style={{ alignSelf: "flex-start", gap: spacing.xs }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 21 }} numberOfLines={1}>
-          {name}
-        </Text>
-        <UserRound color={colors.ink} fill={colors.ink} size={16} strokeWidth={1.6} />
-      </View>
-      {/* Named, not just marked. An icon beside a name says "there is something
-          here" and leaves the reader to guess what tapping does — and this is
-          the card's only tappable text, so nothing else teaches the gesture.
-          Small and primary: an instruction, not a heading. */}
-      <Text style={[type.caption, { color: colors.primary, fontSize: 11, fontWeight: "700" }]}>
-        View profile
+      <Text
+        numberOfLines={1}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 21, lineHeight: 26 }}
+      >
+        {name}
       </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <Phone color={colors.inkSoft} size={15} strokeWidth={2.1} />
+        <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+          {phone || "Phone unavailable"}
+        </Text>
+      </View>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}>
+          View profile
+        </Text>
+        <ArrowRight color={colors.primary} size={14} strokeWidth={2.3} />
+      </View>
     </AnimatedPressable>
   );
 }
@@ -106,156 +104,190 @@ export function ActiveTenancyCard({
   tenancy,
 }: {
   ending?: boolean;
-  // Ending a stay is Property stays at MANAGE. A view-only manager keeps the
-  // card and the profile; the destructive action is absent, not disabled.
   canEndTenancy?: boolean;
   onEndTenancy: () => void;
   onOpen: () => void;
-  /** Withdraws a tenancy the tenant never accepted. */
   onRemove?: () => void;
   removing?: boolean;
   roomLabel: string | null;
   tenancy: TenancySummary;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, type } = useTheme();
   const tenantName = tenancy.tenantName?.trim() || "Unnamed tenant";
   const rentAmount = tenancy.billingType === "DAILY"
     ? tenancy.dailyRatePaise ?? tenancy.rentAmountPaise ?? 0
     : tenancy.rentAmountPaise ?? tenancy.dailyRatePaise ?? 0;
   const rentSuffix = tenancy.billingType === "DAILY" ? "/ day" : "/ month";
-  // The exit scheduler only executes monthly approved exits; daily stays (and any
-  // stay whose end date has slipped) need a manual close. Active daily stays keep
-  // their checkout in plannedEndDate; monthly stays on notice carry it in endDate.
-  // Enable the button on or after that date, and flag "Past due" once it has passed.
   const today = todayLocalISO();
   const endDate = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
   const canEnd = endDate != null && endDate <= today;
   const pastDue = endDate != null && endDate < today;
-  // Only for a fixed term. An indefinite stay can carry an `endDate` too once
-  // notice is served, but that is a pending exit rather than the agreed span,
-  // and showing it as "Stay" would read as the term someone signed up for.
-  const stayEndDate = tenancy.fixedTerm ? tenancy.endDate ?? tenancy.agreementEndDate : null;
-  // Held at PENDING_ACCEPTANCE from onboarding until the tenant signs. The
-  // tenancy's own status is the whole answer: acceptance and the expiry job both
-  // move the agreement and the tenancy in one transaction, so this can never
-  // disagree with the compliance record.
+  const daysUntilEnd = endDate ? dateOnlyDayNumber(endDate) - dateOnlyDayNumber(today) : null;
+  const dueToday = daysUntilEnd === 0;
+  const endingSoon = daysUntilEnd != null && daysUntilEnd > 0 && daysUntilEnd <= 7;
   const awaitingAgreement = tenancy.status === "PENDING_ACCEPTANCE";
 
-  // Nothing on the card navigates except the profile button beside the name.
-  // The card carries a destructive "End tenancy" action, and a large invisible
-  // tap target wrapped around it meant a miss beside that button silently
-  // navigated instead — so the affordance is now explicit and small.
   return (
-    <Card>
-      <View>
-        <View style={{ flexDirection: "row", gap: spacing.md }}>
-          <IconBox icon={BedDouble} />
-          <View style={{ flex: 1, gap: spacing.sm }}>
-            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  {tenancy.referenceCode}
-                </Text>
-                <TenantNameButton name={tenantName} onPress={onOpen} />
-                <Text style={[type.caption, { color: colors.muted }]}>
-                  {tenancy.tenantPhone || "Phone unavailable"}
-                </Text>
-              </View>
-              <View style={{ alignItems: "flex-end", gap: 4 }}>
-                {/* Silent while the agreement is unsigned. "Pending agreement"
-                    and "Agreement unsigned" are the same fact in two voices, and
-                    stacking them made the card look like it was reporting two
-                    different problems. The chip wins because it also says what
-                    to do about it. */}
-                {awaitingAgreement ? null : (
-                  <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]}>
-                    {tenancyStatusLabel(tenancy.status)}
-                  </Text>
-                )}
-                {pastDue ? (
-                  <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-                    <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, }}>
-                      Past due
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-            <TenancyDetail label="Room" value={roomLabel ?? "Unavailable"} />
-            <TenancyDetail label="Rent" value={`${formatMoneyPaise(rentAmount)} ${rentSuffix}`} />
-            {/* A fixed term has both ends known from the day it starts, so the
-                card states the span. An indefinite stay has no end to show —
-                only where it began. */}
-            {stayEndDate ? (
-              <TenancyDetail
-                label="Stay"
-                value={`${formatDate(tenancy.startDate)} – ${formatDate(stayEndDate)}`}
-              />
-            ) : (
-              <TenancyDetail label="Started" value={formatDate(tenancy.startDate)} />
-            )}
-          </View>
-        </View>
-      </View>
-
-      {/* A stay that was never accepted cannot be "ended" — nothing started.
-          The End button would sit permanently disabled under "Available once an
-          end date is set", which is true and useless. Withdrawing it is the only
-          thing anyone can do here, so that is the only thing offered. */}
-      {canEndTenancy && awaitingAgreement && onRemove ? (
-      <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
-        <View style={{ flexDirection: "row" }}>
-          <ActionButton
-            disabled={removing}
-            icon={UserRoundMinus}
-            label={removing ? "Removing…" : "Remove tenancy"}
-            onPress={onRemove}
-            variant="danger"
-          />
-        </View>
-
-        {/* Beside the only thing anyone can do about it, rather than up in the
-            header with the reference code. It is a task, not a status: nothing
-            bills and nobody moves in until it is signed. */}
-        <View style={{ alignItems: "flex-start" }}>
-          <View
-            style={{
-              backgroundColor: colors.warningSoft,
-              borderRadius: 999,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 2,
-            }}
-          >
-            <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 11 }}>
-              Agreement unsigned
-            </Text>
-          </View>
-        </View>
-
-        <Text style={[type.caption, { color: colors.muted }]}>
-          Frees the bed. Nothing has been billed yet.
-        </Text>
-      </View>
-      ) : canEndTenancy ? (
-      <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
-        <View style={{ flexDirection: "row" }}>
-          <ActionButton
-            disabled={!canEnd || ending}
-            icon={LogOut}
-            label={ending ? "Ending…" : "End tenancy"}
-            onPress={onEndTenancy}
-            variant="danger"
-          />
-        </View>
-        {!canEnd ? (
-          <Text style={[type.caption, { color: colors.muted }]}>
-            {endDate ? `Can be ended on ${formatDate(endDate)}.` : "Available once an end date is set."}
+    <Card style={{ borderRadius: radii.card }}>
+      <View style={{ gap: spacing.md }}>
+        <View
+          style={{
+            alignItems: "center",
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: spacing.sm,
+            justifyContent: "space-between",
+          }}
+        >
+          <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
+            {tenancy.referenceCode}
           </Text>
-        ) : null}
+          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+            <TenancyStatusBadge status={tenancy.status} />
+            {pastDue ? <TenancyTimingBadge label="Past due" tone="danger" /> : null}
+            {dueToday ? <TenancyTimingBadge label="Due today" tone="warning" /> : null}
+            {endingSoon ? <TenancyTimingBadge label="Ends soon" tone="warning" /> : null}
+          </View>
+        </View>
+
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 2, width: 48 }}>
+            <UserRound color={colors.ink} size={38} strokeWidth={1.7} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <TenantNameButton name={tenantName} onPress={onOpen} phone={tenancy.tenantPhone} />
+          </View>
+        </View>
+
+        <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+        <View style={{ alignItems: "stretch", flexDirection: "row" }}>
+          <TenancyMetric flex={0.75} label="Room" value={roomLabel ?? "Unavailable"} />
+          <MetricDivider />
+          <TenancyMetric flex={1.3} label="Rent" value={`${formatMoneyPaise(rentAmount)} ${rentSuffix}`} />
+          <MetricDivider />
+          <TenancyMetric flex={1} label="Started" value={formatDate(tenancy.startDate)} />
+          {endDate ? (
+            <>
+              <MetricDivider />
+              <TenancyMetric flex={1} label="End date" value={formatDate(endDate)} />
+            </>
+          ) : null}
+        </View>
       </View>
+
+      {canEndTenancy && awaitingAgreement && onRemove ? (
+        <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton
+              disabled={removing}
+              icon={UserRoundMinus}
+              label={removing ? "Removing…" : "Remove tenancy"}
+              onPress={onRemove}
+              variant="danger"
+            />
+          </View>
+          <Text style={[type.caption, { color: colors.warningText }]}>Agreement signature required before billing starts.</Text>
+          <Text style={[type.caption, { color: colors.muted }]}>Frees the bed. Nothing has been billed yet.</Text>
+        </View>
+      ) : canEndTenancy ? (
+        <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton
+              disabled={!canEnd || ending}
+              icon={LogOut}
+              label={ending ? "Ending…" : "End tenancy"}
+              onPress={onEndTenancy}
+              variant="danger"
+            />
+          </View>
+          {!canEnd ? (
+            <Text style={[type.caption, { color: colors.muted }]}>
+              {endDate ? `Can be ended on ${formatDate(endDate)}.` : "Available once an end date is set."}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
     </Card>
   );
+}
+
+function TenancyStatusBadge({ status }: { status: TenancySummary["status"] }) {
+  const { colors, fonts } = useTheme();
+  const display =
+    status === "ACTIVE"
+      ? { background: colors.primarySoft, color: colors.primaryDeep, icon: CheckCircle2 }
+      : status === "ON_NOTICE" || status === "ON_PREMATURE_NOTICE" || status === "PENDING_ACCEPTANCE"
+        ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3 }
+        : status === "EVICTED"
+          ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle }
+          : { background: colors.surfaceSunken, color: colors.muted, icon: XCircle };
+  const Icon = display.icon;
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: display.background,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 4,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 5,
+      }}
+    >
+      <Icon color={display.color} size={13} strokeWidth={2.3} />
+      <Text style={{ color: display.color, fontFamily: fonts.sansBold, fontSize: 11 }}>
+        {tenancyStatusLabel(status)}
+      </Text>
+    </View>
+  );
+}
+
+function TenancyTimingBadge({ label, tone }: { label: string; tone: "danger" | "warning" }) {
+  const { colors, fonts } = useTheme();
+  const backgroundColor = tone === "danger" ? colors.dangerSoft : colors.warningSoft;
+  const color = tone === "danger" ? colors.danger : colors.warningText;
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 4,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 5,
+      }}
+    >
+      <Clock3 color={color} size={13} strokeWidth={2.3} />
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
+    </View>
+  );
+}
+
+function TenancyMetric({ flex, label, value }: { flex: number; label: string; value: string }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <View style={{ flex, gap: 3, minWidth: 0, paddingHorizontal: spacing.xs }}>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10 }]}>
+        {label}
+      </Text>
+      <Text
+        numberOfLines={2}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function MetricDivider() {
+  const { colors } = useTheme();
+  return <View style={{ backgroundColor: colors.border, marginHorizontal: spacing.xxs, width: 1 }} />;
 }
 
 export function PastTenancyCard({ roomLabel, tenancy }: { roomLabel: string | null; tenancy: TenancySummary }) {
@@ -293,7 +325,7 @@ export function PastTenancyCard({ roomLabel, tenancy }: { roomLabel: string | nu
   );
 }
 
-function IconBox({ icon: Icon, muted = false }: { icon: typeof BedDouble; muted?: boolean }) {
+function IconBox({ icon: Icon, muted = false }: { icon: typeof CalendarDays; muted?: boolean }) {
   const { colors } = useTheme();
   return (
     // No tile. The pale blue fill was the last one of its kind in the app, and
@@ -318,6 +350,10 @@ function TenancyDetail({ compact = false, label, value }: { compact?: boolean; l
   );
 }
 
+function dateOnlyDayNumber(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+}
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }

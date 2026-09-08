@@ -28,6 +28,11 @@ export const ROUTE_GATES: Record<string, { label: string; resource: ManagerResou
   "/owner-notice-detail": { label: "Notice", resource: "NOTICES" },
   "/owner-notices": { label: "Notices", resource: "NOTICES" },
   "/owner-payment-history": { label: "Payment history", resource: "BILLING_CYCLES" },
+  // Owner-only in the service too, and not by a grant — verifying a claim
+  // means reading a bank statement a manager cannot see. Gated on billing
+  // here so a manager is refused before the screen, not by it.
+  "/owner-payment-claims": { label: "Payment claims", resource: "BILLING_CYCLES" },
+  "/owner-payment-details": { label: "Payment setup", resource: "BILLING_CYCLES" },
   "/owner-pnl": { label: "Profit & loss", resource: "PNL" },
   "/owner-edit-property": { label: "Edit property", resource: "PROPERTY_SETTINGS" },
   "/owner-property": { label: "Property", resource: "PROPERTY_SETTINGS" },

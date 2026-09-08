@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
+
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { PickerOptionRow } from "@/components/picker-option-row";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarDays, Megaphone, Pencil, Plus, Save, X } from "lucide-react-native";
+import { CalendarDays, Clock3, Megaphone, Paperclip, Pencil, Save, Users, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -14,7 +17,8 @@ import { Skeleton } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
-import { ActionButton, BackButton, ChoiceButton, FormInput, IconButton } from "@/features/owner/owner-ui";
+import { Fact, FactRow, LaneBadge, PriorityFact, noticeLane, priorityLabel } from "@/features/notice/notice-ui";
+import { ActionButton, FormInput } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import {
   canEditNotice,
@@ -190,29 +194,11 @@ export default function OwnerNoticeDetailScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
       {unsaved.dialog}
-      {/* Centred title with the back control pinned left. The spacer keeps the
-          title optically centred without measuring the button. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, alignItems: "flex-start" }}>
-          <BackButton onPress={() => router.back()} />
-        </View>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
-          Notice Details
-        </Text>
-        <View style={{ flex: 1, alignItems: "flex-end" }}>
-          {/* No chip in the empty case. The missing pencil already says the
-              notice is closed, and "View only" reads as a permissions verdict —
-              which it is not, since the same person could edit it an hour
-              earlier. */}
-          {notice && editable ? (
-            <IconButton
-              accessibilityLabel={editing ? "Leave edit mode" : "Edit this notice"}
-              icon={editing ? X : Pencil}
-              onPress={() => (editing ? leaveEditMode() : setEditRequested(true))}
-            />
-          ) : null}
-        </View>
-      </View>
+      {/* No back control, so no row to centre the title against — it simply
+          leads the screen, the way every other header in the app does. */}
+      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
+        Notice details
+      </Text>
 
       {noticeQuery.isLoading ? <NoticeDetailSkeleton /> : null}
 
@@ -225,120 +211,179 @@ export default function OwnerNoticeDetailScreen() {
       ) : null}
 
       {notice ? (
-        <Card>
-          <View style={{ gap: spacing.md }}>
-            {/* Title, with its icon chip */}
-            <View style={{ flexDirection: "row", gap: spacing.md }}>
-              <View
-                style={{
-                  alignItems: "center",
-                  borderColor: colors.ink,
-                  borderCurve: "continuous",
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  height: 44,
-                  justifyContent: "center",
-                  width: 44,
-                }}
-              >
-                <Megaphone color={colors.ink} size={21} strokeWidth={2.2} />
-              </View>
+        <>
+          {/* What this notice IS: its state, who it went to, and when. The
+              wording lives in the message card below rather than being
+              previewed here as well — one body of text printed twice on one
+              screen says nothing the second time. */}
+          <Card>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <LaneBadge lane={noticeLane(notice)} />
+              <View style={{ flex: 1 }} />
+              {/* On the card, not in the header bar: it acts on this notice, so
+                  it belongs beside it. Borderless — an outlined button next to
+                  the tinted lane badge made two boxed objects on one line, and
+                  the pencil already says this is a control. */}
+              {editable ? (
+                <EditToggle editing={editing} onPress={() => (editing ? leaveEditMode() : setEditRequested(true))} />
+              ) : null}
+            </View>
 
-              <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
                 {field === "title" ? (
-                  <FormInput label="Title" onChangeText={setTitle} placeholder="Notice title" value={title} />
+                  <FormInput
+                    error={form.errors.title}
+                    label="Title"
+                    onChangeText={setTitle}
+                    placeholder="Notice title"
+                    value={title}
+                  />
                 ) : (
-                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, lineHeight: 25 }}>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 26 }}>
                     {title}
                   </Text>
                 )}
               </View>
-
               {editing ? (
                 <FieldPencil active={field === "title"} onPress={() => setField(field === "title" ? null : "title")} />
               ) : null}
             </View>
 
-            {/* Above the rule: when it lands, and how loudly */}
-            <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                <CalendarDays color={colors.kicker} size={14} />
-                <Text style={[type.caption, { color: colors.muted }]}>
-                  {formatNoticeDate(notice.visibleFrom)}
-                </Text>
-              </View>
-
-              <PriorityPill priority={priority} />
-
-              {editing ? (
-                <FieldPencil
-                  active={field === "priority"}
-                  onPress={() => setField(field === "priority" ? null : "priority")}
+            {/* Tinted blocks with white between them, not hairline rules. Three
+                rules across one card drew more lines than facts, and the eye
+                counted the dividers before it read anything. A shade off the
+                card plus a gap separates them without adding a mark. */}
+            <View style={{ gap: 5 }}>
+              <FactBlock>
+                <FactRow
+                  left={{ icon: Users, text: "For all tenants" }}
+                  right={{ icon: CalendarDays, text: formatNoticeDate(notice.visibleFrom) }}
                 />
-              ) : null}
+              </FactBlock>
+
+              {/* Date and time as separate fields, not "12 Sept 2026, 06:00 PM"
+                  in one. An owner checking a notice is checking one or the
+                  other — which day it lands, or what time — and a single run of
+                  text makes both of them read the whole string. */}
+              <FactBlock>
+                <FactRow
+                  left={{ icon: Clock3, text: formatNoticeTime(notice.visibleFrom) }}
+                  right={
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                      <View style={{ flex: 1 }}>
+                        <PriorityFact priority={priority} />
+                      </View>
+                      {/* On the field it changes, not on a heading above the
+                          card. A pencil sitting apart from its value is a
+                          control with no subject. */}
+                      {editing ? (
+                        <FieldPencil active={field === "priority"} onPress={() => setField("priority")} />
+                      ) : null}
+                    </View>
+                  }
+                />
+              </FactBlock>
+
+              {/* When it stops, split the same way the start is. An owner
+                  checking a notice is as likely to be asking when it comes down
+                  as when it went up, and "no end date" is itself the answer
+                  worth seeing — it is the setting people forget. */}
+              {/* One fact across the whole row, not a half-width pair. "Until 05
+                  Sept 2026" alone overran half a phone's card width and
+                  ellipsised the year away — which is the half of a date that
+                  matters least right up until it does. */}
+              <FactBlock>
+                <FactRow
+                  left={{
+                    icon: CalendarDays,
+                    text: notice.visibleUntil
+                      ? `Until ${formatNoticeDate(notice.visibleUntil)} · ${formatNoticeTime(notice.visibleUntil)}`
+                      : "No end date",
+                  }}
+                />
+              </FactBlock>
+
+              {/* Both, always. Publishing a notice raises NoticePublishedEvent,
+                  which the notification module turns into a feed row for every
+                  tenant and hands to the push pipeline — there is no
+                  in-app-only notice to distinguish this from. */}
+              <FactBlock>
+                <Fact fact={{ icon: Megaphone, text: "In-app + push notification" }} />
+              </FactBlock>
             </View>
+          </Card>
 
-            {field === "priority" ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                {PRIORITIES.map((option) => (
-                  <ChoiceButton
-                    active={priority === option}
-                    key={option}
-                    label={option.charAt(0) + option.slice(1).toLowerCase()}
-                    onPress={() => setPriority(option)}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-            {/* Body */}
-            <View style={{ gap: spacing.sm }}>
+          <Card>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 16 }}>
+                Notice message
+              </Text>
               {editing ? (
-                <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>NOTICE</Text>
-                  <FieldPencil active={field === "body"} onPress={() => setField(field === "body" ? null : "body")} />
-                </View>
+                <FieldPencil active={field === "body"} onPress={() => setField(field === "body" ? null : "body")} />
               ) : null}
-
-              {field === "body" ? (
-                <FormInput label="Body" multiline onChangeText={setBody} placeholder="Write the notice" value={body} />
-              ) : (
-                <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
-                  {body}
-                </Text>
-              )}
             </View>
 
+            {field === "body" ? (
+              <FormInput
+                error={form.errors.body}
+                label="Body"
+                multiline
+                onChangeText={setBody}
+                placeholder="Write the notice"
+                value={body}
+              />
+            ) : (
+              <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+                {body}
+              </Text>
+            )}
+          </Card>
 
-            <AttachmentSection
-              documents={attachments.documents}
-              editing={editing}
-              images={attachments.images}
-              items={attachments.items}
-              onAdd={editing ? attachments.openChooser : undefined}
-              onOpenDocuments={attachments.openDocuments}
-              onOpenSlideshow={attachments.openSlideshow}
-              onRemove={attachments.remove}
-              progress={attachments.progress}
-              uploading={attachments.uploading}
-            />
-
-            {editing ? (
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <ActionButton
-                    disabled={updateState.isLoading}
-                    icon={Save}
-                    label={updateState.isLoading ? "Saving…" : "Save changes"}
-                    onPress={save}
-                  />
-                </View>
+          {/* Its own card, and only when there is something in it or something
+              to add. AttachmentSection returns null when a read-only notice has
+              no files, which would otherwise leave an empty titled card. */}
+          {attachments.items.length > 0 || editing ? (
+            <Card>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                <Paperclip color={colors.kicker} size={15} strokeWidth={2.2} />
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>Attachments</Text>
               </View>
-            ) : null}
-          </View>
-        </Card>
+              <AttachmentSection
+                documents={attachments.documents}
+                editing={editing}
+                images={attachments.images}
+                items={attachments.items}
+                onAdd={editing ? attachments.openChooser : undefined}
+                onOpenDocuments={attachments.openDocuments}
+                onOpenSlideshow={attachments.openSlideshow}
+                onRemove={attachments.remove}
+                progress={attachments.progress}
+                uploading={attachments.uploading}
+              />
+            </Card>
+          ) : null}
+
+          {editing ? (
+            <ActionButton
+              disabled={updateState.isLoading}
+              icon={Save}
+              label={updateState.isLoading ? "Saving…" : "Save changes"}
+              onPress={save}
+            />
+          ) : null}
+        </>
+      ) : null}
+
+      {field === "priority" ? (
+        <PriorityPickerModal
+          onClose={() => setField(null)}
+          onSelect={(next) => {
+            setPriority(next);
+            setField(null);
+          }}
+          value={priority}
+        />
       ) : null}
 
       {attachments.overlays}
@@ -411,32 +456,147 @@ function FieldPencil({ active, onPress }: { active: boolean; onPress: () => void
   );
 }
 
-function PriorityPill({ priority }: { priority: NoticePriority }) {
-  const { colors, type } = useTheme();
-  const loud = priority === "URGENT" || priority === "EMERGENCY";
+/** One tinted row inside a card — this screen's alternative to a divider. */
+function FactBlock({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
 
   return (
     <View
       style={{
-        backgroundColor: loud ? colors.dangerSoft : colors.neutralSoft,
-        borderRadius: 999,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 3,
+        backgroundColor: colors.surfaceSunken,
+        borderCurve: "continuous",
+        borderRadius: 8,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
       }}
     >
-      <Text style={[type.caption, { color: loud ? colors.danger : colors.neutralText, fontWeight: "700" }]}>
-        {priority}
-      </Text>
+      {children}
     </View>
   );
 }
 
+/**
+ * Picking the priority — the app's shared picker, same as gender.
+ *
+ * <p>
+ * {@code PickerOptionRow} in a centred card, not chips. Chips unfolding inside
+ * the card pushed everything below them down the moment the pencil was tapped,
+ * so the row being edited moved out from under the thumb that had just tapped
+ * it. Using the picker every other single-choice field uses also means this one
+ * cannot drift away from them.
+ */
+function PriorityPickerModal({
+  onClose,
+  onSelect,
+  value,
+}: {
+  onClose: () => void;
+  onSelect: (value: NoticePriority) => void;
+  value: NoticePriority;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+      {/* Tapping the scrim closes it. A centred dialog with no visible dismiss
+          needs one, and a four-option choice does not deserve a Cancel button
+          taking up a fifth row. */}
+      <AnimatedPressable
+        accessibilityLabel="Close"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.overlay,
+          flex: 1,
+          justifyContent: "center",
+          paddingHorizontal: spacing.xl,
+        }}
+      >
+        {/* Its own pressable so a tap on the card does not reach the scrim
+            behind it and close the picker mid-decision. */}
+        <AnimatedPressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.surface,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            overflow: "hidden",
+            width: "100%",
+          }}
+        >
+          <Text
+            style={{
+              color: colors.muted,
+              fontFamily: fonts.display,
+              fontSize: 19,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.md,
+            }}
+          >
+            Select priority
+          </Text>
+
+          {/* The same row every other picker in the app uses. Its hairline runs
+              above each option INCLUDING the first, which is what separates the
+              list from the heading above it. */}
+          <View style={{ paddingHorizontal: spacing.lg }}>
+            {PRIORITIES.map((option) => (
+              <PickerOptionRow
+                key={option}
+                label={priorityLabel(option)}
+                onPress={() => onSelect(option)}
+                selected={option === value}
+              />
+            ))}
+          </View>
+        </AnimatedPressable>
+      </AnimatedPressable>
+    </Modal>
+  );
+}
+
+/**
+ * Enter or leave edit mode.
+ *
+ * <p>
+ * Not an {@code ActionButton}. Every variant of that draws a border or a fill,
+ * and this sits on the same line as the lane badge, where a second bounded
+ * object competes with the status it is meant to sit quietly beside.
+ */
+function EditToggle({ editing, onPress }: { editing: boolean; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const Icon = editing ? X : Pencil;
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={editing ? "Leave edit mode" : "Edit this notice"}
+      accessibilityRole="button"
+      hitSlop={10}
+      onPress={onPress}
+      style={{ alignItems: "center", flexDirection: "row", gap: 6, paddingVertical: 2 }}
+    >
+      <Icon color={colors.primary} size={16} strokeWidth={2.3} />
+      <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 14 }}>
+        {editing ? "Cancel" : "Edit"}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
 function formatNoticeDate(value: string) {
-  const date = new Date(value);
-  return `${date.toLocaleDateString("en-IN", {
+  return new Date(value).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     timeZone: "Asia/Kolkata",
     year: "numeric",
-  })}, ${date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`;
+  });
+}
+
+function formatNoticeTime(value: string) {
+  return new Date(value).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+  });
 }

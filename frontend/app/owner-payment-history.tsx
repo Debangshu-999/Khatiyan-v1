@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ReceiptText } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { CheckCircle2, Clock3, ReceiptText, WalletCards, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
+import { HeaderNote } from "@/components/header-note";
 import { PaginationBar } from "@/components/pagination-bar";
-import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonList } from "@/components/skeleton";
@@ -16,13 +16,14 @@ import { useAvailableAccounts } from "@/features/account/accounts";
 import {
   PaymentHistoryRow,
   comparePaymentHistoryCycles,
-  monthLabel,
   paymentHistoryStatus,
 } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useListPropertyBillingCyclesQuery } from "@/store/services/billing-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
 
 const PAGE_SIZE = 8;
 
@@ -34,7 +35,7 @@ const FILTERS: { label: string; value: BillFilter }[] = [
 ];
 
 export default function OwnerPaymentHistoryScreen() {
-  const router = useGuardedRouter();
+  const { colors } = useTheme();
   const params = useLocalSearchParams<{ month?: string }>();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
@@ -48,16 +49,17 @@ export default function OwnerPaymentHistoryScreen() {
   const cyclesQuery = useListPropertyBillingCyclesQuery({ month, propertyId }, { skip: !propertyId });
   const ordered = useMemo(() => [...(cyclesQuery.data ?? [])].sort(comparePaymentHistoryCycles), [cyclesQuery.data]);
 
-  // Rent cycles and one-off bills read very differently — a penalty next to a
-  // month's rent is easy to misread as rent. Split them the way tenant bills do.
-  const rentCount = ordered.filter((c) => c.category === "RENT_CYCLE").length;
-  const oneOffCount = ordered.filter((c) => c.category === "ONE_OFF").length;
-  const visible = filter === "ALL" ? ordered : ordered.filter((c) => c.category === filter);
+  const rentCount = ordered.filter((cycle) => cycle.category === "RENT_CYCLE").length;
+  const oneOffCount = ordered.filter((cycle) => cycle.category === "ONE_OFF").length;
+  const visible = filter === "ALL" ? ordered : ordered.filter((cycle) => cycle.category === filter);
 
-  // The metrics describe what is on screen, so they follow the filter too.
-  const paidCount = visible.filter((c) => c.status === "PAID").length;
-  const lateCount = visible.filter((c) => c.status === "PAID" && paymentHistoryStatus(c) === "OVERDUE").length;
-  const unpaidCount = visible.filter((c) => c.status === "UNPAID" || c.status === "OVERDUE").length;
+  const paidCount = visible.filter((cycle) => cycle.status === "PAID").length;
+  const lateCount = visible.filter(
+    (cycle) => cycle.status === "PAID" && paymentHistoryStatus(cycle) === "OVERDUE",
+  ).length;
+  const unpaidCount = visible.filter(
+    (cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE",
+  ).length;
 
   const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -69,19 +71,27 @@ export default function OwnerPaymentHistoryScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader
-        onBack={() => router.back()}
-        eyebrow="Billing"
-        title="Payment"
-        italicTail="history."
-        subtitle={property ? `Paid, late and unpaid bills for ${property.name}.` : "Select a property from Home to view payment history."}
-      />
+    <ScreenScrollView
+      background={
+        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+          <LinearGradient
+            colors={[colors.primarySoft, colors.surface]}
+            end={{ x: 0.5, y: 1 }}
+            locations={[0, 1]}
+            start={{ x: 0.5, y: 0 }}
+            style={{ height: 230 }}
+          />
+        </View>
+      }
+      contentContainerStyle={{ paddingTop: spacing.xs }}
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+    >
+      <PaymentHistoryHeader propertyName={property?.name ?? null} />
 
       {!property ? (
         <EmptyState
           icon={ReceiptText}
-
           title="No property selected"
           description="Choose an active property from Home before viewing payment history."
         />
@@ -89,7 +99,7 @@ export default function OwnerPaymentHistoryScreen() {
         <>
           <MonthSelector onChange={setMonth} value={month} />
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
             {FILTERS.map((entry) => (
               <FilterPill
                 active={filter === entry.value}
@@ -102,9 +112,9 @@ export default function OwnerPaymentHistoryScreen() {
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HistoryMetric label="Paid" value={String(paidCount)} />
-            <HistoryMetric label="Late" value={String(lateCount)} />
-            <HistoryMetric label="Unpaid" value={String(unpaidCount)} />
+            <HistoryMetric icon={CheckCircle2} label="Paid" value={String(paidCount)} />
+            <HistoryMetric icon={Clock3} label="Late" value={String(lateCount)} />
+            <HistoryMetric icon={WalletCards} label="Unpaid" value={String(unpaidCount)} />
           </View>
 
           <Section title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
@@ -112,8 +122,7 @@ export default function OwnerPaymentHistoryScreen() {
 
             {!cyclesQuery.isFetching && visible.length === 0 ? (
               <EmptyState
-                icon={ReceiptText}
-
+                artwork={NO_BILL_ILLUSTRATION}
                 title="No payment history found"
                 description={
                   ordered.length === 0
@@ -147,61 +156,129 @@ export default function OwnerPaymentHistoryScreen() {
   );
 }
 
-
-
-/**
- * Matches the billing summary tiles: eyebrow label, ink figure, no tone colour.
- * Colouring each figure by status made three tiles shout at once — green, amber
- * and blue side by side read as three warnings rather than one breakdown. The
- * label carries the meaning; the figure just has to be legible.
- */
-function HistoryMetric({ label, value }: { label: string; value: string }) {
+function PaymentHistoryHeader({ propertyName }: { propertyName: string | null }) {
   const { colors, type } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        numberOfLines={1}
+        style={[type.brand, { color: colors.ink, fontSize: 29, lineHeight: 35 }]}
+      >
+        Payment
+        <Text style={[type.brandItalic, { color: colors.accent, fontSize: 29, lineHeight: 35 }]}> history.</Text>
+      </Text>
+      <HeaderNote>
+        {propertyName
+          ? "Paid, late and unpaid bills for " + propertyName + "."
+          : "Select a property from Home to view payment history."}
+      </HeaderNote>
+    </View>
+  );
+}
+function HistoryMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+
   return (
     <View
       style={{
+        alignItems: "center",
         backgroundColor: colors.surface,
         borderColor: colors.border,
         borderRadius: radii.card,
         borderWidth: 1,
         flex: 1,
-        gap: spacing.xs,
-        padding: spacing.md,
+        flexDirection: "row",
+        gap: spacing.sm,
+        minWidth: 0,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.md,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        numberOfLines={1}
-        style={[type.metric, { color: colors.ink, fontSize: 22, lineHeight: 26 }]}
-      >
-        {value}
-      </Text>
+      <Icon color={colors.ink} size={22} strokeWidth={2.1} />
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, fontSize: 9 }]}>
+          {label}
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={{
+            color: colors.ink,
+            fontFamily: fonts.display,
+            fontSize: 18,
+            fontVariant: ["tabular-nums"],
+            lineHeight: 21,
+          }}
+        >
+          {value}
+        </Text>
+      </View>
     </View>
   );
 }
 
+function FilterPill({
+  active,
+  count,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
 
-
-function FilterPill({ active, count, label, onPress }: { active: boolean; count: number; label: string; onPress: () => void }) {
-  const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
       accessibilityRole="button"
+      accessibilityState={{ selected: active }}
       onPress={onPress}
       style={{
-        backgroundColor: active ? colors.primary : colors.surfaceSunken,
-        borderColor: active ? colors.primary : colors.border,
+        alignItems: "center",
+        backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
+        borderCurve: "continuous",
         borderRadius: 999,
-        borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm - 2,
+        flex: 1,
+        justifyContent: "center",
+        minHeight: 42,
+        minWidth: 0,
+        paddingHorizontal: spacing.xs,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
-        {label} · {count}
+      <Text
+        numberOfLines={1}
+        style={[
+          type.caption,
+          {
+            color: active ? colors.primaryDeep : colors.muted,
+            fontFamily: fonts.sansSemiBold,
+            fontSize: 12,
+          },
+        ]}
+      >
+        {label} ({count})
       </Text>
+      <View
+        style={{
+          backgroundColor: active ? colors.primary : "transparent",
+          borderRadius: 999,
+          height: 2.5,
+          marginTop: 3,
+          width: 18,
+        }}
+      />
     </AnimatedPressable>
   );
 }

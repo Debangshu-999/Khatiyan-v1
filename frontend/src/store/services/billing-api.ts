@@ -3,7 +3,19 @@ import type { Page } from "@/store/pagination";
 
 // UPCOMING is generated ahead of the due date and is NOT payable or billed yet;
 // it is also the only state in which a rent cycle can still be edited.
-export type BillingCycleStatus = "UPCOMING" | "UNPAID" | "OVERDUE" | "PAID" | "CANCELLED";
+/**
+ * `CONFIRMATION_PENDING` is a tenant's payment claim awaiting the owner.
+ *
+ * <p>Neither paid nor unpaid: no collected figure counts it, and the late-fee
+ * sweeps skip it, so the clock is frozen while the owner checks their statement.
+ */
+export type BillingCycleStatus =
+  | "UPCOMING"
+  | "UNPAID"
+  | "OVERDUE"
+  | "CONFIRMATION_PENDING"
+  | "PAID"
+  | "CANCELLED";
 export type BillingCycleCategory = "RENT_CYCLE" | "ONE_OFF";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
 export type BillingLineItemType = "RENT" | "DEPOSIT" | "EXTRA_CHARGE" | "DISCOUNT" | "LATE_FEE";
@@ -60,6 +72,10 @@ export type BillingCycle = {
   tenancyReferenceCode: string | null;
   tenantUserId: string;
   tenantNameSnapshot: string;
+  /** How to reach the tenant today, for the receipt's "Bill To" block. */
+  tenantPhone: string | null;
+  /** Null unless the address is verified — the server filters, not the app. */
+  tenantEmail: string | null;
   propertyId: string;
   roomId: string;
   roomNumber: string | null;

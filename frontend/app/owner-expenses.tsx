@@ -1,8 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { CalendarClock, Plus, Repeat2, Undo2, Wallet, X } from "lucide-react-native";
 
@@ -28,7 +28,7 @@ import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ExpenseCategoryPicker } from "@/features/owner/expense-category-picker";
-import { ActionButton, BackButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { MonthSelector } from "@/components/month-selector";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -54,10 +54,12 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_EXPENSE_ILLUSTRATION = require("../assets/workspace/No-Expense_512x512.png");
+
 const PAGE_SIZE = 20;
+const EXPENSE_HEADER_ILLUSTRATION = require("../assets/workspace/expense-header.png");
 
 export default function OwnerExpensesScreen() {
-  const router = useGuardedRouter();
   const { colors } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
@@ -107,12 +109,27 @@ export default function OwnerExpensesScreen() {
 
   return (
     <>
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-        <ScreenHeader onBack={() => router.back()}
-          eyebrow="Owner tool"
-          title="Expense"
+      <ScreenScrollView
+        background={
+          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+            <LinearGradient
+              colors={[colors.primarySoft, colors.surface]}
+              end={{ x: 0.5, y: 1 }}
+              locations={[0, 1]}
+              start={{ x: 0.5, y: 0 }}
+              style={{ height: 230 }}
+            />
+          </View>
+        }
+        contentContainerStyle={{ paddingTop: spacing.xs }}
+        safeAreaEdges={["top", "bottom"]}
+        surface={colors.surface}
+      >
+        <ScreenHeader
+          artwork={EXPENSE_HEADER_ILLUSTRATION}
           italicTail="tracker."
           subtitle={property ? `Track spending, budgets and recurring costs for ${property.name}.` : "Select a property from Home to manage expenses."}
+          title="Expense"
         />
 
         {!property ? (
@@ -158,7 +175,7 @@ export default function OwnerExpensesScreen() {
               ) : null}
 
               {expensesPage && expensesPage.items.length === 0 ? (
-                <EmptyState icon={Wallet} title="No expenses this month" description="Add a manual expense or set up recurring costs to start the ledger." />
+                <EmptyState artwork={NO_EXPENSE_ILLUSTRATION} title="No expenses this month" description="Add a manual expense or set up recurring costs to start the ledger." />
               ) : null}
 
               <View style={{ gap: spacing.sm }}>
@@ -211,8 +228,6 @@ export default function OwnerExpensesScreen() {
     </>
   );
 }
-
-
 
 function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<ReturnType<typeof useGetBudgetOverviewQuery>["data"]>; onRaise: () => void; onSetBudget: () => void }) {
   const { colors, fonts, type } = useTheme();
@@ -649,7 +664,7 @@ function ExpenseRow({
           that one undid the other. */}
       {reversal ? (
         <>
-          <View style={{ backgroundColor: colors.border, height: 1, opacity: 0.7 }} />
+          <View style={{ backgroundColor: colors.borderStrong, height: 1 }} />
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <Undo2 color={colors.danger} size={14} strokeWidth={2.2} />
             <View style={{ flex: 1, gap: 1 }}>
@@ -713,7 +728,6 @@ function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () 
     </SheetShell>
   );
 }
-
 
 function AddExpenseSheet({ categories, month, onClose, propertyId }: { categories: ExpenseCategory[]; month: string; onClose: () => void; propertyId: string }) {
   const toast = useToast();
@@ -1077,7 +1091,6 @@ function BodyNote({ children }: { children: ReactNode }) {
   );
 }
 
-
 // ---------------------------------------------------------------- helpers
 
 function toLocalIso(date: Date) {
@@ -1117,7 +1130,6 @@ function istIsoToday() {
 function firstOfMonth() {
   return `${istIsoToday().slice(0, 7)}-01`;
 }
-
 
 function defaultIncurredDate(month: string) {
   // If viewing the current month, default to today (in IST, matching the server);

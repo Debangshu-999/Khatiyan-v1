@@ -10,6 +10,8 @@ import { NUDGE_REFETCH_OPTIONS, useListReceivedNudgesQuery, type Nudge } from "@
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
 /**
  * The tenant's nudges.
  *
@@ -28,13 +30,10 @@ export default function NudgesScreen() {
   return (
     <ScreenScrollView
       // The nested-screen top position, shared with every other back-button screen.
-      contentContainerStyle={{ paddingTop: 0 }}
       safeAreaEdges={["top", "bottom"]}
     >
       <ScreenHeader
-        eyebrow="Notifications"
         italicTail="for you."
-        onBack={() => router.back()}
         subtitle="Short messages from your property. These are one-way — reply through a concern if you need to."
         title="Nudges"
       />
@@ -52,7 +51,7 @@ export default function NudgesScreen() {
       {!nudgesQuery.isLoading && !nudgesQuery.isError && nudges.length === 0 ? (
         <EmptyState
           description="When your owner or manager sends you one, it shows up here."
-          icon={BellRing}
+          artwork={CONCERN_EMPTY_ILLUSTRATION}
           title="No nudges"
         />
       ) : null}

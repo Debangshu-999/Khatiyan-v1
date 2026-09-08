@@ -23,6 +23,8 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
 export default function NotificationsFeedScreen() {
   const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
@@ -129,7 +131,8 @@ export default function NotificationsFeedScreen() {
 
       {isError ? (
         <EmptyState
-          icon={BellOff}
+          icon={BellOff}
+
           title="Couldn't load notifications"
           description="Check your backend connection from Account, then pull down to try again."
         />
@@ -137,7 +140,7 @@ export default function NotificationsFeedScreen() {
 
       {!isLoading && !isError && recent.length === 0 ? (
         <EmptyState
-          icon={BellOff}
+          artwork={CONCERN_EMPTY_ILLUSTRATION}
           title="No recent notifications"
           description={
             user?.activeTenant || user?.role === "OWNER"

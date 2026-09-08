@@ -1,6 +1,8 @@
 package com.khatiyan.d_modules.enquiry.service;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.time.Instant;
 import java.util.List;
@@ -31,6 +33,7 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryResponseRepository;
+import com.khatiyan.d_modules.chat.ChatModule;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
@@ -48,6 +51,20 @@ import lombok.extern.slf4j.Slf4j;
  * reached on is computed HERE, once, by {@link #reachableChannels}. Both the
  * enquirer's confirmation dialog and the owner's respond sheet render from it,
  * and {@link #respond} validates against it. Nothing recomputes it client-side.
+ *
+ * <p>That rule now has two halves. Whether a channel <em>works</em> is a fact
+ * about the account and lives here. Whether the enquirer <em>agreed</em> to it
+ * is decided by {@link EnquiryChannelConsentService}. A channel needs both, and
+ * nothing downstream is allowed to see one without the other — which is why the
+ * enquirer's phone and email are withheld from management exactly when the
+ * matching consent is missing.
+ *
+ * <p><b>The consent half is read once, at {@link #raise}, and frozen onto the
+ * enquiry.</b> Every later read — the list, the respond sheet, the validation on
+ * answering — uses {@code Enquiry.sharedChannels} rather than asking the consent
+ * table again. Changing the standing decision therefore governs the next
+ * enquiry and leaves earlier ones exactly as they were asked, instead of
+ * reshaping a conversation already underway.
  */
 @Slf4j
 @Service
@@ -55,6 +72,8 @@ public class EnquiryService {
 
     private final EnquiryRepository enquiryRepository;
     private final EnquiryResponseRepository enquiryResponseRepository;
+    private final EnquiryChannelConsentService consentService;
+    private final ChatModule chatModule;
     private final PropertyModule propertyModule;
     private final AuthModule authModule;
     private final NotificationModule notificationModule;
@@ -62,11 +81,15 @@ public class EnquiryService {
     public EnquiryService(
             EnquiryRepository enquiryRepository,
             EnquiryResponseRepository enquiryResponseRepository,
+            EnquiryChannelConsentService consentService,
+            ChatModule chatModule,
             PropertyModule propertyModule,
             AuthModule authModule,
             NotificationModule notificationModule) {
         this.enquiryRepository = enquiryRepository;
         this.enquiryResponseRepository = enquiryResponseRepository;
+        this.consentService = consentService;
+        this.chatModule = chatModule;
         this.propertyModule = propertyModule;
         this.authModule = authModule;
         this.notificationModule = notificationModule;
@@ -111,9 +134,28 @@ public class EnquiryService {
             throw new ValidationException("You already have an open enquiry with this property.");
         }
 
-        Enquiry enquiry = enquiryRepository.save(Enquiry.raise(propertyId, actorUserId, request.message()));
-
         UserSummaryResponse enquirer = authModule.findById(actorUserId).orElse(null);
+
+        // The standing decision is read exactly ONCE, here, and then frozen onto
+        // the enquiry. Everything downstream reads the snapshot, so changing the
+        // setting later governs the next enquiry and leaves this one as asked.
+        List<ReachableChannelResponse> reachable =
+                reachableChannels(enquirer, consentService.liveChannels(actorUserId));
+
+        // No "nothing is reachable" guard any more. It existed because an
+        // enquiry with phone and email both declined was one nobody could ever
+        // answer, and it would have sat in the property's queue with no way to
+        // clear it. Chat removed that: every enquiry now carries a reply path
+        // that needs no contact details at all, so declining both is a complete
+        // and answerable choice rather than a dead end.
+
+        Set<EnquiryResponseChannel> shared = reachable.stream()
+                .map(ReachableChannelResponse::channel)
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(EnquiryResponseChannel.class)));
+
+        Enquiry enquiry = enquiryRepository.save(
+                Enquiry.raise(propertyId, actorUserId, request.message(), shared));
+
         notifyManagement(property, enquiry, enquirer);
 
         log.info(
@@ -125,7 +167,7 @@ public class EnquiryService {
                 propertyId,
                 property.name(),
                 enquiry.askedAt(),
-                reachableChannels(enquirer),
+                reachable,
                 emailChannelState(enquirer));
     }
 
@@ -154,6 +196,9 @@ public class EnquiryService {
                 .forEach(response -> userIds.add(response.getRespondedByUserId()));
         Map<UUID, UserSummaryResponse> users = authModule.findByIds(userIds);
 
+        // No consent lookup here any more. Each enquiry carries the set it was
+        // raised with, which is both the correct answer and one fewer query per
+        // page than asking the consent table for every enquirer on it.
         return enquiries.stream()
                 .map(enquiry -> toDetail(
                         enquiry,
@@ -185,7 +230,18 @@ public class EnquiryService {
         }
 
         UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
-        ensureChannelIsReachable(request.channel(), enquirer);
+        // The snapshot, not today's setting. What the property was told it could
+        // use when the question arrived is what it may use to answer it.
+        ensureChannelIsReachable(request.channel(), enquirer, enquiry.getSharedChannels());
+
+        // Chat first, and inside this transaction: the enquiry must not be
+        // recorded as answered-by-chat unless the conversation the answer lives
+        // in actually exists. Idempotent on the enquiry id, so a second manager
+        // answering the same way joins the same thread.
+        if (request.channel() == EnquiryResponseChannel.CHAT) {
+            enquiry.attachChatThread(chatModule.openEnquiryThread(
+                    enquiry.getPropertyId(), enquiry.getId(), enquiry.getEnquirerUserId(), actorUserId));
+        }
 
         enquiry.markResponded();
         enquiryResponseRepository.save(
@@ -197,12 +253,16 @@ public class EnquiryService {
         List<EnquiryResponse> responses =
                 enquiryResponseRepository.findByEnquiryIdInOrderByCreatedAtDesc(List.of(enquiry.getId()));
 
-        // The enquirer is told nothing in-app. Picking a channel opens the
-        // owner's dialer or mail app, so the reply reaches them as a phone call
-        // or an email — announcing "they replied" alongside that would be a
-        // second, emptier message about a conversation happening elsewhere.
-        // Revisit when chat lands: a chat reply DOES live in the app and should
-        // announce itself. NotificationSubtype.ENQUIRY_ANSWERED is kept for that.
+        // Told for chat, and ONLY for chat. Picking phone or email opens the
+        // responder's dialer or mail app, so the reply arrives as a call or a
+        // message and "they replied" alongside it would be a second, emptier
+        // notice about something happening elsewhere. A chat reply is different:
+        // it lands inside this app, on a screen the enquirer has no reason to be
+        // looking at, and without this nothing would ever point them at it.
+        if (request.channel() == EnquiryResponseChannel.CHAT) {
+            notifyEnquirerOfChat(enquiry, actorUserId);
+        }
+
 
         log.info(
                 "Enquiry answered enquiryId={} channel={} respondedByUserId={}",
@@ -218,25 +278,41 @@ public class EnquiryService {
     /**
      * The channels this person can actually be reached on.
      *
-     * <p>Phone is unconditional: a verified phone is a precondition of having an
-     * account at all. Email is conditional on being both present and verified —
-     * an unverified address is one nobody has proved they can read, and
-     * promising to write to it is worse than not offering it.
+     * <p>Two conditions, both required. The channel has to <em>work</em>: a
+     * verified phone is a precondition of having an account, while email needs
+     * an address that is present and verified, because an unverified one is an
+     * address nobody has proved they can read. And the enquirer has to have
+     * <em>agreed</em> to it — a working number they never offered is not a
+     * channel, it is a detail nobody asked to hand over.
+     *
+     * <p>Management is shown only what comes out of here. Not the closed
+     * channels greyed out with an explanation: a channel someone declined is not
+     * management's business, and showing it invites working around it.
      *
      * <p>CHAT is never included. It does not exist yet, and this list is the
      * definition of "reachable".
      */
-    static List<ReachableChannelResponse> reachableChannels(UserSummaryResponse user) {
+    static List<ReachableChannelResponse> reachableChannels(
+            UserSummaryResponse user,
+            Set<EnquiryResponseChannel> consented) {
         List<ReachableChannelResponse> channels = new ArrayList<>();
         if (user == null) {
             return channels;
         }
-        if (user.phone() != null && !user.phone().isBlank()) {
+        if (consented.contains(EnquiryResponseChannel.CALL_BACK)
+                && user.phone() != null && !user.phone().isBlank()) {
             channels.add(new ReachableChannelResponse(EnquiryResponseChannel.CALL_BACK, user.phone()));
         }
-        if (user.email() != null && !user.email().isBlank() && user.emailVerified()) {
+        if (consented.contains(EnquiryResponseChannel.EMAIL)
+                && user.email() != null && !user.email().isBlank() && user.emailVerified()) {
             channels.add(new ReachableChannelResponse(EnquiryResponseChannel.EMAIL, user.email()));
         }
+        // Always, and with no value beside it. Chat is the one channel that
+        // hands the responder nothing they could keep: a number can be saved and
+        // reused past anything this app can revoke, a conversation cannot. That
+        // is why it needs no consent to appear and why it is never stored as
+        // one — there is nothing to agree to and nothing to withdraw.
+        channels.add(new ReachableChannelResponse(EnquiryResponseChannel.CHAT, null));
         return channels;
     }
 
@@ -251,17 +327,26 @@ public class EnquiryService {
         return user.emailVerified() ? EmailChannelState.AVAILABLE : EmailChannelState.UNVERIFIED;
     }
 
-    private void ensureChannelIsReachable(EnquiryResponseChannel channel, UserSummaryResponse enquirer) {
+    private void ensureChannelIsReachable(
+            EnquiryResponseChannel channel,
+            UserSummaryResponse enquirer,
+            Set<EnquiryResponseChannel> consented) {
+        // Never refused, and deliberately ahead of the snapshot check. The
+        // frozen set holds what the enquirer SHARED, and chat shares nothing —
+        // so it is absent from every enquiry raised before this landed, and
+        // asking the snapshot about it would refuse the one channel that has no
+        // consent to be missing.
         if (channel == EnquiryResponseChannel.CHAT) {
-            throw new ValidationException("Chat is not available yet.");
+            return;
         }
-        boolean reachable = reachableChannels(enquirer).stream()
+        boolean reachable = reachableChannels(enquirer, consented).stream()
                 .anyMatch(option -> option.channel() == channel);
         if (!reachable) {
-            throw new ValidationException(
-                    channel == EnquiryResponseChannel.EMAIL
-                            ? "This person has no verified email address."
-                            : "This person cannot be reached on that channel.");
+            // One message for both halves of the rule on purpose. Telling a
+            // responder WHICH condition failed would tell them the enquirer
+            // declined this channel, and that is a fact about the enquirer that
+            // the responder has no claim on.
+            throw new ValidationException("This person cannot be reached on that channel.");
         }
     }
 
@@ -277,6 +362,12 @@ public class EnquiryService {
             UserSummaryResponse enquirer,
             List<EnquiryResponse> responses,
             Map<UUID, UserSummaryResponse> users) {
+        // Both contact details are read off the reachable list rather than off
+        // the user, so there is exactly one place where "may management see
+        // this" is decided. Phone used to be sent unconditionally, which is how
+        // a responder ended up keeping a number the enquirer never offered.
+        List<ReachableChannelResponse> reachable = reachableChannels(enquirer, enquiry.getSharedChannels());
+
         return new EnquiryDetailResponse(
                 enquiry.getId(),
                 enquiry.getPropertyId(),
@@ -286,14 +377,54 @@ public class EnquiryService {
                 enquiry.getExpiresAt(),
                 enquiry.getEnquirerUserId(),
                 enquirer != null ? enquirer.fullName() : null,
-                enquirer != null ? enquirer.phone() : null,
-                // Deliberately withheld unless verified, so the client cannot
-                // offer an address the server would then refuse.
-                enquirer != null && enquirer.emailVerified() ? enquirer.email() : null,
-                reachableChannels(enquirer),
+                targetOf(reachable, EnquiryResponseChannel.CALL_BACK),
+                targetOf(reachable, EnquiryResponseChannel.EMAIL),
+                reachable,
+                enquiry.getChatThreadId(),
                 responses.stream()
                         .map(response -> EnquiryResponseView.of(response, nameOf(users, response.getRespondedByUserId())))
                         .toList());
+    }
+
+    private static String targetOf(List<ReachableChannelResponse> reachable, EnquiryResponseChannel channel) {
+        return reachable.stream()
+                .filter(option -> option.channel() == channel)
+                .map(ReachableChannelResponse::target)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Points the enquirer at the conversation somebody just opened for them.
+     *
+     * <p>To the enquirer alone. The responder is standing in the thread they
+     * created, and management already has the enquiry in its own queue.
+     */
+    private void notifyEnquirerOfChat(Enquiry enquiry, UUID responderUserId) {
+        PropertyResponse property = propertyModule.getActiveProperty(enquiry.getPropertyId());
+
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("enquiryId", enquiry.getId().toString());
+        data.put("propertyId", property.id().toString());
+        data.put("propertyName", property.name());
+        if (enquiry.getChatThreadId() != null) {
+            data.put("threadId", enquiry.getChatThreadId().toString());
+        }
+
+        notificationModule.notifyUser(
+                enquiry.getEnquirerUserId(),
+                property.name() + " replied",
+                "Your enquiry has been answered in chat.",
+                NotificationCategory.ENQUIRY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.ENQUIRY_ANSWERED,
+                enquiry.getId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
+
+        log.info(
+                "Enquiry chat reply announced enquiryId={} responderUserId={}",
+                enquiry.getId(), responderUserId);
     }
 
     private void notifyManagement(PropertyResponse property, Enquiry enquiry, UserSummaryResponse enquirer) {

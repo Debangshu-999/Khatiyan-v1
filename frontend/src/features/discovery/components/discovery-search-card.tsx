@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Keyboard, Modal, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { ChevronDown, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
+import { ChevronDown, LocateFixed, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -65,6 +65,7 @@ export function DiscoverySearchCard({
     focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
+  const selectedLocationLabel = selectedArea || selectedCity || searchText.trim();
 
   return (
     <Card>
@@ -224,6 +225,27 @@ export function DiscoverySearchCard({
       </View>
 
       <DiscoveryButton label="Search" onPress={onSearch} />
+
+      <View
+        style={{
+          alignItems: "center",
+          alignSelf: "center",
+          backgroundColor: colors.neutralSoft,
+          borderColor: colors.border,
+          borderRadius: 9,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.xs,
+          maxWidth: "100%",
+          paddingHorizontal: spacing.sm,
+          paddingVertical: 7,
+        }}
+      >
+        <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
+        <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+          Searching around {selectedLocationLabel || "your selected location"}
+        </Text>
+      </View>
 
       <LocationFilterModal
         emptyLabel="No cities found"

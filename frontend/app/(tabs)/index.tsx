@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock, Compass, Copy, DoorClosed, DoorOpen, FileText, Home, KeyRound, Landmark, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
+import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, ChartColumn, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock, Clock3, Compass, Copy, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { PropertyIcon } from "@/components/property-icon";
+import { CollectedIcon, CollectionIcon, ExpenseIcon, MoneyIcon, NoticeIcon, PaymentClaimsIcon, PropertyArtwork } from "@/components/artwork-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -17,6 +18,7 @@ import { FilterPillRow } from "@/components/filter-bubbles";
 import { GradientCtaCard } from "@/components/gradient-cta-card";
 import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
+import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
@@ -24,10 +26,10 @@ import { TabSwitcher } from "@/components/tab-switcher";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
 import { TrendBarChart } from "@/components/trend-bar-chart";
-import { SkeletonCard, SkeletonScreen } from "@/components/skeleton";
+import { SkeletonCard, SkeletonPills, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
 import { api } from "@/store/api";
 import { getGreeting } from "@/features/greeting/get-greeting";
-import { saveActiveAccount, savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
+import { saveActiveAccount } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
 import type { ConcernSummary } from "@/store/services/concern-api";
@@ -64,10 +66,22 @@ import { accountLabel, useAvailableAccounts } from "@/features/account/accounts"
 import { fetchCurrentLocation, type DeviceLocationState } from "@/store/slices/location-slice";
 import { clearActiveAccount } from "@/store/slices/account-slice";
 import { clearSession } from "@/store/slices/auth-slice";
-import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
+import type { PaymentIntentDigest } from "@/store/services/payment-intent-api";
 import { radii, spacing } from "@/theme/spacing";
+import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
+
+const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy", ImageSourcePropType> = {
+  deposit: require("../../assets/home-tools/deposit-manager.png"),
+  expenses: require("../../assets/home-tools/expense-tracker.png"),
+  pnl: require("../../assets/home-tools/profit-loss.png"),
+  // The earlier drawing, kept for the tile: its 450x300 canvas holds a nearly
+  // square 271x282 of ink, so in the `wide` box it lands at about 43x45pt —
+  // the same visual weight as its square neighbours. vacancy-finder.png is
+  // still the screen header's, where it has a 150x100 slot to fill.
+  vacancy: require("../../assets/workspace/vacancy-header.png"),
+};
 
 export default function HomeScreen() {
   const { colors, fonts, type } = useTheme();
@@ -122,7 +136,13 @@ export default function HomeScreen() {
         : "";
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView
+      // Flush to the safe area, unlike every other screen. Home opens on the
+      // location bar and the greeting rather than a title, and the gap that
+      // gives a heading room reads as a band of nothing above a greeting.
+      contentContainerStyle={{ paddingTop: 0 }}
+      safeAreaEdges={["top", "bottom"]}
+    >
       {/* Left column stacks the location bar and the greeting so the greeting
           hugs the location; the profile + live-events stay pinned top-right. */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
@@ -177,8 +197,17 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Home's own shape: the property selector, its two tiles, the tab bar,
+          and the workspace beneath. SkeletonScreen's defaults drew a heading
+          and a list, which is not what this screen is. */}
       {accountsLoading ? (
-        <SkeletonScreen />
+        <View style={{ gap: spacing.lg }}>
+          <SkeletonCard />
+          <SkeletonTiles count={2} />
+          <SkeletonPills count={2} />
+          <SkeletonCard />
+          <SkeletonTiles count={4} />
+        </View>
       ) : isWorkspace ? (
         <OwnerHome
           account={isManagerAccount ? "manager" : "owner"}
@@ -663,7 +692,7 @@ function LatestEventsModal({
           }}
         >
           {/* Grab handle so the sheet reads as something you pull, not a dialog. */}
-          <View style={{ alignItems: "center", paddingBottom: spacing.xs, paddingTop: spacing.sm }}>
+          <View style={{ alignItems: "center", paddingBottom: spacing.xs }}>
             <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, width: 38 }} />
           </View>
 
@@ -846,7 +875,7 @@ function ActivityDaySection({
           // day sat flush against the next day's header, so the two read as one
           // block. The gap is what separates a section's contents from the seam
           // that follows it.
-          <View style={{ gap: spacing.sm, paddingBottom: spacing.md, paddingTop: spacing.sm }}>
+          <View style={{ gap: spacing.sm, paddingBottom: spacing.md }}>
             {items.map((item, index) => (
               <ActivityRow item={item} key={`${item.type}-${item.occurredAt}-${index}`} />
             ))}
@@ -886,7 +915,7 @@ function ActivityNoPropertyState() {
           width: 62,
         }}
       >
-        <PropertyIcon color={colors.kicker} size={26} strokeWidth={2} />
+        <PropertyArtwork size={34} />
       </View>
       <Text
         style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
@@ -963,7 +992,7 @@ function TenantHome({
     <>
       <Card>
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <IconBadge icon={PropertyIcon} />
+          <IconBadge icon={PropertyArtwork} />
           <View style={{ flex: 1, gap: spacing.sm }}>
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
@@ -1085,6 +1114,7 @@ type OwnerRoute =
   | "/owner-rooms"
   | "/owner-notices"
   | "/owner-upcoming-notices"
+  | "/owner-payment-claims"
   | "/owner-concerns"
   | "/owner-vacancy-finder"
   | "/owner-staff"
@@ -1220,8 +1250,28 @@ function OwnerHome({
           below belongs to the property being replaced, so leaving it on screen
           while the list is open means scrolling past a whole dashboard for the
           property you are in the middle of switching away from. */}
+      {/* The tab bar loads with the screen — it needs no data — and under it
+          the shape of whichever tab is open. Counts match what arrives: five
+          snapshot boxes three to a row on Dashboard, the workspace CTA and the
+          four live-digest tiles on Workspace. */}
       {selectedProperty && !selectorOpen && dashboardQuery.isFetching && !dashboard ? (
-        <SkeletonCard />
+        <>
+          <OwnerTabBar onChange={setTab} tab={tab} />
+          {tab === "dashboard" ? (
+            <View style={{ gap: spacing.md }}>
+              <SkeletonTiles count={5} perRow={3} />
+              <SkeletonCard />
+              <SkeletonCard />
+            </View>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              <SkeletonCard />
+              <SkeletonTiles count={4} />
+              <SkeletonCard />
+              <SkeletonCard />
+            </View>
+          )}
+        </>
       ) : null}
 
       {selectedProperty && !selectorOpen && dashboard ? (
@@ -1247,8 +1297,8 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
       active={tab}
       onChange={onChange}
       options={[
-        { label: "Workspace", value: "workspace" },
-        { label: "Dashboard", value: "dashboard" },
+        { icon: LayoutGrid, label: "Workspace", value: "workspace" },
+        { icon: ChartColumn, label: "Dashboard", value: "dashboard" },
       ]}
     />
   );
@@ -1293,20 +1343,20 @@ function DashboardTab({
               but it hides whether that is nothing owed or nothing paid yet. */}
           <DashboardSnapshotBox
             active={openSnapshot === "collection"}
-            icon={Banknote}
+            icon={MoneyIcon}
             label="Collection"
             onPress={() => toggle("collection")}
             tone="primary"
             value={`${compactMoneyPaise(money.collectedThisMonthPaise)}/${compactMoneyPaise(money.billedThisMonthPaise).replace("₹", "")}`}
           />
-          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyIcon} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
+          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyArtwork} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
           <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
           {/* Spent OVER budget, the same shape as Collection. Spend alone says
               nothing: ₹40,000 is a good month or a disaster depending entirely
               on the number it is being measured against. */}
           <DashboardSnapshotBox
             active={openSnapshot === "expense"}
-            icon={Wallet}
+            icon={ExpenseIcon}
             label="Expense"
             onPress={() => toggle("expense")}
             tone={budget.level === "EXCEEDED" ? "danger" : "primary"}
@@ -1380,14 +1430,22 @@ function DashboardSnapshotBox({
       }}
     >
       <Icon color={accent} size={24} strokeWidth={2.2} />
-      {/* Shrinks rather than truncates: these are money figures, and a ratio like
-          ₹1.2L/5.1L is far wider than the 3/11 these tiles were sized for.
-          Half a rupee value is worse than a slightly smaller one. */}
+      {/* Shrinks rather than truncates: these are money figures, and a ratio
+          like ₹12K/₹51K is far wider than the 3/11 these boxes were sized for.
+          Half a rupee value is worse than a slightly smaller one.
+
+          Measured, not adjustsFontSizeToFit — that prop does nothing on web, so
+          the intent above was only ever honoured on a phone. These boxes are a
+          third of a row wide, which is why they showed it first. */}
       <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-        style={{ color: tone === "danger" ? colors.danger : colors.ink, fontFamily: fonts.display, fontSize: 20, fontVariant: ["tabular-nums"], letterSpacing: -0.3 }}
         numberOfLines={1}
+        style={{
+          color: tone === "danger" ? colors.danger : colors.ink,
+          fontFamily: fonts.display,
+          fontSize: metricFontSize(value, 20),
+          fontVariant: ["tabular-nums"],
+          letterSpacing: -0.3,
+        }}
       >
         {value}
       </Text>
@@ -1429,7 +1487,7 @@ function SnapshotDetail({
           <BillingSnapshotCard money={money} />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
-            <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
+            <SnapshotTile icon={CollectedIcon} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
@@ -1445,10 +1503,10 @@ function SnapshotDetail({
           <PropertySnapshotCard occupancy={occupancy} />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SnapshotTile icon={DoorOpen} label="Rooms" value={String(occupancy.roomCount)} tone="primary" />
-            <SnapshotTile icon={DoorClosed} label="Room unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
+            <SnapshotTile icon={DoorClosed} label="Unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={BedDouble} label="Occupied beds" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
+            <SnapshotTile icon={BedDouble} label="Occupied" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
             <SnapshotTile icon={BedSingle} label="Vacant beds" count={occupancy.vacantBeds} total={occupancy.totalBeds} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
           </View>
           <TrendBarChart data={occupancyTrend} title="Occupancy rate" />
@@ -1708,7 +1766,7 @@ function PnlSnapshotDetail({ onNavigate, propertyId }: { onNavigate: (href: Owne
       </View>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <SnapshotTile icon={Receipt} label={profit ? "Net profit" : "Net loss"} tone={profit ? "primary" : "danger"} value={signedMoneyPaise(statement.netPaise)} />
-        <SnapshotTile icon={Banknote} label="Collected" value={formatMoneyPaise(statement.billCollectedPaise + statement.manualIncomePaise)} />
+        <SnapshotTile icon={CollectedIcon} label="Collected" value={formatMoneyPaise(statement.billCollectedPaise + statement.manualIncomePaise)} />
       </View>
       <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
         <View style={{ backgroundColor: statement.billUncollectedPaise > 0 ? colors.warningText : colors.jade, borderRadius: 999, height: 8, width: 8 }} />
@@ -1740,9 +1798,7 @@ function signedCompactPaise(paise: number) {
 
 function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; propertyId: string | null }) {
   const { colors, fonts, type } = useTheme();
-  const dispatch = useAppDispatch();
   const router = useGuardedRouter();
-  const user = useAppSelector((state) => state.auth.user);
   const { canView, owner: isOwner } = usePropertyPermissions(propertyId);
   // A pin survives a permission change AND a module being removed, so both are
   // filtered here — otherwise a stale pin stays on Home as a shortcut into a
@@ -1753,36 +1809,33 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
     .filter((module) => !module.ownerOnly || isOwner)
     .filter((module) => !module.resources?.length || module.resources.some((resource) => canView(resource)));
 
-  function unpin(key: string) {
-    const next = pinnedKeys.filter((pinnedKey) => pinnedKey !== key);
-    dispatch(setPinnedOwnerModules(next));
-    if (user?.id) {
-      void savePinnedOwnerModulesForUser(user.id, next);
-    }
-  }
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        Frequently accessed
-      </Text>
+      {/* No heading. With nothing pinned the line below IS the heading, and once
+          something is pinned the tiles say what they are — a label above them
+          was naming a section the reader had just filled themselves. */}
       {modules.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-          Pin owner services with the pin button on the workspace screen to keep them one tap away here.
-        </Text>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          {/* The Manage tab's pin, at reading size: same glyph, same primary,
+              same lean. The rotation goes on a wrapping View, never on the icon
+              — a lucide glyph fills its own viewBox edge to edge and the SVG
+              clips to that box, so rotating the SVG shears the tip off. */}
+          <View style={{ transform: [{ rotate: "32deg" }] }}>
+            <Pin color={colors.primary} fill={colors.primary} size={16} strokeWidth={2.1} />
+          </View>
+          <Text style={[type.caption, { color: colors.muted, flex: 1, fontSize: 11, lineHeight: 16 }]}>
+            Pinned management services appear here, pin them from the{" "}
+            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold }}>MANAGE</Text> tab to keep
+            them one tap away.
+          </Text>
+        </View>
       ) : (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          {modules.map((module) => {
-            const Icon = module.icon;
-            return (
-              // The unpin control is a SIBLING of the tile, not a child of it.
-              // Nested, both render as <button> on web — invalid HTML, and a
-              // button inside a button is not reachable by keyboard or
-              // announced by a screen reader, so unpinning was mouse-only. This
-              // wrapper carries the grid sizing so the tile can still fill it.
+          {modules.map((module) => (
               <View
                 key={module.key}
-                style={{ flexBasis: "30%", flexGrow: 1, maxWidth: "32%", position: "relative" }}
+                style={{ flexBasis: "30%", flexGrow: 1, maxWidth: "32%" }}
               >
                 <AnimatedPressable
                   accessibilityRole="button"
@@ -1793,7 +1846,7 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
                     borderCurve: "continuous",
-                    borderRadius: 16,
+                    borderRadius: 12,
                     borderWidth: 1,
                     gap: spacing.xs,
                     justifyContent: "center",
@@ -1802,10 +1855,28 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
                     width: "100%",
                   }}
                 >
-                  {/* Bare icon, same treatment as the Tools grid but smaller for
-                      the tighter tile. The tinted chip it sat in made every pin
-                      read as a status badge rather than a shortcut. */}
-                  <Icon color={colors.primary} size={34} strokeWidth={1.8} />
+                  <View
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: "transparent",
+                      borderRadius: 999,
+                      height: module.artworkVariant === "large" ? 68 : 64,
+                      justifyContent: "center",
+                      overflow: "hidden",
+                      width: module.artworkVariant === "wide" ? 90 : module.artworkVariant === "large" ? 68 : 64,
+                    }}
+                  >
+                    <Image
+                      accessibilityIgnoresInvertColors
+                      accessible={false}
+                      resizeMode="contain"
+                      source={module.artwork}
+                      style={{
+                        height: module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                        width: module.artworkVariant === "wide" ? 88 : module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                      }}
+                    />
+                  </View>
                   <Text
                     style={{
                       color: colors.ink,
@@ -1819,40 +1890,8 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
                     {module.title}
                   </Text>
                 </AnimatedPressable>
-
-                {/* Last sibling and raised, so it paints over the tile on both
-                    platforms. No stopPropagation needed any more — a tap here
-                    never reaches the tile because it is no longer inside it. */}
-                <AnimatedPressable
-                  accessibilityLabel={`Unpin ${module.title}`}
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={() => unpin(module.key)}
-                  style={{
-                    alignItems: "center",
-                    height: 30,
-                    justifyContent: "center",
-                    position: "absolute",
-                    right: 2,
-                    top: 2,
-                    width: 30,
-                    zIndex: 2,
-                  }}
-                >
-                  {/* Filled and leaning, matching the workspace cards:
-                      everything here is pinned by definition, so the mark shows
-                      the state that unpinning would leave.
-
-                      The tilt sits on a wrapping View, not on the icon: a
-                      lucide glyph fills its own viewBox and the SVG clips to
-                      it, so rotating the SVG shears the pin's tip off. */}
-                  <View style={{ transform: [{ rotate: "32deg" }] }}>
-                    <Pin color={colors.primary} fill={colors.primary} size={15} strokeWidth={2} />
-                  </View>
-                </AnimatedPressable>
               </View>
-            );
-          })}
+          ))}
         </View>
       )}
     </View>
@@ -1889,17 +1928,17 @@ function WorkspaceTab({
             looks broken, and leaves the survivors stretched across the row. */}
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HomeToolBox icon={Search} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
-            <HomeToolBox icon={Wallet} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} wide />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.expenses} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <HomeToolBox
               badge={attention.pendingDepositSettlements ?? 0}
-              icon={Landmark}
+              artwork={HOME_TOOL_ARTWORK.deposit}
               label="Deposit manager"
               onPress={() => onNavigate("/owner-deposit-manager")}
             />
-            <HomeToolBox icon={TrendingUp} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
           </View>
         </View>
       </Section>
@@ -1917,7 +1956,10 @@ function WorkspaceTab({
               accentColor={colors.jade}
               hint={formatMoneyPaise(today.paymentsMadeTodayPaise)}
               highlight={today.paymentsMadeToday > 0}
-              icon={Banknote}
+              // ReceiptText, the same mark the owner and tenant bill cards
+              // carry. A payment made today is a bill being settled, and this
+              // tile opens straight into that list.
+              icon={ReceiptText}
               label="Payments"
               onPress={() => onNavigate("/owner-billing")}
               value={String(today.paymentsMadeToday)}
@@ -1950,6 +1992,13 @@ function WorkspaceTab({
             />
           </View>
         </View>
+        {/* Always, including at zero. It used to appear only when someone was
+            waiting, which meant the one route to the claims screen existed only
+            while there was a claim on it — an owner could not go and look at
+            what had already been verified, or check the screen was there at
+            all. A steady tile reading zero also says "nothing is waiting",
+            which a missing tile does not. */}
+        <PaymentClaimsCard digest={dashboard.paymentIntents} onOpen={() => onNavigate("/owner-payment-claims")} />
         <UpcomingNoticesCard
           onOpen={() => onNavigate("/owner-upcoming-notices")}
           propertyId={dashboard.property.propertyId}
@@ -1961,7 +2010,27 @@ function WorkspaceTab({
   );
 }
 
-function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; icon: ComponentType<LucideProps>; label: string; onPress: () => void }) {
+function HomeToolBox({
+  artwork,
+  badge,
+  label,
+  onPress,
+  wide = false,
+}: {
+  artwork: ImageSourcePropType;
+  badge?: number;
+  label: string;
+  onPress: () => void;
+  /**
+   * The artwork is landscape rather than square.
+   *
+   * <p>`contain` fits to the narrower side, so a 3:2 image in a 48-square box
+   * renders 48 wide and 32 tall — two thirds the height of its square
+   * neighbours, which is what made one tile look shrunken. Widening the box
+   * lets it reach the same height instead.
+   */
+  wide?: boolean;
+}) {
   const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
@@ -2001,7 +2070,12 @@ function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; ic
           </Text>
         </View>
       ) : null}
-      <Icon color={colors.primary} size={48} strokeWidth={1.8} />
+      <Image
+        accessibilityIgnoresInvertColors
+        resizeMode="contain"
+        source={artwork}
+        style={{ height: 48, width: wide ? 72 : 48 }}
+      />
       <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}>
         {label}
       </MarqueeText>
@@ -2011,6 +2085,50 @@ function HomeToolBox({ badge, icon: Icon, label, onPress }: { badge?: number; ic
 
 // Owner-only quick view of the staff team, sitting full-width (two tiles wide)
 // under the live digest. Figures are estimated from current staff/manager pay terms.
+
+/**
+ * Tenants who say they have paid, waiting on the owner's bank statement.
+ *
+ * <p>The oldest wait is coloured when it passes a day, because the number that
+ * matters here is not how many are queued but how long someone has been blocked.
+ */
+function PaymentClaimsCard({ digest, onOpen }: { digest: PaymentIntentDigest; onOpen: () => void }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
+      <Card>
+        <View style={{ gap: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            {/* 30 in a 44 rail, matching Upcoming notices directly below —
+                the two digest cards are read as a pair. The 72px artwork, not
+                the 1254px one: half a megabyte is a lot to download for a mark
+                this small. */}
+            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+              <PaymentClaimsIcon size={30} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
+                Payment claims
+              </Text>
+            </View>
+            <ChevronRight color={colors.muted} size={20} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <StaffMetricBox hint="To verify" label="Awaiting" value={String(digest.awaitingReview)} />
+            <StaffMetricBox hint="At stake" label="Claimed" value={formatMoneyPaise(digest.awaitingAmountPaise)} />
+            {/* Resolved, not "oldest wait". With the tile now on the dashboard
+                whether or not anything is queued, an empty queue showed three
+                figures that all meant nothing — and "Oldest: Today" on zero
+                claims reads as a claim raised today. This says what the screen
+                got done instead. */}
+            <StaffMetricBox hint="This month" label="Resolved" value={String(digest.resolvedThisMonth)} />
+          </View>
+        </View>
+      </Card>
+    </AnimatedPressable>
+  );
+}
 
 function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
@@ -2026,8 +2144,11 @@ function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; prope
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-              <Megaphone color={colors.ink} size={30} strokeWidth={1.8} />
+            {/* 30 in a 44 rail, the same as Payment claims above it — the
+                two digest cards are read as a pair and a glyph a few points
+                out is visible straight away. */}
+            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+              <NoticeIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
@@ -2076,8 +2197,10 @@ function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; proper
       <Card>
         <View style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <View style={{ alignItems: "center", borderRadius: 14, height: 44, justifyContent: "center", width: 44 }}>
-              <Wallet color={colors.ink} size={30} strokeWidth={1.8} />
+            {/* 30 in a 44 rail, the third of the digest cards to carry its
+                module's artwork rather than a line glyph. */}
+            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+              <ExpenseIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
@@ -2322,6 +2445,24 @@ function formatRelativeTime(value: string) {
   return formatDate(value);
 }
 
+/**
+ * One live-digest count, in the app's metric-card shape.
+ *
+ * <p>
+ * It used to be its own thing: a centred column with a 26pt glyph above the
+ * label and everything middle-aligned. Every other statistic in the app — the
+ * billing summary, the concern overview, the tenancy snapshot, the dashboard
+ * tiles — is a 38pt ink glyph in a 44-wide rail with the label, number and
+ * hint stacked beside it, so the four digest tiles were the last place the same
+ * kind of fact wore a different face.
+ *
+ * <p>
+ * The glyph is ink, like everywhere else. It used to turn blue on activity,
+ * which is what the {@code hint} line underneath already says — and saying it
+ * twice cost the tile its resemblance to every card around it. {@code
+ * accentColor} still tints that line, so Payments reads green for money in
+ * while the other three stay neutral queues.
+ */
 function DigestTile({
   accentColor,
   hint,
@@ -2344,165 +2485,210 @@ function DigestTile({
   onPress: () => void;
   value: string;
 }) {
-  const { colors, fonts, isDark, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const tone = accentColor ?? colors.primary;
   const accent = highlight ? tone : colors.muted;
+  const valueSize = metricFontSize(value, 23);
 
   return (
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
       style={{
-        alignItems: "center",
         backgroundColor: colors.surface,
         borderColor: colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: 14,
+        borderRadius: 12,
         borderWidth: 1,
+        elevation: 2,
         flex: 1,
-        gap: spacing.xs,
-        minHeight: 132,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.md,
+        // Centred: a tile whose hint wraps to two lines is taller than the one
+        // beside it, and top-aligned the shorter one's glyph sat against the
+        // ceiling with the spare height below it.
+        justifyContent: "center",
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
       }}
     >
-      {/* No chip: the tile already has its own surface, so a second filled
-          shape inside it read as a control rather than a label. Colour alone
-          carries the highlight. */}
-      {/* The icon keeps the shared highlight colour whatever the tile is. Only
-          the figures take a tile's own tone — the icon is what makes the four
-          tiles read as one grid. */}
-      <Icon color={highlight ? colors.primary : colors.muted} size={26} strokeWidth={2.1} />
-      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text
-        style={{
-          // The count is always ink. Colouring it on activity made the number
-          // itself look like a status, when the number IS the fact — the icon
-          // and the line beneath it already carry whether anything happened.
-          color: colors.ink,
-          fontFamily: fonts.display,
-          fontSize: 25,
-          fontVariant: ["tabular-nums"],
-          letterSpacing: -0.5,
-          lineHeight: 30,
-          textAlign: "center",
-        }}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-      {/* No dot. It restated what the hint's own colour already says, and four
-          of them across a row read as status lights on a device. */}
-      <Text style={[type.caption, { color: accent, textAlign: "center" }]} numberOfLines={1}>
-        {hint}
-      </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {/* Bare on the tile's own white — no chip. The tile is already a
+            surface, and a filled square inside it read as a control. */}
+        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+        </View>
+
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            {label}
+          </Text>
+          {/* The count is always ink. Colouring it on activity made the number
+              itself look like a status, when the number IS the fact — the hint
+              beneath it carries whether anything happened. */}
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.display,
+              fontSize: valueSize,
+              fontVariant: ["tabular-nums"],
+              lineHeight: valueSize + 5,
+            }}
+          >
+            {value}
+          </Text>
+          {/* No dot. It restated what the hint's own colour already says, and
+              four of them across a grid read as status lights on a device. */}
+          <Text numberOfLines={2} style={[type.caption, { color: accent, fontSize: 11, lineHeight: 15 }]}>
+            {hint}
+          </Text>
+        </View>
+      </View>
     </AnimatedPressable>
   );
 }
 
-function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupancy"] }) {
+/**
+ * A rate, its status and how far along it is — one card, used twice.
+ *
+ * <p>
+ * Occupancy and collection were two copies of the same layout with the same
+ * thresholds expressed differently, which is how their type sizes and chip
+ * treatments drifted apart. They share this now, so a change to one is a change
+ * to both.
+ *
+ * <p>
+ * The status is a {@link BillingStatusBadge}, not a caps label on grey. Every
+ * other state in the app — a bill's, a claim's, a notice's — is a soft tint
+ * with a glyph and a sentence-case word, and these two were the last places
+ * saying it another way.
+ */
+function RateCard({
+  caption,
+  icon,
+  progress,
+  status,
+  title,
+  tone,
+  value,
+}: {
+  caption: string;
+  icon: ComponentType<LucideProps>;
+  /** 0-100. Drives the bar only — the headline value may be money instead. */
+  progress: number;
+  status: { label: string; level: "good" | "watch" | "poor" };
+  title: string;
+  tone: string;
+  value: string;
+}) {
   const { colors, fonts, type } = useTheme();
-  const rate = occupancy.totalBeds > 0 ? Math.round((occupancy.occupiedBeds / occupancy.totalBeds) * 100) : 0;
-  const tone = rate >= 90 ? colors.successText : rate >= 60 ? colors.primary : colors.danger;
-  const label = rate >= 90 ? "Near full" : rate >= 60 ? "Healthy" : occupancy.totalBeds === 0 ? "No beds set up" : "Low occupancy";
+  const Icon = icon;
+  const badge =
+    status.level === "good"
+      ? { background: colors.successSoft, color: colors.successText, icon: CheckCircle2 }
+      : status.level === "watch"
+        ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3 }
+        : { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle };
 
   return (
     <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
-        {/* Names what the number is about. Three snapshot cards sit in a row on
-            this screen and the figures alone do not say which is the property's
-            and which is the money's. */}
-        <PropertyIcon color={colors.kicker} size={30} />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {/* The metric card's rail, so this reads as the same family as the
+            tiles beneath it rather than as a banner above them. */}
+        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+        </View>
+
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            Occupancy rate
+          <Text style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            {title}
           </Text>
-          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
-            {rate}%
+          {/* 28, not 34. It is the card's headline and outranks the 23pt tiles
+              below, but at 34 it was nearly half again their size and turned a
+              summary into a scoreboard. */}
+          <Text
+            numberOfLines={1}
+            style={{
+              color: tone,
+              fontFamily: fonts.display,
+              fontSize: metricFontSize(value, 28),
+              lineHeight: metricFontSize(value, 28) + 5,
+            }}
+          >
+            {value}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-            {occupancy.occupiedBeds} of {occupancy.totalBeds} beds occupied
-          </Text>
-        </View>
-        <View
-          style={{
-            alignSelf: "flex-start",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={[type.eyebrow, { color: tone }]}>
-            {label}
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
+            {caption}
           </Text>
         </View>
+
+        <BillingStatusBadge
+          background={badge.background}
+          color={badge.color}
+          icon={badge.icon}
+          label={status.label}
+        />
       </View>
 
-      <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 10, marginTop: spacing.sm, overflow: "hidden" }}>
-        <View style={{ backgroundColor: tone, borderRadius: 999, height: 10, width: `${Math.min(100, Math.max(0, rate))}%` }} />
+      <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 8, overflow: "hidden" }}>
+        <View style={{ backgroundColor: tone, borderRadius: 999, height: 8, width: `${Math.min(100, Math.max(0, progress))}%` }} />
       </View>
     </Card>
   );
 }
 
+function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupancy"] }) {
+  const { colors } = useTheme();
+  const rate = occupancy.totalBeds > 0 ? Math.round((occupancy.occupiedBeds / occupancy.totalBeds) * 100) : 0;
+  const level = rate >= 90 ? "good" : rate >= 60 ? "watch" : "poor";
+  const tone = level === "good" ? colors.successText : level === "watch" ? colors.primary : colors.danger;
+
+  return (
+    <RateCard
+      caption={`${occupancy.occupiedBeds} of ${occupancy.totalBeds} beds occupied`}
+      icon={PropertyArtwork}
+      progress={rate}
+      status={{
+        label: rate >= 90 ? "Near full" : rate >= 60 ? "Healthy" : occupancy.totalBeds === 0 ? "No beds" : "Low",
+        level,
+      }}
+      title="Occupancy rate"
+      tone={tone}
+      value={`${rate}%`}
+    />
+  );
+}
+
 function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors } = useTheme();
   const collectable = money.billedThisMonthPaise;
   const collected = money.collectedThisMonthPaise;
   // Before anything is collected this month the rate is a meaningless 0% — show
   // the amount still collectable instead of "₹0 of ₹0 collected".
   const awaiting = collected === 0 && collectable > 0;
   const rate = collectable > 0 ? Math.round((collected / collectable) * 100) : 0;
-  const tone = awaiting
-    ? colors.primary
-    : collectable === 0
-      ? colors.danger
-      : rate >= 90
-        ? colors.successText
-        : rate >= 60
-          ? colors.primary
-          : colors.danger;
-  const label =
-    collectable === 0 ? "Nothing billed" : awaiting ? "Awaiting" : rate >= 90 ? "On track" : rate >= 60 ? "Collecting" : "Behind";
+  const level = awaiting ? "watch" : collectable === 0 ? "poor" : rate >= 90 ? "good" : rate >= 60 ? "watch" : "poor";
+  const tone = level === "good" ? colors.successText : level === "watch" ? colors.primary : colors.danger;
 
   return (
-    <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
-        <View style={{ gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            {awaiting ? "Collectable this month" : "Collection rate"}
-          </Text>
-          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
-            {awaiting ? formatMoneyPaise(collectable) : `${rate}%`}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-            {awaiting
-              ? "Yet to be collected"
-              : `${formatMoneyPaise(collected)} of ${formatMoneyPaise(collectable)} collected`}
-          </Text>
-        </View>
-        <View
-          style={{
-            alignSelf: "flex-start",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={[type.eyebrow, { color: tone }]}>
-            {label}
-          </Text>
-        </View>
-      </View>
-
-      <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 10, marginTop: spacing.sm, overflow: "hidden" }}>
-        <View style={{ backgroundColor: tone, borderRadius: 999, height: 10, width: `${Math.min(100, Math.max(0, rate))}%` }} />
-      </View>
-    </Card>
+    <RateCard
+      caption={
+        awaiting
+          ? "Yet to be collected"
+          : `${formatMoneyPaise(collected)} of ${formatMoneyPaise(collectable)} collected`
+      }
+      icon={CollectionIcon}
+      progress={rate}
+      status={{
+        label: collectable === 0 ? "Nothing billed" : awaiting ? "Awaiting" : rate >= 90 ? "On track" : rate >= 60 ? "Collecting" : "Behind",
+        level,
+      }}
+      title={awaiting ? "Collectable this month" : "Collection rate"}
+      tone={tone}
+      value={awaiting ? formatMoneyPaise(collectable) : `${rate}%`}
+    />
   );
 }
 
@@ -2630,15 +2816,14 @@ function OwnerPropertyPicker({
           // and it clashed with the photograph it sat behind. The prompt state
           // is carried by the border and the eyebrow instead.
           backgroundColor: colors.surfaceRaised,
-          // A hairline, not a 2px ink frame. The heavy black edge made this the
-          // loudest thing on Home — a black box before it was a property — and
-          // it fought the photograph inside it. The card earns its prominence
-          // from its height, the image and the display-size name; the border
-          // only has to close the shape.
-          borderColor: selectedProperty ? colors.borderStrong : colors.primary,
+          // No border at all. The card is a photograph with a shadow under it —
+          // an edge drawn around a picture that already ends at a hard boundary
+          // is a second line saying the same thing, and the blue variant made
+          // the unselected state the most saturated element on Home. The
+          // prompt is carried by the eyebrow turning blue, which is where the
+          // reader is looking anyway.
           borderCurve: "continuous",
           borderRadius: 18,
-          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.md,
           minHeight: 72,
@@ -2683,9 +2868,7 @@ function OwnerPropertyPicker({
             third, and boxing a glyph inside a card inside a page is one edge
             too many. Without the border it can take the tile's full width
             instead of sitting shrunk in the middle of it. */}
-        <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
-          <PropertyIcon color={colors.ink} size={34} />
-        </View>
+        <PropertyArtwork size={42} />
         <View style={{ flex: 1, gap: spacing.xxs }}>
           {/* Ink, not the usual kicker grey. These two lines now sit on a
               photograph, and a light grey that reads fine on flat white

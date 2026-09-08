@@ -94,8 +94,11 @@ public class ChatAccessService {
      *
      * <p>The owner always can — {@code accessLevel} answers MANAGE for them
      * without a grant existing. A manager holds nothing until the owner adds
-     * them in chat settings, which writes the same {@link ManagerResource#CHATS}
-     * grant the manager-permissions screen shows.
+     * them to the ACCESS LIST on the chat screen, which writes the ordinary
+     * {@link ManagerResource#CHATS} grant. That list is the only place the
+     * grant is made: chat is deliberately absent from the manager-permissions
+     * screen, because an owner deciding who reads their tenants messages is
+     * thinking about the chat screen rather than a matrix of resources.
      *
      * <p>A soft boolean rather than a throwing check, because the sections it
      * gates are hidden rather than disabled: a screen that showed a locked

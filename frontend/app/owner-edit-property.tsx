@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft } from "lucide-react-native";
 
@@ -29,6 +29,7 @@ import { ROOM_TYPE_INTRO } from "@/features/property/room-type-board";
 import { RoomTypesSection } from "@/features/property/room-types-section";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -86,7 +87,8 @@ export default function OwnerEditPropertyScreen() {
   if (!property) {
     return (
       <View style={{ backgroundColor: colors.formSurface, flex: 1, padding: spacing.lg }}>
-        <EmptyState
+        <EmptyState
+
           title="No active property selected"
           description="Choose the property you want to edit from Home."
         />
@@ -116,6 +118,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const router = useGuardedRouter();
   const insets = useSafeAreaInsets();
   const { colors, fonts, type } = useTheme();
+  const keyboardInset = useKeyboardInset();
   const onClose = () => router.back();
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState(property.address);
@@ -369,7 +372,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   return (
     <View style={{ backgroundColor: colors.formSurface, flex: 1 }}>
       {unsaved.dialog}
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flex: 1 }}>
             {/* The inset is on the header, not the screen: it was a bottom
@@ -413,7 +416,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
             <ScrollView
               contentContainerStyle={{
                 gap: spacing.lg,
-                paddingBottom: PINNED_FOOTER_CLEARANCE,
+                paddingBottom: PINNED_FOOTER_CLEARANCE + keyboardInset,
                 paddingHorizontal: spacing.lg,
                 // Tighter than the sides. The tab strip already leaves a gap
                 // below its rule, and a full gutter on top of that pushed the

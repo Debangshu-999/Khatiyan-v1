@@ -60,6 +60,20 @@ public class BillingAccessPolicy {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.BILLING_CYCLES);
     }
 
+    /**
+     * Verifying a tenant's UPI payment claim — <b>owner only</b>.
+     *
+     * <p>
+     * Not {@code BILLING_CYCLES} manage, even though that covers recording a
+     * manual payment. Recording one is the owner or manager stating what they
+     * themselves collected; approving a claim is confirming money arrived in the
+     * owner's bank account, and only the owner can read that statement. A
+     * manager would be signing off on evidence they cannot see.
+     */
+    public void ensureOwnsPaymentVerification(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureOwner(actorUserId, propertyId);
+    }
+
     // --- Deposits ---
 
     public void ensureCanViewDeposits(UUID actorUserId, UUID propertyId) {

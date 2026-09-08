@@ -15,12 +15,14 @@ import { EmptyState } from "@/components/empty-state";
 import { AlertModal } from "@/components/alert-modal";
 import { SingleOptionPicker } from "@/components/option-picker";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
-import { ProgressBar } from "@/components/progress-bar";
+import { StepProgress } from "@/components/step-progress";
+import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { PhoneField } from "@/features/auth/auth-ui";
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { DateOfBirthField } from "@/features/account/date-of-birth-field";
 import { emailProblem } from "@/features/forms/email-validation";
 import { GENDER_LABELS, GenderPicker } from "@/features/account/gender-picker";
@@ -495,7 +497,9 @@ export default function OwnerOnboardTenantScreen() {
     const emailIssue = emailProblem(tenantEmail, null);
     const cleared = form.validate({
       ...(tenantName.trim() ? {} : { tenantName: "Enter the guest's full name as it appears on their ID." }),
-      ...(/^\d{10}$/.test(phone.trim()) ? {} : { guestPhone: "Enter a 10-digit phone number." }),
+      // The same rule the account path uses. This was bare-digits-only, so the
+      // one field in the app that refused a +91 was the one under a +91 flag.
+      ...(/^(\+91)?\d{10}$/.test(phone.trim()) ? {} : { guestPhone: "Enter a 10-digit phone number." }),
       ...(emailIssue ? { tenantEmail: emailIssue } : {}),
       ...(tenantAddress.trim() ? {} : { tenantAddress: "Enter the guest's address." }),
       // Number("") is 0, not NaN, so the blank case has to be tested first.
@@ -676,6 +680,7 @@ export default function OwnerOnboardTenantScreen() {
     }
   }
 
+  const wizardHeader = usePinnedWizardHeader();
   const stepIndex = STEP_ORDER.indexOf(step);
   const onDone = step === "done";
 
@@ -699,7 +704,10 @@ export default function OwnerOnboardTenantScreen() {
     // NOT the scroll view — inside one it scrolls away with the content, which
     // is the one thing a pinned footer must not do.
     <View style={{ backgroundColor: colors.formSurface, flex: 1 }}>
-    <ScreenScrollView surface={colors.formSurface}>
+    {/* Held still while the form scrolls under it: the step count and the bar
+        answer "where am I and how much is left", which is asked precisely when
+        someone has scrolled far enough to have pushed the answer off screen. */}
+    <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange}>
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
           {/* Both slots are always occupied, even when a button would do
@@ -726,16 +734,19 @@ export default function OwnerOnboardTenantScreen() {
           </View>
         </View>
 
-        {onDone ? null : (
-          <View style={{ gap: 6 }}>
-            <ProgressBar color={colors.jade} height={4} ratio={(stepIndex + 1) / STEP_ORDER.length} />
-            <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-              Step {stepIndex + 1} of {STEP_ORDER.length}
-            </Text>
-          </View>
-        )}
+        {onDone ? null : <StepProgress step={stepIndex} totalSteps={STEP_ORDER.length} />}
       </View>
+    </PinnedWizardHeader>
 
+    <ScreenScrollView
+      // Cleared by the measured header, not a guessed number: the bar drops off
+      // the final step, so a fixed inset would leave a gap on one step and clip
+      // the first field on another. lg, not sm: the panel is an object with a
+      // curved edge, and content arriving right against that curve reads as
+      // clipped rather than as passing beneath it.
+      contentContainerStyle={{ paddingTop: wizardHeader.contentInset + spacing.xl }}
+      surface={colors.formSurface}
+    >
       {step === "type" ? (
         <Card>
           {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -1648,7 +1659,9 @@ function LookupResultCard({
       ? "Cannot be onboarded"
       : exists
         ? "Existing Khatiyan account"
-        : "New tenant — no account yet";
+        // Not "New tenant": the notice says what happens next, and the card
+        // above it already shows who this is.
+        : "No account yet";
 
   return (
     <Card>
@@ -1686,7 +1699,7 @@ function LookupResultCard({
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
             <Phone color={colors.muted} size={13} strokeWidth={2.2} />
             <Text style={[type.caption, { color: colors.muted }]}>
-              {phone}
+              {formatIndianPhone(phone)}
             </Text>
           </View>
         </View>

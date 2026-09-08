@@ -219,6 +219,33 @@ class TenancyServiceTest {
         assertThat(eventCaptor.getValue()).isInstanceOf(TenancyEndedEvent.class);
     }
 
+    /**
+     * A guest stay has no account, so there is no active-tenant flag to clear.
+     *
+     * <p>This called {@code clearActiveTenant(null)} unconditionally, and Spring
+     * Data throws on {@code findById(null)} rather than returning empty — so
+     * ending any daily guest stay failed with "The given id must not be null"
+     * and the stay could never be closed.
+     */
+    @Test
+    void endsAGuestStayWithoutClearingAnAccountFlag() {
+        Tenancy tenancy = Tenancy.startDailyGuest(
+                "TEN-2026-000009",
+                PROPERTY_ID,
+                ROOM_ID,
+                ACTOR_ID,
+                1_200_00,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 3),
+                guestDetails().withPhone("+919007433360"));
+        when(tenancyRepository.findById(tenancy.getId())).thenReturn(Optional.of(tenancy));
+
+        tenancyService.end(ACTOR_ID, tenancy.getId(), LocalDate.of(2026, 6, 3), "Checkout");
+
+        assertThat(tenancy.getStatus()).isEqualTo(TenancyStatus.EXITED);
+        verify(authModule, never()).clearActiveTenant(any());
+    }
+
     @Test
     void pagesManagedActiveAndPastTenanciesSeparately() {
         Tenancy activeTenancy = Tenancy.start(
@@ -281,6 +308,7 @@ class TenancyServiceTest {
         when(propertyModule.getActiveProperty(PROPERTY_ID)).thenReturn(propertyResponse());
         when(propertyModule.getActiveRoom(PROPERTY_ID, ROOM_ID)).thenReturn(roomResponse(12_000_00));
         when(tenancyRepository.save(any(Tenancy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(authModule.normalizePhone("9007433360")).thenReturn("+919007433360");
 
         TenancyOnboardingResponse response = tenancyService.onboardDailyGuest(
                 ACTOR_ID,
@@ -297,7 +325,11 @@ class TenancyServiceTest {
         // The guest's own name and number fill the tenant fields, so every
         // existing reader that shows "who is this stay for" still works.
         assertThat(response.tenancy().tenantName()).isEqualTo("Ravi Menon");
+        // Normalized on the way in, exactly as an account phone is. Stored raw,
+        // a guest's number came back as ten bare digits while every account
+        // tenant's carried +91, and the screens printing it showed the split.
         assertThat(response.tenancy().tenantPhone()).isEqualTo("+919007433360");
+        verify(authModule).normalizePhone("9007433360");
         assertThat(response.tenancy().billingType()).isEqualTo(TenancyBillingType.DAILY);
 
         verify(authModule, never()).provisionTenantUser(any(), any(), any());
@@ -364,10 +396,11 @@ class TenancyServiceTest {
         verifyNoInteractions(authModule);
     }
 
+    /** Deliberately BARE: the guest form collects ten digits under a +91 flag. */
     private static GuestDetails guestDetails() {
         return new GuestDetails(
                 "Ravi Menon",
-                "+919007433360",
+                "9007433360",
                 null,
                 "12 Nandidurga Road, Bengaluru 560046",
                 29,

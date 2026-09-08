@@ -8,6 +8,7 @@ import { Check, ChevronDown, ChevronUp, Info, ShieldCheck, X } from "lucide-reac
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { InfoModal } from "@/components/info-modal";
 import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -41,14 +42,14 @@ type Draft = Partial<Record<ManagerResource, ManagerAccessLevel>>;
 const SCREEN_LEVELS: { description: string; label: string; level: ManagerAccessLevel }[] = [
   { level: "NONE", label: "Blocked", description: "They see it listed but cannot open it." },
   { level: "VIEW", label: "View only", description: "Can open and read, but not change anything." },
-  { level: "MANAGE", label: "View & manage", description: "Can open, read and act." },
+  { level: "MANAGE", label: "View & Manage", description: "Can open, read and act." },
 ];
 
 // Offered when the module has a single screen — "off" is the toggle's job.
 const POSITIVE_LEVELS = SCREEN_LEVELS.filter((option) => option.level !== "NONE");
 
 const LEVEL_LABEL: Record<ManagerAccessLevel, string> = {
-  MANAGE: "View & manage",
+  MANAGE: "View & Manage",
   NONE: "Blocked",
   VIEW: "View only",
 };
@@ -106,6 +107,11 @@ export default function OwnerManagerPermissionsScreen() {
     try {
       await replacePermissions({ levels, managerUserId, propertyId }).unwrap();
       toast.success(`Permissions updated for ${managerName}.`);
+      // Saving is the end of this screen. It used to stay open on top of the
+      // access decision that sent us here, so the only way on was the back
+      // button, which landed straight back on a question already answered.
+      // The toast is global and survives the navigation.
+      router.back();
     } catch (error) {
       // Surface what the server said. Swallowing it left "Could not save" as the
       // only signal, which says nothing about whether it was a validation
@@ -117,8 +123,8 @@ export default function OwnerManagerPermissionsScreen() {
 
   if (!propertyId || !managerUserId) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}>
-        <ScreenHeader onBack={() => router.back()} eyebrow="Access" title="Manager" italicTail="permissions." />
+      <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
+        <ScreenHeader title="Manager" italicTail="permissions." />
         <EmptyState
           icon={ShieldCheck}
 
@@ -143,11 +149,9 @@ export default function OwnerManagerPermissionsScreen() {
         // it. The footer adds insets.bottom itself, which is why the scroll view
         // does NOT also take a "bottom" safe-area edge: that would pad for the
         // navigation bar twice.
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: 0 }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
       >
         <ScreenHeader
-          onBack={() => router.back()}
-          eyebrow="Access"
           title="Manager"
           italicTail="permissions."
           // Kept short on purpose. The accent rule beside a HeaderNote spans the
@@ -253,7 +257,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
       body: "They can open the screen and read everything on it, but every button that would change something is gone — not greyed out, gone.",
     },
     {
-      title: "View & manage lets them act",
+      title: "View & Manage lets them act",
       body: "The screen behaves for them exactly as it does for you.",
     },
     {
@@ -427,18 +431,7 @@ function ModuleCard({
 
                 {section.screens.map((screen) => (
                   <View key={screen.resource} style={{ gap: spacing.xs }}>
-                    {collapse ? null : (
-                      <View style={{ gap: 1 }}>
-                        <Text
-                          style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5, }}
-                        >
-                          {screen.label}
-                        </Text>
-                        <Text style={[type.caption, { color: colors.muted }]}>
-                          {screen.description}
-                        </Text>
-                      </View>
-                    )}
+                    {collapse ? null : <ScreenHeading screen={screen} />}
                     {screen.derivedFrom ? (
                       // Read-only: the grant lives in another module. Showing a
                       // second set of options here would be two controls for one
@@ -568,6 +561,50 @@ function levelsFor(screen: AccessScreen, collapse: boolean) {
   return SCREEN_LEVELS;
 }
 
+/**
+ * A screen's name, with its explanation behind an "i".
+ *
+ * <p>
+ * The descriptions are two and three lines each, and there are up to five
+ * screens in a module. Printed under every label they pushed the controls off
+ * the page and turned a settings form into a document, so an owner scrolled
+ * past the reading to reach the three options they came to set.
+ *
+ * <p>
+ * The text itself is unchanged and still one tap away, which is the trade: it
+ * is read once when a screen is new to you and never again.
+ */
+function ScreenHeading({ screen }: { screen: AccessScreen }) {
+  const { colors, fonts, type } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+        {screen.label}
+      </Text>
+      <AnimatedPressable
+        accessibilityLabel={`What ${screen.label} covers`}
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={() => setOpen(true)}
+        style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+        tapLockMs={0}
+      >
+        <Info color={colors.kicker} size={16} strokeWidth={2.4} />
+      </AnimatedPressable>
+
+      {open ? (
+        <InfoModal onClose={() => setOpen(false)} title={screen.label}>
+          <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21 }]}>
+            {screen.description}
+          </Text>
+        </InfoModal>
+      ) : null}
+    </View>
+  );
+}
+
 function LevelOption({
   active,
   description,
@@ -589,10 +626,15 @@ function LevelOption({
       style={{
         alignItems: "center",
         backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
-        borderColor: active ? colors.primary : colors.border,
-        borderCurve: "continuous",
-        borderRadius: 14,
-        borderWidth: active ? 1.5 : 1,
+        // The border stays neutral whether or not this option is chosen. The
+        // fill and the tick already say which one is selected, and outlining it
+        // as well drew a blue box around one option in a stack of three that
+        // are all the same control.
+        borderColor: colors.border,
+        // Square, like the checkbox beside it. These are choices in a form, and
+        // a rounded row reads as a card you could open.
+        borderRadius: 0,
+        borderWidth: 1,
         flexDirection: "row",
         gap: spacing.sm,
         paddingHorizontal: spacing.md,
@@ -604,8 +646,7 @@ function LevelOption({
           alignItems: "center",
           backgroundColor: active ? colors.primary : "transparent",
           borderColor: active ? colors.primary : colors.borderStrong,
-          borderCurve: "continuous",
-          borderRadius: 6,
+          borderRadius: 0,
           borderWidth: 1.5,
           height: 20,
           justifyContent: "center",

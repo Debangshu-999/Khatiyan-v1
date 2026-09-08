@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, BackHandler, Easing, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Animated, BackHandler, Easing, Image, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import { Compass, Home, Search } from "lucide-react-native";
+import { Building2, MapPin } from "lucide-react-native";
 
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { ScreenHeader } from "@/components/screen-header";
+import { HeaderNote } from "@/components/header-note";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
@@ -35,6 +35,7 @@ import {
 import { useLazyReverseGeocodeQuery, useSearchLocationsQuery, type GeoSuggestion } from "@/store/services/geo-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { SkeletonList } from "@/components/skeleton";
 
 type SubmittedSearch = {
   text: string;
@@ -43,6 +44,22 @@ type SubmittedSearch = {
 const defaultSearch: SubmittedSearch = {
   text: "",
 };
+
+/**
+ * A region a search is scoped to.
+ *
+ * <p>`area` is what gets matched against a listing's locality and what splits
+ * exact results from nearby ones. `city` and `state` widen the fallback.
+ */
+type LocationScope = {
+  area: string;
+  city: string;
+  state: string;
+};
+
+const DISCOVERY_HERO = require("../../assets/discovery-hero.png");
+const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/discovery-empty-search.png");
+const NO_LOCATION_ILLUSTRATION = require("../../assets/workspace/No-Location_512x512.png");
 
 export default function DiscoveryScreen() {
   const { colors, fonts, type } = useTheme();
@@ -54,6 +71,24 @@ export default function DiscoveryScreen() {
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedArea, setSelectedArea] = useState("");
+
+  /**
+   * Where a text search is scoped, kept apart from the City and Area pickers.
+   *
+   * <p>These used to be the same three values, and the two controls wrote into
+   * each other: picking a place from the search box reverse-geocoded it and
+   * dropped the result into the pickers, so typing "Gachibowli" filled Area with
+   * "Ward 106 Serilingampally" — the administrative ward the geocoder returns,
+   * which no listing is filed under — and searched THAT while the heading still
+   * said Gachibowli. Zero results for a place with listings in it.
+   *
+   * <p>Two scopes now, and only one is live at a time: using either control
+   * clears the other. {@code area} is the label the person actually chose, never
+   * a ward name inferred from coordinates. City and state come from the geocoder
+   * and are used only to scope the query and label the "elsewhere in…" section,
+   * never to fill a picker.
+   */
+  const [textScope, setTextScope] = useState<LocationScope | null>(null);
   // Whether the active search came from a manual pick (city/area/suggestion or a
   // typed search) rather than the auto-fetched device location. This decides
   // which location source drives the query so both paths behave identically.
@@ -88,12 +123,12 @@ export default function DiscoveryScreen() {
     () =>
       isActiveTenant
         ? [
-            { label: "Nearby Locations", value: "locations" },
-            { label: "Properties", value: "properties" },
+            { icon: MapPin, label: "Nearby Locations", value: "locations" },
+            { icon: Building2, label: "Properties", value: "properties" },
           ]
         : [
-            { label: "Properties", value: "properties" },
-            { label: "Nearby Locations", value: "locations" },
+            { icon: Building2, label: "Properties", value: "properties" },
+            { icon: MapPin, label: "Nearby Locations", value: "locations" },
           ],
     [isActiveTenant],
   );
@@ -117,17 +152,29 @@ export default function DiscoveryScreen() {
     }
   }, [location, searchText, submittedSearch.text]);
 
+  /**
+   * The one scope a manual search runs against.
+   *
+   * <p>The pickers win when they hold anything, but they can only hold something
+   * if they were the last control used — every entry point clears the other
+   * scope. Reading both and merging them is what produced searches nobody asked
+   * for, with an area from one control and a city from the other.
+   */
+  const pickerScope: LocationScope | null =
+    selectedCity || selectedArea ? { area: selectedArea, city: selectedCity, state: selectedState } : null;
+  const manualScope = pickerScope ?? textScope;
+
   // The area (locality) the active search is scoped to. For manual searches it
-  // is the picked area or typed text; for auto searches it is the geocoded
-  // locality. Used both for the query and to split exact vs nearby results.
+  // is whichever scope is live; for auto searches it is the geocoded locality.
+  // Used both for the query and to split exact vs nearby results.
   const searchedArea = (
-    manualSelection ? selectedArea || submittedSearch.text : location.locality ?? location.searchHint ?? ""
+    manualSelection ? manualScope?.area ?? "" : location.locality ?? location.searchHint ?? ""
   ).trim();
   // The state the search is scoped to — drives the "nearby" (same-state)
-  // fallback. Manual searches use the picked state; auto searches use the
+  // fallback. Manual searches use the live scope's state; auto searches use the
   // geocoded region. Always known for both paths so the fallback is identical.
-  const searchedState = (manualSelection ? selectedState : location.state ?? "").trim();
-  const searchedCity = (manualSelection ? selectedCity : location.city ?? "").trim();
+  const searchedState = (manualSelection ? manualScope?.state ?? "" : location.state ?? "").trim();
+  const searchedCity = (manualSelection ? manualScope?.city ?? "" : location.city ?? "").trim();
 
   const propertyQueryArgs = useMemo(
     () => ({
@@ -148,7 +195,7 @@ export default function DiscoveryScreen() {
       minRentPaise: appliedFilters.minRentPaise,
       maxRentPaise: appliedFilters.maxRentPaise,
       preferredFor: appliedFilters.preferredFor,
-      foodIncluded: appliedFilters.foodIncluded,
+      foodIncluded: appliedFilters.mealTypes.length > 0 ? true : null,
       mealTypes: appliedFilters.mealTypes,
       electricityIncluded: appliedFilters.electricityIncluded,
       bathroomType: appliedFilters.bathroomType,
@@ -198,11 +245,15 @@ export default function DiscoveryScreen() {
 
     if (isManual) {
       setManualSelection(true);
-      const effectiveText = selectedArea || selectedCity || typed;
-      setSubmittedSearch({ text: effectiveText });
-      if (!selectedCity && !selectedArea && typed) {
-        // Free-typed text with no picked option — pure text matching.
+      if (hasManualPick) {
+        setSubmittedSearch({ text: selectedArea || selectedCity });
+      } else if (typed) {
+        // Typed and submitted without choosing a suggestion. The text IS the
+        // scope — matched as a locality, with no city or state to widen to,
+        // because nothing has told us which region this belongs to.
         setSelectedState("");
+        setTextScope({ area: typed, city: "", state: "" });
+        setSubmittedSearch({ text: typed });
       }
     } else {
       // Search (or re-search) the auto-fetched device location.
@@ -210,6 +261,7 @@ export default function DiscoveryScreen() {
       setSelectedState("");
       setSelectedCity("");
       setSelectedArea("");
+      setTextScope(null);
       setSearchText(autoHint);
       setSubmittedSearch({ text: autoHint });
     }
@@ -224,6 +276,7 @@ export default function DiscoveryScreen() {
     setSelectedState("");
     setSelectedCity("");
     setSelectedArea("");
+    setTextScope(null);
     setSubmittedSearch(defaultSearch);
     setSelectedPropertyId(null);
     setPage(0);
@@ -250,29 +303,39 @@ export default function DiscoveryScreen() {
     setPage(0);
     setSubmittedSearch({ text: label });
 
+    // The pickers are the other scope, and only one may be live. Cleared here
+    // rather than merged, so a city left over from an earlier pick cannot
+    // silently narrow a search the person made by typing.
+    clearPickers();
+
     if (suggestion.latitude == null || suggestion.longitude == null) {
       // No coordinates — plain text search of the label.
-      setSelectedState("");
-      setSelectedCity("");
-      setSelectedArea(label);
+      setTextScope({ area: label, city: "", state: "" });
       return;
     }
 
-    // Resolve the picked place's address details (locality/city/state) so the
-    // search is region-scoped. The distance reference stays the device location,
+    // Resolve the picked place's city and state so the same-region fallback has
+    // something to widen to. The distance reference stays the device location,
     // so the picked coordinates are only used here to look up the region.
     try {
       const address = await reverseGeocode({ lat: suggestion.latitude, lng: suggestion.longitude }, true).unwrap();
-      setSelectedState(address.state ?? "");
-      setSelectedCity(address.city ?? "");
-      setSelectedArea(address.locality ?? "");
+      // The LABEL is the area, not `address.locality`. The geocoder answers with
+      // the administrative unit containing the point — "Ward 106 Serilingampally"
+      // for Gachibowli — and no owner files a listing under a ward number, so
+      // matching on it returned nothing for places that plainly have listings.
+      setTextScope({ area: label, city: address.city ?? "", state: address.state ?? "" });
     } catch {
-      // Reverse lookup failed — fall back to the formatted address text so the
-      // backend can still infer the region from it; coordinates still rank.
-      setSelectedState("");
-      setSelectedCity("");
-      setSelectedArea(suggestion.address ?? label);
+      // Reverse lookup failed — the label alone still matches as a locality,
+      // just with no region to fall back to.
+      setTextScope({ area: label, city: "", state: "" });
     }
+  }
+
+  /** Empties the City and Area pickers, so the text scope is the only live one. */
+  function clearPickers() {
+    setSelectedState("");
+    setSelectedCity("");
+    setSelectedArea("");
   }
 
   const propertyPage = propertiesQuery.data;
@@ -285,8 +348,18 @@ export default function DiscoveryScreen() {
     [properties, searchedArea],
   );
   const areaLabel = submittedSearch.text.trim();
-  const nearbyCityLabel = searchedCity || (manualSelection ? selectedState : location.state ?? "").trim();
+  // The live scope's state, not the picker's — on a text search the picker is
+  // empty and this would have read "elsewhere in " with nothing after it.
+  const nearbyCityLabel = searchedCity || searchedState || (location.state ?? "").trim();
   const activeFilterCount = countActivePropertyFilters(appliedFilters);
+  const noPropertiesFound = Boolean(
+    hasActiveSearch &&
+      propertyPage &&
+      !propertiesQuery.isFetching &&
+      !propertiesQuery.isError &&
+      exactProperties.length === 0 &&
+      nearbyProperties.length === 0,
+  );
   const cities = citiesQuery.data ?? [];
   const areas = areasQuery.data ?? [];
   // The geocoder can return the same place more than once; dedupe so it renders
@@ -322,7 +395,7 @@ export default function DiscoveryScreen() {
     // cards; the deeper grey put a heavy band either side of the image and made
     // the page compete with the picture it exists to show.
     return (
-      <LinearGradient colors={[colors.primarySoft, colors.formSurface, colors.formSurface]} style={{ flex: 1 }}>
+      <View style={{ backgroundColor: colors.surfaceRaised, flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
           {/* A plain ScrollView, so it has to bring its own RefreshControl —
               ScreenScrollView supplies one everywhere else, which is why the
@@ -331,7 +404,11 @@ export default function DiscoveryScreen() {
               detail loads on first open, and the spinner would appear over a
               screen nobody pulled. */}
           <ScrollView
-            contentContainerStyle={{ gap: spacing.lg, paddingBottom: 96, paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}
+            // spacing.sm to match the app's header gap. A plain ScrollView does
+            // not inherit ScreenScrollView's preset, so this branch kept the
+            // old lg while every other screen moved — and it is the branch that
+            // lost its back button, which is what the lg used to sit under.
+            contentContainerStyle={{ gap: spacing.lg, paddingBottom: 96, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
             keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
@@ -352,7 +429,7 @@ export default function DiscoveryScreen() {
             {detailQuery.isLoading ? <PropertyProfileSkeleton /> : null}
 
             {detailQuery.data ? (
-              <PropertyProfile property={detailQuery.data} onBack={() => setSelectedPropertyId(null)} />
+              <PropertyProfile property={detailQuery.data} />
             ) : null}
 
             {detailQuery.isError ? (
@@ -367,17 +444,13 @@ export default function DiscoveryScreen() {
             ) : null}
           </ScrollView>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader
-        title="Find"
-        italicTail="nearby."
-        subtitle="Properties and local services around your selected location."
-      />
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <DiscoveryHeader />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
 
@@ -388,8 +461,13 @@ export default function DiscoveryScreen() {
             cityOptions={cities}
             loadingSuggestions={suggestionsQuery.isFetching}
             activeFilterCount={activeFilterCount}
+            // A picker still writes its choice into the search box — that
+            // direction reads as the box showing where you are searching. Only
+            // the reverse was wrong. Each one drops the text scope so the two
+            // never both hold a region.
             onAreaSelect={(area) => {
               setManualSelection(true);
+              setTextScope(null);
               setSelectedArea(area?.area ?? "");
               setSelectedCity(area?.city ?? selectedCity);
               setSelectedState(area?.state ?? selectedState);
@@ -401,6 +479,7 @@ export default function DiscoveryScreen() {
             }}
             onCitySelect={(city) => {
               setManualSelection(true);
+              setTextScope(null);
               setSelectedCity(city?.city ?? "");
               setSelectedState(city?.state ?? "");
               setSelectedArea("");
@@ -416,7 +495,15 @@ export default function DiscoveryScreen() {
             }}
             onClearSearch={clearSearch}
             onSearch={handleSearch}
-            onSearchTextChange={setSearchText}
+            // Editing the box by hand hands the scope back to the text path.
+            // A picker writes its choice in here, so without this, typing over
+            // "Hyderabad" and pressing Search still searched Hyderabad — the
+            // picker short-circuits the typed text, and the edit did nothing.
+            // Only fires on real typing, never when a picker sets the value.
+            onSearchTextChange={(text) => {
+              setSearchText(text);
+              clearPickers();
+            }}
             onSuggestionSelect={selectSuggestion}
             searchText={searchText}
             selectedArea={selectedArea}
@@ -436,11 +523,8 @@ export default function DiscoveryScreen() {
           {hasActiveSearch ? (
             <>
           <Card>
-            <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  Results
-                </Text>
                 <Text
                   style={{
                     color: colors.ink,
@@ -451,16 +535,69 @@ export default function DiscoveryScreen() {
                 >
                   Property listings
                 </Text>
-                <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
-                  {propertyPage
-                    ? exactProperties.length === 0
-                      ? `No listings found${areaLabel ? ` for "${areaLabel}"` : ""}`
-                      : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${areaLabel ? ` for "${areaLabel}"` : ""}`
-                    : "Loading property listings"}
-                </Text>
+                {!noPropertiesFound ? (
+                  <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
+                    {propertyPage
+                      ? `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${areaLabel ? ` for "${areaLabel}"` : ""}`
+                      : "Loading property listings"}
+                  </Text>
+                ) : null}
               </View>
-              {propertiesQuery.isFetching ? <ActivityIndicator color={colors.primary} /> : null}
             </View>
+
+            {noPropertiesFound ? (
+              <View
+                style={{
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  paddingBottom: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  paddingTop: spacing.sm,
+                }}
+              >
+                <Image
+                  accessibilityIgnoresInvertColors
+                  resizeMode="contain"
+                  source={EMPTY_SEARCH_ILLUSTRATION}
+                  style={{ height: 144, width: 144 }}
+                />
+                <Text
+                  style={{
+                    color: colors.ink,
+                    fontFamily: fonts.display,
+                    fontSize: 21,
+                    letterSpacing: -0.25,
+                    textAlign: "center",
+                  }}
+                >
+                  No listings found
+                </Text>
+                <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+                  {areaLabel ? `No listings found for "${areaLabel}".` : "No listings were found for this location."}
+                </Text>
+                <AnimatedPressable
+                  accessibilityRole="button"
+                  onPress={clearSearch}
+                  style={{
+                    alignItems: "center",
+                    borderColor: colors.primary,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    justifyContent: "center",
+                    marginTop: spacing.sm,
+                    minHeight: 48,
+                    paddingHorizontal: spacing.lg,
+                  }}
+                >
+                  <MapPin color={colors.primary} size={19} strokeWidth={2.3} />
+                  <Text style={{ color: colors.primary, fontFamily: fonts.displaySoft, fontSize: 15 }}>
+                    Try a different location
+                  </Text>
+                </AnimatedPressable>
+              </View>
+            ) : null}
           </Card>
 
           {propertiesQuery.isError ? (
@@ -469,6 +606,13 @@ export default function DiscoveryScreen() {
               description="Check the backend connection and try searching again."
             />
           ) : null}
+
+
+          {/* Listing-shaped, not a spinner in the heading row. A search that
+              takes a moment reserved no height at all, so the results shoved
+              the page down the instant they arrived. isLoading, not isFetching:
+              a re-search keeps the listings already on screen. */}
+          {propertiesQuery.isLoading ? <SkeletonList rows={3} /> : null}
 
           {exactProperties.map((property) => (
             <PropertyListingCard
@@ -499,7 +643,9 @@ export default function DiscoveryScreen() {
           ) : null}
             </>
           ) : (
-            <EmptySearchPrompt />
+            <Card>
+              <EmptySearchPrompt />
+            </Card>
           )}
         </>
       ) : (
@@ -507,10 +653,19 @@ export default function DiscoveryScreen() {
           {isActiveTenant ? (
             <NearbyPlacesView mode="tenant" />
           ) : (
-            <DiscoveryEmptyState
-              title="No nearby locations yet"
-              description="Important locations appear here after you become an active tenant of a property."
-            />
+            /* An owner standing on this tab never reaches NearbyPlacesView —
+               the places list belongs to the property somebody is STAYING in —
+               so this is the only empty state they ever see here. The same card
+               and bobbing illustration the property tab shows before a search:
+               both are "there is nothing to look at yet", not "your search
+               found nothing", and that is the treatment for it. */
+            <Card>
+              <EmptySearchPrompt
+                artwork={NO_LOCATION_ILLUSTRATION}
+                description="Important locations appear here after you become an active tenant of a property."
+                title="No nearby locations yet"
+              />
+            </Card>
           )}
         </>
       )}
@@ -592,14 +747,59 @@ function editDistanceAtMost(a: string, b: string, max: number) {
   return previous[b.length] <= max;
 }
 
+
 // Shown on the properties tab when nothing is searched (initial no-location
 // state, or after the search box is cleared). A magnifying glass sits inside a
 // soft badge with a looping "sonar ping" ring, over a large centred prompt.
-function EmptySearchPrompt() {
+function DiscoveryHeader() {
+  const { colors, type } = useTheme();
+  const { width } = useWindowDimensions();
+  const compact = width < 390;
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.62}
+        numberOfLines={1}
+        style={[type.brand, { color: colors.ink, fontSize: 30, lineHeight: 36, transform: [{ translateY: 9 }] }]}
+      >
+        Find
+        <Text style={[type.brandItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]}>
+          {" "}nearby.
+        </Text>
+      </Text>
+
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ flex: 1 }}>
+          <HeaderNote>Properties and local services around your selected location.</HeaderNote>
+        </View>
+        <View style={{ height: compact ? 76 : 94, width: compact ? 112 : 148 }}>
+          <Image
+            accessibilityIgnoresInvertColors
+            accessible={false}
+            resizeMode="contain"
+            source={DISCOVERY_HERO}
+            style={{ height: "100%", width: "100%" }}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+function EmptySearchPrompt({
+  artwork = EMPTY_SEARCH_ILLUSTRATION,
+  description = "Enter a city, area or place above to find properties nearby.",
+  title = "Search a place to see listings",
+}: {
+  /** Defaults to the search illustration; the nearby tab passes its own. */
+  artwork?: ImageSourcePropType;
+  description?: string;
+  title?: string;
+}) {
   const { colors, fonts, type } = useTheme();
   const bob = useRef(new Animated.Value(0)).current;
 
-  // Only the gentle bob remains; the radiating ring is gone.
   useEffect(() => {
     const bobLoop = Animated.loop(
       Animated.sequence([
@@ -617,22 +817,12 @@ function EmptySearchPrompt() {
 
   return (
     <View style={{ alignItems: "center", gap: spacing.lg, justifyContent: "center", paddingVertical: spacing.xxl }}>
-      <View style={{ alignItems: "center", height: 150, justifyContent: "center", width: 150 }}>
-        {/* Outlined container, black border, ink glyph — no tinted tile behind
-            an icon anywhere in the app. */}
-        <Animated.View
-          style={{
-            alignItems: "center",
-            borderRadius: 999,
-            height: 104,
-            justifyContent: "center",
-            transform: [{ translateY: iconTranslateY }],
-            width: 104,
-          }}
-        >
-          <Search color={colors.ink} size={62} strokeWidth={2.4} />
-        </Animated.View>
-      </View>
+      <Animated.Image
+        accessibilityIgnoresInvertColors
+        resizeMode="contain"
+        source={artwork}
+        style={{ height: 138, transform: [{ translateY: iconTranslateY }], width: 138 }}
+      />
       <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg }}>
         <Text
           style={{
@@ -643,34 +833,12 @@ function EmptySearchPrompt() {
             textAlign: "center",
           }}
         >
-          Search a place to see listings
+          {title}
         </Text>
         <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
-          Enter a city, area or place above to find properties nearby.
+          {description}
         </Text>
       </View>
     </View>
   );
 }
-
-function DiscoveryHeaderIcon() {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.primarySoft,
-        borderColor: colors.primary,
-        borderRadius: 14,
-        borderWidth: 1,
-        height: 46,
-        justifyContent: "center",
-        width: 46,
-      }}
-    >
-      <Compass color={colors.primary} size={21} strokeWidth={2.3} />
-    </View>
-  );
-}
-

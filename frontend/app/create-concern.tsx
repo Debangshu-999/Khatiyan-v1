@@ -201,7 +201,6 @@ export default function CreateConcernScreen() {
   return (
     <ScreenScrollView>
       <ScreenHeader
-        eyebrow="CONCERNS"
         italicTail="concern."
         subtitle="Add category, details and optional photos for the property team."
         title="Raise"

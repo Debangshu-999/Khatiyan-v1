@@ -23,6 +23,8 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
 /** First screenful, and how many more arrive each time the reader reaches the end. */
 const PAGE_SIZE = 6;
 
@@ -86,13 +88,10 @@ export default function NotificationsOlderScreen() {
   return (
     <ScreenScrollView
       // The nested-screen top position, shared with every other back-button screen.
-      contentContainerStyle={{ paddingTop: 0 }}
       onScroll={handleScroll}
       scrollEventThrottle={16}
     >
       <ScreenHeader
-        onBack={() => router.back()}
-        eyebrow="Notifications"
         title="Older"
         italicTail="notifications."
         subtitle={
@@ -106,7 +105,8 @@ export default function NotificationsOlderScreen() {
 
       {isError ? (
         <EmptyState
-          icon={BellOff}
+          icon={BellOff}
+
           title="Couldn't load older notifications"
           description="Try again from Account once the backend is reachable."
         />
@@ -118,7 +118,7 @@ export default function NotificationsOlderScreen() {
 
           {olderItems.length === 0 ? (
             <EmptyState
-              icon={BellOff}
+              artwork={CONCERN_EMPTY_ILLUSTRATION}
               title="No older notifications"
               description={
                 topic === "all"

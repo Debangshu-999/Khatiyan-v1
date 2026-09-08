@@ -21,6 +21,14 @@ public record BillingCycleResponse(
     String tenancyReferenceCode,
     UUID tenantUserId,
     String tenantNameSnapshot,
+    // Printed on the receipt's "Bill To" block. Resolved from the tenant's
+    // account rather than stamped on the cycle: unlike the name, which is a
+    // snapshot of who was billed, these are how you reach that person TODAY.
+    String tenantPhone,
+    // Null unless the address is verified. An unverified address on a document
+    // the tenant may forward to a bank is worse than a blank line, so the
+    // filtering happens here and an unverified one never leaves the server.
+    String tenantEmail,
     UUID propertyId,
     UUID roomId,
     String roomNumber,
@@ -49,7 +57,7 @@ public record BillingCycleResponse(
     public static BillingCycleResponse from(
             BillingCycle cycle,
             List<BillingCycleLineItemResponse> lineItems) {
-        return from(cycle, lineItems, null, null);
+        return from(cycle, lineItems, null, null, null, null);
     }
 
     public static BillingCycleResponse from(
@@ -57,6 +65,16 @@ public record BillingCycleResponse(
             List<BillingCycleLineItemResponse> lineItems,
             String tenancyReferenceCode,
             String roomNumber) {
+        return from(cycle, lineItems, tenancyReferenceCode, roomNumber, null, null);
+    }
+
+    public static BillingCycleResponse from(
+            BillingCycle cycle,
+            List<BillingCycleLineItemResponse> lineItems,
+            String tenancyReferenceCode,
+            String roomNumber,
+            String tenantPhone,
+            String tenantEmail) {
         return new BillingCycleResponse(
             cycle.getId(),
             cycle.getReferenceCode(),
@@ -64,6 +82,8 @@ public record BillingCycleResponse(
             tenancyReferenceCode,
             cycle.getTenantUserId(),
             cycle.getTenantNameSnapshot(),
+            tenantPhone,
+            tenantEmail,
             cycle.getPropertyId(),
             cycle.getRoomId(),
             roomNumber,

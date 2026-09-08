@@ -20,19 +20,27 @@ import { spacing } from "@/theme/spacing";
 export function PropertyProfileSkeleton() {
   return (
     <View style={{ gap: spacing.lg }}>
-      {/* Back button, then the name and its address line. */}
-      <Skeleton height={32} radius={999} width={32} />
-      <View style={{ gap: spacing.sm }}>
-        <Skeleton height={28} width="72%" />
-        <Skeleton height={16} width="90%" />
+      <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end" }}>
+        <Skeleton height={42} radius={999} width={42} />
+        <Skeleton height={42} radius={999} width={42} />
       </View>
 
-      {/* The photograph — the tallest thing on the screen by a long way, and
-          the reason an inch-high placeholder felt so wrong. */}
-      <Skeleton height={260} radius={16} />
+      <Skeleton height={224} radius={18} />
+      <View style={{ flexDirection: "row", gap: 7 }}>
+        {Array.from({ length: 5 }, (_, index) => (
+          <Skeleton height={56} key={index} radius={8} width="18.4%" />
+        ))}
+      </View>
 
-      {/* Enquire. */}
-      <Skeleton height={50} radius={14} />
+      <View style={{ gap: spacing.sm }}>
+        <Skeleton height={24} width="24%" />
+        <Skeleton height={32} width="72%" />
+        <Skeleton height={18} width="94%" />
+        <Skeleton height={42} width="100%" />
+      </View>
+
+      <GridBlock rows={2} />
+      <Skeleton height={86} radius={10} />
 
       {/* Property details: two columns, three rows. */}
       <GridBlock rows={3} />

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { Modal, Text, View } from "react-native";
-import { ChevronDown, X } from "lucide-react-native";
+import { ChevronDown, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
@@ -34,10 +34,13 @@ export const GENDER_LABELS: Record<Gender, string> = {
  * skip cannot tell the difference between that and not having got there yet.
  */
 export function GenderPicker({
+  icon: Icon,
   label = "Gender",
   onChange,
   value,
 }: {
+  /** A glyph on the label line, so the field below still spans full width. */
+  icon?: ComponentType<LucideProps>;
   label?: string;
   onChange: (value: Gender | null) => void;
   value: Gender | null;
@@ -47,7 +50,13 @@ export function GenderPicker({
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>{label}</Text>
+      {/* `muted`, matching FormInput's label at rest. This was `inkSoft`, two
+          shades darker, so a form mixing this field with a FormInput showed two
+          different label colours down one column. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {Icon ? <Icon color={colors.muted} size={15} strokeWidth={2.2} /> : null}
+        <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+      </View>
 
       {/* The clear button is a SIBLING of the field, never a child: nested, its
           press bubbles to the field underneath and reopens the picker it just

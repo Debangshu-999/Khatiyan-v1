@@ -306,6 +306,26 @@ public class BillCycleController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    /**
+     * The bill receipt as a PDF file.
+     *
+     * <p>An ordinary attachment download, like the CSV export above it — which
+     * is the point of generating it here rather than in the app, where the
+     * browser could only ever open a print dialog.
+     */
+    @GetMapping(value = "/cycles/{billingCycleId}/receipt.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> downloadReceipt(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId) {
+        byte[] pdf = billingModule.renderReceiptPdf(user.userId(), billingCycleId);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"receipt-" + billingCycleId + ".pdf\"")
+                .body(pdf);
+    }
+
     @GetMapping("/cycles/{billingCycleId}/manual-payments")
     public List<ManualPaymentResponse> listManualPayments(
             @AuthenticationPrincipal UserPrincipal user,

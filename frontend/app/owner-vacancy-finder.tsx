@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AirVent, BedDouble, CalendarClock, Check, ChevronDown, Filter, IndianRupee, Layers, RotateCcw, Search } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { AirVent, BedDouble, Building2, CalendarClock, Check, ChevronDown, Filter, IndianRupee, RotateCcw, Search } from "lucide-react-native";
 
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -14,7 +14,7 @@ import { SegmentedChoice } from "@/components/segmented-choice";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonCard } from "@/components/skeleton";
-import { ActionButton, BackButton, ChoiceButton, FormInput, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, FormInput, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   ROOM_CONDITIONINGS,
@@ -30,9 +30,15 @@ import { useListPropertyRoomChangeRequestsQuery, useListPropertyTenanciesQuery, 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_BEDS_ILLUSTRATION = require("../assets/workspace/No-Beds_512x512.png");
+
 type ConditioningFilter = "ANY" | RoomConditioning;
 type RoomTypeFilter = "ANY" | RoomType;
 type UpcomingRoom = { beds: number; date: string; room: OwnerRoom };
+
+// The same file the Home tool card draws, so updating the artwork updates both.
+// They were two different images, and only one of them ever got redrawn.
+const VACANCY_HEADER_ILLUSTRATION = require("../assets/home-tools/vacancy-finder.png");
 
 type SearchCriteria = {
   conditioning: ConditioningFilter;
@@ -90,7 +96,6 @@ function compareByFloor(left: OwnerRoom, right: OwnerRoom, floorQuery: string) {
 }
 
 export default function OwnerVacancyFinderScreen() {
-  const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -241,17 +246,32 @@ export default function OwnerVacancyFinderScreen() {
   const loadingUpcoming = showUpcoming && tenanciesQuery.isFetching && (tenanciesQuery.data ?? []).length === 0;
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <ScreenHeader onBack={() => router.back()}
-        eyebrow="Owner tool"
-        title="Vacancy"
+    <ScreenScrollView
+      background={
+        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+          <LinearGradient
+            colors={[colors.primarySoft, colors.surface]}
+            end={{ x: 0.5, y: 1 }}
+            locations={[0, 1]}
+            start={{ x: 0.5, y: 0 }}
+            style={{ height: 230 }}
+          />
+        </View>
+      }
+      contentContainerStyle={{ paddingTop: spacing.xs }}
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+    >
+      <ScreenHeader
+        artwork={VACANCY_HEADER_ILLUSTRATION}
         italicTail="finder."
         subtitle={selectedProperty ? `Search available rooms in ${selectedProperty.name}.` : "Select a property on Home first."}
+        title="Vacancy"
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={PropertyIcon}
+          icon={PropertyIcon}
           title="No active property selected"
           description="Choose the property whose rooms you want to search from Home."
         />
@@ -348,7 +368,7 @@ export default function OwnerVacancyFinderScreen() {
             <SkeletonCard />
           ) : matchCount === 0 && similarCount === 0 ? (
             <EmptyState
-              icon={Search}
+              artwork={NO_BEDS_ILLUSTRATION}
               title={showUpcoming ? "No active or upcoming vacancies" : "No available rooms"}
               description={
                 showUpcoming
@@ -409,60 +429,85 @@ function RoomResultCard({
 }) {
   const { colors, fonts, type } = useTheme();
   const upcoming = Boolean(availableFrom);
+  const bedsFree = upcomingBeds ?? 1;
 
   return (
     <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: upcoming ? colors.accentSoft : highlight ? colors.primary : colors.primarySoft,
-            borderRadius: 12,
-            height: 42,
-            justifyContent: "center",
-            width: 42,
-          }}
-        >
-          {upcoming ? (
-            <CalendarClock color={colors.accent} size={20} strokeWidth={2.2} />
-          ) : (
-            <BedDouble color={highlight ? colors.onPrimary : colors.primary} size={20} strokeWidth={2.2} />
-          )}
-        </View>
-        <View style={{ flex: 1, gap: spacing.sm }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, }}>
-              Room {room.roomNumber}
-            </Text>
+      <View style={{ gap: spacing.md }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: upcoming ? colors.accentSoft : highlight ? colors.primary : "transparent",
+              borderRadius: 13,
+              height: 46,
+              justifyContent: "center",
+              width: 46,
+            }}
+          >
             {upcoming ? (
-              <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
-                <CalendarClock color={colors.accent} size={13} strokeWidth={2.4} />
-                <Text style={[type.caption, { color: colors.accent, fontWeight: "900" }]}>
-                  From {formatShortDate(availableFrom!)}
-                </Text>
-              </View>
+              <CalendarClock color={colors.accent} size={23} strokeWidth={2.2} />
             ) : (
-              <Text style={[type.caption, { color: colors.primary, fontWeight: "900" }]}>
-                {room.availableVacancies} free
-              </Text>
+              <BedDouble color={highlight ? colors.onPrimary : colors.primary} size={25} strokeWidth={2.2} />
             )}
           </View>
-          <InfoLine icon={Layers} label="Floor" value={room.floor ? `Floor ${room.floor}` : "Unassigned"} />
-          <InfoLine icon={BedDouble} label="Type" value={`${humanizeToken(room.roomType)} · ${room.occupiedCount}/${room.capacity} filled`} />
-          {/* Conditioning is one of the two filters at the top of the screen,
-              so it gets its own labelled row instead of a fragment buried in
-              the middle of a dot-separated string. */}
-          <InfoLine icon={AirVent} label="Conditioning" value={room.conditioning === "AC" ? "AC" : "Non-AC"} />
-          {upcoming ? (
-            <InfoLine icon={CalendarClock} label="Frees" value={`${upcomingBeds ?? 1} bed${(upcomingBeds ?? 1) === 1 ? "" : "s"} by ${formatShortDate(availableFrom!)}`} />
-          ) : null}
-          <InfoLine icon={IndianRupee} label="Rent" value={`${formatMoneyPaise(room.baseRentPaise)} / bed`} />
+
+          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+              Room {room.roomNumber}
+            </Text>
+            <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+              {humanizeToken(room.roomType)} room
+            </Text>
+          </View>
+
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: upcoming ? colors.accentSoft : colors.primarySoft,
+              borderRadius: 999,
+              flexDirection: "row",
+              gap: 4,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 4,
+            }}
+          >
+            {upcoming ? <CalendarClock color={colors.accent} size={13} strokeWidth={2.4} /> : null}
+            <Text style={[type.caption, { color: upcoming ? colors.accent : colors.primary, fontWeight: "900" }]}>
+              {upcoming ? "Upcoming" : `${room.availableVacancies} free`}
+            </Text>
+          </View>
         </View>
+
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <RoomDetail icon={Building2} label="Floor" value={room.floor ? `Floor ${room.floor}` : "Unassigned"} />
+          <RoomDetail icon={BedDouble} label="Occupancy" value={`${room.occupiedCount}/${room.capacity} filled`} />
+          <RoomDetail icon={AirVent} label="Conditioning" value={room.conditioning === "AC" ? "AC" : "Non-AC"} />
+          <RoomDetail icon={IndianRupee} label="Rent" value={`${formatMoneyPaise(room.baseRentPaise)} / bed`} />
+        </View>
+
+        {upcoming ? (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.accentSoft,
+              borderRadius: 12,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <CalendarClock color={colors.accent} size={16} strokeWidth={2.3} />
+            <Text style={[type.caption, { color: colors.accent, flex: 1, fontWeight: "800" }]}>
+              {bedsFree} bed{bedsFree === 1 ? "" : "s"} free from {formatShortDate(availableFrom!)}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Card>
   );
 }
-
 /**
  * A single-choice picker, matching the staff category filter.
  *
@@ -622,21 +667,32 @@ function ChoiceRow<T extends string>({
   );
 }
 
-function InfoLine({ icon: Icon, label, value }: { icon: typeof Layers; label: string; value: string }) {
+function RoomDetail({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {
   const { colors, type } = useTheme();
+
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-      <Icon color={colors.kicker} size={14} strokeWidth={2.1} />
-      <Text style={[type.caption, { color: colors.muted }]}>
-        {label}
-      </Text>
-      <Text style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700", textAlign: "right" }]}>
+    <View
+      style={{
+        backgroundColor: colors.surfaceSunken,
+        borderRadius: 12,
+        flexBasis: "46%",
+        flexGrow: 1,
+        gap: 5,
+        minWidth: 0,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+        <Icon color={colors.primary} size={14} strokeWidth={2.2} />
+        <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
+      </View>
+      <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
         {value}
       </Text>
     </View>
   );
 }
-
 function UpcomingVacanciesToggle({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   const { colors, type } = useTheme();
   return (

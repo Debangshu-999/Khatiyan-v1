@@ -2,35 +2,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
+import { MoneyIcon } from "@/components/artwork-icon";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, Repeat, Search, TimerReset, Undo2, Users, X } from "lucide-react-native";
+import Svg, { Circle } from "react-native-svg";
+import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, TimerReset, Undo2, Users, Wallet, WalletCards, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
-import { ScreenHeader } from "@/components/screen-header";
+
 import { StatusPill as Pill } from "@/components/status-pill";
 import { MonthSelector } from "@/components/month-selector";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SearchField } from "@/components/search-field";
 import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { NoticeBar, RequiredMark } from "@/features/owner/owner-ui";
 import { SheetShell } from "@/components/sheet-shell";
-import { BillTotal } from "@/features/owner/bill-views";
+import { BillStatusPill, BillTotal } from "@/features/owner/bill-views";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { FieldError } from "@/components/field-error";
 import { SingleOptionPicker } from "@/components/option-picker";
-import { TabSwitcher } from "@/components/tab-switcher";
+import { TabSwitcher, type TabOption } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
 import { MultiImageField } from "@/features/uploads/multi-image-field";
 import { SingleImageField } from "@/features/uploads/single-image-field";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { BackButton, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { Section } from "@/components/section";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -46,12 +48,23 @@ import {
   useLazyExportPropertyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
   useListUpcomingPropertyCyclesQuery,
-  useListManualPaymentsQuery,
   useRecordManualPaymentMutation,
 } from "@/store/services/billing-api";
-import { useListMyPropertiesQuery } from "@/store/services/property-api";
+import { downloadBillReceipt } from "@/features/billing/download-bill-receipt";
+// One receipt, printed for both sides. The document and its sheet used to live
+// in this file, which is how the tenant ended up reading a different-looking
+// paper for the same bill.
+import { BillReceiptSheet } from "@/features/billing/bill-receipt-sheet";
+import { PaymentDetailsSheet } from "@/features/billing/payment-details-sheet";
+import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
+import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
+import { SkeletonCard, SkeletonList, SkeletonPills, SkeletonTiles } from "@/components/skeleton";
+import { HeaderGradient } from "@/components/header-gradient";
+import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
+
+const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
 
 type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
 type CycleView = "cycles" | "other";
@@ -63,6 +76,8 @@ type SummaryFilter = "all" | "cycles" | "other" | "overdue" | "paid" | "unpaid" 
 // can never render larger than the button beside it.
 const BILL_ACTION_ROW_HEIGHT = 48;
 const CYCLE_PAGE_SIZE = 8;
+const BILLING_HEADER_ILLUSTRATION = require("../assets/workspace/billing-header.png");
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Client-side pager: a single month's cycles are bounded, and the summary tiles
 // + "view all" modal still need the full list, so we page the array in memory.
@@ -188,6 +203,9 @@ export default function OwnerBillingScreen() {
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const account = useAppSelector((state) => state.auth.user);
+  const accessToken = useAppSelector((state) => state.auth.accessToken);
+  const apiBaseUrl = useAppSelector((state) => state.appConfig.apiBaseUrl);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = selectedPropertyId
@@ -195,6 +213,21 @@ export default function OwnerBillingScreen() {
     : properties.length === 1
       ? properties[0]
       : null;
+
+  /**
+   * The contact printed on the property's letterhead.
+   *
+   * <p>Only the OWNER's. A manager can reach this screen too, and putting their
+   * personal number on the property's receipt would hand a tenant the wrong
+   * person to chase — and hand every tenant a staff member's details.
+   */
+  const letterheadContact = useMemo(() => {
+    const isOwner = Boolean(account && selectedProperty && selectedProperty.ownerId === account.id);
+    return {
+      email: isOwner ? account?.email ?? null : null,
+      phone: isOwner ? account?.phone ?? null : null,
+    };
+  }, [account, selectedProperty]);
 
   const [cycleView, setCycleView] = useState<CycleView>("cycles");
   const [searchDraft, setSearchDraft] = useState("");
@@ -221,10 +254,21 @@ export default function OwnerBillingScreen() {
   };
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter | null>(null);
   const [receiptCycle, setReceiptCycle] = useState<BillingCycle | null>(null);
+  const [paymentDetailsCycle, setPaymentDetailsCycle] = useState<BillingCycle | null>(null);
   const [page, setPage] = useState(0);
   const summaryMonth = selectedMonth;
   // Search applies to both bill lists (rent cycles and other bills).
   const cycleSearchQuery = searchQuery;
+
+  // Match Tenancy: commit the field after a short pause so the list updates
+  // without a separate Search button or a request on every keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearchQuery(searchDraft.trim());
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchDraft]);
 
   // VIEW sees every figure and every bill; MANAGE adds recording payment,
   // one-off bills and line-item edits.
@@ -242,6 +286,10 @@ export default function OwnerBillingScreen() {
   const [exportMonthlyReport, exportState] = useLazyExportPropertyBillingCyclesQuery();
 
   const visibleCycles = cyclesQuery.data ?? [];
+  // isLoading, not isFetching: it means "in flight AND nothing to show". A
+  // refetch of a list already on screen must not blank the page the reader is
+  // looking at.
+  const screenLoading = cyclesQuery.isLoading || monthSummaryQuery.isLoading;
   // Rent cycles vs one-off bills (penalties, ad-hoc charges) shown as separate
   // segmented lists. The summary filter modal still spans all categories.
   const rentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
@@ -299,25 +347,18 @@ export default function OwnerBillingScreen() {
 
   async function downloadCycleReceipt(cycle: BillingCycle) {
     try {
-      const html = buildReceiptHtml(cycle, selectedProperty?.name ?? null);
-
-      if (Platform.OS === "web") {
-        await Print.printAsync({ html });
-        setStatusMessage(`Receipt ready to print or save for ${cycle.referenceCode}.`);
-        return;
-      }
-
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          UTI: "com.adobe.pdf",
-          dialogTitle: `Receipt ${cycle.referenceCode}`,
-          mimeType: "application/pdf",
-        });
-      }
-      setStatusMessage(`Receipt PDF prepared for ${cycle.referenceCode}.`);
+      // Fetched, not rendered here. The server builds the PDF, so this is an
+      // ordinary file download on every platform — the same shape as the
+      // monthly CSV export — and the tenant's copy is the same document.
+      const fileName = await downloadBillReceipt({
+        apiBaseUrl,
+        billingCycleId: cycle.id,
+        fileName: cycle.referenceCode,
+        token: accessToken,
+      });
+      setStatusMessage(`Receipt saved as ${fileName}`);
     } catch {
-      setStatusMessage("Could not generate the receipt PDF. Please try again.");
+      setStatusMessage("Could not download the receipt. Please try again.");
     }
   }
 
@@ -331,41 +372,55 @@ export default function OwnerBillingScreen() {
     setPage(0);
   }
 
-  function runSearch() {
-    setSearchQuery(searchDraft);
-    setPage(0);
-  }
-
-  function clearSearch() {
-    setSearchDraft("");
-    setSearchQuery("");
-    setPage(0);
-  }
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: 0 }}>
-      <BackButton onPress={() => router.back()} />
+    <ScreenScrollView
+      background={<HeaderGradient />}
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+    >
       <ScreenHeader
+        artwork={BILLING_HEADER_ILLUSTRATION}
         badge={!canManageBilling ? <ViewOnlyChip /> : null}
-        title="Billing"
         italicTail="control."
         subtitle={selectedProperty ? `Billing workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
+        title="Billing"
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
-          icon={Banknote}
+          icon={MoneyIcon}
 
           title="Select a property"
           description="Billing is scoped to the active owner property selected on Home."
         />
       ) : null}
 
-      {selectedProperty ? (
+      {/* The WHOLE screen ghosts, not just the list. A page that renders its
+          month picker, summary tiles and tool grid for real and then hangs a
+          skeleton under them is telling the reader the top half is ready when
+          none of it is — and the moment the data lands, every one of those
+          "ready" numbers changes anyway. One boundary around the body, and the
+          real components draw themselves as bars. */}
+      {/* The screen's SHAPE while it loads, not the screen itself. The counts
+          match what actually arrives — one collection card, four summary tiles,
+          two bills — because the arrangement is what a reader takes in during
+          the wait, not whether a card had a chip in its corner. */}
+      {selectedProperty && screenLoading ? (
+        <View style={{ gap: spacing.md }}>
+          <SkeletonPills count={3} />
+          <SkeletonCard />
+          <SkeletonTiles count={4} />
+          <SkeletonCard />
+          <SkeletonPills count={2} />
+          <SkeletonList rows={2} />
+        </View>
+      ) : null}
+
+      {selectedProperty && !screenLoading ? (
         <>
           <MonthSelector onChange={handleSummaryMonthChange} value={summaryMonth} />
 
           <ActiveSummarySection
-            loading={monthSummaryQuery.isFetching}
             month={summaryMonth}
             onOpenFilter={setSummaryFilter}
             oneOffCount={oneOffCycles.length}
@@ -374,6 +429,7 @@ export default function OwnerBillingScreen() {
           />
 
           <BillToolsGrid
+            onOpenPaymentDetails={() => router.push("/owner-payment-details")}
             reportBusy={exportState.isFetching}
             onOpenPaymentHistory={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-payment-history" })}
             onOpenReport={() => setReportActionMode("actions")}
@@ -384,17 +440,9 @@ export default function OwnerBillingScreen() {
             active={cycleView}
             onChange={changeCycleView}
             options={[
-              { label: "Billing cycles", value: "cycles" },
-              { label: "Other bills", value: "other" },
+              { icon: RefreshCw, label: "Billing cycles", value: "cycles" },
+              { icon: ReceiptText, label: "Other bills", value: "other" },
             ]}
-          />
-
-          <CycleSearchCard
-            onClear={clearSearch}
-            onSearch={runSearch}
-            placeholder="Search tenant name, phone or tenancy reference"
-            value={searchDraft}
-            onChange={setSearchDraft}
           />
 
           <BillingCyclesSection
@@ -408,6 +456,13 @@ export default function OwnerBillingScreen() {
             onPageChange={setPage}
             page={page}
             query={visibleQuery}
+            searchField={
+              <SearchField
+                onChangeText={setSearchDraft}
+                placeholder="Search tenant name, phone or tenancy reference"
+                value={searchDraft}
+              />
+            }
           />
 
           {cycleView === "cycles" ? (
@@ -426,8 +481,8 @@ export default function OwnerBillingScreen() {
           cycle={selectedCycle}
           mode={actionMode}
           onClose={closeAction}
-          onDownloadReceipt={downloadCycleReceipt}
           onSelectMode={setActionMode}
+          onViewPaymentDetails={setPaymentDetailsCycle}
           onViewReceipt={setReceiptCycle}
         />
       ) : null}
@@ -451,10 +506,24 @@ export default function OwnerBillingScreen() {
         />
       ) : null}
       {receiptCycle ? (
-        <ReceiptModal
+        <BillReceiptSheet
+          contact={letterheadContact}
           cycle={receiptCycle}
           onClose={() => setReceiptCycle(null)}
-          onDownload={() => downloadCycleReceipt(receiptCycle)}
+          // The sheet no longer closes itself on download — the tenant's copy
+          // stays up to show "Preparing…" on the button. The owner's does close,
+          // so say so here rather than changing what a tap does for both.
+          onDownload={() => {
+            void downloadCycleReceipt(receiptCycle);
+            setReceiptCycle(null);
+          }}
+          property={selectedProperty ?? null}
+        />
+      ) : null}
+      {paymentDetailsCycle ? (
+        <PaymentDetailsSheet
+          cycle={paymentDetailsCycle}
+          onClose={() => setPaymentDetailsCycle(null)}
           propertyName={selectedProperty?.name ?? null}
         />
       ) : null}
@@ -464,20 +533,14 @@ export default function OwnerBillingScreen() {
 }
 
 function ActiveSummarySection({
-  loading,
   month,
   onOpenFilter,
   oneOffCount,
   rentCycleCount,
   summary,
 }: {
-  loading: boolean;
   month: string;
   onOpenFilter: (filter: SummaryFilter) => void;
-  // Counted from the same rows the drill-down lists, not from the summary. The
-  // summary's counts run through countsAsBilled(), which drops UPCOMING so that
-  // money totals stay honest — correct for rupees, wrong for "how many bills",
-  // and it showed 0 while two cycles sat in the list below.
   oneOffCount: number;
   rentCycleCount: number;
   summary?: BillingMonthSummary;
@@ -486,16 +549,9 @@ function ActiveSummarySection({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      {!summary && loading ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
-          Loading summary...
-        </Text>
-      ) : null}
-
       {summary && !summary.hasData ? (
         <EmptyState
-          icon={ReceiptText}
-
+          artwork={NO_BILL_ILLUSTRATION}
           title="No data available"
           description="No billing cycles started in this month."
         />
@@ -503,25 +559,61 @@ function ActiveSummarySection({
 
       {summary && summary.hasData ? (
         <View style={{ gap: spacing.sm }}>
-          {/* Collected against billed is the number the month is judged on, so
-              it leads at full width. Everything below is a breakdown of it. */}
-          <SummaryTile
-            label="Collectable amount"
-            large
-            leadValue={formatMoney(summary.collectedPaise)}
-            value={`/${formatMoney(summary.billedPaise)}`}
-            hint="Collected / billed"
+          <CollectionSummaryCard
+            billedPaise={summary.billedPaise}
+            collectedPaise={summary.collectedPaise}
             onPress={() => onOpenFilter("collectable")}
           />
+
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Billing cycles" value={String(rentCycleCount)} hint="Rent cycles" onPress={() => onOpenFilter("cycles")} />
-            <SummaryTile label="Overdue" value={String(summary.overdueCount)} hint={formatMoney(summary.overduePaise)} onPress={() => onOpenFilter("overdue")} />
-            <SummaryTile label="Other bills" value={String(oneOffCount)} hint="Bills raised" onPress={() => onOpenFilter("other")} />
+            <SummaryTile
+              hint="Rent cycles"
+              icon={FileText}
+              label="Billing cycles"
+              onPress={() => onOpenFilter("cycles")}
+              value={String(rentCycleCount)}
+            />
+            <SummaryTile
+              hint={formatMoney(summary.overduePaise)}
+              icon={TimerReset}
+              label="Overdue"
+              onPress={() => onOpenFilter("overdue")}
+              value={String(summary.overdueCount)}
+            />
           </View>
+
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SummaryTile label="Paid" value={String(summary.paidCycleCount)} hint="Cycles settled" onPress={() => onOpenFilter("paid")} />
-            <SummaryTile label="Unpaid" value={String(summary.unpaidCycleCount)} hint="Awaiting payment" onPress={() => onOpenFilter("unpaid")} />
-            <SummaryTile label="Discount given" value={formatMoney(summary.totalDiscountPaise)} hint="This month" onPress={() => onOpenFilter("discount")} />
+            <SummaryTile
+              hint="Bills raised"
+              icon={ReceiptText}
+              label="Other bills"
+              onPress={() => onOpenFilter("other")}
+              value={String(oneOffCount)}
+            />
+            <SummaryTile
+              hint="Cycles settled"
+              icon={CheckCircle2}
+              label="Paid"
+              onPress={() => onOpenFilter("paid")}
+              value={String(summary.paidCycleCount)}
+            />
+          </View>
+
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile
+              hint="Awaiting payment"
+              icon={WalletCards}
+              label="Unpaid"
+              onPress={() => onOpenFilter("unpaid")}
+              value={String(summary.unpaidCycleCount)}
+            />
+            <SummaryTile
+              hint="This month"
+              icon={Percent}
+              label="Discount given"
+              onPress={() => onOpenFilter("discount")}
+              value={formatMoney(summary.totalDiscountPaise)}
+            />
           </View>
         </View>
       ) : null}
@@ -559,8 +651,7 @@ function PaymentHistorySection({
 
         {orderedCycles.length === 0 ? (
           <EmptyState
-            icon={ReceiptText}
-
+            artwork={NO_BILL_ILLUSTRATION}
             title="No payment history found"
             description={query ? "No billing cycle matched the current search for this month." : "No billing cycles started in this month."}
           />
@@ -600,30 +691,29 @@ function PendingGenerationNote({ count }: { count: number }) {
 }
 
 function BillingCyclesSection({
+  canManage,
   cycles,
   fallbackLateFeePerDayPaise,
   month,
   noun = "billing cycle",
-  canManage,
   notGeneratedCount,
   onAction,
   onPageChange,
   page,
   query,
+  searchField,
 }: {
+  canManage: boolean;
   cycles: BillingCycle[];
   fallbackLateFeePerDayPaise?: number | null;
   month: string;
   noun?: string;
   notGeneratedCount: number;
-  // False for a view-only manager: mutating controls are greyed and disabled
-  // rather than removed, so the manager can see the action exists and is simply
-  // not theirs.
-  canManage: boolean;
   onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
   onPageChange: (page: number) => void;
   page: number;
   query: string;
+  searchField: ReactNode;
 }) {
   const { colors } = useTheme();
   const paged = paginateArray(cycles, page, CYCLE_PAGE_SIZE);
@@ -631,8 +721,7 @@ function BillingCyclesSection({
 
   return (
     <Section
-
-      title={`${cycles.length} ${noun}${cycles.length === 1 ? "" : "s"}`}
+      title={cycles.length + " " + noun + (cycles.length === 1 ? "" : "s")}
       trailing={
         <AnimatedPressable
           accessibilityLabel="How billing cycles work"
@@ -647,16 +736,16 @@ function BillingCyclesSection({
       }
     >
       {rulesOpen ? <BillingRulesModal onClose={() => setRulesOpen(false)} /> : null}
+      {searchField}
       {cycles.length === 0 ? (
         <EmptyState
-          icon={ReceiptText}
-
+          artwork={NO_BILL_ILLUSTRATION}
           title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
           description={
             query
               ? "No cycle matched that tenant name or tenancy ID for this billing month."
               : notGeneratedCount > 0
-                ? `${notGeneratedCount} cycle${notGeneratedCount === 1 ? "" : "s"} ${notGeneratedCount === 1 ? "has" : "have"} not been generated yet — each appears automatically a few days before its due date, so you can adjust it before it goes live.`
+                ? notGeneratedCount + " cycle" + (notGeneratedCount === 1 ? "" : "s") + " " + (notGeneratedCount === 1 ? "has" : "have") + " not been generated yet — each appears automatically a few days before its due date, so you can adjust it before it goes live."
                 : "No billing cycles started in this month."
           }
         />
@@ -831,37 +920,53 @@ function CycleListFrame({ children }: { children: ReactNode }) {
   return <View style={{ gap: spacing.sm }}>{children}</View>;
 }
 
-// Square tiles, three to a row, matching the pinned-module grid on Home.
 function BillToolsGrid({
+  onOpenPaymentDetails,
   onOpenPaymentHistory,
   onOpenReport,
   onOpenTenantBills,
   reportBusy,
 }: {
+  onOpenPaymentDetails: () => void;
   onOpenPaymentHistory: () => void;
   onOpenReport: () => void;
   onOpenTenantBills: () => void;
   reportBusy: boolean;
 }) {
+  const { colors } = useTheme();
   const tools: { icon: ComponentType<LucideProps>; key: string; label: string; onPress: () => void }[] = [
     { icon: History, key: "history", label: "Payment history", onPress: onOpenPaymentHistory },
-    { icon: Users, key: "tenant-bills", label: "Tenant bills", onPress: onOpenTenantBills },
+    // Broken explicitly. "Payment history", "Monthly report" and "Payment
+    // setup" all wrap at their space because they are too wide for a quarter
+    // tile; "Tenant bills" just fits, so it sat alone on one line with its
+    // glyph half a line higher than the other three.
+    { icon: Users, key: "tenant-bills", label: "Tenant\nbills", onPress: onOpenTenantBills },
     { icon: FileDown, key: "report", label: reportBusy ? "Preparing…" : "Monthly report", onPress: onOpenReport },
+    { icon: Wallet, key: "payment-details", label: "Payment setup", onPress: onOpenPaymentDetails },
   ];
 
   return (
-    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      {tools.map((tool) => (
-        <BillToolTile icon={tool.icon} key={tool.key} label={tool.label} onPress={tool.onPress} />
+    <Card style={{ flexDirection: "row", gap: 0, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm }}>
+      {tools.map((tool, index) => (
+        <View key={tool.key} style={{ alignItems: "stretch", flex: 1, flexDirection: "row" }}>
+          {index > 0 ? (
+            <View
+              style={{
+                alignSelf: "center",
+                backgroundColor: colors.borderStrong,
+                height: 62,
+                opacity: 0.65,
+                width: 1,
+              }}
+            />
+          ) : null}
+          <BillToolTile icon={tool.icon} label={tool.label} onPress={tool.onPress} />
+        </View>
       ))}
-    </View>
+    </Card>
   );
 }
 
-// Matches HomeToolBox (home Quick access) and TenancyToolBox: a large bare icon
-// IS the tile's visual, not a small glyph inside a soft box. Billing previously
-// copied the pinned-modules grid instead, so these three read differently from
-// every other tool row in the app.
 function BillToolTile({
   icon: Icon,
   label,
@@ -872,29 +977,25 @@ function BillToolTile({
   onPress: () => void;
 }) {
   const { colors, fonts } = useTheme();
+
   return (
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderCurve: "continuous",
-        borderRadius: 16,
-        borderWidth: 1,
         flex: 1,
         gap: spacing.xs,
         justifyContent: "center",
-        minHeight: 112,
+        minHeight: 88,
         paddingHorizontal: spacing.xs,
-        paddingVertical: spacing.md,
+        paddingVertical: spacing.sm,
       }}
     >
-      <Icon color={colors.primary} size={48} strokeWidth={1.8} />
+      <Icon color={colors.primary} size={32} strokeWidth={1.9} />
       <Text
-        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
         numberOfLines={2}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
       >
         {label}
       </Text>
@@ -977,7 +1078,7 @@ function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onP
       style={{
         alignItems: "center",
         alignSelf: "center",
-        backgroundColor: hasUpcoming ? colors.primarySoft : colors.surfaceSunken,
+        backgroundColor: "transparent",
         borderColor: hasUpcoming ? colors.primary : colors.border,
         borderCurve: "continuous",
         borderRadius: 999,
@@ -1097,53 +1198,6 @@ function MonthlyReportModal({
   );
 }
 
-function CycleSearchCard({
-  onChange,
-  onClear,
-  onSearch,
-  placeholder,
-  value,
-}: {
-  onChange: (value: string) => void;
-  onClear: () => void;
-  onSearch: () => void;
-  placeholder: string;
-  value: string;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            borderColor: colors.border,
-            borderRadius: 14,
-            borderWidth: 1,
-            flexDirection: "row",
-            gap: spacing.sm,
-            paddingHorizontal: spacing.md,
-          }}
-        >
-          <Search color={colors.kicker} size={18} strokeWidth={2.2} />
-          <AppTextInput
-            autoCapitalize="none"
-            onChangeText={onChange}
-            onSubmitEditing={onSearch}
-            placeholder={placeholder}
-            placeholderTextColor={colors.kicker}
-            returnKeyType="search"
-            style={{ color: colors.ink, flex: 1, fontSize: 15, minHeight: 46 }}
-            value={value}
-          />
-          {value ? <IconButton accessibilityLabel="Clear billing search" icon={X} onPress={onClear} /> : null}
-        </View>
-        <ActionButton icon={Search} label="Search" onPress={onSearch} />
-      </View>
-    </Card>
-  );
-}
-
 function CycleCardList({
   canManage = true,
   cycles,
@@ -1172,6 +1226,10 @@ function CycleCardList({
     </View>
   );
 }
+
+
+
+
 
 function BillingCycleCard({
   canManage = true,
@@ -1257,8 +1315,8 @@ function BillingCycleCard({
             <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
               {cycle.referenceCode}
             </Text>
-            <StatusPill cycle={cycle} />
-          </View>
+            <BillStatusPill cycle={cycle} />
+                      </View>
           {/* Due date rides with the tenant name, not with the total. Once a
               bill carries a discount the total line grows a struck-through
               price and a percentage chip, and sharing a row with the date
@@ -1267,8 +1325,8 @@ function BillingCycleCard({
               END dragged the tenant name down to meet its baseline. */}
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <Text
-              numberOfLines={2}
-              style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
+          numberOfLines={2}
+          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
             >
               {tenantName}
             </Text>
@@ -1340,21 +1398,6 @@ function BillingCycleCard({
   );
 }
 
-function StatusPill({ cycle }: { cycle: BillingCycle }) {
-  const statusDisplay = billingCycleStatusDisplay(cycle);
-  const tone: "success" | "danger" | "warning" | "neutral" | "primary" =
-    statusDisplay.tone === "success"
-      ? "success"
-      : statusDisplay.tone === "danger"
-        ? "danger"
-        : statusDisplay.tone === "warning"
-          ? "warning"
-          : statusDisplay.tone === "muted"
-            ? "neutral"
-            : "primary";
-  return <Pill label={statusDisplay.label} tone={tone} />;
-}
-
 function SummaryCyclesModal({
   cycles,
   notGeneratedCount,
@@ -1397,8 +1440,7 @@ function SummaryCyclesModal({
 
           {cycles.length === 0 ? (
             <EmptyState
-              icon={ReceiptText}
-
+              artwork={NO_BILL_ILLUSTRATION}
               title={notGeneratedCount > 0 ? "Cycles not generated yet" : "No matching cycles"}
               description={
                 notGeneratedCount > 0
@@ -1477,16 +1519,16 @@ function BillingActionModal({
   cycle,
   mode,
   onClose,
-  onDownloadReceipt,
   onSelectMode,
+  onViewPaymentDetails,
   onViewReceipt,
 }: {
   canManage: boolean;
   cycle: BillingCycle;
   mode: ActionMode;
   onClose: () => void;
-  onDownloadReceipt: (cycle: BillingCycle) => void;
   onSelectMode: (mode: ActionMode) => void;
+  onViewPaymentDetails: (cycle: BillingCycle) => void;
   onViewReceipt: (cycle: BillingCycle) => void;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -1779,7 +1821,10 @@ function BillingActionModal({
               <ActionButton disabled={!editable || !canManage} icon={Percent} label="Add discount" onPress={() => onSelectMode("discount")} variant="secondary" />
               <ActionButton disabled={!editable || !canManage} icon={Plus} label="Add extra charge" onPress={() => onSelectMode("extra-charge")} variant="secondary" />
               {/* Receipt actions stay available on paid and cancelled bills —
-                  those are exactly the ones an owner comes back to print. */}
+                  those are exactly the ones an owner comes back to print.
+                  Downloading the PDF lives inside the receipt itself rather
+                  than beside this row: two doors to one file meant an owner
+                  could send a receipt without ever having read it. */}
               <ActionButton
                 icon={Eye}
                 label="View receipt"
@@ -1789,15 +1834,20 @@ function BillingActionModal({
                 }}
                 variant="secondary"
               />
-              <ActionButton
-                icon={FileDown}
-                label="Download receipt"
-                onPress={() => {
-                  onClose();
-                  onDownloadReceipt(cycle);
-                }}
-                variant="secondary"
-              />
+              {/* Only once there IS a payment. Before that the sheet would open
+                  on four empty rows and a proof section with nothing in it,
+                  which reads as a fault rather than as "not yet". */}
+              {cycle.status === "PAID" ? (
+                <ActionButton
+                  icon={Banknote}
+                  label="Payment details"
+                  onPress={() => {
+                    onClose();
+                    onViewPaymentDetails(cycle);
+                  }}
+                  variant="secondary"
+                />
+              ) : null}
               {!payable || !editable ? (
                 <Text style={[type.caption, { color: colors.muted }]}>
                   {cycle.status === "UPCOMING"
@@ -2121,7 +2171,7 @@ function SegmentedControl({
 }: {
   active: CycleView;
   onChange: (value: CycleView) => void;
-  options: { label: string; value: CycleView }[];
+  options: TabOption<CycleView>[];
 }) {
   return <TabSwitcher active={active} onChange={onChange} options={options} />;
 }
@@ -2140,87 +2190,233 @@ function SegmentedControl({
  * narrower phone or a larger system font size would reintroduce the wrap, and
  * the alignment would silently break again.
  */
-const TILE_LABEL_LINE_HEIGHT = 14;
-const TILE_HINT_LINE_HEIGHT = 17;
+function CollectionSummaryCard({
+  billedPaise,
+  collectedPaise,
+  onPress,
+}: {
+  billedPaise: number;
+  collectedPaise: number;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const ringSize = 80;
+  const ringStrokeWidth = 8;
+  const ringRadius = (ringSize - ringStrokeWidth) / 2;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const collectedPercent = billedPaise > 0
+    ? Math.max(0, Math.min(100, Math.round((collectedPaise / billedPaise) * 100)))
+    : 0;
+  const animatedPercent = useRef(new Animated.Value(collectedPercent)).current;
+  const animatedCollectedPaise = useRef(new Animated.Value(collectedPaise)).current;
+  const animatedBilledPaise = useRef(new Animated.Value(billedPaise)).current;
+  const [displayPercent, setDisplayPercent] = useState(collectedPercent);
+  const [displayCollectedPaise, setDisplayCollectedPaise] = useState(collectedPaise);
+  const [displayBilledPaise, setDisplayBilledPaise] = useState(billedPaise);
+  const animatedRingOffset = animatedPercent.interpolate({
+    extrapolate: "clamp",
+    inputRange: [0, 100],
+    outputRange: [ringCircumference, 0],
+  });
+
+  useEffect(() => {
+    const percentListenerId = animatedPercent.addListener(({ value }) => {
+      setDisplayPercent(Math.round(value));
+    });
+    const collectedListenerId = animatedCollectedPaise.addListener(({ value }) => {
+      setDisplayCollectedPaise(Math.round(value));
+    });
+    const billedListenerId = animatedBilledPaise.addListener(({ value }) => {
+      setDisplayBilledPaise(Math.round(value));
+    });
+    const animation = Animated.parallel([
+      Animated.timing(animatedPercent, {
+        duration: 650,
+        easing: Easing.out(Easing.cubic),
+        toValue: collectedPercent,
+        useNativeDriver: false,
+      }),
+      Animated.timing(animatedCollectedPaise, {
+        duration: 650,
+        easing: Easing.out(Easing.cubic),
+        toValue: collectedPaise,
+        useNativeDriver: false,
+      }),
+      Animated.timing(animatedBilledPaise, {
+        duration: 650,
+        easing: Easing.out(Easing.cubic),
+        toValue: billedPaise,
+        useNativeDriver: false,
+      }),
+    ]);
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      animatedPercent.removeListener(percentListenerId);
+      animatedCollectedPaise.removeListener(collectedListenerId);
+      animatedBilledPaise.removeListener(billedListenerId);
+    };
+  }, [
+    animatedBilledPaise,
+    animatedCollectedPaise,
+    animatedPercent,
+    billedPaise,
+    collectedPaise,
+    collectedPercent,
+  ]);
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Open collectable billing cycles"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        elevation: 3,
+        flexDirection: "row",
+        gap: spacing.md,
+        padding: spacing.lg,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 4, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 12,
+      }}
+    >
+      <View style={{ flex: 1, gap: spacing.xs }}>
+        <Text style={[type.body, { color: colors.muted, fontSize: 16 }]}>
+          Collectable amount
+        </Text>
+        <Text
+          adjustsFontSizeToFit
+          minimumFontScale={0.65}
+          numberOfLines={1}
+          style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 31, lineHeight: 37 }}
+        >
+          {formatMoney(displayCollectedPaise)}
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 21 }}>
+            {" / " + formatMoney(displayBilledPaise)}
+          </Text>
+        </Text>
+        <Text style={[type.body, { color: colors.muted }]}>Collected / billed</Text>
+      </View>
+
+      <View
+        style={{
+          alignItems: "center",
+          height: ringSize,
+          justifyContent: "center",
+          position: "relative",
+          width: ringSize,
+        }}
+      >
+        <Svg height={ringSize} style={{ position: "absolute" }} width={ringSize}>
+          <Circle
+            cx={ringSize / 2}
+            cy={ringSize / 2}
+            fill="transparent"
+            r={ringRadius}
+            stroke={colors.primarySoft}
+            strokeWidth={ringStrokeWidth}
+          />
+          <AnimatedCircle
+            cx={ringSize / 2}
+            cy={ringSize / 2}
+            fill="transparent"
+            originX={ringSize / 2}
+            originY={ringSize / 2}
+            r={ringRadius}
+            rotation={-90}
+            stroke={colors.primary}
+            strokeDasharray={[ringCircumference, ringCircumference]}
+            strokeDashoffset={animatedRingOffset}
+            strokeLinecap="round"
+            strokeWidth={ringStrokeWidth}
+          />
+        </Svg>
+        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.display, fontSize: 18, lineHeight: 22 }}>
+          {displayPercent}%
+        </Text>
+        <Text style={[type.caption, { color: colors.muted, fontSize: 10 }]}>collected</Text>
+      </View>
+    </AnimatedPressable>
+  );
+}
 
 function SummaryTile({
   hint,
+  icon: Icon,
   label,
-  large,
-  leadValue,
   onPress,
   value,
 }: {
   hint: string;
+  icon: ComponentType<LucideProps>;
   label: string;
-  /** Full width and a bigger figure — for the one number that leads the month. */
-  large?: boolean;
-  /** Shown muted before `value`. The collected half of "collected / billed":
-   *  it is the part already banked, so the eye should land on what is still
-   *  outstanding rather than on money that is no longer a task. */
-  leadValue?: string;
-  onPress?: () => void;
+  onPress: () => void;
   value: string;
 }) {
-  const { colors, type } = useTheme();
-  const style = {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    flex: large ? undefined : 1,
-    gap: spacing.xs,
-    padding: large ? spacing.lg : spacing.md,
-  } as const;
-  // Figures are ink. Colouring them by tone made every tile shout at once —
-  // red, green and blue side by side reads as five warnings rather than a
-  // breakdown. Meaning lives in the label, emphasis in the size.
-  const fontSize = large ? 30 : 20;
-  // Only the small tiles share a row and need to line up. The large one is full
-  // width, never wraps, and would just gain dead space.
-  const content = (
-    <>
-      <Text
-        numberOfLines={large ? 1 : 2}
-        style={[
-          type.eyebrow,
-          { color: colors.kicker, lineHeight: TILE_LABEL_LINE_HEIGHT },
-          large ? null : { height: TILE_LABEL_LINE_HEIGHT * 2 },
-        ]}
-      >
-        {label}
-      </Text>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        numberOfLines={1}
-        style={[type.metric, { color: colors.ink, fontSize, lineHeight: fontSize + 4 }]}
-      >
-        {leadValue ? <Text style={{ color: colors.muted }}>{leadValue}</Text> : null}
-        {value}
-      </Text>
-      <Text
-        numberOfLines={large ? 1 : 2}
-        style={[
-          type.caption,
-          { color: colors.muted },
-          large ? null : { height: TILE_HINT_LINE_HEIGHT * 2 },
-        ]}
-      >
-        {hint}
-      </Text>
-    </>
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        elevation: 2,
+        flex: 1,
+        flexDirection: "row",
+        gap: spacing.sm,
+        minHeight: 104,
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 3, width: 0 },
+        shadowOpacity: 0.75,
+        shadowRadius: 9,
+      }}
+    >
+      <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+        <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          numberOfLines={2}
+          style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+          {label}
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={{
+            color: colors.ink,
+            fontFamily: fonts.display,
+            // Shrinks with the figure's length. adjustsFontSizeToFit does
+            // nothing on web, so a long amount ellipsised there.
+            fontSize: metricFontSize(value, 23),
+            lineHeight: metricFontSize(value, 23) + 5,
+          }}
+        >
+          {value}
+        </Text>
+        <Text
+          numberOfLines={2}
+          style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
+          {hint}
+        </Text>
+      </View>
+    </AnimatedPressable>
   );
-
-  if (onPress) {
-    return (
-      <AnimatedPressable accessibilityRole="button" onPress={onPress} style={style}>
-        {content}
-      </AnimatedPressable>
-    );
-  }
-
-  return <View style={style}>{content}</View>;
 }
 
 function ChoiceButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
@@ -2295,9 +2491,9 @@ function ActionButton({
 
 // How the cycle lifecycle works, for an owner who has just watched a bill
 // appear on its own and wants to know what they can still change.
+/** Billing's own copy. The sheet around it is shared with payment claims. */
 function BillingRulesModal({ onClose }: { onClose: () => void }) {
-  const { colors, fonts, type } = useTheme();
-  const rules: { body: string; title: string }[] = [
+  const rules: HowItWorksStep[] = [
     {
       title: "The first bill of a tenancy stays open",
       body: "It is created and opened the moment you onboard the tenant, so it never gets an early window like the others. Discounts, extra charges and reverting them all stay available on it until it is paid.",
@@ -2336,86 +2532,7 @@ function BillingRulesModal({ onClose }: { onClose: () => void }) {
     },
   ];
 
-  return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "85%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Billing
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
-                How cycles work
-              </Text>
-            </View>
-            <IconButton accessibilityLabel="Close billing rules" icon={X} onPress={onClose} />
-          </View>
-
-          <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
-            {rules.map((rule, index) => (
-              <View
-                key={rule.title}
-                style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
-              >
-                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                  <View
-                    style={{
-                      alignItems: "center",
-                      borderColor: colors.ink,
-                      borderWidth: 1,
-                      borderRadius: 999,
-                      height: 22,
-                      justifyContent: "center",
-                      width: 22,
-                    }}
-                  >
-                    <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11, }}>
-                      {index + 1}
-                    </Text>
-                  </View>
-                  <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14, }}>
-                    {rule.title}
-                  </Text>
-                </View>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                  {rule.body}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={onClose}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.ink,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              justifyContent: "center",
-              marginTop: spacing.sm,
-              minHeight: 46,
-            }}
-          >
-            <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
-          </AnimatedPressable>
-        </View>
-      </View>
-    </Modal>
-  );
+  return <HowItWorksSheet eyebrow="Billing" onClose={onClose} steps={rules} title="How cycles work" />;
 }
 
 // Explains when this bill has to be paid and what being late costs.
@@ -2696,7 +2813,7 @@ function CycleWindowModal({
             <ReceiptLine label="Pay between" strong value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.rentDueDate)}`} />
             <ReceiptLine
               label="Grace"
-              value={cycle.rentGraceDays === 0 ? "None — due on the start date" : `${cycle.rentGraceDays} day${cycle.rentGraceDays === 1 ? "" : "s"} (already in the due date)`}
+              value={cycle.rentGraceDays === 0 ? "None" : `${cycle.rentGraceDays} day${cycle.rentGraceDays === 1 ? "" : "s"}`}
             />
           </View>
 
@@ -2714,7 +2831,7 @@ function CycleWindowModal({
                   }`
                 : `No late fee is set for this property, so paying after ${formatDate(cycle.rentDueDate)} costs nothing extra. You can set a daily rate in property billing settings.`
             }
-            title="If paid late"
+            title="IF PAID LATE?"
             tone="warning"
           />
 
@@ -2809,227 +2926,7 @@ async function downloadTextFile(fileName: string, content: string, mimeType: str
   await Linking.openURL(dataUrl);
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
-function receiptRows(cycle: BillingCycle): { label: string; value: string }[] {
-  return [
-    { label: "Reference", value: cycle.referenceCode },
-    { label: "Status", value: humanizeToken(cycle.status) },
-    { label: "Tenant", value: cycle.tenantNameSnapshot || `Tenant ${shortId(cycle.tenantUserId)}` },
-    { label: "Tenancy", value: cycle.tenancyReferenceCode ?? "Tenancy reference unavailable" },
-    { label: "Room", value: cycle.roomNumber ? `Room ${cycle.roomNumber}` : "Room unavailable" },
-    { label: "Bill", value: billTitle(cycle) },
-    { label: "Period", value: `${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}` },
-    { label: "Due date", value: formatDate(cycle.rentDueDate) },
-    { label: "Paid at", value: cycle.paidAt ? formatDate(cycle.paidAt) : "—" },
-  ];
-}
-
-/**
- * The lines a receipt should show.
- *
- * <p>Reverting a line does not delete it. `clear()` sets its amount to zero and
- * stamps it WAIVED, so the row survives as an audit trail of what was charged
- * and then taken back. A receipt is a statement of what is owed rather than that
- * trail, so a waived line has nothing to say on it — and printing "₹0.00" next
- * to a discount invites the reader to work out why it is there.
- *
- * <p><b>Zero amount is not the test.</b> A line settled from the deposit is also
- * worth zero on the bill and must still appear, because the money genuinely
- * moved — it came out of the deposit instead of the payable. Only WAIVED means
- * "this was undone", and only `clear()` ever sets it.
- */
-function receiptLineItems(cycle: BillingCycle) {
-  return cycle.lineItems.filter((item) => item.settlementAction !== "WAIVED");
-}
-
-function receiptAmounts(cycle: BillingCycle): { label: string; value: string }[] {
-  return [
-    { label: "Base rent", value: formatMoney(cycle.baseAmountPaise) },
-    { label: "Extra charges", value: formatMoney(cycle.extraChargePaise) },
-    { label: "Late fee", value: formatMoney(cycle.lateFeeAmountPaise) },
-    { label: "Discount", value: `- ${formatMoney(cycle.discountAmountPaise)}` },
-  ];
-}
-
-function buildReceiptHtml(cycle: BillingCycle, propertyName: string | null) {
-  const detailRows = receiptRows(cycle)
-    .map((row) => `<tr><td class="k">${escapeHtml(row.label)}</td><td class="v">${escapeHtml(row.value)}</td></tr>`)
-    .join("");
-  const amountRows = receiptAmounts(cycle)
-    .map((row) => `<tr><td class="k">${escapeHtml(row.label)}</td><td class="v">${escapeHtml(row.value)}</td></tr>`)
-    .join("");
-  // Same filter as the on-screen receipt. The PDF is the copy that gets sent
-  // to a tenant, so a reverted line slipping through here would be the version
-  // that actually gets argued about.
-  const printableLines = receiptLineItems(cycle);
-  const lineItems = printableLines.length
-    ? printableLines
-        .map(
-          (item) =>
-            `<tr><td>${escapeHtml(item.label)}</td><td class="muted">${escapeHtml(humanizeToken(item.type))}</td><td class="v">${escapeHtml(formatMoney(item.amountPaise))}</td></tr>`,
-        )
-        .join("")
-    : `<tr><td colspan="3" class="muted">No line items.</td></tr>`;
-
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
-    <style>
-      * { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1c1c1e; }
-      body { padding: 28px; }
-      h1 { font-size: 22px; margin: 0 0 2px; }
-      .eyebrow { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #8a8a8e; margin-bottom: 18px; }
-      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #8a8a8e; margin: 22px 0 6px; }
-      table { width: 100%; border-collapse: collapse; }
-      td { padding: 6px 0; font-size: 13px; border-bottom: 1px solid #ececec; vertical-align: top; }
-      td.k { color: #6b6b70; }
-      td.v { text-align: right; font-weight: 700; }
-      td.muted { color: #8a8a8e; }
-      .total { margin-top: 14px; padding: 12px 14px; background: #f4f4f5; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
-      .total .label { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #6b6b70; }
-      .total .amount { font-size: 22px; font-weight: 800; }
-      .footer { margin-top: 26px; font-size: 11px; color: #a0a0a5; }
-    </style></head><body>
-      <div class="eyebrow">Billing receipt${propertyName ? " · " + escapeHtml(propertyName) : ""}</div>
-      <h1>${escapeHtml(cycle.referenceCode)}</h1>
-      <h2>Cycle details</h2>
-      <table>${detailRows}</table>
-      <h2>Charges</h2>
-      <table>${amountRows}</table>
-      <h2>Line items</h2>
-      <table>${lineItems}</table>
-      <div class="total"><span class="label">Total payable</span><span class="amount">${escapeHtml(formatMoney(cycle.totalAmountPaise))}</span></div>
-      <div class="footer">Generated ${escapeHtml(formatDate(new Date().toISOString()))} · Khatiyan</div>
-    </body></html>`;
-}
-
-function ReceiptModal({
-  cycle,
-  onClose,
-  onDownload,
-  propertyName,
-}: {
-  cycle: BillingCycle;
-  onClose: () => void;
-  onDownload: () => void;
-  propertyName: string | null;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "88%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Receipt{propertyName ? ` · ${propertyName}` : ""}
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
-                {cycle.referenceCode}
-              </Text>
-            </View>
-            <IconButton accessibilityLabel="Close receipt" icon={X} onPress={onClose} />
-          </View>
-
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
-            <View style={{ gap: spacing.md }}>
-              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                {receiptRows(cycle).map((row) => (
-                  <ReceiptLine key={row.label} label={row.label} value={row.value} />
-                ))}
-              </View>
-
-              <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  Charges
-                </Text>
-                {receiptAmounts(cycle).map((row) => (
-                  <ReceiptLine key={row.label} label={row.label} value={row.value} />
-                ))}
-                <View style={{ borderTopColor: colors.border, borderTopWidth: 1, marginTop: spacing.xs, paddingTop: spacing.sm }}>
-                  <ReceiptLine label="Total payable" strong value={formatMoney(cycle.totalAmountPaise)} />
-                </View>
-              </View>
-
-              {receiptLineItems(cycle).length ? (
-                <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-                  <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                    Line items
-                  </Text>
-                  {receiptLineItems(cycle).map((item) => (
-                    <ReceiptLine key={item.id} label={`${item.label} · ${humanizeToken(item.type)}`} value={formatMoney(item.amountPaise)} />
-                  ))}
-                </View>
-              ) : null}
-
-              <ManualPaymentsSection billingCycleId={cycle.id} />
-            </View>
-          </ScrollView>
-
-          <ActionButton
-            icon={FileDown}
-            label="Download PDF"
-            onPress={() => {
-              void onDownload();
-              onClose();
-            }}
-          />
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// How the money actually arrived. Every payment in the app is collected by the
-// owner off-platform and recorded here, so this is the whole payment record —
-// method, reference and when it was logged.
-function ManualPaymentsSection({ billingCycleId }: { billingCycleId: string }) {
-  const { colors, type } = useTheme();
-  const paymentsQuery = useListManualPaymentsQuery(billingCycleId);
-  const payments = paymentsQuery.data ?? [];
-
-  if (paymentsQuery.isLoading) {
-    return null;
-  }
-
-  return (
-    <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        Payments recorded
-      </Text>
-      {payments.length === 0 ? (
-        <Text style={[type.body, { color: colors.muted }]}>
-          No payment recorded yet. Use &ldquo;Mark paid&rdquo; on the bill once the tenant has paid you.
-        </Text>
-      ) : (
-        payments.map((payment) => (
-          <View key={payment.id} style={{ gap: 2, paddingVertical: spacing.xs }}>
-            <ReceiptLine label={`${humanizeToken(payment.method)} · ${formatDate(payment.collectedAt)}`} value={formatMoney(payment.amountPaise)} />
-            {payment.referenceText ? <ReceiptLine label="Reference" value={payment.referenceText} /> : null}
-            {payment.note ? <ReceiptLine label="Note" value={payment.note} /> : null}
-          </View>
-        ))
-      )}
-    </View>
-  );
-}
 
 function ReceiptLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
   const { colors, type } = useTheme();
@@ -3117,6 +3014,12 @@ function billingCycleStatusDisplay(cycle: BillingCycle): { label: string; tone: 
 
   if (cycle.status === "CANCELLED") {
     return { label: "Cancelled", tone: "muted" };
+  }
+  // Its own label rather than a humanized enum name. "Confirmation Pending"
+  // reads as a system state; the owner needs to know a person is waiting on
+  // them, and the tenant needs to know the bill is not theirs to act on.
+  if (cycle.status === "CONFIRMATION_PENDING") {
+    return { label: "Confirming", tone: "warning" };
   }
 
   return { label: humanizeToken(cycle.status), tone: "primary" };

@@ -225,7 +225,13 @@ export function ScreenScrollView({
             justifyContent: centerContent ? "center" : undefined,
             paddingBottom: bottomPadding,
             paddingHorizontal: spacing.lg,
-            paddingTop: spacing.lg,
+            // The app's header gap, in one place. Screens used to override this
+            // to 0 and sit their title against the status bar, because a back
+            // arrow sat above it and took the space. With the arrows gone the
+            // title leads every screen, and it wants a few pixels of air rather
+            // than the lg the default carried for a header that no longer
+            // exists. Screens needing more say so themselves.
+            paddingTop: spacing.sm,
           },
           contentContainerStyle,
           // LAST, so it cannot be overridden. The inset used to live in the

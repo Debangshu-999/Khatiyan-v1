@@ -227,6 +227,22 @@
             <artifactId>spring-modulith-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Renders the tenancy bill receipt to PDF server-side.
+
+            The document used to be built as an HTML string in the app and handed
+            to expo-print, whose web implementation is a bare window.print() that
+            ignores the markup entirely — so a browser printed the billing screen
+            instead of the bill, and no file was produced at all. Generating here
+            means one document, byte-identical for the owner and the tenant, and
+            an ordinary file download on every platform.
+        -->
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>1.0.10</version>
+        </dependency>
+
     </dependencies>
 
     <build>

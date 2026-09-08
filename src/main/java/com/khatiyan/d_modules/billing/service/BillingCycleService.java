@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -83,6 +84,7 @@ public class BillingCycleService {
     private final PropertyModule propertyModule;
     private final BillingAccessPolicy billingAccessPolicy;
     private final AuthModule authModule;
+    private final BillReceiptPdfService receiptPdfService;
     private final DepositManagerService depositManagerService;
     private final ApplicationEventPublisher eventPublisher;
     private final ReferenceCodeGenerator referenceCodeGenerator;
@@ -103,6 +105,7 @@ public class BillingCycleService {
             PropertyModule propertyModule,
             BillingAccessPolicy billingAccessPolicy,
             AuthModule authModule,
+            BillReceiptPdfService receiptPdfService,
             DepositManagerService depositManagerService,
             ApplicationEventPublisher eventPublisher,
             ReferenceCodeGenerator referenceCodeGenerator,
@@ -117,6 +120,7 @@ public class BillingCycleService {
         this.propertyModule = propertyModule;
         this.billingAccessPolicy = billingAccessPolicy;
         this.authModule = authModule;
+        this.receiptPdfService = receiptPdfService;
         this.depositManagerService = depositManagerService;
         this.eventPublisher = eventPublisher;
         this.referenceCodeGenerator = referenceCodeGenerator;
@@ -226,8 +230,15 @@ public class BillingCycleService {
                 propertyId, monthStart, nextMonthStart);
         long collected = billingCycleRepository.sumTotalForPropertyByStatusAndPaidAtBetween(
                 propertyId, BillingCycleStatus.PAID, monthStartInstant, nextMonthStartInstant);
+        // CONFIRMATION_PENDING counts as pending. The money has not arrived until
+        // the owner says it has, and dropping it here the moment a tenant claims
+        // would show the bill as collected on the strength of the claim alone.
         long pending = billingCycleRepository.sumTotalForPropertyByStatusIn(
-                propertyId, List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE));
+                propertyId,
+                List.of(
+                        BillingCycleStatus.UNPAID,
+                        BillingCycleStatus.OVERDUE,
+                        BillingCycleStatus.CONFIRMATION_PENDING));
         long overdue = billingCycleRepository.sumTotalForPropertyByStatus(
                 propertyId, BillingCycleStatus.OVERDUE);
         long overdueCount = billingCycleRepository.countForPropertyByStatus(
@@ -236,8 +247,15 @@ public class BillingCycleService {
                 propertyId, BillingCycleStatus.PAID, todayStartInstant, tomorrowStartInstant);
         long paymentsMadeTodayPaise = billingCycleRepository.sumTotalForPropertyByStatusAndPaidAtBetween(
                 propertyId, BillingCycleStatus.PAID, todayStartInstant, tomorrowStartInstant);
+        // A bill awaiting payment confirmation is still a live bill — leaving it
+        // out made the active count drop as soon as a tenant claimed.
         long activeCycleCount = billingCycleRepository.countForPropertyByStatusIn(
-                propertyId, List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE, BillingCycleStatus.PAID));
+                propertyId,
+                List.of(
+                        BillingCycleStatus.UNPAID,
+                        BillingCycleStatus.OVERDUE,
+                        BillingCycleStatus.CONFIRMATION_PENDING,
+                        BillingCycleStatus.PAID));
         long paidCycleCount = billingCycleRepository.countForPropertyByStatus(propertyId, BillingCycleStatus.PAID);
         long manuallyPaidCycleCount = manualPaymentRepository.countDistinctPaidCyclesByPropertyId(propertyId);
         long unpaidCycleCount = billingCycleRepository.countForPropertyByStatus(propertyId, BillingCycleStatus.UNPAID);
@@ -801,6 +819,57 @@ public class BillingCycleService {
     }
 
     /**
+     * The receipt for one bill, as a PDF.
+     *
+     * <p>
+     * Open to the bill's own tenant as well as to the property's owner and
+     * managers. {@link #getViewableCycle} alone is NOT enough: it resolves to
+     * {@code ManagerAccessPolicy.levelFor}, which answers NONE for anyone who is
+     * neither the owner nor an active manager — a tenant included. This method
+     * claimed to serve tenants and returned 403 to every one of them.
+     *
+     * <p>
+     * The tenant lookup comes first and is scoped by {@code tenantUserId}, so it
+     * can only ever match the caller's own bill. A miss falls through to the
+     * manager gate, which still answers 404 for a cycle that does not exist and
+     * 403 for one that belongs to somebody else.
+     *
+     * <p>
+     * The letterhead's contact is the OWNER's — resolved from the property's
+     * owner rather than from whoever asked — because a manager pulling a receipt
+     * must not put their personal number on the property's paper, and a tenant
+     * pulling one has no contact of the owner's to offer.
+     */
+    @Transactional(readOnly = true)
+    public byte[] renderReceiptPdf(UUID actorUserId, UUID billingCycleId) {
+        BillingCycle cycle = billingCycleRepository
+                .findByIdForTenant(billingCycleId, actorUserId)
+                .orElseGet(() -> getViewableCycle(actorUserId, billingCycleId));
+        PropertyResponse property = propertyModule.getActiveProperty(cycle.getPropertyId());
+        UserSummaryResponse owner = property == null
+                ? null
+                : authModule.findById(property.ownerId()).orElse(null);
+
+        return receiptPdfService.render(
+                toResponse(cycle),
+                new BillReceiptPdfService.ReceiptLetterhead(
+                        property == null ? null : property.name(),
+                        propertyAddress(property),
+                        owner == null ? null : owner.phone(),
+                        verifiedEmail(owner)));
+    }
+
+    /** The property's postal address on one line, as it prints on a letterhead. */
+    private static String propertyAddress(PropertyResponse property) {
+        if (property == null) {
+            return null;
+        }
+        return Stream.of(property.address(), property.area(), property.city(), property.state(), property.pincode())
+                .filter(part -> part != null && !part.isBlank())
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
      * Lists manual payments recorded against a billing cycle the actor manages.
      */
     @Transactional(readOnly = true)
@@ -1068,8 +1137,16 @@ public class BillingCycleService {
         // would refuse a move-out the manager is allowed to run.
 
         // Every bill — rent cycles and one-off penalty bills alike — must be paid.
+        // CONFIRMATION_PENDING blocks an exit too. A claim the owner has not
+        // verified is not payment, and without this a tenant could claim
+        // success, move out, and have the claim rejected afterwards — with the
+        // stay already closed and the bed already released.
         if (billingCycleRepository.existsByTenancyIdAndStatusIn(
-                tenancyId, List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE))) {
+                tenancyId,
+                List.of(
+                        BillingCycleStatus.UNPAID,
+                        BillingCycleStatus.OVERDUE,
+                        BillingCycleStatus.CONFIRMATION_PENDING))) {
             throw new ValidationException("All bills must be paid before tenancy exit");
         }
 
@@ -1260,6 +1337,10 @@ public class BillingCycleService {
      */
     @Transactional
     public int recalculateLateFees(LocalDate today) {
+        // CONFIRMATION_PENDING is deliberately absent: this omission IS the
+        // late-fee freeze while an owner verifies. Because this recomputes from
+        // the due date rather than accumulating, a rejected claim picks the
+        // elapsed days straight back up on the next run.
         List<BillingCycle> cycles = billingCycleRepository.findCyclesEligibleForLateFee(
                 List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
                 today);
@@ -1285,6 +1366,9 @@ public class BillingCycleService {
 
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> findCyclesDueTodayForReminders(LocalDate today) {
+        // CONFIRMATION_PENDING is deliberately absent: a tenant who has claimed
+        // payment has done their part and is waiting on the owner. Chasing them
+        // for it would be the app nagging about its own delay.
         return toResponses(billingCycleRepository.findCyclesDueToday(
                 List.of(BillingCycleStatus.UNPAID, BillingCycleStatus.OVERDUE),
                 today));
@@ -1866,7 +1950,29 @@ public class BillingCycleService {
                 .map(lineItem -> BillingCycleLineItemResponse.from(lineItem, actorName(actorNames, lineItem)))
                 .toList();
 
-        return BillingCycleResponse.from(cycle, lineItems, resolveTenancyReferenceCode(cycle), resolveRoomNumber(cycle));
+        UserSummaryResponse tenant = authModule.findById(cycle.getTenantUserId()).orElse(null);
+        return BillingCycleResponse.from(
+                cycle,
+                lineItems,
+                resolveTenancyReferenceCode(cycle),
+                resolveRoomNumber(cycle),
+                tenant == null ? null : tenant.phone(),
+                verifiedEmail(tenant));
+    }
+
+    /**
+     * An email address only when the account has proved it owns it.
+     *
+     * <p>The receipt is a document a tenant may forward to a bank or an
+     * employer, and an unverified address on it is a claim we cannot stand
+     * behind. Filtered here rather than in the app so an unverified one never
+     * leaves the server at all.
+     */
+    private static String verifiedEmail(UserSummaryResponse user) {
+        if (user == null || !user.emailVerified()) {
+            return null;
+        }
+        return user.email();
     }
 
     private List<BillingCycleResponse> toResponses(List<BillingCycle> cycles) {
@@ -1895,13 +2001,23 @@ public class BillingCycleService {
                                 Collectors.toList())));
 
         Map<RoomDisplayKey, String> roomNumbers = roomNumbers(cycles);
+        // One lookup for the page, like the actor names above. A month of bills
+        // is a month of the same handful of tenants, and resolving contact
+        // details per row would be a query per bill on a list screen.
+        Map<UUID, UserSummaryResponse> tenants = authModule.findByIds(
+                cycles.stream().map(BillingCycle::getTenantUserId).distinct().toList());
 
         return cycles.stream()
-                .map(cycle -> BillingCycleResponse.from(
-                        cycle,
-                        lineItemsByCycleId.getOrDefault(cycle.getId(), List.of()),
-                        tenancyReferenceCodes.get(cycle.getTenancyId()),
-                        roomNumbers.get(new RoomDisplayKey(cycle.getPropertyId(), cycle.getRoomId()))))
+                .map(cycle -> {
+                    UserSummaryResponse tenant = tenants.get(cycle.getTenantUserId());
+                    return BillingCycleResponse.from(
+                            cycle,
+                            lineItemsByCycleId.getOrDefault(cycle.getId(), List.of()),
+                            tenancyReferenceCodes.get(cycle.getTenancyId()),
+                            roomNumbers.get(new RoomDisplayKey(cycle.getPropertyId(), cycle.getRoomId())),
+                            tenant == null ? null : tenant.phone(),
+                            verifiedEmail(tenant));
+                })
                 .toList();
     }
 

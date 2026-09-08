@@ -2,7 +2,8 @@ import type { ComponentType } from "react";
 import { Text, View } from "react-native";
 import { ArrowDownRight, ArrowUpRight, Minus, type LucideProps } from "lucide-react-native";
 
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
+import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
 
 type SnapshotTone = "default" | "primary" | "danger";
@@ -34,57 +35,90 @@ type SnapshotTileProps = {
   tone?: SnapshotTone;
 };
 
+/**
+ * One figure inside a dashboard snapshot, in the app's one metric-card shape.
+ *
+ * <p>
+ * A 38pt ink glyph in a 44-wide rail, then the label, the number and any delta
+ * stacked beside it. The same card the billing summary, the concern overview
+ * and the tenancy snapshot use — before this it was the odd one out: centred,
+ * glyph on top, everything middle-aligned, so the same kind of statistic looked
+ * like a different kind of thing depending on which screen you met it on.
+ *
+ * <p>
+ * The glyph is ink whatever the tone. Tone lives in the NUMBER, which is what
+ * gets read; a red icon beside a red figure says the same thing twice and a
+ * blue one beside a black figure competes with it.
+ */
 export function SnapshotTile({ count, delta, icon: Icon, label, lowerIsBetter, tone = "default", total, value }: SnapshotTileProps) {
   const { colors, fonts, type } = useTheme();
-  const accent = tone === "danger" ? colors.danger : tone === "primary" ? colors.primary : colors.primary;
-  const accentSoft = tone === "danger" ? colors.dangerSoft : colors.primarySoft;
   const valueColor = tone === "danger" ? colors.danger : colors.ink;
   const isFraction = typeof count === "number" && typeof total === "number";
   // Current count stays faded until the stay/cycle is full, then it matches the
   // dark total — a quick visual cue that there is no remaining headroom.
   const currentColor = isFraction && count! >= total! && total! > 0 ? colors.ink : colors.muted;
 
+  // Sized by how long the figure is — see metricFontSize.
+  const valueSize = metricFontSize(isFraction ? `${count}/${total}` : value ?? "", 23);
+
   return (
     <View
       style={{
-        alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: radii.card,
+        borderRadius: 12,
         borderWidth: 1,
+        elevation: 2,
         flex: 1,
-        gap: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.md,
+        // Centred, because tiles in a row stretch to the tallest of them. A tile
+        // with no delta — On notice has no previous-month figure to compare
+        // against — is shorter than its neighbour, and top-aligned its glyph and
+        // number sat against the ceiling with the spare height below.
+        justifyContent: "center",
+        padding: spacing.md,
+        shadowColor: colors.shadow,
+        shadowOffset: { height: 2, width: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
       }}
     >
-      {/* Glyph only. The tile is already a bounded surface; a tinted square
-          inside it reads as a second, competing container. */}
-      <View style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}>
-        <Icon color={colors.ink} size={20} strokeWidth={2.2} />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {/* Glyph only. The tile is already a bounded surface; a tinted square
+            inside it reads as a second, competing container. */}
+        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+        </View>
+
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            {label}
+          </Text>
+
+          {isFraction ? (
+            <Text style={{ fontFamily: fonts.display, fontSize: valueSize, fontVariant: ["tabular-nums"], lineHeight: valueSize + 5 }}>
+              <Text style={{ color: currentColor }}>{count}</Text>
+              <Text style={{ color: colors.ink }}>/{total}</Text>
+            </Text>
+          ) : (
+            <Text
+              numberOfLines={1}
+              style={{ color: valueColor, fontFamily: fonts.display, fontSize: valueSize, fontVariant: ["tabular-nums"], lineHeight: valueSize + 5 }}
+            >
+              {value}
+            </Text>
+          )}
+
+        </View>
       </View>
 
-      <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]} numberOfLines={1}>
-        {label}
-      </Text>
-
-      {isFraction ? (
-        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], letterSpacing: -0.5 }}>
-          <Text style={{ color: currentColor }}>{count}</Text>
-          <Text style={{ color: colors.ink }}>/{total}</Text>
-        </Text>
-      ) : (
-        <Text
-          style={{ color: valueColor, fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"], letterSpacing: -0.5, textAlign: "center" }}
-          numberOfLines={1}
-        >
-          {value}
-        </Text>
-      )}
-
+      {/* Under the row, on the tile's full width. In the column beside a 38pt
+          glyph the phrase had about half a tile and wrapped to two lines, which
+          made one tile taller than the one next to it. */}
       {delta ? (
-        <DeltaChip current={delta.current} lowerIsBetter={lowerIsBetter} previous={delta.previous} />
+        <View style={{ marginTop: spacing.xs }}>
+          <DeltaChip current={delta.current} lowerIsBetter={lowerIsBetter} previous={delta.previous} />
+        </View>
       ) : null}
     </View>
   );
@@ -100,9 +134,11 @@ function DeltaChip({ current, lowerIsBetter, previous }: SnapshotDelta & { lower
   const Icon = direction === "up" ? ArrowUpRight : direction === "down" ? ArrowDownRight : Minus;
 
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
-      <Icon color={color} size={13} strokeWidth={2.6} />
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11, }}>
+    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 3 }}>
+      <Icon color={color} size={13} strokeWidth={2.6} style={{ marginTop: 1 }} />
+      {/* flexShrink so the phrase wraps inside the column rather than running
+          past the tile's edge — the rail leaves it about half a tile's width. */}
+      <Text style={{ color, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 15 }}>
         {Math.abs(percent)}% vs last month
       </Text>
     </View>

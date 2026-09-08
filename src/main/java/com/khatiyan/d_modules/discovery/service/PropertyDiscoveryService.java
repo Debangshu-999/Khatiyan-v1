@@ -689,8 +689,8 @@ public class PropertyDiscoveryService {
         int count = 0;
         if (pgFor != null && pgFor != PgFor.ANYONE) count++;
         if (preferredFor != null && preferredFor != PreferredTenantType.ANYONE) count++;
-        if (foodIncluded != null) count++;
         if (mealTypes != null && !mealTypes.isEmpty()) count++;
+        else if (foodIncluded != null) count++;
         if (electricityIncluded != null) count++;
         if (bathroomType != null) count++;
         if (sharingTypes != null && !sharingTypes.isEmpty()) count++;
@@ -710,8 +710,11 @@ public class PropertyDiscoveryService {
         if (pgFor != null && pgFor != PgFor.ANYONE && matchesPgFor(response.pgFor(), pgFor)) matches++;
         if (preferredFor != null && preferredFor != PreferredTenantType.ANYONE
                 && matchesPreferredFor(response.preferredFor(), preferredFor)) matches++;
-        if (foodIncluded != null && response.foodIncluded() == foodIncluded) matches++;
-        if (mealTypes != null && !mealTypes.isEmpty() && response.includedMeals().containsAll(mealTypes)) matches++;
+        if (mealTypes != null && !mealTypes.isEmpty()) {
+            if (response.foodIncluded() && response.includedMeals().containsAll(mealTypes)) matches++;
+        } else if (foodIncluded != null && response.foodIncluded() == foodIncluded) {
+            matches++;
+        }
         if (electricityIncluded != null && response.electricityIncluded() == electricityIncluded) matches++;
         if (bathroomType != null && response.bathroomType() == bathroomType) matches++;
         if (sharingTypes != null && !sharingTypes.isEmpty() && hasAny(response.availableSharingTypes(), sharingTypes)) matches++;

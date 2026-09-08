@@ -1,6 +1,5 @@
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { FileSignature } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -13,6 +12,8 @@ import { useGetMyAgreementQuery } from "@/store/services/compliance-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const NO_AGREEMENT_ILLUSTRATION = require("../assets/workspace/No-Agreement_512x512.png");
+
 // Read-only view of the tenant's own accepted agreement — every term they agreed
 // to, in the same grouped layout the acceptance screen used.
 export default function TenancyAgreementViewScreen() {
@@ -22,10 +23,8 @@ export default function TenancyAgreementViewScreen() {
   const agreement = agreementQuery.data;
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Tenancy"
-        onBack={() => router.back()}
         title="Your"
         italicTail="agreement."
         subtitle="The terms you accepted for this tenancy."
@@ -34,11 +33,11 @@ export default function TenancyAgreementViewScreen() {
       {agreementQuery.isFetching && !agreement ? (
         <>
           <SkeletonCard />
-          <SkeletonList />
+          <SkeletonList rows={3} />
         </>
       ) : !agreement ? (
         <EmptyState
-          icon={FileSignature}
+          artwork={NO_AGREEMENT_ILLUSTRATION}
           title="No agreement on file"
           description="This tenancy does not have an accepted agreement."
         />

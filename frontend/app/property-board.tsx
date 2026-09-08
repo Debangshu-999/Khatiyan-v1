@@ -1,6 +1,5 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ClipboardList } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -13,6 +12,8 @@ import { useListMyPropertyBoardItemsQuery } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+
 export default function PropertyBoardScreen() {
   const { colors, type } = useTheme();
   const router = useGuardedRouter();
@@ -21,10 +22,8 @@ export default function PropertyBoardScreen() {
   const groupedItems = groupByCategory(boardItems);
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingTop: 0 }}>
+    <ScreenScrollView>
       <ScreenHeader
-        eyebrow="Property"
-        onBack={() => router.back()}
         title="Always-on,"
         italicTail="info."
         subtitle="Rules, timings, contacts and property details published by your property team."
@@ -55,7 +54,7 @@ export default function PropertyBoardScreen() {
         ))
       ) : (
         <EmptyState
-          icon={ClipboardList}
+          artwork={CONCERN_EMPTY_ILLUSTRATION}
           title="No board items yet"
           description="Stable property information will appear here after it is published."
         />
