@@ -11,7 +11,7 @@ import { PaginationBar } from "@/components/pagination-bar";
 
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusPill } from "@/components/status-pill";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerPaymentListSkeleton } from "@/components/skeletons/owner";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
@@ -75,7 +75,7 @@ export default function OwnerUpcomingCyclesScreen() {
           <MonthDivider label={monthName} />
 
           {upcomingQuery.isFetching && items.length === 0 ? (
-            <SkeletonCard />
+            <OwnerPaymentListSkeleton rows={3} />
           ) : items.length === 0 ? (
             <EmptyState
               artwork={NO_BILL_ILLUSTRATION}

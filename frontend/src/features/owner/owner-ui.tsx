@@ -10,7 +10,7 @@ import { StatusPill } from "@/components/status-pill";
 import { tapHaptic } from "@/lib/haptics";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { useIsSkeleton } from "@/components/skeleton-boundary";
+import { useIsSkeleton } from "@/components/skeletons";
 
 /**
  * Marks a screen a manager may read but not change.

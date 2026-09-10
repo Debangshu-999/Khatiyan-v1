@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { Skeleton, SkeletonForm } from "@/components/skeleton";
+import { OwnerPaymentDetailsSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -143,11 +143,27 @@ export default function OwnerPaymentDetailsScreen() {
   // and the empty state only once we know it is true.
   if (!hydrated) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-        <Skeleton height={22} width="26%" />
-        <SkeletonForm fields={3} media />
-        <Skeleton height={22} width="42%" />
-        <SkeletonForm fields={3} note={false} />
+      <ScreenScrollView
+        background={
+          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
+            <LinearGradient
+              colors={[colors.primarySoft, colors.surface]}
+              end={{ x: 0.5, y: 1 }}
+              locations={[0, 1]}
+              start={{ x: 0.5, y: 0 }}
+              style={{ height: 260 }}
+            />
+          </View>
+        }
+        safeAreaEdges={["top", "bottom"]}
+        surface={colors.surface}
+      >
+        <ScreenHeader
+          title="Payment"
+          italicTail="setup."
+          subtitle="Where your tenants' rent should be paid. Leave it blank to keep collecting offline."
+        />
+        <OwnerPaymentDetailsSkeleton />
       </ScreenScrollView>
     );
   }
@@ -191,14 +207,7 @@ export default function OwnerPaymentDetailsScreen() {
           so an owner with a UPI address on file was shown a blank form telling
           them they had none. */}
       {detailsQuery.isLoading ? (
-        <>
-          {/* Two section headings, each over one tall card of fields — the UPI
-              block with its QR above them, the bank block without. */}
-          <Skeleton height={22} width="26%" />
-          <SkeletonForm fields={3} media />
-          <Skeleton height={22} width="42%" />
-          <SkeletonForm fields={3} note={false} />
-        </>
+        <OwnerPaymentDetailsSkeleton />
       ) : (
         <>
           <Section title="UPI">

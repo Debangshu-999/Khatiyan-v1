@@ -96,6 +96,8 @@ class BillingReminderScannerTest {
                 "TEN-2026-000001",
                 tenantUserId,
                 tenantUserId == null ? "Ravi Menon" : "Test Tenant",
+                null,
+                null,
                 PROPERTY_ID,
                 UUID.randomUUID(),
                 "101",

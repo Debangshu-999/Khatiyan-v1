@@ -7,8 +7,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+
+import jakarta.persistence.LockModeType;
 
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
@@ -17,6 +20,10 @@ import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
  * Repository for tenancy exit request workflows.
  */
 public interface TenancyExitRequestRepository extends JpaRepository<TenancyExitRequest, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT request FROM TenancyExitRequest request WHERE request.id = :requestId")
+    Optional<TenancyExitRequest> findByIdForUpdate(UUID requestId);
 
     @Query("""
         SELECT request
@@ -86,4 +93,5 @@ public interface TenancyExitRequestRepository extends JpaRepository<TenancyExitR
         LIMIT 1
         """)
     Optional<TenancyExitRequest> findLatestByTenancyId(UUID tenancyId);
+
 }

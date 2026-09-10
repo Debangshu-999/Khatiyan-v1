@@ -44,7 +44,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerRoomInventorySkeleton, OwnerRoomMetricsSkeleton } from "@/components/skeletons/owner";
 import { RoomCarousel } from "@/features/owner/room-carousel";
 import {
   ActionButton,
@@ -127,6 +127,7 @@ export default function OwnerRoomsScreen() {
   const roomsQuery = useListAllPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const allRooms = roomsQuery.data ?? [];
   const rooms = allRooms.filter((room) => room.active);
+  const roomsLoading = roomsQuery.isFetching && !roomsQuery.data;
 
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const ownerId = selectedProperty?.ownerId ?? null;
@@ -250,7 +251,7 @@ export default function OwnerRoomsScreen() {
 
       {selectedProperty ? (
         <>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          {roomsLoading ? <OwnerRoomMetricsSkeleton /> : <><View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile icon={DoorClosed} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} tone="primary" />
             <MetricTile icon={BedDouble} iconPlacement="side" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
           </View>
@@ -258,7 +259,7 @@ export default function OwnerRoomsScreen() {
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile icon={Wrench} iconPlacement="side" label="Out of service" value={String(maintenanceCount)} hint="Under maintenance" tone={maintenanceCount > 0 ? "danger" : "default"} />
             <MetricTile icon={BedSingle} iconPlacement="side" label="Occupied / partial" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
-          </View>
+          </View></>}
 
           {/* Both paths kept. One room is the common act and wants one field;
               thirty is a different frame of mind and wants a series or a pasted
@@ -287,8 +288,8 @@ export default function OwnerRoomsScreen() {
             />
           </View>
 
-          {roomsQuery.isFetching && allRooms.length === 0 ? (
-            <SkeletonCard />
+          {roomsLoading ? (
+            <OwnerRoomInventorySkeleton />
           ) : allRooms.length === 0 ? (
             <EmptyState
               artwork={NO_BEDS_ILLUSTRATION}

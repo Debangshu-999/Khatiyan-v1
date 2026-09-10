@@ -164,6 +164,8 @@ class BillingModuleTest {
                 "TEN-2026-000001",
                 tenantUserId,
                 "Test Tenant",
+                null,
+                null,
                 propertyId,
                 roomId,
                 "101",

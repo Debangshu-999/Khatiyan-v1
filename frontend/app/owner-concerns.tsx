@@ -17,7 +17,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { TabSwitcher } from "@/components/tab-switcher";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerConcernMetricsSkeleton, OwnerConcernQueueSkeleton } from "@/components/skeletons/owner";
 import { ActionButton, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -117,10 +117,19 @@ export default function OwnerConcernsScreen() {
   }, [currentUserId, historyQuery.data]);
 
   const propertyConcerns = propertyTab === "available" ? propertyAvailable : propertyEscalated;
-  const propertyLoading = propertyTab === "available" ? availableQuery.isFetching : escalatedQuery.isFetching;
+  const propertyLoading = propertyTab === "available"
+    ? availableQuery.isFetching && !availableQuery.data
+    : escalatedQuery.isFetching && !escalatedQuery.data;
   const myRawConcerns = myTab === "review" ? myInReview : myTab === "progress" ? myInProgress : myTab === "reopened" ? myReopened : myHistoryRaw;
   const myVisibleConcerns = sortLatest(myRawConcerns);
-  const myLoading = myTab === "history" ? historyQuery.isFetching : undertakenQuery.isFetching;
+  const myLoading = myTab === "history"
+    ? historyQuery.isFetching && !historyQuery.data
+    : undertakenQuery.isFetching && !undertakenQuery.data;
+  const overviewLoading =
+    (availableQuery.isFetching && !availableQuery.data) ||
+    (escalatedQuery.isFetching && !escalatedQuery.data) ||
+    (historyQuery.isFetching && !historyQuery.data) ||
+    (canWorkConcerns && undertakenQuery.isFetching && !undertakenQuery.data);
 
   // Both queue endpoints return the whole list, so the paging is client-side.
   // A busy property accumulates open concerns faster than anyone works through
@@ -176,7 +185,7 @@ export default function OwnerConcernsScreen() {
                 No card around them. A Card holding six cards put a surface
                 inside a surface, and the tiles already carry their own border
                 and lift. */}
-            <View style={{ gap: spacing.sm }}>
+            {overviewLoading ? <OwnerConcernMetricsSkeleton /> : <View style={{ gap: spacing.sm }}>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <MetricTile icon={FileText} iconPlacement="side" label="Open" value={String(propertyAvailableRaw.length)} hint="Unassigned" tone={propertyAvailableRaw.length > 0 ? "primary" : "default"} />
                 <MetricTile icon={Clock3} iconPlacement="side" label="In review" value={String(myInReview.length)} hint="Assigned to me" tone={myInReview.length > 0 ? "primary" : "default"} />
@@ -189,7 +198,7 @@ export default function OwnerConcernsScreen() {
                 <MetricTile icon={CheckCircle2} iconPlacement="side" label="Resolved" value={String(resolvedThisWeek)} hint="This week" />
                 <MetricTile icon={RefreshCw} iconPlacement="side" label="Reopened" value={String(myReopened.length)} hint="Needs re-handling" tone={myReopened.length > 0 ? "primary" : "default"} />
               </View>
-            </View>
+            </View>}
           </View>
 
           {/* Two cards, one under the other, not one card with a rule down the
@@ -213,7 +222,7 @@ export default function OwnerConcernsScreen() {
               <ConcernRouteCard
                 artwork={CONCERN_HISTORY_ILLUSTRATION}
                 buttonIcon={Clock3}
-                buttonLabel={`${historyQuery.data?.totalElements ?? 0} history items`}
+                buttonLabel={historyQuery.data ? `${historyQuery.data.totalElements} history items` : "View history"}
                 description="Resolved and closed concerns for this property, regardless of who handled them."
                 eyebrow="Concern history"
                 onPress={() => setPropertyHistoryOpen(true)}
@@ -227,10 +236,10 @@ export default function OwnerConcernsScreen() {
             {queueTab === "property" ? (
               <View style={{ gap: spacing.md }}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
-                  <TabChip active={propertyTab === "available"} count={propertyAvailableRaw.length} label="Available" onPress={() => setPropertyTab("available")} />
-                  <TabChip active={propertyTab === "escalated"} blink={propertyEscalatedRaw.length > 0} count={propertyEscalatedRaw.length} label="Escalated" onPress={() => setPropertyTab("escalated")} />
+                  <TabChip active={propertyTab === "available"} count={availableQuery.data ? propertyAvailableRaw.length : undefined} label="Available" onPress={() => setPropertyTab("available")} />
+                  <TabChip active={propertyTab === "escalated"} blink={propertyEscalatedRaw.length > 0} count={escalatedQuery.data ? propertyEscalatedRaw.length : undefined} label="Escalated" onPress={() => setPropertyTab("escalated")} />
                 </ScrollView>
-                <TabHeading count={propertyConcerns.length} text={propertyTab === "available" ? "Available concerns" : "Escalated concerns"} />
+                <TabHeading count={propertyLoading ? undefined : propertyConcerns.length} text={propertyTab === "available" ? "Available concerns" : "Escalated concerns"} />
                 <QueueWindow loading={propertyLoading}>
                   {propertyConcerns.length > 0 ? (
                     propertyPaged.items.map((concern) => (
@@ -265,12 +274,12 @@ export default function OwnerConcernsScreen() {
             ) : (
               <View style={{ gap: spacing.md }}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
-                  <TabChip active={myTab === "review"} count={myInReview.length} label="In review" onPress={() => setMyTab("review")} />
-                  <TabChip active={myTab === "progress"} count={myInProgress.length} label="In progress" onPress={() => setMyTab("progress")} />
-                  <TabChip active={myTab === "reopened"} count={myReopened.length} label="Reopened" onPress={() => setMyTab("reopened")} />
-                  <TabChip active={myTab === "history"} count={myHistoryRaw.length} label="History" onPress={() => setMyTab("history")} />
+                  <TabChip active={myTab === "review"} count={undertakenQuery.data ? myInReview.length : undefined} label="In review" onPress={() => setMyTab("review")} />
+                  <TabChip active={myTab === "progress"} count={undertakenQuery.data ? myInProgress.length : undefined} label="In progress" onPress={() => setMyTab("progress")} />
+                  <TabChip active={myTab === "reopened"} count={undertakenQuery.data ? myReopened.length : undefined} label="Reopened" onPress={() => setMyTab("reopened")} />
+                  <TabChip active={myTab === "history"} count={historyQuery.data ? myHistoryRaw.length : undefined} label="History" onPress={() => setMyTab("history")} />
                 </ScrollView>
-                <TabHeading count={myVisibleConcerns.length} text={myTabHeadingText(myTab)} />
+                <TabHeading count={myLoading ? undefined : myVisibleConcerns.length} text={myTabHeadingText(myTab)} />
                 <QueueWindow loading={myLoading}>
                   {myVisibleConcerns.length > 0 ? (
                     myPaged.items.map((concern) => (
@@ -336,7 +345,7 @@ function TabChip({
 }: {
   active: boolean;
   blink?: boolean;
-  count: number;
+  count?: number;
   label: string;
   onPress: () => void;
 }) {
@@ -394,7 +403,7 @@ function TabChip({
       <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
-      <View
+      {count != null ? <View
         style={{
           alignItems: "center",
           backgroundColor: active ? "rgba(255,255,255,0.22)" : colors.surface,
@@ -408,16 +417,16 @@ function TabChip({
         <Text style={{ color: active ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11, }}>
           {count}
         </Text>
-      </View>
+      </View> : null}
     </AnimatedPressable>
   );
 }
 
-function TabHeading({ count, text }: { count: number; text: string }) {
+function TabHeading({ count, text }: { count?: number; text: string }) {
   const { colors, type } = useTheme();
   return (
     <Text style={[type.caption, { color: colors.muted, fontWeight: "800", letterSpacing: 0.3 }]}>
-      {text} · {count}
+      {count == null ? text : `${text} · ${count}`}
     </Text>
   );
 }
@@ -428,7 +437,7 @@ function TabHeading({ count, text }: { count: number; text: string }) {
  * cards read as contents of a box rather than as the list itself.
  */
 function QueueWindow({ children, loading }: { children: React.ReactNode; loading: boolean }) {
-  return <View style={{ gap: spacing.md }}>{loading ? <SkeletonCard /> : children}</View>;
+  return <View style={{ gap: spacing.md }}>{loading ? <OwnerConcernQueueSkeleton /> : children}</View>;
 }
 
 /**
@@ -560,7 +569,7 @@ function HistoryModal({
             <IconButton accessibilityLabel="Close property history" icon={X} onPress={onClose} />
           </View>
           {query.isFetching && !pageData ? (
-            <SkeletonCard />
+            <OwnerConcernQueueSkeleton />
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
               {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => onOpen(concern)} />) : null}

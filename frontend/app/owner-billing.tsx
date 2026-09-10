@@ -60,7 +60,10 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
-import { SkeletonCard, SkeletonList, SkeletonPills, SkeletonTiles } from "@/components/skeleton";
+import {
+  OwnerBillingCycleListSkeleton,
+  OwnerBillingOverviewSkeleton,
+} from "@/components/skeletons/owner";
 import { HeaderGradient } from "@/components/header-gradient";
 import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
 
@@ -289,7 +292,10 @@ export default function OwnerBillingScreen() {
   // isLoading, not isFetching: it means "in flight AND nothing to show". A
   // refetch of a list already on screen must not blank the page the reader is
   // looking at.
-  const screenLoading = cyclesQuery.isLoading || monthSummaryQuery.isLoading;
+  const summaryLoading =
+    (cyclesQuery.isFetching && !cyclesQuery.data) ||
+    (monthSummaryQuery.isFetching && !monthSummaryQuery.data);
+  const cycleListLoading = cyclesQuery.isFetching && !cyclesQuery.data;
   // Rent cycles vs one-off bills (penalties, ad-hoc charges) shown as separate
   // segmented lists. The summary filter modal still spans all categories.
   const rentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
@@ -395,38 +401,21 @@ export default function OwnerBillingScreen() {
         />
       ) : null}
 
-      {/* The WHOLE screen ghosts, not just the list. A page that renders its
-          month picker, summary tiles and tool grid for real and then hangs a
-          skeleton under them is telling the reader the top half is ready when
-          none of it is — and the moment the data lands, every one of those
-          "ready" numbers changes anyway. One boundary around the body, and the
-          real components draw themselves as bars. */}
-      {/* The screen's SHAPE while it loads, not the screen itself. The counts
-          match what actually arrives — one collection card, four summary tiles,
-          two bills — because the arrangement is what a reader takes in during
-          the wait, not whether a card had a chip in its corner. */}
-      {selectedProperty && screenLoading ? (
-        <View style={{ gap: spacing.md }}>
-          <SkeletonPills count={3} />
-          <SkeletonCard />
-          <SkeletonTiles count={4} />
-          <SkeletonCard />
-          <SkeletonPills count={2} />
-          <SkeletonList rows={2} />
-        </View>
-      ) : null}
-
-      {selectedProperty && !screenLoading ? (
+      {selectedProperty ? (
         <>
           <MonthSelector onChange={handleSummaryMonthChange} value={summaryMonth} />
 
-          <ActiveSummarySection
-            month={summaryMonth}
-            onOpenFilter={setSummaryFilter}
-            oneOffCount={oneOffCycles.length}
-            rentCycleCount={rentCycles.length}
-            summary={monthSummaryQuery.data}
-          />
+          {summaryLoading ? (
+            <OwnerBillingOverviewSkeleton />
+          ) : (
+            <ActiveSummarySection
+              month={summaryMonth}
+              onOpenFilter={setSummaryFilter}
+              oneOffCount={oneOffCycles.length}
+              rentCycleCount={rentCycles.length}
+              summary={monthSummaryQuery.data}
+            />
+          )}
 
           <BillToolsGrid
             onOpenPaymentDetails={() => router.push("/owner-payment-details")}
@@ -456,6 +445,7 @@ export default function OwnerBillingScreen() {
             onPageChange={setPage}
             page={page}
             query={visibleQuery}
+            loading={cycleListLoading}
             searchField={
               <SearchField
                 onChangeText={setSearchDraft}
@@ -695,6 +685,7 @@ function BillingCyclesSection({
   cycles,
   fallbackLateFeePerDayPaise,
   month,
+  loading = false,
   noun = "billing cycle",
   notGeneratedCount,
   onAction,
@@ -707,6 +698,7 @@ function BillingCyclesSection({
   cycles: BillingCycle[];
   fallbackLateFeePerDayPaise?: number | null;
   month: string;
+  loading?: boolean;
   noun?: string;
   notGeneratedCount: number;
   onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
@@ -721,7 +713,7 @@ function BillingCyclesSection({
 
   return (
     <Section
-      title={cycles.length + " " + noun + (cycles.length === 1 ? "" : "s")}
+      title={loading ? (noun === "billing cycle" ? "Billing cycles" : "Other bills") : cycles.length + " " + noun + (cycles.length === 1 ? "" : "s")}
       trailing={
         <AnimatedPressable
           accessibilityLabel="How billing cycles work"
@@ -737,7 +729,9 @@ function BillingCyclesSection({
     >
       {rulesOpen ? <BillingRulesModal onClose={() => setRulesOpen(false)} /> : null}
       {searchField}
-      {cycles.length === 0 ? (
+      {loading ? (
+        <OwnerBillingCycleListSkeleton />
+      ) : cycles.length === 0 ? (
         <EmptyState
           artwork={NO_BILL_ILLUSTRATION}
           title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}

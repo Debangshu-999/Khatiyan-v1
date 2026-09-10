@@ -35,7 +35,7 @@ import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerNoticeListSkeleton, OwnerNoticeTotalsSkeleton } from "@/components/skeletons/owner";
 import { classifyToast, useToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, IconButton, ViewOnlyChip, humanizeToken } from "@/features/owner/owner-ui";
@@ -147,6 +147,8 @@ export default function OwnerNoticesScreen() {
   const [deleteRecurringNotice] = useDeleteRecurringNoticeMutation();
 
   const loading = publishedQuery.isFetching || archivedQuery.isFetching || recurringQuery.isFetching;
+  const initialLoading =
+    loading && !publishedQuery.data && !archivedQuery.data && !recurringQuery.data;
 
   /**
    * Everything on the board, newest first, before any filter is applied.
@@ -279,14 +281,20 @@ export default function OwnerNoticesScreen() {
           <CountTabPills
             onChange={setTab}
             options={BOARD_TABS.map((entry) => ({
-              count: board.filter((item) => TAB_LANES[entry.value].includes(item.lane)).length,
+              count: initialLoading
+                ? undefined
+                : board.filter((item) => TAB_LANES[entry.value].includes(item.lane)).length,
               label: entry.label,
               value: entry.value,
             }))}
             value={tab}
           />
 
-          <BoardTotals live={counts.live} recurring={counts.recurring} scheduled={counts.scheduled} />
+          {initialLoading ? (
+            <OwnerNoticeTotalsSkeleton />
+          ) : (
+            <BoardTotals live={counts.live} recurring={counts.recurring} scheduled={counts.scheduled} />
+          )}
 
           <ActionButton
             disabled={!canManageNotices}
@@ -338,8 +346,8 @@ export default function OwnerNoticesScreen() {
             </AnimatedPressable>
           ) : null}
 
-          {loading && board.length === 0 ? (
-            <SkeletonCard />
+          {initialLoading ? (
+            <OwnerNoticeListSkeleton />
           ) : visible.length === 0 ? (
             <EmptyState
               artwork={NOTICE_EMPTY_ILLUSTRATION}

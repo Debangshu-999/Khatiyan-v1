@@ -11,7 +11,7 @@ import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerConcernQueueSkeleton } from "@/components/skeletons/owner";
 import { ActionButton, humanizeToken } from "@/features/owner/owner-ui";
 import { type ConcernSummary, useListPropertyConcernMonitorQuery } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
@@ -74,7 +74,7 @@ export default function OwnerConcernMonitorScreen() {
 
           <Section title="Monitored concerns">
             {monitorQuery.isFetching ? (
-              <SkeletonCard />
+              <OwnerConcernQueueSkeleton />
             ) : sortedConcerns.length > 0 ? (
               <View style={{ gap: spacing.md }}>
                 {sortedConcerns.map((concern) => (

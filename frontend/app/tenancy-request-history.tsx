@@ -1,21 +1,19 @@
 import type { ComponentType } from "react";
 import { useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Clock, DoorOpen, FileClock, History, LockOpen, Repeat, Undo2, UserRound, type LucideProps } from "lucide-react-native";
+import { Clock, History, MoreHorizontal, Undo2, UserRound, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
-import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
-import { FilterBubbles } from "@/components/filter-bubbles";
-import { SkeletonList } from "@/components/skeleton";
+import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { AlertModal } from "@/components/alert-modal";
@@ -24,18 +22,20 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton } from "@/features/owner/owner-ui";
 import {
   buildExitRequestChains,
+  buildRoomChangeRequestChains,
   exitTimelineEntries,
   roomChangeTimelineEntries,
   type ExitRequestChain,
+  type RoomChangeRequestChain,
 } from "@/features/tenancy/request-chain";
 import { RequestReasonInfo } from "@/features/tenancy/request-reason-info";
 import { RequestTimelineSheet } from "@/features/tenancy/request-timeline-sheet";
 import {
-  matchesRequestSearch,
-  requestCounts,
+  ExitRequestCorrectionActions,
+  RoomChangeRequestCorrectionActions,
+} from "@/features/tenancy/request-correction-actions";
+import {
   splitByActivity,
-  splitByAttention,
-  type RequestFilter,
 } from "@/features/tenancy/request-activity";
 import {
   useListMyExitRequestsQuery,
@@ -44,282 +44,144 @@ import {
   type TenancyExitRequest,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
-import { metricFontSize } from "@/theme/metric-size";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
-
-type RequestKind = "EXIT" | "ROOM_CHANGE";
-
-const KIND_TABS: { label: string; value: RequestKind }[] = [
-  { label: "Exit", value: "EXIT" },
-  { label: "Room change", value: "ROOM_CHANGE" },
-];
+const REQUEST_HISTORY_ILLUSTRATION = require("../assets/workspace/staff-history.png");
 
 /**
- * The tenant's request workspace, one tab per kind.
+ * The tenant's current request tracker.
  *
- * <p>Exits and room changes were previously interleaved behind a filter, which
- * made "how many of mine are live" unanswerable at a glance — the counts covered
- * both kinds at once and the rules differ between them. A tab each means every
- * count, every section and every action on screen belongs to one kind.
+ * <p>Only requests whose server-provided action window is still open belong on
+ * this screen. Older exit and room-change requests share one dated history
+ * route, keeping this screen focused on what the tenant can still act on.
  */
 export default function TenancyRequestHistoryScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{ excludeTenancyId?: string; scope?: string; tenancyId?: string }>();
-  const [kind, setKind] = useState<RequestKind>("EXIT");
 
-  const exitQuery = useListMyExitRequestsQuery();
-  const roomChangeQuery = useListMyRoomChangeRequestsQuery();
+  const exitQuery = useListMyExitRequestsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const roomChangeQuery = useListMyRoomChangeRequestsQuery(undefined, { refetchOnMountOrArgChange: true });
   const loading = exitQuery.isFetching || roomChangeQuery.isFetching;
 
   const scopedExits = scopeToTenancy(exitQuery.data ?? [], params);
   const scopedRoomChanges = scopeToTenancy(roomChangeQuery.data ?? [], params);
+  const exitChains = useMemo(() => buildExitRequestChains(scopedExits), [scopedExits]);
+  const exitChainByHeadId = useMemo(
+    () => new Map(exitChains.map((chain) => [chain.head.id, chain])),
+    [exitChains],
+  );
+  const exitHeads = exitChains.map((chain) => chain.head);
+  const roomChangeChains = useMemo(
+    () => buildRoomChangeRequestChains(scopedRoomChanges),
+    [scopedRoomChanges],
+  );
+  const roomChainByHeadId = useMemo(
+    () => new Map(roomChangeChains.map((chain) => [chain.head.id, chain])),
+    [roomChangeChains],
+  );
+  const roomHeads = roomChangeChains.map((chain) => chain.head);
+  const { active: activeExits, history: pastExits } = splitByActivity(exitHeads);
+  const { active: activeRoomChanges, history: pastRoomChanges } = splitByActivity(roomHeads);
+  const currentRequests = [
+    ...activeExits.map((request) => ({ kind: "EXIT" as const, request })),
+    ...activeRoomChanges.map((request) => ({ kind: "ROOM_CHANGE" as const, request })),
+  ].sort((left, right) => new Date(right.request.createdAt).getTime() - new Date(left.request.createdAt).getTime());
+  const pastCount = pastExits.length + pastRoomChanges.length;
 
   return (
     <ScreenScrollView>
       <ScreenHeader
-        title="Your"
-        italicTail="requests."
-        subtitle="Raise, follow and act on your exit and room change requests."
+        title="Requests,"
+        italicTail="tracked."
+        subtitle="Follow the current exit or room change request for your tenancy."
       />
 
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        {KIND_TABS.map((tab) => (
-          <TabButton
-            active={kind === tab.value}
-            key={tab.value}
-            label={tab.label}
-            onPress={() => setKind(tab.value)}
+      <Section title="Current request">
+        {loading && !exitQuery.data && !roomChangeQuery.data ? (
+          <SkeletonList rows={1} />
+        ) : currentRequests.length === 0 ? (
+          <EmptyState
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
+            title="No current request"
+            description="An exit or room-change request stays here while it can still be acted on."
           />
-        ))}
-      </View>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {currentRequests.map((entry) =>
+              entry.kind === "EXIT" ? (
+                <ExitCard
+                  chain={exitChainByHeadId.get(entry.request.id)}
+                  key={`exit-${entry.request.id}`}
+                  request={entry.request}
+                />
+              ) : (
+                <RoomChangeCard
+                  chain={roomChainByHeadId.get(entry.request.id)}
+                  key={`room-${entry.request.id}`}
+                  request={entry.request}
+                />
+              ),
+            )}
+          </View>
+        )}
+      </Section>
 
-      {kind === "EXIT" ? (
-        <ExitTab loading={loading} requests={scopedExits} />
+      {loading && !exitQuery.data && !roomChangeQuery.data ? (
+        <SkeletonCard />
       ) : (
-        <RoomChangeTab loading={loading} requests={scopedRoomChanges} />
+        <RequestHistoryRouteCard
+          count={pastCount}
+          onPress={() =>
+            router.push({
+              pathname: "/tenancy-past-requests",
+              params: {
+                excludeTenancyId: params.excludeTenancyId,
+                scope: params.scope,
+                tenancyId: params.tenancyId,
+              },
+            })
+          }
+        />
       )}
     </ScreenScrollView>
   );
 }
 
-function ExitTab({ loading, requests }: { loading: boolean; requests: TenancyExitRequest[] }) {
-  const [search, setSearch] = useState("");
-  const [activePage, setActivePage] = useState(0);
-  const [historyPage, setHistoryPage] = useState(0);
-  /** Null until picked, so the default can react to data that arrives later. */
-  const [attention, setAttention] = useState<RequestFilter | null>(null);
-
-  // Re-raises collapse into their newest link, so one intent counts once.
-  const chains = useMemo(() => buildExitRequestChains(requests), [requests]);
-  const heads = chains.map((chain) => chain.head);
-  const chainByHeadId = useMemo(
-    () => new Map(chains.map((chain) => [chain.head.id, chain])),
-    [chains],
-  );
-
-  const counts = requestCounts(heads);
-  const visible = heads.filter((request) => matchesRequestSearch(request, search));
-  const { active: liveRequests, history } = splitByActivity(visible);
-  const { attended, unattended } = splitByAttention(liveRequests);
-  // Opens on what is still awaiting an answer, unless nothing is.
-  const filter = attention ?? (unattended.length > 0 ? "unattended" : "all");
-  const active =
-    filter === "unattended" ? unattended : filter === "attended" ? attended : liveRequests;
-  const activePaged = pageOf(active, activePage);
-  const historyPaged = pageOf(history, historyPage);
+function RequestHistoryRouteCard({ count, onPress }: { count: number; onPress: () => void }) {
+  const { colors, type } = useTheme();
 
   return (
-    <View style={{ gap: spacing.lg }}>
-      <OverviewTiles counts={counts} />
-
-      <Section
-
-        title={`${active.length} request${active.length === 1 ? "" : "s"}`}
-        trailing={
-          <FilterBubbles
-            onChange={(next) => {
-              setAttention(next);
-              setActivePage(0);
-            }}
-            options={[
-              { count: unattended.length, label: "Awaiting reply", value: "unattended" as const },
-              { count: attended.length, label: "Answered", value: "attended" as const },
-              { count: liveRequests.length, label: "All", value: "all" as const },
-            ]}
-            value={filter}
-          />
-        }
-      >
-        {/* The search sits with the list it filters. Above the tabs it looked
-            like it searched the whole screen, and its example code could only
-            name one of the two kinds. */}
-        <SearchField
-          onChangeText={(next) => {
-            setSearch(next);
-            setActivePage(0);
-            setHistoryPage(0);
-          }}
-          placeholder="Search by code, e.g. TEX-2026-000042"
-          value={search}
+    <Card>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>Request history</Text>
+          <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>View past requests</Text>
+          <Text style={[type.body, { color: colors.muted }]}>Expired exit and room-change requests.</Text>
+        </View>
+        <Image
+          accessibilityIgnoresInvertColors
+          accessible={false}
+          resizeMode="contain"
+          source={REQUEST_HISTORY_ILLUSTRATION as ImageSourcePropType}
+          style={{ height: 92, width: 92 }}
         />
+      </View>
 
-        {loading && requests.length === 0 ? (
-          <SkeletonList rows={2} />
-        ) : active.length === 0 ? (
-          <EmptyState
-            artwork={CONCERN_EMPTY_ILLUSTRATION}
-            title={filter === "unattended" ? "Nothing awaiting a reply" : "No active exit requests"}
-            description="A request stays here until it expires — including after it is decided."
-          />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {activePaged.items.map((request) => (
-              <ExitCard chain={chainByHeadId.get(request.id)} key={request.id} request={request} />
-            ))}
-            <ListPager onPage={setActivePage} paged={activePaged} total={active.length} />
-          </View>
-        )}
-      </Section>
-
-      <Section title="Exit request history">
-        {history.length === 0 ? (
-          <EmptyState
-            artwork={CONCERN_EMPTY_ILLUSTRATION}
-            title="No past exit requests"
-            description="Requests move here once they expire."
-          />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {historyPaged.items.map((request) => (
-              <ExitCard chain={chainByHeadId.get(request.id)} key={request.id} request={request} />
-            ))}
-            <ListPager onPage={setHistoryPage} paged={historyPaged} total={history.length} />
-          </View>
-        )}
-      </Section>
-    </View>
-  );
-}
-
-function RoomChangeTab({
-  loading,
-  requests,
-}: {
-  loading: boolean;
-  requests: TenancyRoomChangeRequest[];
-}) {
-  const [search, setSearch] = useState("");
-  const [activePage, setActivePage] = useState(0);
-  const [historyPage, setHistoryPage] = useState(0);
-  /** Null until picked, so the default can react to data that arrives later. */
-  const [attention, setAttention] = useState<RequestFilter | null>(null);
-
-  const counts = requestCounts(requests);
-  const visible = requests.filter((request) => matchesRequestSearch(request, search));
-  const { active: liveRequests, history } = splitByActivity(visible);
-  const { attended, unattended } = splitByAttention(liveRequests);
-  // Opens on what is still awaiting an answer, unless nothing is.
-  const filter = attention ?? (unattended.length > 0 ? "unattended" : "all");
-  const active =
-    filter === "unattended" ? unattended : filter === "attended" ? attended : liveRequests;
-  const activePaged = pageOf(active, activePage);
-  const historyPaged = pageOf(history, historyPage);
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <OverviewTiles counts={counts} />
-
-      <Section
-
-        title={`${active.length} request${active.length === 1 ? "" : "s"}`}
-        trailing={
-          <FilterBubbles
-            onChange={(next) => {
-              setAttention(next);
-              setActivePage(0);
-            }}
-            options={[
-              { count: unattended.length, label: "Awaiting reply", value: "unattended" as const },
-              { count: attended.length, label: "Answered", value: "attended" as const },
-              { count: liveRequests.length, label: "All", value: "all" as const },
-            ]}
-            value={filter}
-          />
-        }
-      >
-        <SearchField
-          onChangeText={(next) => {
-            setSearch(next);
-            setActivePage(0);
-            setHistoryPage(0);
-          }}
-          placeholder="Search by code, e.g. TRC-2026-000155"
-          value={search}
-        />
-
-        {loading && requests.length === 0 ? (
-          <SkeletonList rows={2} />
-        ) : active.length === 0 ? (
-          <EmptyState
-            artwork={CONCERN_EMPTY_ILLUSTRATION}
-            title={filter === "unattended" ? "Nothing awaiting a reply" : "No active room change requests"}
-            description="A room change closes as soon as it is decided — there is no withdrawal window."
-          />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {activePaged.items.map((request) => (
-              <RoomChangeCard key={request.id} request={request} />
-            ))}
-            <ListPager onPage={setActivePage} paged={activePaged} total={active.length} />
-          </View>
-        )}
-      </Section>
-
-      <Section title="Room change request history">
-        {history.length === 0 ? (
-          <EmptyState
-            artwork={CONCERN_EMPTY_ILLUSTRATION}
-            title="No past room change requests"
-            description="Requests move here once they are decided or expire."
-          />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {historyPaged.items.map((request) => (
-              <RoomChangeCard key={request.id} request={request} />
-            ))}
-            <ListPager onPage={setHistoryPage} paged={historyPaged} total={history.length} />
-          </View>
-        )}
-      </Section>
-    </View>
-  );
-}
-
-function OverviewTiles({ counts }: { counts: { active: number; expired: number; total: number } }) {
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      <SummaryTile
-        hint="Still open"
-        icon={LockOpen}
-        label="Active"
-        tone={counts.active > 0 ? "primary" : "default"}
-        value={String(counts.active)}
+      <ActionButton
+        icon={History}
+        label={`${count} past request${count === 1 ? "" : "s"}`}
+        onPress={onPress}
+        variant="secondary"
       />
-      <SummaryTile
-        hint={`${counts.expired} expired`}
-        icon={FileClock}
-        label="Total"
-        value={String(counts.total)}
-      />
-    </View>
+    </Card>
   );
 }
 
-function ExitCard({ chain, request }: { chain?: ExitRequestChain; request: TenancyExitRequest }) {
+export function ExitCard({ chain, request }: { chain?: ExitRequestChain; request: TenancyExitRequest }) {
   const { colors, fonts, type } = useTheme();
+  const [showActions, setShowActions] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const attempts = chain?.links.length ?? 1;
@@ -330,8 +192,9 @@ function ExitCard({ chain, request }: { chain?: ExitRequestChain; request: Tenan
         <RequestCardHeader
           referenceCode={request.referenceCode}
           status={request.status}
-          tenantName={request.tenantName}
+          title="Exit request"
         />
+        <RequestExpiryNotice label={exitExpiryLabel(request)} />
 
         <DetailLine label="Requested checkout" value={formatDate(request.requestedCheckoutDate)} />
         {request.approvedCheckoutDate ? (
@@ -377,19 +240,17 @@ function ExitCard({ chain, request }: { chain?: ExitRequestChain; request: Tenan
           </Text>
         ) : null}
 
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <ActionButton
             icon={History}
             label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
             onPress={() => setShowTimeline(true)}
             variant="outline"
           />
-          {request.withdrawalWindowOpen ? (
-            <ActionButton
-              icon={Undo2}
-              label="Cancel this exit"
-              onPress={() => setShowWithdraw(true)}
-              variant="outline"
+          {request.reRaiseAllowed || request.withdrawalWindowOpen ? (
+            <RequestOverflowButton
+              accessibilityLabel="Open exit request actions"
+              onPress={() => setShowActions(true)}
             />
           ) : null}
         </View>
@@ -416,12 +277,30 @@ function ExitCard({ chain, request }: { chain?: ExitRequestChain; request: Tenan
           requestId={request.id}
         />
       ) : null}
+      {showActions ? (
+        <ExitRequestCorrectionActions
+          onClose={() => setShowActions(false)}
+          onRequestWithdrawal={() => {
+            setShowActions(false);
+            setShowWithdraw(true);
+          }}
+          request={request}
+        />
+      ) : null}
     </Card>
   );
 }
 
-function RoomChangeCard({ request }: { request: TenancyRoomChangeRequest }) {
+export function RoomChangeCard({
+  chain,
+  request,
+}: {
+  chain?: RoomChangeRequestChain;
+  request: TenancyRoomChangeRequest;
+}) {
+  const [showActions, setShowActions] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const attempts = chain?.links.length ?? 1;
 
   return (
     <Card>
@@ -429,8 +308,9 @@ function RoomChangeCard({ request }: { request: TenancyRoomChangeRequest }) {
         <RequestCardHeader
           referenceCode={request.referenceCode}
           status={request.status}
-          tenantName={request.tenantName}
+          title="Room change request"
         />
+        <RequestExpiryNotice label={roomChangeExpiryLabel(request)} />
 
         <DetailLine label="Transfer date" value={formatDate(request.effectiveTransferDate)} />
         <DetailLine label="Requested rent" value={formatMoney(request.requestedRoomRentAmountPaise)} />
@@ -463,26 +343,95 @@ function RoomChangeCard({ request }: { request: TenancyRoomChangeRequest }) {
           ) : null}
         </View>
 
-        <View style={{ flexDirection: "row" }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <ActionButton
             icon={History}
-            label="View timeline"
+            label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
             onPress={() => setShowTimeline(true)}
             variant="outline"
           />
+          {request.reRaiseAllowed ? (
+            <RequestOverflowButton
+              accessibilityLabel="Open room change request actions"
+              onPress={() => setShowActions(true)}
+            />
+          ) : null}
         </View>
       </View>
 
       {showTimeline ? (
         <RequestTimelineSheet
-          entries={roomChangeTimelineEntries(request)}
+          entries={roomChangeTimelineEntries(chain ?? request)}
           onClose={() => setShowTimeline(false)}
           referenceCode={request.referenceCode}
           tenantName={request.tenantName}
           viewer="TENANT"
         />
       ) : null}
+      {showActions ? (
+        <RoomChangeRequestCorrectionActions
+          onClose={() => setShowActions(false)}
+          request={request}
+        />
+      ) : null}
     </Card>
+  );
+}
+
+function RequestOverflowButton({
+  accessibilityLabel,
+  onPress,
+}: {
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surfaceSunken,
+        borderColor: colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        height: 48,
+        justifyContent: "center",
+        width: 48,
+      }}
+    >
+      <MoreHorizontal color={colors.ink} size={20} strokeWidth={2.4} />
+    </AnimatedPressable>
+  );
+}
+
+function RequestExpiryNotice({ label }: { label: string | null }) {
+  const { colors, fonts } = useTheme();
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        alignSelf: "flex-start",
+        backgroundColor: colors.warningSoft,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: spacing.xs,
+        minHeight: 30,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 5,
+      }}
+    >
+      <Clock color={colors.ink} size={14} strokeWidth={2.2} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12 }}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -490,11 +439,11 @@ function RoomChangeCard({ request }: { request: TenancyRoomChangeRequest }) {
 function RequestCardHeader({
   referenceCode,
   status,
-  tenantName,
+  title,
 }: {
   referenceCode: string;
   status: string;
-  tenantName: string | null;
+  title: string;
 }) {
   const { colors, fonts, type } = useTheme();
 
@@ -512,7 +461,7 @@ function RequestCardHeader({
           numberOfLines={1}
           style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}
         >
-          {tenantName ?? "You"}
+          {title}
         </Text>
         <StatusPill label={humanizeToken(status)} tone={statusTone(status)} />
       </View>
@@ -590,153 +539,6 @@ function WithdrawExitSheet({
   );
 }
 
-function SearchField({
-  onChangeText,
-  placeholder,
-  value,
-}: {
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <AppTextInput
-      autoCapitalize="characters"
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor={colors.kicker}
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        color: colors.ink,
-        fontFamily: fonts.sans,
-        fontSize: 15,
-        minHeight: 48,
-        paddingHorizontal: spacing.md,
-      }}
-      value={value}
-    />
-  );
-}
-
-function TabButton({
-  active,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.ink : "transparent",
-        borderColor: active ? colors.ink : colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        flex: 1,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      <Text
-        style={{
-          color: active ? colors.surface : colors.ink,
-          fontFamily: fonts.sansBold,
-          fontSize: 14,
-        }}
-      >
-        {label}
-      </Text>
-    </AnimatedPressable>
-  );
-}
-
-function SummaryTile({
-  hint,
-  icon: Icon,
-  label,
-  tone = "default",
-  value,
-}: {
-  hint: string;
-  icon: ComponentType<LucideProps>;
-  label: string;
-  tone?: "default" | "primary";
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const accent = tone === "primary" ? colors.primary : colors.ink;
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        elevation: 2,
-        flex: 1,
-        gap: spacing.xs,
-        // Centred, because tiles in a row stretch to the tallest of them.
-        justifyContent: "center",
-        padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
-      }}
-    >
-      {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the
-          label and number stacked beside it — the billing, concern and tenancy
-          tiles' exact layout. Above the label the glyph made these two the
-          tallest things on the screen and read as a different KIND of figure
-          from the same counts elsewhere. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
-          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
-        </View>
-
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
-            {label}
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={{
-              color: accent,
-              fontFamily: fonts.display,
-              fontSize: metricFontSize(value, 23),
-              fontVariant: ["tabular-nums"],
-              lineHeight: metricFontSize(value, 23) + 5,
-            }}
-          >
-            {value}
-          </Text>
-        </View>
-      </View>
-
-      {/* Under the row on the tile's full width — beside a 38pt glyph the hint
-          had half a tile and wrapped, leaving one tile taller than its pair. */}
-      <Text numberOfLines={2} style={[type.caption, { color: colors.kicker, fontSize: 11, lineHeight: 15 }]}>
-        {hint}
-      </Text>
-    </View>
-  );
-}
-
-
 function DetailLine({
   icon: Icon,
   label,
@@ -762,7 +564,7 @@ function DetailLine({
   );
 }
 
-function scopeToTenancy<T extends { tenancyId: string }>(
+export function scopeToTenancy<T extends { tenancyId: string }>(
   requests: T[],
   params: { excludeTenancyId?: string; scope?: string; tenancyId?: string },
 ) {
@@ -817,39 +619,50 @@ function humanizeToken(value: string) {
   return value.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-const PAGE_SIZE = 5;
-
-/** A page window over an in-memory list, clamped so a shrinking list is safe. */
-function pageOf<T>(items: T[], page: number) {
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages - 1);
-  const start = safePage * PAGE_SIZE;
-
-  return { items: items.slice(start, start + PAGE_SIZE), page: safePage, totalPages };
-}
-
-function ListPager({
-  onPage,
-  paged,
-  total,
-}: {
-  onPage: (page: number) => void;
-  paged: { page: number; totalPages: number };
-  total: number;
-}) {
-  if (paged.totalPages <= 1) {
+function exitExpiryLabel(request: TenancyExitRequest) {
+  const remaining = remainingDays(request.expiresAt);
+  if (remaining === null) {
     return null;
   }
+  if (request.status === "REQUESTED") {
+    return remaining === 1 ? "Expires today" : `Expires in ${remaining}d`;
+  }
+  if (request.status === "REJECTED" && request.reRaiseAllowed) {
+    return remaining === 1
+      ? "Last day to re-raise this request"
+      : `${remaining}d left to re-raise this request`;
+  }
+  if (request.status === "APPROVED" && request.withdrawalWindowOpen) {
+    return remaining === 1
+      ? "Last day to request withdrawal"
+      : `${remaining}d left to request withdrawal`;
+  }
+  return null;
+}
 
-  return (
-    <PaginationBar
-      hasNext={paged.page + 1 < paged.totalPages}
-      hasPrevious={paged.page > 0}
-      onNext={() => onPage(paged.page + 1)}
-      onPrevious={() => onPage(Math.max(0, paged.page - 1))}
-      page={paged.page}
-      totalElements={total}
-      totalPages={paged.totalPages}
-    />
-  );
+function roomChangeExpiryLabel(request: TenancyRoomChangeRequest) {
+  const remaining = remainingDays(request.expiresAt);
+  if (remaining === null) {
+    return null;
+  }
+  if (request.status === "REQUESTED") {
+    return remaining === 1 ? "Expires today" : `Expires in ${remaining}d`;
+  }
+  if (request.status === "REJECTED" && request.reRaiseAllowed) {
+    return remaining === 1
+      ? "Last day to re-raise this request"
+      : `${remaining}d left to re-raise this request`;
+  }
+  return null;
+}
+
+function remainingDays(expiresAt: string | null) {
+  if (!expiresAt) {
+    return null;
+  }
+  const milliseconds = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return null;
+  }
+  return Math.max(1, Math.ceil(milliseconds / 86_400_000));
 }

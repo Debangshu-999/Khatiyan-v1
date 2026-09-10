@@ -26,7 +26,8 @@ public record ExitCheckoutWindowResponse(
     LocalDate earliestCheckoutDate,
     LocalDate latestCheckoutDate,
     /**
-     * The floor for an <em>early</em> departure — tomorrow.
+     * The floor for any departure. Product policy requires ten full days of
+     * lead time from the day the request is raised.
      *
      * <p>A tenant is allowed to leave before their notice is served; they simply
      * have not served it, which makes the request premature rather than
@@ -34,6 +35,11 @@ public record ExitCheckoutWindowResponse(
      * notice with no route at all.
      */
     LocalDate earliestPossibleDate,
+    /** Whether this tenancy may currently choose a date before full notice. */
+    boolean prematureExitAllowed,
+    int minimumLeadDays,
+    /** Human-readable reason shown when premature exit is unavailable. */
+    String restrictionMessage,
     /** True when there is only one possible date, so clients show text not a picker. */
     boolean fixed,
     /** True when this window belongs to a re-raise of a lapsed request. */
@@ -45,6 +51,9 @@ public record ExitCheckoutWindowResponse(
             LocalDate earliest,
             LocalDate latest,
             LocalDate earliestPossible,
+            boolean prematureExitAllowed,
+            int minimumLeadDays,
+            String restrictionMessage,
             boolean reRaise) {
         return new ExitCheckoutWindowResponse(
                 noticePeriod,
@@ -52,6 +61,9 @@ public record ExitCheckoutWindowResponse(
                 earliest,
                 latest,
                 earliestPossible,
+                prematureExitAllowed,
+                minimumLeadDays,
+                restrictionMessage,
                 earliest.equals(latest),
                 reRaise);
     }

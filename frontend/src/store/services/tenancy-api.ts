@@ -88,6 +88,47 @@ export type EndTenancyPayload = {
   proofImageUrl: string | null;
 };
 
+export type ExitExecutionConfiguration = Omit<EndTenancyPayload, "tenancyId">;
+
+export type ScheduledTenancyExitStatus =
+  | "SCHEDULED"
+  | "COMPLETED"
+  | "REVERSED"
+  | "UNSCHEDULED";
+
+export type ScheduledTenancyExit = {
+  id: string;
+  exitRequestId: string;
+  tenancyId: string;
+  propertyId: string;
+  tenantUserId: string;
+  scheduledCheckoutDate: string;
+  configuredByUserId: string;
+  nextAttemptAt: string;
+  lastAttemptAt: string | null;
+  attemptCount: number;
+  lastFailureCode: string | null;
+  lastFailureMessage: string | null;
+  status: ScheduledTenancyExitStatus;
+  closedAt: string | null;
+  closureReason: string | null;
+  configuration: ExitExecutionConfiguration;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExitScheduleSettings = {
+  propertyId: string;
+  /** Local property time, serialized by Spring as HH:mm:ss. */
+  executionTime: string;
+};
+
+export type UpcomingTenancyExit = {
+  request: TenancyExitRequest;
+  executionTime: string;
+  schedule: ScheduledTenancyExit | null;
+};
+
 export type TenancySummary = {
   id: string;
   referenceCode: string;
@@ -224,6 +265,8 @@ export type TenancyExitRequest = {
   withdrawalAdminNotes: string | null;
   /** Server-computed: whether the tenant may still ask to undo this approval. */
   withdrawalWindowOpen: boolean;
+  /** Server-computed: this rejected/expired request may be corrected now. */
+  reRaiseAllowed: boolean;
   /**
    * When this stops being interactive and drops into history. Null means an
    * open-ended wait (a withdrawal the owner has not answered).
@@ -243,8 +286,11 @@ export type ExitCheckoutWindow = {
   /** The soonest they can leave having served the full notice — no consequence. */
   earliestCheckoutDate: string;
   latestCheckoutDate: string;
-  /** Tomorrow. Choosing before `earliestCheckoutDate` is early, not forbidden. */
+  /** The earliest legal selection, including the ten-day product rule. */
   earliestPossibleDate: string;
+  prematureExitAllowed: boolean;
+  minimumLeadDays: number;
+  restrictionMessage: string | null;
   /** True when the notice-served date is a single date rather than a range. */
   fixed: boolean;
   /** True when this window belongs to a re-raise of a lapsed request. */
@@ -263,7 +309,7 @@ export type TenancyRoomChangeRequestStatus =
   | "REJECTED"
   | "CANCELLED"
   | "EXECUTED"
-  /** Nobody reviewed it within 5 days. No re-raise carve-out here — just ask again. */
+  /** Nobody reviewed it within 5 days. */
   | "EXPIRED";
 
 export type TenancyRoomChangeRequest = {
@@ -287,8 +333,14 @@ export type TenancyRoomChangeRequest = {
   decidedByName: string | null;
   decidedAt: string | null;
   executedAt: string | null;
-  /** When this stops being interactive. Room changes expire once decided. */
+  /** When this stops being interactive. */
   expiresAt: string | null;
+  /** The rejected request this corrected request replaces. */
+  supersededRequestId: string | null;
+  /** Server-computed: this rejected request may be corrected now. */
+  reRaiseAllowed: boolean;
+  /** Server-computed: management may still return this approval for review. */
+  approvalRevertAllowed: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -476,8 +528,8 @@ export const tenancyApi = api.injectEndpoints({
     }),
 
     /**
-     * Tenant asks to undo an APPROVED exit. Different from cancel, which is
-     * unilateral and only works before a decision. This needs the owner's yes.
+     * Tenant asks to undo an APPROVED exit. This always needs management's yes;
+     * a pending request has no unilateral cancellation path.
      */
     withdrawApprovedExitRequest: builder.mutation<
       TenancyExitRequest,
@@ -496,6 +548,53 @@ export const tenancyApi = api.injectEndpoints({
     listPropertyExitRequests: builder.query<TenancyExitRequest[], string>({
       query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/exit-requests`,
       providesTags: ["Tenancy"],
+    }),
+
+    listUpcomingTenancyExits: builder.query<UpcomingTenancyExit[], string>({
+      query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/upcoming-exits`,
+      providesTags: ["Tenancy"],
+    }),
+
+    getExitScheduleSettings: builder.query<ExitScheduleSettings, string>({
+      query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/exit-schedule-settings`,
+      providesTags: ["Tenancy"],
+    }),
+
+    updateExitScheduleSettings: builder.mutation<
+      ExitScheduleSettings,
+      { propertyId: string; executionTime: string }
+    >({
+      query: ({ executionTime, propertyId }) => ({
+        body: { executionTime },
+        method: "PUT",
+        url: `/api/v1/tenancies/properties/${propertyId}/exit-schedule-settings`,
+      }),
+      invalidatesTags: ["Tenancy"],
+    }),
+
+    getScheduledTenancyExit: builder.query<ScheduledTenancyExit, string>({
+      query: (requestId) => `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
+      providesTags: ["Tenancy"],
+    }),
+
+    scheduleTenancyExit: builder.mutation<
+      ScheduledTenancyExit,
+      { configuration: ExitExecutionConfiguration; requestId: string }
+    >({
+      query: ({ configuration, requestId }) => ({
+        body: configuration,
+        method: "POST",
+        url: `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
+      }),
+      invalidatesTags: ["Tenancy", "Notification"],
+    }),
+
+    unscheduleTenancyExit: builder.mutation<void, string>({
+      query: (requestId) => ({
+        method: "DELETE",
+        url: `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
+      }),
+      invalidatesTags: ["Tenancy", "Notification"],
     }),
 
     listPropertyRoomChangeRequests: builder.query<TenancyRoomChangeRequest[], string>({
@@ -555,6 +654,14 @@ export const tenancyApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
+
+    revertRoomChangeApproval: builder.mutation<TenancyRoomChangeRequest, string>({
+      query: (requestId) => ({
+        method: "POST",
+        url: `/api/v1/tenancies/room-change-requests/${requestId}/revert-approval`,
+      }),
+      invalidatesTags: ["Tenancy", "Notification", "Property"],
+    }),
     endTenancy: builder.mutation<void, EndTenancyPayload>({
       query: ({ tenancyId, ...body }) => ({
         body,
@@ -581,6 +688,8 @@ export const {
   useCreateExitRequestMutation,
   useDecideExitWithdrawalMutation,
   useGetExitCheckoutWindowQuery,
+  useGetExitScheduleSettingsQuery,
+  useGetScheduledTenancyExitQuery,
   useWithdrawApprovedExitRequestMutation,
   useCreateRoomChangeRequestMutation,
   useGetMyActiveTenancyQuery,
@@ -590,6 +699,7 @@ export const {
   useListMyRoomChangeRequestsQuery,
   useListMyTenanciesQuery,
   useListPropertyExitRequestsQuery,
+  useListUpcomingTenancyExitsQuery,
   useListPropertyRoomChangeRequestsQuery,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
@@ -597,4 +707,8 @@ export const {
   useOnboardDailyStayMutation,
   useRejectExitRequestMutation,
   useRejectRoomChangeRequestMutation,
+  useRevertRoomChangeApprovalMutation,
+  useScheduleTenancyExitMutation,
+  useUnscheduleTenancyExitMutation,
+  useUpdateExitScheduleSettingsMutation,
 } = tenancyApi;

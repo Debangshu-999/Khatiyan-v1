@@ -84,6 +84,9 @@ class BillingCycleServiceTest {
     private AuthModule authModule;
 
     @Mock
+    private BillReceiptPdfService billReceiptPdfService;
+
+    @Mock
     private DepositManagerService depositManagerService;
 
     @Mock
@@ -106,6 +109,7 @@ class BillingCycleServiceTest {
                 propertyModule,
                 billingAccessPolicy,
                 authModule,
+                billReceiptPdfService,
                 depositManagerService,
                 eventPublisher,
                 referenceCodeGenerator,

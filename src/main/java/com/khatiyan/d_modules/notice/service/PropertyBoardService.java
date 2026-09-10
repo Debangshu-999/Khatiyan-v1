@@ -138,6 +138,7 @@ public class PropertyBoardService {
                 request.body(),
                 defaultOrder(request.displayOrder()));
 
+        category.markContentChanged();
         return PropertyBoardItemResponse.from(itemRepository.save(item));
     }
 
@@ -179,7 +180,7 @@ public class PropertyBoardService {
         TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
                 .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
 
-        return itemRepository.findActiveByPropertyId(tenancy.propertyId())
+        return itemRepository.findActiveForTenantByPropertyId(tenancy.propertyId())
                 .stream()
                 .map(item -> PropertyBoardItemResponse.from(item))
                 .toList();
@@ -195,6 +196,7 @@ public class PropertyBoardService {
             UpdatePropertyBoardItemRequest request) {
         PropertyBoardItem item = getItem(itemId);
         propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, item.getPropertyId());
+        PropertyBoardCategory previousCategory = item.getCategory();
         PropertyBoardCategory category = getActiveCategoryForProperty(
                 item.getPropertyId(),
                 request.categoryId());
@@ -205,6 +207,10 @@ public class PropertyBoardService {
                 request.body(),
                 request.displayOrder());
 
+        previousCategory.markContentChanged();
+        if (!previousCategory.getId().equals(category.getId())) {
+            category.markContentChanged();
+        }
         return PropertyBoardItemResponse.from(item);
     }
 
@@ -216,6 +222,7 @@ public class PropertyBoardService {
         PropertyBoardItem item = getItem(itemId);
         propertyBoardAccessPolicy.ensureCanManageBoard(actorUserId, item.getPropertyId());
         item.deactivate();
+        item.getCategory().markContentChanged();
     }
 
     private PropertyBoardCategory getCategory(UUID categoryId) {

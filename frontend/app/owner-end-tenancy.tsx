@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertCircle, AlertTriangle, Check, DoorOpen, Info, Plus } from "lucide-react-native";
+import { AlertTriangle, Check, DoorOpen, Info, Plus, Shield, Trash2 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -11,8 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SegmentedChoice } from "@/components/segmented-choice";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { OwnerEndTenancySkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -44,7 +43,12 @@ import type {
   ExitCollectionMethod,
   ExitCustomCharge,
 } from "@/store/services/tenancy-api";
-import { useEndTenancyMutation, useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import {
+  useEndTenancyMutation,
+  useGetScheduledTenancyExitQuery,
+  useListPropertyTenanciesQuery,
+  useScheduleTenancyExitMutation,
+} from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -82,8 +86,21 @@ export default function OwnerEndTenancyScreen() {
   // cannot be used, a server that says no. There is no field to correct, so
   // they all go to the modal.
   const opErrors = useFormErrors<never>();
-  const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
+  const {
+    edit: editParam,
+    mode: modeParam,
+    requestId: requestIdParam,
+    tenancyId: tenancyIdParam,
+  } = useLocalSearchParams<{
+    edit?: string;
+    mode?: string;
+    requestId?: string;
+    tenancyId?: string;
+  }>();
   const tenancyId = typeof tenancyIdParam === "string" ? tenancyIdParam : "";
+  const requestId = typeof requestIdParam === "string" ? requestIdParam : "";
+  const isScheduling = modeParam === "schedule" && Boolean(requestId);
+  const editingSchedule = isScheduling && editParam === "1";
 
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
@@ -121,11 +138,48 @@ export default function OwnerEndTenancyScreen() {
   // Every bill counts — rent cycles AND one-off bills. Mirrors the backend exit
   // gate, which blocks on any unpaid bill.
   const unpaidBills = useMemo(
-    () => (cyclesQuery.data ?? []).filter((cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE"),
+    () => (cyclesQuery.data ?? []).filter(
+      (cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE" || cycle.status === "CONFIRMATION_PENDING",
+    ),
     [cyclesQuery.data],
   );
   const duesCleared = unpaidBills.length === 0;
-  const unpaidTotalPaise = unpaidBills.reduce((sum, cycle) => sum + cycle.totalAmountPaise, 0);
+  const currentBill = useMemo(
+    () => [...(cyclesQuery.data ?? [])]
+      .filter((cycle) => cycle.category === "RENT_CYCLE" && cycle.status !== "UPCOMING" && cycle.status !== "CANCELLED")
+      .sort((left, right) => {
+        const periodDifference = new Date(right.periodStartDate).getTime() - new Date(left.periodStartDate).getTime();
+        return periodDifference !== 0 ? periodDifference : (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0);
+      })[0] ?? null,
+    [cyclesQuery.data],
+  );
+  const currentBillTitle = currentBill == null
+    ? "Current bill"
+    : currentBill.status === "PAID"
+      ? "Current bill paid"
+      : currentBill.status === "CONFIRMATION_PENDING"
+        ? "Payment confirmation pending"
+        : currentBill.status === "OVERDUE"
+          ? "Current bill overdue"
+          : "Current bill unpaid";
+  const currentBillMessage = currentBill == null
+    ? "No current billing cycle is available for this tenancy."
+    : `${billTitle(currentBill)} (${currentBill.referenceCode}) of ${formatMoneyPaise(currentBill.totalAmountPaise)} is ${
+        currentBill.status === "PAID"
+          ? "paid"
+          : currentBill.status === "CONFIRMATION_PENDING"
+            ? "awaiting payment confirmation"
+            : currentBill.status === "OVERDUE"
+              ? "overdue"
+              : "unpaid"
+      }.`;
+  const currentBillTone = currentBill == null
+    ? "info" as const
+    : currentBill.status === "PAID"
+      ? "success" as const
+      : currentBill.status === "CONFIRMATION_PENDING"
+        ? "warning" as const
+        : "danger" as const;
 
   // ---------------------------------------------------------------- 1 of 3
   // An early exit is one that ends before the day the agreement named. Only a
@@ -187,6 +241,52 @@ export default function OwnerEndTenancyScreen() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const [endTenancy, endState] = useEndTenancyMutation();
+  const [scheduleTenancyExit, scheduleState] = useScheduleTenancyExitMutation();
+  const scheduledExitQuery = useGetScheduledTenancyExitQuery(requestId, {
+    skip: !editingSchedule,
+  });
+  const hydratedScheduleId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const saved = scheduledExitQuery.data;
+    if (!saved || hydratedScheduleId.current === saved.id || policiesQuery.isFetching) {
+      return;
+    }
+
+    const configuration = saved.configuration;
+    const exitCharges = configuration.earlyExitCharges ?? [];
+    const exitTotal = exitCharges.reduce((sum, charge) => sum + charge.amountPaise, 0);
+    const depositCharge = exitCharges.find((charge) => charge.instrument === "DEPOSIT");
+    const billedCharge = exitCharges.find((charge) => charge.instrument === "ONE_OFF_BILL");
+    const damages = configuration.damages;
+
+    setEarlyExitRupees(exitTotal > 0 ? String(exitTotal / 100) : "");
+    setEarlyExitInstrument(
+      exitCharges.length === 0
+        ? null
+        : depositCharge
+          ? "DEPOSIT"
+          : "ONE_OFF_BILL",
+    );
+    setSplitDepositPaise(depositCharge && billedCharge ? depositCharge.amountPaise : null);
+    setCollectedVia(billedCharge?.collectedVia ?? damages?.collectedVia ?? "CASH");
+    setDepositPayable(configuration.depositPayable ?? true);
+    setDamageSelected(
+      Object.fromEntries((damages?.itemNames ?? []).map((name) => [name, true])),
+    );
+    setCustomCharges(damages?.customCharges ?? []);
+    setDamageInstrument(damages?.instrument ?? null);
+    setChecked(
+      Object.fromEntries(
+        checklist.map((item, index) => [
+          index,
+          (configuration.checklistConfirmed ?? []).includes(item),
+        ]),
+      ),
+    );
+    setProofImageUrl(configuration.proofImageUrl ?? "");
+    hydratedScheduleId.current = saved.id;
+  }, [checklist, policiesQuery.isFetching, scheduledExitQuery.data]);
 
   // Mirrors the server's running-balance rule so the actor sees the problem
   // while they can still fix it, rather than as a rejection after submitting.
@@ -194,6 +294,23 @@ export default function OwnerEndTenancyScreen() {
   // Nothing to deduct from: offering the deposit here would only produce a
   // rejection at submit, or a split whose deposit half is zero.
   const depositUnavailable = deposit == null || depositBalancePaise <= 0;
+  const depositCollectionBlocked = !isDaily && !depositPayable;
+
+  // A forfeited deposit is the settlement itself, not a pool that can also pay
+  // charges. Clear any older deposit choice immediately when the disposition
+  // changes, including an inconsistent configuration loaded for editing.
+  useEffect(() => {
+    if (!depositCollectionBlocked) {
+      return;
+    }
+    setEarlyExitInstrument((current) => current === "DEPOSIT" ? null : current);
+    setDamageInstrument((current) => current === "DEPOSIT" ? null : current);
+    setPendingInstrument((current) => current === "DEPOSIT" ? null : current);
+    setPendingDamageInstrument((current) => current === "DEPOSIT" ? null : current);
+    setSplitDepositPaise(null);
+    setInstrumentPreviewOpen(false);
+    setDamagePreviewOpen(false);
+  }, [depositCollectionBlocked]);
 
   // One list, used for the payload, the deposit projection and the summary row —
   // so the three can never disagree about what is being charged.
@@ -241,7 +358,7 @@ export default function OwnerEndTenancyScreen() {
   // nothing to photograph and the field would be asking for a fiction.
   const collectsMoney = billedEarlyExitPaise > 0 || (damageInstrument === "ONE_OFF_BILL" && damageTotalPaise > 0);
 
-  const blockingMessage = !duesCleared
+  const blockingMessage = !isScheduling && !duesCleared
     ? unpaidBills.length === 1
       ? "Clear the outstanding bill before ending the tenancy."
       : "Clear all outstanding bills before ending the tenancy."
@@ -259,10 +376,34 @@ export default function OwnerEndTenancyScreen() {
     // The button is already disabled while anything is blocking, and the reason
     // is stated on screen in the "Action needed" bar — repeating it here would
     // be a second copy of a message the reader is already looking at.
-    if (!tenancyId || blockingMessage) {
+    if (!tenancyId || blockingMessage || (isScheduling && !requestId)) {
       return;
     }
     try {
+      if (isScheduling) {
+        await scheduleTenancyExit({
+          configuration: {
+            checklistConfirmed: checklist.filter((_, index) => checked[index]),
+            damages:
+              damageInstrument != null && (selectedDamageNames.length > 0 || customCharges.length > 0)
+                ? {
+                    collectedVia: damageInstrument === "ONE_OFF_BILL" ? collectedVia : null,
+                    customCharges,
+                    instrument: damageInstrument,
+                    itemNames: selectedDamageNames,
+                  }
+                : null,
+            depositPayable: isDaily || !deposit ? null : depositPayable,
+            earlyExitCharges,
+            proofImageUrl: collectsMoney ? proofImageUrl.trim() || null : null,
+          },
+          requestId,
+        }).unwrap();
+        toast.success(editingSchedule ? "Scheduled exit updated." : "Exit added to the schedule.");
+        router.back();
+        return;
+      }
+
       await endTenancy({
         checklistConfirmed: checklist.filter((_, index) => checked[index]),
         // Narrowed on the instrument: a damage charge with none chosen is
@@ -287,11 +428,18 @@ export default function OwnerEndTenancyScreen() {
       toast.success("Tenancy ended.");
       router.back();
     } catch (error) {
-      opErrors.failFromServer(errorMessage(error) || "Could not end the tenancy. Please try again.");
+      opErrors.failFromServer(
+        errorMessage(error)
+          || (isScheduling
+            ? "Could not save the scheduled exit. Please try again."
+            : "Could not end the tenancy. Please try again."),
+      );
     }
   }
 
-  const loading = tenanciesQuery.isFetching && !tenancy;
+  const loading =
+    (tenanciesQuery.isFetching && !tenancy)
+    || (editingSchedule && scheduledExitQuery.isFetching && !scheduledExitQuery.data);
 
   // Numbering is derived from what is on screen. A daily stay shows only damage
   // charges; a monthly stay at the end of its term shows deposit and damages but
@@ -308,16 +456,21 @@ export default function OwnerEndTenancyScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
         <ScreenHeader
-          title="End"
-          italicTail="tenancy."
-          subtitle={tenancy ? `Check out ${tenancy.tenantName?.trim() || "the tenant"} and settle up.` : "Ending a tenancy."}
+          title={isScheduling ? "Schedule" : "End"}
+          italicTail={isScheduling ? "exit." : "tenancy."}
+          subtitle={
+            tenancy
+              ? isScheduling
+                ? `Configure the checkout for ${tenancy.tenantName?.trim() || "the tenant"} before its due date.`
+                : `Check out ${tenancy.tenantName?.trim() || "the tenant"} and settle up.`
+              : isScheduling
+                ? "Configuring a scheduled exit."
+                : "Ending a tenancy."
+          }
         />
 
         {loading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonList rows={2} />
-          </>
+          <OwnerEndTenancySkeleton />
         ) : !tenancy ? (
           <EmptyState
             icon={DoorOpen}
@@ -326,23 +479,39 @@ export default function OwnerEndTenancyScreen() {
           />
         ) : (
           <>
-            <NoticeBar
-              message={
-                duesCleared
-                  ? "All bills are paid — rent cycles and any one-off charges."
-                  : unpaidBills.length === 1
-                    ? `${billTitle(unpaidBills[0])} (${unpaidBills[0].referenceCode}) of ${formatMoneyPaise(unpaidBills[0].totalAmountPaise)} is unpaid.`
-                    : `${unpaidBills.length} unpaid bills totalling ${formatMoneyPaise(unpaidTotalPaise)}.`
-              }
-              title={duesCleared ? "Dues cleared" : "Dues outstanding"}
-              tone={duesCleared ? "success" : "danger"}
+            <ExitInfoPanel
+              message={currentBillMessage}
+              title={currentBillTitle}
+              tone={currentBillTone}
             />
+
+            {isScheduling && !duesCleared ? (
+              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xs }}>
+                <View
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.primarySoft,
+                    borderRadius: 999,
+                    height: 28,
+                    justifyContent: "center",
+                    width: 28,
+                  }}
+                >
+                  <Info color={colors.primaryDeep} size={17} strokeWidth={2.3} />
+                </View>
+                <Text style={[type.caption, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 }]}>
+                  <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 13 }]}>Execution-day payment check. </Text>
+                  Every bill is checked again before the exit runs. If anything remains unpaid or unconfirmed,
+                  nothing changes and the owner is notified.
+                </Text>
+              </View>
+            ) : null}
 
             {/* Sits with the dues gate rather than beside the section that
                 caused it: both answer the same question — why the button at the
                 bottom will not move — so they belong in one place the actor
                 reads before scrolling, not scattered down the page. */}
-            {blockingMessage && duesCleared ? (
+            {blockingMessage && (duesCleared || isScheduling) ? (
               <NoticeBar message={blockingMessage} title="Action needed" tone="warning" />
             ) : null}
 
@@ -357,7 +526,7 @@ export default function OwnerEndTenancyScreen() {
                     reason this section exists, and it changes what the owner is
                     entitled to charge. Set as a plain caption it read as a
                     footnote to the heading; it is a warning. */}
-                <NoticeBar
+                <ExitInfoPanel
                   message={
                     isEarlyExit
                       ? tenancy.agreementEndDate
@@ -370,39 +539,26 @@ export default function OwnerEndTenancyScreen() {
                 />
 
                 {governingRule ? (
-                  <View
-                    style={{
-                      borderColor: colors.borderStrong,
-                      borderLeftWidth: 3,
-                      gap: spacing.xs,
-                      paddingLeft: spacing.md,
-                      paddingVertical: spacing.xs,
-                    }}
-                  >
-                    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                        {isEarlyExit ? "Your rule" : "Premature exit policy"}
-                      </Text>
-                      <AnimatedPressable
-                        accessibilityLabel="About this rule"
-                        accessibilityRole="button"
-                        hitSlop={10}
-                        onPress={() => setRuleInfoOpen(true)}
-                      >
-                        <Info color={colors.muted} size={15} strokeWidth={2.2} />
-                      </AnimatedPressable>
-                    </View>
-                    <Text selectable style={[type.body, { color: colors.ink, lineHeight: 20 }]}>
-                      {governingRule}
-                    </Text>
-                  </View>
+                  <ExitInfoPanel
+                    emphasis="message"
+                    message={governingRule}
+                    onInfo={() => setRuleInfoOpen(true)}
+                    title={isEarlyExit ? "Early exit policy" : "Premature exit policy"}
+                    tone="info"
+                  />
                 ) : (
-                  <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                    {isEarlyExit
+                  <ExitInfoPanel
+                    message={
+                      isEarlyExit
                       ? "No early-exit rule was written into this agreement, so nothing is owed unless you charge it here."
-                      : "No premature exit policy is set for this property, so nothing is owed unless you charge it here."}
-                  </Text>
+                      : "No premature exit policy is set for this property, so nothing is owed unless you charge it here."
+                    }
+                    title="No policy configured"
+                    tone="info"
+                  />
                 )}
+
+                <SectionDivider />
 
                 <FormInput
                   keyboardType="number-pad"
@@ -419,33 +575,41 @@ export default function OwnerEndTenancyScreen() {
                   prefix="₹"
                   value={earlyExitRupees}
                 />
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                  Nothing is calculated for you — enter what your rule works out to, or leave it empty to charge nothing.
-                </Text>
-
-                <SegmentedChoice
+                {/* <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  Nothing is calculated automatically, enter what the set rule works out to, or leave it empty to charge nothing.
+                </Text> */}
+                <InlineInfoText
+                  message={"Nothing is calculated automatically, enter what the set rule works out to, or leave it empty to charge nothing."}
+                />
+                <ExitChoiceRow
                   disabled={earlyExitPaise <= 0}
+                  label="Collect charges from"
                   onChange={(next) => {
                     // Selecting an instrument is a decision about someone's
                     // money, so it is confirmed before it sticks rather than
                     // toggled by a stray tap.
-                    if (next === "DEPOSIT" && depositUnavailable) {
-                      opErrors.failFromServer("There is no deposit to charge against.");
+                    if (next === "DEPOSIT" && (depositUnavailable || depositCollectionBlocked)) {
+                      opErrors.failFromServer(
+                        depositCollectionBlocked
+                          ? "Mark the deposit refundable before using it for charges."
+                          : "There is no deposit to charge against.",
+                      );
                       return;
                     }
                     setPendingInstrument(next);
                     setSplitDepositPaise(null);
                     setInstrumentPreviewOpen(true);
                   }}
-                  options={INSTRUMENT_OPTIONS}
+                  options={INSTRUMENT_OPTIONS.map((option) => ({
+                    ...option,
+                    disabled: option.value === "DEPOSIT" && depositCollectionBlocked,
+                  }))}
                   value={earlyExitInstrument}
                 />
                 {earlyExitCharges.length === 0 ? (
-                  <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                    {earlyExitPaise <= 0
-                      ? "Enter a charge above to choose how it is collected."
-                      : "Choose how this charge is collected."}
-                  </Text>
+                  earlyExitPaise <= 0
+                        ? <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>Enter a charge above to choose how it is collected</Text>
+                        : <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>Choose how this charge is collected.</Text>
                 ) : (
                   /* Rendered from the same list the payload is built from, so a
                      split charge shows as the two lines it actually becomes
@@ -456,20 +620,22 @@ export default function OwnerEndTenancyScreen() {
                         key={`${charge.instrument}-${index}`}
                         style={{
                           alignItems: "center",
+                          backgroundColor: colors.surfaceSunken,
                           borderColor: colors.borderStrong,
-                          borderRadius: 0,
+                          borderCurve: "continuous",
+                          borderRadius: 12,
                           borderWidth: 1,
                           flexDirection: "row",
                           gap: spacing.sm,
-                          paddingHorizontal: spacing.md,
-                          paddingVertical: spacing.sm,
+                          paddingHorizontal: 12,
+                          paddingVertical: spacing.xs,
                         }}
                       >
                         <View style={{ flex: 1, gap: 2 }}>
                           <Text style={[type.eyebrow, { color: colors.kicker }]}>
                             {charge.instrument === "DEPOSIT" ? "From deposit" : "One-off bill"}
                           </Text>
-                          <Text selectable style={[type.body, { color: colors.ink }]}>
+                          <Text selectable style={[type.body, { color: colors.ink, fontSize: 13, lineHeight: 19 }]}>
                             {charge.instrument === "DEPOSIT"
                               ? `${formatMoneyPaise(charge.amountPaise)} comes off the deposit`
                               : `${formatMoneyPaise(charge.amountPaise)} billed, collected by ${
@@ -508,26 +674,45 @@ export default function OwnerEndTenancyScreen() {
               <Card>
                 <StepLabel index={stepOf("deposit")} of={stepCount} title="Deposit" />
                 {!deposit ? (
-                  <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                    This tenancy has no deposit account, so there is nothing to settle.
-                  </Text>
+                  <ExitInfoPanel
+                    message="This tenancy has no deposit account, so there is nothing to settle."
+                    title="No deposit account"
+                    tone="info"
+                  />
                 ) : (
                   <>
-                    <Text selectable style={[type.metric, { color: colors.ink, fontSize: 26, lineHeight: 30 }]}>
-                      {formatMoneyPaise(Math.max(depositBalancePaise - depositDemandPaise, 0))}
-                    </Text>
-                    <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                      {depositDemandPaise > 0
-                        ? "Left after the charges you have chosen to take from the deposit."
-                        : "Held now. Nothing on this screen is being taken from it yet."}
-                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: colors.primarySoft,
+                        borderColor: colors.border,
+                        borderCurve: "continuous",
+                        borderRadius: 14,
+                        borderWidth: 1,
+                        gap: 4,
+                        padding: 12,
+                      }}
+                    >
+                      <Text style={[type.eyebrow, { color: colors.muted }]}>Current balance</Text>
+                      <Text selectable style={[type.metric, { color: colors.ink, fontSize: 23, lineHeight: 28 }]}>
+                        {formatMoneyPaise(depositBalancePaise)}
+                      </Text>
+                    </View>
 
                     {/* The payability question is asked of the remainder, so the
                         remainder is the figure shown large. The workings stay
                         visible underneath: an actor deciding whether to refund
                         needs to see what reduced it, not just the result. */}
                     {depositDemandPaise > 0 ? (
-                      <View style={{ gap: spacing.xs }}>
+                      <View
+                        style={{
+                          borderColor: colors.border,
+                          borderCurve: "continuous",
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          gap: spacing.xs,
+                          padding: 12,
+                        }}
+                      >
                         <Row label="Deposit held" value={formatMoneyPaise(depositBalancePaise)} />
                         {earlyExitInstrument === "DEPOSIT" && earlyExitPaise > 0 ? (
                           <Row label="Early exit charge" value={`− ${formatMoneyPaise(earlyExitPaise)}`} />
@@ -538,25 +723,42 @@ export default function OwnerEndTenancyScreen() {
                       </View>
                     ) : null}
 
-                    <SegmentedChoice
-                      onChange={(value) => setDepositPayable(value === "REFUND")}
+                    <SectionDivider />
+
+                    <ExitChoiceRow
+                      label="Settle remaining deposit as"
+                      onChange={(value) => {
+                        const refundable = value === "REFUND";
+                        setDepositPayable(refundable);
+                        if (!refundable) {
+                          setEarlyExitInstrument((current) => current === "DEPOSIT" ? null : current);
+                          setDamageInstrument((current) => current === "DEPOSIT" ? null : current);
+                          setPendingInstrument(null);
+                          setPendingDamageInstrument(null);
+                          setSplitDepositPaise(null);
+                          setInstrumentPreviewOpen(false);
+                          setDamagePreviewOpen(false);
+                        }
+                      }}
                       options={[
                         { label: "Refundable", value: "REFUND" },
                         { label: "Not refundable", value: "FORFEIT" },
                       ]}
                       value={depositPayable ? "REFUND" : "FORFEIT"}
                     />
-                    <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                      {depositPayable
-                        ? `${formatMoneyPaise(Math.max(depositBalancePaise - depositDemandPaise, 0))} is returned when you settle the deposit.`
-                        : "Nothing is returned. A deposit you are keeping cannot also be deducted from — charge anything owed to a one-off bill."}
-                    </Text>
+                    <InlineInfoText
+                      message={
+                        depositPayable
+                          ? `${formatMoneyPaise(Math.max(depositBalancePaise - depositDemandPaise, 0))} is returned when you settle the deposit.`
+                          : "Nothing is returned. A deposit you are keeping cannot also be deducted from."
+                      }
+                    />
 
                     {canManageDeposits ? (
                       <ActionButton
                         label="Open deposit manager"
                         onPress={() => setDepositSheetOpen(true)}
-                        variant="secondary"
+                        variant="outline"
                       />
                     ) : null}
                   </>
@@ -566,126 +768,200 @@ export default function OwnerEndTenancyScreen() {
 
             <Card>
               <StepLabel index={stepOf("damages")} of={stepCount} title="Damage charges" />
+              <Text style={[type.bodyStrong, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+                Select any damaged items
+              </Text>
               {damageCharges.length === 0 ? (
-                <NoticeBar
+                <ExitInfoPanel
                   message="This agreement set no damage-charge schedule, so nothing here is pre-agreed. Anything you charge must be evidenced at move-out."
                   title="No agreed damage charges"
                   tone="warning"
                 />
               ) : (
-                damageCharges.map((item) => (
-                  <CheckRow
-                    key={item.name}
-                    checked={Boolean(damageSelected[item.name])}
-                    label={`${item.name} — ${formatMoneyPaise(item.chargePaise)}`}
-                    onToggle={() =>
-                      setDamageSelected((current) => ({ ...current, [item.name]: !current[item.name] }))
-                    }
-                  />
-                ))
-              )}
-
-              {customCharges.map((charge, index) => (
                 <View
-                  key={`${charge.reason}-${index}`}
                   style={{
-                    alignItems: "center",
-                    borderBottomColor: colors.border,
-                    borderBottomWidth: 1,
-                    flexDirection: "row",
-                    gap: spacing.sm,
-                    paddingVertical: spacing.sm,
+                    borderColor: colors.border,
+                    borderCurve: "continuous",
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    overflow: "hidden",
                   }}
                 >
-                  <Text selectable style={[type.body, { color: colors.ink, flex: 1 }]}>
-                    {charge.reason}
-                  </Text>
-                  <Text selectable style={[type.bodyStrong, { color: colors.ink }]}>
-                    {formatMoneyPaise(charge.amountPaise)}
-                  </Text>
-                  <AnimatedPressable
-                    accessibilityLabel={`Remove ${charge.reason}`}
-                    accessibilityRole="button"
-                    hitSlop={10}
-                    onPress={() => setCustomCharges((rows) => rows.filter((_, i) => i !== index))}
-                  >
-                    <Text style={[type.caption, { color: colors.danger }]}>
-                      Remove
-                    </Text>
-                  </AnimatedPressable>
+                  {damageCharges.map((item, index) => (
+                    <DamageChargeRow
+                      amount={formatMoneyPaise(item.chargePaise)}
+                      checked={Boolean(damageSelected[item.name])}
+                      key={item.name}
+                      label={item.name}
+                      last={index === damageCharges.length - 1}
+                      onToggle={() =>
+                        setDamageSelected((current) => ({ ...current, [item.name]: !current[item.name] }))
+                      }
+                    />
+                  ))}
                 </View>
-              ))}
+              )}
 
-              <ActionButton
-                icon={Plus}
-                label="Add custom damage charge"
+              <Text style={[type.bodyStrong, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+                Custom charges
+              </Text>
+              {customCharges.length > 0 ? (
+                <View
+                  style={{
+                    borderColor: colors.border,
+                    borderCurve: "continuous",
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    overflow: "hidden",
+                  }}
+                >
+                  {customCharges.map((charge, index) => (
+                    <View
+                      key={`${charge.reason}-${index}`}
+                      style={{
+                        alignItems: "center",
+                        borderBottomColor: colors.border,
+                        borderBottomWidth: index === customCharges.length - 1 ? 0 : 1,
+                        flexDirection: "row",
+                        gap: spacing.sm,
+                        minHeight: 48,
+                        paddingHorizontal: 12,
+                        paddingVertical: spacing.xs,
+                      }}
+                    >
+                      <Text
+                        selectable
+                        style={[type.bodyStrong, { color: colors.ink, flex: 1, fontSize: 14, lineHeight: 19 }]}
+                      >
+                        {charge.reason}
+                      </Text>
+                      <Text selectable style={[type.bodyStrong, { color: colors.ink, fontSize: 14, lineHeight: 19 }]}>
+                        {formatMoneyPaise(charge.amountPaise)}
+                      </Text>
+                      <AnimatedPressable
+                        accessibilityLabel={`Remove ${charge.reason}`}
+                        accessibilityRole="button"
+                        hitSlop={10}
+                        onPress={() => setCustomCharges((rows) => rows.filter((_, i) => i !== index))}
+                      >
+                        <Trash2 color={colors.danger} size={17} strokeWidth={2.2} />
+                      </AnimatedPressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <AnimatedPressable
+                accessibilityRole="button"
                 onPress={() => setAddDamageOpen(true)}
-                variant="secondary"
+                style={{
+                  alignItems: "center",
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                  borderCurve: "continuous",
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  justifyContent: "center",
+                  minHeight: 44,
+                  paddingHorizontal: spacing.md,
+                }}
+              >
+                <Plus color={colors.onPrimary} size={18} strokeWidth={2.2} />
+                <Text style={[type.bodyStrong, { color: colors.onPrimary, fontSize: 14, lineHeight: 19 }]}>
+                  Add custom damage charge
+                </Text>
+              </AnimatedPressable>
+
+              <View
+                style={{
+                  alignItems: "center",
+                  borderColor: colors.border,
+                  borderCurve: "continuous",
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  minHeight: 52,
+                  paddingHorizontal: 12,
+                  paddingVertical: spacing.sm,
+                }}
+              >
+                <Text style={[type.bodyStrong, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>Total</Text>
+                <Text selectable style={[type.metric, { color: colors.ink, fontSize: 20, lineHeight: 25 }]}>
+                  {formatMoneyPaise(damageTotalPaise)}
+                </Text>
+              </View>
+
+              <ExitChoiceRow
+                disabled={damageTotalPaise <= 0}
+                label="Collect charges from"
+                onChange={(next) => {
+                  if (next === "DEPOSIT" && (depositUnavailable || depositCollectionBlocked)) {
+                    opErrors.failFromServer(
+                      depositCollectionBlocked
+                        ? "Mark the deposit refundable before using it for charges."
+                        : "There is no deposit left to charge against.",
+                    );
+                    return;
+                  }
+                  setPendingDamageInstrument(next);
+                  setDamagePreviewOpen(true);
+                }}
+                options={INSTRUMENT_OPTIONS.map((option) => ({
+                  ...option,
+                  disabled: option.value === "DEPOSIT" && depositCollectionBlocked,
+                }))}
+                value={damageInstrument}
               />
 
               {damageTotalPaise > 0 ? (
-                <>
-                  <Text selectable style={[type.bodyStrong, { color: colors.ink }]}>
-                    Total {formatMoneyPaise(damageTotalPaise)}
-                  </Text>
-                  <SegmentedChoice
-                    disabled={false}
-                    onChange={(next) => {
-                      if (next === "DEPOSIT" && depositUnavailable) {
-                        opErrors.failFromServer("There is no deposit left to charge against.");
-                        return;
-                      }
-                      setPendingDamageInstrument(next);
-                      setDamagePreviewOpen(true);
-                    }}
-                    options={INSTRUMENT_OPTIONS}
-                    value={damageInstrument}
-                  />
+                <InlineInfoText
+                  message={
+                    damageInstrument == null && depositUnavailable
+                      ? "No deposit is available, so these must be collected as a bill."
+                      : "Choose how these charges are collected."
+                  }
+                />
+              ) : null}
 
-                  {damageInstrument == null ? (
-                    <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                      {depositUnavailable
-                        ? "No deposit is available, so these must be collected as a bill."
-                        : "Choose how these charges are collected."}
+              {damageInstrument != null ? (
+                <View
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceSunken,
+                    borderColor: colors.border,
+                    borderCurve: "continuous",
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    paddingHorizontal: 12,
+                    paddingVertical: spacing.xs,
+                  }}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                      {damageInstrument === "DEPOSIT" ? "From deposit" : "One-off bill"}
                     </Text>
-                  ) : (
-                    <View
-                      style={{
-                        alignItems: "center",
-                        borderColor: colors.borderStrong,
-                        borderRadius: 0,
-                        borderWidth: 1,
-                        flexDirection: "row",
-                        gap: spacing.sm,
-                        paddingHorizontal: spacing.md,
-                        paddingVertical: spacing.sm,
-                      }}
-                    >
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                          {damageInstrument === "DEPOSIT" ? "From deposit" : "One-off bill"}
-                        </Text>
-                        <Text selectable style={[type.body, { color: colors.ink }]}>
-                          {damageInstrument === "DEPOSIT"
-                            ? `${formatMoneyPaise(damageTotalPaise)} comes off the deposit`
-                            : billedEarlyExitPaise > 0
-                              ? `${formatMoneyPaise(damageTotalPaise)} added to the same bill`
-                              : `${formatMoneyPaise(damageTotalPaise)} billed, recorded paid`}
-                        </Text>
-                      </View>
-                      <AnimatedPressable
-                        accessibilityLabel="Remove damage charge collection"
-                        accessibilityRole="button"
-                        hitSlop={10}
-                        onPress={() => setDamageInstrument(null)}
-                      >
-                        <Text style={[type.caption, { color: colors.danger }]}>
-                          Remove
-                        </Text>
-                      </AnimatedPressable>
-                    </View>
-                  )}
-                </>
+                    <Text selectable style={[type.body, { color: colors.ink, fontSize: 13, lineHeight: 19 }]}>
+                      {damageInstrument === "DEPOSIT"
+                        ? `${formatMoneyPaise(damageTotalPaise)} comes off the deposit`
+                        : billedEarlyExitPaise > 0
+                          ? `${formatMoneyPaise(damageTotalPaise)} added to the same bill`
+                          : `${formatMoneyPaise(damageTotalPaise)} billed, recorded paid`}
+                    </Text>
+                  </View>
+                  <AnimatedPressable
+                    accessibilityLabel="Remove damage charge collection"
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => setDamageInstrument(null)}
+                  >
+                    <Text style={[type.caption, { color: colors.danger }]}>Remove</Text>
+                  </AnimatedPressable>
+                </View>
               ) : null}
             </Card>
 
@@ -739,12 +1015,22 @@ export default function OwnerEndTenancyScreen() {
       </ScreenScrollView>
 
       {tenancy ? (
-        <PinnedFooter>
+        <PinnedFooter fade={false}>
           <ActionButton
-            disabled={endState.isLoading || Boolean(blockingMessage)}
-            label={endState.isLoading ? "Ending…" : "End tenancy"}
+            disabled={endState.isLoading || scheduleState.isLoading || Boolean(blockingMessage)}
+            label={
+              isScheduling
+                ? scheduleState.isLoading
+                  ? "Saving..."
+                  : editingSchedule
+                    ? "Update scheduled exit"
+                    : "Add to scheduled exits"
+                : endState.isLoading
+                  ? "Ending..."
+                  : "End tenancy"
+            }
             onPress={() => void end()}
-            variant="danger"
+            variant={isScheduling ? undefined : "danger"}
           />
         </PinnedFooter>
       ) : null}
@@ -1321,13 +1607,293 @@ function Row({
   const { colors, type } = useTheme();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-      <Text style={[type.body, { color: colors.muted }]}>
+      <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
         {label}
       </Text>
-      <Text selectable style={[strong ? type.bodyStrong : type.body, { color: tone ?? colors.ink }]}>
+      <Text
+        selectable
+        style={[strong ? type.bodyStrong : type.body, { color: tone ?? colors.ink, fontSize: 13, lineHeight: 19 }]}
+      >
         {value}
       </Text>
     </View>
+  );
+}
+
+function SectionDivider() {
+  const { colors } = useTheme();
+  return <View style={{ borderBottomColor: colors.border, borderBottomWidth: 1 }} />;
+}
+
+function InlineInfoText({ message }: { message: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: 999,
+          height: 18,
+          justifyContent: "center",
+          width: 18,
+        }}
+      >
+        <Info color={colors.muted} size={11} strokeWidth={2.4} />
+      </View>
+      <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+function ExitInfoPanel({
+  emphasis = "title",
+  message,
+  onInfo,
+  title,
+  tone,
+}: {
+  emphasis?: "message" | "title";
+  message: string;
+  onInfo?: () => void;
+  title: string;
+  tone: "danger" | "info" | "success" | "warning";
+}) {
+  const { colors, type } = useTheme();
+  const warning = tone === "warning";
+  const danger = tone === "danger";
+  const success = tone === "success";
+  const panelBackground = danger
+    ? colors.dangerSoft
+    : success
+      ? colors.successSoft
+      : warning
+        ? colors.warningSoft
+        : colors.primarySoft;
+  const iconBadge = (
+    <View
+      style={{
+        alignItems: "center",
+        alignSelf: "flex-start",
+        backgroundColor: danger
+          ? colors.danger
+          : success
+            ? colors.successText
+            : warning
+              ? "transparent"
+              : colors.surface,
+        borderRadius: 999,
+        height: danger ? 28 : 34,
+        justifyContent: "center",
+        width: danger ? 28 : 34,
+      }}
+    >
+      {danger ? (
+        <Text style={[type.bodyStrong, { color: colors.onPrimary, fontSize: 16, lineHeight: 18 }]}>!</Text>
+      ) : success ? (
+        <Check color={colors.onPrimary} size={19} strokeWidth={3} />
+      ) : warning ? (
+        <AlertTriangle color={colors.onPrimary} fill={colors.warning} size={28} strokeWidth={2.2} />
+      ) : (
+        <View style={{ alignItems: "center", justifyContent: "center" }}>
+          <Shield color={colors.primaryDeep} fill={colors.primaryDeep} size={23} strokeWidth={2.2} />
+          <Text
+            style={{
+              color: colors.onPrimary,
+              fontSize: 12,
+              fontWeight: "900",
+              lineHeight: 14,
+              position: "absolute",
+            }}
+          >
+            i
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+  return (
+    <View
+      style={{
+        backgroundColor: panelBackground,
+        borderCurve: "continuous",
+        borderRadius: 14,
+        borderWidth: 0,
+        flexDirection: "row",
+        gap: spacing.sm,
+        padding: 12,
+      }}
+    >
+      {onInfo ? (
+        <AnimatedPressable
+          accessibilityLabel="About this policy"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onInfo}
+        >
+          {iconBadge}
+        </AnimatedPressable>
+      ) : iconBadge}
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text
+          style={[
+            emphasis === "message" ? type.eyebrow : type.bodyStrong,
+            {
+              color: emphasis === "message" ? colors.primaryDeep : colors.ink,
+              fontSize: emphasis === "message" ? 10 : 15,
+              lineHeight: emphasis === "message" ? 14 : 20,
+            },
+          ]}
+        >
+          {title}
+        </Text>
+        <Text
+          selectable
+          style={[
+            emphasis === "message" ? type.bodyStrong : type.body,
+            {
+              color: emphasis === "message" ? colors.ink : colors.muted,
+              fontSize: emphasis === "message" ? 15 : 13,
+              lineHeight: emphasis === "message" ? 21 : 19,
+            },
+          ]}
+        >
+          {message}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ExitChoiceRow<T extends string>({
+  disabled,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  disabled?: boolean;
+  label: string;
+  onChange: (value: T) => void;
+  options: readonly { disabled?: boolean; label: string; value: T }[];
+  value: T | null;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text
+        style={[type.bodyStrong, { color: disabled ? colors.kicker : colors.ink, fontSize: 13, lineHeight: 18 }]}
+      >
+        {label}
+      </Text>
+      <View style={{ flexDirection: "row", gap: spacing.xs }}>
+        {options.map((option) => {
+          const selected = option.value === value;
+          const optionDisabled = Boolean(disabled || option.disabled);
+          return (
+            <AnimatedPressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected, disabled: optionDisabled }}
+              disabled={optionDisabled}
+              key={option.value}
+              onPress={() => onChange(option.value)}
+              style={{
+                alignItems: "center",
+                backgroundColor: selected ? colors.primarySoft : colors.surface,
+                borderColor: colors.borderStrong,
+                borderCurve: "continuous",
+                borderRadius: 12,
+                borderWidth: 1,
+                flex: 1,
+                flexDirection: "row",
+                gap: spacing.xs,
+                minHeight: 50,
+                opacity: optionDisabled ? 0.45 : 1,
+                paddingHorizontal: spacing.sm,
+              }}
+            >
+              <View
+                style={{
+                  alignItems: "center",
+                  borderColor: selected ? colors.primary : colors.borderStrong,
+                  borderRadius: 999,
+                  borderWidth: 1.5,
+                  height: 20,
+                  justifyContent: "center",
+                  width: 20,
+                }}
+              >
+                {selected ? (
+                  <View style={{ backgroundColor: colors.primary, borderRadius: 999, height: 10, width: 10 }} />
+                ) : null}
+              </View>
+              <Text
+                numberOfLines={2}
+                style={[
+                  type.bodyStrong,
+                  { color: optionDisabled ? colors.kicker : colors.ink, flex: 1, fontSize: 13, lineHeight: 18 },
+                ]}
+              >
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function DamageChargeRow({
+  amount,
+  checked,
+  label,
+  last,
+  onToggle,
+}: {
+  amount: string;
+  checked: boolean;
+  label: string;
+  last: boolean;
+  onToggle: () => void;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={onToggle}
+      style={{
+        alignItems: "center",
+        borderBottomColor: colors.border,
+        borderBottomWidth: last ? 0 : 1,
+        flexDirection: "row",
+        gap: spacing.sm,
+        minHeight: 48,
+        paddingHorizontal: 12,
+        paddingVertical: spacing.xs,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: checked ? colors.primary : "transparent",
+          borderColor: checked ? colors.primary : colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 5,
+          borderWidth: 1.25,
+          height: 20,
+          justifyContent: "center",
+          width: 20,
+        }}
+      >
+        {checked ? <Check color={colors.onPrimary} size={13} strokeWidth={3} /> : null}
+      </View>
+      <Text style={[type.bodyStrong, { color: colors.ink, flex: 1, fontSize: 14, lineHeight: 19 }]}>{label}</Text>
+      <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 14, lineHeight: 19 }]}>{amount}</Text>
+    </AnimatedPressable>
   );
 }
 
@@ -1338,7 +1904,7 @@ function StepLabel({ index, of, title }: { index: number; of: number; title: str
       <Text style={[type.eyebrow, { color: colors.kicker }]}>
         {index} OF {of}
       </Text>
-      <Text style={[type.bodyStrong, { color: colors.ink }]}>
+      <Text style={[type.metric, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
         {title}
       </Text>
     </View>

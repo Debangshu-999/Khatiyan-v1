@@ -37,11 +37,12 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
     property.headline ||
     `Comfortable ${humanizeToken(property.type)} stay in ${property.area || property.city} with essential amenities and easy city access.`;
 
-  const preferredHighlight =
-    property.preferredFor === "STUDENT"
-      ? { icon: "school-outline" as MaterialIconName, label: "Student Friendly" }
-      : property.preferredFor === "PROFESSIONAL"
-        ? { icon: "briefcase-outline" as MaterialIconName, label: "Working Friendly" }
+  const propertyKind = humanizeToken(property.type);
+  const pgForHighlight =
+    property.pgFor === "MALE"
+      ? { icon: "human-male-boy" as MaterialIconName, label: `${propertyKind} for Boys` }
+      : property.pgFor === "FEMALE"
+        ? { icon: "human-female-girl" as MaterialIconName, label: `${propertyKind} for Girls` }
         : { icon: "account-group-outline" as MaterialIconName, label: "Everyone Welcome" };
 
   function openDirections() {
@@ -122,7 +123,7 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
       </View>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        <QuickHighlight icon={preferredHighlight.icon} label={preferredHighlight.label} />
+        <QuickHighlight icon={pgForHighlight.icon} label={pgForHighlight.label} />
         <QuickHighlight
           crossed={!property.foodIncluded}
           icon="silverware-fork-knife"

@@ -8,7 +8,10 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+
+import jakarta.persistence.LockModeType;
 
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
@@ -17,6 +20,10 @@ import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
  * Repository for tenant room change request workflows.
  */
 public interface TenancyRoomChangeRequestRepository extends JpaRepository<TenancyRoomChangeRequest, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT request FROM TenancyRoomChangeRequest request WHERE request.id = :requestId")
+    Optional<TenancyRoomChangeRequest> findByIdForUpdate(UUID requestId);
 
     @Query("""
         SELECT request
@@ -78,4 +85,7 @@ public interface TenancyRoomChangeRequestRepository extends JpaRepository<Tenanc
             TenancyRoomChangeRequestStatus status,
             Instant cutoff,
             Pageable pageable);
+
+    Optional<TenancyRoomChangeRequest> findFirstByTenancyIdOrderByCreatedAtDesc(UUID tenancyId);
+
 }

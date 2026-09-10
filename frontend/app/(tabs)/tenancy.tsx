@@ -11,10 +11,10 @@ import {
   DoorOpen,
   FileSignature,
   History,
-  Inbox,
   IndianRupee,
   Info,
   KeyRound,
+  LogOut,
   MapPin,
   ReceiptText,
 } from "lucide-react-native";
@@ -48,8 +48,11 @@ import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { SkeletonCard, SkeletonList, SkeletonTiles } from "@/components/skeleton";
 import { AgreementAcceptanceView } from "@/features/compliance/agreement-acceptance-view";
+import { useTenantCardUpdates } from "@/features/tenancy/use-tenant-card-updates";
 import type { BillingCycle } from "@/store/services/billing-api";
 import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
+import type { ConcernSummary } from "@/store/services/concern-api";
+import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import {
   useGetMyActiveTenancyQuery,
   useListMyExitRequestsQuery,
@@ -63,11 +66,20 @@ import {
 import { useAppSelector } from "@/store/hooks";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { buildExitRequestChains, buildRoomChangeRequestChains } from "@/features/tenancy/request-chain";
+import {
+  exitRequestBlock,
+  RequestBlockedModal,
+  roomChangeRequestBlock,
+  type RequestBlock,
+} from "@/features/tenancy/request-blocked-modal";
 
 // The same drawing the owner's Deposit manager tile carries on Home. A deposit
 // is one thing across both sides of the app and should look like one thing.
 const DEPOSIT_ARTWORK = require("../../assets/home-tools/deposit-manager.png");
 const BILLS_ARTWORK = require("../../assets/workspace/tenant-bills-header.png");
+const REQUESTS_ARTWORK = require("../../assets/workspace/tenancy-module.png");
+const CONCERNS_ARTWORK = require("../../assets/workspace/concern-module.png");
 const NO_BILL_ILLUSTRATION = require("../../assets/workspace/No-Bill_512x436.png");
 
 export default function TenancyScreen() {
@@ -75,6 +87,7 @@ export default function TenancyScreen() {
   const params = useLocalSearchParams<{ exitRequestCreated?: string; roomChangeRequested?: string }>();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
+  const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const requestToastShownRef = useRef(false);
 
   useEffect(() => {
@@ -91,11 +104,24 @@ export default function TenancyScreen() {
   }, [params.exitRequestCreated, params.roomChangeRequested, toast]);
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const tenanciesQuery = useListMyTenanciesQuery();
-  const exitRequestsQuery = useListMyExitRequestsQuery();
-  const roomChangeRequestsQuery = useListMyRoomChangeRequestsQuery();
+  const exitRequestsQuery = useListMyExitRequestsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const roomChangeRequestsQuery = useListMyRoomChangeRequestsQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  });
   const activeTenancy = activeTenancyQuery.data;
+  const concernsQuery = useListMyCurrentConcernsQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+    skip: !activeTenancy,
+  });
+  const concernHistoryQuery = useListMyConcernHistoryQuery(
+    { page: 0, size: 200 },
+    { refetchOnMountOrArgChange: true, skip: !activeTenancy },
+  );
   const activeTenancyId = activeTenancy?.tenancy.id;
-  const cyclesQuery = useListMyTenancyBillingCyclesQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
+  const cyclesQuery = useListMyTenancyBillingCyclesQuery(activeTenancyId ?? "", {
+    refetchOnMountOrArgChange: true,
+    skip: !activeTenancyId,
+  });
   const depositQuery = useGetMyTenancyDepositQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
   const cycles = useMemo(() => [...(cyclesQuery.data ?? [])].sort(compareCycles), [cyclesQuery.data]);
   // My Bills = everything still owed, grouped: numbered rent cycles vs one-off
@@ -145,6 +171,7 @@ export default function TenancyScreen() {
   const [viewingIntents, setViewingIntents] = useState<BillingCycle | null>(null);
   /** The attempt whose outcome we are asking about, from a fresh or open one. */
   const [deciding, setDeciding] = useState<PaymentIntent | null>(null);
+  const [requestBlock, setRequestBlock] = useState<RequestBlock | null>(null);
 
   // One bill at a time: the state is only ever read for the bill being paid, so
   // there is no reason to ask about the others.
@@ -234,6 +261,39 @@ export default function TenancyScreen() {
     () => (activeTenancy ? mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data, activeTenancy.tenancy.id).sort(compareRequests) : []),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
   );
+  const requestAvailabilityLoading = exitRequestsQuery.isFetching || roomChangeRequestsQuery.isFetching;
+
+  function openRoomChangeRequest() {
+    if (!activeTenancy || requestAvailabilityLoading) {
+      return;
+    }
+    const block = roomChangeRequestBlock(
+      exitRequestsQuery.data,
+      roomChangeRequestsQuery.data,
+      activeTenancy.tenancy.id,
+    );
+    if (block) {
+      setRequestBlock(block);
+      return;
+    }
+    router.push("/tenancy-room-change-request");
+  }
+
+  function openExitRequest() {
+    if (!activeTenancy || requestAvailabilityLoading) {
+      return;
+    }
+    const block = exitRequestBlock(
+      exitRequestsQuery.data,
+      roomChangeRequestsQuery.data,
+      activeTenancy.tenancy.id,
+    );
+    if (block) {
+      setRequestBlock(block);
+      return;
+    }
+    router.push("/tenancy-exit-request");
+  }
   const pastTenancyRequests = useMemo(
     () =>
       mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data)
@@ -241,11 +301,43 @@ export default function TenancyScreen() {
         .sort(compareRequests),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
   );
-  // What the entry card counts: anything still moving. A decided request is
-  // history, and history is what the screen behind the card is for.
-  const openRequestCount = currentTenancyRequests.filter(
-    (request) => request.status === "REQUESTED" || request.status === "APPROVED",
-  ).length;
+  const currentConcerns = useMemo(
+    () => (concernsQuery.data ?? []).filter(isOpenConcern),
+    [concernsQuery.data],
+  );
+  const closedConcerns = useMemo(
+    () =>
+      uniqueConcerns([
+        ...(concernsQuery.data ?? []).filter((concern) => !isOpenConcern(concern)),
+        ...(concernHistoryQuery.data?.items ?? []),
+      ]).filter((concern) => !isOpenConcern(concern)),
+    [concernHistoryQuery.data, concernsQuery.data],
+  );
+  const closedConcernCount = Math.max(concernHistoryQuery.data?.totalElements ?? 0, closedConcerns.length);
+  const trackedConcerns = useMemo(
+    () => uniqueConcerns([...(concernsQuery.data ?? []), ...(concernHistoryQuery.data?.items ?? [])]),
+    [concernHistoryQuery.data, concernsQuery.data],
+  );
+  const cardUpdates = useTenantCardUpdates({
+    bills: cycles,
+    billsReady: cyclesQuery.isSuccess && !cyclesQuery.isFetching,
+    concerns: trackedConcerns,
+    concernsReady:
+      concernsQuery.isSuccess &&
+      concernHistoryQuery.isSuccess &&
+      !concernsQuery.isFetching &&
+      !concernHistoryQuery.isFetching,
+    requests: currentTenancyRequests,
+    requestsReady:
+      exitRequestsQuery.isSuccess &&
+      roomChangeRequestsQuery.isSuccess &&
+      !exitRequestsQuery.isFetching &&
+      !roomChangeRequestsQuery.isFetching,
+    scopeKey:
+      currentUserId && activeTenancyId
+        ? currentUserId + "." + activeTenancyId
+        : null,
+  });
 
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
@@ -317,7 +409,11 @@ export default function TenancyScreen() {
 
             <AllBillsCard
               dueNowPaise={payableBills.reduce((total, cycle) => total + cycle.totalAmountPaise, 0)}
-              onPress={() => router.push({ pathname: "/tenancy-bills", params: { tenancyId: activeTenancy.tenancy.id } })}
+              hasUpdate={cardUpdates.billUpdate}
+              onPress={() => {
+                cardUpdates.markBillsSeen();
+                router.push({ pathname: "/tenancy-bills", params: { tenancyId: activeTenancy.tenancy.id } });
+              }}
               payableCount={payableBills.length}
               totalCount={cycles.length}
             />
@@ -352,30 +448,47 @@ export default function TenancyScreen() {
           <Section title="Raise a request">
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <RequestTile
+                disabled={requestAvailabilityLoading}
                 icon={ArrowLeftRight}
                 label="Room change"
-                onPress={() => router.push("/tenancy-room-change-request")}
+                onPress={openRoomChangeRequest}
               />
               <RequestTile
-                icon={DoorOpen}
+                disabled={requestAvailabilityLoading}
+                icon={LogOut}
                 label="Exit request"
-                onPress={() => router.push("/tenancy-exit-request")}
+                onPress={openExitRequest}
               />
             </View>
-          </Section>
 
-          <Section title="Tenancy requests">
-            <EntryCard
-              icon={Inbox}
-              label="On this stay"
-              onPress={() =>
+            <StayRequestsCard
+              hasUpdate={cardUpdates.requestUpdate}
+              onPress={() => {
+                cardUpdates.markRequestsSeen();
                 router.push({
                   pathname: "/tenancy-request-history",
                   params: { scope: "current", tenancyId: activeTenancy.tenancy.id },
-                })
-              }
-              value={`${openRequestCount} open`}
+                });
+              }}
             />
+          </Section>
+
+          <Section title="Concerns">
+            {(concernsQuery.isFetching && !concernsQuery.data) ||
+            (concernHistoryQuery.isFetching && !concernHistoryQuery.data) ? (
+              <SkeletonCard />
+            ) : (
+              <TenantConcernsCard
+                closedCount={closedConcernCount}
+                hasUpdate={cardUpdates.concernUpdate}
+                onPress={() => {
+                  cardUpdates.markConcernsSeen();
+                  router.push("/concerns");
+                }}
+                openCount={currentConcerns.length}
+                totalCount={currentConcerns.length + closedConcernCount}
+              />
+            )}
           </Section>
 
         </>
@@ -412,6 +525,25 @@ export default function TenancyScreen() {
             </Card>
           ))}
         </Section>
+      ) : null}
+
+      {requestBlock ? (
+        <RequestBlockedModal
+          block={requestBlock}
+          onClose={() => setRequestBlock(null)}
+          onViewRequests={() => {
+            const tenancyId = activeTenancy?.tenancy.id;
+            setRequestBlock(null);
+            if (!tenancyId) {
+              return;
+            }
+            cardUpdates.markRequestsSeen();
+            router.push({
+              pathname: "/tenancy-request-history",
+              params: { scope: "current", tenancyId },
+            });
+          }}
+        />
       ) : null}
 
       {viewingBill ? (
@@ -512,20 +644,22 @@ function TenancyOverviewCard({
           screen heading that already says what it is; this one leads the tab. */}
       <Card>
         <View style={{ gap: spacing.sm }}>
-          {/* The pill sits on the eyebrow row, which has width to spare, so a
-              long status like ON PREMATURE NOTICE never squashes the name. */}
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              Current tenancy
-            </Text>
-            <TenancyStatusPill status={activeTenancy.tenancy.status} />
-          </View>
-
+          {/* One identity row: the label belongs to the property name, while
+              the live tenancy state stays visible at the trailing edge. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <PropertyArtwork size={24} />
-            <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 27 }]}>
-              {activeTenancy.property.name}
-            </Text>
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Current stay</Text>
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+                numberOfLines={1}
+                style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}
+              >
+                {activeTenancy.property.name}
+              </Text>
+            </View>
+            <TenancyStatusPill status={activeTenancy.tenancy.status} />
           </View>
 
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -697,11 +831,13 @@ function TenancyStatusPill({ status }: { status: string }) {
  */
 function AllBillsCard({
   dueNowPaise,
+  hasUpdate,
   onPress,
   payableCount,
   totalCount,
 }: {
   dueNowPaise: number;
+  hasUpdate: boolean;
   onPress: () => void;
   payableCount: number;
   totalCount: number;
@@ -710,10 +846,7 @@ function AllBillsCard({
   const owing = payableCount > 0;
 
   return (
-    <AnimatedPressable
-      accessibilityLabel={`All bills. ${totalCount} bill${totalCount === 1 ? "" : "s"}, ${payableCount} to pay, ${formatMoney(dueNowPaise)} due.`}
-      accessibilityRole="button"
-      onPress={onPress}
+    <View
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.borderStrong,
@@ -724,8 +857,13 @@ function AllBillsCard({
         padding: spacing.md,
       }}
     >
-      {/* The title row: what this is, and that it goes somewhere. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+      {/* Only the header navigates. The metrics below remain readable, static data. */}
+      <AnimatedPressable
+        accessibilityLabel={`View your bills. ${totalCount} bill${totalCount === 1 ? "" : "s"}, ${payableCount} to pay, ${formatMoney(dueNowPaise)} due.`}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
+      >
         {/* Landscape, so a wider box than a square: `contain` fits to the
             narrower side, and a 3:2 image in a square renders two thirds the
             height and reads as a shrunken version of itself. */}
@@ -737,13 +875,13 @@ function AllBillsCard({
           style={{ height: 44, width: 64 }}
         />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>All bills</Text>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>All bills on this stay</Text>
           <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            Every bill on this stay
+            My Bills
           </Text>
         </View>
-        <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
-      </View>
+        <SummaryChevron hasUpdate={hasUpdate} />
+      </AnimatedPressable>
 
       <View style={{ backgroundColor: colors.border, height: 1 }} />
 
@@ -759,7 +897,175 @@ function AllBillsCard({
         />
         <BillStat divided label="Due now" tone={owing ? colors.danger : colors.ink} value={formatMoney(dueNowPaise)} />
       </View>
-    </AnimatedPressable>
+    </View>
+  );
+}
+
+function StayRequestsCard({
+  hasUpdate,
+  onPress,
+}: {
+  hasUpdate: boolean;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        padding: spacing.md,
+      }}
+    >
+      <AnimatedPressable
+        accessibilityLabel="View your requests"
+        accessibilityRole="button"
+        onPress={onPress}
+        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
+      >
+        <Image
+          accessibilityIgnoresInvertColors
+          accessible={false}
+          resizeMode="contain"
+          source={REQUESTS_ARTWORK}
+          style={{ height: 48, width: 64 }}
+        />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+            My Requests
+          </Text>
+        </View>
+        <SummaryChevron hasUpdate={hasUpdate} />
+      </AnimatedPressable>
+    </View>
+  );
+}
+
+function TenantConcernsCard({
+  closedCount,
+  hasUpdate,
+  onPress,
+  openCount,
+  totalCount,
+}: {
+  closedCount: number;
+  hasUpdate: boolean;
+  onPress: () => void;
+  openCount: number;
+  totalCount: number;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        gap: spacing.md,
+        padding: spacing.md,
+      }}
+    >
+      <AnimatedPressable
+        accessibilityLabel="View your concerns"
+        accessibilityRole="button"
+        onPress={onPress}
+        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
+      >
+        <Image
+          accessibilityIgnoresInvertColors
+          accessible={false}
+          resizeMode="contain"
+          source={CONCERNS_ARTWORK}
+          style={{ height: 50, width: 58 }}
+        />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
+          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+            My Concerns
+          </Text>
+        </View>
+        <SummaryChevron hasUpdate={hasUpdate} />
+      </AnimatedPressable>
+
+      <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+      <View style={{ flexDirection: "row" }}>
+        <ConcernStat label="Open" value={String(openCount)} />
+        <ConcernStat divided label="Closed" value={String(closedCount)} />
+        <ConcernStat divided label="Total" value={String(totalCount)} />
+      </View>
+    </View>
+  );
+}
+
+function SummaryChevron({ hasUpdate }: { hasUpdate?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.neutralSoft,
+        borderRadius: 999,
+        height: 34,
+        justifyContent: "center",
+        width: 34,
+      }}
+    >
+      <ChevronRight color={colors.muted} size={17} strokeWidth={2.3} />
+      {hasUpdate ? (
+        <View
+          pointerEvents="none"
+          style={{
+            backgroundColor: colors.danger,
+            borderColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 2,
+            height: 10,
+            position: "absolute",
+            right: -2,
+            top: -2,
+            width: 10,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function ConcernStat({
+  divided,
+  label,
+  value,
+}: {
+  divided?: boolean;
+  label: string;
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        borderLeftColor: colors.border,
+        borderLeftWidth: divided ? 1 : 0,
+        flex: 1,
+        gap: 1,
+        minWidth: 0,
+        paddingHorizontal: spacing.xs,
+      }}
+    >
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 17, textAlign: "left" }}>{value}</Text>
+      <Text style={[type.caption, { color: colors.kicker, textAlign: "left" }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -860,10 +1166,12 @@ function EntryCard({
  * are — where two stacked cards read as two unrelated features.
  */
 function RequestTile({
+  disabled = false,
   icon: Icon,
   label,
   onPress,
 }: {
+  disabled?: boolean;
   icon: typeof CalendarDays;
   label: string;
   onPress: () => void;
@@ -873,7 +1181,8 @@ function RequestTile({
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      onPress={onPress}
+      disabled={disabled}
+      onPress={disabled ? undefined : onPress}
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
@@ -884,6 +1193,7 @@ function RequestTile({
         flex: 1,
         gap: spacing.xs,
         justifyContent: "center",
+        opacity: disabled ? 0.55 : 1,
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.md,
       }}
@@ -1025,10 +1335,12 @@ function mergedRequests(
   roomChangeRequests: TenancyRoomChangeRequest[] = [],
   tenancyId?: string,
 ): TenantRequestHistoryItem[] {
-  const exits = exitRequests
+  const exits = buildExitRequestChains(exitRequests)
+    .map((chain) => chain.head)
     .filter((request) => !tenancyId || request.tenancyId === tenancyId)
     .map((request) => ({ ...request, requestKind: "EXIT" as const }));
-  const roomChanges = roomChangeRequests
+  const roomChanges = buildRoomChangeRequestChains(roomChangeRequests)
+    .map((chain) => chain.head)
     .filter((request) => !tenancyId || request.tenancyId === tenancyId)
     .map((request) => ({ ...request, requestKind: "ROOM_CHANGE" as const }));
 
@@ -1075,4 +1387,17 @@ function humanizeToken(value: string) {
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function isOpenConcern(concern: ConcernSummary) {
+  return concern.status !== "RESOLVED" && concern.status !== "CLOSED";
+}
+
+function uniqueConcerns(concerns: ConcernSummary[]) {
+  const seen = new Set<string>();
+  return concerns.filter((concern) => {
+    if (seen.has(concern.id)) return false;
+    seen.add(concern.id);
+    return true;
+  });
 }

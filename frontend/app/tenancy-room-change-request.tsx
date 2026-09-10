@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View, useWindowDimensions } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { BedDouble, CalendarDays, Check } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
@@ -15,12 +15,17 @@ import { SkeletonCard } from "@/components/skeleton";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { NoticeBar } from "@/features/owner/owner-ui";
+import {
+  roomChangeRequestBlock,
+} from "@/features/tenancy/request-blocked-modal";
 import { useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { TenantRoomSummary } from "@/store/services/tenancy-api";
 import {
   useCreateRoomChangeRequestMutation,
   useGetMyActiveTenancyQuery,
   useListMyActivePropertyRoomsQuery,
+  useListMyExitRequestsQuery,
+  useListMyRoomChangeRequestsQuery,
 } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -34,17 +39,22 @@ type RequestField = "reason" | "room";
 
 export default function TenancyRoomChangeRequestScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ reason?: string; reRaiseRequestId?: string; targetRoomId?: string }>();
+  const reRaiseRequestId = firstParam(params.reRaiseRequestId);
+  const initialTargetRoomId = firstParam(params.targetRoomId);
   const { colors, fonts } = useTheme();
   const form = useFormErrors<RequestField>();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const roomsQuery = useListMyActivePropertyRoomsQuery();
+  const roomRequestsQuery = useListMyRoomChangeRequestsQuery();
+  const exitRequestsQuery = useListMyExitRequestsQuery();
   const [createRoomChangeRequest, createRoomChangeState] = useCreateRoomChangeRequestMutation();
   const currentRoomId = activeTenancyQuery.data?.room.id;
   const activeTenancyId = activeTenancyQuery.data?.tenancy.id;
   const cyclesQuery = useListMyTenancyBillingCyclesQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialTargetRoomId ?? null);
+  const [reason, setReason] = useState(firstParam(params.reason) ?? "");
 
   const rooms = useMemo(() => {
     const roomMap = new Map<string, TenantRoomSummary>();
@@ -71,9 +81,32 @@ export default function TenancyRoomChangeRequestScreen() {
     const cycles = [...(cyclesQuery.data ?? [])].sort(
       (left, right) => (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0),
     );
-    return cycles.find((cycle) => cycle.status !== "PAID" && cycle.status !== "CANCELLED") ?? cycles[0] ?? null;
+    const today = localISODate(new Date());
+    return (
+      cycles.find(
+        (cycle) => cycle.category === "RENT_CYCLE"
+          && cycle.periodStartDate <= today
+          && cycle.periodEndDate >= today,
+      )
+      ?? cycles.find((cycle) => cycle.category === "RENT_CYCLE")
+      ?? null
+    );
   }, [cyclesQuery.data]);
   const effectiveDate = currentCycle?.periodEndDate ?? null;
+  const correction = (roomRequestsQuery.data ?? []).find(
+    (request) => request.id === reRaiseRequestId && request.reRaiseAllowed,
+  );
+  const requestBlock = roomChangeRequestBlock(exitRequestsQuery.data, roomRequestsQuery.data, activeTenancyId);
+
+  useEffect(() => {
+    if (!initialTargetRoomId || rooms.length === 0) {
+      return;
+    }
+    const initialRoom = rooms.find((room) => room.id === initialTargetRoomId);
+    if (initialRoom) {
+      setSelectedFloor(floorKey(initialRoom.floor));
+    }
+  }, [initialTargetRoomId, rooms]);
 
   useEffect(() => {
     if (form.errors.room !== CURRENT_ROOM_ERROR) {
@@ -139,8 +172,20 @@ export default function TenancyRoomChangeRequestScreen() {
         subtitle={SCREEN_DESCRIPTION}
       />
 
-      {activeTenancyQuery.isFetching || roomsQuery.isFetching ? (
+      {activeTenancyQuery.isFetching || roomsQuery.isFetching || roomRequestsQuery.isFetching || exitRequestsQuery.isFetching ? (
         <SkeletonCard />
+      ) : requestBlock ? (
+        <EmptyState
+          icon={BedDouble}
+          title={requestBlock.title}
+          description={`${requestBlock.referenceCode}: ${requestBlock.message}`}
+        />
+      ) : reRaiseRequestId && !correction ? (
+        <EmptyState
+          icon={BedDouble}
+          title="Correction window closed"
+          description="This room-change request can no longer be edited and raised again."
+        />
       ) : roomsQuery.error ? (
         <EmptyState
           icon={BedDouble}
@@ -231,6 +276,17 @@ export default function TenancyRoomChangeRequestScreen() {
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
   );
+}
+
+function firstParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function localISODate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function CurrentStayCard({ room }: { room: TenantRoomSummary }) {

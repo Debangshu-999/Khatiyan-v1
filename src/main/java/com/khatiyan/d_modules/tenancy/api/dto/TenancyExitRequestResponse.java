@@ -62,6 +62,8 @@ public record TenancyExitRequestResponse(
      * should not be deciding for itself.
      */
     boolean withdrawalWindowOpen,
+    /** Authoritative server capability for a corrected re-raise. */
+    boolean reRaiseAllowed,
     /**
      * When this stops being interactive and drops into history. Null means an
      * open-ended wait (a withdrawal awaiting the owner).
@@ -116,6 +118,7 @@ public record TenancyExitRequestResponse(
             nameOf(names, request.getWithdrawalDecidedByUserId()),
             request.getWithdrawalAdminNotes(),
             request.withdrawalWindowOpen(today),
+            request.allowsReRaiseAt(Instant.now()),
             request.getExpiresAt(),
             request.getCreatedAt(),
             request.getUpdatedAt()

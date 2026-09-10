@@ -3,6 +3,7 @@ package com.khatiyan.d_modules.tenancy.service;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,8 +32,10 @@ import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRejectedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRequestedEvent;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
+import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
+import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
 
@@ -45,13 +48,21 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class TenancyRoomChangeRequestService {
 
+    private static final ZoneId REQUEST_ZONE = ZoneId.of("Asia/Kolkata");
+
     private static final List<TenancyRoomChangeRequestStatus> OPEN_STATUSES = List.of(
             TenancyRoomChangeRequestStatus.REQUESTED,
             TenancyRoomChangeRequestStatus.APPROVED);
 
+    private static final List<TenancyExitRequestStatus> EXIT_BLOCKING_STATUSES = List.of(
+            TenancyExitRequestStatus.REQUESTED,
+            TenancyExitRequestStatus.APPROVED,
+            TenancyExitRequestStatus.WITHDRAWAL_REQUESTED);
+
     private final AuthModule authModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final TenancyRoomChangeRequestRepository roomChangeRequestRepository;
+    private final TenancyExitRequestRepository exitRequestRepository;
     private final TenancyRepository tenancyRepository;
     private final PropertyModule propertyModule;
     private final TenancyAccessPolicy tenancyAccessPolicy;
@@ -64,6 +75,7 @@ public class TenancyRoomChangeRequestService {
             AuthModule authModule,
             ReferenceCodeGenerator referenceCodeGenerator,
             TenancyRoomChangeRequestRepository roomChangeRequestRepository,
+            TenancyExitRequestRepository exitRequestRepository,
             TenancyRepository tenancyRepository,
             PropertyModule propertyModule,
             TenancyAccessPolicy tenancyAccessPolicy,
@@ -73,6 +85,7 @@ public class TenancyRoomChangeRequestService {
         this.authModule = authModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.roomChangeRequestRepository = roomChangeRequestRepository;
+        this.exitRequestRepository = exitRequestRepository;
         this.tenancyRepository = tenancyRepository;
         this.propertyModule = propertyModule;
         this.tenancyAccessPolicy = tenancyAccessPolicy;
@@ -86,14 +99,20 @@ public class TenancyRoomChangeRequestService {
             UUID tenantUserId,
             UUID targetRoomId,
             String reason) {
-        Tenancy tenancy = getTenantActiveTenancy(tenantUserId);
+        Tenancy tenancy = getTenantActiveTenancyForUpdate(tenantUserId);
         ensureNoOpenRequest(tenancy.getId());
+        ensureNoBlockingExitRequest(tenancy.getId());
+        TenancyRoomChangeRequest superseded = roomChangeRequestRepository
+                .findFirstByTenancyIdOrderByCreatedAtDesc(tenancy.getId())
+                .filter(previous -> previous.allowsReRaiseAt(Instant.now()))
+                .orElse(null);
 
         if (tenancy.getRoomId().equals(targetRoomId)) {
             throw new ValidationException("Target room must be different from current room");
         }
 
-        BillingCycleResponse cycle = billingModule.getLatestMyCycle(tenantUserId);
+        BillingCycleResponse cycle = billingModule.getCurrentMyRentCycle(
+                tenantUserId, LocalDate.now(REQUEST_ZONE));
         RoomResponse targetRoom = propertyModule.getActiveRoom(tenancy.getPropertyId(), targetRoomId);
         validateTargetRoom(tenancy, targetRoom);
 
@@ -107,16 +126,18 @@ public class TenancyRoomChangeRequestService {
                 cycle.id(),
                 cycle.periodEndDate(),
                 reason,
-                targetRoom.baseRentPaise());
+                targetRoom.baseRentPaise(),
+                superseded);
 
         TenancyRoomChangeRequest saved = roomChangeRequestRepository.save(request);
         log.info(
-                "Tenancy room change requested requestId={} tenancyId={} currentRoomId={} targetRoomId={} effectiveTransferDate={}",
+                "Tenancy room change requested requestId={} tenancyId={} currentRoomId={} targetRoomId={} effectiveTransferDate={} supersedes={}",
                 saved.getId(),
                 tenancy.getId(),
                 tenancy.getRoomId(),
                 targetRoom.id(),
-                cycle.periodEndDate());
+                cycle.periodEndDate(),
+                saved.getSupersededRequestId());
         eventPublisher.publishEvent(new TenancyRoomChangeRequestedEvent(
                 saved.getId(),
                 saved.getReferenceCode(),
@@ -134,6 +155,7 @@ public class TenancyRoomChangeRequestService {
     public TenancyRoomChangeRequestResponse approve(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
+        ensureNoBlockingExitRequest(request.getTenancyId());
         ensureTargetStillAvailable(request);
 
         request.approve(actorUserId, adminNotes);
@@ -158,6 +180,27 @@ public class TenancyRoomChangeRequestService {
         return TenancyRoomChangeRequestResponse.from(request);
     }
 
+    /**
+     * Management undoes an approval while its short reversal window is open.
+     * The request remains active, but returns to the decision queue and no
+     * longer holds the target bed.
+     */
+    @Transactional
+    public TenancyRoomChangeRequestResponse revertApproval(UUID actorUserId, UUID requestId) {
+        TenancyRoomChangeRequest request = getRequest(requestId);
+        tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
+
+        request.revertApproval(Instant.now());
+        propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
+        log.info(
+                "Tenancy room change approval reverted and target bed released requestId={} actorUserId={} targetRoomId={}",
+                requestId,
+                actorUserId,
+                request.getTargetRoomId());
+
+        return TenancyRoomChangeRequestResponse.from(request);
+    }
+
     @Transactional
     public TenancyRoomChangeRequestResponse reject(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
@@ -173,15 +216,6 @@ public class TenancyRoomChangeRequestService {
                 request.getPropertyId(),
                 request.getAdminNotes()));
 
-        return TenancyRoomChangeRequestResponse.from(request);
-    }
-
-    @Transactional
-    public TenancyRoomChangeRequestResponse cancel(UUID tenantUserId, UUID requestId) {
-        TenancyRoomChangeRequest request = getRequest(requestId);
-        request.cancel(tenantUserId);
-
-        log.info("Tenancy room change cancelled requestId={} tenantUserId={}", requestId, tenantUserId);
         return TenancyRoomChangeRequestResponse.from(request);
     }
 
@@ -238,6 +272,17 @@ public class TenancyRoomChangeRequestService {
             throw new ValidationException("Approved room change request is missing approver");
         }
 
+        String blockedReason = scheduledExecutionBlockReason(request);
+        if (blockedReason != null) {
+            request.reopenAfterExecutionBlocked(Instant.now(), blockedReason);
+            propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
+            log.warn(
+                    "Scheduled room change reopened for decision and target bed released requestId={} reason={}",
+                    requestId,
+                    blockedReason);
+            return TenancyRoomChangeRequestResponse.from(request);
+        }
+
         return executeApprovedRequest(actorUserId, request);
     }
 
@@ -292,8 +337,13 @@ public class TenancyRoomChangeRequestService {
             throw new ValidationException("Only approved room change requests can be executed");
         }
 
-        if (request.getEffectiveTransferDate().isAfter(LocalDate.now())) {
+        if (request.getEffectiveTransferDate().isAfter(LocalDate.now(REQUEST_ZONE))) {
             throw new ValidationException("Room change request is not due for execution");
+        }
+
+        String blockedReason = scheduledExecutionBlockReason(request);
+        if (blockedReason != null) {
+            throw new ValidationException(blockedReason);
         }
 
         ensureNextCycleHasNotBeenGenerated(actorUserId, request);
@@ -366,20 +416,52 @@ public class TenancyRoomChangeRequestService {
         }
     }
 
-    private Tenancy getTenantActiveTenancy(UUID tenantUserId) {
-        return tenancyRepository.findByUserIdAndActiveTrue(tenantUserId)
+    private Tenancy getTenantActiveTenancyForUpdate(UUID tenantUserId) {
+        return tenancyRepository.findByUserIdAndActiveTrueForUpdate(tenantUserId)
                 .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
     }
 
     private TenancyRoomChangeRequest getRequest(UUID requestId) {
-        return roomChangeRequestRepository.findById(requestId)
+        return roomChangeRequestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new NotFoundException("TenancyRoomChangeRequest", requestId));
     }
 
     private void ensureNoOpenRequest(UUID tenancyId) {
         if (roomChangeRequestRepository.findOpenByTenancyId(tenancyId, OPEN_STATUSES).isPresent()) {
-            throw new ValidationException("Tenancy already has an open room change request");
+            throw new ValidationException(
+                    "An active room change request already exists. Open My Requests to review it.");
         }
+    }
+
+    private void ensureNoBlockingExitRequest(UUID tenancyId) {
+        if (exitRequestRepository.findOpenByTenancyId(tenancyId, EXIT_BLOCKING_STATUSES).isPresent()) {
+            throw new ValidationException(
+                    "An active exit request must be resolved before a room change request can be raised.");
+        }
+    }
+
+    /**
+     * Returns a stable business reason when an approved move is no longer safe
+     * to execute. These conditions are repaired by reopening the request;
+     * unexpected infrastructure failures still throw and roll back normally.
+     */
+    private String scheduledExecutionBlockReason(TenancyRoomChangeRequest request) {
+        Tenancy tenancy = tenancyRepository.findByIdForUpdate(request.getTenancyId()).orElse(null);
+        if (tenancy == null || !tenancy.isCurrentlyActive()) {
+            return "The tenancy is no longer active at this property. Review and reject this room change.";
+        }
+        if (!request.getTenantUserId().equals(tenancy.getUserId())
+                || !request.getPropertyId().equals(tenancy.getPropertyId())) {
+            return "The request no longer matches the tenant's active property. Review and reject this room change.";
+        }
+        if (!request.getCurrentRoomId().equals(tenancy.getRoomId())) {
+            return "The tenant is no longer in the room recorded on this request. Review and reject this room change.";
+        }
+        if (exitRequestRepository.findOpenByTenancyId(
+                request.getTenancyId(), EXIT_BLOCKING_STATUSES).isPresent()) {
+            return "An active exit request conflicts with this room change. Review and reject one request before continuing.";
+        }
+        return null;
     }
 
     /**

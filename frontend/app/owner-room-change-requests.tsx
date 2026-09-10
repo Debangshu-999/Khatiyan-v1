@@ -7,24 +7,27 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarDays, Check, Clock, FileClock, FileText, History, IndianRupee, Info, LockOpen, Repeat2, UserRound, X, type LucideProps } from "lucide-react-native";
+import { ArrowRight, CalendarDays, Check, Clock, FileClock, FileText, History, IndianRupee, Info, LockOpen, Repeat2, RotateCcw, UserRound, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { RequestTimelineSheet } from "@/features/tenancy/request-timeline-sheet";
-import { roomChangeTimelineEntries } from "@/features/tenancy/request-chain";
+import {
+  buildRoomChangeRequestChains,
+  roomChangeTimelineEntries,
+  type RoomChangeRequestChain,
+} from "@/features/tenancy/request-chain";
 import {
   matchesRequestSearch,
   splitByActivity,
   splitByAttention,
   type RequestFilter,
 } from "@/features/tenancy/request-activity";
-import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { CountTabPills } from "@/components/filter-bubbles";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { OwnerRequestListSkeleton } from "@/components/skeletons/owner";
 import { ActionButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -33,6 +36,7 @@ import {
   useApproveRoomChangeRequestMutation,
   useListPropertyRoomChangeRequestsQuery,
   useRejectRoomChangeRequestMutation,
+  useRevertRoomChangeApprovalMutation,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
 import { metricFontSize } from "@/theme/metric-size";
@@ -73,6 +77,9 @@ export default function OwnerRoomChangeRequestsScreen() {
 
   const [selected, setSelected] = useState<TenancyRoomChangeRequest | null>(null);
   const [mode, setMode] = useState<ReviewMode | null>(null);
+  const [revertTarget, setRevertTarget] = useState<TenancyRoomChangeRequest | null>(null);
+  const [revertError, setRevertError] = useState<string | null>(null);
+  const [revertRoomChangeApproval, revertState] = useRevertRoomChangeApprovalMutation();
   const [pastOpen, setPastOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activePage, setActivePage] = useState(0);
@@ -83,7 +90,15 @@ export default function OwnerRoomChangeRequestsScreen() {
    */
   const [attention, setAttention] = useState<RequestFilter | null>(null);
 
-  const requests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
+  const roomChangeChains = useMemo(
+    () => buildRoomChangeRequestChains(requestsQuery.data ?? []),
+    [requestsQuery.data],
+  );
+  const chainByHeadId = useMemo(
+    () => new Map(roomChangeChains.map((chain) => [chain.head.id, chain])),
+    [roomChangeChains],
+  );
+  const requests = roomChangeChains.map((chain) => chain.head).sort(byPendingFirst);
   // Same rule as exits: active means "not yet expired". A room change expires
   // the moment it is decided — there is no withdrawal window — so in practice
   // this matches the old "still REQUESTED" test, but it now comes from the
@@ -110,8 +125,21 @@ export default function OwnerRoomChangeRequestsScreen() {
     setMode(null);
   }
 
+  async function confirmApprovalRevert() {
+    if (!revertTarget || revertState.isLoading) {
+      return;
+    }
+    const requestId = revertTarget.id;
+    setRevertTarget(null);
+    try {
+      await revertRoomChangeApproval(requestId).unwrap();
+    } catch (caught) {
+      setRevertError(errorMessage(caught) || "Could not return this room change for a new decision.");
+    }
+  }
+
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
         {!canManageRoomChanges ? <ViewOnlyChip /> : null}
       </View>
@@ -176,7 +204,7 @@ export default function OwnerRoomChangeRequestsScreen() {
                 setSearch(next);
                 setActivePage(0);
               }}
-              placeholder="Search by code, e.g. TRC-2026-000155"
+              placeholder="Search by request ID"
               value={search}
             />
             {/* Counts on the pills, not in a heading. The heading said "4
@@ -201,7 +229,7 @@ export default function OwnerRoomChangeRequestsScreen() {
             />
 
             {requestsQuery.isFetching && requests.length === 0 ? (
-              <SkeletonList rows={2} />
+              <OwnerRequestListSkeleton />
             ) : activeRequests.length === 0 ? (
               <EmptyState
                 artwork={REQUEST_EMPTY_ILLUSTRATION}
@@ -216,6 +244,7 @@ export default function OwnerRoomChangeRequestsScreen() {
               <View style={{ gap: spacing.sm }}>
                 {activePaged.pageItems.map((request) => (
                   <RoomChangeCard
+                    chain={chainByHeadId.get(request.id)}
                     key={request.id}
                     request={request}
                     currentRoomLabel={roomLabels[request.currentRoomId]}
@@ -223,6 +252,7 @@ export default function OwnerRoomChangeRequestsScreen() {
                     canManage={canManageRoomChanges}
                     onApprove={() => openReview(request, "approve")}
                     onReject={() => openReview(request, "reject")}
+                    onRevert={() => setRevertTarget(request)}
                   />
                 ))}
                 {activeRequests.length > 0 ? (
@@ -243,7 +273,24 @@ export default function OwnerRoomChangeRequestsScreen() {
       ) : null}
 
       {selected && mode ? <RoomChangeReviewModal mode={mode} onClose={closeReview} request={selected} /> : null}
-      {pastOpen ? <PastRoomChangeRequestsModal onClose={() => setPastOpen(false)} requests={expiredRequests} roomLabels={roomLabels} /> : null}
+      {revertTarget ? (
+        <ConfirmDialog
+          confirmLabel="Revert approval"
+          message={`This releases ${roomLabels[revertTarget.targetRoomId] ?? "the target room"} and returns ${revertTarget.referenceCode} to Needs action for a fresh decision.`}
+          onCancel={() => setRevertTarget(null)}
+          onConfirm={() => void confirmApprovalRevert()}
+          title="Revert room-change approval?"
+        />
+      ) : null}
+      {revertError ? <AlertModal message={revertError} onClose={() => setRevertError(null)} /> : null}
+      {pastOpen ? (
+        <PastRoomChangeRequestsModal
+          chains={chainByHeadId}
+          onClose={() => setPastOpen(false)}
+          requests={expiredRequests}
+          roomLabels={roomLabels}
+        />
+      ) : null}
     </ScreenScrollView>
   );
 }
@@ -267,7 +314,17 @@ function paginateArray<T>(items: T[], page: number, size: number) {
 }
 
 // Reviewed (non-pending) room-change requests, paginated in a modal like concern history.
-function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClose: () => void; requests: TenancyRoomChangeRequest[]; roomLabels: Record<string, string> }) {
+function PastRoomChangeRequestsModal({
+  chains,
+  onClose,
+  requests,
+  roomLabels,
+}: {
+  chains: Map<string, RoomChangeRequestChain>;
+  onClose: () => void;
+  requests: TenancyRoomChangeRequest[];
+  roomLabels: Record<string, string>;
+}) {
   const { colors, fonts, type } = useTheme();
   const [page, setPage] = useState(0);
   const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
@@ -292,7 +349,7 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</Text>
             </View>
-            <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={onClose} />
           </View>
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
@@ -301,6 +358,7 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
               <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
                 {paged.pageItems.map((request) => (
                   <RoomChangeCard
+                    chain={chains.get(request.id)}
                     key={request.id}
                     currentRoomLabel={roomLabels[request.currentRoomId]}
                     onApprove={() => {}}
@@ -331,16 +389,20 @@ function PastRoomChangeRequestsModal({ onClose, requests, roomLabels }: { onClos
 
 function RoomChangeCard({
   canManage = true,
+  chain,
   currentRoomLabel,
   onApprove,
   onReject,
+  onRevert,
   request,
   targetRoomLabel,
 }: {
   canManage?: boolean;
+  chain?: RoomChangeRequestChain;
   currentRoomLabel?: string;
   onApprove: () => void;
   onReject: () => void;
+  onRevert?: () => void;
   request: TenancyRoomChangeRequest;
   targetRoomLabel?: string;
 }) {
@@ -348,81 +410,104 @@ function RoomChangeCard({
   const pending = request.status === "REQUESTED";
   const [info, setInfo] = useState<{ label: string; value: string } | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
+  const attempts = chain?.links.length ?? 1;
 
   return (
     <>
       <Card>
         <View style={{ gap: spacing.md }}>
-          <View style={{ flexDirection: "row", gap: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <View
               style={{
                 alignItems: "center",
-                borderColor: colors.ink,
-                borderWidth: 1,
-                borderRadius: 12,
-                height: 42,
+                backgroundColor: colors.neutralSoft,
+                borderRadius: 999,
+                height: 40,
                 justifyContent: "center",
-                width: 42,
+                width: 40,
               }}
             >
               <Repeat2 color={colors.ink} size={20} strokeWidth={2.2} />
             </View>
-            <View style={{ flex: 1, gap: spacing.sm }}>
-              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-                <View style={{ flex: 1, gap: spacing.xs }}>
-                  {/* Who, then the move, then the code — the same order as the
-                      exit card. It used to lead with room ids and identify the
-                      tenancy by a truncated UUID nobody can look up. */}
-                  <Text
-                    numberOfLines={1}
-                    style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
-                  >
-                    {request.tenantName ?? "Tenant"}
-                  </Text>
-                  <Text style={[type.caption, { color: colors.muted }]}>
-                    {(currentRoomLabel ?? "Current room") + " → " + (targetRoomLabel ?? "New room")}
-                  </Text>
-                  <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
-                    {request.referenceCode}
-                  </Text>
-                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                    <CalendarDays color={colors.kicker} size={13} strokeWidth={2.1} />
-                    <Text style={[type.caption, { color: colors.muted }]}>
-                      {formatDate(request.effectiveTransferDate)}
-                    </Text>
-                  </View>
-                </View>
-                <StatusBadge status={request.status} />
-              </View>
-              {request.decidedByName && request.decidedAt ? (
-                <>
-                  {/* Who and when, on their own rows. They used to share one
-                      line separated by a dot, which read as a single fact and
-                      made the timestamp easy to mistake for part of the name. */}
-                  <InfoLine
-                    icon={UserRound}
-                    label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
-                    value={request.decidedByName}
-                  />
-                  <InfoLine
-                    icon={Clock}
-                    label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
-                    value={formatDateTime(request.decidedAt)}
-                  />
-                </>
-              ) : null}
-
-              <InfoLine icon={IndianRupee} label="New rent" value={formatMoney(request.requestedRoomRentAmountPaise)} />
-              {request.executedRentAmountPaise != null ? (
-                <InfoLine icon={IndianRupee} label="Executed rent" value={formatMoney(request.executedRentAmountPaise)} />
-              ) : null}
-              {request.tenantReason ? (
-                <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
-              ) : null}
-              {request.adminNotes ? (
-                <InfoRow icon={FileText} label="Notes" onPress={() => setInfo({ label: "Notes", value: request.adminNotes ?? "" })} />
-              ) : null}
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+              >
+                {request.tenantName ?? "Tenant"}
+              </Text>
+              <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+                {request.referenceCode}
+              </Text>
             </View>
+            <StatusBadge status={request.status} />
+          </View>
+
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderRadius: 14,
+              gap: spacing.sm,
+              padding: spacing.md,
+            }}
+          >
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>From</Text>
+                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                  {currentRoomLabel ?? "Current room"}
+                </Text>
+              </View>
+              <View
+                style={{
+                  alignItems: "center",
+                  backgroundColor: colors.surface,
+                  borderRadius: 999,
+                  height: 30,
+                  justifyContent: "center",
+                  width: 30,
+                }}
+              >
+                <ArrowRight color={colors.ink} size={16} strokeWidth={2.2} />
+              </View>
+              <View style={{ alignItems: "flex-end", flex: 1, gap: 2, minWidth: 0 }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>To</Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, textAlign: "right" }}
+                >
+                  {targetRoomLabel ?? "New room"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+            <InfoLine icon={CalendarDays} label="Transfer date" value={formatDate(request.effectiveTransferDate)} />
+            {request.decidedByName && request.decidedAt ? (
+              <>
+                <InfoLine
+                  icon={UserRound}
+                  label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
+                  value={request.decidedByName}
+                />
+                <InfoLine
+                  icon={Clock}
+                  label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
+                  value={formatDateTime(request.decidedAt)}
+                />
+              </>
+            ) : null}
+            <InfoLine icon={IndianRupee} label="New rent" value={formatMoney(request.requestedRoomRentAmountPaise)} />
+            {request.executedRentAmountPaise != null ? (
+              <InfoLine icon={IndianRupee} label="Executed rent" value={formatMoney(request.executedRentAmountPaise)} />
+            ) : null}
+            {request.tenantReason ? (
+              <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
+            ) : null}
+            {request.adminNotes ? (
+              <InfoRow icon={FileText} label="Notes" onPress={() => setInfo({ label: "Notes", value: request.adminNotes ?? "" })} />
+            ) : null}
           </View>
 
           {pending ? (
@@ -432,10 +517,20 @@ function RoomChangeCard({
             </View>
           ) : null}
 
+          {request.approvalRevertAllowed && onRevert ? (
+            <ActionButton
+              disabled={!canManage}
+              icon={RotateCcw}
+              label="Revert approval"
+              onPress={onRevert}
+              variant="secondary"
+            />
+          ) : null}
+
           <View style={{ flexDirection: "row" }}>
             <ActionButton
               icon={History}
-              label="View timeline"
+              label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
               onPress={() => setShowTimeline(true)}
               variant="outline"
             />
@@ -445,7 +540,7 @@ function RoomChangeCard({
       {info ? <InfoPopover onClose={() => setInfo(null)} title={info.label} value={info.value} /> : null}
       {showTimeline ? (
         <RequestTimelineSheet
-          entries={roomChangeTimelineEntries(request)}
+          entries={roomChangeTimelineEntries(chain ?? request)}
           onClose={() => setShowTimeline(false)}
           referenceCode={request.referenceCode}
           roomLabel={currentRoomLabel}

@@ -9,7 +9,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPillRow } from "@/components/filter-bubbles";
 import { LedgerRow } from "@/components/ledger-row";
-import { Skeleton, SkeletonRow } from "@/components/skeleton";
+import { OwnerActionCenterSkeleton } from "@/components/skeletons/owner";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
@@ -33,7 +33,7 @@ type ActionRoute =
   | "/owner-tenancy"
   // Opens the tenancy screen with its Upcoming exits sheet already up. The
   // route gate matches on the path alone, so the param does not ungate it.
-  | "/owner-tenancy?open=upcoming-exits";
+  | "/owner-upcoming-exits";
 type ActionSource = "billing" | "concern" | "tenancy" | "budget" | "enquiry" | "staff";
 type ActionFilter = ActionSource | "all";
 type ActionTone = "primary" | "warning" | "danger";
@@ -73,7 +73,11 @@ export default function OwnerActionCenterScreen() {
   const [filter, setFilter] = useState<ActionFilter>("all");
 
   const filters = FILTERS.map((entry) => ({
-    count: entry.key === "all" ? actionItems.length : actionItems.filter((item) => item.source === entry.key).length,
+    count: dashboard
+      ? entry.key === "all"
+        ? actionItems.length
+        : actionItems.filter((item) => item.source === entry.key).length
+      : undefined,
     label: entry.label,
     value: entry.key,
   }));
@@ -99,17 +103,8 @@ export default function OwnerActionCenterScreen() {
 
       {selectedPropertyId && dashboardQuery.isFetching && !dashboard ? (
         <View style={{ gap: spacing.lg }}>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <Skeleton height={32} radius={999} width={64} />
-            <Skeleton height={32} radius={999} width={88} />
-            <Skeleton height={32} radius={999} width={82} />
-          </View>
-          <View style={{ gap: spacing.sm }}>
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
-          </View>
+          <FilterPillRow onChange={setFilter} options={filters} value={filter} />
+          <OwnerActionCenterSkeleton />
         </View>
       ) : null}
 
@@ -168,7 +163,7 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
     items.push({ badge: String(attention.pendingRoomChangeRequests), detail: "Awaiting your review", emphasize: false, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", tone: "primary" });
   }
   if (attention.upcomingExits > 0) {
-    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: CalendarClock, key: "upcoming", label: "Upcoming exits", route: "/owner-tenancy?open=upcoming-exits", source: "tenancy", tone: "primary" });
+    items.push({ badge: String(attention.upcomingExits), detail: "Review and configure scheduled checkout", emphasize: false, icon: CalendarClock, key: "upcoming", label: "Upcoming exits", route: "/owner-upcoming-exits", source: "tenancy", tone: "primary" });
   }
   if (attention.tenantsOnNotice > 0) {
     items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });

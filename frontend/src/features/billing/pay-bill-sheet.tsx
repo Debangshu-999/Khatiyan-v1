@@ -1,7 +1,18 @@
 import { useState } from "react";
-import { AppState, Image, Linking, Modal, ScrollView, Text, View } from "react-native";
+import {
+  AppState,
+  Image,
+  Linking,
+  Modal,
+  NativeModules,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+  type ImageSourcePropType,
+} from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { AtSign, Copy, Phone, ScanLine, X } from "lucide-react-native";
+import { AtSign, Check, Copy, Phone, ScanLine, X } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -16,6 +27,59 @@ import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PayTab = "upi" | "bank";
+type UpiAppKey = "GOOGLE_PAY" | "PHONEPE" | "PAYTM" | "BHIM" | "AMAZON_PAY";
+
+type UpiAppOption = {
+  androidPackage: string;
+  androidScheme: string;
+  key: UpiAppKey;
+  label: string;
+  logo: ImageSourcePropType;
+};
+
+const UPI_APPS: UpiAppOption[] = [
+  {
+    androidPackage: "com.google.android.apps.nbu.paisa.user",
+    androidScheme: "tez://upi/pay",
+    key: "GOOGLE_PAY",
+    label: "Google Pay",
+    logo: require("../../../assets/upi-apps/google-pay.jpg"),
+  },
+  {
+    androidPackage: "com.phonepe.app",
+    androidScheme: "phonepe://pay",
+    key: "PHONEPE",
+    label: "PhonePe",
+    logo: require("../../../assets/upi-apps/phonepe.jpg"),
+  },
+  {
+    androidPackage: "net.one97.paytm",
+    androidScheme: "paytmmp://pay",
+    key: "PAYTM",
+    label: "Paytm",
+    logo: require("../../../assets/upi-apps/paytm.jpg"),
+  },
+  {
+    androidPackage: "in.org.npci.upiapp",
+    androidScheme: "bhim://upi/pay",
+    key: "BHIM",
+    label: "BHIM UPI",
+    logo: require("../../../assets/upi-apps/bhim-upi.jpg"),
+  },
+  {
+    androidPackage: "in.amazon.mShop.android.shopping",
+    androidScheme: "amazonpay://pay",
+    key: "AMAZON_PAY",
+    label: "Amazon Pay",
+    logo: require("../../../assets/upi-apps/amazon-pay.jpg"),
+  },
+];
+
+type UpiIntentLauncher = {
+  openUpiApp: (upiUri: string, packageName: string) => Promise<boolean>;
+};
+
+const upiIntentLauncher = NativeModules.UpiIntentLauncher as UpiIntentLauncher | undefined;
 
 /**
  * How long to wait for a backgrounding that may never come.
@@ -60,6 +124,7 @@ export function PayBillSheet({
   const [startPayment, startState] = useStartPaymentMutation();
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<PayTab>("upi");
+  const [selectedUpiApp, setSelectedUpiApp] = useState<UpiAppKey>("GOOGLE_PAY");
 
   async function openUpiApp() {
     try {
@@ -69,15 +134,23 @@ export function PayBillSheet({
         return;
       }
 
-      // The intent exists before the app leaves. If we opened the link first and
-      // the tenant never came back, there would be nothing recording that they
-      // were handed a way to pay.
-      const opened = await Linking.canOpenURL(started.upiLink);
-      if (!opened) {
-        setError("No UPI app was found on this phone. Scan the QR code instead.");
-        return;
+      // The server-generated URI remains the single payment payload. Only its
+      // scheme/path is swapped when an app exposes a dedicated deep link; all
+      // payment parameters continue to come from the backend. A rebuilt native
+      // app can additionally pin the original UPI URI to an Android package.
+      // The unchanged generic URI is used only as the final chooser fallback.
+      const selected = UPI_APPS.find((app) => app.key === selectedUpiApp) ?? UPI_APPS[0];
+      const selectedOpened = await openSelectedUpiApp(started.upiLink, selected);
+      if (!selectedOpened) {
+        const fallbackOpened = await Linking.canOpenURL(started.upiLink);
+        if (!fallbackOpened) {
+          setError(
+            `${selected.label} could not be opened, and no other UPI app was found. Scan the QR code or copy the UPI address instead.`,
+          );
+          return;
+        }
+        await Linking.openURL(started.upiLink);
       }
-      await Linking.openURL(started.upiLink);
 
       // Wait for the app to come back rather than asking straight away.
       //
@@ -188,7 +261,9 @@ export function PayBillSheet({
                 hasPayLink={hasPayLink}
                 onCopy={copy}
                 onScanAndPay={() => void openUpiApp()}
+                onSelectUpiApp={setSelectedUpiApp}
                 payee={payee}
+                selectedUpiApp={selectedUpiApp}
               />
             ) : (
               <BankTab onCopy={copy} payee={payee} referenceCode={referenceCode} />
@@ -207,13 +282,17 @@ function UpiTab({
   hasPayLink,
   onCopy,
   onScanAndPay,
+  onSelectUpiApp,
   payee,
+  selectedUpiApp,
 }: {
   busy: boolean;
   hasPayLink: boolean;
   onCopy: (value: string, what: string) => void;
   onScanAndPay: () => void;
+  onSelectUpiApp: (app: UpiAppKey) => void;
   payee: PayeeDetails;
+  selectedUpiApp: UpiAppKey;
 }) {
   const { colors, type } = useTheme();
 
@@ -248,12 +327,15 @@ function UpiTab({
       {/* Hidden without an address: there is no link to fire, and a button that
           cannot do anything is worse than no button. */}
       {hasPayLink ? (
-        <ActionButton
-          disabled={busy}
-          icon={ScanLine}
-          label={busy ? "Opening…" : "Scan and pay"}
-          onPress={onScanAndPay}
-        />
+        <View style={{ gap: spacing.sm }}>
+          <ActionButton
+            disabled={busy}
+            icon={ScanLine}
+            label={busy ? "Opening…" : "Scan and pay"}
+            onPress={onScanAndPay}
+          />
+          <UpiAppSelector onSelect={onSelectUpiApp} selected={selectedUpiApp} />
+        </View>
       ) : null}
 
       {payee.upiVpa || payee.upiPhone ? (
@@ -266,6 +348,90 @@ function UpiTab({
           ) : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function UpiAppSelector({
+  onSelect,
+  selected,
+}: {
+  onSelect: (app: UpiAppKey) => void;
+  selected: UpiAppKey;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 12 }}>Pay with</Text>
+      <ScrollView
+        contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.xs }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {UPI_APPS.map((app) => {
+          const active = selected === app.key;
+          return (
+            <AnimatedPressable
+              accessibilityLabel={`Pay with ${app.label}`}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
+              key={app.key}
+              onPress={() => onSelect(app.key)}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: active ? colors.primary : colors.border,
+                borderCurve: "continuous",
+                borderRadius: 13,
+                borderWidth: active ? 1.5 : 1,
+                gap: 5,
+                minHeight: 72,
+                paddingHorizontal: 7,
+                paddingVertical: 7,
+                position: "relative",
+                width: 68,
+              }}
+            >
+              <Image
+                accessibilityIgnoresInvertColors
+                accessible={false}
+                resizeMode="cover"
+                source={app.logo}
+                style={{ borderRadius: 10, height: 38, width: 38 }}
+              />
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: active ? colors.primary : colors.inkSoft,
+                  fontFamily: fonts.sansBold,
+                  fontSize: 9.5,
+                  textAlign: "center",
+                }}
+              >
+                {app.label}
+              </Text>
+              {active ? (
+                <View
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.primary,
+                    borderRadius: 999,
+                    height: 15,
+                    justifyContent: "center",
+                    position: "absolute",
+                    right: 4,
+                    top: 4,
+                    width: 15,
+                  }}
+                >
+                  <Check color={colors.onPrimary} size={9} strokeWidth={3} />
+                </View>
+              ) : null}
+            </AnimatedPressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -408,6 +574,44 @@ function waitForReturn(onReturn: () => void) {
       onReturn();
     }
   }, RETURN_FALLBACK_MS);
+}
+
+async function openSelectedUpiApp(upiUri: string, app: UpiAppOption) {
+  if (Platform.OS !== "android") {
+    return false;
+  }
+
+  // Dedicated schemes are important during development too: they work after a
+  // JavaScript refresh and do not require the newly added native module to be
+  // present in the APK already installed on the device.
+  const directUri = replaceUpiRoute(upiUri, app.androidScheme);
+  if (directUri) {
+    try {
+      await Linking.openURL(directUri);
+      return true;
+    } catch {
+      // The selected app is probably not installed. Continue to the exact
+      // package launcher before allowing the normal device chooser to appear.
+    }
+  }
+
+  if (!upiIntentLauncher?.openUpiApp) {
+    return false;
+  }
+
+  try {
+    return await upiIntentLauncher.openUpiApp(upiUri, app.androidPackage);
+  } catch {
+    return false;
+  }
+}
+
+function replaceUpiRoute(upiUri: string, appRoute: string) {
+  const queryStart = upiUri.indexOf("?");
+  if (queryStart < 0) {
+    return null;
+  }
+  return `${appRoute}${upiUri.slice(queryStart)}`;
 }
 
 function readErrorMessage(caught: unknown) {

@@ -35,6 +35,26 @@ public interface PropertyBoardItemRepository extends JpaRepository<PropertyBoard
     """)
     List<PropertyBoardItem> findActiveByPropertyId(UUID propertyId);
 
+    /**
+     * Tenant ordering is activity-led: the most recently maintained category
+     * comes first, while the owner's item order is retained inside it.
+     */
+    @Query("""
+        SELECT item
+        FROM PropertyBoardItem item
+        JOIN FETCH item.category category
+        WHERE item.propertyId = :propertyId
+          AND item.active = true
+          AND category.active = true
+        ORDER BY category.updatedAt DESC,
+                 category.createdAt DESC,
+                 category.id ASC,
+                 item.displayOrder ASC,
+                 item.createdAt ASC,
+                 item.id ASC
+    """)
+    List<PropertyBoardItem> findActiveForTenantByPropertyId(UUID propertyId);
+
     @Query("""
         SELECT item
         FROM PropertyBoardItem item

@@ -6,7 +6,7 @@ import { Globe, Laptop, Monitor, Smartphone, Tablet, type LucideProps } from "lu
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { SkeletonList } from "@/components/skeleton";
+import { AccountSessionListSkeleton } from "@/components/skeletons/account";
 import { useToast } from "@/components/toast";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { errorMessage } from "@/features/forms/server-error";
@@ -74,7 +74,7 @@ export function SignedInDevices() {
 
   return (
     <View style={{ gap: spacing.sm }}>
-      {sessionsQuery.isLoading ? <SkeletonList /> : null}
+      {sessionsQuery.isLoading ? <AccountSessionListSkeleton /> : null}
 
       {!sessionsQuery.isLoading && sessions.length === 0 ? (
         <Card>

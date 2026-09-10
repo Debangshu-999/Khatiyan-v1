@@ -346,16 +346,6 @@ public class TenancyExitRequest extends BaseEntity {
         this.decidedAt = Instant.now();
     }
 
-    public void cancel(UUID tenantUserId) {
-        ensureRequested();
-        if (!this.tenantUserId.equals(tenantUserId)) {
-            throw new ValidationException("Only the tenant can cancel this exit request");
-        }
-
-        this.status = TenancyExitRequestStatus.CANCELLED;
-        this.expiresAt = Instant.now();
-    }
-
     /**
      * Nobody reviewed this request within {@link #REVIEW_WINDOW_DAYS}.
      *
@@ -371,8 +361,8 @@ public class TenancyExitRequest extends BaseEntity {
     /**
      * Tenant asks to undo an approved exit.
      *
-     * <p>Unlike cancelling before approval this is a request, not an act: the
-     * tenancy stays on notice until the owner decides. Bounded to
+     * <p>This is a request, not an immediate cancellation: the tenancy stays on
+     * notice until the owner decides. Bounded to
      * {@link #WITHDRAWAL_WINDOW_DAYS} after approval and never once the checkout
      * date has arrived, so an owner gets a definite point past which the bed is
      * theirs to re-let.
@@ -456,16 +446,27 @@ public class TenancyExitRequest extends BaseEntity {
         return expiresAt == null || expiresAt.isAfter(now);
     }
 
+    public boolean allowsReRaiseAt(Instant now) {
+        if (status != TenancyExitRequestStatus.EXPIRED && status != TenancyExitRequestStatus.REJECTED) {
+            return false;
+        }
+        return expiresAt != null && expiresAt.isAfter(now);
+    }
+
+    /**
+     * Compatibility helper for date-based domain tests. API and service paths
+     * use {@link #allowsReRaiseAt(Instant)} so the real deadline remains an
+     * exact 72-hour window.
+     */
+    @Deprecated(forRemoval = false)
     public boolean allowsReRaiseOn(LocalDate today) {
         if (status != TenancyExitRequestStatus.EXPIRED && status != TenancyExitRequestStatus.REJECTED) {
             return false;
         }
-
         Instant lapsedAt = decidedAt != null ? decidedAt : getUpdatedAt();
         if (lapsedAt == null) {
             return false;
         }
-
         LocalDate lapsedOn = lapsedAt.atZone(REQUEST_ZONE).toLocalDate();
         return !today.isBefore(lapsedOn) && !today.isAfter(lapsedOn.plusDays(RE_RAISE_WINDOW_DAYS));
     }

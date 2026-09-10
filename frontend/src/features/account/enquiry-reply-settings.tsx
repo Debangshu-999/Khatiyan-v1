@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { Mail, MessageSquare, Phone } from "lucide-react-native";
 
+import { Card } from "@/components/card";
 import { useToast } from "@/components/toast";
+import { AccountEnquiryRepliesSkeleton } from "@/components/skeletons/account";
 import { ConsentTick } from "@/features/compliance/clickwrap-consent";
 import {
   describeChannelName,
@@ -51,6 +53,10 @@ export function EnquiryReplySettings() {
   const [ticked, setTicked] = useState<boolean | null>(null);
   const agreed = ticked ?? anyGranted;
 
+  if (consentsQuery.isLoading && !consents) {
+    return <AccountEnquiryRepliesSkeleton />;
+  }
+
   if (!consents) {
     return null;
   }
@@ -94,11 +100,10 @@ export function EnquiryReplySettings() {
   }
 
   return (
-    <View style={{ gap: spacing.md }}>
-      {/* The options are one bounded group and get the box. The agreement sits
-          OUTSIDE it, because it is not a fourth option — it is the thing the
-          three of them rest on, and inside the same frame it read as another
-          row you could pick. Same composition as the consent modal. */}
+    <Card>
+      {/* The options remain one bounded group. The agreement is visually
+          separate because it gates the channel rows, while the outer card now
+          keeps the complete setting together as one account section. */}
       <View
         style={{
           borderColor: colors.border,
@@ -126,7 +131,7 @@ export function EnquiryReplySettings() {
           I agree to share the contact details I picked with the properties I enquire to.
         </Text>
       </View>
-    </View>
+    </Card>
   );
 }
 

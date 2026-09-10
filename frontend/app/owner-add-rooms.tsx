@@ -12,7 +12,7 @@ import { FieldHint } from "@/components/field-hint";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerSettingsFormSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { errorMessage } from "@/features/forms/server-error";
@@ -290,7 +290,7 @@ export default function OwnerAddRoomsScreen() {
 
         <View style={{ gap: spacing.lg, marginTop: spacing.md }}>
           {molds.isLoading ? (
-            <SkeletonCard />
+            <OwnerSettingsFormSkeleton fields={5} />
           ) : live.length === 0 ? (
             <View style={{ gap: spacing.sm }}>
               <Text style={[type.body, { color: colors.muted }]}>

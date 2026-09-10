@@ -14,7 +14,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerRequestListSkeleton } from "@/components/skeletons/owner";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
 import { ActionButton } from "@/features/owner/owner-ui";
@@ -126,7 +126,7 @@ export default function OwnerNudgesScreen() {
           />
 
           {tab === "send" ? (
-            <Section title={`${matches.length} ${matches.length === 1 ? "tenant" : "tenants"}`}>
+            <Section title={candidatesQuery.isFetching && !candidatesQuery.data ? "Tenants" : `${matches.length} ${matches.length === 1 ? "tenant" : "tenants"}`}>
               {/* Under the count, not above it: the heading names what is being
                   searched, so the box belongs inside what it narrows. */}
               <SearchField
@@ -136,7 +136,7 @@ export default function OwnerNudgesScreen() {
               />
 
               {candidatesQuery.isFetching && candidates.length === 0 ? (
-                <SkeletonCard />
+                <OwnerRequestListSkeleton />
               ) : matches.length === 0 ? (
                 <EmptyState
                   description={
@@ -173,9 +173,9 @@ export default function OwnerNudgesScreen() {
               )}
             </Section>
           ) : (
-            <Section title={`${sent.length} ${sent.length === 1 ? "nudge" : "nudges"}`}>
+            <Section title={sentQuery.isFetching && !sentQuery.data ? "Sent nudges" : `${sent.length} ${sent.length === 1 ? "nudge" : "nudges"}`}>
               {sentQuery.isFetching && sent.length === 0 ? (
-                <SkeletonCard />
+                <OwnerRequestListSkeleton />
               ) : sent.length === 0 ? (
                 <EmptyState
                   description="Nudges you and your managers send appear here for seven days."

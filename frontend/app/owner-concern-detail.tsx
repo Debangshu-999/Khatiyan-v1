@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
+import { OwnerConcernDetailSkeleton, OwnerStaffListSkeleton } from "@/components/skeletons/owner";
 import { classifyToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
@@ -182,7 +183,7 @@ export default function OwnerConcernDetailScreen() {
         subtitle="Review the concern, keep the tenant updated, and resolve it."
       />
 
-      {loading && !concern ? <Card><Text style={[type.body, { color: colors.muted }]}>Loading concern...</Text></Card> : null}
+      {loading && !concern ? <OwnerConcernDetailSkeleton /> : null}
       {!loading && !concern ? <EmptyState icon={ImageOff} title="Concern not found" description="Refresh the queue and open the concern again." /> : null}
 
       {concern ? (
@@ -292,7 +293,7 @@ function AssignConcernModal({
             <IconButton accessibilityLabel="Close assignment" icon={X} onPress={onClose} />
           </View>
 
-          {loading ? <Text style={[type.body, { color: colors.muted }]}>Loading managers...</Text> : null}
+          {loading ? <OwnerStaffListSkeleton rows={2} /> : null}
           {!loading && managers.length === 0 ? (
             <EmptyState artwork={NO_PERSON_ILLUSTRATION} title="No active managers" description="Add a manager to this property before assigning concerns." />
           ) : null}

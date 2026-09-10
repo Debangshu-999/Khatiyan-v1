@@ -131,6 +131,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-tenancy-agreement" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-policies" options={{ headerShown: false }} />
         <Stack.Screen name="owner-end-tenancy" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-upcoming-exits" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notices" options={{ headerShown: false }} />
         <Stack.Screen name="owner-upcoming-notices" options={{ headerShown: false }} />
@@ -206,6 +207,13 @@ function ThemedRootStack() {
         />
         <Stack.Screen
           name="tenancy-request-history"
+          options={{
+            headerShown: false,
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
+          name="tenancy-past-requests"
           options={{
             headerShown: false,
             presentation: "card",

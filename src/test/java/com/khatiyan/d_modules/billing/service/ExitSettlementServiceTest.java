@@ -79,7 +79,7 @@ class ExitSettlementServiceTest {
     private void stubBill() {
         BillingCycleResponse bill = new BillingCycleResponse(
                 UUID.randomUUID(), "BIL-2026-000001", TENANCY, "TEN-2026-000001",
-                UUID.randomUUID(), "Test Tenant", PROPERTY, UUID.randomUUID(), "101",
+                UUID.randomUUID(), "Test Tenant", null, null, PROPERTY, UUID.randomUUID(), "101",
                 TenancyBillingType.MONTHLY, BillingCycleCategory.ONE_OFF, 1,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), LocalDate.of(2026, 6, 4),
                 BillingCollectionTiming.CYCLE_START, 3,

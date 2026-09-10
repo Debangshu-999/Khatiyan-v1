@@ -14,7 +14,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { SheetShell } from "@/components/sheet-shell";
 import { Section } from "@/components/section";
-import { SkeletonList } from "@/components/skeleton";
+import { OwnerPaymentListSkeleton, OwnerTenancyListSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -310,7 +310,7 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
       <TenantCountHeading count={tenancies.length} />
       <SearchField onChangeText={setSearch} placeholder="Search by tenant name, phone or tenancy ID" value={search} />
 
-      {tenanciesQuery.isFetching && tenancies.length === 0 ? <SkeletonList rows={4} /> : null}
+      {tenanciesQuery.isFetching && tenancies.length === 0 ? <OwnerTenancyListSkeleton rows={4} /> : null}
 
       {!tenanciesQuery.isFetching && filtered.length === 0 ? (
         <EmptyState
@@ -452,7 +452,7 @@ function TenantBills({
       </View>
 
       <Section title={`${filtered.length} bill${filtered.length === 1 ? "" : "s"}`}>
-        {cyclesQuery.isFetching && all.length === 0 ? <SkeletonList rows={4} /> : null}
+        {cyclesQuery.isFetching && all.length === 0 ? <OwnerPaymentListSkeleton rows={4} /> : null}
 
         {!cyclesQuery.isFetching && filtered.length === 0 ? (
           <EmptyState

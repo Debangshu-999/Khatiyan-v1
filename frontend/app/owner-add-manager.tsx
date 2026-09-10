@@ -11,6 +11,7 @@ import { SingleOptionPicker } from "@/components/option-picker";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
+import { OwnerStaffProfileSkeleton } from "@/components/skeletons/owner";
 import { PhoneField } from "@/features/auth/auth-ui";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -208,6 +209,8 @@ export default function OwnerAddManagerScreen() {
           />
         </Card>
       )}
+
+      {lookupState.isFetching && !lookup && !assigned ? <OwnerStaffProfileSkeleton /> : null}
 
       {/* A card of its own beneath the lookup, not an expansion inside it. The
           answer is about a person, and a person's details reading as an appendix

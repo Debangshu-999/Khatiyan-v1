@@ -20,7 +20,12 @@ import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
-import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
+import {
+  OwnerBreakdownSkeleton,
+  OwnerChartSkeleton,
+  OwnerLedgerSkeleton,
+  OwnerPnlHeroSkeleton,
+} from "@/components/skeletons/owner";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ActionButton, FormInput, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { PnlTrendChart } from "@/features/owner/pnl-trend-chart";
@@ -133,23 +138,38 @@ export default function OwnerPnlScreen() {
             <MonthSelector onChange={(picked) => setMonth(`${picked}-01`)} value={month.slice(0, 7)} />
 
             {statementQuery.isLoading && !statement ? (
-              <SkeletonScreen tiles={3} rows={0} />
+              <OwnerPnlHeroSkeleton />
+            ) : statement ? (
+              <NetHero statement={statement} />
+            ) : null}
+
+            {trendQuery.isFetching && !trend ? (
+              <Section title="Last 6 months">
+                <OwnerChartSkeleton />
+              </Section>
+            ) : trend && trend.points.length > 0 ? (
+              <Section title="Last 6 months">
+                <PnlTrendChart points={trend.points} />
+              </Section>
+            ) : null}
+
+            <PnlToolsGrid
+              onAddIncome={() => setSheet("add-income")}
+              onOpenBills={() => router.push("/owner-billing")}
+              onOpenReport={() => setSheet("report")}
+            />
+
+            {statementQuery.isLoading && !statement ? (
+              <>
+                <Section title="Income">
+                  <OwnerBreakdownSkeleton />
+                </Section>
+                <Section title="Expenses">
+                  <OwnerBreakdownSkeleton />
+                </Section>
+              </>
             ) : statement ? (
               <>
-                <NetHero statement={statement} />
-
-                {trend && trend.points.length > 0 ? (
-                  <Section title="Last 6 months">
-                    <PnlTrendChart points={trend.points} />
-                  </Section>
-                ) : null}
-
-                <PnlToolsGrid
-                  onAddIncome={() => setSheet("add-income")}
-                  onOpenBills={() => router.push("/owner-billing")}
-                  onOpenReport={() => setSheet("report")}
-                />
-
                 <Breakdown
                   accent
                   emptyText="No income recorded for this month yet."
@@ -159,7 +179,6 @@ export default function OwnerPnlScreen() {
                   totalLabel="Total income"
                   totalPaise={statement.totalIncomePaise}
                 />
-
                 <Breakdown
                   emptyText="No spending recorded for this month yet."
                   eyebrow="Breakdown"
@@ -168,39 +187,39 @@ export default function OwnerPnlScreen() {
                   totalLabel="Total expense"
                   totalPaise={statement.expensePaise}
                 />
-
-                <Section title="Manual income this month">
-                  {incomeQuery.isFetching && !incomePage ? <SkeletonList rows={3} /> : null}
-
-                  {incomePage && incomePage.items.length === 0 ? (
-                    <EmptyState artwork={NO_EXPENSE_ILLUSTRATION} title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
-                  ) : null}
-
-                  <View style={{ gap: spacing.sm }}>
-                    {incomeRows.map(({ entry, reversal }) => (
-                      <IncomeRow
-                        entry={entry}
-                        key={entry.id}
-                        onReverse={() => setReverseTarget(entry)}
-                        reversal={reversal}
-                      />
-                    ))}
-                  </View>
-
-                  {incomePage && incomePage.totalElements > 0 ? (
-                    <PaginationBar
-                      hasNext={incomePage.hasNext}
-                      hasPrevious={incomePage.hasPrevious}
-                      onNext={() => setPage((current) => current + 1)}
-                      onPrevious={() => setPage((current) => Math.max(0, current - 1))}
-                      page={incomePage.page}
-                      totalElements={incomePage.totalElements}
-                      totalPages={incomePage.totalPages}
-                    />
-                  ) : null}
-                </Section>
               </>
             ) : null}
+
+            <Section title="Manual income this month">
+              {incomeQuery.isFetching && !incomePage ? <OwnerLedgerSkeleton rows={3} /> : null}
+
+              {incomePage && incomePage.items.length === 0 ? (
+                <EmptyState artwork={NO_EXPENSE_ILLUSTRATION} title="No manual income" description="Add ad-hoc income (parking, laundry, misc) that doesn't flow through billing." />
+              ) : null}
+
+              <View style={{ gap: spacing.sm }}>
+                {incomeRows.map(({ entry, reversal }) => (
+                  <IncomeRow
+                    entry={entry}
+                    key={entry.id}
+                    onReverse={() => setReverseTarget(entry)}
+                    reversal={reversal}
+                  />
+                ))}
+              </View>
+
+              {incomePage && incomePage.totalElements > 0 ? (
+                <PaginationBar
+                  hasNext={incomePage.hasNext}
+                  hasPrevious={incomePage.hasPrevious}
+                  onNext={() => setPage((current) => current + 1)}
+                  onPrevious={() => setPage((current) => Math.max(0, current - 1))}
+                  page={incomePage.page}
+                  totalElements={incomePage.totalElements}
+                  totalPages={incomePage.totalPages}
+                />
+              ) : null}
+            </Section>
           </>
         )}
       </ScreenScrollView>

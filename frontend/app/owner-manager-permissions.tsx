@@ -13,7 +13,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerPermissionSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -161,7 +161,7 @@ export default function OwnerManagerPermissionsScreen() {
           subtitle={`What ${managerName} can see and do here.`}
         />
 
-        {permissionsQuery.isLoading ? <SkeletonCard /> : null}
+        {permissionsQuery.isLoading ? <OwnerPermissionSkeleton /> : null}
 
         {permissionsQuery.data ? (
           <>

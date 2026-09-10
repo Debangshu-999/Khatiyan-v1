@@ -507,7 +507,7 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
           <ReceiptText color={colors.ink} size={29} strokeWidth={2} />
         </View>
 
-        <View style={{ flex: 1, gap: spacing.md, minWidth: 0 }}>
+        <View style={{ flex: 1, gap: spacing.sm, minWidth: 0 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
               <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
@@ -521,7 +521,7 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
               </Text>
             </View>
 
-            <View style={{ alignItems: "flex-end", gap: spacing.sm }}>
+            <View style={{ alignItems: "flex-end", gap: spacing.sm, marginRight: -spacing.xs }}>
               <PaymentStatusBadge cycle={cycle} />
               <View style={{ alignItems: "flex-end", gap: 3 }}>
                 <Text style={[type.eyebrow, { color: colors.kicker }]}>Due date</Text>
@@ -542,16 +542,22 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
           </View>
 
           <BillTotal cycle={cycle} size={30} />
-
-          <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <RefreshCw color={colors.primary} size={17} strokeWidth={2.1} />
-            <Text numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
-              {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
-            </Text>
-          </View>
         </View>
+      </View>
+
+      {/* Full-width rule and period: both belong to the whole bill, not only
+          to the text column beside the receipt icon. */}
+      <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        {cycle.category === "RENT_CYCLE" ? (
+          <RefreshCw color={colors.primary} size={17} strokeWidth={2.1} />
+        ) : (
+          <ReceiptText color={colors.primary} size={17} strokeWidth={2.1} />
+        )}
+        <Text numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
+          {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
+        </Text>
       </View>
     </View>
   );

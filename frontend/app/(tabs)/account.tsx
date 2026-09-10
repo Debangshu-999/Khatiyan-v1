@@ -27,7 +27,9 @@ import { clearStoredSession, saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
-import { Skeleton, SkeletonList } from "@/components/skeleton";
+import { Skeleton } from "@/components/skeletons";
+import { AccountSwitchRowsSkeleton } from "@/components/skeletons/account";
+import { OwnerInsetListSkeleton } from "@/components/skeletons/owner";
 import { Lightbox } from "@/components/image-carousel";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
@@ -70,6 +72,7 @@ export default function AccountScreen() {
   const emailRecoveryQuery = useGetEmailRecoveryStatusQuery(undefined, { skip: !auth.accessToken });
   const identityQuery = useGetMyIdentityQuery(undefined, { skip: !auth.accessToken });
   const identity = identityQuery.data;
+  const identityLoading = identityQuery.isLoading && !identity;
   const profileCompletion = describeProfileCompletion(identity);
   const [updateRecoveryEmail, updateRecoveryEmailState] = useUpdateRecoveryEmailMutation();
   const [requestEmailVerification, requestEmailVerificationState] = useRequestEmailVerificationMutation();
@@ -366,6 +369,7 @@ export default function AccountScreen() {
             <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
               <CompletionField
                 complete={profileCompletion.complete}
+                loading={identityLoading}
                 onExplain={() => setCompletionInfoOpen(true)}
               />
             </View>
@@ -377,6 +381,7 @@ export default function AccountScreen() {
             <View style={{ minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, width: "48%" }}>
               <ReadonlyField
                 label="Gender"
+                loading={identityLoading}
                 value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
               />
             </View>
@@ -391,6 +396,7 @@ export default function AccountScreen() {
             <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
               <ReadonlyField
                 label="Date of birth"
+                loading={identityLoading}
                 value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
               />
             </View>
@@ -437,36 +443,83 @@ export default function AccountScreen() {
             ) : (
               <View style={{ gap: spacing.xs }}>
                 <Text style={[type.caption, { color: colors.muted }]}>Email</Text>
-                <AppTextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  onChangeText={(next) => {
-                    setEmailDraft(next);
-                    form.clearField("email");
-                  }}
-                  placeholder="Add your email"
-                  placeholderTextColor={colors.muted}
-                  value={emailDraft}
+                <View
                   style={{
+                    alignItems: "center",
                     backgroundColor: colors.surfaceRaised,
                     borderColor: form.errors.email ? colors.danger : colors.border,
                     borderRadius: 12,
                     borderWidth: form.errors.email ? 1.5 : 1,
-                    color: colors.ink,
-                    fontFamily: fonts.sans,
-                    minHeight: 46,
-                    paddingHorizontal: spacing.md,
+                    flexDirection: "row",
+                    overflow: "hidden",
                   }}
-                />
+                >
+                  <AppTextInput
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    onChangeText={(next) => {
+                      setEmailDraft(next);
+                      form.clearField("email");
+                    }}
+                    placeholder="Add your email"
+                    placeholderTextColor={colors.muted}
+                    value={emailDraft}
+                    style={{
+                      backgroundColor: "transparent",
+                      borderWidth: 0,
+                      color: colors.ink,
+                      flex: 1,
+                      fontFamily: fonts.sans,
+                      minHeight: 46,
+                      paddingLeft: spacing.md,
+                      paddingRight: spacing.sm,
+                    }}
+                  />
+                  <AnimatedPressable
+                    accessibilityLabel="Add email"
+                    accessibilityRole="button"
+                    disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked}
+                    onPress={() => void saveRecoveryEmail()}
+                    style={{
+                      alignItems: "center",
+                      backgroundColor:
+                        !emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked
+                          ? colors.neutralSoft
+                          : colors.primary,
+                      borderRadius: 9,
+                      flexDirection: "row",
+                      gap: spacing.xxs,
+                      justifyContent: "center",
+                      marginRight: 5,
+                      minHeight: 36,
+                      paddingHorizontal: spacing.sm,
+                    }}
+                  >
+                    <MailCheck
+                      color={
+                        !emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked
+                          ? colors.muted
+                          : colors.onPrimary
+                      }
+                      size={15}
+                      strokeWidth={2.2}
+                    />
+                    <Text
+                      style={{
+                        color:
+                          !emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked
+                            ? colors.muted
+                            : colors.onPrimary,
+                        fontFamily: fonts.sansBold,
+                        fontSize: 13,
+                      }}
+                    >
+                      Add
+                    </Text>
+                  </AnimatedPressable>
+                </View>
                 <FieldError message={form.errors.email} />
-                <ActionButton
-                  disabled={!emailDraft.trim() || updateRecoveryEmailState.isLoading || form.blocked}
-                  icon={MailCheck}
-                  label={updateRecoveryEmailState.isLoading ? "Adding email…" : "Add email"}
-                  onPress={() => void saveRecoveryEmail()}
-                  variant="secondary"
-                />
               </View>
             )}
           </View>
@@ -475,7 +528,9 @@ export default function AccountScreen() {
 
           <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
             <AddressField
+              loading={identityLoading}
               pincode={identity?.permanentAddressPincode ?? null}
+              requiredForTenantOnboarding={activeAccount === "owner" || (!activeAccount && user?.role === "OWNER")}
               value={identity?.permanentAddress ?? null}
             />
           </View>
@@ -508,16 +563,20 @@ export default function AccountScreen() {
             account rather than like a paragraph explaining that you have one.
             With nothing to switch to it is simply the only option, already
             ticked, and the line under it says why there is no second. */}
-        <View style={{ gap: spacing.sm }}>
-          {accounts.map((account) => (
-            <AccountRow account={account} active={account === activeAccount} key={account} onPress={() => switchAccount(account)} />
-          ))}
-        </View>
-        {accounts.length > 1 ? null : (
+        {accountsLoading && accounts.length === 0 ? (
+          <AccountSwitchRowsSkeleton />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {accounts.map((account) => (
+              <AccountRow account={account} active={account === activeAccount} key={account} onPress={() => switchAccount(account)} />
+            ))}
+          </View>
+        )}
+        {!accountsLoading && accounts.length <= 1 ? (
           <Text style={[type.caption, { color: colors.muted }]}>
             Only one account available for this phone.
           </Text>
-        )}
+        ) : null}
       </View>
 
       {accounts.includes("owner") ? (
@@ -550,7 +609,7 @@ export default function AccountScreen() {
           {/* A list of properties, so a list-shaped ghost. One card stood in
               for however many rows were about to arrive. */}
           {ownerPropertiesQuery.isFetching && ownerPropertyCount === 0 ? (
-            <SkeletonList rows={2} />
+            <OwnerInsetListSkeleton header={false} rows={2} />
           ) : ownerPropertyCount === 0 ? null : (
             <Card style={{ gap: 0, padding: 0 }}>
               {ownerPropertiesQuery.data?.map((property, index) => (
@@ -738,11 +797,13 @@ function PhotoAction({
   destructive,
   icon: Icon,
   label,
+  loading,
   onPress,
 }: {
   destructive?: boolean;
   icon: ComponentType<LucideProps>;
   label: string;
+  loading?: boolean;
   onPress: () => void;
 }) {
   const { colors, fonts } = useTheme();
@@ -887,6 +948,7 @@ function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode
 function ReadonlyField({
   hideStatusDivider,
   label,
+  loading,
   mono,
   onEdit,
   onStatusPress,
@@ -896,6 +958,7 @@ function ReadonlyField({
 }: {
   hideStatusDivider?: boolean;
   label: string;
+  loading?: boolean;
   mono?: boolean;
   onEdit?: () => void;
   onStatusPress?: () => void;
@@ -919,17 +982,23 @@ function ReadonlyField({
         }}
       >
         {prefix}
-        <Text
-          numberOfLines={1}
-          style={{
-            color: colors.ink,
-            flex: 1,
-            fontFamily: mono ? fonts.mono : fonts.sansBold,
-            fontSize: 15,
-          }}
-        >
-          {value}
-        </Text>
+        {loading ? (
+          <View style={{ flex: 1 }}>
+            <Skeleton height={16} width="68%" />
+          </View>
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.ink,
+              flex: 1,
+              fontFamily: mono ? fonts.mono : fonts.sansBold,
+              fontSize: 15,
+            }}
+          >
+            {value}
+          </Text>
+        )}
         {onEdit ? (
           <AnimatedPressable
             accessibilityLabel={'Edit ' + label.toLowerCase()}
@@ -1159,14 +1228,14 @@ function describeProfileCompletion(identity: UserIdentity | undefined) {
  * on the one field with an outstanding action buries it among eight facts that
  * need nothing.
  */
-function CompletionField({ complete, onExplain }: { complete: boolean; onExplain: () => void }) {
+function CompletionField({ complete, loading, onExplain }: { complete: boolean; loading?: boolean; onExplain: () => void }) {
   const { colors, fonts, type } = useTheme();
 
   return (
     <View style={{ gap: spacing.xxs }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
         <Text style={[type.caption, { color: colors.muted }]}>Profile completion</Text>
-        {complete ? null : (
+        {loading || complete ? null : (
           <AnimatedPressable
             accessibilityLabel="What is missing from my profile"
             accessibilityRole="button"
@@ -1178,17 +1247,23 @@ function CompletionField({ complete, onExplain }: { complete: boolean; onExplain
         )}
       </View>
 
-      <Text
-        numberOfLines={1}
-        style={{
-          color: complete ? colors.ink : colors.danger,
-          fontFamily: fonts.sansBold,
-          fontSize: 15,
-          minHeight: 24,
-        }}
-      >
-        {complete ? "Complete" : "Incomplete"}
-      </Text>
+      {loading ? (
+        <View style={{ minHeight: 24, paddingTop: 3 }}>
+          <Skeleton height={16} width="70%" />
+        </View>
+      ) : (
+        <Text
+          numberOfLines={1}
+          style={{
+            color: complete ? colors.ink : colors.danger,
+            fontFamily: fonts.sansBold,
+            fontSize: 15,
+            minHeight: 24,
+          }}
+        >
+          {complete ? "Complete" : "Incomplete"}
+        </Text>
+      )}
     </View>
   );
 }
@@ -1200,7 +1275,17 @@ function CompletionField({ complete, onExplain }: { complete: boolean; onExplain
  * is the field on this card most likely to need checking against a document. It
  * gets its own block, wraps, and shows the PIN on its own line.
  */
-function AddressField({ pincode, value }: { pincode: string | null; value: string | null }) {
+function AddressField({
+  loading,
+  pincode,
+  requiredForTenantOnboarding,
+  value,
+}: {
+  loading?: boolean;
+  pincode: string | null;
+  requiredForTenantOnboarding: boolean;
+  value: string | null;
+}) {
   const { colors, fonts, type } = useTheme();
   const held = Boolean(value?.trim());
 
@@ -1208,16 +1293,28 @@ function AddressField({ pincode, value }: { pincode: string | null; value: strin
     <View style={{ gap: spacing.xxs }}>
       <Text style={[type.caption, { color: colors.muted }]}>Permanent address</Text>
       <View style={{ gap: 2 }}>
-        <Text
-          style={{
-            color: held ? colors.ink : colors.muted,
-            fontFamily: held ? fonts.sansBold : fonts.sans,
-            fontSize: 14,
-            lineHeight: 20,
-          }}
-        >
-          {held ? value : "Not set — needed before you can onboard a tenant"}
-        </Text>
+        {loading ? (
+          <View style={{ gap: 6, paddingVertical: 2 }}>
+            <Skeleton height={13} width="86%" />
+            <Skeleton height={13} width="54%" />
+          </View>
+        ) : (
+          <Text
+            style={{
+              color: held ? colors.ink : colors.muted,
+              fontFamily: held ? fonts.sansBold : fonts.sans,
+              fontSize: 14,
+              fontStyle: held ? "normal" : "italic",
+              lineHeight: 20,
+            }}
+          >
+            {held
+              ? value
+              : requiredForTenantOnboarding
+                ? "Not set, required for tenant onboarding"
+                : "Not set yet"}
+          </Text>
+        )}
         {held && pincode?.trim() ? (
           <Text style={[type.caption, { color: colors.muted }]}>PIN {pincode}</Text>
         ) : null}

@@ -10,7 +10,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { humanizeToken } from "@/features/owner/owner-ui";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerDepositListSkeleton } from "@/components/skeletons/owner";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ChoiceButton, formatMoneyPaise, shortId } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
@@ -147,7 +147,7 @@ export default function OwnerDepositHistoryScreen() {
           <CountTabPills onChange={changeStatus} options={STATUS_FILTERS} value={statusFilter} />
 
           {depositsQuery.isFetching && items.length === 0 ? (
-            <SkeletonCard />
+            <OwnerDepositListSkeleton rows={3} />
           ) : items.length === 0 ? (
             <EmptyState
               artworkNode={<DepositHistoryArtwork size={124} />}
@@ -246,4 +246,3 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
     </AnimatedPressable>
   );
 }
-

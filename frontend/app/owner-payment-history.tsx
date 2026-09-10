@@ -10,7 +10,7 @@ import { HeaderNote } from "@/components/header-note";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonList } from "@/components/skeleton";
+import { OwnerPaymentListSkeleton } from "@/components/skeletons/owner";
 import { MonthSelector, currentMonth } from "@/components/month-selector";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
@@ -118,7 +118,7 @@ export default function OwnerPaymentHistoryScreen() {
           </View>
 
           <Section title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
-            {cyclesQuery.isFetching && visible.length === 0 ? <SkeletonList rows={4} /> : null}
+            {cyclesQuery.isFetching && visible.length === 0 ? <OwnerPaymentListSkeleton rows={4} /> : null}
 
             {!cyclesQuery.isFetching && visible.length === 0 ? (
               <EmptyState

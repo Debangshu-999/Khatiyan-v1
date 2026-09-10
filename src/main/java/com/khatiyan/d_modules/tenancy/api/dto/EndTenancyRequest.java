@@ -3,8 +3,10 @@ package com.khatiyan.d_modules.tenancy.api.dto;
 import java.util.List;
 
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
+import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -50,6 +52,26 @@ public record EndTenancyRequest(
          * payment recorded against the exit's bill. Null when nothing is billed.
          */
         @Size(max = 600) String proofImageUrl) {
+
+    /**
+     * A retained deposit cannot simultaneously fund exit charges. Enforcing the
+     * invariant on the request protects both the immediate end flow and saved
+     * schedules before either can reach settlement.
+     */
+    @AssertTrue(message = "A non-refundable deposit cannot be used for exit or damage charges")
+    public boolean isDepositCollectionCompatible() {
+        if (!Boolean.FALSE.equals(depositPayable)) {
+            return true;
+        }
+
+        boolean earlyExitUsesDeposit = earlyExitCharges != null
+                && earlyExitCharges.stream()
+                        .anyMatch(charge -> charge != null
+                                && charge.instrument() == ExitChargeInstrument.DEPOSIT);
+        boolean damagesUseDeposit = damages != null
+                && damages.instrument() == ExitChargeInstrument.DEPOSIT;
+        return !earlyExitUsesDeposit && !damagesUseDeposit;
+    }
 
     public ApplyExitPolicyRequest toExitPolicy() {
         return new ApplyExitPolicyRequest(earlyExitCharges, damages, depositPayable, proofImageUrl);

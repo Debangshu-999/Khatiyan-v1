@@ -7,7 +7,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerSettingsFormSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { errorMessage } from "@/features/forms/server-error";
@@ -194,7 +194,7 @@ export default function OwnerEditRoomScreen() {
 
         <View style={{ gap: spacing.lg, marginTop: spacing.md }}>
           {rooms.isLoading || molds.isLoading ? (
-            <SkeletonCard />
+            <OwnerSettingsFormSkeleton fields={5} />
           ) : !room || !seeded ? (
             <Text style={[type.body, { color: colors.muted }]}>
               That room is no longer in this property.

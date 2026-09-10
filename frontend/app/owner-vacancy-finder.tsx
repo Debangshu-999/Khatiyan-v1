@@ -13,7 +13,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerMetricGridSkeleton, OwnerRoomInventorySkeleton } from "@/components/skeletons/owner";
 import { ActionButton, ChoiceButton, FormInput, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -353,19 +353,21 @@ export default function OwnerVacancyFinderScreen() {
             </View>
           </Card>
 
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          {roomsQuery.isFetching && !roomsQuery.data ? (
+            <OwnerMetricGridSkeleton count={2} />
+          ) : <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile label="Matches" value={String(matchCount)} hint={matchCount > 0 ? `${matchBeds} free now` : "Exact fit"} tone={matchCount > 0 ? "primary" : "default"} />
             <MetricTile
               label="Similar"
               value={String(similarCount)}
               hint={conditioning === "ANY" && roomType === "ANY" && floorQuery === "" ? "Set a filter" : "Other vacancies"}
             />
-          </View>
+          </View>}
 
           {roomsQuery.isFetching && rooms.length === 0 ? (
-            <SkeletonCard />
+            <OwnerRoomInventorySkeleton />
           ) : loadingUpcoming && matchCount === 0 && similarCount === 0 ? (
-            <SkeletonCard />
+            <OwnerRoomInventorySkeleton />
           ) : matchCount === 0 && similarCount === 0 ? (
             <EmptyState
               artwork={NO_BEDS_ILLUSTRATION}

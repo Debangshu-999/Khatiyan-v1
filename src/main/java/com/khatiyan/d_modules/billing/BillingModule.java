@@ -169,6 +169,10 @@ public class BillingModule {
         return billingCycleService.getLatestMyCycle(tenantUserId);
     }
 
+    public BillingCycleResponse getCurrentMyRentCycle(UUID tenantUserId, LocalDate onDate) {
+        return billingCycleService.getCurrentMyRentCycle(tenantUserId, onDate);
+    }
+
     public BillingCycleResponse getMyCycle(UUID tenantUserId, UUID billingCycleId) {
         return billingCycleService.getMyCycle(tenantUserId, billingCycleId);
     }

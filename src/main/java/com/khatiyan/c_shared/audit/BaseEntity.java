@@ -33,4 +33,16 @@ public abstract class BaseEntity {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /**
+     * Marks an aggregate as changed when one of its owned records changes.
+     *
+     * <p>Spring Data normally updates this timestamp when a field on this row
+     * changes. Some aggregates also need their activity time refreshed when a
+     * child row changes; assigning the audit value makes that relationship
+     * explicit and gives Hibernate a dirty field to persist.
+     */
+    protected final void touchUpdatedAt() {
+        this.updatedAt = Instant.now();
+    }
 }

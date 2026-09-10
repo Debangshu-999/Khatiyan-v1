@@ -12,7 +12,7 @@ import { Lightbox } from "@/components/image-carousel";
 import { MonthSelector, currentMonth } from "@/components/month-selector";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonList } from "@/components/skeleton";
+import { OwnerPaymentListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { BillingStatusBadge } from "@/features/owner/bill-views";
@@ -28,8 +28,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-// The large copy: a header illustration is drawn at 126x96, so it needs the
-// resolution a 72px glyph does not have.
+// Empty-state artwork shown only when the selected month has no claims.
 const PAYMENT_CLAIMS_ILLUSTRATION = require("../assets/workspace/payment_claims1254.png");
 
 /**
@@ -152,7 +151,6 @@ export default function OwnerPaymentClaimsScreen() {
       surface={colors.surface}
     >
       <ScreenHeader
-        artwork={PAYMENT_CLAIMS_ILLUSTRATION}
         title="Payment"
         italicTail="claims."
         subtitle="Tenants who say they have paid. Check each against your bank statement before approving."
@@ -195,7 +193,7 @@ export default function OwnerPaymentClaimsScreen() {
       ) : null}
 
       {claimsQuery.isFetching && claims.length === 0 ? (
-        <SkeletonList rows={2} />
+        <OwnerPaymentListSkeleton rows={2} />
       ) : claims.length === 0 ? (
         <EmptyState
           description="When a tenant pays by UPI and tells us, their claim appears here for you to confirm. Nothing was raised this month."

@@ -12,7 +12,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
-import { SkeletonList } from "@/components/skeleton";
+import { OwnerPlacesListSkeleton } from "@/components/skeletons/owner";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { CategoryPickerModal } from "@/features/discovery/components/category-picker-modal";
 import { NearbyPlaceCard } from "@/features/discovery/components/nearby-place-card";
@@ -110,7 +110,7 @@ export default function OwnerLocalPlacesScreen() {
           <>
             <Section title="Curated list">
               {placesQuery.isFetching && places.length === 0 ? (
-                <SkeletonList />
+                <OwnerPlacesListSkeleton />
               ) : null}
 
               {!placesQuery.isFetching && places.length === 0 ? (

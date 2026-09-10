@@ -20,7 +20,13 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
-import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
+import {
+  OwnerBreakdownSkeleton,
+  OwnerChartSkeleton,
+  OwnerDataListSkeleton,
+  OwnerFinanceOverviewSkeleton,
+  OwnerLedgerSkeleton,
+} from "@/components/skeletons/owner";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
@@ -144,7 +150,7 @@ export default function OwnerExpensesScreen() {
             <MonthSelector onChange={(picked) => setMonth(`${picked}-01`)} value={month.slice(0, 7)} />
 
             {budgetQuery.isLoading && !budget ? (
-              <SkeletonScreen tiles={3} rows={0} />
+              <OwnerFinanceOverviewSkeleton metrics={4} />
             ) : budget ? (
               <BudgetHero budget={budget} onRaise={() => setSheet("raise-budget")} onSetBudget={() => setSheet("set-budget")} />
             ) : null}
@@ -159,7 +165,12 @@ export default function OwnerExpensesScreen() {
               </View>
             </Section>
 
-            {trend && trend.points.length > 0 ? (
+            {trendQuery.isFetching && !trend ? (
+              <Section title="Last 6 months">
+                <OwnerChartSkeleton />
+                <OwnerChartSkeleton />
+              </Section>
+            ) : trend && trend.points.length > 0 ? (
               <Section title="Last 6 months">
                 <BudgetSpendChart points={trend.points} />
                 <BudgetTrendChart points={trend.points} />
@@ -167,11 +178,17 @@ export default function OwnerExpensesScreen() {
               </Section>
             ) : null}
 
-            <CategoryBreakdown loading={summaryQuery.isFetching && !summary} totals={summary?.byCategory ?? []} totalSpentPaise={summary?.totalSpentPaise ?? 0} />
+            {summaryQuery.isFetching && !summary ? (
+              <Section title="By category">
+                <OwnerBreakdownSkeleton />
+              </Section>
+            ) : (
+              <CategoryBreakdown loading={false} totals={summary?.byCategory ?? []} totalSpentPaise={summary?.totalSpentPaise ?? 0} />
+            )}
 
             <Section title="This month">
               {expensesQuery.isFetching && !expensesPage ? (
-                <SkeletonList rows={4} />
+                <OwnerLedgerSkeleton rows={4} />
               ) : null}
 
               {expensesPage && expensesPage.items.length === 0 ? (
@@ -923,7 +940,7 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
     <>
       <Sheet onClose={onClose} title="Recurring expenses">
         <BodyNote>Templates are posted automatically each month on their day. Salary is projected from current staff and managed by the system.</BodyNote>
-        {recurringQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+        {recurringQuery.isLoading ? <OwnerDataListSkeleton bodyLines={1} rows={2} /> : null}
         {items.length === 0 && !recurringQuery.isLoading ? (
           <Text style={[type.body, { color: colors.muted }]}>
             No recurring expenses yet.

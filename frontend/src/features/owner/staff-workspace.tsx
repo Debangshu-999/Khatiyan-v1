@@ -19,7 +19,12 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { SheetShell } from "@/components/sheet-shell";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import {
+  OwnerSalaryAccountSkeleton,
+  OwnerSettlementSkeleton,
+  OwnerStaffListSkeleton,
+  OwnerStaffProfileSkeleton,
+} from "@/components/skeletons/owner";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
@@ -321,7 +326,7 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
 
       <Section title="My employment">
         {employmentQuery.isLoading ? (
-          <SkeletonCard />
+          <OwnerStaffProfileSkeleton />
         ) : employment ? (
           <Card>
             <View style={{ gap: spacing.sm }}>
@@ -350,7 +355,7 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
 
       <Section title="My salary account">
         {salaryQuery.isLoading ? (
-          <SkeletonCard />
+          <OwnerSalaryAccountSkeleton />
         ) : salaryQuery.data ? (
           <SalaryAccountDetailCard detail={salaryQuery.data} readOnly />
         ) : (
@@ -360,7 +365,7 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
 
       <Section title={`${directory.length} staff member${directory.length === 1 ? "" : "s"}`}>
         {directoryQuery.isLoading ? (
-          <SkeletonList rows={3} />
+          <OwnerStaffListSkeleton />
         ) : directory.length ? (
           <PersonScroller count={directory.length}>
             {directory.map((member) => (
@@ -476,7 +481,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
 
       <StaffGroupCard actionLabel="Add manager" onAction={() => router.push("/owner-add-manager")} title="Managers">
         {managersLoading ? (
-          <SkeletonList rows={2} />
+          <OwnerStaffListSkeleton rows={2} />
         ) : managerEntries.length ? (
           <PersonScroller count={managerEntries.length} divided>
             {managerEntries.map((entry) => (
@@ -501,7 +506,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
           selected={selectedCategory}
         />
         {membersLoading ? (
-          <SkeletonList rows={3} />
+          <OwnerStaffListSkeleton />
         ) : filteredMembers.length ? (
           <PersonScroller count={filteredMembers.length} divided>
             {filteredMembers.map((member) => (
@@ -710,7 +715,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
             the cards put placeholder rows above real content, which reads as two
             extra accounts rather than as loading. A refetch dims the list
             instead — the data is already on screen, it is just going stale. */}
-        {(directoryLoading || loading) && shownPeople.length === 0 ? <SkeletonList rows={3} /> : null}
+        {(directoryLoading || loading) && shownPeople.length === 0 ? <OwnerStaffListSkeleton /> : null}
         <DividedRows>
           {shownPeople.map((target) => {
             // Daily-wage employees never get a salary account — we just show their
@@ -1247,7 +1252,7 @@ function PayslipList({
   const [shown, setShown] = useState(PAYSLIPS_PER_PAGE);
 
   if (loading) {
-    return <SkeletonList rows={3} />;
+    return <OwnerStaffListSkeleton />;
   }
 
   if (payslips.length === 0) {
@@ -1472,7 +1477,7 @@ function EmployeeHistory({ property }: { property: OwnerProperty }) {
         title={knownTotal === undefined ? "Loading…" : `${knownTotal} record${knownTotal === 1 ? "" : "s"}`}
       >
         {loading ? (
-          <SkeletonList rows={3} />
+          <OwnerStaffListSkeleton />
         ) : items.length ? (
           <View style={{ gap: spacing.sm }}>
             {items.map((item) => (
@@ -2730,7 +2735,7 @@ function EndEmploymentSheet({
         <View style={{ gap: spacing.sm }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>Full & final settlement</Text>
           {previewLoading ? (
-            <SkeletonCard />
+            <OwnerSettlementSkeleton />
           ) : (
             <>
               {hasAccount ? (

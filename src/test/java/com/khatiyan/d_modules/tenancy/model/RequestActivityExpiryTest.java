@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.tenancy.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -9,6 +10,9 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import com.khatiyan.c_shared.exception.ValidationException;
 
 /**
  * When a request stops being interactive.
@@ -161,15 +165,20 @@ class RequestActivityExpiryTest {
     }
 
     @Test
-    @DisplayName("a room change closes the moment it is decided — there is no withdrawal window")
-    void aRoomChangeClosesOnDecision() {
+    @DisplayName("a room-change decision remains visible for three days")
+    void aRoomChangeDecisionRemainsVisibleBriefly() {
         TenancyRoomChangeRequest approved = newRoomChange();
         approved.approve(OWNER, null);
-        assertThat(approved.isActivelyOpen(Instant.now().plusSeconds(1))).isFalse();
+        assertThat(approved.isActivelyOpen(Instant.now().plusSeconds(1))).isTrue();
+        assertThat(approved.allowsReRaiseAt(Instant.now())).isFalse();
 
         TenancyRoomChangeRequest rejected = newRoomChange();
         rejected.reject(OWNER, "no space");
-        assertThat(rejected.isActivelyOpen(Instant.now().plusSeconds(1))).isFalse();
+        assertThat(rejected.isActivelyOpen(Instant.now().plusSeconds(1))).isTrue();
+        assertThat(rejected.allowsReRaiseAt(Instant.now())).isTrue();
+        assertThat(rejected.allowsReRaiseAt(
+                Instant.now().plus(Duration.ofDays(TenancyRoomChangeRequest.RE_RAISE_WINDOW_DAYS + 1))))
+                .isFalse();
     }
 
     @Test
@@ -181,5 +190,79 @@ class RequestActivityExpiryTest {
         assertThat(remaining).isBetween(
                 Duration.ofDays(TenancyRoomChangeRequest.REVIEW_WINDOW_DAYS).minusMinutes(1),
                 Duration.ofDays(TenancyRoomChangeRequest.REVIEW_WINDOW_DAYS).plusMinutes(1));
+    }
+
+    @Test
+    @DisplayName("a corrected room change links to the rejected attempt")
+    void correctedRoomChangeKeepsItsHistoryLink() {
+        TenancyRoomChangeRequest rejected = newRoomChange();
+        rejected.reject(OWNER, "pick another room");
+
+        TenancyRoomChangeRequest corrected = TenancyRoomChangeRequest.request(
+                null,
+                rejected.getTenancyId(),
+                TENANT,
+                rejected.getPropertyId(),
+                rejected.getCurrentRoomId(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                LocalDate.of(2026, 12, 31),
+                "new room selected",
+                11_000_00L,
+                rejected);
+
+        assertThat(corrected.getSupersededRequestId()).isEqualTo(rejected.getId());
+    }
+
+    @Test
+    @DisplayName("management can return an approved room change to the decision queue")
+    void approvedRoomChangeCanBeRevertedInsideItsWindow() {
+        TenancyRoomChangeRequest request = newRoomChange();
+        request.approve(OWNER, "approved");
+
+        request.revertApproval(Instant.now());
+
+        assertThat(request.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.REQUESTED);
+        assertThat(request.getDecidedByUserId()).isNull();
+        assertThat(request.getDecidedAt()).isNull();
+        assertThat(request.getAdminNotes()).isNull();
+        assertThat(request.allowsApprovalRevertAt(Instant.now())).isFalse();
+    }
+
+    @Test
+    @DisplayName("rejection can never be revived as an active room change")
+    void rejectedRoomChangeCannotBeReverted() {
+        TenancyRoomChangeRequest request = newRoomChange();
+        request.reject(OWNER, "no vacancy");
+
+        assertThatThrownBy(() -> request.revertApproval(Instant.now()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("can no longer be reverted");
+    }
+
+    @Test
+    @DisplayName("manual approval reversion closes when its decision window ends")
+    void approvedRoomChangeCannotBeManuallyRevertedAfterItsWindow() {
+        TenancyRoomChangeRequest request = newRoomChange();
+        request.approve(OWNER, null);
+        ReflectionTestUtils.setField(request, "expiresAt", Instant.now().minusSeconds(1));
+
+        assertThatThrownBy(() -> request.revertApproval(Instant.now()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("can no longer be reverted");
+    }
+
+    @Test
+    @DisplayName("the scheduler can safely reopen a blocked approval after the manual window")
+    void schedulerRecoveryCanReopenAnOlderApproval() {
+        TenancyRoomChangeRequest request = newRoomChange();
+        request.approve(OWNER, null);
+        ReflectionTestUtils.setField(request, "expiresAt", Instant.now().minusSeconds(1));
+
+        request.reopenAfterExecutionBlocked(Instant.now(), "Tenancy is no longer active");
+
+        assertThat(request.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.REQUESTED);
+        assertThat(request.getAdminNotes()).isEqualTo("Tenancy is no longer active");
+        assertThat(request.isActivelyOpen(Instant.now())).isTrue();
     }
 }

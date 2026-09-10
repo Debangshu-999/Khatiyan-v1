@@ -85,6 +85,15 @@ public class PropertyBoardCategory extends BaseEntity {
         this.active = false;
     }
 
+    /**
+     * A board category's activity includes changes to the items it contains.
+     * Tenant views use this timestamp to keep recently maintained sections at
+     * the top without changing the owner's manual display order.
+     */
+    public void markContentChanged() {
+        touchUpdatedAt();
+    }
+
     public boolean isCurrentlyActive() {
         return active;
     }

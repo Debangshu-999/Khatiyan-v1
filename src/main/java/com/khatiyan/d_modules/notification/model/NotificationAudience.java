@@ -28,6 +28,7 @@ public enum NotificationAudience {
         return switch (subtype) {
             case CONCERN_RAISED, CONCERN_ASSIGNED, CONCERN_REOPENED,
                     TENANCY_EXIT_REQUESTED, TENANCY_EXIT_CANCELLED,
+                    TENANCY_EXIT_SCHEDULE_FAILED,
                     MANAGER_ASSIGNED, MANAGER_REMOVED,
                     ROOM_MAINTENANCE_STARTED, ROOM_MAINTENANCE_ENDED,
                     ROOM_DEACTIVATED, ROOM_REACTIVATED,

@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { useLocalSearchParams } from "expo-router";
 import { AlertModal } from "@/components/alert-modal";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useToast } from "@/components/toast";
@@ -22,7 +21,11 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
-import { SkeletonList, SkeletonPills, SkeletonTiles } from "@/components/skeleton";
+import {
+  OwnerTenancyInitialSkeleton,
+  OwnerTenancyListSkeleton,
+  OwnerTenancySnapshotSkeleton,
+} from "@/components/skeletons/owner";
 import { ActiveTenancyCard, PastTenancyCard } from "@/features/owner/tenancy-list";
 import { useAppSelector } from "@/store/hooks";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
@@ -31,14 +34,13 @@ import {
   type TenancySummary,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
+  useListUpcomingTenancyExitsQuery,
 } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 
 import { useTheme } from "@/theme/use-theme";
 import { HeaderGradient } from "@/components/header-gradient";
-
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
 
@@ -56,8 +58,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
   // row is about the stays listed in this sheet — not the exit REQUESTS screen,
   // which is a different queue.
-  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
-  const [upcomingOpen, setUpcomingOpen] = useState(openParam === "upcoming-exits");
   // Withdrawing a stay the tenant never accepted. Held here rather than in the
   // card so one dialog serves the whole list.
   const [pendingRemoval, setPendingRemoval] = useState<TenancySummary | null>(null);
@@ -86,6 +86,9 @@ export default function OwnerTenancyWorkspaceScreen() {
   // inside instead.
   const { canManage, canView } = usePropertyPermissions(selectedProperty?.id);
   const { dialog: accessDialog, guard } = useScreenAccessGuard(selectedProperty?.id);
+  const upcomingExitsQuery = useListUpcomingTenancyExitsQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty || !canView("EXIT_REQUESTS"),
+  });
 
   const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const activeTenanciesQuery = useListActivePropertyTenanciesQuery(
@@ -110,26 +113,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   // Stays whose checkout falls in the next 7 days, IST — the same window the
   // dashboard's upcomingExits counts, derived here from the list already loaded
   // rather than fetched again.
-  const upcomingExits = useMemo(() => {
-    const today = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()));
-    const horizon = new Date(today);
-    horizon.setDate(horizon.getDate() + 7);
-
-    return (activeTenancies?.items ?? [])
-      .filter((tenancy) => {
-        const checkout = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
-        if (!checkout) {
-          return false;
-        }
-        const date = new Date(checkout);
-        return date >= today && date <= horizon;
-      })
-      .sort((a, b) => {
-        const left = (a.billingType === "DAILY" ? a.plannedEndDate : a.endDate) ?? "";
-        const right = (b.billingType === "DAILY" ? b.plannedEndDate : b.endDate) ?? "";
-        return left.localeCompare(right);
-      });
-  }, [activeTenancies]);
   const tenancySnapshot = dashboardQuery.data?.tenancy;
 
   function openActiveTenancy(tenancy: TenancySummary) {
@@ -186,15 +169,8 @@ export default function OwnerTenancyWorkspaceScreen() {
         title="Tenancy"
       />
 
-      {/* The screen's shape: six snapshot tiles, the filter strip, and the
-          tenancy list. SkeletonScreen's defaults drew a heading and three rows,
-          which is not what this screen is. */}
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <View style={{ gap: spacing.md }}>
-          <SkeletonTiles count={6} />
-          <SkeletonPills count={3} />
-          <SkeletonList rows={2} />
-        </View>
+        <OwnerTenancyInitialSkeleton />
       ) : null}
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -244,14 +220,14 @@ export default function OwnerTenancyWorkspaceScreen() {
                 />
               </View>
             </Section>
-          ) : (
+          ) : dashboardQuery.isFetching ? (
             // Inside the Section, so the heading stays put and only the tiles
             // under it are pending — the page does not grow a heading when the
             // data lands.
             <Section title="Tenancy snapshot">
-              <SkeletonTiles count={4} />
+              <OwnerTenancySnapshotSkeleton />
             </Section>
-          )}
+          ) : null}
 
           <Section title="Tenancy tools">
             <View style={{ gap: spacing.sm }}>
@@ -288,11 +264,11 @@ export default function OwnerTenancyWorkspaceScreen() {
                     onPress: () => guard("TENANCIES", "Tenancy history", () => setHistoryOpen(true)),
                   },
                   {
-                    badge: upcomingExits.length,
+                    badge: upcomingExitsQuery.data?.length ?? 0,
                     icon: LogOut,
                     key: "upcoming-exits",
                     label: "Upcoming exits",
-                    onPress: () => guard("TENANCIES", "Upcoming exits", () => setUpcomingOpen(true)),
+                    onPress: () => guard("EXIT_REQUESTS", "Upcoming exits", () => router.push("/owner-upcoming-exits")),
                   },
                 ]}
               />
@@ -334,7 +310,7 @@ export default function OwnerTenancyWorkspaceScreen() {
             <View style={{ gap: spacing.md }}>
               <SearchField onChangeText={setSearchDraft} placeholder="Search by tenant name, phone or tenancy ID" value={searchDraft} />
 
-              {isLoading && !visiblePage ? <SkeletonList rows={2} /> : null}
+              {isLoading && !visiblePage ? <OwnerTenancyListSkeleton /> : null}
 
               {isError ? (
                 <EmptyState
@@ -425,7 +401,7 @@ export default function OwnerTenancyWorkspaceScreen() {
 
     {historyOpen ? (
       <SheetShell onClose={() => setHistoryOpen(false)} title="Tenancy history">
-        {pastTenanciesQuery.isFetching && !pastTenancies ? <SkeletonList /> : null}
+        {pastTenanciesQuery.isFetching && !pastTenancies ? <OwnerTenancyListSkeleton rows={3} /> : null}
 
         {!pastTenanciesQuery.isFetching && (pastTenancies?.items.length ?? 0) === 0 ? (
           <EmptyState
@@ -457,35 +433,6 @@ export default function OwnerTenancyWorkspaceScreen() {
       </SheetShell>
     ) : null}
 
-    {upcomingOpen ? (
-      <SheetShell onClose={() => setUpcomingOpen(false)} title="Upcoming exits">
-        {upcomingExits.length === 0 ? (
-          <EmptyState
-            description="No stay is due to end in the next seven days."
-            artwork={CONCERN_EMPTY_ILLUSTRATION}
-            title="All clear"
-          />
-        ) : (
-          upcomingExits.map((tenancy) => (
-            <ActiveTenancyCard
-              key={tenancy.id}
-              canEndTenancy={canManage("TENANCIES")}
-              ending={false}
-              onEndTenancy={() => {
-                setUpcomingOpen(false);
-                router.push({ pathname: "/owner-end-tenancy", params: { tenancyId: tenancy.id } });
-              }}
-              onOpen={() => {
-                setUpcomingOpen(false);
-                openActiveTenancy(tenancy);
-              }}
-              roomLabel={rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? null}
-              tenancy={tenancy}
-            />
-          ))
-        )}
-      </SheetShell>
-    ) : null}
     </>
   );
 }

@@ -10,7 +10,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { OwnerRulesEditorSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
@@ -133,10 +133,7 @@ export default function OwnerExitPoliciesScreen() {
             description="Choose an active property from Home before managing its exit policies."
           />
         ) : policiesQuery.isLoading || damageCharges === null || checklist === null ? (
-          <>
-            <SkeletonCard />
-            <SkeletonList rows={3} />
-          </>
+          <OwnerRulesEditorSkeleton />
         ) : (
           <>
             <Section title="Damage charges">

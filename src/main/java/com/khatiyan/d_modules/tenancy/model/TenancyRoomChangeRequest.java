@@ -29,6 +29,8 @@ public class TenancyRoomChangeRequest extends BaseEntity {
 
     /** Mirrors the exit request's review window; both sweeps share the value. */
     public static final int REVIEW_WINDOW_DAYS = 5;
+    public static final int RE_RAISE_WINDOW_DAYS = 3;
+    public static final int DECISION_VISIBILITY_DAYS = 3;
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -84,11 +86,16 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     @Column(name = "executed_at")
     private Instant executedAt;
 
+    /** The rejected request this corrected request replaces, if any. */
+    @Column(name = "superseded_request_id")
+    private UUID supersededRequestId;
+
     /**
      * When this request stops being interactive.
      *
-     * <p>Room changes expire the moment they are decided — there is no
-     * withdrawal after approval, so nothing remains for either side to do.
+     * <p>A rejected request stays visible for its correction window. An
+     * approved request stays reversible by management for a short window even
+     * though it remains scheduled after that window closes.
      */
     @Column(name = "expires_at")
     private Instant expiresAt;
@@ -104,7 +111,8 @@ public class TenancyRoomChangeRequest extends BaseEntity {
             UUID billingCycleId,
             LocalDate effectiveTransferDate,
             String tenantReason,
-            long requestedRoomRentAmountPaise) {
+            long requestedRoomRentAmountPaise,
+            UUID supersededRequestId) {
         if (tenancyId == null || tenantUserId == null || propertyId == null || currentRoomId == null
                 || targetRoomId == null || billingCycleId == null) {
             throw new ValidationException("Room change request tenancy details are required");
@@ -134,6 +142,7 @@ public class TenancyRoomChangeRequest extends BaseEntity {
         this.effectiveTransferDate = effectiveTransferDate;
         this.tenantReason = clean(tenantReason);
         this.requestedRoomRentAmountPaise = requestedRoomRentAmountPaise;
+        this.supersededRequestId = supersededRequestId;
         this.expiresAt = Instant.now().plus(java.time.Duration.ofDays(REVIEW_WINDOW_DAYS));
     }
 
@@ -148,6 +157,23 @@ public class TenancyRoomChangeRequest extends BaseEntity {
             LocalDate effectiveTransferDate,
             String tenantReason,
             long requestedRoomRentAmountPaise) {
+        return request(referenceCode, tenancyId, tenantUserId, propertyId, currentRoomId,
+                targetRoomId, billingCycleId, effectiveTransferDate, tenantReason,
+                requestedRoomRentAmountPaise, null);
+    }
+
+    public static TenancyRoomChangeRequest request(
+            String referenceCode,
+            UUID tenancyId,
+            UUID tenantUserId,
+            UUID propertyId,
+            UUID currentRoomId,
+            UUID targetRoomId,
+            UUID billingCycleId,
+            LocalDate effectiveTransferDate,
+            String tenantReason,
+            long requestedRoomRentAmountPaise,
+            TenancyRoomChangeRequest superseded) {
         return TenancyRoomChangeRequest.builder()
                 .referenceCode(referenceCode)
                 .tenancyId(tenancyId)
@@ -159,13 +185,14 @@ public class TenancyRoomChangeRequest extends BaseEntity {
                 .effectiveTransferDate(effectiveTransferDate)
                 .tenantReason(tenantReason)
                 .requestedRoomRentAmountPaise(requestedRoomRentAmountPaise)
+                .supersededRequestId(superseded == null ? null : superseded.getId())
                 .build();
     }
 
     public void approve(UUID actorUserId, String adminNotes) {
         ensureRequested();
         this.status = TenancyRoomChangeRequestStatus.APPROVED;
-        this.expiresAt = Instant.now();
+        this.expiresAt = Instant.now().plus(java.time.Duration.ofDays(DECISION_VISIBILITY_DAYS));
         this.adminNotes = clean(adminNotes);
         this.decidedByUserId = actorUserId;
         this.decidedAt = Instant.now();
@@ -174,19 +201,45 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     public void reject(UUID actorUserId, String adminNotes) {
         ensureRequested();
         this.status = TenancyRoomChangeRequestStatus.REJECTED;
-        this.expiresAt = Instant.now();
+        this.expiresAt = Instant.now().plus(java.time.Duration.ofDays(RE_RAISE_WINDOW_DAYS));
         this.adminNotes = clean(adminNotes);
         this.decidedByUserId = actorUserId;
         this.decidedAt = Instant.now();
     }
 
-    public void cancel(UUID tenantUserId) {
-        ensureRequested();
-        if (!this.tenantUserId.equals(tenantUserId)) {
-            throw new ValidationException("Only the tenant can cancel this room change request");
+    /** Whether management may still undo an approval before execution. */
+    public boolean allowsApprovalRevertAt(Instant now) {
+        return status == TenancyRoomChangeRequestStatus.APPROVED
+                && executedAt == null
+                && expiresAt != null
+                && expiresAt.isAfter(now);
+    }
+
+    /**
+     * Returns an approved move to the decision queue.
+     *
+     * <p>The service releases the target-bed reservation in the same
+     * transaction. Rejected requests deliberately cannot use this transition:
+     * rejection frees the tenancy to raise an exit request, so reviving it
+     * could create two competing active requests.
+     */
+    public void revertApproval(Instant now) {
+        if (!allowsApprovalRevertAt(now)) {
+            throw new ValidationException("Room change approval can no longer be reverted");
         }
-        this.status = TenancyRoomChangeRequestStatus.CANCELLED;
-        this.expiresAt = Instant.now();
+        reopenForDecision(now, null);
+    }
+
+    /**
+     * Scheduler recovery for an approved move whose execution prerequisites no
+     * longer hold. This is not limited by the UI reversal window: its purpose is
+     * to stop an invalid approval from holding a bed indefinitely.
+     */
+    public void reopenAfterExecutionBlocked(Instant now, String reason) {
+        if (status != TenancyRoomChangeRequestStatus.APPROVED || executedAt != null) {
+            throw new ValidationException("Only an unexecuted approved room change can be reopened");
+        }
+        reopenForDecision(now, reason);
     }
 
     /**
@@ -206,8 +259,8 @@ public class TenancyRoomChangeRequest extends BaseEntity {
 
     /**
      * Closes an open request because the tenancy it belongs to has ended, so the
-     * move can never run. Unlike {@link #cancel}, this is a system action and is
-     * allowed from APPROVED — that is the state that holds a reserved bed.
+     * move can never run. This is a system action and is allowed from APPROVED
+     * — that is the state that holds a reserved bed.
      *
      * @return true if the request had been approved, i.e. a bed is still held
      *         for it and must be released
@@ -215,6 +268,13 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     /** Whether either party still has something they can do about this. */
     public boolean isActivelyOpen(Instant now) {
         return expiresAt == null || expiresAt.isAfter(now);
+    }
+
+    /** A rejected request may be corrected and re-raised for exactly 72 hours. */
+    public boolean allowsReRaiseAt(Instant now) {
+        return status == TenancyRoomChangeRequestStatus.REJECTED
+                && expiresAt != null
+                && expiresAt.isAfter(now);
     }
 
     public boolean cancelBecauseTenancyEnded() {
@@ -244,6 +304,14 @@ public class TenancyRoomChangeRequest extends BaseEntity {
         if (status != TenancyRoomChangeRequestStatus.REQUESTED) {
             throw new ValidationException("Room change request is not pending review");
         }
+    }
+
+    private void reopenForDecision(Instant now, String notes) {
+        this.status = TenancyRoomChangeRequestStatus.REQUESTED;
+        this.expiresAt = now.plus(java.time.Duration.ofDays(REVIEW_WINDOW_DAYS));
+        this.adminNotes = clean(notes);
+        this.decidedByUserId = null;
+        this.decidedAt = null;
     }
 
     private static String clean(String value) {

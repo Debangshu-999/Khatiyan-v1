@@ -17,6 +17,7 @@ import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitApprovedEvent;
+import com.khatiyan.d_modules.tenancy.event.ScheduledTenancyExitFailedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitExecutedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitExpiredEvent;
@@ -127,6 +128,40 @@ public class TenancyExitNotificationEventListener {
                 NotificationPriority.NORMAL,
                 NotificationSubtype.TENANCY_EXIT_EXECUTED,
                 event.requestId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    @ApplicationModuleListener
+    public void onScheduledTenancyExitFailed(ScheduledTenancyExitFailedEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseExitData(
+                event.exitRequestId(),
+                event.requestReferenceCode(),
+                event.tenancyId(),
+                event.tenantUserId(),
+                property);
+        data.put("scheduleId", event.scheduleId().toString());
+        data.put("checkoutDate", event.checkoutDate().toString());
+        data.put("failureCode", event.failureCode());
+        data.put("attemptCount", Integer.toString(event.attemptCount()));
+
+        String message = "PAYMENT_DUE".equals(event.failureCode())
+                ? "Scheduled exit " + event.requestReferenceCode()
+                        + " did not run because the tenant still has an unpaid or unconfirmed bill. "
+                        + "Clear it and the schedule will retry."
+                : "Scheduled exit " + event.requestReferenceCode()
+                        + " could not be completed: " + event.failureMessage()
+                        + ". Review it before the next retry.";
+
+        notificationModule.notifyUser(
+                property.ownerId(),
+                "Scheduled exit needs attention",
+                message,
+                NotificationCategory.TENANCY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.TENANCY_EXIT_SCHEDULE_FAILED,
+                event.exitRequestId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
     }

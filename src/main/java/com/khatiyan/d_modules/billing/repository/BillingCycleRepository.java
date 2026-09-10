@@ -92,6 +92,21 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
     List<BillingCycle> findLatestByTenancyId(UUID tenancyId, Pageable pageable);
 
     /**
+     * The rent cycle that owns {@code onDate}. Upcoming cycles are deliberately
+     * excluded by the date bounds until their period actually starts.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.tenancyId = :tenancyId
+          AND cycle.category = com.khatiyan.d_modules.billing.model.BillingCycleCategory.RENT_CYCLE
+          AND cycle.periodStartDate <= :onDate
+          AND cycle.periodEndDate >= :onDate
+        ORDER BY cycle.cycleNumber DESC
+        """)
+    List<BillingCycle> findCurrentRentCycle(UUID tenancyId, LocalDate onDate, Pageable pageable);
+
+    /**
      * True if the tenancy has any bill (rent cycle or one-off) still owed. Used to
      * gate tenancy exit — the penalty one-off bill must be paid too.
      */

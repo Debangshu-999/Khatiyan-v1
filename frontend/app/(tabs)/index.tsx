@@ -5,7 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, ChartColumn, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock, Clock3, Compass, Copy, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
+import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, CalendarDays, ChartColumn, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Clock, Clock3, Compass, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { PropertyIcon } from "@/components/property-icon";
@@ -27,15 +27,23 @@ import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
 import { TrendBarChart } from "@/components/trend-bar-chart";
 import { SkeletonCard, SkeletonPills, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
+import {
+  OwnerDashboardDataSkeleton,
+  OwnerDigestCardSkeleton,
+  OwnerLiveDigestSkeleton,
+  OwnerPropertySelectorSkeleton,
+} from "@/components/skeletons/owner";
 import { api } from "@/store/api";
 import { getGreeting } from "@/features/greeting/get-greeting";
+import {
+  PropertyBoardHomeCard,
+  selectPropertyBoardPreviewItems,
+} from "@/features/property-board/property-board-ui";
 import { saveActiveAccount } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
-import type { ConcernSummary } from "@/store/services/concern-api";
-import { useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
 import { useSearchDiscoveryPropertiesQuery } from "@/store/services/discovery-api";
-import type { NoticeSummary, PropertyBoardItem } from "@/store/services/notice-api";
+import type { NoticeSummary } from "@/store/services/notice-api";
 import {
   useListMyPropertyBoardItemsQuery,
   useListMyVisibleNoticesQuery,
@@ -61,7 +69,7 @@ import { useRouteGate } from "@/features/owner/route-gates";
 import { workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { type OwnerProperty } from "@/store/services/property-api";
 import { useListManagerEmploymentQuery, useListStaffCategoriesQuery, useListStaffMembersQuery } from "@/store/services/staff-api";
-import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
+import { useGetMyActiveTenancyQuery, type TenantActiveTenancy } from "@/store/services/tenancy-api";
 import { accountLabel, useAvailableAccounts } from "@/features/account/accounts";
 import { fetchCurrentLocation, type DeviceLocationState } from "@/store/slices/location-slice";
 import { clearActiveAccount } from "@/store/slices/account-slice";
@@ -197,17 +205,10 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Home's own shape: the property selector, its two tiles, the tab bar,
-          and the workspace beneath. SkeletonScreen's defaults drew a heading
-          and a list, which is not what this screen is. */}
+      {/* The greeting and other static chrome stay visible. Only the account or
+          property content that is actually waiting on an API response ghosts. */}
       {accountsLoading ? (
-        <View style={{ gap: spacing.lg }}>
-          <SkeletonCard />
-          <SkeletonTiles count={2} />
-          <SkeletonPills count={2} />
-          <SkeletonCard />
-          <SkeletonTiles count={4} />
-        </View>
+        isWorkspace ? <OwnerPropertySelectorSkeleton /> : <SkeletonCard />
       ) : isWorkspace ? (
         <OwnerHome
           account={isManagerAccount ? "manager" : "owner"}
@@ -215,7 +216,12 @@ export default function HomeScreen() {
           properties={isManagerAccount ? managedProperties : ownedProperties}
         />
       ) : activeAccount === "tenant" ? (
-        <TenantHome onNavigate={router.push} />
+        <TenantHome
+          onNavigate={router.push}
+          onOpenBoardItem={(itemId) => {
+            router.push({ pathname: "/property-board", params: { itemId } });
+          }}
+        />
       ) : (
         <NonTenantHome onNavigate={router.push} />
       )}
@@ -947,27 +953,22 @@ function ActivityEmptyHint() {
 
 function TenantHome({
   onNavigate,
+  onOpenBoardItem,
 }: {
   onNavigate: (href: "/tenancy" | "/property-board" | "/property-notices" | "/discovery" | "/concerns") => void;
+  onOpenBoardItem: (itemId: string) => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const dispatch = useAppDispatch();
-  const location = useAppSelector((state) => state.location);
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const activeTenancy = activeTenancyQuery.data;
   const boardQuery = useListMyPropertyBoardItemsQuery();
   const noticesQuery = useListMyVisibleNoticesQuery();
-  const concernsQuery = useListMyCurrentConcernsQuery();
-  const boardItemCount = boardQuery.data?.length ?? 0;
-  const boardItems = (boardQuery.data ?? []).slice(0, 3);
+  const boardItems = selectPropertyBoardPreviewItems(boardQuery.data ?? []);
   const noticeCount = noticesQuery.data?.length ?? 0;
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority).slice(0, 3);
-  const concerns = (concernsQuery.data ?? []).filter(isOpenConcern);
-  const latestConcern = concerns[0];
 
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
-      <SkeletonScreen />
+      <SkeletonScreen cards={3} header={false} rows={0} tiles={0} />
     );
   }
 
@@ -981,66 +982,19 @@ function TenantHome({
     );
   }
 
-  const property = activeTenancy.property;
-  const room = activeTenancy.room;
-  const tenancy = activeTenancy.tenancy;
-  const propertyAddress = [property.address, property.city, property.state, property.pincode]
-    .filter(Boolean)
-    .join(", ");
-
   return (
     <>
-      <Card>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <IconBadge icon={PropertyArtwork} />
-          <View style={{ flex: 1, gap: spacing.sm }}>
-            <View style={{ gap: spacing.xs }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Current property
-              </Text>
-              <Text
-                style={{
-                  color: colors.ink,
-                  fontFamily: fonts.display,
-                  fontSize: 24,
-                  lineHeight: 29,
-                }}
-              >
-                {property.name}
-              </Text>
-            </View>
-            <InfoLine icon={KeyRound} text={`Room ${room.roomNumber}${room.floor ? `  /  ${formatFloor(room.floor)}` : ""}`} />
-            <AddressInfoLine address={propertyAddress} />
-          </View>
-        </View>
-      </Card>
+      <TenantCurrentPropertyCard activeTenancy={activeTenancy} />
 
-      <CurrentLocationCard
-        label="Current location"
-        location={location}
-        onRefresh={() => {
-          void dispatch(fetchCurrentLocation());
-        }}
-      />
-
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <MetricTile label="Stay type" value={humanizeToken(tenancy.billingType)} hint="Current tenancy" tone="primary" />
-        <MetricTile label="Status" value={tenancyStatusLabel(tenancy.status)} hint={noticeHint(tenancy)} />
-      </View>
-
-      <Section title="Property board">
-        {boardQuery.isFetching ? (
-          <SkeletonCard />
-        ) : boardItems.length > 0 ? (
-          <BoardPreviewCard
-            itemCount={boardItemCount}
-            items={boardItems}
-            onPress={() => onNavigate("/property-board")}
-          />
-        ) : (
-          <BoardPreviewCard itemCount={0} items={[]} />
-        )}
-      </Section>
+      {boardQuery.isFetching && !boardQuery.data ? (
+        <SkeletonCard />
+      ) : (
+        <PropertyBoardHomeCard
+          items={boardItems}
+          onOpenBoard={() => onNavigate("/property-board")}
+          onOpenItem={(item) => onOpenBoardItem(item.id)}
+        />
+      )}
 
       <Section title="Notice board">
         {noticesQuery.isFetching ? (
@@ -1056,48 +1010,95 @@ function TenantHome({
         )}
       </Section>
 
-      <Section title="Concerns">
-        <Card>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile
-              label="Open"
-              value={String(concerns.length)}
-              hint={concerns.length === 1 ? "Current concern" : "Current concerns"}
-              tone={concerns.length > 0 ? "primary" : "default"}
-            />
-            <MetricTile
-              label="Latest"
-              value={latestConcern ? humanizeToken(latestConcern.status) : "None"}
-              hint={latestConcern?.title ?? "No active concern"}
-            />
-          </View>
-        </Card>
-        {latestConcern ? (
-          <SummaryRow
-            icon={AlertCircle}
-            kicker={humanizeToken(latestConcern.category)}
-            title={latestConcern.title}
-            body={latestConcern.description}
-          />
-        ) : null}
-        <ActionCard
-          meta="Concerns"
-          title="Open concerns"
-          description="View current concerns, history, and raise a new concern from the concerns screen."
-          onPress={() => onNavigate("/concerns")}
-          tone="primary"
-        />
-      </Section>
-
-      <Section title="Go to">
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <ModuleChip icon={KeyRound} label="Tenancy" onPress={() => onNavigate("/tenancy")} />
-          <ModuleChip icon={FileText} label="Notices" onPress={() => onNavigate("/property-notices")} />
-          <ModuleChip icon={AlertCircle} label="Concerns" onPress={() => onNavigate("/concerns")} />
-          <ModuleChip icon={Compass} label="Local places" onPress={() => onNavigate("/discovery")} />
-        </View>
-      </Section>
     </>
+  );
+}
+
+function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantActiveTenancy }) {
+  const { colors, fonts, type } = useTheme();
+  const property = activeTenancy.property;
+  const room = activeTenancy.room;
+  const tenancy = activeTenancy.tenancy;
+  const propertyAddress = [property.address, property.city, property.state, property.pincode]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <Card
+      style={{
+        borderLeftColor: colors.tabSelected,
+        borderLeftWidth: 4,
+        gap: spacing.md,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <PropertyArtwork size={28} />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>Current property</Text>
+          <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.78}
+            numberOfLines={1}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, lineHeight: 28 }}
+          >
+            {property.name}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <TenantHomeFact
+          icon={BedDouble}
+          label="Room / Floor"
+          value={`Room ${room.roomNumber}${room.floor ? ` · ${formatFloor(room.floor)}` : ""}`}
+        />
+        <TenantHomeFact icon={CalendarDays} label="Stay type" value={humanizeToken(tenancy.billingType)} />
+      </View>
+
+      <View style={{ backgroundColor: colors.border, height: 1 }} />
+      <AddressInfoLine address={propertyAddress} />
+    </Card>
+  );
+}
+
+function TenantHomeFact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  value: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.surfaceRaised,
+        borderColor: colors.border,
+        borderRadius: radii.lg,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.xs,
+        minWidth: 0,
+        padding: spacing.sm,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <Icon color={colors.primary} size={16} strokeWidth={2.1} />
+        <Text style={[type.caption, { color: colors.kicker, flex: 1 }]}>{label}</Text>
+      </View>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+        numberOfLines={1}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14, lineHeight: 18 }}
+      >
+        {value}
+      </Text>
+    </View>
   );
 }
 
@@ -1258,18 +1259,14 @@ function OwnerHome({
         <>
           <OwnerTabBar onChange={setTab} tab={tab} />
           {tab === "dashboard" ? (
-            <View style={{ gap: spacing.md }}>
-              <SkeletonTiles count={5} perRow={3} />
-              <SkeletonCard />
-              <SkeletonCard />
-            </View>
+            <OwnerDashboardDataSkeleton />
           ) : (
-            <View style={{ gap: spacing.md }}>
-              <SkeletonCard />
-              <SkeletonTiles count={4} />
-              <SkeletonCard />
-              <SkeletonCard />
-            </View>
+            <WorkspaceTabLoading
+              onNavigate={navigate}
+              pinnedKeys={pinnedKeys}
+              propertyId={selectedProperty.id}
+              workspaceRole={workspaceRole}
+            />
           )}
         </>
       ) : null}
@@ -2010,6 +2007,42 @@ function WorkspaceTab({
   );
 }
 
+function WorkspaceTabLoading({
+  onNavigate,
+  pinnedKeys,
+  propertyId,
+  workspaceRole,
+}: {
+  onNavigate: (href: OwnerRoute) => void;
+  pinnedKeys: string[];
+  propertyId: string;
+  workspaceRole: "Owner" | "Manager";
+}) {
+  return (
+    <>
+      <Section title="Workspace">
+        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={propertyId} />
+        <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
+      </Section>
+
+      <Section title="Tools">
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} wide />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.expenses} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.deposit} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
+          </View>
+        </View>
+      </Section>
+
+      <OwnerLiveDigestSkeleton />
+    </>
+  );
+}
+
 function HomeToolBox({
   artwork,
   badge,
@@ -2132,8 +2165,12 @@ function PaymentClaimsCard({ digest, onOpen }: { digest: PaymentIntentDigest; on
 
 function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
-  const upcoming =
-    useListUpcomingNoticesQuery(propertyId, { pollingInterval: 60_000, skip: !propertyId }).data ?? [];
+  const upcomingQuery = useListUpcomingNoticesQuery(propertyId, { pollingInterval: 60_000, skip: !propertyId });
+  const upcoming = upcomingQuery.data ?? [];
+
+  if (upcomingQuery.isFetching && !upcomingQuery.data) {
+    return <OwnerDigestCardSkeleton />;
+  }
 
   const recurringCount = upcoming.filter((notice) => notice.recurringNoticeId !== null).length;
   const scheduledCount = upcoming.length - recurringCount;
@@ -2182,7 +2219,12 @@ function formatUpcomingTime(visibleFrom: string) {
 
 function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
-  const budget = useGetBudgetOverviewQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId }).data;
+  const budgetQuery = useGetBudgetOverviewQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId });
+  const budget = budgetQuery.data;
+
+  if (budgetQuery.isFetching && !budgetQuery.data) {
+    return <OwnerDigestCardSkeleton />;
+  }
 
   const spent = budget?.spentPaise ?? 0;
   const effective = budget?.effectiveBudgetPaise ?? null;
@@ -3046,37 +3088,6 @@ function CurrentLocationCard({
   );
 }
 
-function IconBadge({ icon: Icon }: { icon: ComponentType<LucideProps> }) {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        borderRadius: 14,
-        height: 44,
-        justifyContent: "center",
-        width: 44,
-      }}
-    >
-      <Icon color={colors.ink} size={21} strokeWidth={2.4} />
-    </View>
-  );
-}
-
-function InfoLine({ icon: Icon, text }: { icon: ComponentType<LucideProps>; text: string }) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-      <Icon color={colors.kicker} size={15} strokeWidth={2.2} />
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
 function AddressInfoLine({ address }: { address: string }) {
   const { colors, type } = useTheme();
   const [copied, setCopied] = useState(false);
@@ -3116,16 +3127,12 @@ function AddressInfoLine({ address }: { address: string }) {
           onPress={copyAddress}
           style={{
             alignItems: "center",
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 10,
-            borderWidth: 1,
             height: 34,
             justifyContent: "center",
             width: 34,
           }}
         >
-          <Copy color={colors.primary} size={16} strokeWidth={2.2} />
+          <ClipboardIcon color={colors.ink} size={18} strokeWidth={2.1} />
         </AnimatedPressable>
       </View>
       {copied ? (
@@ -3146,87 +3153,6 @@ function AddressInfoLine({ address }: { address: string }) {
         </View>
       ) : null}
     </View>
-  );
-}
-
-function BoardPreviewCard({
-  itemCount,
-  items,
-  onPress,
-}: {
-  itemCount: number;
-  items: PropertyBoardItem[];
-  onPress?: () => void;
-}) {
-  const { colors, type } = useTheme();
-  const hasItems = items.length > 0;
-  const Wrapper = hasItems && onPress ? AnimatedPressable : View;
-
-  return (
-    <Wrapper accessibilityRole={hasItems ? "button" : undefined} onPress={hasItems ? onPress : undefined}>
-      <Card tone={hasItems ? "default" : "sunken"}>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: hasItems ? colors.primarySoft : colors.surface,
-              borderColor: colors.border,
-              borderRadius: 12,
-              borderWidth: 1,
-              height: 40,
-              justifyContent: "center",
-              width: 40,
-            }}
-          >
-            <ClipboardList color={hasItems ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} />
-          </View>
-          <View style={{ flex: 1, gap: spacing.xs }}>
-            <Text style={[type.eyebrow, { color: hasItems ? colors.primary : colors.kicker }]}>
-              {hasItems ? `${itemCount} board item${itemCount === 1 ? "" : "s"}` : "Property board"}
-            </Text>
-            <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
-              Property board
-            </Text>
-            <Text style={[type.body, { color: colors.muted }]}>
-              {hasItems
-                ? "A quick preview of property rules, timings and shared information."
-                : "Rules, timings and property information will appear here after the property team publishes them."}
-            </Text>
-          </View>
-        </View>
-
-        {hasItems ? (
-          <View style={{ gap: spacing.sm }}>
-            {items.map((item) => (
-              <View
-                key={item.id}
-                style={{
-                  borderColor: colors.border,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  gap: spacing.xs,
-                  padding: spacing.md,
-                }}
-              >
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  {item.categoryName}
-                </Text>
-                <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
-                  {item.title}
-                </Text>
-                <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
-                  {item.body}
-                </Text>
-              </View>
-            ))}
-
-            <Text style={[type.eyebrow, { color: colors.primary, textAlign: "center" }]}>
-              Tap to expand
-            </Text>
-          </View>
-        ) : null}
-      </Card>
-    </Wrapper>
   );
 }
 
@@ -3423,19 +3349,6 @@ function tenancyStatusLabel(status: string) {
   return humanizeToken(status);
 }
 
-function noticeHint(tenancy: { plannedEndDate: string | null; status: string }) {
-  if (tenancy.status === "ON_NOTICE") {
-    return tenancy.plannedEndDate ? `Normal notice  /  ends ${formatDate(tenancy.plannedEndDate)}` : "Normal notice";
-  }
-  if (tenancy.status === "ON_PREMATURE_NOTICE") {
-    return tenancy.plannedEndDate
-      ? `Premature notice  /  ends ${formatDate(tenancy.plannedEndDate)}`
-      : "Premature notice";
-  }
-
-  return "Normal stay";
-}
-
 function humanizeToken(value: string) {
   return value
     .toLowerCase()
@@ -3457,10 +3370,6 @@ function formatMoneyPaise(value: number) {
     maximumFractionDigits: 0,
     style: "currency",
   }).format(value / 100);
-}
-
-function isOpenConcern(concern: ConcernSummary) {
-  return concern.status !== "RESOLVED" && concern.status !== "CLOSED";
 }
 
 function getDisplayFirstName(fullName?: string | null) {

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { AlertCircle, CalendarDays, CircleCheck, Clock3, History, Receipt, ReceiptText, SlidersHorizontal } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
+import { AlertModal } from "@/components/alert-modal";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
 import { PickerOptionRow } from "@/components/picker-option-row";
@@ -12,11 +13,14 @@ import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
+import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonList, SkeletonTiles } from "@/components/skeleton";
 import { Card } from "@/components/card";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { useTheme } from "@/theme/use-theme";
 import { BillPaymentIntentsSheet } from "@/features/billing/bill-payment-intents-sheet";
+import { PayBillSheet } from "@/features/billing/pay-bill-sheet";
+import { PaymentDecisionModal } from "@/features/billing/payment-decision-modal";
 import { TenantBillCard } from "@/features/billing/tenant-bill-card";
 import { TenantBillReceiptSheet } from "@/features/billing/tenant-bill-receipt-sheet";
 import { formatMoney } from "@/features/owner/bill-views";
@@ -26,7 +30,11 @@ import {
   useListMyTenancyBillingCyclesQuery,
   type BillingCycle,
 } from "@/store/services/billing-api";
-import { useListMyLivePaymentIntentsQuery, type PaymentIntent } from "@/store/services/payment-intent-api";
+import {
+  useGetMyPaymentStateQuery,
+  useListMyLivePaymentIntentsQuery,
+  type PaymentIntent,
+} from "@/store/services/payment-intent-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { paginateArray } from "@/store/pagination";
 import { spacing } from "@/theme/spacing";
@@ -97,12 +105,16 @@ export default function TenancyBillsScreen() {
   const liveIntentsQuery = useListMyLivePaymentIntentsQuery(tenancyId ?? "", { skip: !tenancyId });
 
   const [viewingIntents, setViewingIntents] = useState<BillingCycle | null>(null);
+  const [payingBill, setPayingBill] = useState<BillingCycle | null>(null);
+  const [deciding, setDeciding] = useState<PaymentIntent | null>(null);
   const [tab, setTab] = useState<BillTab>("RENT_CYCLE");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<BillStatusFilter>("ALL");
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<BillingCycle | null>(null);
   const [page, setPage] = useState(0);
+  const paymentStateQuery = useGetMyPaymentStateQuery(payingBill?.id ?? "", { skip: !payingBill });
+  const paymentState = paymentStateQuery.data;
 
   /**
    * The stay's property, for the receipt's letterhead.
@@ -197,6 +209,17 @@ export default function TenancyBillsScreen() {
   // The earliest date still owed. Sorted newest-first above, so the last
   // payable row is the oldest — which is the one that comes due first.
   const nextDue = payable.length > 0 ? payable[payable.length - 1].rentDueDate : null;
+
+  function payHandlerFor(cycle: BillingCycle) {
+    if (cycle.status === "CONFIRMATION_PENDING") {
+      return null;
+    }
+    const openAttempt = liveIntentByCycle.get(cycle.id);
+    if (openAttempt) {
+      return openAttempt.status === "CREATED" ? () => setDeciding(openAttempt) : null;
+    }
+    return () => setPayingBill(cycle);
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -314,10 +337,7 @@ export default function TenancyBillsScreen() {
               <TenantBillCard
                 cycle={cycle}
                 key={cycle.id}
-                // Paying happens on the tenancy tab, which owns the payment sheet
-                // and the attempt-decision flow. Offering a second Pay here would
-                // be a second place for a payment to be half-started.
-                onPay={null}
+                onPay={payHandlerFor(cycle)}
                 onViewBill={() => setViewingReceipt(cycle)}
                 onViewIntents={() => setViewingIntents(cycle)}
                 openAttempt={liveIntentByCycle.get(cycle.id) ?? null}
@@ -375,14 +395,52 @@ export default function TenancyBillsScreen() {
         />
       ) : null}
 
-      {/* Read-only here. Resolving an unanswered attempt belongs with the
-          payment sheet on the tenancy tab, which owns that conversation — two
-          screens asking "did this go through" is two places to answer it. */}
       {viewingIntents ? (
         <BillPaymentIntentsSheet
           cycle={viewingIntents}
           onClose={() => setViewingIntents(null)}
-          onResolve={() => setViewingIntents(null)}
+          onResolve={(intent) => {
+            setViewingIntents(null);
+            setDeciding(intent);
+          }}
+        />
+      ) : null}
+
+      {payingBill && paymentStateQuery.isLoading ? (
+        <SheetShell onClose={() => setPayingBill(null)} title="Pay">
+          <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        </SheetShell>
+      ) : null}
+
+      {payingBill && paymentState && !paymentState.upiAvailable ? (
+        <AlertModal
+          message="This property has not set up online payment yet. Pay them directly and they will record it."
+          onClose={() => setPayingBill(null)}
+        />
+      ) : null}
+
+      {payingBill && paymentState?.payee ? (
+        <PayBillSheet
+          amountPaise={payingBill.totalAmountPaise}
+          billingCycleId={payingBill.id}
+          hasPayLink={paymentState.payLinkAvailable}
+          onClose={() => setPayingBill(null)}
+          onStarted={(intent) => {
+            setPayingBill(null);
+            setDeciding(intent);
+          }}
+          payee={paymentState.payee}
+          referenceCode={payingBill.referenceCode}
+        />
+      ) : null}
+
+      {deciding ? (
+        <PaymentDecisionModal
+          intent={deciding}
+          onClose={() => setDeciding(null)}
+          onSettled={() => setDeciding(null)}
         />
       ) : null}
     </ScreenScrollView>

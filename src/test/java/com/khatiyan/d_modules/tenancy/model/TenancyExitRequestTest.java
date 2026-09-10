@@ -76,25 +76,6 @@ class TenancyExitRequestTest {
     }
 
     @Test
-    void onlyTenantCanCancelRequestedExitRequest() {
-        UUID tenantUserId = UUID.randomUUID();
-        TenancyExitRequest request = TenancyExitRequest.premature(
-                UUID.randomUUID(),
-                tenantUserId,
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                LocalDate.of(2026, 6, 10),
-                "Transfer");
-
-        assertThatThrownBy(() -> request.cancel(UUID.randomUUID()))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Only the tenant can cancel this exit request");
-
-        request.cancel(tenantUserId);
-        assertThat(request.getStatus()).isEqualTo(TenancyExitRequestStatus.CANCELLED);
-    }
-
-    @Test
     void onlyApprovedRequestCanBeExecuted() {
         TenancyExitRequest request = normalRequest();
 

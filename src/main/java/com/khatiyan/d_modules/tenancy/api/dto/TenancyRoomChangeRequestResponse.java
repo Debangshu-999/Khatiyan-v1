@@ -36,6 +36,12 @@ public record TenancyRoomChangeRequestResponse(
      * open-ended wait (a withdrawal awaiting the owner).
      */
     Instant expiresAt,
+    /** The rejected request corrected by this request, if any. */
+    UUID supersededRequestId,
+    /** Authoritative server capability; clients must not reconstruct the clock. */
+    boolean reRaiseAllowed,
+    /** Whether management may still return an approval to the decision queue. */
+    boolean approvalRevertAllowed,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -70,6 +76,9 @@ public record TenancyRoomChangeRequestResponse(
             request.getDecidedAt(),
             request.getExecutedAt(),
             request.getExpiresAt(),
+            request.getSupersededRequestId(),
+            request.allowsReRaiseAt(Instant.now()),
+            request.allowsApprovalRevertAt(Instant.now()),
             request.getCreatedAt(),
             request.getUpdatedAt()
         );

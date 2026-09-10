@@ -2,8 +2,8 @@ import { useState } from "react";
 import { ActivityIndicator, Platform, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { useRouter } from "expo-router";
-import { CalendarClock, CalendarDays, FileClock, TriangleAlert } from "lucide-react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { CalendarClock, CalendarDays, TriangleAlert } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -16,13 +16,15 @@ import { SkeletonCard } from "@/components/skeleton";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton } from "@/features/owner/owner-ui";
-import { isRequestActive } from "@/features/tenancy/request-activity";
+import {
+  exitRequestBlock,
+} from "@/features/tenancy/request-blocked-modal";
 import {
   useCreateExitRequestMutation,
   useGetExitCheckoutWindowQuery,
   useGetMyActiveTenancyQuery,
   useListMyExitRequestsQuery,
+  useListMyRoomChangeRequestsQuery,
 } from "@/store/services/tenancy-api";
 import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
 import type { ExitCheckoutWindow } from "@/store/services/tenancy-api";
@@ -31,6 +33,11 @@ import { useTheme } from "@/theme/use-theme";
 
 export default function TenancyExitRequestScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    reason?: string;
+    reRaiseRequestId?: string;
+    requestedCheckoutDate?: string;
+  }>();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const tenancy = activeTenancyQuery.data?.tenancy;
 
@@ -51,14 +58,21 @@ export default function TenancyExitRequestScreen() {
           description="Exit requests can be raised only from an active tenancy."
         />
       ) : (
-        <ExitRequestGate onDone={() => goToTenancy(router)} />
+        <ExitRequestGate
+          initialReason={firstParam(params.reason)}
+          initialRequestedCheckoutDate={firstParam(params.requestedCheckoutDate)}
+          onDone={() => goToTenancy(router)}
+          reRaiseRequestId={firstParam(params.reRaiseRequestId)}
+          tenancyId={tenancy.id}
+        />
       )}
     </ScreenScrollView>
   );
 }
 
 /**
- * Refuses to open the form while a request is still live.
+ * Last-line safety for a direct link or request-state race. Normal taps are
+ * gated on the Tenancy tab before this screen is opened.
  *
  * <p>The server enforces one open request per tenancy, so without this the
  * tenant fills in a whole form and is rejected on submit. Worse, "live" now
@@ -66,40 +80,63 @@ export default function TenancyExitRequestScreen() {
  * is genuinely invisible from here — it has to be spelled out.
  *
  * <p>The way forward is on the request itself: re-raise a lapsed one, or ask to
- * cancel an approved one, both from its card.
+ * withdraw an approved one, both from its card.
  */
-function ExitRequestGate({ onDone }: { onDone: () => void }) {
-  const { colors, type } = useTheme();
-  const router = useRouter();
+function ExitRequestGate({
+  initialReason,
+  initialRequestedCheckoutDate,
+  onDone,
+  reRaiseRequestId,
+  tenancyId,
+}: {
+  initialReason?: string;
+  initialRequestedCheckoutDate?: string;
+  onDone: () => void;
+  reRaiseRequestId?: string;
+  tenancyId: string;
+}) {
   const requestsQuery = useListMyExitRequestsQuery();
+  const roomRequestsQuery = useListMyRoomChangeRequestsQuery();
 
-  if (requestsQuery.isLoading) {
+  if (requestsQuery.isLoading || roomRequestsQuery.isLoading) {
     return <SkeletonCard />;
   }
 
-  const live = (requestsQuery.data ?? []).find((request) => isRequestActive(request));
-  if (!live) {
+  const correction = (requestsQuery.data ?? []).find(
+    (request) => request.id === reRaiseRequestId && request.reRaiseAllowed,
+  );
+  if (correction) {
+    return (
+      <ServeNoticeForm
+        initialReason={initialReason}
+        initialRequestedCheckoutDate={initialRequestedCheckoutDate}
+        onDone={onDone}
+      />
+    );
+  }
+
+  if (reRaiseRequestId) {
+    return (
+      <EmptyState
+        icon={CalendarClock}
+        title="Correction window closed"
+        description="This exit request can no longer be edited and raised again."
+      />
+    );
+  }
+
+  const requestBlock = exitRequestBlock(requestsQuery.data, roomRequestsQuery.data, tenancyId);
+
+  if (!requestBlock) {
     return <ServeNoticeForm onDone={onDone} />;
   }
 
   return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>ALREADY OPEN</Text>
-        <Text style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>
-          You have a request in progress
-        </Text>
-        <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
-          {live.referenceCode} is still open. You can only have one exit request at a time — open it
-          to raise it again, cancel it, or wait for it to expire before starting a new one.
-        </Text>
-        <ActionButton
-          icon={FileClock}
-          label="Go to my requests"
-          onPress={() => router.push("/tenancy-request-history")}
-        />
-      </View>
-    </Card>
+    <EmptyState
+      icon={CalendarClock}
+      title={requestBlock.title}
+      description={`${requestBlock.referenceCode}: ${requestBlock.message}`}
+    />
   );
 }
 
@@ -117,7 +154,15 @@ function goToTenancy(router: ReturnType<typeof useRouter>) {
  * leaving on the fifth — so the tenant picks any day up to the cycle end. They
  * have already paid for the month; this is them deciding how much of it to use.
  */
-function ServeNoticeForm({ onDone }: { onDone: () => void }) {
+function ServeNoticeForm({
+  initialReason,
+  initialRequestedCheckoutDate,
+  onDone,
+}: {
+  initialReason?: string;
+  initialRequestedCheckoutDate?: string;
+  onDone: () => void;
+}) {
   const windowQuery = useGetExitCheckoutWindowQuery();
 
   if (windowQuery.isLoading) {
@@ -134,28 +179,48 @@ function ServeNoticeForm({ onDone }: { onDone: () => void }) {
     );
   }
 
-  return <NoticeWindowForm checkoutWindow={windowQuery.data} onDone={onDone} />;
+  return (
+    <NoticeWindowForm
+      checkoutWindow={windowQuery.data}
+      initialReason={initialReason}
+      initialRequestedCheckoutDate={initialRequestedCheckoutDate}
+      onDone={onDone}
+    />
+  );
 }
 
 /** The form proper, once the window is known. */
 function NoticeWindowForm({
   checkoutWindow,
+  initialReason,
+  initialRequestedCheckoutDate,
   onDone,
 }: {
   checkoutWindow: ExitCheckoutWindow;
+  initialReason?: string;
+  initialRequestedCheckoutDate?: string;
   onDone: () => void;
 }) {
   const { colors, type } = useTheme();
   const toast = useToast();
   const [createExit, createState] = useCreateExitRequestMutation();
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(initialReason ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Starts on the notice-served date — the one that carries no consequence. The
   // tenant can move it earlier, but never by accident: that takes a deliberate
   // tap on Change.
   const noticeDate = parseISODate(checkoutWindow.earliestCheckoutDate);
-  const [chosenDate, setChosenDate] = useState<Date>(noticeDate);
+  const [chosenDate, setChosenDate] = useState<Date>(() => {
+    if (!initialRequestedCheckoutDate) {
+      return noticeDate;
+    }
+    return clamp(
+      parseISODate(initialRequestedCheckoutDate),
+      parseISODate(checkoutWindow.earliestPossibleDate),
+      parseISODate(checkoutWindow.latestCheckoutDate),
+    );
+  });
 
   const chosenIso = toISODate(chosenDate);
   const premature = chosenIso < checkoutWindow.earliestCheckoutDate;
@@ -189,6 +254,14 @@ function NoticeWindowForm({
                 {formatDate(checkoutWindow.noticeAnchorDate)}
               </Text>
               . You have not lost any time.
+            </Text>
+          </Card>
+        ) : null}
+
+        {!checkoutWindow.prematureExitAllowed && checkoutWindow.restrictionMessage ? (
+          <Card tone="sunken">
+            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              {checkoutWindow.restrictionMessage} The earliest selectable date already serves your full notice.
             </Text>
           </Card>
         ) : null}
@@ -527,6 +600,10 @@ function clamp(date: Date, min: Date, max: Date) {
   return date;
 }
 
+function firstParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 function tomorrow() {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
@@ -550,4 +627,3 @@ function formatDateLong(date: Date) {
 function parseISODate(iso: string) {
   return new Date(`${iso}T00:00:00`);
 }
-

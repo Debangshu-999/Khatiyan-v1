@@ -11,7 +11,10 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonList, SkeletonScreen } from "@/components/skeleton";
+import {
+  OwnerDataCardSkeleton,
+  OwnerDepositOverviewSkeleton,
+} from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
@@ -264,7 +267,7 @@ export default function OwnerDepositManagerScreen() {
                 description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
               />
             ) : depositQuery.isFetching && !deposit ? (
-              <SkeletonScreen header={false} tiles={2} rows={2} />
+              <OwnerDepositOverviewSkeleton />
             ) : deposit ? (
               <DepositAccountDetail
                 key={deposit.id}
@@ -357,6 +360,10 @@ function TenancyPicker({
       ? "Choose an active tenant to manage their deposit."
       : "No active monthly tenancies on this property.";
 
+  if (loading) {
+    return <OwnerDataCardSkeleton bodyLines={1} />;
+  }
+
   return (
     <View style={{ gap: spacing.md }}>
       <AnimatedPressable
@@ -439,11 +446,6 @@ function TenancyPicker({
           )
         ) : null}
       </AnimatedPressable>
-
-      {/* Two ghost rows, not a spinner. A lone ActivityIndicator said
-          "something is happening" and reserved none of the height the list was
-          about to take, so the page jumped when it landed. */}
-      {loading ? <SkeletonList rows={2} /> : null}
 
       {open && activeTenancies.length > 0 ? (
         <View style={{ gap: spacing.md }}>

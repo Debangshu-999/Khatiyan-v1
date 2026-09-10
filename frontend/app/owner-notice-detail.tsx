@@ -13,7 +13,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
-import { Skeleton } from "@/components/skeleton";
+import { OwnerNoticeDetailSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
@@ -200,7 +200,7 @@ export default function OwnerNoticeDetailScreen() {
         Notice details
       </Text>
 
-      {noticeQuery.isLoading ? <NoticeDetailSkeleton /> : null}
+      {noticeQuery.isLoading ? <OwnerNoticeDetailSkeleton /> : null}
 
       {!noticeQuery.isLoading && !notice ? (
         <EmptyState
@@ -389,46 +389,6 @@ export default function OwnerNoticeDetailScreen() {
       {attachments.overlays}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
-  );
-}
-
-/**
- * Stands in for the notice card itself, not for a generic card.
- *
- * <p>A single small placeholder left most of the screen blank, which reads as a
- * page that failed to load rather than one still loading. This mirrors the real
- * layout — icon chip, title, meta row, rule, body — so the content lands in the
- * shape the eye is already holding.
- */
-function NoticeDetailSkeleton() {
-  const { colors } = useTheme();
-
-  return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: "row", gap: spacing.md }}>
-          <Skeleton height={44} radius={14} width={44} />
-          <View style={{ flex: 1, gap: spacing.xs }}>
-            <Skeleton height={18} width="90%" />
-            <Skeleton height={18} width="55%" />
-          </View>
-        </View>
-
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <Skeleton height={13} width={130} />
-          <Skeleton height={13} radius={999} width={70} />
-        </View>
-
-        <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-        <View style={{ gap: spacing.sm }}>
-          <Skeleton height={14} width="100%" />
-          <Skeleton height={14} width="97%" />
-          <Skeleton height={14} width="92%" />
-          <Skeleton height={14} width="60%" />
-        </View>
-      </View>
-    </Card>
   );
 }
 

@@ -1,21 +1,22 @@
-import { useEffect, useRef } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { Modal, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertCircle, CheckCircle2, Clock3, Eye, RotateCcw, ShieldAlert } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Archive, CirclePlus, Eye, type LucideProps, X } from "lucide-react-native";
 
-import { ActionCard } from "@/components/action-card";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { useToast } from "@/components/toast";
 import { SkeletonCard } from "@/components/skeleton";
-import type { ConcernStatus, ConcernSummary } from "@/store/services/concern-api";
+import { useToast } from "@/components/toast";
+import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import type { ConcernSummary } from "@/store/services/concern-api";
 import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
@@ -23,13 +24,26 @@ const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_st
 export default function ConcernsScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{ createdConcern?: string }>();
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
   const currentQuery = useListMyCurrentConcernsQuery();
-  const historyQuery = useListMyConcernHistoryQuery();
+  const historyQuery = useListMyConcernHistoryQuery({ page: 0, size: 200 });
+  const [historyOpen, setHistoryOpen] = useState(false);
   const currentData = currentQuery.data ?? [];
-  const currentConcerns = currentData.filter(isActiveConcern);
-  const resolvedFromCurrent = currentData.filter((concern) => !isActiveConcern(concern));
-  const concernHistory = uniqueConcerns([...resolvedFromCurrent, ...(historyQuery.data?.items ?? [])]);
+  const currentConcerns = useMemo(
+    () => uniqueConcerns(currentData.filter(isActiveConcern)).sort(sortLatest),
+    [currentData],
+  );
+  const concernHistory = useMemo(
+    () =>
+      uniqueConcerns([
+        ...currentData.filter((concern) => !isActiveConcern(concern)),
+        ...(historyQuery.data?.items ?? []),
+      ])
+        .filter((concern) => !isActiveConcern(concern))
+        .sort(sortLatest),
+    [currentData, historyQuery.data],
+  );
+  const closedCount = Math.max(historyQuery.data?.totalElements ?? 0, concernHistory.length);
   const toast = useToast();
   const toastShownRef = useRef(false);
 
@@ -45,6 +59,11 @@ export default function ConcernsScreen() {
     router.push({ pathname: "/concern-detail", params: { concernId: concern.id } });
   }
 
+  function openClosedConcern(concern: ConcernSummary) {
+    setHistoryOpen(false);
+    openConcern(concern);
+  }
+
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView>
@@ -54,179 +73,228 @@ export default function ConcernsScreen() {
           subtitle="Current concerns, history and concern actions for your active tenancy."
         />
 
-        <Section title="Raise a concern">
-          <ActionCard
-            meta="New"
-            title="Create concern"
-            description="Add category and details for the property team."
-            onPress={() => router.push("/create-concern")}
-            tone="primary"
-          />
+        <Section title="Concern actions">
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ConcernActionTile
+              icon={CirclePlus}
+              label="Create concern"
+              meta="Raise a new issue"
+              onPress={() => router.push("/create-concern")}
+            />
+            <ConcernActionTile
+              icon={Archive}
+              label="Closed concerns"
+              meta={String(closedCount) + " in history"}
+              onPress={() => setHistoryOpen(true)}
+            />
+          </View>
         </Section>
 
         <Section title="Open concerns">
-          {currentQuery.isFetching ? (
+          {currentQuery.isFetching && !currentQuery.data ? (
             <SkeletonCard />
           ) : currentConcerns.length > 0 ? (
             currentConcerns.map((concern) => (
-              <ConcernOverviewCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
+              <ConcernCard concern={concern} key={concern.id} onPress={() => openConcern(concern)} />
             ))
           ) : (
             <EmptyState
-
+              artwork={CONCERN_EMPTY_ILLUSTRATION}
               title="No open concerns"
               description="New concerns and in-progress issues will appear here."
             />
           )}
         </Section>
-
-        <Section title="Resolved concerns">
-          {historyQuery.isFetching ? (
-            <SkeletonCard />
-          ) : concernHistory.length > 0 ? (
-            concernHistory
-              .slice(0, 8)
-              .map((concern) => (
-                <ConcernOverviewCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
-              ))
-          ) : (
-            <EmptyState
-              artwork={CONCERN_EMPTY_ILLUSTRATION}
-              title="No concern history"
-              description="Resolved or closed concerns will be kept here for reference."
-            />
-          )}
-        </Section>
       </ScreenScrollView>
+
+      {historyOpen ? (
+        <ClosedConcernsModal
+          concerns={concernHistory}
+          loading={historyQuery.isFetching && !historyQuery.data}
+          onClose={() => setHistoryOpen(false)}
+          onOpen={openClosedConcern}
+        />
+      ) : null}
     </View>
   );
 }
 
-// Compact overview card — full details live on the concern detail screen,
-// mirroring the owner concern monitor's card → "View detail" behaviour.
-function ConcernOverviewCard({ concern, onOpen }: { concern: ConcernSummary; onOpen: () => void }) {
+function ConcernActionTile({
+  icon: Icon,
+  label,
+  meta,
+  onPress,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  meta: string;
+  onPress: () => void;
+}) {
   const { colors, fonts, type } = useTheme();
-  const active = isActiveConcern(concern);
-  const status = concernTonePalette(statusTone(concern.status), colors);
-  const assignedTo = concern.assignedToName ?? (concern.assignedToUserId ? "Assigned" : null);
-
-  return (
-    <Card tone={active ? "default" : "sunken"}>
-      <View style={{ gap: spacing.md }}>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: status.bg,
-              borderColor: status.border,
-              borderRadius: 16,
-              borderWidth: 1,
-              height: 48,
-              justifyContent: "center",
-              width: 48,
-            }}
-          >
-            <ConcernStatusIcon color={status.fg} concern={concern} />
-          </View>
-          <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              {concern.referenceCode}
-            </Text>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 26 }}>
-              {concern.title}
-            </Text>
-            <Text style={[type.caption, { color: status.fg, fontWeight: "800" }]}>
-              {humanizeToken(concern.status)}
-              {concern.reopened ? " · Reopened" : ""}
-            </Text>
-          </View>
-        </View>
-
-        <View style={{ gap: spacing.xs }}>
-          <InfoLine label="Category" value={humanizeToken(concern.category)} />
-          <InfoLine label="Room" value={concern.roomNumber} />
-          {assignedTo ? <InfoLine label="Assigned to" value={assignedTo} /> : null}
-          {concern.statusNote ? <InfoLine label="Latest note" value={concern.statusNote} /> : null}
-          <InfoLine label="Updated" value={formatDateTime(concern.updatedAt)} />
-        </View>
-
-        <ViewDetailButton onPress={onOpen} />
-      </View>
-    </Card>
-  );
-}
-
-function ViewDetailButton({ onPress }: { onPress: () => void }) {
-  const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
       style={{
-        alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 14,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
         borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.xs,
-        justifyContent: "center",
-        minHeight: 48,
-        paddingHorizontal: spacing.md,
+        flex: 1,
+        gap: spacing.sm,
+        minHeight: 124,
+        padding: spacing.md,
       }}
     >
-      <Eye color={colors.primary} size={16} strokeWidth={2.2} />
-      <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 14, }}>
-        View detail
-      </Text>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.neutralSoft,
+          borderRadius: 999,
+          height: 42,
+          justifyContent: "center",
+          width: 42,
+        }}
+      >
+        <Icon color={colors.ink} size={20} strokeWidth={2.2} />
+      </View>
+      <View style={{ gap: 2 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 16, lineHeight: 21 }}>
+          {label}
+        </Text>
+        <Text style={[type.caption, { color: colors.muted }]}>{meta}</Text>
+      </View>
     </AnimatedPressable>
   );
 }
 
-function InfoLine({ label, value }: { label: string; value: string }) {
+// The tenant queue now uses the same compact, information-first card as the
+// owner queue. The detail screen carries the full status and assignment grid.
+function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: () => void }) {
   const { colors, type } = useTheme();
+  const photoCount = concern.photos.filter((photo) => Boolean(photo.photoUrl)).length;
+  const showEscalation = concern.escalationLevel !== "NONE" && concern.status === "OPEN";
+
   return (
-    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, width: 92 }]}>
-        {label}
-      </Text>
-      <Text numberOfLines={2} style={[type.caption, { color: colors.ink, flex: 1, fontWeight: "700" }]}>
-        {value}
-      </Text>
-    </View>
+    <Card>
+      <View style={{ gap: spacing.sm }}>
+        <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>{concern.referenceCode}</Text>
+          <Text
+            style={[
+              type.caption,
+              { color: showEscalation ? colors.danger : colors.muted, fontWeight: "900" },
+            ]}
+          >
+            {showEscalation ? humanizeToken(concern.escalationLevel) : humanizeToken(concern.status)}
+          </Text>
+        </View>
+        <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
+          {concern.title}
+        </Text>
+        <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
+          {concern.description}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <Text style={[type.caption, { color: colors.kicker }]}>{humanizeToken(concern.category)}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>Room {concern.roomNumber}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>{formatDateTime(concern.createdAt)}</Text>
+          <Text style={[type.caption, { color: colors.kicker }]}>
+            {photoCount ? String(photoCount) + " image" + (photoCount === 1 ? "" : "s") : "No images"}
+          </Text>
+        </View>
+        {concern.statusNote ? (
+          <Text numberOfLines={1} style={[type.caption, { color: colors.primary }]}>
+            Note: {concern.statusNote}
+          </Text>
+        ) : null}
+        {concern.reopened ? (
+          <Text numberOfLines={1} style={[type.caption, { color: colors.danger }]}>
+            Reopened: {concern.reopenReason ?? "No reason provided"}
+          </Text>
+        ) : null}
+        <ActionButton icon={Eye} label="View" onPress={onPress} variant="secondary" />
+      </View>
+    </Card>
   );
 }
 
-type ConcernTone = "primary" | "danger" | "success" | "warning" | "neutral";
+function ClosedConcernsModal({
+  concerns,
+  loading,
+  onClose,
+  onOpen,
+}: {
+  concerns: ConcernSummary[];
+  loading: boolean;
+  onClose: () => void;
+  onOpen: (concern: ConcernSummary) => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const insets = useSafeAreaInsets();
 
-function ConcernStatusIcon({ color, concern }: { color: string; concern: ConcernSummary }) {
-  if (concern.reopened) return <RotateCcw color={color} size={22} strokeWidth={2.4} />;
-  if (concern.status === "RESOLVED" || concern.status === "CLOSED") return <CheckCircle2 color={color} size={22} strokeWidth={2.4} />;
-  if (concern.status === "UNDER_REVIEW") return <Clock3 color={color} size={22} strokeWidth={2.4} />;
-  if (concern.status === "IN_PROGRESS") return <ShieldAlert color={color} size={22} strokeWidth={2.4} />;
-  return <AlertCircle color={color} size={22} strokeWidth={2.4} />;
-}
+  return (
+    <Modal
+      animationType="slide"
+      navigationBarTranslucent
+      onRequestClose={onClose}
+      statusBarTranslucent
+      transparent
+      visible
+    >
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            borderWidth: 1,
+            gap: spacing.md,
+            maxHeight: "88%",
+            padding: spacing.lg,
+            paddingBottom: insets.bottom + spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern history</Text>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23 }}>
+                Closed concerns
+              </Text>
+            </View>
+            <IconButton accessibilityLabel="Close concern history" icon={X} onPress={onClose} />
+          </View>
 
-function concernTonePalette(tone: ConcernTone, colors: ReturnType<typeof useTheme>["colors"]) {
-  const palette: Record<ConcernTone, { bg: string; border: string; fg: string }> = {
-    danger: { bg: colors.dangerSoft, border: colors.danger, fg: colors.danger },
-    neutral: { bg: colors.neutralSoft, border: colors.borderStrong, fg: colors.neutralText },
-    primary: { bg: colors.primarySoft, border: colors.primary, fg: colors.primary },
-    success: { bg: colors.successSoft, border: colors.successText, fg: colors.successText },
-    warning: { bg: colors.warningSoft, border: colors.warningText, fg: colors.warningText },
-  };
-  return palette[tone];
-}
-
-function statusTone(status: ConcernStatus): ConcernTone {
-  if (status === "RESOLVED" || status === "CLOSED") return "success";
-  if (status === "OPEN") return "danger";
-  if (status === "UNDER_REVIEW") return "primary";
-  return "warning";
+          {loading ? (
+            <SkeletonCard />
+          ) : (
+            <ScrollView contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
+              {concerns.map((concern) => (
+                <ConcernCard concern={concern} key={concern.id} onPress={() => onOpen(concern)} />
+              ))}
+              {concerns.length === 0 ? (
+                <EmptyState
+                  artwork={CONCERN_EMPTY_ILLUSTRATION}
+                  title="No history yet"
+                  description="Resolved and closed concerns will appear here."
+                />
+              ) : null}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function isActiveConcern(concern: ConcernSummary) {
   return concern.status !== "RESOLVED" && concern.status !== "CLOSED";
+}
+
+function sortLatest(left: ConcernSummary, right: ConcernSummary) {
+  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
 }
 
 function formatDateTime(value: string) {
@@ -240,21 +308,9 @@ function formatDateTime(value: string) {
 
 function uniqueConcerns(concerns: ConcernSummary[]) {
   const seen = new Set<string>();
-
   return concerns.filter((concern) => {
-    if (seen.has(concern.id)) {
-      return false;
-    }
-
+    if (seen.has(concern.id)) return false;
     seen.add(concern.id);
     return true;
   });
-}
-
-function humanizeToken(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

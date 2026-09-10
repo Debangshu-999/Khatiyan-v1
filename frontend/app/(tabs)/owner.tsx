@@ -12,7 +12,7 @@ import { HeaderNote } from "@/components/header-note";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard, SkeletonList, SkeletonTiles } from "@/components/skeleton";
+import { OwnerManageMetricsSkeleton, OwnerManagePropertySkeleton } from "@/components/skeletons/owner";
 import { visibleOwnerModules, type OwnerModuleRoute } from "@/features/owner/owner-modules";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
@@ -81,7 +81,9 @@ export default function OwnerScreen() {
   const rooms = roomsQuery.data ?? [];
   const activeTenancies = tenanciesQuery.data ?? [];
   // Either source still arriving means the tiles have nothing true to show.
-  const tilesLoading = (roomsQuery.isLoading || tenanciesQuery.isLoading) && !roomsQuery.data && !tenanciesQuery.data;
+  const tilesLoading =
+    (roomsQuery.isFetching && !roomsQuery.data) ||
+    (tenanciesQuery.isFetching && !tenanciesQuery.data);
   const occupiedRooms = rooms.filter((room) => room.occupiedCount > 0).length;
   const vacantRooms = rooms.filter((room) => room.availableVacancies > 0).length;
 
@@ -89,14 +91,10 @@ export default function OwnerScreen() {
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.surface}>
       <ManageHeader />
 
-      {/* The screen's shape: the selected-property card, its four metric tiles,
-          and the service list beneath. One card stood in for all of it. */}
+      {/* Header and workspace actions are static. The property summary and
+          figures below are the only pieces waiting on the API. */}
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <View style={{ gap: spacing.md }}>
-          <SkeletonCard />
-          <SkeletonTiles count={4} />
-          <SkeletonList rows={3} />
-        </View>
+        <OwnerManagePropertySkeleton />
       ) : null}
 
       {!propertiesQuery.isFetching && properties.length === 0 ? (
@@ -142,7 +140,7 @@ export default function OwnerScreen() {
               properties one that gates the screen — so on a warm property cache
               they rendered four zeros while their own data was still in flight.
               Their ghost belongs to THEIR load. */}
-          {selectedProperty && tilesLoading ? <SkeletonTiles count={4} /> : null}
+          {selectedProperty && tilesLoading ? <OwnerManageMetricsSkeleton /> : null}
 
           {selectedProperty && !tilesLoading ? (
             <>

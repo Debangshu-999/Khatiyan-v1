@@ -4,19 +4,18 @@ import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarDays, Check, Clock, DoorOpen, FileClock, FileText, History, IndianRupee, Info, LockOpen, LogOut, UserRound, X , type LucideProps } from "lucide-react-native";
+import { CalendarClock, CalendarDays, Check, Clock, DoorOpen, FileClock, FileText, History, IndianRupee, Info, LockOpen, LogOut, ReceiptText, UserRound, WalletCards, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
-import { PINNED_FOOTER_CLEARANCE } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { CountTabPills } from "@/components/filter-bubbles";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { OwnerDataCardSkeleton, OwnerRequestListSkeleton } from "@/components/skeletons/owner";
 import { RequestTimelineSheet } from "@/features/tenancy/request-timeline-sheet";
 import {
   matchesRequestSearch,
@@ -38,6 +37,7 @@ import { useListManagedTenancyBillingCyclesQuery } from "@/store/services/billin
 import {
   useApproveExitRequestMutation,
   useListPropertyExitRequestsQuery,
+  useListUpcomingTenancyExitsQuery,
   useListPropertyTenanciesQuery,
   useDecideExitWithdrawalMutation,
   useRejectExitRequestMutation,
@@ -79,8 +79,10 @@ export default function OwnerExitRequestsScreen() {
   // the tap, where the control should never have invited one.
   const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
   const canManageExits = canManageResource("EXIT_REQUESTS");
+  const canScheduleExits = canManageExits && canManageResource("TENANCIES");
 
   const requestsQuery = useListPropertyExitRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const upcomingExitsQuery = useListUpcomingTenancyExitsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const tenanciesQuery = useListPropertyTenanciesQuery(
     { includePast: true, propertyId: selectedProperty?.id ?? "" },
@@ -106,6 +108,11 @@ export default function OwnerExitRequestsScreen() {
   const [pastOpen, setPastOpen] = useState(false);
 
   const allRequests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
+  const scheduledRequestIds = new Set(
+    (upcomingExitsQuery.data ?? [])
+      .filter((item) => item.schedule != null)
+      .map((item) => item.request.id),
+  );
 
   // Chains are built over EVERY request, because a live re-raise points back at
   // ones already rejected or expired.
@@ -163,7 +170,7 @@ export default function OwnerExitRequestsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
         {!canManageExits ? <ViewOnlyChip /> : null}
       </View>
@@ -234,7 +241,7 @@ export default function OwnerExitRequestsScreen() {
                 setSearch(next);
                 setActivePage(0);
               }}
-              placeholder="Search by code, e.g. TEX-2026-000042"
+              placeholder="Search by request ID"
               value={search}
             />
             {/* Counts on the pills, not in a heading. The heading said "4
@@ -259,7 +266,7 @@ export default function OwnerExitRequestsScreen() {
             />
 
             {requestsQuery.isFetching && requests.length === 0 ? (
-              <SkeletonList rows={2} />
+              <OwnerRequestListSkeleton />
             ) : activeRequests.length === 0 ? (
               <EmptyState
                 artwork={REQUEST_EMPTY_ILLUSTRATION}
@@ -283,6 +290,19 @@ export default function OwnerExitRequestsScreen() {
                     onApprove={() => openReview(request, "approve")}
                     onRefuseWithdrawal={() => void decideWithdrawal(request, false)}
                     onReject={() => openReview(request, "reject")}
+                    onSchedule={() =>
+                      router.push({
+                        pathname: "/owner-end-tenancy",
+                        params: {
+                          edit: scheduledRequestIds.has(request.id) ? "1" : "0",
+                          mode: "schedule",
+                          requestId: request.id,
+                          tenancyId: request.tenancyId,
+                        },
+                      })
+                    }
+                    scheduled={scheduledRequestIds.has(request.id)}
+                    canSchedule={canScheduleExits}
                   />
                 ))}
                 {activeRequests.length > 0 ? (
@@ -372,7 +392,7 @@ function PastExitRequestsModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Exit request history</Text>
             </View>
-            <IconButton accessibilityLabel="Close past requests" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={onClose} />
           </View>
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
@@ -411,22 +431,28 @@ function ExitRequestCard({
   // The past-requests list reuses this card purely to read, so the decision
   // handlers are optional there — nothing in a settled request is actionable.
   canManage = true,
+  canSchedule = true,
   chain,
   onAllowWithdrawal = () => {},
   onApprove = () => {},
   onRefuseWithdrawal = () => {},
   onReject = () => {},
+  onSchedule = () => {},
   request,
   roomLabel,
+  scheduled = false,
 }: {
   canManage?: boolean;
+  canSchedule?: boolean;
   chain?: ExitRequestChain;
   onAllowWithdrawal?: () => void;
   onApprove?: () => void;
   onRefuseWithdrawal?: () => void;
   onReject?: () => void;
+  onSchedule?: () => void;
   request: TenancyExitRequest;
   roomLabel?: string;
+  scheduled?: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
   const pending = request.status === "REQUESTED";
@@ -439,85 +465,85 @@ function ExitRequestCard({
     <>
       <Card>
         <View style={{ gap: spacing.md }}>
-          <View style={{ flexDirection: "row", gap: spacing.md }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <View
               style={{
                 alignItems: "center",
-                borderColor: colors.ink,
-                borderWidth: 1,
-                borderRadius: 12,
-                height: 42,
+                backgroundColor: colors.neutralSoft,
+                borderRadius: 999,
+                height: 40,
                 justifyContent: "center",
-                width: 42,
+                width: 40,
               }}
             >
               <LogOut color={colors.ink} size={20} strokeWidth={2.2} />
             </View>
-            <View style={{ flex: 1, gap: spacing.sm }}>
-              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-                <View style={{ flex: 1, gap: spacing.xs }}>
-                  {/* Who, then which room, then the code. The card used to lead
-                      with a truncated tenancy UUID, which identified nobody. */}
-                  <Text
-                    numberOfLines={1}
-                    style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
-                  >
-                    {request.tenantName ?? "Tenant"}
-                  </Text>
-                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                    {roomLabel ? (
-                      <Text style={[type.caption, { color: colors.muted }]}>{roomLabel}</Text>
-                    ) : null}
-                    <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
-                      {request.referenceCode}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                    <CalendarDays color={colors.kicker} size={13} strokeWidth={2.1} />
-                    <Text style={[type.caption, { color: colors.muted }]}>
-                      {formatDate(request.requestedCheckoutDate)}
-                    </Text>
-                  </View>
-                </View>
-                <StatusBadge status={request.status} />
-              </View>
-              {request.approvedCheckoutDate ? (
-                <InfoLine icon={CalendarDays} label="Approved" value={formatDate(request.approvedCheckoutDate)} />
-              ) : null}
-              {request.decidedByName && request.decidedAt ? (
-                <>
-                  {/* Who and when, on their own rows. They used to share one
-                      line separated by a dot, which read as a single fact and
-                      made the timestamp easy to mistake for part of the name. */}
-                  <InfoLine
-                    icon={UserRound}
-                    label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
-                    value={request.decidedByName}
-                  />
-                  <InfoLine
-                    icon={Clock}
-                    label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
-                    value={formatDateTime(request.decidedAt)}
-                  />
-                </>
-              ) : null}
-              {request.finalBillingAmountPaise != null && request.finalBillingAmountPaise > 0 ? (
-                <InfoLine icon={IndianRupee} label="Bill impact" value={formatMoney(request.finalBillingAmountPaise)} />
-              ) : null}
-              {request.tenantReason ? (
-                <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
-              ) : null}
-              {request.adminNotes ? (
-                <InfoRow icon={FileText} label="Notes" onPress={() => setInfo({ label: "Notes", value: request.adminNotes ?? "" })} />
-              ) : null}
-              {request.withdrawalReason ? (
-                <InfoRow
-                  icon={FileText}
-                  label="Why they want to stay"
-                  onPress={() => setInfo({ label: "Why they want to stay", value: request.withdrawalReason ?? "" })}
-                />
-              ) : null}
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+              >
+                {request.tenantName ?? "Tenant"}
+              </Text>
+              <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+                {request.referenceCode}
+              </Text>
             </View>
+            <StatusBadge status={request.status} />
+          </View>
+
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderRadius: 14,
+              gap: spacing.sm,
+              padding: spacing.md,
+            }}
+          >
+            <InfoLine
+              icon={LogOut}
+              label="Exit type"
+              value={request.type === "PREMATURE" ? "Premature exit" : "Normal notice"}
+            />
+            {roomLabel ? <InfoLine icon={DoorOpen} label="Room" value={roomLabel} /> : null}
+            <InfoLine
+              icon={CalendarDays}
+              label="Checkout date"
+              value={formatDate(request.requestedCheckoutDate)}
+            />
+            {request.approvedCheckoutDate ? (
+              <InfoLine icon={CalendarDays} label="Approved checkout" value={formatDate(request.approvedCheckoutDate)} />
+            ) : null}
+            {request.decidedByName && request.decidedAt ? (
+              <>
+                <InfoLine
+                  icon={UserRound}
+                  label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
+                  value={request.decidedByName}
+                />
+                <InfoLine
+                  icon={Clock}
+                  label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
+                  value={formatDateTime(request.decidedAt)}
+                />
+              </>
+            ) : null}
+            {request.finalBillingAmountPaise != null && request.finalBillingAmountPaise > 0 ? (
+              <InfoLine icon={IndianRupee} label="Bill impact" value={formatMoney(request.finalBillingAmountPaise)} />
+            ) : null}
+            {request.tenantReason ? (
+              <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
+            ) : null}
+            {request.adminNotes ? (
+              <InfoRow icon={FileText} label="Notes" onPress={() => setInfo({ label: "Notes", value: request.adminNotes ?? "" })} />
+            ) : null}
+            {request.withdrawalReason ? (
+              <InfoRow
+                icon={FileText}
+                label="Why they want to stay"
+                onPress={() => setInfo({ label: "Why they want to stay", value: request.withdrawalReason ?? "" })}
+              />
+            ) : null}
           </View>
 
           {withdrawalPending ? (
@@ -541,6 +567,13 @@ function ExitRequestCard({
               <ActionButton disabled={!canManage} label="Approve" onPress={onApprove} />
               <ActionButton disabled={!canManage} label="Reject" onPress={onReject} variant="danger" />
             </View>
+          ) : request.status === "APPROVED" ? (
+            <ActionButton
+              disabled={!canSchedule}
+              icon={CalendarClock}
+              label={scheduled ? "Edit scheduled exit" : "Add to scheduled exits"}
+              onPress={onSchedule}
+            />
           ) : null}
 
           <View style={{ flexDirection: "row" }}>
@@ -595,6 +628,7 @@ function ExitReviewModal({
   const [rejectExit, rejectState] = useRejectExitRequestMutation();
   const busy = approveState.isLoading || rejectState.isLoading;
   const reject = mode === "reject";
+  const premature = request.type === "PREMATURE";
 
   // Current bill status drives the messaging: a paid bill means the early-exit
   // penalty becomes a NEW bill; an unpaid bill is where it (or dues) settle.
@@ -677,9 +711,11 @@ function ExitReviewModal({
           >
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.lg }}>
               <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  {humanizeToken(request.type)}
-                </Text>
+                {reject ? (
+                  <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                    {humanizeToken(request.type)}
+                  </Text>
+                ) : null}
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {title}
                 </Text>
@@ -708,22 +744,35 @@ function ExitReviewModal({
                     value={formatDate(request.requestedCheckoutDate)}
                   />
 
+                  <StatusNote
+                    icon={LogOut}
+                    tone={premature ? "warning" : "success"}
+                    title={premature ? "Premature exit request" : "Normal exit request"}
+                    message={
+                      premature
+                        ? "The tenant is leaving before completing the required notice period. The premature exit policy may apply."
+                        : "The tenant is completing the required notice period before checkout."
+                    }
+                  />
+
                   {cyclesQuery.isFetching && !latestCycle ? (
-                    <ActivityIndicator color={colors.primary} />
+                    <OwnerDataCardSkeleton bodyLines={1} />
                   ) : (
                     <StatusNote
+                      icon={ReceiptText}
                       tone={billPaid ? "muted" : "warning"}
                       title="Current bill"
                       message={
                         billPaid
                           ? "The current bill is fully paid — there is nothing to settle here."
-                          : `Outstanding: ${formatMoney(latestCycle?.totalAmountPaise ?? 0)}${latestCycle ? ` (bill ${latestCycle.referenceCode})` : ""}. The tenant clears this before checkout.`
+                          : `Outstanding: ${formatMoney(latestCycle?.totalAmountPaise ?? 0)}${latestCycle ? ` (bill ${latestCycle.referenceCode})` : ""}. Tenant must pay this before checkout.`
                       }
                     />
                   )}
 
                   {tenancy?.earlyExitRule ? (
                     <StatusNote
+                      icon={FileText}
                       tone="primary"
                       title="If they are leaving early"
                       message={tenancy.earlyExitRule}
@@ -731,6 +780,7 @@ function ExitReviewModal({
                   ) : null}
 
                   <StatusNote
+                    icon={WalletCards}
                     tone="muted"
                     title="Deposit"
                     message="The deposit is settled when the tenancy ends, not at approval."
@@ -994,18 +1044,67 @@ function FormInput({
   );
 }
 
-function StatusNote({ message, title, tone }: { message: string; title: string; tone: "muted" | "warning" | "primary" }) {
-  const { colors, type } = useTheme();
-  const accent = tone === "warning" ? colors.warningText : tone === "primary" ? colors.primary : colors.muted;
-  const soft = tone === "warning" ? colors.warningSoft : tone === "primary" ? colors.primarySoft : colors.surfaceSunken;
+function StatusNote({
+  icon: Icon,
+  message,
+  title,
+  tone,
+}: {
+  icon: ComponentType<LucideProps>;
+  message: string;
+  title: string;
+  tone: "muted" | "primary" | "success" | "warning";
+}) {
+  const { colors, fonts, type } = useTheme();
+  const accent =
+    tone === "warning"
+      ? colors.warningText
+      : tone === "success"
+        ? colors.successText
+        : tone === "primary"
+          ? colors.primary
+          : colors.borderStrong;
+  const soft =
+    tone === "warning"
+      ? colors.warningSoft
+      : tone === "success"
+        ? colors.successSoft
+        : tone === "primary"
+          ? colors.primarySoft
+          : colors.surfaceSunken;
   return (
-    <View style={{ backgroundColor: soft, borderRadius: 12, gap: 2, padding: spacing.md }}>
-      <Text style={[type.caption, { color: accent, fontWeight: "800" }]}>
-        {title}
-      </Text>
-      <Text style={[type.caption, { color: colors.ink, lineHeight: 18 }]}>
-        {message}
-      </Text>
+    <View
+      style={{
+        alignItems: "flex-start",
+        backgroundColor: soft,
+        borderLeftColor: accent,
+        borderLeftWidth: 4,
+        borderRadius: 14,
+        flexDirection: "row",
+        gap: spacing.sm,
+        padding: spacing.md,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderRadius: 999,
+          height: 36,
+          justifyContent: "center",
+          width: 36,
+        }}
+      >
+        <Icon color={colors.ink} size={18} strokeWidth={2.2} />
+      </View>
+      <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+          {title}
+        </Text>
+        <Text style={[type.caption, { color: colors.ink, lineHeight: 18 }]}>
+          {message}
+        </Text>
+      </View>
     </View>
   );
 }

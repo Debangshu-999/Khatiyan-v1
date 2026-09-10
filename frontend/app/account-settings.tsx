@@ -37,6 +37,8 @@ import { BloomModalShell } from "@/components/bloom-modal-shell";
 import { useToast } from "@/components/toast";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
+import { Skeleton } from "@/components/skeletons";
+import { AccountDeviceAlertSkeleton, AccountIdentityFieldsSkeleton } from "@/components/skeletons/account";
 import { SessionCountdown, SignedInDevices } from "@/features/auth/signed-in-devices";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
@@ -157,6 +159,7 @@ export default function AccountSettingsScreen() {
                 of the screen now, and carries the close. */}
             <ProfileCard
               email={emailStatus?.email ?? null}
+              emailLoading={emailQuery.isLoading}
               fullName={auth.user?.fullName ?? ""}
               onClose={close}
               phone={phone}
@@ -192,25 +195,31 @@ export default function AccountSettingsScreen() {
 
             <Section title="Device alerts">
               <Card>
-                <PreferenceRow
-                  icon={BellRing}
-                  title="Push notifications"
-                  description={notificationsEnabled ? "This device is registered." : "Enable alerts on this device."}
-                  right={
-                    <Switch
-                      disabled={notificationsBusy}
-                      value={notificationsEnabled}
-                      onValueChange={(value) => void handleNotificationToggle(value)}
-                      trackColor={{ false: colors.neutralSoft, true: colors.primary }}
-                      thumbColor={colors.surface}
+                {devicesQuery.isLoading && !devicesQuery.data ? (
+                  <AccountDeviceAlertSkeleton />
+                ) : (
+                  <>
+                    <PreferenceRow
+                      icon={BellRing}
+                      title="Push notifications"
+                      description={notificationsEnabled ? "This device is registered." : "Enable alerts on this device."}
+                      right={
+                        <Switch
+                          disabled={notificationsBusy}
+                          value={notificationsEnabled}
+                          onValueChange={(value) => void handleNotificationToggle(value)}
+                          trackColor={{ false: colors.neutralSoft, true: colors.primary }}
+                          thumbColor={colors.surface}
+                        />
+                      }
                     />
-                  }
-                />
-                {activeDevice ? (
-                  <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
-                    {activeDevice.platform} / {activeDevice.provider} / last seen {formatRelativeTime(activeDevice.lastSeenAt)}
-                  </Text>
-                ) : null}
+                    {activeDevice ? (
+                      <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
+                        {activeDevice.platform} / {activeDevice.provider} / last seen {formatRelativeTime(activeDevice.lastSeenAt)}
+                      </Text>
+                    ) : null}
+                  </>
+                )}
               </Card>
             </Section>
 
@@ -294,12 +303,14 @@ function DialpadIcon({ color, size }: LucideProps) {
 
 function ProfileCard({
   email,
+  emailLoading,
   fullName,
   onClose,
   phone,
   photoUrl,
 }: {
   email: string | null;
+  emailLoading: boolean;
   fullName: string;
   onClose: () => void;
   phone: string;
@@ -385,9 +396,13 @@ function ProfileCard({
         <Mail color={colors.kicker} size={16} strokeWidth={2.2} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>Email</Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
-            {email ?? "Not added"}
-          </Text>
+          {emailLoading ? (
+            <Skeleton height={14} width="58%" />
+          ) : (
+            <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+              {email ?? "Not added"}
+            </Text>
+          )}
         </View>
       </View>
     </Card>
@@ -970,33 +985,39 @@ function IdentityCard() {
           boxes sat indented from the paragraph above and from each other's
           labels. On the label line they mark the field and the inputs keep one
           left margin. */}
-      <FormInput
-        icon={MapPin}
-        label="Permanent address"
-        multiline
-        onChangeText={setAddress}
-        placeholder=""
-        value={address}
-      />
-      <FormInput
-        error={form.errors.pincode}
-        icon={Hash}
-        keyboardType="number-pad"
-        label="PIN code"
-        maxLength={6}
-        onChangeText={(text) => {
-          setPincode(text.replace(/[^0-9]/g, ""));
-          form.clearField("pincode");
-        }}
-        placeholder=""
-        value={pincode}
-      />
-      {/* No "(optional)" suffix. The paragraph above already says which fields
-          are optional, and repeating it on every label makes the required ones
-          look like an oversight rather than a rule. */}
-      <DateOfBirthField icon={CalendarDays} onChange={setDob} value={dob} />
+      {identityQuery.isLoading && !identityQuery.data ? (
+        <AccountIdentityFieldsSkeleton />
+      ) : (
+        <>
+          <FormInput
+            icon={MapPin}
+            label="Permanent address"
+            multiline
+            onChangeText={setAddress}
+            placeholder=""
+            value={address}
+          />
+          <FormInput
+            error={form.errors.pincode}
+            icon={Hash}
+            keyboardType="number-pad"
+            label="PIN code"
+            maxLength={6}
+            onChangeText={(text) => {
+              setPincode(text.replace(/[^0-9]/g, ""));
+              form.clearField("pincode");
+            }}
+            placeholder=""
+            value={pincode}
+          />
+          {/* No "(optional)" suffix. The paragraph above already says which fields
+              are optional, and repeating it on every label makes the required ones
+              look like an oversight rather than a rule. */}
+          <DateOfBirthField icon={CalendarDays} onChange={setDob} value={dob} />
 
-      <GenderPicker icon={User} onChange={setGender} value={gender} />
+          <GenderPicker icon={User} onChange={setGender} value={gender} />
+        </>
+      )}
 
       <ActionButton
         disabled={saveState.isLoading || form.blocked || !isDirty}

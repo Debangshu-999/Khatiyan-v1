@@ -19,6 +19,7 @@ import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRou
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { ImageCarousel } from "@/components/image-carousel";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
@@ -117,9 +118,7 @@ export default function ConcernDetailScreen() {
 
       {concern ? (
         <>
-          <ConcernMediaCarousel concern={concern} />
-
-          <ConcernDataCard concern={concern} />
+          <OwnerStyleConcernMediaCarousel concern={concern} />
 
           <Card>
             <View style={{ gap: spacing.sm }}>
@@ -134,6 +133,8 @@ export default function ConcernDetailScreen() {
               </Text>
             </View>
           </Card>
+
+          <OwnerStyleConcernDataCard concern={concern} />
 
           {concern.statusNote ? (
             <NoteCard title="Status update from the property team" body={concern.statusNote} />
@@ -428,6 +429,175 @@ function TimelineRow({ label, value }: { label: string; value: string }) {
       </Text>
     </View>
   );
+}
+
+function OwnerStyleConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
+  const { colors } = useTheme();
+  const images = useMemo(
+    () => concern.photos.map((photo) => photo.photoUrl).filter((url): url is string => Boolean(url)),
+    [concern.photos],
+  );
+
+  if (!images.length) {
+    return (
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.primarySoft,
+          borderRadius: 16,
+          gap: spacing.sm,
+          justifyContent: "center",
+          minHeight: 220,
+          padding: spacing.lg,
+        }}
+      >
+        <Images color={colors.primary} size={42} strokeWidth={1.8} />
+        <Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900", textAlign: "center" }}>
+          No images available
+        </Text>
+        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>
+          Concern photos will appear here when you attach them.
+        </Text>
+      </View>
+    );
+  }
+
+  return <ImageCarousel images={images} />;
+}
+
+function OwnerStyleConcernDataCard({ concern }: { concern: ConcernSummary }) {
+  const { colors, fonts, type } = useTheme();
+  const status = tonePalette(ownerStatusTone(concern.status), colors);
+  const assignedTo =
+    concern.assignedToName ?? (concern.assignedToUserId ? "Property team" : "Not assigned yet");
+  const assignedBy =
+    concern.assignedByName ?? (concern.assignedByUserId ? "Property team" : null);
+
+  return (
+    <Card style={{ overflow: "hidden", padding: 0 }}>
+      <View style={{ backgroundColor: status.fg, height: 5 }} />
+      <View style={{ gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ gap: spacing.xxs }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>Current status</Text>
+            <Text style={[type.caption, { color: colors.muted }]}>{formatDateTime(concern.updatedAt)}</Text>
+          </View>
+          <Text style={{ color: status.fg, fontFamily: fonts.display, fontSize: 27, lineHeight: 33 }}>
+            {humanizeToken(concern.status)}
+          </Text>
+        </View>
+
+        <OwnerFactTile label="Tenancy" tone="neutral" value={concern.tenancyReferenceCode} wide />
+
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <OwnerFactTile label="Category" tone="neutral" value={humanizeToken(concern.category)} />
+          <OwnerFactTile label="Room" tone="primary" value={concern.roomNumber} />
+        </View>
+
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <OwnerFactTile label="Assigned to" tone="neutral" value={assignedTo} />
+          <OwnerFactTile
+            label="Escalation"
+            tone={concern.escalationLevel === "NONE" ? "neutral" : "danger"}
+            value={humanizeToken(concern.escalationLevel)}
+          />
+        </View>
+
+        {assignedBy ? (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            Assigned by {assignedBy}
+            {concern.assignedAt ? " · " + formatDateTime(concern.assignedAt) : ""}
+          </Text>
+        ) : concern.assignedAt ? (
+          <Text style={[type.caption, { color: colors.muted }]}>
+            Assigned on {formatDateTime(concern.assignedAt)}
+          </Text>
+        ) : null}
+
+        {concern.reopened ? (
+          <View
+            style={{
+              backgroundColor: colors.dangerSoft,
+              borderColor: colors.danger,
+              borderRadius: 14,
+              borderWidth: 1,
+              gap: spacing.xs,
+              padding: spacing.md,
+            }}
+          >
+            <Text style={[type.eyebrow, { color: colors.danger }]}>Reopened</Text>
+            <Text style={[type.body, { color: colors.ink }]}>
+              {concern.reopenReason ?? "No reopen reason provided."}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+        <View style={{ gap: spacing.sm }}>
+          <OwnerTimelineRow label="Raised" value={formatDateTime(concern.createdAt)} />
+          {concern.inProgressAt ? (
+            <OwnerTimelineRow label="In progress" value={formatDateTime(concern.inProgressAt)} />
+          ) : null}
+          {concern.resolvedAt ? (
+            <OwnerTimelineRow label="Resolved" value={formatDateTime(concern.resolvedAt)} />
+          ) : null}
+          {concern.reopenUntil ? (
+            <OwnerTimelineRow label="Reopen until" value={formatDateTime(concern.reopenUntil)} />
+          ) : null}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function OwnerFactTile({
+  label,
+  tone,
+  value,
+  wide,
+}: {
+  label: string;
+  tone: BadgeTone;
+  value: string;
+  wide?: boolean;
+}) {
+  const { colors, type } = useTheme();
+  const palette = tonePalette(tone, colors);
+  return (
+    <View
+      style={{
+        backgroundColor: palette.bg,
+        borderColor: palette.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        gap: spacing.xs,
+        padding: spacing.md,
+        width: wide ? "100%" : "48%",
+      }}
+    >
+      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]}>{label}</Text>
+      <Text style={[type.bodyStrong, { color: colors.ink }]}>{value}</Text>
+    </View>
+  );
+}
+
+function OwnerTimelineRow({ label, value }: { label: string; value: string }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+      <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 8, width: 8 }} />
+      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]}>{label}</Text>
+      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]}>{value}</Text>
+    </View>
+  );
+}
+
+function ownerStatusTone(status: ConcernStatus): BadgeTone {
+  if (status === "RESOLVED") return "success";
+  if (status === "CLOSED") return "neutral";
+  if (status === "UNDER_REVIEW") return "warning";
+  return "primary";
 }
 
 function NoteCard({ body, title, tone }: { body: string; title: string; tone?: "success" }) {

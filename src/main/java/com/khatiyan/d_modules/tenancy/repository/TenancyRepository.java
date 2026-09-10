@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,12 +16,24 @@ import org.springframework.stereotype.Repository;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
+import jakarta.persistence.LockModeType;
+
 @Repository
 public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
 
     Optional<Tenancy> findByReferenceCode(String referenceCode);
 
+    /** Locks one tenancy while a scheduled workflow re-validates its state. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT tenancy FROM Tenancy tenancy WHERE tenancy.id = :tenancyId")
+    Optional<Tenancy> findByIdForUpdate(UUID tenancyId);
+
     Optional<Tenancy> findByUserIdAndActiveTrue(UUID userId);
+
+    /** Serialises tenant request creation, including the first request. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT tenancy FROM Tenancy tenancy WHERE tenancy.userId = :userId AND tenancy.active = true")
+    Optional<Tenancy> findByUserIdAndActiveTrueForUpdate(UUID userId);
 
     @Query("""
         SELECT tenancy

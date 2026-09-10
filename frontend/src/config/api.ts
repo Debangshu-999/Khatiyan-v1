@@ -27,20 +27,20 @@ function hostNameFromUri(uri: string) {
   }
 }
 
-// export function resolveDefaultApiBaseUrl() {
-//   if (Platform.OS === "web") {
-//     return "http://localhost:8080";
-//   }
+export function resolveDefaultApiBaseUrl() {
+  if (Platform.OS === "web") {
+    return "http://localhost:8080";
+  }
 
-//   const hostUri = expoHostUri();
-//   const hostName = hostUri ? hostNameFromUri(hostUri) : null;
+  const hostUri = expoHostUri();
+  const hostName = hostUri ? hostNameFromUri(hostUri) : null;
 
-//   if (hostName) {
-//     return `http://${hostName}:${backendPort}`;
-//   }
+  if (hostName) {
+    return `http://${hostName}:${backendPort}`;
+  }
 
-//   return "http://localhost:8080";
-// }
+  return "http://localhost:8080";
+}
 
 /**
  * Cleans a base URL before anything is concatenated onto it.
@@ -60,8 +60,8 @@ export function normalizeApiBaseUrl(value: string) {
   return trimmed.endsWith("/") ? trimmed.replace(/\/+$/, "") : trimmed;
 }
 
-export function resolveDefaultApiBaseUrl() {
-  return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
-}
+// export function resolveDefaultApiBaseUrl() {
+//   return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
+// }
 
 export const defaultApiBaseUrl = resolveDefaultApiBaseUrl();

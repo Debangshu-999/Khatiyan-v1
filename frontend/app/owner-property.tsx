@@ -20,7 +20,11 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
-import { SkeletonCard } from "@/components/skeleton";
+import {
+  OwnerDataCardSkeleton,
+  OwnerMetricTileSkeleton,
+  OwnerPropertyOverviewSkeleton,
+} from "@/components/skeletons/owner";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { PropertyContactsSection } from "@/features/property/property-contacts-section";
 import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
@@ -83,6 +87,7 @@ export default function OwnerPropertyScreen() {
   // repriced or deactivated.
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? skipToken);
   const startingRentPaise = lowestActiveRoomRentPaise(roomsQuery.data ?? []);
+  const roomsLoading = roomsQuery.isFetching && !roomsQuery.data;
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -93,7 +98,7 @@ export default function OwnerPropertyScreen() {
       </View>
 
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <SkeletonCard />
+        <OwnerPropertyOverviewSkeleton />
       ) : null}
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -134,12 +139,16 @@ export default function OwnerPropertyScreen() {
           </Card>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile
-              label="Rent from"
-              value={startingRentPaise == null ? "No rooms yet" : formatMoneyPaise(startingRentPaise)}
-              hint="Lowest room"
-              tone="primary"
-            />
+            {roomsLoading ? (
+              <OwnerMetricTileSkeleton />
+            ) : (
+              <MetricTile
+                label="Rent from"
+                value={startingRentPaise == null ? "No rooms yet" : formatMoneyPaise(startingRentPaise)}
+                hint="Lowest room"
+                tone="primary"
+              />
+            )}
             <MetricTile label="Deposit" value={formatDepositPaise(selectedProperty.standardDepositPaise)} hint="Standard" />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -160,11 +169,15 @@ export default function OwnerPropertyScreen() {
               value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "None"}
               hint="Per day"
             />
-            <MetricTile
-              label="Rooms"
-              value={roomsQuery.data ? String(roomsQuery.data.filter((room) => room.active).length) : "-"}
-              hint="Active"
-            />
+            {roomsLoading ? (
+              <OwnerMetricTileSkeleton />
+            ) : (
+              <MetricTile
+                label="Rooms"
+                value={String((roomsQuery.data ?? []).filter((room) => room.active).length)}
+                hint="Active"
+              />
+            )}
           </View>
 
           {/* Same grid a prospective tenant sees on the discovery profile. The
@@ -240,6 +253,18 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
       setOptimisticListed(null);
     }
   }, [listed, optimisticListed]);
+
+  if (loadingProfile) {
+    return (
+      <Section title="Listing">
+        <OwnerDataCardSkeleton actions={1} bodyLines={2} />
+        <Card>
+          <Text style={[type.eyebrow, { color: colors.kicker }]}>Property contacts</Text>
+          <PropertyContactsSection canManage={canManage} propertyId={propertyId} />
+        </Card>
+      </Section>
+    );
+  }
 
   async function toggleListing() {
     if (busy || loadingProfile) {

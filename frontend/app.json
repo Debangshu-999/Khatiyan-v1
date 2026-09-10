@@ -42,7 +42,8 @@
         }
       ],
       "@maplibre/maplibre-react-native",
-      "expo-font"
+      "expo-font",
+      "./plugins/with-upi-intent-launcher"
     ]
   }
 }

@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { WizardHeader } from "@/components/wizard-header";
+import { OwnerRoomInventorySkeleton } from "@/components/skeletons/owner";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { ROOM_TYPE_INTRO } from "@/features/property/room-type-board";
 import { RoomTypesSection } from "@/features/property/room-types-section";
@@ -43,9 +44,11 @@ export default function OwnerRoomTypesScreen() {
           ))}
         </View>
 
-        {propertyId ? (
+        {propertyId && property.isFetching && !property.data ? <OwnerRoomInventorySkeleton /> : null}
+
+        {propertyId && property.data ? (
           <RoomTypesSection
-            occupancies={property.data?.availableSharingTypes ?? []}
+            occupancies={property.data.availableSharingTypes ?? []}
             propertyId={propertyId}
           />
         ) : null}

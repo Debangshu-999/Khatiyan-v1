@@ -11,7 +11,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { InfoModal } from "@/components/info-modal";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerNoticeListSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
@@ -140,7 +140,7 @@ export default function OwnerUpcomingNoticesScreen() {
               value={filter}
             />
             {upcomingQuery.isLoading ? (
-              <SkeletonCard />
+              <OwnerNoticeListSkeleton />
             ) : notices.length > 0 ? (
               notices.map((notice) => (
                 <UpcomingNoticeCard

@@ -10,7 +10,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SegmentedChoice } from "@/components/segmented-choice";
-import { SkeletonCard, SkeletonList } from "@/components/skeleton";
+import { OwnerRulesEditorSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -174,10 +174,7 @@ export default function OwnerTenancyAgreementScreen() {
             title="No property selected"
           />
         ) : settingsQuery.isLoading || draft === null ? (
-          <>
-            <SkeletonCard />
-            <SkeletonList rows={3} />
-          </>
+          <OwnerRulesEditorSkeleton />
         ) : (
           <>
             <Section title="Agreement Term">

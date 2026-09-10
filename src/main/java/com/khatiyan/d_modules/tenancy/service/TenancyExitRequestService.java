@@ -30,7 +30,6 @@ import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ExitCheckoutWindowResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitApprovedEvent;
-import com.khatiyan.d_modules.tenancy.event.TenancyExitCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitExecutedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitExpiredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitRejectedEvent;
@@ -41,9 +40,11 @@ import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
+import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
+import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -71,12 +72,18 @@ public class TenancyExitRequestService {
             TenancyExitRequestStatus.APPROVED,
             TenancyExitRequestStatus.WITHDRAWAL_REQUESTED);
 
+    private static final List<TenancyRoomChangeRequestStatus> ROOM_CHANGE_BLOCKING_STATUSES = List.of(
+            TenancyRoomChangeRequestStatus.REQUESTED,
+            TenancyRoomChangeRequestStatus.APPROVED);
+
     /** Calendar dates follow the property's timezone, not the server's. */
     private static final ZoneId EXIT_ZONE = ZoneId.of("Asia/Kolkata");
+    public static final int MIN_EXIT_LEAD_DAYS = 10;
 
     private final AuthModule authModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final TenancyExitRequestRepository exitRequestRepository;
+    private final TenancyRoomChangeRequestRepository roomChangeRequestRepository;
     private final TenancyRepository tenancyRepository;
     private final PropertyModule propertyModule;
     private final TenancyAccessPolicy tenancyAccessPolicy;
@@ -88,6 +95,7 @@ public class TenancyExitRequestService {
             AuthModule authModule,
             ReferenceCodeGenerator referenceCodeGenerator,
             TenancyExitRequestRepository exitRequestRepository,
+            TenancyRoomChangeRequestRepository roomChangeRequestRepository,
             TenancyRepository tenancyRepository,
             PropertyModule propertyModule,
             TenancyAccessPolicy tenancyAccessPolicy,
@@ -97,6 +105,7 @@ public class TenancyExitRequestService {
         this.authModule = authModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.exitRequestRepository = exitRequestRepository;
+        this.roomChangeRequestRepository = roomChangeRequestRepository;
         this.tenancyRepository = tenancyRepository;
         this.propertyModule = propertyModule;
         this.tenancyAccessPolicy = tenancyAccessPolicy;
@@ -116,8 +125,8 @@ public class TenancyExitRequestService {
     @Transactional(readOnly = true)
     public ExitCheckoutWindowResponse getExitCheckoutWindow(UUID tenantUserId) {
         Tenancy tenancy = getTenantActiveTenancy(tenantUserId);
-        BillingCycleResponse cycle = billingModule.getLatestMyCycle(tenantUserId);
         LocalDate today = LocalDate.now(EXIT_ZONE);
+        BillingCycleResponse cycle = billingModule.getCurrentMyRentCycle(tenantUserId, today);
 
         TenancyExitRequest reRaised = findReRaisableRequest(tenancy.getId(), today, cycle);
         LocalDate anchor = reRaised != null ? reRaised.getNoticeAnchorDate() : today;
@@ -150,11 +159,12 @@ public class TenancyExitRequestService {
             UUID tenantUserId,
             LocalDate chosenCheckoutDate,
             String reason) {
-        Tenancy tenancy = getTenantActiveTenancy(tenantUserId);
+        Tenancy tenancy = getTenantActiveTenancyForUpdate(tenantUserId);
         ensureNoOpenRequest(tenancy.getId());
+        ensureNoBlockingRoomChangeRequest(tenancy.getId());
 
-        BillingCycleResponse cycle = billingModule.getLatestMyCycle(tenantUserId);
         LocalDate today = LocalDate.now(EXIT_ZONE);
+        BillingCycleResponse cycle = billingModule.getCurrentMyRentCycle(tenantUserId, today);
 
         TenancyExitRequest reRaised = findReRaisableRequest(tenancy.getId(), today, cycle);
         if (reRaised == null) {
@@ -227,15 +237,24 @@ public class TenancyExitRequestService {
             UUID tenantUserId,
             LocalDate requestedCheckoutDate,
             String reason) {
-        Tenancy tenancy = getTenantActiveTenancy(tenantUserId);
-        if (requestedCheckoutDate == null || !requestedCheckoutDate.isAfter(LocalDate.now(EXIT_ZONE))) {
-            throw new ValidationException("Requested checkout date must be in the future");
+        Tenancy tenancy = getTenantActiveTenancyForUpdate(tenantUserId);
+        LocalDate today = LocalDate.now(EXIT_ZONE);
+        BillingCycleResponse currentCycle = billingModule.getCurrentMyRentCycle(tenantUserId, today);
+        LocalDate minimumCheckoutDate = minimumCheckoutDate(today);
+        if (requestedCheckoutDate == null || requestedCheckoutDate.isBefore(minimumCheckoutDate)) {
+            throw new ValidationException(
+                    "The earliest checkout date is " + minimumCheckoutDate + " (10 days from today)");
+        }
+        if (!prematureExitAllowed(currentCycle.cycleNumber())) {
+            throw new ValidationException(
+                    "Premature exit is not available during the first billing cycle");
         }
         if (!tenancy.isWithinTerm(requestedCheckoutDate)) {
             throw new ValidationException(
                     "This date is not inside a lock-in period. Please raise an ordinary exit request instead.");
         }
         ensureNoOpenRequest(tenancy.getId());
+        ensureNoBlockingRoomChangeRequest(tenancy.getId());
 
         TenancyExitRequest request = TenancyExitRequest.premature(
                 referenceCodeGenerator.nextCode("TEX"),
@@ -259,6 +278,7 @@ public class TenancyExitRequestService {
     public TenancyExitRequestResponse approve(UUID actorUserId, UUID requestId, ApproveTenancyExitRequest payload) {
         TenancyExitRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageExitRequests(actorUserId, request.getPropertyId());
+        ensureNoBlockingRoomChangeRequest(request.getTenancyId());
 
         Tenancy tenancy = tenancyRepository.findById(request.getTenancyId())
                 .orElseThrow(() -> new NotFoundException("Tenancy", request.getTenancyId()));
@@ -316,19 +336,6 @@ public class TenancyExitRequestService {
         log.info("Tenancy exit request rejected requestId={} actorUserId={}", requestId, actorUserId);
         publishExitRejected(request);
 
-        return TenancyExitRequestResponse.from(request);
-    }
-
-    /**
-     * Tenant cancels their own pending request.
-     */
-    @Transactional
-    public TenancyExitRequestResponse cancel(UUID tenantUserId, UUID requestId) {
-        TenancyExitRequest request = getRequest(requestId);
-        request.cancel(tenantUserId);
-
-        log.info("Tenancy exit request cancelled requestId={} tenantUserId={}", requestId, tenantUserId);
-        publishExitCancelled(request);
         return TenancyExitRequestResponse.from(request);
     }
 
@@ -483,11 +490,15 @@ public class TenancyExitRequestService {
             throw new ValidationException("A daily stay has no agreement term to exit early from");
         }
 
-        TenancyExitRequest approved = exitRequestRepository.findByTenancyId(tenancyId).stream()
+        UUID approvedRequestId = exitRequestRepository.findByTenancyId(tenancyId).stream()
                 .filter(existing -> existing.getStatus() == TenancyExitRequestStatus.APPROVED)
+                .map(TenancyExitRequest::getId)
                 .findFirst()
                 .orElse(null);
-        if (approved != null) {
+        if (approvedRequestId != null) {
+            // Re-load with a row lock. A withdrawal can arrive at the same time
+            // as manual checkout; exactly one transition is allowed to win.
+            TenancyExitRequest approved = getRequest(approvedRequestId);
             executeApprovedRequest(actorUserId, approved, request);
             return;
         }
@@ -540,6 +551,19 @@ public class TenancyExitRequestService {
         tenancyAccessPolicy.ensureCanViewExitRequests(actorUserId, propertyId);
 
         return withNames(exitRequestRepository.findByPropertyId(propertyId));
+    }
+
+    /**
+     * Scheduler entry point. It deliberately reuses the same locked execution
+     * path as the end-tenancy screen so billing and settlement rules cannot
+     * drift between manual and scheduled exits.
+     */
+    @Transactional
+    public TenancyExitRequestResponse executeScheduledApprovedRequest(
+            UUID actorUserId,
+            UUID requestId,
+            EndTenancyRequest endRequest) {
+        return executeApprovedRequest(actorUserId, getRequest(requestId), endRequest);
     }
 
     private TenancyExitRequestResponse executeApprovedRequest(
@@ -603,16 +627,6 @@ public class TenancyExitRequestService {
                 request.getType()));
     }
 
-    private void publishExitCancelled(TenancyExitRequest request) {
-        eventPublisher.publishEvent(new TenancyExitCancelledEvent(
-                request.getId(),
-                request.getReferenceCode(),
-                request.getTenancyId(),
-                request.getTenantUserId(),
-                request.getPropertyId(),
-                request.getType()));
-    }
-
     private void publishExitExecuted(TenancyExitRequest request) {
         eventPublisher.publishEvent(new TenancyExitExecutedEvent(
                 request.getId(),
@@ -629,14 +643,28 @@ public class TenancyExitRequestService {
                 .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
     }
 
+    private Tenancy getTenantActiveTenancyForUpdate(UUID tenantUserId) {
+        return tenancyRepository.findByUserIdAndActiveTrueForUpdate(tenantUserId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
+    }
+
     private TenancyExitRequest getRequest(UUID requestId) {
-        return exitRequestRepository.findById(requestId)
+        return exitRequestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new NotFoundException("TenancyExitRequest", requestId));
     }
 
     private void ensureNoOpenRequest(UUID tenancyId) {
         if (exitRequestRepository.findOpenByTenancyId(tenancyId, OPEN_STATUSES).isPresent()) {
-            throw new ValidationException("Tenancy already has an open exit request");
+            throw new ValidationException(
+                    "An active exit request already exists. Open My Requests to review it.");
+        }
+    }
+
+    private void ensureNoBlockingRoomChangeRequest(UUID tenancyId) {
+        if (roomChangeRequestRepository.findOpenByTenancyId(
+                tenancyId, ROOM_CHANGE_BLOCKING_STATUSES).isPresent()) {
+            throw new ValidationException(
+                    "An active room change request must be resolved before an exit request can be raised.");
         }
     }
 
@@ -672,7 +700,11 @@ public class TenancyExitRequestService {
             NoticePeriod noticePeriod,
             LocalDate anchor,
             boolean reRaise) {
-        LocalDate earliestPossible = LocalDate.now(EXIT_ZONE).plusDays(1);
+        LocalDate earliestPossible = minimumCheckoutDate(LocalDate.now(EXIT_ZONE));
+        boolean prematureAllowed = prematureExitAllowed(cycle.cycleNumber());
+        String restrictionMessage = prematureAllowed
+                ? null
+                : "Premature exit is available from the second billing cycle.";
 
         // A fixed term has no notice to serve — its last day was agreed when the
         // tenancy started, so the window is that one date. Running notice
@@ -680,15 +712,19 @@ public class TenancyExitRequestService {
         // and could push it past the day the tenancy ends.
         if (tenancy.hasFixedTerm()) {
             LocalDate termEnd = tenancy.getAgreementEndDate();
-            return ExitCheckoutWindowResponse.of(
-                    noticePeriod, anchor, termEnd, termEnd, earliestPossible, reRaise);
+            LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, termEnd, prematureAllowed);
+            ensureWindowAvailable(effectiveFloor, termEnd);
+            return ExitCheckoutWindowResponse.of(noticePeriod, anchor, termEnd, termEnd,
+                    effectiveFloor, prematureAllowed, MIN_EXIT_LEAD_DAYS, restrictionMessage, reRaise);
         }
 
         if (noticePeriod.isWholeMonths()) {
             LocalDate checkout = billingModule.periodEndAfterCycles(
                     tenancy.getId(), cycle.periodStartDate(), noticePeriod.extraCyclesBeyondCurrent());
-            return ExitCheckoutWindowResponse.of(
-                    noticePeriod, anchor, checkout, checkout, earliestPossible, reRaise);
+            LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, checkout, prematureAllowed);
+            ensureWindowAvailable(effectiveFloor, checkout);
+            return ExitCheckoutWindowResponse.of(noticePeriod, anchor, checkout, checkout,
+                    effectiveFloor, prematureAllowed, MIN_EXIT_LEAD_DAYS, restrictionMessage, reRaise);
         }
 
         LocalDate earliest = anchor.plusDays(noticePeriod.days());
@@ -697,8 +733,36 @@ public class TenancyExitRequestService {
             latest = earliest;
         }
 
-        return ExitCheckoutWindowResponse.of(
-                noticePeriod, anchor, earliest, latest, earliestPossible, reRaise);
+        LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, earliest, prematureAllowed);
+        ensureWindowAvailable(effectiveFloor, latest);
+        return ExitCheckoutWindowResponse.of(noticePeriod, anchor, earliest, latest,
+                effectiveFloor, prematureAllowed, MIN_EXIT_LEAD_DAYS, restrictionMessage, reRaise);
+    }
+
+    static LocalDate minimumCheckoutDate(LocalDate today) {
+        return today.plusDays(MIN_EXIT_LEAD_DAYS);
+    }
+
+    static boolean prematureExitAllowed(Integer cycleNumber) {
+        return cycleNumber != null && cycleNumber > 1;
+    }
+
+    static LocalDate earliestPermittedDate(
+            LocalDate leadTimeFloor,
+            LocalDate fullNoticeDate,
+            boolean prematureAllowed) {
+        return prematureAllowed ? leadTimeFloor : laterOf(leadTimeFloor, fullNoticeDate);
+    }
+
+    private static LocalDate laterOf(LocalDate first, LocalDate second) {
+        return first.isAfter(second) ? first : second;
+    }
+
+    private void ensureWindowAvailable(LocalDate earliest, LocalDate latest) {
+        if (earliest.isAfter(latest)) {
+            throw new ValidationException(
+                    "No checkout date is currently available with the required 10-day lead time");
+        }
     }
 
     /**
@@ -758,7 +822,9 @@ public class TenancyExitRequestService {
      */
     private void ensureInsideCheckoutWindow(LocalDate checkoutDate, ExitCheckoutWindowResponse window) {
         if (checkoutDate.isBefore(window.earliestPossibleDate())) {
-            throw new ValidationException("Your last day has to be in the future.");
+            throw new ValidationException(
+                    "The earliest checkout date is " + window.earliestPossibleDate()
+                            + " (10 days from today).");
         }
         if (checkoutDate.isAfter(window.latestCheckoutDate())) {
             throw new ValidationException(
@@ -797,7 +863,7 @@ public class TenancyExitRequestService {
             LocalDate today,
             BillingCycleResponse cycle) {
         return exitRequestRepository.findLatestByTenancyId(tenancyId)
-                .filter(previous -> previous.allowsReRaiseOn(today))
+                .filter(previous -> previous.allowsReRaiseAt(Instant.now()))
                 .filter(previous -> isInsideCycle(previous.getNoticeAnchorDate(), cycle))
                 .orElse(null);
     }

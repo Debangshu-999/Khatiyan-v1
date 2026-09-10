@@ -22,7 +22,7 @@ import {
 } from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
 import { PropertyProfile } from "@/features/discovery/components/property-profile";
-import { PropertyProfileSkeleton } from "@/features/discovery/components/property-profile-skeleton";
+import { PropertyProfileSkeleton } from "@/components/skeletons/discovery/property-profile";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -59,6 +59,7 @@ type LocationScope = {
 
 const DISCOVERY_HERO = require("../../assets/discovery-hero.png");
 const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/discovery-empty-search.png");
+const LISTING_RESULTS_ILLUSTRATION = require("../../assets/listing-results-illustration.jpg");
 const NO_LOCATION_ILLUSTRATION = require("../../assets/workspace/No-Location_512x512.png");
 
 export default function DiscoveryScreen() {
@@ -348,6 +349,7 @@ export default function DiscoveryScreen() {
     [properties, searchedArea],
   );
   const areaLabel = submittedSearch.text.trim();
+  const listingAreaLabel = areaLabel.split(",")[0]?.trim() ?? "";
   // The live scope's state, not the picker's — on a text search the picker is
   // empty and this would have read "elsewhere in " with nothing after it.
   const nearbyCityLabel = searchedCity || searchedState || (location.state ?? "").trim();
@@ -522,7 +524,7 @@ export default function DiscoveryScreen() {
 
           {hasActiveSearch ? (
             <>
-          <Card>
+          <Card style={{ borderRadius: 28, overflow: "hidden" }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
                 <Text
@@ -533,15 +535,36 @@ export default function DiscoveryScreen() {
                     letterSpacing: -0.3,
                   }}
                 >
-                  Property listings
+                  Listing Results
                 </Text>
-                {!noPropertiesFound ? (
-                  <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
-                    {propertyPage
-                      ? `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${areaLabel ? ` for "${areaLabel}"` : ""}`
-                      : "Loading property listings"}
-                  </Text>
-                ) : null}
+                <Text
+                  numberOfLines={2}
+                  style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}
+                >
+                  {propertyPage
+                    ? exactProperties.length === 0
+                      ? listingAreaLabel
+                        ? `No listing for "${listingAreaLabel}"`
+                        : "No listing for this location"
+                      : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${listingAreaLabel ? ` for "${listingAreaLabel}"` : ""}`
+                    : "Loading listing results"}
+                </Text>
+              </View>
+              <View
+                style={{
+                  alignItems: "center",
+                  height: 64,
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  width: 72,
+                }}
+              >
+                <Image
+                  accessibilityIgnoresInvertColors
+                  resizeMode="contain"
+                  source={LISTING_RESULTS_ILLUSTRATION}
+                  style={{ height: 82, transform: [{ scale: 1.18 }], width: 82 }}
+                />
               </View>
             </View>
 

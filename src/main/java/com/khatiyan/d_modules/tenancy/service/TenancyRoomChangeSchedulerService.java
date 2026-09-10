@@ -12,6 +12,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
+import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
+
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 
 import lombok.extern.slf4j.Slf4j;
@@ -59,11 +62,17 @@ public class TenancyRoomChangeSchedulerService {
         }
 
         int executedCount = 0;
+        int reopenedCount = 0;
         int failedCount = 0;
         for (UUID requestId : requestIds) {
             try {
-                roomChangeRequestService.executeDueApprovedRequest(requestId);
-                executedCount = executedCount + 1;
+                TenancyRoomChangeRequestResponse result =
+                        roomChangeRequestService.executeDueApprovedRequest(requestId);
+                if (result.status() == TenancyRoomChangeRequestStatus.EXECUTED) {
+                    executedCount = executedCount + 1;
+                } else if (result.status() == TenancyRoomChangeRequestStatus.REQUESTED) {
+                    reopenedCount = reopenedCount + 1;
+                }
             } catch (RuntimeException exception) {
                 failedCount = failedCount + 1;
                 log.error("Tenancy room change scheduler failed requestId={}", requestId, exception);
@@ -71,9 +80,10 @@ public class TenancyRoomChangeSchedulerService {
         }
 
         log.info(
-                "Tenancy room change scheduler completed due requests found={} executed={} failed={}",
+                "Tenancy room change scheduler completed due requests found={} executed={} reopened={} failed={}",
                 requestIds.size(),
                 executedCount,
+                reopenedCount,
                 failedCount);
     }
 

@@ -9,6 +9,8 @@ import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { UnderlineTabs } from "@/components/underline-tabs";
 import { AlertModal } from "@/components/alert-modal";
+import { Skeleton } from "@/components/skeletons";
+import { OwnerSettingsFormSkeleton } from "@/components/skeletons/owner";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
@@ -74,7 +76,9 @@ const MAX_PROPERTY_IMAGES = 10;
  * of its own. As a route it also gets a back gesture and a URL.
  */
 export default function OwnerEditPropertyScreen() {
-  const { colors } = useTheme();
+  const router = useGuardedRouter();
+  const insets = useSafeAreaInsets();
+  const { colors, fonts, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
@@ -83,6 +87,44 @@ export default function OwnerEditPropertyScreen() {
     : properties.length === 1
       ? properties[0]
       : null;
+
+  if (propertiesQuery.isFetching && !propertiesQuery.data) {
+    return (
+      <View style={{ backgroundColor: colors.formSurface, flex: 1 }}>
+        <View
+          style={{
+            alignItems: "center",
+            borderBottomColor: colors.borderStrong,
+            borderBottomWidth: 2,
+            flexDirection: "row",
+            paddingBottom: spacing.md,
+            paddingHorizontal: spacing.lg,
+            paddingTop: insets.top + spacing.md,
+          }}
+        >
+          <IconButton accessibilityLabel="Back" icon={ArrowLeft} onPress={() => router.back()} />
+          <View style={{ flex: 1, gap: 4, paddingLeft: spacing.sm }}>
+            <Skeleton height={10} width={92} />
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
+              Edit property
+            </Text>
+          </View>
+        </View>
+        <View style={{ paddingHorizontal: spacing.lg }}>
+          <UnderlineTabs active="basics" bleed={spacing.lg} onChange={() => undefined} options={EDIT_TABS} tone="strong" />
+        </View>
+        <ScrollView
+          contentContainerStyle={{ gap: spacing.lg, paddingBottom: PINNED_FOOTER_CLEARANCE, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
+          showsVerticalScrollIndicator={false}
+        >
+          <OwnerSettingsFormSkeleton fields={6} />
+        </ScrollView>
+        <PinnedFooter>
+          <ActionButton disabled label="Save property" onPress={() => undefined} />
+        </PinnedFooter>
+      </View>
+    );
+  }
 
   if (!property) {
     return (

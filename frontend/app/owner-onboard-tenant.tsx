@@ -18,6 +18,12 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { StepProgress } from "@/components/step-progress";
 import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import {
+  OwnerAgreementPreviewSkeleton,
+  OwnerOnboardingPropertySkeleton,
+  OwnerOnboardingRoomsSkeleton,
+  OwnerStayTypeOptionsSkeleton,
+} from "@/components/skeletons/owner";
 import { ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
@@ -749,7 +755,7 @@ export default function OwnerOnboardTenantScreen() {
     >
       {step === "type" ? (
         <Card>
-          {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+          {propertiesQuery.isLoading ? <OwnerStayTypeOptionsSkeleton /> : null}
           {!propertiesQuery.isLoading && !selectedProperty ? (
             <EmptyState
               icon={KeyRound}
@@ -887,10 +893,11 @@ export default function OwnerOnboardTenantScreen() {
       {step === "details" ? (
         <>
           <Card>
-            {propertiesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-            {selectedProperty ? (
+            {propertiesQuery.isLoading ? (
+              <OwnerOnboardingPropertySkeleton />
+            ) : selectedProperty ? (
               <PropertySummary property={selectedProperty} />
-            ) : !propertiesQuery.isLoading ? (
+            ) : (
               <EmptyState
                 icon={KeyRound}
                 title={properties.length > 1 ? "Select a property from Home" : "No property available"}
@@ -900,7 +907,7 @@ export default function OwnerOnboardTenantScreen() {
                     : "Create a property before onboarding a tenant."
                 }
               />
-            ) : null}
+            )}
           </Card>
 
           {selectedProperty ? (
@@ -908,30 +915,33 @@ export default function OwnerOnboardTenantScreen() {
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
               </Text>
-              {roomsQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-              <RoomPicker
-                onClear={clearRoom}
-                onSelect={selectRoom}
-                priceOf={(room) => {
-                  const perNight =
-                    room.conditioning === "AC"
-                      ? selectedProperty.dailyGuestAcRatePaise
-                      : selectedProperty.dailyGuestNonAcRatePaise;
-                  if (!isDaily) {
-                    return `${rupees(room.baseRentPaise)} / month`;
-                  }
-                  return perNight != null ? `${rupees(perNight)} / night` : "No daily rate";
-                }}
-                rooms={selectableRooms}
-                selectedRoomId={roomId}
-                unavailable={(room) => {
-                  const perNight =
-                    room.conditioning === "AC"
-                      ? selectedProperty.dailyGuestAcRatePaise
-                      : selectedProperty.dailyGuestNonAcRatePaise;
-                  return room.availableVacancies <= 0 || (isDaily && perNight == null);
-                }}
-              />
+              {roomsQuery.isLoading ? (
+                <OwnerOnboardingRoomsSkeleton />
+              ) : (
+                <RoomPicker
+                  onClear={clearRoom}
+                  onSelect={selectRoom}
+                  priceOf={(room) => {
+                    const perNight =
+                      room.conditioning === "AC"
+                        ? selectedProperty.dailyGuestAcRatePaise
+                        : selectedProperty.dailyGuestNonAcRatePaise;
+                    if (!isDaily) {
+                      return `${rupees(room.baseRentPaise)} / month`;
+                    }
+                    return perNight != null ? `${rupees(perNight)} / night` : "No daily rate";
+                  }}
+                  rooms={selectableRooms}
+                  selectedRoomId={roomId}
+                  unavailable={(room) => {
+                    const perNight =
+                      room.conditioning === "AC"
+                        ? selectedProperty.dailyGuestAcRatePaise
+                        : selectedProperty.dailyGuestNonAcRatePaise;
+                    return room.availableVacancies <= 0 || (isDaily && perNight == null);
+                  }}
+                />
+              )}
             </Card>
           ) : null}
 
@@ -1202,7 +1212,7 @@ export default function OwnerOnboardTenantScreen() {
               creating a tenancy without having seen it is the one outcome this
               step exists to prevent. */}
           <CollapsibleSection defaultOpen summary="The tenant's agreement" title="Preview">
-            {previewQuery.isFetching && !previewQuery.data ? <ActivityIndicator color={colors.primary} /> : null}
+            {previewQuery.isFetching && !previewQuery.data ? <OwnerAgreementPreviewSkeleton /> : null}
             {previewQuery.data ? (
               <AgreementDocument
                 clauses={previewQuery.data.clauses}
@@ -2460,4 +2470,3 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
 
   return properties.length === 1 ? properties[0] : undefined;
 }
-

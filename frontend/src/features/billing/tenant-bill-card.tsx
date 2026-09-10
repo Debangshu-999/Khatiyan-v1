@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Banknote,
   CalendarDays,
+  Check,
   CheckCircle2,
   Clock3,
   History,
@@ -48,6 +49,7 @@ export function TenantBillCard({
   const awaitingConfirmation = cycle.status === "CONFIRMATION_PENDING";
   const unanswered = openAttempt?.status === "CREATED";
   const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
+  const paid = cycle.status === "PAID";
   const payLabel = payButtonLabel(cycle, openAttempt);
   const discount = tenantDiscountBreakdown(cycle);
 
@@ -210,9 +212,10 @@ export function TenantBillCard({
           />
           <TenantBillAction
             disabled={!onPay}
-            icon={payLabel === "Pay now" ? Banknote : undefined}
+            icon={paid ? Check : payLabel === "Pay now" ? Banknote : undefined}
             label={payLabel}
             onPress={() => onPay?.()}
+            variant={paid ? "paid" : "primary"}
           />
         </View>
         <TenantBillAction
@@ -241,10 +244,14 @@ function TenantBillAction({
   icon?: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
-  variant?: "primary" | "secondary";
+  variant?: "paid" | "primary" | "secondary";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
+  const paid = variant === "paid";
+  const backgroundColor = paid ? colors.neutralSoft : primary ? colors.primary : colors.surface;
+  const contentColor = paid ? colors.muted : primary ? colors.onPrimary : colors.ink;
+  const borderColor = paid ? colors.border : primary ? colors.primary : colors.borderStrong;
 
   return (
     <AnimatedPressable
@@ -253,8 +260,8 @@ function TenantBillAction({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: primary ? colors.primary : colors.surface,
-        borderColor: primary ? colors.primary : colors.borderStrong,
+        backgroundColor,
+        borderColor,
         borderCurve: "continuous",
         borderRadius: radii.md,
         borderWidth: 1,
@@ -263,18 +270,18 @@ function TenantBillAction({
         gap: spacing.xs,
         justifyContent: "center",
         minHeight: 44,
-        opacity: disabled ? 0.45 : 1,
+        opacity: disabled && !paid ? 0.45 : 1,
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.sm,
       }}
     >
       {Icon ? (
-        <Icon color={primary ? colors.onPrimary : colors.ink} size={16} strokeWidth={2.2} />
+        <Icon color={paid ? colors.jade : contentColor} size={16} strokeWidth={2.2} />
       ) : null}
       <Text
         numberOfLines={1}
         style={{
-          color: primary ? colors.onPrimary : colors.ink,
+          color: contentColor,
           fontFamily: fonts.sansBold,
           fontSize: 13,
         }}
@@ -393,6 +400,9 @@ function formatTenantDate(value: string) {
 }
 
 function payButtonLabel(cycle: BillingCycle, openAttempt: PaymentIntent | null) {
+  if (cycle.status === "PAID") {
+    return "Paid";
+  }
   if (cycle.status === "CONFIRMATION_PENDING" || openAttempt?.status === "TENANT_CONFIRMED") {
     return "Confirming";
   }

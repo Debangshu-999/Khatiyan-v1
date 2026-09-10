@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerRoomInventorySkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import {
@@ -109,11 +109,7 @@ export function RoomTypesSection({
   }
 
   if (molds.isLoading) {
-    return (
-      <View style={{ gap: spacing.md }}>
-        <SkeletonCard />
-      </View>
-    );
+    return <OwnerRoomInventorySkeleton />;
   }
 
   return (

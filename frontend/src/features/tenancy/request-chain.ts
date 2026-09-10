@@ -20,6 +20,11 @@ export type ExitRequestChain = {
   links: TenancyExitRequest[];
 };
 
+export type RoomChangeRequestChain = {
+  head: TenancyRoomChangeRequest;
+  links: TenancyRoomChangeRequest[];
+};
+
 /**
  * Groups requests into chains by walking `supersededRequestId` backwards.
  *
@@ -50,6 +55,34 @@ export function buildExitRequestChains(requests: TenancyExitRequest[]): ExitRequ
         current = current.supersededRequestId ? byId.get(current.supersededRequestId) : undefined;
       }
 
+      return { head, links };
+    })
+    .sort(
+      (left, right) =>
+        new Date(right.head.updatedAt ?? right.head.createdAt).getTime()
+        - new Date(left.head.updatedAt ?? left.head.createdAt).getTime(),
+    );
+}
+
+export function buildRoomChangeRequestChains(
+  requests: TenancyRoomChangeRequest[],
+): RoomChangeRequestChain[] {
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  const superseded = new Set(
+    requests.map((request) => request.supersededRequestId).filter((id): id is string => id != null),
+  );
+
+  return requests
+    .filter((request) => !superseded.has(request.id))
+    .map((head) => {
+      const links: TenancyRoomChangeRequest[] = [];
+      const seen = new Set<string>();
+      let current: TenancyRoomChangeRequest | undefined = head;
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        links.push(current);
+        current = current.supersededRequestId ? byId.get(current.supersededRequestId) : undefined;
+      }
       return { head, links };
     })
     .sort(
@@ -223,51 +256,59 @@ export function exitTimelineEntries(chain: ExitRequestChain): TimelineEntry[] {
   }));
 }
 
-/**
- * Timeline entries for a room change — always a single entry.
- *
- * <p>Room changes have no re-raise carve-out, so there is no chain to walk: a
- * refused request is simply asked again as a new one.
- */
-export function roomChangeTimelineEntries(request: TenancyRoomChangeRequest): TimelineEntry[] {
-  const steps: RequestTimelineStep[] = [];
+/** Timeline entries for every attempt in a corrected room-change chain. */
+export function roomChangeTimelineEntries(
+  value: TenancyRoomChangeRequest | RoomChangeRequestChain,
+): TimelineEntry[] {
+  const links = "links" in value ? value.links : [value];
 
-  if (request.executedAt) {
-    steps.push({ actor: "SYSTEM", at: request.executedAt, detail: null, label: "Room changed" });
-  }
-  if (request.decidedAt) {
+  return links.map((request, index) => {
+    const steps: RequestTimelineStep[] = [];
+
+    if (index > 0) {
+      steps.push({
+        actor: "TENANT",
+        at: links[index - 1].createdAt,
+        detail: "Raised again with corrected room-change details.",
+        label: "Re-raised",
+      });
+    }
+
+    if (request.executedAt) {
+      steps.push({ actor: "SYSTEM", at: request.executedAt, detail: null, label: "Room changed" });
+    }
+    if (request.decidedAt) {
+      steps.push({
+        actorName: request.decidedByName,
+        actor: "MANAGEMENT",
+        at: request.decidedAt,
+        detail: null,
+        label: request.status === "REJECTED" ? "Rejected" : "Approved",
+      });
+    }
+    if (request.status === "EXPIRED") {
+      steps.push({
+        actor: "SYSTEM",
+        at: request.updatedAt,
+        detail: "Nobody reviewed it in time. You can ask again.",
+        label: "Expired unreviewed",
+      });
+    }
     steps.push({
-      actorName: request.decidedByName,
-      actor: "MANAGEMENT",
-      at: request.decidedAt,
+      actorName: request.tenantName,
+      actor: "TENANT",
+      at: request.createdAt,
       detail: null,
-      label: request.status === "REJECTED" ? "Rejected" : "Approved",
+      label: "Requested",
     });
-  }
-  if (request.status === "EXPIRED") {
-    steps.push({
-      actor: "SYSTEM",
-      at: request.updatedAt,
-      detail: "Nobody reviewed it in time. You can ask again.",
-      label: "Expired unreviewed",
-    });
-  }
-  steps.push({
-    actorName: request.tenantName,
-    actor: "TENANT",
-    at: request.createdAt,
-    detail: null,
-    label: "Requested",
-  });
 
-  return [
-    {
+    return {
       headline: `Transfer date ${request.effectiveTransferDate}`,
       id: request.id,
       status: request.status,
       steps,
-    },
-  ];
+    };
+  });
 }
 
 /** Tone for a room change status pill. */

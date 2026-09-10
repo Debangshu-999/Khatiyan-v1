@@ -7,32 +7,38 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Camera, ImagePlus, X } from "lucide-react-native";
+import { Camera, ChevronDown, ImagePlus, MessageSquareWarning, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
+import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { Section } from "@/components/section";
+import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import type { ConcernCategory } from "@/store/services/concern-api";
 import { uploadAssets } from "@/features/uploads/upload-asset";
 import { useCreateConcernMutation } from "@/store/services/concern-api";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_CATEGORIES = [
-  "MAINTENANCE",
-  "CLEANING",
-  "WIFI",
-  "MESS",
-  "WATER",
-  "ELECTRICITY",
-  "NOISE",
-  "SECURITY",
-  "PAYMENT",
-  "LIFT",
-  "OTHER",
-] as const satisfies readonly ConcernCategory[];
+const CONCERN_CATEGORY_OPTIONS = [
+  { label: "Maintenance", subtitle: "Repairs, fixtures or property damage", value: "MAINTENANCE" },
+  { label: "Cleaning", subtitle: "Cleanliness or housekeeping", value: "CLEANING" },
+  { label: "Wi-Fi", subtitle: "Internet access or connection", value: "WIFI" },
+  { label: "Mess", subtitle: "Meals or dining service", value: "MESS" },
+  { label: "Water", subtitle: "Water supply or quality", value: "WATER" },
+  { label: "Electricity", subtitle: "Power, wiring or electrical issues", value: "ELECTRICITY" },
+  { label: "Noise", subtitle: "Disturbance or quiet-hours issues", value: "NOISE" },
+  { label: "Security", subtitle: "Access, safety or security", value: "SECURITY" },
+  { label: "Payment", subtitle: "Rent, deposit or payment issues", value: "PAYMENT" },
+  { label: "Lift", subtitle: "Lift or elevator issues", value: "LIFT" },
+  { label: "Other", subtitle: "Anything that does not fit above", value: "OTHER" },
+] as const satisfies readonly {
+  label: string;
+  subtitle: string;
+  value: ConcernCategory;
+}[];
 
 const MAX_LOCAL_PHOTOS = 4;
 
@@ -59,6 +65,7 @@ export default function CreateConcernScreen() {
   const toast = useToast();
   const [createConcern, createState] = useCreateConcernMutation();
   const [category, setCategory] = useState<ConcernCategory>("MAINTENANCE");
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalConcernPhoto[]>([]);
@@ -199,100 +206,91 @@ export default function CreateConcernScreen() {
   };
 
   return (
-    <ScreenScrollView>
+    <ScreenScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
       <ScreenHeader
         italicTail="concern."
-        subtitle="Add category, details and optional photos for the property team."
+        subtitle="Tell the property team what needs attention and add photos if they help."
         title="Raise"
-        trailing={
-          <AnimatedPressable
-            accessibilityLabel="Back to concerns"
-            onPress={() => router.back()}
-            style={{
-              alignItems: "center",
-              borderColor: colors.border,
-              borderRadius: 12,
-              borderWidth: 1,
-              height: 42,
-              justifyContent: "center",
-              width: 42,
-            }}
-          >
-            <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
-          </AnimatedPressable>
-        }
       />
 
-      <Card>
-        <View style={{ gap: spacing.md }}>
-          <OptionGroup
-            label="Category"
-            options={CONCERN_CATEGORIES}
-            selected={category}
-            onSelect={(value) => {
-              setCategory(value);
-              setError(null);
-            }}
-          />
+      <Section title="Choose a category">
+        <CategoryPickerField
+          onPress={() => setCategoryPickerOpen(true)}
+          value={category}
+        />
+      </Section>
 
-          <FormField
-            label="Title"
-            maxLength={160}
-            onChangeText={(value) => {
-              setTitle(value);
-              form.clearField("title");
-            }}
-            placeholder="Short issue title"
-            value={title}
-          />
-          <FieldError message={form.errors.title} />
+      <Section title="Describe the concern">
+        <FormField
+          label="Concern title"
+          maxLength={160}
+          onChangeText={(value) => {
+            setTitle(value);
+            form.clearField("title");
+          }}
+          placeholder="Give the issue a short, clear title"
+          value={title}
+        />
+        <FieldError message={form.errors.title} />
 
-          <PhotoAttachmentSection
-            onOpenCamera={openCamera}
-            onPickFromDevice={pickFromDevice}
-            onRemovePhoto={(photoId) => setPhotos((current) => current.filter((photo) => photo.id !== photoId))}
-            photos={photos}
-            uploadProgress={uploadProgress}
-          />
+        <FormField
+          label="What happened?"
+          maxLength={1000}
+          multiline
+          onChangeText={(value) => {
+            setDescription(value);
+            form.clearField("description");
+          }}
+          placeholder="Describe the issue and include any useful details."
+          value={description}
+        />
+        <FieldError message={form.errors.description} />
+      </Section>
 
-          <FormField
-            label="Details"
-            maxLength={1000}
-            multiline
-            onChangeText={(value) => {
-              setDescription(value);
-              form.clearField("description");
-            }}
-            placeholder="What happened? Add enough detail for the property team."
-            value={description}
-          />
-          <FieldError message={form.errors.description} />
+      <Section title="Add photos">
+        <PhotoAttachmentSection
+          onOpenCamera={openCamera}
+          onPickFromDevice={pickFromDevice}
+          onRemovePhoto={(photoId) => setPhotos((current) => current.filter((photo) => photo.id !== photoId))}
+          photos={photos}
+          uploadProgress={uploadProgress}
+        />
+      </Section>
 
+      <AnimatedPressable
+        accessibilityRole="button"
+        disabled={busy || form.blocked}
+        onPress={submitConcern}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.primary,
+          borderRadius: 14,
+          justifyContent: "center",
+          minHeight: 54,
+          opacity: busy || form.blocked ? 0.75 : 1,
+          padding: spacing.md,
+        }}
+      >
+        {busy ? (
+          <ActivityIndicator color={colors.onPrimary} />
+        ) : (
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15 }}>
+            Create concern
+          </Text>
+        )}
+      </AnimatedPressable>
 
-          <AnimatedPressable
-            accessibilityRole="button"
-            disabled={busy || form.blocked}
-            onPress={submitConcern}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.primary,
-              borderRadius: 14,
-              justifyContent: "center",
-              minHeight: 52,
-              opacity: busy || form.blocked ? 0.75 : 1,
-              padding: spacing.md,
-            }}
-          >
-            {busy ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15, }}>
-                Create concern
-              </Text>
-            )}
-          </AnimatedPressable>
-        </View>
-      </Card>
+      {categoryPickerOpen ? (
+        <CategoryPickerSheet
+          onClose={() => setCategoryPickerOpen(false)}
+          onSelect={(value) => {
+            setCategory(value);
+            setCategoryPickerOpen(false);
+            setError(null);
+          }}
+          value={category}
+        />
+      ) : null}
 
       {form.serverError ? (
         <AlertModal message={form.serverError} onClose={form.dismissServerError} />
@@ -319,35 +317,22 @@ function PhotoAttachmentSection({
   return (
     <View
       style={{
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: radii.card,
-        borderWidth: 1,
         gap: spacing.sm,
-        padding: spacing.md,
       }}
     >
-      <View style={{ gap: spacing.xs }}>
-        <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <View
-              style={{
-                alignItems: "center",
-                borderColor: colors.ink,
-                borderWidth: 1,
-                borderRadius: 10,
-                height: 34,
-                justifyContent: "center",
-                width: 34,
-              }}
-            >
-              <ImagePlus color={colors.ink} size={17} strokeWidth={2.3} />
-            </View>
-            <Text style={[type.eyebrow, { color: colors.primary }]}>
-              Photos
-            </Text>
-          </View>
-          <Text style={[type.body, { color: colors.kicker, fontSize: 12 }]}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <Text style={[type.body, { color: colors.muted, flex: 1, lineHeight: 20 }]}>
+          Optional · add up to four photos to help the property team understand the issue.
+        </Text>
+        <View
+          style={{
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 5,
+          }}
+        >
+          <Text style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
             {photos.length}/{MAX_LOCAL_PHOTOS}
           </Text>
         </View>
@@ -360,8 +345,8 @@ function PhotoAttachmentSection({
           paddingTop: spacing.xs,
         }}
       >
-        <PhotoActionButton icon={ImagePlus} label="Device" onPress={onPickFromDevice} />
-        <PhotoActionButton icon={Camera} label="Camera" onPress={onOpenCamera} />
+        <PhotoActionButton icon={ImagePlus} label="Choose photos" onPress={onPickFromDevice} />
+        <PhotoActionButton icon={Camera} label="Take a photo" onPress={onOpenCamera} />
       </View>
 
       {uploadProgress ? (
@@ -427,7 +412,7 @@ function PhotoActionButton({
   label: string;
   onPress: () => void;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts } = useTheme();
 
   return (
     <AnimatedPressable
@@ -451,9 +436,8 @@ function PhotoActionButton({
       <View
         style={{
           alignItems: "center",
-          borderColor: colors.ink,
-          borderWidth: 1,
-          borderRadius: 9,
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: 999,
           height: 30,
           justifyContent: "center",
           width: 30,
@@ -461,57 +445,120 @@ function PhotoActionButton({
       >
         <Icon color={colors.ink} size={15} strokeWidth={2.3} />
       </View>
-      <Text style={[type.eyebrow, { color: colors.inkSoft, flex: 1, fontSize: 10.5 }]}>
+      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13 }}>
         {label}
       </Text>
     </AnimatedPressable>
   );
 }
 
-function OptionGroup<T extends string>({
-  label,
-  onSelect,
-  options,
-  selected,
+function CategoryPickerField({
+  onPress,
+  value,
 }: {
-  label: string;
-  onSelect: (value: T) => void;
-  options: readonly T[];
-  selected: T;
+  onPress: () => void;
+  value: ConcernCategory;
+}) {
+  const { colors, fonts, type } = useTheme();
+  const selected = CONCERN_CATEGORY_OPTIONS.find((option) => option.value === value)
+    ?? CONCERN_CATEGORY_OPTIONS[0];
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={`Concern category, ${selected.label}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: 16,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.md,
+        minHeight: 72,
+        padding: spacing.md,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.primarySoft,
+          borderRadius: 999,
+          height: 42,
+          justifyContent: "center",
+          width: 42,
+        }}
+      >
+        <MessageSquareWarning color={colors.ink} size={20} strokeWidth={2.1} />
+      </View>
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <Text style={[type.caption, { color: colors.muted }]}>Selected category</Text>
+        <Text
+          numberOfLines={1}
+          style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}
+        >
+          {selected.label}
+        </Text>
+        <Text numberOfLines={1} style={[type.caption, { color: colors.kicker }]}>
+          {selected.subtitle}
+        </Text>
+      </View>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: 999,
+          height: 32,
+          justifyContent: "center",
+          width: 32,
+        }}
+      >
+        <ChevronDown color={colors.ink} size={16} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+function CategoryPickerSheet({
+  onClose,
+  onSelect,
+  value,
+}: {
+  onClose: () => void;
+  onSelect: (value: ConcernCategory) => void;
+  value: ConcernCategory;
 }) {
   const { colors, type } = useTheme();
 
   return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        {label}
+    <SheetShell animated onClose={onClose} title="Choose a category">
+      <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+        Select the closest match. You can explain the full issue in the details section.
       </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {options.map((option) => {
-          const active = option === selected;
-
-          return (
-            <AnimatedPressable
-              accessibilityRole="button"
-              key={option}
-              onPress={() => onSelect(option)}
-              style={{
-                backgroundColor: active ? colors.primarySoft : colors.surfaceRaised,
-                borderColor: active ? colors.primary : colors.border,
-                borderRadius: 999,
-                borderWidth: 1,
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
-              }}
-            >
-              <Text style={[type.eyebrow, { color: active ? colors.primary : colors.inkSoft, fontSize: 10 }]}>
-                {humanizeToken(option)}
-              </Text>
-            </AnimatedPressable>
-          );
-        })}
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: 16,
+          borderWidth: 1,
+          overflow: "hidden",
+          paddingHorizontal: spacing.sm,
+        }}
+      >
+        {CONCERN_CATEGORY_OPTIONS.map((option, index) => (
+          <PickerOptionRow
+            first={index === 0}
+            key={option.value}
+            label={option.label}
+            onPress={() => onSelect(option.value)}
+            selected={option.value === value}
+            subtitle={option.subtitle}
+          />
+        ))}
       </View>
-    </View>
+    </SheetShell>
   );
 }
 
@@ -535,10 +582,10 @@ function FormField({
   return (
     <View style={{ gap: spacing.xs }}>
       <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {label}
         </Text>
-        <Text style={[type.body, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]}>
+        <Text style={[type.caption, { color: colors.kicker, fontVariant: ["tabular-nums"] }]}>
           {value.length}/{maxLength}
         </Text>
       </View>
@@ -549,12 +596,12 @@ function FormField({
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
         style={{
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderRadius: 14,
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderRadius: 16,
           borderWidth: 1,
           color: colors.ink,
-          fontFamily: fonts.sans,
+          fontFamily: fonts.sansMedium,
           fontSize: 15,
           minHeight: multiline ? 120 : 52,
           padding: spacing.md,
@@ -564,12 +611,4 @@ function FormField({
       />
     </View>
   );
-}
-
-function humanizeToken(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

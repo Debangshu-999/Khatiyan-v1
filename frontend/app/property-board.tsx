@@ -1,80 +1,116 @@
-import { ActivityIndicator, Text, View } from "react-native";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
+import { Text, View } from "react-native";
+import { RefreshCw } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
-import { SkeletonCard } from "@/components/skeleton";
-import { useListMyPropertyBoardItemsQuery } from "@/store/services/notice-api";
+import { PropertyBoardScreenSkeleton } from "@/components/skeletons/property-board";
+import {
+  groupPropertyBoardItems,
+  PROPERTY_BOARD_ARTWORK,
+  PropertyBoardCategoryCard,
+  PropertyBoardHero,
+  PropertyBoardItemModal,
+} from "@/features/property-board/property-board-ui";
+import {
+  type PropertyBoardItem,
+  useListMyPropertyBoardItemsQuery,
+} from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
-
 export default function PropertyBoardScreen() {
   const { colors, type } = useTheme();
-  const router = useGuardedRouter();
+  const { itemId } = useLocalSearchParams<{ itemId?: string | string[] }>();
   const boardQuery = useListMyPropertyBoardItemsQuery();
   const boardItems = boardQuery.data ?? [];
-  const groupedItems = groupByCategory(boardItems);
+  const groupedItems = groupPropertyBoardItems(boardItems);
+  const [selectedItem, setSelectedItem] = useState<PropertyBoardItem | null>(null);
+  const handledItemId = useRef<string | null>(null);
+  const requestedItemId = Array.isArray(itemId) ? itemId[0] : itemId;
+
+  useEffect(() => {
+    if (!requestedItemId || !boardQuery.data || handledItemId.current === requestedItemId) {
+      return;
+    }
+
+    const requestedItem = boardQuery.data.find((item) => item.id === requestedItemId);
+    if (!requestedItem) {
+      return;
+    }
+
+    const modalDelay = setTimeout(() => {
+      handledItemId.current = requestedItemId;
+      setSelectedItem(requestedItem);
+    }, 500);
+
+    return () => clearTimeout(modalDelay);
+  }, [boardQuery.data, requestedItemId]);
 
   return (
-    <ScreenScrollView>
-      <ScreenHeader
-        title="Always-on,"
-        italicTail="info."
-        subtitle="Rules, timings, contacts and property details published by your property team."
-      />
+    <>
+      <ScreenScrollView
+        contentContainerStyle={{ paddingBottom: 0 }}
+        onRefresh={async () => {
+          await boardQuery.refetch();
+        }}
+      >
+        <PropertyBoardHero />
 
-      {boardQuery.isFetching ? (
-        <SkeletonCard />
-      ) : boardItems.length > 0 ? (
-        groupedItems.map(([categoryName, items]) => (
-          <Section key={categoryName} title={categoryName}>
-            {/* Default tone, not sunken. Sunken exists for cards nested INSIDE
-                another surface, which is why it carries no shadow — these sit
-                straight on the page, so they were being denied the lift they
-                should have had. */}
-            {items.map((item) => (
-              <Card key={item.id}>
-                <View style={{ gap: spacing.xs }}>
-                  <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
-                    {item.title}
-                  </Text>
-                  <Text style={[type.body, { color: colors.muted }]}>
-                    {item.body}
-                  </Text>
-                </View>
-              </Card>
-            ))}
-          </Section>
-        ))
-      ) : (
-        <EmptyState
-          artwork={CONCERN_EMPTY_ILLUSTRATION}
-          title="No board items yet"
-          description="Stable property information will appear here after it is published."
-        />
-      )}
-    </ScreenScrollView>
+        {boardQuery.isFetching && !boardQuery.data ? (
+          <PropertyBoardScreenSkeleton />
+        ) : boardQuery.isError ? (
+          <Card tone="sunken">
+            <View style={{ alignItems: "center", gap: spacing.md }}>
+              <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
+                Could not load the property board
+              </Text>
+              <Text style={[type.body, { color: colors.muted, textAlign: "center" }]}>
+                Check your connection and try again.
+              </Text>
+              <AnimatedPressable
+                accessibilityLabel="Try loading the property board again"
+                accessibilityRole="button"
+                onPress={() => {
+                  void boardQuery.refetch();
+                }}
+                style={{
+                  alignItems: "center",
+                  borderColor: colors.borderStrong,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  minHeight: 46,
+                  paddingHorizontal: spacing.lg,
+                }}
+              >
+                <RefreshCw color={colors.primary} size={18} strokeWidth={2.2} />
+                <Text style={[type.action, { color: colors.primary }]}>Try again</Text>
+              </AnimatedPressable>
+            </View>
+          </Card>
+        ) : groupedItems.length > 0 ? (
+          groupedItems.map((group) => (
+            <PropertyBoardCategoryCard
+              group={group}
+              key={group.categoryId}
+              onSelectItem={setSelectedItem}
+            />
+          ))
+        ) : (
+          <EmptyState
+            artwork={PROPERTY_BOARD_ARTWORK}
+            title="No board items yet"
+            description="Rules, timings and property information will appear here after your property team publishes them."
+          />
+        )}
+      </ScreenScrollView>
+
+      <PropertyBoardItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+    </>
   );
-}
-
-
-function groupByCategory<T extends { categoryName: string; displayOrder: number }>(items: T[]) {
-  const grouped = new Map<string, T[]>();
-
-  for (const item of items) {
-    const categoryItems = grouped.get(item.categoryName) ?? [];
-    categoryItems.push(item);
-    grouped.set(item.categoryName, categoryItems);
-  }
-
-  return [...grouped.entries()].map(([categoryName, categoryItems]) => [
-    categoryName,
-    categoryItems.sort((left, right) => left.displayOrder - right.displayOrder),
-  ] as const);
 }

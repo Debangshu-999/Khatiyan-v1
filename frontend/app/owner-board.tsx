@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard } from "@/components/skeleton";
+import { OwnerBoardCategoriesSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
@@ -51,6 +51,9 @@ export default function OwnerBoardScreen() {
   const itemsQuery = useListBoardItemsQuery(propertyId, { skip: !selectedProperty });
   const categories = (categoriesQuery.data ?? []).filter((category) => category.active);
   const items = (itemsQuery.data ?? []).filter((item) => item.active);
+  const boardLoading =
+    (categoriesQuery.isFetching && !categoriesQuery.data) ||
+    (itemsQuery.isFetching && !itemsQuery.data);
 
   const [deactivateCategory] = useDeactivateBoardCategoryMutation();
   const [deactivateItem] = useDeactivateBoardItemMutation();
@@ -95,7 +98,9 @@ export default function OwnerBoardScreen() {
             <ActionButton disabled={!canManageBoard} icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} variant="secondary" />
           </View>
 
-          {categories.length === 0 ? (
+          {boardLoading ? (
+            <OwnerBoardCategoriesSkeleton />
+          ) : categories.length === 0 ? (
             <EmptyState
               artwork={NO_CATEGORY_ILLUSTRATION}
               title="No categories yet"
@@ -149,9 +154,6 @@ export default function OwnerBoardScreen() {
             })
           )}
 
-          {(categoriesQuery.isFetching || itemsQuery.isFetching) && categories.length === 0 ? (
-            <SkeletonCard />
-          ) : null}
         </>
       ) : null}
 

@@ -11,7 +11,7 @@ import { CountTabPills } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
-import { SkeletonList } from "@/components/skeleton";
+import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -135,7 +135,7 @@ export default function OwnerEnquiriesScreen() {
             // Enquiry-shaped: a name row, the message, and the Respond
             // button — three of them, because one card standing in for a list
             // reserves a fraction of the height that arrives.
-            <SkeletonList action body={2} rows={3} />
+            <OwnerEnquiryListSkeleton />
           ) : visible.length === 0 ? (
             <EmptyState
               description={

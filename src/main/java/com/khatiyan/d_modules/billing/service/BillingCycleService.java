@@ -677,6 +677,26 @@ public class BillingCycleService {
     }
 
     /**
+     * Loads the rent cycle containing the supplied calendar date. This is for
+     * rules tied to the tenant's present cycle; using the numerically latest
+     * cycle is unsafe because billing may already have generated the next one
+     * in UPCOMING state.
+     */
+    @Transactional(readOnly = true)
+    public BillingCycleResponse getCurrentMyRentCycle(UUID tenantUserId, LocalDate onDate) {
+        TenancyResponse tenancy = tenancyModule.findActiveByUserId(tenantUserId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", tenantUserId));
+
+        BillingCycle cycle = billingCycleRepository.findCurrentRentCycle(
+                        tenancy.id(), onDate, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new ValidationException(
+                        "No active rent cycle covers the selected checkout date"));
+        return toResponse(cycle);
+    }
+
+    /**
      * Loads one tenant-owned cycle for payment initiation or self-service views.
      */
     @Transactional(readOnly = true)
