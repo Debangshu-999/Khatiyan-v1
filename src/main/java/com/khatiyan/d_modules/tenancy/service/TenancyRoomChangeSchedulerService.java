@@ -20,7 +20,11 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Executes approved room changes before billing cycle generation.
+ * Executes approved room changes on their transfer date.
+ *
+ * <p>Each move is run once. One that cannot complete is cancelled, its bed
+ * released and everyone told. It is never reopened for another decision and
+ * never tried again the next night.
  */
 @Slf4j
 @Component
@@ -62,7 +66,7 @@ public class TenancyRoomChangeSchedulerService {
         }
 
         int executedCount = 0;
-        int reopenedCount = 0;
+        int cancelledCount = 0;
         int failedCount = 0;
         for (UUID requestId : requestIds) {
             try {
@@ -70,20 +74,28 @@ public class TenancyRoomChangeSchedulerService {
                         roomChangeRequestService.executeDueApprovedRequest(requestId);
                 if (result.status() == TenancyRoomChangeRequestStatus.EXECUTED) {
                     executedCount = executedCount + 1;
-                } else if (result.status() == TenancyRoomChangeRequestStatus.REQUESTED) {
-                    reopenedCount = reopenedCount + 1;
+                } else if (result.status() == TenancyRoomChangeRequestStatus.CANCELLED) {
+                    cancelledCount = cancelledCount + 1;
                 }
             } catch (RuntimeException exception) {
                 failedCount = failedCount + 1;
-                log.error("Tenancy room change scheduler failed requestId={}", requestId, exception);
+                log.warn("Tenancy room change could not run and is being cancelled requestId={}",
+                        requestId, exception);
+                try {
+                    roomChangeRequestService.closeAfterExecutionFailure(requestId, exception);
+                } catch (RuntimeException closeException) {
+                    // Left APPROVED, so tomorrow's run reaches it again. Only an
+                    // outage should land here.
+                    log.error("Could not cancel failed room change requestId={}", requestId, closeException);
+                }
             }
         }
 
         log.info(
-                "Tenancy room change scheduler completed due requests found={} executed={} reopened={} failed={}",
+                "Tenancy room change scheduler completed due requests found={} executed={} cancelled={} failed={}",
                 requestIds.size(),
                 executedCount,
-                reopenedCount,
+                cancelledCount,
                 failedCount);
     }
 

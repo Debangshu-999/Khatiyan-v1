@@ -379,6 +379,26 @@ public class BillingCycleLineItem extends BaseEntity {
         this.settlementAction = BillingLineSettlementAction.SYSTEM_CHARGE;
     }
 
+    /**
+     * Reprices the system rent line of a cycle that has not opened yet, after a
+     * room change moved its tenant onto a different rent.
+     *
+     * <p>Rent lines are never edited by hand, so there is no adjustment here to
+     * preserve. A line that somehow carries one is refused rather than overwritten.
+     */
+    public void replaceSystemRent(long amountPaise) {
+        if (type != BillingCycleLineItemType.RENT) {
+            throw new ValidationException("Only rent lines can be repriced as rent");
+        }
+        if (!systemGenerated || lastAdjustedByUserId != null) {
+            throw new ValidationException("A manually adjusted rent line cannot be repriced automatically");
+        }
+
+        validatePositiveAmount(amountPaise);
+        this.amountPaise = amountPaise;
+        this.settlementAmountPaise = amountPaise;
+    }
+
     public void adjust(long newAmountPaise, UUID adjustedByUserId) {
         ensureEditableLine();
         validatePositiveAmount(newAmountPaise);

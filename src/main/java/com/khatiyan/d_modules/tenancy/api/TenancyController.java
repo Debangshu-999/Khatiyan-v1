@@ -31,9 +31,7 @@ import com.khatiyan.d_modules.tenancy.api.dto.EndTenancyRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.CreatePrematureExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ApproveTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ExitCheckoutWindowResponse;
-import com.khatiyan.d_modules.tenancy.api.dto.ExitScheduleSettingsResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.RejectTenancyExitRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.ScheduledTenancyExitResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.DecideTenancyExitWithdrawalRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.WithdrawTenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.ReviewRoomChangeRequest;
@@ -45,13 +43,10 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TransferTenancyRoomRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.UpdateTenancyRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.UpdateExitScheduleSettingsRequest;
-import com.khatiyan.d_modules.tenancy.api.dto.UpcomingTenancyExitResponse;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
-import com.khatiyan.d_modules.tenancy.service.ScheduledTenancyExitService;
 
 import jakarta.validation.Valid;
 
@@ -63,17 +58,14 @@ public class TenancyController {
     private final TenancyService tenancyService;
     private final TenancyExitRequestService tenancyExitRequestService;
     private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
-    private final ScheduledTenancyExitService scheduledTenancyExitService;
 
     public TenancyController(
             TenancyService tenancyService,
             TenancyExitRequestService tenancyExitRequestService,
-            TenancyRoomChangeRequestService tenancyRoomChangeRequestService,
-            ScheduledTenancyExitService scheduledTenancyExitService) {
+            TenancyRoomChangeRequestService tenancyRoomChangeRequestService) {
         this.tenancyService = tenancyService;
         this.tenancyExitRequestService = tenancyExitRequestService;
         this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
-        this.scheduledTenancyExitService = scheduledTenancyExitService;
     }
 
     /**
@@ -277,57 +269,6 @@ public class TenancyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return tenancyExitRequestService.listForProperty(user.userId(), propertyId);
-    }
-
-    @GetMapping("/properties/{propertyId}/upcoming-exits")
-    public List<UpcomingTenancyExitResponse> listUpcomingExits(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId) {
-        return scheduledTenancyExitService.listUpcoming(user.userId(), propertyId);
-    }
-
-    @GetMapping("/properties/{propertyId}/exit-schedule-settings")
-    public ExitScheduleSettingsResponse getExitScheduleSettings(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId) {
-        return scheduledTenancyExitService.getSettings(user.userId(), propertyId);
-    }
-
-    @PutMapping("/properties/{propertyId}/exit-schedule-settings")
-    public ExitScheduleSettingsResponse updateExitScheduleSettings(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID propertyId,
-            @Valid @RequestBody UpdateExitScheduleSettingsRequest req) {
-        return scheduledTenancyExitService.updateSettings(
-                user.userId(), propertyId, req.executionTime());
-    }
-
-    @PostMapping("/exit-requests/{requestId}/schedule")
-    public ResponseEntity<ScheduledTenancyExitResponse> scheduleExit(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID requestId,
-            @Valid @RequestBody EndTenancyRequest request) {
-        ScheduledTenancyExitResponse response =
-                scheduledTenancyExitService.schedule(user.userId(), requestId, request);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .location(URI.create("/api/v1/tenancies/exit-requests/" + requestId + "/schedule"))
-                .body(response);
-    }
-
-    @GetMapping("/exit-requests/{requestId}/schedule")
-    public ScheduledTenancyExitResponse getScheduledExit(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID requestId) {
-        return scheduledTenancyExitService.getActiveSchedule(user.userId(), requestId);
-    }
-
-    @DeleteMapping("/exit-requests/{requestId}/schedule")
-    public ResponseEntity<Void> unscheduleExit(
-            @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID requestId) {
-        scheduledTenancyExitService.unschedule(user.userId(), requestId);
-        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/exit-requests")

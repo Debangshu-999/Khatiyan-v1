@@ -56,6 +56,7 @@ spring:
     baseline-on-migrate: true
     locations:
       - classpath:db/migration/shared
+      - classpath:db/migration/intelligence
       - classpath:db/migration/auth
       - classpath:db/migration/property
       - classpath:db/migration/staff
@@ -108,22 +109,43 @@ spring:
     # NOTE: TenancyAgreementService pins its own NON_NULL mapper for the
     # agreement content hash, which must not move when this changes.
     default-property-inclusion: always
+    # Dates as ISO-8601 strings, never epoch numbers. Jackson 3 moved this out
+    # of SerializationFeature into DateTimeFeature, so Boot 4 reads it from
+    # spring.jackson.datatype.datetime — under the old key the context refused
+    # to start with "No enum constant SerializationFeature
+    # .write-dates-as-timestamps". Stated rather than left to Jackson 3's
+    # default, because the frontend parses every date as a string.
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
     serialization:
-      write-dates-as-timestamps: false
       indent-output: false
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      group-id: ${KAFKA_CONSUMER_GROUP_ID:khatiyan-notification-service}
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: com.khatiyan.d_modules.notification.queue
+  autoconfigure:
+    exclude:
+      # Every Spring AI OpenAI auto-configuration, off.
+      #
+      # The starter is here because Groq and Workers AI both speak the OpenAI
+      # wire format, not because we use OpenAI. Left alone it builds six models
+      # pointed at api.openai.com from spring.ai.openai.*, and an
+      # auto-configured chat model is one an @Autowired ChatModel could pick up
+      # by accident and quietly send a tenant's words to a provider we never
+      # chose. The intelligence module builds its models explicitly, each with
+      # its own base URL, key and retry policy (AI spec §8.3).
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+
+  ai:
+    # Spring AI's own observation logging. Prompts and completions must never
+    # reach the application log: they carry whatever a tenant typed.
+    chat:
+      observations:
+        log-prompt: false
+        log-completion: false
 
 server:
   port: 8080
@@ -153,6 +175,50 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
 
 app:
+  ai:
+    # The master switch. Off means off: no provider call, no key read, nothing
+    # in the background. This is the only module that sends data outside
+    # Khatiyan, so doing nothing is the resting state, not a misconfiguration.
+    enabled: ${AI_ENABLED:false}
+    smart-search:
+      enabled: ${AI_SMART_SEARCH_ENABLED:false}
+      max-query-chars: 300
+      timeout: 8s
+      user-limit-per-minute: 6
+      user-limit-per-day: 40
+      cache-ttl: 24h
+    providers:
+      groq:
+        base-url: https://api.groq.com/openai/v1
+        api-key: ${GROQ_API_KEY:}
+        # Rotation slot. A second key REPLACES the first — it never runs
+        # alongside it to widen the quota. Groq's free limits are per
+        # organisation, so pooling keys buys nothing and risks the account.
+        next-api-key: ${GROQ_API_KEY_NEXT:}
+        # Flip only once Zero Data Retention is actually enabled on the
+        # account. Until then assume prompts are kept up to 30 days for abuse
+        # monitoring, and send nothing that would matter if they were.
+        zero-data-retention-confirmed: ${GROQ_ZDR_CONFIRMED:false}
+        models:
+          structured-fast: openai/gpt-oss-20b
+          structured-strong: openai/gpt-oss-120b
+        # Ninety per cent of the published free ceilings, so we refuse
+        # ourselves before Groq refuses us. Our refusal is a message we write.
+        budget:
+          requests-per-minute: 27
+          requests-per-day: 900
+          tokens-per-minute: 7200
+          tokens-per-day: 180000
+      workers-ai:
+        base-url: ${CLOUDFLARE_AI_BASE_URL:}
+        api-key: ${CLOUDFLARE_AI_API_TOKEN:}
+        next-api-key: ${CLOUDFLARE_AI_API_TOKEN_NEXT:}
+        models:
+          # Chosen in the Milestone 1 spike, against the golden set.
+          structured-fast: ""
+          structured-strong: "@cf/openai/gpt-oss-120b"
+        neurons-per-day: 9000
+
   logging:
     dir: ${KHATIYAN_LOG_DIR:logs}
   # Signed direct upload: the device sends bytes straight to Cloudinary and only
@@ -280,10 +346,6 @@ app:
     close-expired-resolved-cron: ${CONCERN_CLOSE_EXPIRED_RESOLVED_CRON:0 35 0 * * *}
     close-expired-resolved-zone: ${CONCERN_CLOSE_EXPIRED_RESOLVED_ZONE:Asia/Kolkata}
   tenancy:
-    # Minute sweep; each row carries its property's configured execution time.
-    exit-execution-cron: ${TENANCY_EXIT_EXECUTION_CRON:0 * * * * *}
-    exit-execution-zone: ${TENANCY_EXIT_EXECUTION_ZONE:Asia/Kolkata}
-    exit-execution-batch-size: ${TENANCY_EXIT_EXECUTION_BATCH_SIZE:50}
     room-change-execution-cron: ${TENANCY_ROOM_CHANGE_EXECUTION_CRON:0 12 0 * * *}
     room-change-execution-zone: ${TENANCY_ROOM_CHANGE_EXECUTION_ZONE:Asia/Kolkata}
     room-change-execution-batch-size: ${TENANCY_ROOM_CHANGE_EXECUTION_BATCH_SIZE:50}
@@ -344,8 +406,6 @@ app:
     push-delivery-zone: ${NOTIFICATION_PUSH_DELIVERY_ZONE:Asia/Kolkata}
     cleanup-cron: ${NOTIFICATION_CLEANUP_CRON:0 0 0 * * *}
     cleanup-zone: ${NOTIFICATION_CLEANUP_ZONE:Asia/Kolkata}
-    kafka:
-      push-topic: ${NOTIFICATION_PUSH_TOPIC:notification.push.delivery}
   reminder:
     scan-cron: ${REMINDER_SCAN_CRON:0 40 0 * * *}
     scan-zone: ${REMINDER_SCAN_ZONE:Asia/Kolkata}

@@ -9,7 +9,9 @@ import java.util.UUID;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.d_modules.notification.NotificationModule;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationPriority;
@@ -18,6 +20,7 @@ import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeApprovedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeExecutedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeExecutionFailedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRejectedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomChangeRequestedEvent;
 
@@ -146,6 +149,77 @@ public class TenancyRoomChangeNotificationEventListener {
                 event.requestId(),
                 data,
                 NotificationDeliveryMode.IN_APP_ONLY);
+    }
+
+    /**
+     * A scheduled move could not run, so it is cancelled and its bed released.
+     *
+     * <p>
+     * Told to everyone it concerns, once. The tenant learns the move is off and
+     * that they can ask again. Management gets the reason, since it is theirs to
+     * look into.
+     */
+    @ApplicationModuleListener
+    public void onExecutionFailed(TenancyRoomChangeExecutionFailedEvent event) {
+        PropertyResponse property = activePropertyOrNull(event.propertyId());
+
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("requestId", event.requestId().toString());
+        data.put("referenceCode", event.requestReferenceCode());
+        data.put("tenancyId", event.tenancyId().toString());
+        data.put("tenantUserId", event.tenantUserId().toString());
+        data.put("propertyId", event.propertyId().toString());
+        if (property != null) {
+            data.put("propertyName", property.name());
+        }
+        data.put("targetRoomId", event.targetRoomId().toString());
+        data.put("effectiveTransferDate", event.effectiveTransferDate().toString());
+
+        notificationModule.notifyUser(
+                event.tenantUserId(),
+                "Room change not completed",
+                "Your room change planned for " + event.effectiveTransferDate()
+                        + " could not be completed, so it has been cancelled. You can raise a new request if you"
+                        + " still want to move.",
+                NotificationCategory.TENANCY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.TENANCY_ROOM_CHANGE_EXECUTION_FAILED,
+                event.requestId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.TENANT);
+
+        if (property == null) {
+            return;
+        }
+
+        notificationModule.notifyUsers(
+                adminRecipients(property),
+                "Room change cancelled",
+                "Room change " + event.requestReferenceCode() + " due on " + event.effectiveTransferDate()
+                        + " could not be completed and has been cancelled. " + sentence(event.reason())
+                        + " The reserved bed has been released.",
+                NotificationCategory.TENANCY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.TENANCY_ROOM_CHANGE_EXECUTION_FAILED,
+                event.requestId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
+    }
+
+    private PropertyResponse activePropertyOrNull(java.util.UUID propertyId) {
+        try {
+            return propertyModule.getActiveProperty(propertyId);
+        } catch (NotFoundException exception) {
+            return null;
+        }
+    }
+
+    /** One sentence, ending in exactly one full stop, whatever the source ended in. */
+    private static String sentence(String text) {
+        String trimmed = text == null ? "" : text.trim();
+        return trimmed.endsWith(".") ? trimmed : trimmed + ".";
     }
 
     private Map<String, String> baseData(

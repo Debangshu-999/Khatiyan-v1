@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type ReactNode } from "react";
-import { ActivityIndicator, Image, Text, View } from "react-native";
+import { ActivityIndicator, Image, Text, View, type ViewStyle } from "react-native";
 import { PropertyIcon } from "@/components/property-icon";
 import { AppTextInput } from "@/components/app-text-input";
 import { emailProblem } from "@/features/forms/email-validation";
@@ -8,18 +8,24 @@ import * as ImagePicker from "expo-image-picker";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   Camera,
+  CalendarDays,
   Check,
   ChevronRight,
+  CircleAlert,
   Cog,
+  Hash,
   Home,
-  Info,
+  Mail,
   MailCheck,
+  MapPin,
   Image as ImageIcon,
   Pencil,
+  Phone,
   Plus,
   Power,
   ShieldCheck,
   Trash2,
+  UserRound,
   type LucideProps,
 } from "lucide-react-native";
 
@@ -346,77 +352,72 @@ export default function AccountScreen() {
 
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Personal information" />
-        <Card
-          style={{
-            borderRadius: 12,
-            gap: 0,
-            overflow: "hidden",
-            padding: 0,
-          }}
-        >
-          <View style={{ flexDirection: "row" }}>
-            <View style={{ minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, width: "48%" }}>
-              <ReadonlyField label="Account status" value={user?.active ? "Active" : "Inactive"} />
-            </View>
-            <View
-              style={{
-                alignSelf: "stretch",
-                backgroundColor: colors.border,
-                marginVertical: spacing.md,
-                width: 1,
-              }}
-            />
-            <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-              <CompletionField
-                complete={profileCompletion.complete}
-                loading={identityLoading}
-                onExplain={() => setCompletionInfoOpen(true)}
-              />
-            </View>
-          </View>
-
-          <Divider style={{ marginHorizontal: spacing.lg }} />
-
-          <View style={{ flexDirection: "row" }}>
-            <View style={{ minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, width: "48%" }}>
-              <ReadonlyField
-                label="Gender"
-                loading={identityLoading}
-                value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
-              />
-            </View>
-            <View
-              style={{
-                alignSelf: "stretch",
-                backgroundColor: colors.border,
-                marginVertical: spacing.md,
-                width: 1,
-              }}
-            />
-            <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-              <ReadonlyField
-                label="Date of birth"
-                loading={identityLoading}
-                value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
-              />
-            </View>
-          </View>
-
-          <Divider style={{ marginHorizontal: spacing.lg }} />
-
-          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+        <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
+          <PersonalInfoCard
+            compact
+            icon={ShieldCheck}
+            style={{ flex: 1 }}
+          >
             <ReadonlyField
-              hideStatusDivider
-              label="Registered phone"
-              prefix={<DialCodePrefix />}
-              status={user?.phoneVerified ? "Verified" : "Not verified"}
-              value={formatPhone(user?.phone)}
+              compact
+              label="Account status"
+              value={user?.active ? "Active" : "Inactive"}
+              valueColor={user?.active ? colors.jade : colors.danger}
             />
-          </View>
+          </PersonalInfoCard>
+          <PersonalInfoCard
+            accessibilityLabel="View profile completion"
+            compact
+            icon={CircleAlert}
+            onPress={() => setCompletionInfoOpen(true)}
+            style={{ flex: 1 }}
+          >
+            <CompletionField compact complete={profileCompletion.complete} loading={identityLoading} />
+          </PersonalInfoCard>
+        </View>
 
-          <Divider style={{ marginHorizontal: spacing.lg }} />
+        <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
+          <PersonalInfoCard
+            accessibilityLabel="Edit gender in account settings"
+            compact
+            icon={UserRound}
+            onPress={() => router.push("/account-settings")}
+            style={{ flex: 1 }}
+          >
+            <ReadonlyField
+              compact
+              label="Gender"
+              loading={identityLoading}
+              value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
+            />
+          </PersonalInfoCard>
+          <PersonalInfoCard
+            accessibilityLabel="Edit date of birth in account settings"
+            compact
+            icon={CalendarDays}
+            onPress={() => router.push("/account-settings")}
+            style={{ flex: 1 }}
+          >
+            <ReadonlyField
+              compact
+              label="Date of birth"
+              loading={identityLoading}
+              value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
+            />
+          </PersonalInfoCard>
+        </View>
 
-          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+        <PersonalInfoCard icon={Phone}>
+          <ReadonlyField
+            hideStatusDivider
+            label="Registered phone"
+            prefix={<DialCodePrefix />}
+            status={user?.phoneVerified ? "Verified" : "Not verified"}
+            value={formatPhone(user?.phone)}
+          />
+        </PersonalInfoCard>
+
+        <PersonalInfoCard icon={Mail}>
             {/* Before either branch. "No email yet" and "still asking" are not
                 the same thing, and the form is what the app shows for the
                 first — so every load flashed "Add your email" and an Add email
@@ -522,25 +523,24 @@ export default function AccountScreen() {
                 <FieldError message={form.errors.email} />
               </View>
             )}
-          </View>
+        </PersonalInfoCard>
 
-          <Divider style={{ marginHorizontal: spacing.lg }} />
+        <PersonalInfoCard
+          accessibilityLabel="Edit permanent address in account settings"
+          icon={MapPin}
+          onPress={() => router.push("/account-settings")}
+        >
+          <AddressField
+            loading={identityLoading}
+            pincode={identity?.permanentAddressPincode ?? null}
+            requiredForTenantOnboarding={activeAccount === "owner" || (!activeAccount && user?.role === "OWNER")}
+            value={identity?.permanentAddress ?? null}
+          />
+        </PersonalInfoCard>
 
-          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-            <AddressField
-              loading={identityLoading}
-              pincode={identity?.permanentAddressPincode ?? null}
-              requiredForTenantOnboarding={activeAccount === "owner" || (!activeAccount && user?.role === "OWNER")}
-              value={identity?.permanentAddress ?? null}
-            />
-          </View>
-
-          <Divider style={{ marginHorizontal: spacing.lg }} />
-
-          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-            <ReadonlyField label="Account reference" value={shortId(user?.id)} />
-          </View>
-        </Card>
+        <PersonalInfoCard icon={Hash}>
+          <ReadonlyField label="Account reference" value={shortId(user?.id)} />
+        </PersonalInfoCard>
       </View>
 
       {/* Directly under the card holding the phone and email, because this is
@@ -934,6 +934,80 @@ function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode
 }
 
 /**
+ * A single personal-information fact, separated into its own compact card.
+ *
+ * <p>The white surface is deliberate: account health is communicated by the
+ * value, never by washing the entire card green or red. The icon disc remains
+ * neutral and every glyph uses the normal ink colour, including account status
+ * and profile completion.
+ */
+function PersonalInfoCard({
+  accessibilityLabel,
+  children,
+  compact = false,
+  icon: Icon,
+  onPress,
+  style,
+}: {
+  accessibilityLabel?: string;
+  children: ReactNode;
+  compact?: boolean;
+  icon: ComponentType<LucideProps>;
+  onPress?: () => void;
+  style?: ViewStyle;
+}) {
+  const { colors } = useTheme();
+  const frame: ViewStyle = {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: compact ? spacing.xxs : spacing.sm,
+    minHeight: compact ? 94 : 78,
+    minWidth: 0,
+    paddingHorizontal: compact ? spacing.xs : spacing.md,
+    paddingVertical: spacing.md,
+  };
+  const iconSize = compact ? 32 : 38;
+
+  const content = (
+    <>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceSunken,
+          borderRadius: iconSize / 2,
+          height: iconSize,
+          justifyContent: "center",
+          width: iconSize,
+        }}
+      >
+        <Icon color={colors.ink} size={compact ? 16 : 19} strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
+      {onPress ? <ChevronRight color={colors.muted} size={compact ? 14 : 17} strokeWidth={2.2} /> : null}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <AnimatedPressable
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={[frame, style]}
+      >
+        {content}
+      </AnimatedPressable>
+    );
+  }
+
+  return <View style={[frame, style]}>{content}</View>;
+}
+
+/**
  * One stored fact about the account.
  *
  * <p>The label is a quiet kicker rather than heavy bold: in a stack of six
@@ -946,6 +1020,7 @@ function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode
  * loaded family gets synthetic bolding on Android.
  */
 function ReadonlyField({
+  compact,
   hideStatusDivider,
   label,
   loading,
@@ -955,7 +1030,9 @@ function ReadonlyField({
   prefix,
   status,
   value,
+  valueColor,
 }: {
+  compact?: boolean;
   hideStatusDivider?: boolean;
   label: string;
   loading?: boolean;
@@ -965,6 +1042,7 @@ function ReadonlyField({
   prefix?: ReactNode;
   status?: string;
   value: string;
+  valueColor?: string;
 }) {
   const { colors, fonts, type } = useTheme();
   const statusColor =
@@ -988,12 +1066,14 @@ function ReadonlyField({
           </View>
         ) : (
           <Text
+            adjustsFontSizeToFit={compact}
+            minimumFontScale={0.78}
             numberOfLines={1}
             style={{
-              color: colors.ink,
+              color: valueColor ?? colors.ink,
               flex: 1,
               fontFamily: mono ? fonts.mono : fonts.sansBold,
-              fontSize: 15,
+              fontSize: compact ? 13 : 15,
             }}
           >
             {value}
@@ -1228,24 +1308,12 @@ function describeProfileCompletion(identity: UserIdentity | undefined) {
  * on the one field with an outstanding action buries it among eight facts that
  * need nothing.
  */
-function CompletionField({ complete, loading, onExplain }: { complete: boolean; loading?: boolean; onExplain: () => void }) {
+function CompletionField({ compact, complete, loading }: { compact?: boolean; complete: boolean; loading?: boolean }) {
   const { colors, fonts, type } = useTheme();
 
   return (
     <View style={{ gap: spacing.xxs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-        <Text style={[type.caption, { color: colors.muted }]}>Profile completion</Text>
-        {loading || complete ? null : (
-          <AnimatedPressable
-            accessibilityLabel="What is missing from my profile"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onExplain}
-          >
-            <Info color={colors.muted} size={13} strokeWidth={2.4} />
-          </AnimatedPressable>
-        )}
-      </View>
+      <Text style={[type.caption, { color: colors.muted }]}>Profile</Text>
 
       {loading ? (
         <View style={{ minHeight: 24, paddingTop: 3 }}>
@@ -1253,11 +1321,13 @@ function CompletionField({ complete, loading, onExplain }: { complete: boolean; 
         </View>
       ) : (
         <Text
+          adjustsFontSizeToFit={compact}
+          minimumFontScale={0.78}
           numberOfLines={1}
           style={{
             color: complete ? colors.ink : colors.danger,
             fontFamily: fonts.sansBold,
-            fontSize: 15,
+            fontSize: compact ? 13 : 15,
             minHeight: 24,
           }}
         >

@@ -33,6 +33,7 @@ import { DateOfBirthField } from "@/features/account/date-of-birth-field";
 import { emailProblem } from "@/features/forms/email-validation";
 import { GENDER_LABELS, GenderPicker } from "@/features/account/gender-picker";
 import { ClickwrapConsent } from "@/features/compliance/clickwrap-consent";
+import { formatFloor } from "@/features/property/floor";
 import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { AgreementTemplateEditor } from "@/features/compliance/agreement-template-editor";
 import { OnboardingGateBoard } from "@/features/compliance/onboarding-gate-board";
@@ -1947,7 +1948,7 @@ function RoomPicker({
             Room {selected.roomNumber}
           </Text>
           <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
-            {selected.floor?.trim() || "Unassigned floor"} · {priceOf(selected)}
+            {formatFloor(selected.floor)} · {priceOf(selected)}
           </Text>
         </View>
         <AnimatedPressable
@@ -1989,7 +1990,7 @@ function RoomPicker({
             >
               <Hotel color={colors.inkSoft} size={18} strokeWidth={2.1} />
               <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 15 }}>
-                {floor}
+                {floor === "Unassigned" ? floor : formatFloor(floor)}
               </Text>
               <Text style={[type.caption, { color: free > 0 ? colors.muted : colors.kicker }]}>
                 {free > 0 ? `${free} free` : "Full"}

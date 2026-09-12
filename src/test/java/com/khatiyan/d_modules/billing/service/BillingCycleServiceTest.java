@@ -290,6 +290,52 @@ class BillingCycleServiceTest {
         assertThat(cycle.isLocked()).isTrue();
     }
 
+    /**
+     * A room change runs at the end of its cycle, by which time the next cycle
+     * already exists at the old room and rent. That cycle moves with the tenant.
+     */
+    @Test
+    void roomTransferMovesTheUpcomingCycleToTheNewRoomAndRent() {
+        BillingCycle current = monthlyLiveCycleDue(LocalDate.of(2026, 6, 4), 100_00L);
+        BillingCycle next = monthlyUpcomingCycle();
+        UUID newRoomId = UUID.randomUUID();
+        BillingCycleLineItem rent = BillingCycleLineItem.systemCharge(
+                next, BillingCycleLineItemType.RENT, "Rent", null, 12_000_00L, 1);
+        savedLineItems.add(rent);
+        when(billingCycleRepository.findById(current.getId())).thenReturn(Optional.of(current));
+        when(billingCycleRepository.findRentCyclesAfter(TENANCY_ID, 1)).thenReturn(List.of(next));
+        when(lineItemRepository.findByBillingCycleIdAndType(next.getId(), BillingCycleLineItemType.RENT))
+                .thenReturn(List.of(rent));
+        when(lineItemRepository.findByBillingCycleId(next.getId()))
+                .thenAnswer(invocation -> lineItemsFor(next.getId()));
+
+        billingCycleService.applyRoomTransferToUpcomingCycles(TENANCY_ID, current.getId(), newRoomId, 14_000_00L);
+
+        assertThat(next.getRoomId()).isEqualTo(newRoomId);
+        assertThat(rent.getAmountPaise()).isEqualTo(14_000_00L);
+        assertThat(next.getTotalAmountPaise()).isEqualTo(14_000_00L);
+        // The cycle being finished stays with the room it was lived in.
+        assertThat(current.getRoomId()).isEqualTo(ROOM_ID);
+    }
+
+    /** An opened cycle is a bill the tenant may already be paying. */
+    @Test
+    void roomTransferRefusesOnceTheNextCycleHasOpened() {
+        BillingCycle current = monthlyLiveCycleDue(LocalDate.of(2026, 6, 4), 100_00L);
+        BillingCycle next = monthlyUpcomingCycle();
+        next.activate(100_00L);
+        when(billingCycleRepository.findById(current.getId())).thenReturn(Optional.of(current));
+        when(billingCycleRepository.findRentCyclesAfter(TENANCY_ID, 1)).thenReturn(List.of(next));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> billingCycleService.applyRoomTransferToUpcomingCycles(
+                        TENANCY_ID, current.getId(), UUID.randomUUID(), 14_000_00L))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class)
+                .hasMessageContaining("already opened at the old rent");
+
+        assertThat(next.getRoomId()).isEqualTo(ROOM_ID);
+        verifyNoInteractions(lineItemRepository);
+    }
+
     private List<BillingCycleLineItem> lineItemsFor(UUID billingCycleId) {
         return savedLineItems.stream()
                 .filter(lineItem -> billingCycleId.equals(lineItem.getBillingCycleId()))

@@ -231,7 +231,7 @@ class TenancyExitRequestLifecycleTest {
     }
 
     @ParameterizedTest(name = "re-raise still allowed {0} day(s) after the lapse")
-    @ValueSource(longs = {0, 1, 2, 3})
+    @ValueSource(longs = {0, 1, 2})
     void reRaiseAllowedInsideItsWindow(long daysAgo) {
         TenancyExitRequest request = newRequest();
         statusOf(request, TenancyExitRequestStatus.EXPIRED);
@@ -245,9 +245,45 @@ class TenancyExitRequestLifecycleTest {
     void reRaiseBlockedAfterItsWindow() {
         TenancyExitRequest request = newRequest();
         statusOf(request, TenancyExitRequestStatus.EXPIRED);
-        decidedDaysAgo(request, TenancyExitRequest.RE_RAISE_WINDOW_DAYS + 1);
+        decidedDaysAgo(request, TenancyExitRequest.RE_RAISE_WINDOW_HOURS / 24 + 1);
 
         assertThat(request.allowsReRaiseOn(LocalDate.now())).isFalse();
+    }
+
+    @Test
+    @DisplayName("a chain stops offering re-raise after two corrections")
+    void reRaiseChainIsCappedAtTwo() {
+        TenancyExitRequest original = newRequest();
+        original.reject(OWNER, "wrong date");
+        assertThat(original.getReRaiseCount()).isZero();
+        assertThat(original.allowsReRaiseAt(Instant.now())).isTrue();
+
+        TenancyExitRequest first = reRaiseOf(original);
+        assertThat(first.getReRaiseCount()).isEqualTo(1);
+        first.reject(OWNER, "still wrong");
+        assertThat(first.allowsReRaiseAt(Instant.now())).isTrue();
+
+        TenancyExitRequest second = reRaiseOf(first);
+        assertThat(second.getReRaiseCount()).isEqualTo(2);
+        second.reject(OWNER, "no");
+
+        // Every link so far has been carrying the first attempt's notice anchor,
+        // which is the whole reason the chain cannot run forever: the tenant
+        // would keep an increasingly stale checkout date alive all month.
+        assertThat(second.getNoticeAnchorDate()).isEqualTo(original.getNoticeAnchorDate());
+        assertThat(second.allowsReRaiseAt(Instant.now())).isFalse();
+    }
+
+    private static TenancyExitRequest reRaiseOf(TenancyExitRequest superseded) {
+        return TenancyExitRequest.normalNotice(
+                null,
+                superseded.getTenancyId(),
+                TENANT,
+                superseded.getPropertyId(),
+                superseded.getRoomId(),
+                CHECKOUT,
+                "moving out",
+                superseded);
     }
 
     @Test

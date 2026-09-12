@@ -27,6 +27,7 @@ import {
   useListMyExitRequestsQuery,
   useListMyRoomChangeRequestsQuery,
 } from "@/store/services/tenancy-api";
+import { formatFloor } from "@/features/property/floor";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -694,10 +695,6 @@ function compareFloorLabels(left: string, right: string) {
   return left.localeCompare(right, undefined, { numeric: true });
 }
 
-function formatFloor(value: string) {
-  const trimmed = value.trim();
-  return trimmed.toLowerCase().startsWith("floor") ? trimmed : `Floor ${trimmed}`;
-}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(

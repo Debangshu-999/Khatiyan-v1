@@ -1,17 +1,20 @@
-import { Image, Modal, ScrollView, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FileDown, X } from "lucide-react-native";
+import Svg, { Path, Rect } from "react-native-svg";
 
-import { formatDate, formatMoney } from "@/features/owner/bill-views";
+import { formatDate } from "@/features/owner/bill-views";
 import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { billTitle, type BillingCycle } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const LETTERHEAD_ROAD_ART = require("../../../assets/workspace/RoadClouds_200x70.png");
-const LETTERHEAD_MONUMENT_ART = require("../../../assets/workspace/monument_26x26.png");
-const LETTERHEAD_FLAG_ART = require("../../../assets/workspace/flag_26x26.png");
+const RECEIPT_NAVY = "#0C1734";
+const RECEIPT_GOLD = "#B68418";
+const RECEIPT_HEADER = "#E6F1FF";
+const RECEIPT_LABEL = "#F0F6FF";
+const RECEIPT_BORDER = "#C9DCF2";
 
 /**
  * The property as the letterhead needs it.
@@ -78,132 +81,210 @@ export function BillReceiptDocument({
   const itemised = extras.reduce((sum, item) => sum + item.amountPaise, 0);
   const unitemised = cycle.extraChargePaise - itemised;
   const subtotal = cycle.baseAmountPaise + cycle.extraChargePaise + cycle.lateFeeAmountPaise;
+  const billDetails: ReceiptDetail[] = [
+    { code: true, label: "Bill Number", value: cycle.referenceCode },
+    { label: "Bill Cycle", value: billTitle(cycle) },
+    { label: "Bill Date", value: formatDate(cycle.createdAt) },
+    { label: "Due Date", value: formatDate(cycle.rentDueDate) },
+    { label: "Bill Status", value: humanizeToken(cycle.status) },
+    { label: "Paid On", value: paidOn ? formatDate(paidOn) : "—" },
+  ];
+  const billedTo: ReceiptDetail[] = [
+    { label: "Name", value: cycle.tenantNameSnapshot },
+    { code: true, label: "Tenancy ID", value: cycle.tenancyReferenceCode ?? "—" },
+    { label: "Phone", value: cycle.tenantPhone ? formatIndianPhone(cycle.tenantPhone) : "—" },
+    ...(cycle.tenantEmail ? [{ label: "Email", value: cycle.tenantEmail }] : []),
+    { label: "Room No", value: cycle.roomNumber ?? "—" },
+  ];
 
   return (
-    /* No frame. The document is the thing being looked at, not a card on a
-       page — an outline around it made it one item in a list of one. Its
-       parents give it the full sheet width, so the letterhead band runs to
-       both paper edges as it does in print. */
-    <View>
-      {/* The letterhead band, edge to edge. */}
-      <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, flexDirection: "row", gap: spacing.sm, paddingLeft: 0, paddingRight: spacing.md, paddingVertical: spacing.md }}>
-        <Image accessibilityIgnoresInvertColors resizeMode="contain" source={LETTERHEAD_ROAD_ART} style={{ height: 34, width: 96 }} />
+    <View style={{ backgroundColor: colors.surface, gap: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.lg }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <ReceiptBrandMark />
 
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+          <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
             {property?.name ?? "Tenancy bill"}
           </Text>
-          {address ? <Text style={[type.caption, { color: colors.inkSoft, fontSize: 10, lineHeight: 14 }]}>{address}</Text> : null}
-          {contact.phone ? <Text style={[type.caption, { color: colors.inkSoft, fontSize: 10, lineHeight: 14 }]}>{formatIndianPhone(contact.phone)}</Text> : null}
-          {contact.email ? <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, fontSize: 10, lineHeight: 14 }]}>{contact.email}</Text> : null}
+          {address ? (
+            <Text numberOfLines={3} style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
+              {address}
+            </Text>
+          ) : null}
+          {contact.phone ? (
+            <Text style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
+              {formatIndianPhone(contact.phone)}
+            </Text>
+          ) : null}
+          {contact.email ? (
+            <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
+              {contact.email}
+            </Text>
+          ) : null}
         </View>
 
-        <View style={{ gap: 3 }}>
-          <Image accessibilityIgnoresInvertColors resizeMode="contain" source={LETTERHEAD_MONUMENT_ART} style={{ height: 18, width: 18 }} />
-          <Image accessibilityIgnoresInvertColors resizeMode="contain" source={LETTERHEAD_FLAG_ART} style={{ height: 18, width: 18 }} />
-        </View>
+        <ReceiptMotto />
       </View>
 
-      <View style={{ gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}>
+      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 23, lineHeight: 30, textAlign: "center" }}>
           Tenancy Bill Receipt
-        </Text>
+      </Text>
 
-        {/* Two boxes sharing one outline, divided by a single rule. */}
-        <View style={{ borderColor: colors.borderStrong, borderRadius: 8, borderWidth: 1, flexDirection: "row" }}>
-          <View style={{ borderRightColor: colors.borderStrong, borderRightWidth: 1, flex: 1, gap: 4, minWidth: 0, padding: spacing.sm }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15, marginBottom: 2 }}>Bill Details</Text>
-            <DocLine code label="Bill Number" value={cycle.referenceCode} />
-            <DocLine label="Bill Cycle" value={billTitle(cycle)} />
-            <DocLine label="Bill Date" value={formatDate(cycle.createdAt)} />
-            <DocLine label="Due Date" value={formatDate(cycle.rentDueDate)} />
-            <DocLine label="Bill Status" value={humanizeToken(cycle.status)} />
-            <DocLine label="Paid On" value={paidOn ? formatDate(paidOn) : ""} />
-          </View>
-          <View style={{ flex: 1, gap: 4, minWidth: 0, padding: spacing.sm }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15, marginBottom: 2 }}>Bill To</Text>
-            <DocLine label="Name" value={cycle.tenantNameSnapshot} />
-            <DocLine code label="Tenancy ID" value={cycle.tenancyReferenceCode ?? ""} />
-            <DocLine label="Phone" value={cycle.tenantPhone ? formatIndianPhone(cycle.tenantPhone) : ""} />
-            {/* The whole line goes, not just its value. The server only sends a
-                VERIFIED address, so an absent one means we have nothing we can
-                stand behind — and "Email:" with a blank after it reads as a
-                detail we failed to print rather than one we do not hold. */}
-            {cycle.tenantEmail ? <DocLine label="Email" value={cycle.tenantEmail} /> : null}
-            <DocLine label="Room No" value={cycle.roomNumber ?? ""} />
-          </View>
-        </View>
-
-        {/* Every charge itemised, so the rows and the total agree. */}
-        <View style={{ borderColor: colors.borderStrong, borderRadius: 8, borderWidth: 1, overflow: "hidden" }}>
-          <DocRow head amount="Amount" label="Charges(Incl.Taxes)" />
-          <DocRow amount={formatMoney(cycle.baseAmountPaise)} label="Base Rent" />
-          {extras.map((item) => (
-            <DocRow amount={formatMoney(item.amountPaise)} key={item.id} label={item.label} />
-          ))}
-          {unitemised > 0 ? <DocRow amount={formatMoney(unitemised)} label="Extra charges" /> : null}
-          <DocRow amount={formatMoney(cycle.lateFeeAmountPaise)} label="Late Fee" />
-          <DocRow amount={`- ${formatMoney(cycle.discountAmountPaise)}`} label="Discount" />
-        </View>
-
-        <View style={{ borderColor: colors.borderStrong, borderRadius: 8, borderWidth: 1, overflow: "hidden" }}>
-          <DocRow amount={formatMoney(subtotal)} label="Subtotal" />
-          <DocRow amount={formatMoney(cycle.totalAmountPaise)} label="Total Amount Due" strong />
-        </View>
-
-        {/* Dropped once the bill is settled. Asking for payment on a receipt
-            for money already received is the line a tenant replies to. */}
-        {paidOn ? null : (
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
-            Please make the payment by the due date. Thank you for your support.
-          </Text>
-        )}
+      <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
+        <ReceiptDetailTable rows={billDetails} title="Bill Details" />
+        <ReceiptDetailTable rows={billedTo} title="Bill To" />
       </View>
+
+      <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, overflow: "hidden" }}>
+        <DocRow head amount="Amount" label="Charges (Incl. Taxes)" />
+        <DocRow amount={formatReceiptMoney(cycle.baseAmountPaise)} label="Base Rent" />
+        {extras.map((item) => (
+          <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} label={item.label} />
+        ))}
+        {unitemised > 0 ? <DocRow amount={formatReceiptMoney(unitemised)} label="Extra charges" /> : null}
+        <DocRow amount={formatReceiptMoney(cycle.lateFeeAmountPaise)} label="Late Fee" />
+        <DocRow amount={`- ${formatReceiptMoney(cycle.discountAmountPaise)}`} label="Discount" />
+      </View>
+
+      <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, overflow: "hidden" }}>
+        <ReceiptTableHeader title="Summary" />
+        <DocRow amount={formatReceiptMoney(subtotal)} amountRight label="Subtotal" />
+        <DocRow amount={formatReceiptMoney(cycle.totalAmountPaise)} amountRight label="Total Amount Due" strong />
+      </View>
+
+      {paidOn ? null : (
+        <Text style={[type.caption, { color: colors.muted, fontSize: 10, lineHeight: 15 }]}>
+          Please make the payment by the due date. Thank you for your support.
+        </Text>
+      )}
     </View>
   );
 }
 
-/** One bulleted "Label: value" inside a party box. */
-function DocLine({ code, label, value }: { code?: boolean; label: string; value: string }) {
-  const { colors, fonts, type } = useTheme();
+type ReceiptDetail = { code?: boolean; label: string; value: string };
+
+function ReceiptDetailTable({ rows, title }: { rows: ReceiptDetail[]; title: string }) {
+  const { fonts } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
-      {label}:{" "}
-      {value ? (
-        <Text
-          style={{
-            color: colors.ink,
-            // Reference codes shrink rather than wrap: half of
-            // "BIL-2026-000186" on a second line reads as a different number.
-            fontFamily: code ? fonts.mono : fonts.sansSemiBold,
-            fontSize: code ? 10 : 11,
-          }}
-        >
-          {value}
-        </Text>
-      ) : null}
-    </Text>
+    <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, flex: 1, minWidth: 0, overflow: "hidden" }}>
+      <ReceiptTableHeader title={title} />
+      {rows.map((row) => (
+        <View key={row.label} style={{ borderTopColor: RECEIPT_BORDER, borderTopWidth: 1, flexDirection: "row", minHeight: 34 }}>
+          <View style={{ backgroundColor: RECEIPT_LABEL, justifyContent: "center", paddingHorizontal: 7, paddingVertical: 6, width: "42%" }}>
+            <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.sans, fontSize: 9, lineHeight: 12 }}>
+              {row.label}
+            </Text>
+          </View>
+          <View style={{ borderLeftColor: RECEIPT_BORDER, borderLeftWidth: 1, flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: 7, paddingVertical: 6 }}>
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.65}
+              numberOfLines={row.label === "Email" ? 2 : 1}
+              style={{ color: RECEIPT_NAVY, fontFamily: row.code ? fonts.mono : fonts.sansSemiBold, fontSize: row.code ? 8 : 9, lineHeight: 12 }}
+            >
+              {row.value}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
-/** One ruled row of the charges or totals grid. */
-function DocRow({ amount, head, label, strong }: { amount: string; head?: boolean; label: string; strong?: boolean }) {
-  const { colors, fonts, type } = useTheme();
-  const tone = head ? colors.muted : colors.ink;
+function ReceiptTableHeader({ title }: { title: string }) {
+  const { fonts } = useTheme();
   return (
-    <View style={{ borderTopColor: colors.borderStrong, borderTopWidth: head ? 0 : 1, flexDirection: "row" }}>
-      <View style={{ borderRightColor: colors.borderStrong, borderRightWidth: 1, flex: 1, padding: spacing.sm }}>
-        <Text numberOfLines={2} style={[type.caption, { color: tone, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: 12 }]}>
+    <View style={{ backgroundColor: RECEIPT_HEADER, justifyContent: "center", minHeight: 38, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
+      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 14, lineHeight: 19 }}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
+function DocRow({
+  amount,
+  amountRight,
+  head,
+  label,
+  strong,
+}: {
+  amount: string;
+  amountRight?: boolean;
+  head?: boolean;
+  label: string;
+  strong?: boolean;
+}) {
+  const { fonts } = useTheme();
+  return (
+    <View style={{ backgroundColor: head ? RECEIPT_HEADER : "#FFFFFF", borderTopColor: RECEIPT_BORDER, borderTopWidth: head ? 0 : 1, flexDirection: "row", minHeight: strong ? 54 : 38 }}>
+      <View style={{ borderRightColor: RECEIPT_BORDER, borderRightWidth: head ? 1 : 0, flex: 2, justifyContent: "center", paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
+        <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 14 : head ? 13 : 11, lineHeight: strong ? 19 : 16 }}>
           {label}
         </Text>
       </View>
-      <View style={{ flex: 1, padding: spacing.sm }}>
-        <Text numberOfLines={1} style={[type.caption, { color: tone, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: 12 }]}>
+      <View style={{ flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
+        <Text
+          adjustsFontSizeToFit
+          minimumFontScale={0.65}
+          numberOfLines={1}
+          style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 20 : head ? 13 : 11, lineHeight: strong ? 25 : 16, textAlign: amountRight ? "right" : "left" }}
+        >
           {amount}
         </Text>
       </View>
     </View>
   );
+}
+
+function ReceiptBrandMark() {
+  const { fonts } = useTheme();
+  return (
+    <View style={{ alignItems: "center", width: 62 }}>
+      <Svg accessible={false} height={46} width={58} viewBox="0 0 72 58">
+        <Path d="M8 25 36 5l28 20" fill="none" stroke={RECEIPT_GOLD} strokeLinecap="square" strokeWidth={6} />
+        <Path d="M13 31 36 13l23 18v20H13Z" fill="none" stroke={RECEIPT_NAVY} strokeLinejoin="round" strokeWidth={5} />
+        <Rect fill={RECEIPT_GOLD} height={9} width={9} x={25} y={31} />
+        <Rect fill={RECEIPT_GOLD} height={9} width={9} x={38} y={31} />
+        <Path d="M6 54h60" stroke={RECEIPT_NAVY} strokeLinecap="round" strokeWidth={2.5} />
+      </Svg>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        numberOfLines={1}
+        style={{
+          color: RECEIPT_NAVY,
+          fontFamily: fonts.sansBold,
+          fontSize: 5,
+          letterSpacing: 0.35,
+          textAlign: "center",
+          width: "100%",
+        }}
+      >
+        COMFORT LIVES HERE
+      </Text>
+    </View>
+  );
+}
+
+function ReceiptMotto() {
+  const { fonts } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexShrink: 0, gap: 2 }}>
+      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.sansSemiBold, fontSize: 6.5, letterSpacing: 2 }}>SAFE SPACES</Text>
+      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.sansSemiBold, fontSize: 6.5, letterSpacing: 2 }}>HAPPIER DAYS</Text>
+      <View style={{ backgroundColor: RECEIPT_GOLD, height: 1.5, marginTop: 2, width: 28 }} />
+    </View>
+  );
+}
+
+function formatReceiptMoney(paise: number) {
+  return new Intl.NumberFormat("en-IN", {
+    currency: "INR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
+  }).format(paise / 100);
 }
 
 /**

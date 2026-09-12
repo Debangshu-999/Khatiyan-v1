@@ -63,9 +63,12 @@ public class EnquiryResponse extends BaseEntity {
         if (channel == null) {
             throw new ValidationException("Choose how you will get back to them.");
         }
-        if (channel == EnquiryResponseChannel.CHAT) {
-            throw new ValidationException("Chat is not available yet.");
-        }
+        // CHAT used to be refused here, from before the chat module existed. It
+        // outlived that by a long way: the service opens the conversation, marks
+        // the enquiry answered and THEN builds this row, so the throw rolled the
+        // whole transaction back and every chat reply came back "Chat is not
+        // available yet" with the thread it had just created discarded. The
+        // action log has rendered "Chatted" for this channel the whole time.
         String trimmedNote = note == null ? null : note.trim();
         if (trimmedNote != null && trimmedNote.isEmpty()) {
             trimmedNote = null;

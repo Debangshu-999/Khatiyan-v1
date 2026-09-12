@@ -4,7 +4,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
-import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
+import java.time.Instant;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 
 /**
@@ -32,6 +32,6 @@ public class EnquiryModule {
      * counter would add a query per card for an answer already known.
      */
     public long countNewForProperty(UUID propertyId) {
-        return enquiryRepository.countByPropertyIdAndStatus(propertyId, EnquiryStatus.NEW);
+        return enquiryRepository.countAwaitingAnswer(propertyId, Instant.now());
     }
 }

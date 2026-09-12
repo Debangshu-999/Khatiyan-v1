@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -21,15 +21,61 @@
         <java.version>21</java.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <lombok.version>1.18.38</lombok.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
         <bucket4j.version>8.11.1</bucket4j.version>
-        <spring-modulith.version>1.3.12</spring-modulith.version>
-        <springdoc.version>2.6.0</springdoc.version>
-        <shedlock.version>5.16.0</shedlock.version>
+        <spring-modulith.version>2.1.1</spring-modulith.version>
+        <springdoc.version>3.1.1</springdoc.version>
+        <shedlock.version>7.10.1</shedlock.version>
+        <!-- Pinned ahead of what Boot 3.3.5 manages. Docker Engine 29 refuses API
+             versions below 1.40, and the docker-java inside Testcontainers 1.20.x
+             negotiates lower than that — every container start failed with a bare
+             "Could not find a valid Docker environment", which is HTTP 400 from a
+             pipe that was reachable all along. Do not drop this below 1.21. -->
+        <testcontainers.version>1.21.3</testcontainers.version>
+        <!-- Spring AI 2.0.1 builds against Boot 4.1.1 exactly, which is why the
+             Boot 4 upgrade was Milestone 0 of the intelligence work. -->
+        <spring-ai.version>2.0.1</spring-ai.version>
+        <!-- Test groups the normal build skips. "spike" tests make real calls to
+             a paid-or-rate-limited provider, so they must be asked for by name:
+                 mvn test -Dtest=GroqProviderSpikeTest -Dtest.excluded.groups=
+             Overridable rather than hard-coded so the exclusion can be lifted
+             without editing this file. -->
+        <test.excluded.groups>spike</test.excluded.groups>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- OkHttp, forced to 4.x.
+
+                 razorpay-java 1.4.8 pins okhttp 3.10.0 and, being nearer in the
+                 tree, it won. Spring AI's OpenAI client is built on okhttp 4,
+                 so the first provider call died on
+                 NoSuchMethodError: OkHttpClient$Builder.pingInterval(Duration)
+                 — a 4.x method absent from 3.10.
+
+                 Safe to force here: payments are parked and the Razorpay client
+                 is inert (see the payments note in the project memory), and
+                 okhttp 4 is binary-compatible with 3 for the calls it makes.
+                 Revisit if payments are ever switched back on. -->
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp</artifactId>
+                <version>4.12.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
@@ -80,10 +126,6 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-core</artifactId>
         </dependency>
@@ -106,6 +148,67 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!-- Spring AI, for the intelligence module.
+
+             The OpenAI starter, because both providers speak the OpenAI wire
+             format: Groq at api.groq.com/openai/v1 and Cloudflare Workers AI at
+             their /ai/v1 endpoint. Nothing here talks to OpenAI itself.
+
+             Its auto-configuration is excluded on purpose. It would build a
+             ChatModel from spring.ai.openai.* pointing at api.openai.com, and
+             this module builds both models explicitly with their own base URL,
+             key and retry policy (AI spec §8.3). An auto-configured model left
+             lying around is one an autowire could pick by accident. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <!-- RestClient's auto-configuration, another Boot 4 split.
+
+             The geocoding providers inject RestClient.Builder. On Boot 3 the web
+             starter carried that auto-configuration; on Boot 4 it lives here, so
+             without it the builder has no bean and every geo bean fails to
+             construct. Same shape as spring-boot-flyway below. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-restclient</artifactId>
+        </dependency>
+
+        <!-- Jackson 2, kept deliberately alongside Boot 4's Jackson 3.
+
+             Boot 4 defaults to Jackson 3 (tools.jackson) and no longer
+             auto-configures a com.fasterxml.jackson ObjectMapper, so the nine
+             classes that inject one lost their bean. This module puts it back.
+
+             Not a temporary shim to remove later: the agreement content hash
+             MUST stay on Jackson 2 (§6.2 hazard 1 of the AI spec, and
+             AgreementContentHashTest). Every already-signed deed is bound to
+             the bytes Jackson 2 produces, so Jackson 2 is on this classpath for
+             good and the compatibility module is the supported way to have it.
+             Boot's own BOM manages both lines: jackson-bom 3.x and
+             jackson-2-bom 2.x. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
+
+        <!-- Flyway's Boot integration, which is a SEPARATE artifact on Boot 4.
+
+             Boot 3 shipped every auto-configuration in one jar, so flyway-core
+             alone was enough. Boot 4 splits them per technology and this project
+             has no Flyway starter to pull the new one in, so without this line
+             Flyway is on the classpath and simply never runs: no schemas, no
+             tables, and — with ddl-auto anything other than validate — an
+             application that starts happily against an unmigrated database.
+
+             It failed here as "missing table [auth.login_attempts]", which is
+             not a Flyway message at all. That is just the first table Hibernate
+             happened to look for. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -143,7 +246,7 @@
         <!-- Resilience4j (for circuit breakers and retries on external calls) -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-spring-boot3</artifactId>
+            <artifactId>resilience4j-spring-boot4</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
 
@@ -192,10 +295,14 @@
             <version>${springdoc.version}</version>
         </dependency>
 
-        <!-- AOP (required by Resilience4j annotations) -->
+        <!-- AOP, required by the Resilience4j annotations.
+
+             Boot 4 removed spring-boot-starter-aop: the auto-configuration moved
+             into spring-boot-autoconfigure, and all the starter added on top of
+             it was AspectJ, which the BOM manages directly. This is that half. -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
         </dependency>
 
         <!-- ShedLock: distributed locks so each scheduled job runs on only one
@@ -215,6 +322,26 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- The context-loading harness. Nothing in this project has ever
+             started the real application context in a test, so a bean cycle, a
+             missing migration or a broken JPA mapping only ever showed up on a
+             developer's own boot. See docs/testing/context-harness.md. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -247,6 +374,24 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${test.excluded.groups}</excludedGroups>
+                    <systemPropertyVariables>
+                        <!-- Docker Engine 29 refuses API versions below 1.40, and the
+                             docker-java inside Testcontainers negotiates lower unless it
+                             is told not to. Without this every container start fails as
+                             "Could not find a valid Docker environment", which reads as a
+                             missing Docker rather than as the HTTP 400 it actually is.
+
+                             1.44 is Docker 25 and above, so it is safe anywhere the
+                             harness could plausibly run. Raise it, never lower it. -->
+                        <api.version>1.44</api.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

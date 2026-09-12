@@ -154,8 +154,30 @@ public class Enquiry extends BaseEntity {
         return status == EnquiryStatus.NEW;
     }
 
+    /**
+     * Whether this enquiry's window has closed. Answered or not.
+     *
+     * <p><b>By the clock, not by the status.</b> The status only says what
+     * {@link com.khatiyan.d_modules.enquiry.service.EnquiryExpirySchedulerService}
+     * has recorded, and that runs on a cron — so between the deadline passing
+     * and the next run an unanswered enquiry is still {@code NEW}. Asking the
+     * status answered "not expired" for hours after it was, and the guard in
+     * {@code respond} that was meant to be the backstop asked this same
+     * question and agreed with the stale card.
+     *
+     * <p><b>And regardless of whether it was answered.</b> A reply inside the
+     * window does not reopen it. The date is the life of the question, not a
+     * deadline on the first response: a month-old enquiry someone called about
+     * once is closed, and calling it again is answering something the enquirer
+     * stopped waiting on weeks ago.
+     *
+     * <p>{@link #expire()} is deliberately narrower — it only moves {@code NEW},
+     * because the status column records what happened to the enquiry and
+     * restamping an answered one would rewrite that.
+     */
     public boolean isExpired() {
-        return status == EnquiryStatus.EXPIRED;
+        return status == EnquiryStatus.EXPIRED
+                || (expiresAt != null && !Instant.now().isBefore(expiresAt));
     }
 
     /**

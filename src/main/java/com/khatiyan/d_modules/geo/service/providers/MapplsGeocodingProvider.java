@@ -15,7 +15,12 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import com.fasterxml.jackson.databind.JsonNode;
+// Jackson 3. Boot 4's RestClient message converters produce
+// tools.jackson nodes, so reading a response into a Jackson 2 JsonNode
+// throws at conversion — and this class catches RuntimeException and
+// returns empty, so the failure looked like "no results" rather than
+// like an error.
+import tools.jackson.databind.JsonNode;
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
 import com.khatiyan.d_modules.geo.api.dto.ReverseGeocodeResponse;
 import com.khatiyan.d_modules.geo.service.GeocodingProvider;

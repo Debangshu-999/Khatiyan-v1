@@ -55,8 +55,7 @@ public record EndTenancyRequest(
 
     /**
      * A retained deposit cannot simultaneously fund exit charges. Enforcing the
-     * invariant on the request protects both the immediate end flow and saved
-     * schedules before either can reach settlement.
+     * invariant on the request stops it before it can reach settlement.
      */
     @AssertTrue(message = "A non-refundable deposit cannot be used for exit or damage charges")
     public boolean isDepositCollectionCompatible() {

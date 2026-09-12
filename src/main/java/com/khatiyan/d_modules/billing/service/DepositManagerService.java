@@ -161,13 +161,16 @@ public class DepositManagerService {
     }
 
     /**
-     * Loads a tenancy deposit account after verifying the actor can manage the
-     * tenancy's property.
+     * Loads one tenancy's deposit account for somebody working that tenancy.
+     *
+     * <p>Open to {@code DEPOSITS} or {@code TENANCIES}: settling the deposit is
+     * part of ending a stay. See
+     * {@link BillingAccessPolicy#ensureCanViewDepositsForStay}.
      */
     @Transactional(readOnly = true)
     public DepositAccountResponse getForManagedTenancy(UUID actorUserId, UUID tenancyId) {
         TenancyResponse tenancy = getTenancy(tenancyId);
-        billingAccessPolicy.ensureCanViewDeposits(actorUserId, tenancy.propertyId());
+        billingAccessPolicy.ensureCanViewDepositsForStay(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
         return toResponse(account);
@@ -549,6 +552,37 @@ public class DepositManagerService {
     }
 
     /** One deduction the actor chose to take from the deposit at end-tenancy. */
+    /**
+     * The running-balance rule for exit deductions. Each one is checked against
+     * what the earlier ones left, not against the opening balance.
+     */
+    private void ensureExitDeductionsFit(
+            DepositAccount account,
+            List<DepositMovement> movements,
+            List<ExitDeduction> deductions,
+            boolean payable) {
+        if (account.getStatus() != DepositAccountStatus.ACTIVE) {
+            throw new ValidationException("Deposit account is no longer active for this tenancy");
+        }
+
+        if (!payable && !deductions.isEmpty()) {
+            throw new ValidationException(
+                    "A deposit that is not being refunded cannot also be deducted from — "
+                            + "charge these to a one-off bill instead");
+        }
+
+        long remainingPaise = calculateBalance(movements);
+        for (ExitDeduction deduction : deductions) {
+            if (deduction.amountPaise() > remainingPaise) {
+                throw new ValidationException(
+                        "\"" + deduction.reason() + "\" is " + rupees(deduction.amountPaise())
+                                + " but only " + rupees(remainingPaise)
+                                + " is left in the deposit. Charge the excess to a one-off bill.");
+            }
+            remainingPaise = remainingPaise - deduction.amountPaise();
+        }
+    }
+
     public record ExitDeduction(String reason, long amountPaise) {
     }
 
@@ -579,26 +613,12 @@ public class DepositManagerService {
         // this actor may end the stay. Re-checking deposit permissions here would
         // refuse a move-out the manager is allowed to run.
         DepositAccount account = getAccountByTenancyId(tenancyId);
-        if (account.getStatus() != DepositAccountStatus.ACTIVE) {
-            throw new ValidationException("Deposit account is no longer active for this tenancy");
-        }
-
-        if (!payable && !deductions.isEmpty()) {
-            throw new ValidationException(
-                    "A deposit that is not being refunded cannot also be deducted from — "
-                            + "charge these to a one-off bill instead");
-        }
-
         List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
-        for (ExitDeduction deduction : deductions) {
-            long remainingPaise = calculateBalance(movements);
-            if (deduction.amountPaise() > remainingPaise) {
-                throw new ValidationException(
-                        "\"" + deduction.reason() + "\" is " + rupees(deduction.amountPaise())
-                                + " but only " + rupees(remainingPaise)
-                                + " is left in the deposit. Charge the excess to a one-off bill.");
-            }
+        // Vetted in full before anything is written, so one deduction that does not
+        // fit refuses the whole set instead of failing part-way through it.
+        ensureExitDeductionsFit(account, movements, deductions, payable);
 
+        for (ExitDeduction deduction : deductions) {
             DepositMovement movement = DepositMovement.correctionDeduction(
                     account.getId(), deduction.reason(), deduction.amountPaise(), actorUserId);
             depositMovementRepository.save(movement);

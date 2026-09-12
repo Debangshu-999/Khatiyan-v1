@@ -19,6 +19,12 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, FormInput, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { AmenityPicker } from "@/features/property/amenity-picker";
+import {
+  FLOOR_PLACEHOLDER,
+  MAX_FLOOR_DIGITS,
+  formatFloor,
+  sanitizeFloorInput,
+} from "@/features/property/floor";
 import { MoldPicker } from "@/features/property/mold-picker";
 import {
   RoomDraftRow,
@@ -326,10 +332,11 @@ export default function OwnerAddRoomsScreen() {
                   info line closes the section by saying what that type hands to
                   every room in the series, which is why the choice matters.
 
-                  No card: the amenities block below draws its own border, and a
-                  card around each section put a box inside a box. The gap
-                  between the two groups is what separates them. */}
-              <View style={{ gap: spacing.md }}>
+                  A card, like every other section in the app. Bare on the page
+                  these fields ran into the ones below them and the screen read
+                  as one long column of inputs with an unexplained rule through
+                  the middle of it. */}
+              <Card>
                 <MoldPicker
                   error={form.errors.mold}
                   molds={live}
@@ -343,12 +350,14 @@ export default function OwnerAddRoomsScreen() {
                 <FormInput
                   disabled={!mold}
                   error={form.errors.floor}
+                  keyboardType="number-pad"
                   label="Floor"
+                  maxLength={MAX_FLOOR_DIGITS}
                   onChangeText={(next) => {
-                    setFloor(next);
+                    setFloor(sanitizeFloorInput(next));
                     form.clearField("floor");
                   }}
-                  placeholder="Ground, 1, 2…"
+                  placeholder={FLOOR_PLACEHOLDER}
                   required
                   value={floor}
                 />
@@ -360,15 +369,15 @@ export default function OwnerAddRoomsScreen() {
                       ? `Every room in this series gets ${mold.bedCount} ${
                           mold.bedCount === 1 ? "bed" : "beds"
                         }, ${formatMoneyPaise(mold.baseRentPaise)} per bed and the amenities below${
-                          floor.trim() ? `, on floor ${floor.trim()}` : ""
+                          floor.trim() ? `, on the ${formatFloor(floor).toLowerCase()}` : ""
                         }.`
                       : "Choose a room type and it sets the beds, the rent and the amenities for every room in the series."}
                   </Text>
                 </View>
-              </View>
+              </Card>
 
               {/* How they are NUMBERED, and what they come with. */}
-              <View style={{ gap: spacing.md }}>
+              <Card>
                 <View style={{ gap: spacing.sm }}>
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     <View style={{ flex: 1 }}>
@@ -437,7 +446,7 @@ export default function OwnerAddRoomsScreen() {
                     Choose a room type and its amenities appear here, ready to adjust.
                   </Text>
                 )}
-              </View>
+              </Card>
             </>
           ) : (
             <>

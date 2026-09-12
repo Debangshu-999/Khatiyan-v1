@@ -1,0 +1,74 @@
+# Test profile for the context-loading harness.
+#
+# The harness boots the REAL application context against a throwaway PostgreSQL
+# from Testcontainers, so everything here exists to make that boot deterministic
+# rather than to fake anything: the datasource is supplied by @ServiceConnection,
+# and what is left is the handful of settings that would otherwise reach outside
+# the test.
+#
+# Scheduling is the important one. @EnableScheduling is on the application
+# class, so every job below would start firing against the throwaway database
+# the moment the context came up — generating billing cycles, expiring
+# enquiries, moving rooms. "-" is Spring's documented disabled trigger, and
+# listing them one by one is deliberate: a new job added later shows up as a
+# failing or slow harness run rather than silently running in every test.
+
+spring:
+  config:
+    # The dev .env must not leak into a test run.
+    import: ""
+  jpa:
+    hibernate:
+      # Flyway owns the schema here exactly as it does in production, so the
+      # harness proves the migrations and the entities still agree.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    clean-disabled: false
+
+# A value, not the real one. Nothing in the harness signs anything a person
+# will ever hold, and the property is required for the context to start.
+jwt:
+  secret: harness-only-secret-not-used-outside-tests-0123456789abcdef
+
+app:
+  app:
+    billing:
+      cycle-activation-cron: "-"
+      late-fee-recalculation-cron: "-"
+      monthly-cycle-generation-cron: "-"
+      monthly-report-generation-cron: "-"
+      overdue-marker-cron: "-"
+    compliance:
+      agreement-expiry-cron: "-"
+    concern:
+      close-expired-resolved-cron: "-"
+      update-escalations-cron: "-"
+    enquiry:
+      expiry-cron: "-"
+    expense:
+      recurring-generation-cron: "-"
+    geo:
+      backfill:
+        local-place-cron: "-"
+        property-cron: "-"
+    notice:
+      archive-expired-cron: "-"
+      recurring-generation-cron: "-"
+    notification:
+      cleanup-cron: "-"
+      push-delivery-cron: "-"
+    payment:
+      deferred-transfer-cron: "-"
+      unapplied-refund-cron: "-"
+    reminder:
+      process-cron: "-"
+      scan-cron: "-"
+    salary:
+      month-open-cron: "-"
+    staff:
+      scheduled-end-cron: "-"
+    tenancy:
+      agreement-expiry-reminder-cron: "-"
+      room-change-execution-cron: "-"
+      room-change-expiry-cron: "-"

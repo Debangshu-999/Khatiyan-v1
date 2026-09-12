@@ -24,4 +24,21 @@ public interface GeocodingProvider {
 
     /** Structured address for a map point. */
     Optional<ReverseGeocodeResponse> reverse(double latitude, double longitude);
+
+    /**
+     * Every place of one KIND within a radius — metro stations, hospitals,
+     * colleges — rather than places matching a typed name.
+     *
+     * <p>Defaults to empty, which reads as "this vendor cannot do it". A
+     * caller that finds nothing simply has no landmarks to measure against and
+     * says so, so a vendor without a places catalogue degrades to the same
+     * behaviour as one that is switched off.
+     *
+     * @param category      the vendor's own category identifier
+     * @param radiusMeters  how far around the point to look
+     */
+    default List<GeoSuggestionResponse> places(
+            String category, double latitude, double longitude, int radiusMeters, int limit) {
+        return List.of();
+    }
 }

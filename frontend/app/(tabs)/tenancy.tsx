@@ -73,6 +73,7 @@ import {
   roomChangeRequestBlock,
   type RequestBlock,
 } from "@/features/tenancy/request-blocked-modal";
+import { formatFloor } from "@/features/property/floor";
 
 // The same drawing the owner's Deposit manager tile carries on Home. A deposit
 // is one thing across both sides of the app and should look like one thing.
@@ -1375,11 +1376,6 @@ function formatDate(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", hour: "numeric", minute: "2-digit", month: "short" }).format(new Date(value));
-}
-
-function formatFloor(value: string) {
-  const trimmed = value.trim();
-  return trimmed.toLowerCase().startsWith("floor") ? trimmed : `Floor ${trimmed}`;
 }
 
 function humanizeToken(value: string) {

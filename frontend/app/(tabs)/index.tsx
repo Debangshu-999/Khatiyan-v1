@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,7 +22,6 @@ import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
-import { TabSwitcher } from "@/components/tab-switcher";
 import { Section } from "@/components/section";
 import { SnapshotTile } from "@/components/snapshot-tile";
 import { TrendBarChart } from "@/components/trend-bar-chart";
@@ -39,6 +38,7 @@ import {
   PropertyBoardHomeCard,
   selectPropertyBoardPreviewItems,
 } from "@/features/property-board/property-board-ui";
+import { formatFloor } from "@/features/property/floor";
 import { saveActiveAccount } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useGetProfileQuery } from "@/store/services/auth-api";
@@ -92,7 +92,8 @@ const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy", Imag
 };
 
 export default function HomeScreen() {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const router = useGuardedRouter();
   const auth = useAppSelector((state) => state.auth);
@@ -102,6 +103,7 @@ export default function HomeScreen() {
 
   const { loading: accountsLoading, managedProperties, ownedProperties } = useAvailableAccounts();
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  const [ownerSelectorOpen, setOwnerSelectorOpen] = useState(false);
 
   useEffect(() => {
     if (location.status === "idle") {
@@ -114,6 +116,8 @@ export default function HomeScreen() {
 
   const isManagerAccount = activeAccount === "manager";
   const isWorkspace = activeAccount === "owner" || isManagerAccount;
+  const ownerHeaderSecondary = isDark ? "rgba(5, 5, 5, 0.70)" : "rgba(255, 255, 255, 0.82)";
+  const ownerHeaderAccent = isDark ? "rgba(5, 5, 5, 0.88)" : "#DCE8FF";
 
   // Recent activity for the header's latest-events button (deduped with the
   // dashboard query rendered inside the workspace view).
@@ -148,30 +152,98 @@ export default function HomeScreen() {
       // Flush to the safe area, unlike every other screen. Home opens on the
       // location bar and the greeting rather than a title, and the gap that
       // gives a heading room reads as a band of nothing above a greeting.
-      contentContainerStyle={{ paddingTop: 0 }}
-      safeAreaEdges={["top", "bottom"]}
+      contentContainerStyle={{
+        gap: isWorkspace ? 0 : spacing.lg,
+        paddingBottom: isWorkspace && ownerSelectorOpen ? spacing.xs : undefined,
+        paddingTop: 0,
+      }}
+      scrollOnlyWhenNeeded={isWorkspace && ownerSelectorOpen}
+      safeAreaEdges={isWorkspace ? ["bottom"] : ["top", "bottom"]}
     >
       {/* Left column stacks the location bar and the greeting so the greeting
           hugs the location; the profile + live-events stay pinned top-right. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+      <View
+        style={{
+          alignItems: "flex-start",
+          backgroundColor: isWorkspace ? colors.primary : "transparent",
+          flexDirection: "row",
+          gap: spacing.sm,
+          justifyContent: "space-between",
+          marginHorizontal: isWorkspace ? -spacing.lg : 0,
+          paddingBottom: isWorkspace ? spacing.lg : 0,
+          paddingHorizontal: isWorkspace ? spacing.lg : 0,
+          // The status-bar strip is part of the blue band rather than a safe
+          // area above it, so the fill runs to the top of the display. Padding
+          // rather than a painted lid: a lid would have to change colour as the
+          // band scrolls past it, and a colour that changes mid-scroll draws
+          // more attention than the content passing under the clock does. The
+          // extra sm is the gap the old safe area used to give for free —
+          // padding of exactly the inset put the location bar against it.
+          paddingTop: isWorkspace ? safeAreaInsets.top + spacing.sm : 0,
+        }}
+      >
         <View style={{ flex: 1, gap: spacing.sm }}>
-          <HomeLocationBar location={location} onRefresh={() => void dispatch(fetchCurrentLocation())} />
+          <HomeLocationBar
+            compact={isWorkspace}
+            inverse={isWorkspace}
+            location={location}
+            onRefresh={() => void dispatch(fetchCurrentLocation())}
+          />
           <View style={{ gap: spacing.xs }}>
             <Text
               style={{
-                color: colors.ink,
+                color: isWorkspace ? colors.onPrimary : colors.ink,
                 fontFamily: fonts.display,
-                fontSize: 30,
+                fontSize: isWorkspace ? 22 : 30,
                 letterSpacing: -0.4,
-                lineHeight: 36,
+                lineHeight: isWorkspace ? 28 : 36,
               }}
             >
               {greeting},{" "}
-              <Text style={{ color: colors.primary, fontStyle: "italic", fontWeight: "400" }}>
+              <Text
+                style={{
+                  color: isWorkspace ? ownerHeaderAccent : colors.primary,
+                  fontStyle: "italic",
+                  fontWeight: "400",
+                }}
+              >
                 {firstName}.
               </Text>
             </Text>
-            <HeaderNote>{subtitle}</HeaderNote>
+            {isWorkspace ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  maxWidth: 430,
+                }}
+              >
+                <View
+                  style={{
+                    alignSelf: "stretch",
+                    backgroundColor: ownerHeaderAccent,
+                    borderRadius: 2,
+                    width: 4,
+                  }}
+                />
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    type.body,
+                    {
+                      color: ownerHeaderSecondary,
+                      flex: 1,
+                      fontSize: 11,
+                      lineHeight: 15,
+                    },
+                  ]}
+                >
+                  {subtitle}
+                </Text>
+              </View>
+            ) : (
+              <HeaderNote>{subtitle}</HeaderNote>
+            )}
           </View>
         </View>
         <View style={{ alignItems: "flex-end", gap: spacing.sm }}>
@@ -186,6 +258,7 @@ export default function HomeScreen() {
               tenant has no property selector, so their bell is never blocked. */}
           <HomeAlertsButton
             disabled={awaitingPropertyChoice}
+            inverse={isWorkspace}
             onPress={() => router.push("/notifications")}
           />
           {isWorkspace ? (
@@ -193,11 +266,13 @@ export default function HomeScreen() {
               <LatestEventsButton
                 activity={headerRecentActivity}
                 disabled={awaitingPropertyChoice}
+                inverse
                 propertyName={selectedWorkspaceProperty?.name ?? null}
               />
               <HomeAttentionButton
                 count={headerAttentionCount}
                 disabled={awaitingPropertyChoice}
+                inverse
                 onPress={() => router.push("/owner-action-center")}
               />
             </>
@@ -213,6 +288,7 @@ export default function HomeScreen() {
         <OwnerHome
           account={isManagerAccount ? "manager" : "owner"}
           onNavigate={router.push}
+          onSelectorOpenChange={setOwnerSelectorOpen}
           properties={isManagerAccount ? managedProperties : ownedProperties}
         />
       ) : activeAccount === "tenant" ? (
@@ -232,9 +308,26 @@ export default function HomeScreen() {
 // Device-location bar pinned to the top-left of every home view: a navigation
 // glyph, a short place label with a chevron affordance, and the full address
 // below. Tapping it re-fetches the current location.
-function HomeLocationBar({ location, onRefresh }: { location: DeviceLocationState; onRefresh: () => void }) {
-  const { colors, fonts, type } = useTheme();
+function HomeLocationBar({
+  compact = false,
+  inverse = false,
+  location,
+  onRefresh,
+}: {
+  compact?: boolean;
+  inverse?: boolean;
+  location: DeviceLocationState;
+  onRefresh: () => void;
+}) {
+  const { colors, fonts, isDark, type } = useTheme();
   const busy = location.status === "loading" || location.status === "idle";
+  const foregroundColor = inverse ? colors.onPrimary : colors.ink;
+  const secondaryColor = inverse
+    ? isDark
+      ? "rgba(5, 5, 5, 0.68)"
+      : "rgba(255, 255, 255, 0.76)"
+    : colors.muted;
+  const locationIconColor = inverse ? colors.onPrimary : colors.primary;
 
   return (
     <AnimatedPressable
@@ -242,19 +335,23 @@ function HomeLocationBar({ location, onRefresh }: { location: DeviceLocationStat
       accessibilityLabel={`Current location: ${locationTitle(location)}`}
       accessibilityRole="button"
       onPress={onRefresh}
-      style={{ alignSelf: "stretch", gap: 2 }}
+      style={{ alignSelf: "stretch", gap: compact ? 0 : 2 }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Navigation color={colors.primary} fill={colors.primary} size={16} strokeWidth={2} />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: compact ? spacing.xxs : spacing.xs }}>
+        <Navigation color={locationIconColor} fill={locationIconColor} size={compact ? 13 : 16} strokeWidth={2} />
         <Text
           numberOfLines={1}
-          style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 20, letterSpacing: 0 }}
+          style={{ color: foregroundColor, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: compact ? 16 : 20, letterSpacing: 0 }}
         >
           {locationTitle(location)}
         </Text>
-        {busy ? <ActivityIndicator color={colors.muted} size="small" /> : <RefreshCw color={colors.muted} size={14} strokeWidth={2.4} />}
+        {busy ? (
+          <ActivityIndicator color={secondaryColor} size="small" />
+        ) : (
+          <RefreshCw color={secondaryColor} size={compact ? 12 : 14} strokeWidth={2.4} />
+        )}
       </View>
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+      <Text numberOfLines={1} style={[type.caption, { color: secondaryColor, fontSize: compact ? 10 : 11 }]}>
         {locationAddress(location)}
       </Text>
     </AnimatedPressable>
@@ -323,13 +420,16 @@ function attentionCount(dashboard: OwnerDashboard | undefined): number {
 function HomeAttentionButton({
   count,
   disabled,
+  inverse = false,
   onPress,
 }: {
   count: number;
   disabled?: boolean;
+  inverse?: boolean;
   onPress: () => void;
 }) {
   const { colors, fonts } = useTheme();
+  const iconColor = inverse ? colors.onPrimary : colors.ink;
 
   return (
     <AnimatedPressable
@@ -341,13 +441,13 @@ function HomeAttentionButton({
       style={{ alignItems: "center", height: 32, justifyContent: "center", opacity: disabled ? 0.4 : 1, width: 32 }}
       onPress={disabled ? undefined : onPress}
     >
-      <ClipboardList color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
+      <ClipboardList color={iconColor} size={23} strokeWidth={2.1} />
       {count > 0 && !disabled ? (
         <View
           style={{
             alignItems: "center",
             backgroundColor: colors.danger,
-            borderColor: colors.surface,
+            borderColor: inverse ? colors.primary : colors.surface,
             borderRadius: 999,
             borderWidth: 1.5,
             height: 16,
@@ -376,10 +476,11 @@ function HomeAttentionButton({
   );
 }
 
-function HomeAlertsButton({ disabled, onPress }: { disabled?: boolean; onPress: () => void }) {
+function HomeAlertsButton({ disabled, inverse = false, onPress }: { disabled?: boolean; inverse?: boolean; onPress: () => void }) {
   const { colors, fonts } = useTheme();
   const auth = useAppSelector((state) => state.auth);
   const unreadCount = useScopedUnreadCount({ enabled: Boolean(auth.accessToken) });
+  const iconColor = inverse ? colors.onPrimary : colors.ink;
 
   return (
     <AnimatedPressable
@@ -401,7 +502,7 @@ function HomeAlertsButton({ disabled, onPress }: { disabled?: boolean; onPress: 
         width: 32,
       }}
     >
-      <Bell color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
+      <Bell color={iconColor} size={23} strokeWidth={2.1} />
       {/* The count, not a dot: a bare dot says "something, sometime" and cannot
           be told apart from one you already read. */}
       {unreadCount > 0 && !disabled ? (
@@ -409,7 +510,7 @@ function HomeAlertsButton({ disabled, onPress }: { disabled?: boolean; onPress: 
           style={{
             alignItems: "center",
             backgroundColor: colors.danger,
-            borderColor: colors.surface,
+            borderColor: inverse ? colors.primary : colors.surface,
             borderRadius: 999,
             borderWidth: 1.5,
             height: 16,
@@ -474,10 +575,12 @@ function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owne
 function LatestEventsButton({
   activity,
   disabled,
+  inverse = false,
   propertyName,
 }: {
   activity: RecentActivityItem[];
   disabled?: boolean;
+  inverse?: boolean;
   // Null until a property is chosen. The feed is per-property, so without one
   // there is nothing to show — and an empty feed would wrongly read as
   // "nothing has happened" rather than "nothing is selected".
@@ -534,8 +637,8 @@ function LatestEventsButton({
           width: 32,
         }}
       >
-        <Radar color={disabled ? colors.muted : colors.ink} size={23} strokeWidth={2.1} />
-        {hasNew && !disabled ? <BlinkingDot /> : null}
+        <Radar color={inverse ? colors.onPrimary : colors.ink} size={23} strokeWidth={2.1} />
+        {hasNew && !disabled ? <BlinkingDot inverse={inverse} /> : null}
       </AnimatedPressable>
       {open ? (
         <LatestEventsModal activity={activity} onClose={() => setOpen(false)} propertyName={propertyName} />
@@ -544,7 +647,7 @@ function LatestEventsButton({
   );
 }
 
-function BlinkingDot() {
+function BlinkingDot({ inverse = false }: { inverse?: boolean }) {
   const { colors } = useTheme();
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -562,7 +665,7 @@ function BlinkingDot() {
       pointerEvents="none"
       style={{
         backgroundColor: colors.danger,
-        borderColor: colors.surface,
+        borderColor: inverse ? colors.primary : colors.surface,
         borderRadius: 999,
         borderWidth: 1.5,
         height: 11,
@@ -1153,13 +1256,15 @@ const PROPERTY_CARD_ART = require("../../assets/workspace/property-card.jpg");
 function OwnerHome({
   account,
   onNavigate,
+  onSelectorOpenChange,
   properties,
 }: {
   account: "owner" | "manager";
   onNavigate: (href: OwnerRoute) => void;
+  onSelectorOpenChange: (open: boolean) => void;
   properties: OwnerProperty[];
 }) {
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
   const dispatch = useAppDispatch();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
@@ -1167,6 +1272,7 @@ function OwnerHome({
   const [tab, setTab] = useState<OwnerTab>("workspace");
   const workspaceRole: "Owner" | "Manager" = account === "manager" ? "Manager" : "Owner";
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
+  const selectorPanelOpen = selectorOpen || !selectedProperty;
   const { dialog: routeGateDialog, gate: routeGate } = useRouteGate(selectedProperty?.id);
   const navigate = useCallback(
     (href: OwnerRoute) => {
@@ -1183,6 +1289,12 @@ function OwnerHome({
     skip: !selectedProperty,
   });
   const dashboard = dashboardQuery.data;
+
+  useEffect(() => {
+    onSelectorOpenChange(selectorPanelOpen);
+  }, [onSelectorOpenChange, selectorPanelOpen]);
+
+  useEffect(() => () => onSelectorOpenChange(false), [onSelectorOpenChange]);
 
   useEffect(() => {
     if (properties.length === 1 && selectedPropertyId !== properties[0].id) {
@@ -1216,49 +1328,72 @@ function OwnerHome({
     );
   }
 
+  const selectProperty = (propertyId: string) => {
+    dispatch(setSelectedOwnerPropertyId(propertyId));
+    setSelectorOpen(false);
+  };
+
   return (
-    <FadeInUp style={{ gap: spacing.lg }}>
-      <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          {account === "manager" ? (properties.length > 1 ? "Managed properties" : "Managed property") : "Property selector"}
-        </Text>
+    <FadeInUp>
+      <View
+        style={{
+          backgroundColor: colors.primary,
+          // In the open state this blue surface is the selector card's outer
+          // frame, so its lower corners use the same radius as that card.
+          borderBottomLeftRadius: selectorPanelOpen ? 18 : 0,
+          borderBottomRightRadius: selectorPanelOpen ? 18 : 0,
+          borderCurve: "continuous",
+          gap: spacing.md,
+          marginHorizontal: -spacing.lg,
+          overflow: selectorPanelOpen ? "hidden" : "visible",
+          // A small closed-state join lets the blue baseline meet the tab's
+          // shoulder at the same depth instead of stopping just above it.
+          paddingBottom: selectorPanelOpen ? spacing.md : 3,
+          paddingHorizontal: spacing.lg,
+        }}
+      >
         <OwnerPropertyPicker
           open={selectorOpen}
+          onSelect={selectProperty}
+          renderOptions={false}
           properties={properties}
           selectedProperty={selectedProperty}
           workspaceRole={workspaceRole}
-          onSelect={(propertyId) => {
-            dispatch(setSelectedOwnerPropertyId(propertyId));
-            setSelectorOpen(false);
-          }}
           onToggle={() => setSelectorOpen((currentValue) => !currentValue)}
         />
+        {selectedProperty && !selectorOpen ? <OwnerTabBar onChange={setTab} tab={tab} /> : null}
       </View>
 
-      {!selectedProperty || selectorOpen ? (
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <MetricTile label="Properties" value={String(properties.length)} hint="In your portfolio" tone="primary" />
-          <MetricTile
-            hint={selectedProperty ? "Pick another to switch" : "Choose one above"}
-            label="Selected"
-            value={selectedProperty ? selectedProperty.name : "None"}
-          />
-        </View>
-      ) : null}
+      <View
+        style={{
+          backgroundColor: colors.background,
+          gap: spacing.lg,
+          paddingTop: selectorPanelOpen ? spacing.md : spacing.lg,
+        }}
+      >
+        {/* The open picker takes the selected tab's content slot. The tab
+            switcher remains steady while the old property's workspace and
+            dashboard disappear until a new property is chosen. */}
+        {selectorOpen && properties.length > 1 ? (
+          <>
+            <OwnerPropertyOptions
+              onSelect={selectProperty}
+              properties={properties}
+              selectedProperty={selectedProperty}
+            />
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <MetricTile label="Properties" value={String(properties.length)} hint="In your portfolio" tone="primary" />
+              <MetricTile
+                hint={selectedProperty ? "Pick another to switch" : "Choose one above"}
+                label="Selected"
+                value={selectedProperty ? selectedProperty.name : "None"}
+              />
+            </View>
+          </>
+        ) : null}
 
-      {/* Opening the selector puts the screen back into the state it loads in
-          with nothing chosen: the picker and nothing under it. The workspace
-          below belongs to the property being replaced, so leaving it on screen
-          while the list is open means scrolling past a whole dashboard for the
-          property you are in the middle of switching away from. */}
-      {/* The tab bar loads with the screen — it needs no data — and under it
-          the shape of whichever tab is open. Counts match what arrives: five
-          snapshot boxes three to a row on Dashboard, the workspace CTA and the
-          four live-digest tiles on Workspace. */}
-      {selectedProperty && !selectorOpen && dashboardQuery.isFetching && !dashboard ? (
-        <>
-          <OwnerTabBar onChange={setTab} tab={tab} />
-          {tab === "dashboard" ? (
+        {selectedProperty && !selectorOpen && dashboardQuery.isFetching && !dashboard ? (
+          tab === "dashboard" ? (
             <OwnerDashboardDataSkeleton />
           ) : (
             <WorkspaceTabLoading
@@ -1267,21 +1402,18 @@ function OwnerHome({
               propertyId={selectedProperty.id}
               workspaceRole={workspaceRole}
             />
-          )}
-        </>
-      ) : null}
+          )
+        ) : null}
 
-      {selectedProperty && !selectorOpen && dashboard ? (
-        <>
-          <OwnerTabBar onChange={setTab} tab={tab} />
-          {tab === "dashboard" ? (
+        {selectedProperty && !selectorOpen && dashboard ? (
+          tab === "dashboard" ? (
             <DashboardTab dashboard={dashboard} onNavigate={navigate} />
           ) : (
             <WorkspaceTab dashboard={dashboard} onNavigate={navigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
-          )}
-        </>
-      ) : null}
-      {routeGateDialog}
+          )
+        ) : null}
+        {routeGateDialog}
+      </View>
     </FadeInUp>
   );
 }
@@ -1289,15 +1421,153 @@ function OwnerHome({
 type SnapshotKey = "collection" | "property" | "tenancy" | "expense" | "pnl";
 
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
+  const { colors, fonts, isDark } = useTheme();
+  const [tabBarWidth, setTabBarWidth] = useState(0);
+  const options: { icon: ComponentType<LucideProps>; label: string; value: OwnerTab }[] = [
+    { icon: LayoutGrid, label: "Workspace", value: "workspace" },
+    { icon: ChartColumn, label: "Dashboard", value: "dashboard" },
+  ];
+  const tabWidth = tabBarWidth / options.length;
+  const activeLeft = tab === "workspace" ? 0 : tabWidth;
+  const headerColor = colors.primary;
+  const shoulderSize = 32;
+  const joinDepth = 3;
+
   return (
-    <TabSwitcher
-      active={tab}
-      onChange={onChange}
-      options={[
-        { icon: LayoutGrid, label: "Workspace", value: "workspace" },
-        { icon: ChartColumn, label: "Dashboard", value: "dashboard" },
-      ]}
-    />
+    <View
+      onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        setTabBarWidth((currentWidth) => (
+          Math.abs(currentWidth - nextWidth) < 0.5 ? currentWidth : nextWidth
+        ));
+      }}
+      style={{ alignItems: "stretch", flexDirection: "row", overflow: "visible" }}
+    >
+      {tabBarWidth > 0 ? (
+        <View
+          pointerEvents="none"
+          style={{
+            bottom: 0,
+            left: activeLeft,
+            position: "absolute",
+            top: 0,
+            width: tabWidth,
+            zIndex: 0,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderTopLeftRadius: 30,
+              borderTopRightRadius: 30,
+              bottom: -(joinDepth + 1),
+              boxShadow: isDark
+                ? "0px -2px 10px rgba(0, 0, 0, 0.22)"
+                : "0px -2px 10px rgba(15, 23, 42, 0.10)",
+              left: 0,
+              position: "absolute",
+              right: 0,
+              top: 0,
+            }}
+          />
+
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              bottom: -joinDepth,
+              height: shoulderSize,
+              // The tab row starts one screen gutter in from the viewport.
+              // Begin the first shoulder at that viewport edge so its arc is
+              // not clipped partway through and sits level with the right one.
+              left: -spacing.lg,
+              overflow: "hidden",
+              position: "absolute",
+              width: shoulderSize + 1,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: headerColor,
+                borderRadius: shoulderSize,
+                bottom: 0,
+                height: shoulderSize * 2,
+                left: -shoulderSize,
+                position: "absolute",
+                width: shoulderSize * 2,
+              }}
+            />
+          </View>
+
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              bottom: -joinDepth,
+              height: shoulderSize,
+              overflow: "hidden",
+              position: "absolute",
+              right: -shoulderSize,
+              width: shoulderSize + 1,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: headerColor,
+                borderRadius: shoulderSize,
+                bottom: 0,
+                height: shoulderSize * 2,
+                position: "absolute",
+                right: -shoulderSize,
+                width: shoulderSize * 2,
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {options.map((option) => {
+        const active = option.value === tab;
+        const Icon = option.icon;
+
+        return (
+          <View
+            key={option.value}
+            style={{
+              flex: 1,
+              position: "relative",
+              zIndex: 2,
+            }}
+          >
+            <AnimatedPressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              onPress={() => onChange(option.value)}
+              style={{
+                alignItems: "center",
+                backgroundColor: "transparent",
+                flex: 1,
+                flexDirection: "row",
+                gap: spacing.sm,
+                justifyContent: "center",
+                minHeight: 56,
+                paddingHorizontal: spacing.md,
+                zIndex: 2,
+              }}
+            >
+              <Icon color={active ? colors.primary : colors.onPrimary} size={20} strokeWidth={2.1} />
+              <Text
+                style={{
+                  color: active ? colors.ink : colors.onPrimary,
+                  fontFamily: active ? fonts.sansBold : fonts.sans,
+                  fontSize: 15,
+                }}
+              >
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1318,9 +1588,29 @@ function DashboardTab({
   onNavigate: (href: OwnerRoute) => void;
 }) {
   const { colors, type } = useTheme();
+  const { height: viewportHeight } = useWindowDimensions();
   const { budget, money, occupancy, tenancy } = dashboard;
   const [openSnapshot, setOpenSnapshot] = useState<SnapshotKey | null>(null);
+  const [snapshotGridTop, setSnapshotGridTop] = useState<number | null>(null);
+  const snapshotGridRef = useRef<View>(null);
   const toggle = (key: SnapshotKey) => setOpenSnapshot((current) => (current === key ? null : key));
+
+  const measureSnapshotGrid = useCallback(() => {
+    requestAnimationFrame(() => {
+      snapshotGridRef.current?.measureInWindow((_x, y) => {
+        setSnapshotGridTop((current) => (current !== null && Math.abs(current - y) < 0.5 ? current : y));
+      });
+    });
+  }, []);
+
+  // The floating Home tab bar owns the final 96px of the viewport. Sharing
+  // everything above it between two rows makes the initial five snapshots fill
+  // the dashboard while naturally leaving row two's sixth position empty.
+  // Any later third row keeps this height and extends the scroll content.
+  const snapshotCardHeight =
+    snapshotGridTop === null
+      ? 104
+      : Math.max(148, Math.floor((viewportHeight - snapshotGridTop - 96 - spacing.sm) / 2));
 
   const pnlPropertyId = dashboard.property.propertyId;
   const pnlStatement = useGetPnlStatementQuery(
@@ -1334,7 +1624,11 @@ function DashboardTab({
         <Text style={[type.caption, { color: colors.muted, marginTop: -spacing.xs }]}>
           Tap a snapshot to see its details
         </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        <View
+          onLayout={measureSnapshotGrid}
+          ref={snapshotGridRef}
+          style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}
+        >
           {/* Collected OVER billed, like the Property box's occupied/total. On its
               own the collected figure reads as ₹0 for most of the month — true,
               but it hides whether that is nothing owed or nothing paid yet. */}
@@ -1343,11 +1637,12 @@ function DashboardTab({
             icon={MoneyIcon}
             label="Collection"
             onPress={() => toggle("collection")}
+            tileHeight={snapshotCardHeight}
             tone="primary"
             value={`${compactMoneyPaise(money.collectedThisMonthPaise)}/${compactMoneyPaise(money.billedThisMonthPaise).replace("₹", "")}`}
           />
-          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyArtwork} label="Property" onPress={() => toggle("property")} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
-          <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tone="primary" value={String(tenancy.activeTenants)} />
+          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyArtwork} label="Property" onPress={() => toggle("property")} tileHeight={snapshotCardHeight} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
+          <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tileHeight={snapshotCardHeight} tone="primary" value={String(tenancy.activeTenants)} />
           {/* Spent OVER budget, the same shape as Collection. Spend alone says
               nothing: ₹40,000 is a good month or a disaster depending entirely
               on the number it is being measured against. */}
@@ -1356,6 +1651,7 @@ function DashboardTab({
             icon={ExpenseIcon}
             label="Expense"
             onPress={() => toggle("expense")}
+            tileHeight={snapshotCardHeight}
             tone={budget.level === "EXCEEDED" ? "danger" : "primary"}
             value={
               budget.effectiveBudgetPaise > 0
@@ -1363,7 +1659,7 @@ function DashboardTab({
                 : compactMoneyPaise(budget.spentPaise)
             }
           />
-          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} tone={pnlStatement && pnlStatement.netPaise < 0 ? "danger" : "primary"} value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"} />
+          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} tileHeight={snapshotCardHeight} tone={pnlStatement && pnlStatement.netPaise < 0 ? "danger" : "primary"} value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"} />
         </View>
       </Section>
 
@@ -1385,6 +1681,7 @@ function DashboardSnapshotBox({
   icon: Icon,
   label,
   onPress,
+  tileHeight,
   tone = "default",
   value,
 }: {
@@ -1392,6 +1689,7 @@ function DashboardSnapshotBox({
   icon: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
+  tileHeight: number;
   tone?: "default" | "danger" | "primary";
   value: string;
 }) {
@@ -1404,7 +1702,6 @@ function DashboardSnapshotBox({
       onPress={onPress}
       style={{
         alignItems: "center",
-        aspectRatio: 1,
         // Selection is the foot of the card turning green, never a wash of
         // colour behind it: these boxes carry a money figure, and tinting the
         // paper under a number is the one thing that makes it harder to read.
@@ -1420,9 +1717,9 @@ function DashboardSnapshotBox({
         flexBasis: "30%",
         flexGrow: 1,
         gap: spacing.xs,
+        height: tileHeight,
         justifyContent: "center",
         maxWidth: "32%",
-        minHeight: 104,
         padding: spacing.sm,
       }}
     >
@@ -1793,6 +2090,11 @@ function signedCompactPaise(paise: number) {
   return `${paise < 0 ? "−" : ""}${compactMoneyPaise(Math.abs(paise))}`;
 }
 
+/** The dashed box's own inset and frame, and the floor a tile never shrinks to. */
+const PINNED_BOX_PADDING = spacing.sm;
+const PINNED_BOX_BORDER = 1;
+const PINNED_TILE_MIN_HEIGHT = 104;
+
 function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; propertyId: string | null }) {
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();
@@ -1807,8 +2109,45 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
     .filter((module) => !module.resources?.length || module.resources.some((resource) => canView(resource)));
 
 
+  // The box is sized from its own width rather than a fixed number, because a
+  // tile is square and as wide as a third of the row — so its height is a
+  // function of the screen, and a hard-coded two-row height would be wrong on
+  // every device but one.
+  const [boxWidth, setBoxWidth] = useState(0);
+  // onLayout reports the BORDER box, so the frame comes off as well as the
+  // padding. Missing the two border pixels made each tile a third of a pixel
+  // too wide, which is enough to overflow the row and wrap it after two — the
+  // box went three rows of two instead of two rows of three.
+  const innerWidth = Math.max(0, boxWidth - PINNED_BOX_PADDING * 2 - PINNED_BOX_BORDER * 2);
+  // Three to a row, from the width actually available. The tiles used to be
+  // sized in percentages — 32% each — which ignores the two gaps between them,
+  // so three never fitted. Floored, because a fractional width that adds back
+  // up to exactly the row is one rounding error away from wrapping again.
+  const tileWidth = innerWidth > 0 ? Math.floor((innerWidth - spacing.sm * 2) / 3) : 0;
+  const tileHeight = Math.max(PINNED_TILE_MIN_HEIGHT, tileWidth);
+  const twoRows =
+    tileHeight * 2 + spacing.sm + PINNED_BOX_PADDING * 2 + PINNED_BOX_BORDER * 2;
+
   return (
-    <View style={{ gap: spacing.sm }}>
+    /* One box, pinned or not. Empty, the dashed outline says this is somewhere
+       things go — a single line of grey text said nothing was there and left
+       the reader to work out that it was a place at all. Holding two rows'
+       height in both states also stops Home shifting under the thumb the
+       moment the first pin lands. */
+    <View
+      onLayout={(event) => setBoxWidth(event.nativeEvent.layout.width)}
+      style={{
+        borderColor: colors.borderStrong,
+        // Square corners: the tiles inside are square, and RN on Android
+        // quietly renders a dashed border as solid once it has a radius.
+        borderRadius: 0,
+        borderStyle: "dashed",
+        borderWidth: PINNED_BOX_BORDER,
+        justifyContent: modules.length === 0 ? "center" : "flex-start",
+        minHeight: twoRows,
+        padding: PINNED_BOX_PADDING,
+      }}
+    >
       {/* No heading. With nothing pinned the line below IS the heading, and once
           something is pinned the tiles say what they are — a label above them
           was naming a section the reader had just filled themselves. */}
@@ -1832,7 +2171,7 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
           {modules.map((module) => (
               <View
                 key={module.key}
-                style={{ flexBasis: "30%", flexGrow: 1, maxWidth: "32%" }}
+                style={tileWidth > 0 ? { width: tileWidth } : { flexBasis: "30%", flexGrow: 1 }}
               >
                 <AnimatedPressable
                   accessibilityRole="button"
@@ -1842,8 +2181,7 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
                     aspectRatio: 1,
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
-                    borderCurve: "continuous",
-                    borderRadius: 12,
+                    borderRadius: 0,
                     borderWidth: 1,
                     gap: spacing.xs,
                     justifyContent: "center",
@@ -2823,6 +3161,7 @@ function OwnerPropertyPicker({
   onToggle,
   open,
   properties,
+  renderOptions = true,
   selectedProperty,
   workspaceRole,
 }: {
@@ -2830,6 +3169,7 @@ function OwnerPropertyPicker({
   onToggle: () => void;
   open: boolean;
   properties: OwnerProperty[];
+  renderOptions?: boolean;
   selectedProperty: OwnerProperty | null;
   workspaceRole: "Owner" | "Manager";
 }) {
@@ -2943,7 +3283,7 @@ function OwnerPropertyPicker({
         ) : null}
       </AnimatedPressable>
 
-      {open && hasMultipleProperties ? (
+      {renderOptions && open && hasMultipleProperties ? (
         <View
           style={{
             backgroundColor: colors.surface,
@@ -3006,6 +3346,63 @@ function OwnerPropertyPicker({
           })}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function OwnerPropertyOptions({
+  onSelect,
+  properties,
+  selectedProperty,
+}: {
+  onSelect: (propertyId: string) => void;
+  properties: OwnerProperty[];
+  selectedProperty: OwnerProperty | null;
+}) {
+  const { colors, type } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        overflow: "hidden",
+      }}
+    >
+      {properties.map((property, index) => {
+        const selected = property.id === selectedProperty?.id;
+
+        return (
+          <AnimatedPressable
+            key={property.id}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(property.id)}
+            style={{
+              alignItems: "center",
+              backgroundColor: selected ? colors.terracottaSoft : "transparent",
+              borderTopColor: colors.border,
+              borderTopWidth: index === 0 ? 0 : 1,
+              flexDirection: "row",
+              gap: spacing.md,
+              padding: spacing.md,
+            }}
+          >
+            <View style={{ flex: 1, gap: spacing.xxs }}>
+              <Text style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink }]}>
+                {property.name}
+              </Text>
+              <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+                {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
+              </Text>
+            </View>
+            {selected ? <Check color={colors.terracotta} size={18} strokeWidth={2.4} /> : null}
+          </AnimatedPressable>
+        );
+      })}
     </View>
   );
 }
@@ -3399,12 +3796,3 @@ function initialsFor(name: string) {
     .join("");
 }
 
-function formatFloor(value: string) {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  return trimmed.toLowerCase().startsWith("floor") ? trimmed : `Floor ${trimmed}`;
-}

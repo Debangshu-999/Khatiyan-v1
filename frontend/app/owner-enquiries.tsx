@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
 
@@ -59,17 +59,44 @@ export default function OwnerEnquiriesScreen() {
   const [responding, setResponding] = useState<EnquiryDetail | null>(null);
   const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
 
+  /**
+   * The conversation to open once the respond sheet has actually gone.
+   *
+   * <p>The sheet used to navigate to the chat itself, from inside its own
+   * modal. On Android a modal is a separate native window, so pushing a screen
+   * while one is still up puts that screen behind it — the sheet closes and the
+   * app is left where it started, which is the "reply over chat does nothing"
+   * report. Closing and pushing in the same handler does not help either: both
+   * land in one commit, so the window is still there when the push goes out.
+   *
+   * <p>Holding the id and pushing from an effect fixes the ordering by stating
+   * it. The effect cannot run until the render that unmounted the sheet has
+   * been committed, so by the time it does there is no modal left to land
+   * behind. Navigation also belongs to the screen rather than to a sheet.
+   */
+  const [pendingChat, setPendingChat] = useState<{ threadId: string; title: string } | null>(null);
+  useEffect(() => {
+    if (!pendingChat || responding) {
+      return;
+    }
+    setPendingChat(null);
+    router.push({
+      params: { threadId: pendingChat.threadId, title: pendingChat.title },
+      pathname: "/chat/[threadId]",
+    });
+  }, [pendingChat, responding, router]);
+
   const enquiriesQuery = useListPropertyEnquiriesQuery(selectedProperty?.id ?? "", {
     skip: !selectedProperty,
   });
 
   const enquiries = useMemo(() => enquiriesQuery.data ?? [], [enquiriesQuery.data]);
-  const openCount = enquiries.filter((enquiry) => enquiry.status === "NEW").length;
+  const openCount = enquiries.filter(awaitingAnswer).length;
 
   // Unanswered first by default, and "All" when there is nothing waiting —
   // opening onto an empty filter reads as "no enquiries" when there are plenty.
   const effectiveFilter: EnquiryFilter = filter === "new" && openCount === 0 ? "all" : filter;
-  const visible = effectiveFilter === "new" ? enquiries.filter((enquiry) => enquiry.status === "NEW") : enquiries;
+  const visible = effectiveFilter === "new" ? enquiries.filter(awaitingAnswer) : enquiries;
   const shown = visible.slice(0, visibleCount);
   const hasMore = visibleCount < visible.length;
 
@@ -172,14 +199,18 @@ export default function OwnerEnquiriesScreen() {
         <RespondSheet
           enquiry={responding}
           onClose={() => setResponding(null)}
-          onResponded={(channel) => {
+          onResponded={(channel, chat) => {
             setResponding(null);
             // Accurate about what happened: the app handed off to the dialer or
             // mail client. Nothing was sent to the enquirer from in here.
             if (channel === "CHAT") {
               // Nothing to confirm: the chat itself opens, which is the whole
               // answer. A toast over a conversation says less than the
-              // conversation does.
+              // conversation does. Queued rather than opened here — see
+              // pendingChat.
+              if (chat) {
+                setPendingChat(chat);
+              }
               return;
             }
             toast.show(channel === "EMAIL" ? "Marked as emailed." : "Marked as called.", "success");
@@ -205,10 +236,17 @@ function EnquiryCard({
   // Status, not `responses.length` — the New filter and both badges count on
   // status, and a pill disagreeing with the number beside it is worse than
   // either being wrong on its own.
-  const isNew = enquiry.status === "NEW";
+  const isNew = awaitingAnswer(enquiry);
   // Greyed and unactionable, but still listed for a day — see the module doc.
   // Nothing should vanish between two glances at the screen.
-  const isExpired = enquiry.status === "EXPIRED";
+  //
+  // By the clock, not by the status. EXPIRED is only what the server's sweep
+  // has already recorded, and that runs on a cron — so an enquiry whose
+  // deadline passed an hour ago is still NEW, and reading the status alone left
+  // the card with no expired tag and a live Respond button on a question the
+  // enquirer has already been freed to ask again. Only NEW ages out: a
+  // RESPONDED enquiry is finished, and the date passing does not un-answer it.
+  const isExpired = enquiry.status === "EXPIRED" || hasLapsed(enquiry);
 
   return (
     <Card>
@@ -237,21 +275,10 @@ function EnquiryCard({
               </Text>
             </View>
           ) : null}
-          {isExpired ? (
-            <View
-              style={{
-                borderColor: colors.borderStrong,
-                borderRadius: 999,
-                borderWidth: 1,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: 1,
-              }}
-            >
-              <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10 }}>
-                EXPIRED
-              </Text>
-            </View>
-          ) : null}
+          {/* No EXPIRED pill here. The chip at the foot of the card already
+              says "Expired 24 Aug", which is the same fact and the useful half
+              of it — a bare EXPIRED above it was the word twice. NEW keeps its
+              pill because nothing else on the card carries it. */}
         </View>
 
         {enquiry.enquirerPhone ? (
@@ -312,10 +339,12 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderColor: empty ? colors.borderStrong : colors.ink,
-        borderCurve: "continuous",
-        borderRadius: 12,
-        borderWidth: 1,
+        // A filled disc rather than an outlined square. Beside the Respond
+        // button — a solid block of the same height — an outlined box read as a
+        // second, weaker button competing with it, where a disc reads as the
+        // quiet secondary it is.
+        backgroundColor: colors.surfaceSunken,
+        borderRadius: 999,
         height: 48,
         justifyContent: "center",
         width: 48,
@@ -324,6 +353,29 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
       <History color={empty ? colors.muted : colors.ink} size={20} strokeWidth={2} />
     </AnimatedPressable>
   );
+}
+
+/**
+ * Whether this enquiry's window has closed. Answered or not.
+ *
+ * <p>By the clock, not by the status. `EXPIRED` is only what the server's sweep
+ * has already recorded, and that runs on a cron — so an enquiry whose deadline
+ * passed an hour ago is still `NEW`, and reading the status alone left it
+ * counted as new, listed under the New tab, badged NEW, carrying no expired tag
+ * and offering a live Respond button.
+ *
+ * <p>A reply inside the window does not reopen it either. The date is the life
+ * of the question: a month-old enquiry somebody called about once is closed,
+ * and it read as live because its status was `RESPONDED` rather than `EXPIRED`
+ * and nothing was comparing the date.
+ */
+function hasLapsed(enquiry: EnquiryDetail) {
+  return Date.parse(enquiry.expiresAt) <= Date.now();
+}
+
+/** Still genuinely waiting on someone. */
+function awaitingAnswer(enquiry: EnquiryDetail) {
+  return enquiry.status === "NEW" && !hasLapsed(enquiry);
 }
 
 /** What was done, by whom, when — the whole history, newest first. */
@@ -379,10 +431,14 @@ function RespondSheet({
 }: {
   enquiry: EnquiryDetail;
   onClose: () => void;
-  onResponded: (channel: EnquiryResponseChannel) => void;
+  /**
+   * @param chat the conversation to open, for a chat reply only. Handed up
+   *             rather than opened here: this sheet is a modal, and a screen
+   *             pushed from inside one lands behind it.
+   */
+  onResponded: (channel: EnquiryResponseChannel, chat?: { threadId: string; title: string }) => void;
 }) {
   const { colors, type } = useTheme();
-  const router = useGuardedRouter();
   const [error, setError] = useState<string | null>(null);
   const [respond] = useRespondToEnquiryMutation();
 
@@ -398,7 +454,7 @@ function RespondSheet({
    * rather than blocking anything.
    */
   /**
-   * Answers in chat: opens the conversation, then goes to it.
+   * Answers in chat: opens the conversation, then hands it to the screen.
    *
    * <p>
    * The order is the opposite of the phone and email paths, and has to be. There
@@ -409,6 +465,16 @@ function RespondSheet({
    */
   async function chooseChat() {
     setError(null);
+    const title = enquiry.enquirerName ?? "Enquiry";
+
+    // Already answered in chat, so this is "Open chat" and there is nothing to
+    // record. Going through the mutation again wrote a second, identical row
+    // into the action log every time the owner reopened the conversation, and
+    // made reading an existing thread depend on a write succeeding.
+    if (enquiry.chatThreadId) {
+      onResponded("CHAT", { threadId: enquiry.chatThreadId, title });
+      return;
+    }
 
     try {
       const detail = await respond({ channel: "CHAT", enquiryId: enquiry.id, note: null }).unwrap();
@@ -416,8 +482,7 @@ function RespondSheet({
         setError("The conversation could not be opened. Try again.");
         return;
       }
-      onResponded("CHAT");
-      router.push(`/chat/${detail.chatThreadId}?title=${encodeURIComponent(enquiry.enquirerName ?? "Enquiry")}`);
+      onResponded("CHAT", { threadId: detail.chatThreadId, title });
     } catch {
       setError("Could not start the chat. Try again.");
     }
@@ -454,32 +519,43 @@ function RespondSheet({
 
   return (
     <SheetShell onClose={onClose} title={`Respond to ${firstName(enquiry.enquirerName)}`}>
+      {/* "nothing is sent from inside the app" went with the dash. It stopped
+          being true when chat became a real reply: that one IS sent from in
+          here, and the line was promising the opposite directly above it. */}
       <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-        Reach them directly — nothing is sent from inside the app.
+        Reach them directly through these available channels.
       </Text>
 
-      <ChannelOption
-        available={Boolean(callChannel)}
-        icon={Phone}
-        label="Call back"
-        onPress={() => void choose("CALL_BACK", callChannel?.target)}
-        subtitle={callChannel?.target ?? "No phone number on file"}
-      />
+      {/* Only what actually works. A greyed row saying "no verified email"
+          was a dead control that also announced a fact about the enquirer —
+          which is the very thing reachableChannels exists to withhold, since a
+          channel someone declined is not management's business and showing it
+          invites working around it. Absent says the same thing without either
+          problem. */}
+      {callChannel ? (
+        <ChannelOption
+          icon={Phone}
+          label="Call back"
+          onPress={() => void choose("CALL_BACK", callChannel.target)}
+          subtitle={callChannel.target}
+        />
+      ) : null}
 
-      <ChannelOption
-        available={Boolean(emailChannel)}
-        icon={Mail}
-        label="Email"
-        onPress={() => void choose("EMAIL", emailChannel?.target)}
-        subtitle={emailChannel?.target ?? `${firstName(enquiry.enquirerName)} has no verified email`}
-      />
+      {emailChannel ? (
+        <ChannelOption
+          icon={Mail}
+          label="Email"
+          onPress={() => void choose("EMAIL", emailChannel.target)}
+          subtitle={emailChannel.target}
+        />
+      ) : null}
 
-      {/* Always available, unlike the two above. Chat needs no phone number
+      {/* Never conditional, unlike the two above. Chat needs no phone number
           and no verified address, so it is the one reply that works however
           little the enquirer chose to share — which is what makes declining the
-          other two a real choice rather than a way to go unanswerable. */}
+          other two a real choice rather than a way to go unanswerable, and what
+          keeps this sheet from ever being empty. */}
       <ChannelOption
-        available
         icon={MessageSquare}
         label={enquiry.chatThreadId ? "Open chat" : "Chat"}
         onPress={() => void chooseChat()}
@@ -500,51 +576,46 @@ function RespondSheet({
   );
 }
 
+/**
+ * One way of getting back to the enquirer.
+ *
+ * <p>Every one rendered is one that works — the unreachable ones are left out
+ * rather than greyed — so this no longer carries an unusable state, and the
+ * `dashed` and `disabled` props that dressed one went with it.
+ */
 function ChannelOption({
-  available,
-  dashed,
-  disabled,
   icon: Icon,
   label,
   onPress,
   subtitle,
 }: {
-  available: boolean;
-  dashed?: boolean;
-  disabled?: boolean;
   icon: typeof Phone;
   label: string;
   onPress: () => void;
   subtitle: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const usable = available && !disabled;
-  // Ink, not primary. These are three equal choices of how to reach someone —
-  // blue made each one read as the recommended action, which none of them is.
-  const tint = usable ? colors.ink : colors.muted;
 
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: !usable }}
-      disabled={!usable}
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderColor: usable ? colors.ink : colors.borderStrong,
+        borderColor: colors.ink,
         borderCurve: "continuous",
         borderRadius: 14,
-        borderStyle: dashed ? "dashed" : "solid",
         borderWidth: 1.5,
         flexDirection: "row",
         gap: spacing.md,
-        opacity: usable ? 1 : 0.6,
         padding: spacing.md,
       }}
     >
-      <Icon color={tint} size={18} strokeWidth={2.2} />
+      {/* Ink, not primary. These are equal choices of how to reach someone —
+          blue made each one read as the recommended action, which none is. */}
+      <Icon color={colors.ink} size={18} strokeWidth={2.2} />
       <View style={{ flex: 1, gap: 1 }}>
-        <Text style={{ color: usable ? colors.ink : colors.muted, fontFamily: fonts.sansBold, fontSize: 14 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {label}
         </Text>
         <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>

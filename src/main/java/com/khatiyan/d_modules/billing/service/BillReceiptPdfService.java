@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 
@@ -51,16 +50,6 @@ public class BillReceiptPdfService {
     /** Dates are the tenant's, so they are read in the tenant's zone. */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
-
-    private final String roadCloudsUri;
-    private final String monumentUri;
-    private final String flagUri;
-
-    public BillReceiptPdfService() {
-        this.roadCloudsUri = dataUri("receipt/roadclouds.png");
-        this.monumentUri = dataUri("receipt/monument.png");
-        this.flagUri = dataUri("receipt/flag.png");
-    }
 
     /**
      * The receipt as PDF bytes.
@@ -134,12 +123,17 @@ public class BillReceiptPdfService {
             contact.append("<div class=\"line\">").append(escape(letterhead.ownerEmail())).append("</div>");
         }
 
-        // The email line is dropped entirely when there is no VERIFIED address:
-        // a label with nothing after it reads as a detail we failed to print
-        // rather than one we do not hold.
-        String tenantEmailLine = notBlank(cycle.tenantEmail())
-                ? "<li>Email: <span class=\"val\">" + escape(cycle.tenantEmail()) + "</span></li>"
-                : "";
+        String billDetails = detailRow("Bill Number", cycle.referenceCode(), true)
+                + detailRow("Bill Cycle", billTitle(cycle), false)
+                + detailRow("Bill Date", date(cycle.createdAt()), false)
+                + detailRow("Due Date", date(cycle.rentDueDate()), false)
+                + detailRow("Bill Status", humanize(cycle.status().name()), false)
+                + detailRow("Paid On", date(paidOn), false);
+        String billTo = detailRow("Name", cycle.tenantNameSnapshot(), false)
+                + detailRow("Tenancy ID", cycle.tenancyReferenceCode(), true)
+                + detailRow("Phone", notBlank(cycle.tenantPhone()) ? phone(cycle.tenantPhone()) : null, false)
+                + (notBlank(cycle.tenantEmail()) ? detailRow("Email", cycle.tenantEmail(), false) : "")
+                + detailRow("Room No", cycle.roomNumber(), false);
 
         return """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -148,119 +142,126 @@ public class BillReceiptPdfService {
             <head>
               <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
               <style>
-                @page { size: A4; margin: 0; }
-                * { font-family: "Inter", sans-serif; color: #1f2124; }
+                @page { size: A4; margin: 30px 34px 32px; }
+                * { box-sizing: border-box; font-family: "Inter", sans-serif; color: #0c1734; }
                 body { background: #ffffff; margin: 0; }
 
-                table.band { background: #edefee; border-collapse: collapse; table-layout: fixed; width: 100%%; }
-                table.band td { padding: 0; }
-                td.art { padding-left: 10px; vertical-align: bottom; width: 200px; }
-                td.who { padding: 30px 12px 26px; text-align: left; }
-                td.marks { padding-bottom: 14px; padding-right: 20px; text-align: right; vertical-align: bottom; width: 84px; }
-                td.marks img { margin-left: 8px; }
-                .band h1 { font-size: 34px; font-weight: 700; margin: 0 0 8px; }
-                .band .line { color: #3d4045; font-size: 12px; line-height: 1.55; }
+                table.letterhead { border-collapse: collapse; table-layout: fixed; width: 100%%; }
+                table.letterhead td { padding: 0; vertical-align: middle; }
+                td.brand { width: 92px; }
+                td.who { padding-left: 12px; }
+                td.motto { text-align: center; width: 126px; }
+                .property-name { font-size: 27px; font-weight: 700; line-height: 1.16; margin-bottom: 5px; }
+                .line { color: #4f5d78; font-size: 10.5px; line-height: 1.48; }
 
-                .sheet { padding: 40px 46px 46px; }
-                h2.title { font-size: 27px; font-weight: 700; margin: 8px 0 34px; text-align: center; }
+                .brand-mark { margin: 0 auto; text-align: center; width: 78px; }
+                .roof { border-bottom: 18px solid #b68418; border-left: 30px solid transparent; border-right: 30px solid transparent; height: 0; margin: 0 auto -8px; width: 0; }
+                .house { background: #0c1734; height: 38px; margin: 0 auto; padding-top: 11px; text-align: center; width: 50px; }
+                .window { background: #b68418; display: inline-block; height: 9px; margin: 0 2px; width: 9px; }
+                .ground { background: #0c1734; height: 2px; margin: 3px auto 0; width: 68px; }
+                .brand-caption { font-size: 5.5px; font-weight: 700; letter-spacing: .9px; margin-top: 4px; white-space: nowrap; }
+                .motto-line { font-size: 8px; font-weight: 700; letter-spacing: 2.8px; line-height: 1.7; }
+                .motto-rule { background: #b68418; height: 2px; margin: 5px auto 0; width: 36px; }
 
-                table.parties { border: 1px solid #c9cccf; border-collapse: collapse; table-layout: fixed; width: 100%%; }
-                table.parties td { border-right: 1px solid #c9cccf; padding: 20px 22px 26px; vertical-align: top; width: 50%%; }
-                table.parties td.last { border-right: 0; }
-                table.parties h3 { font-size: 22px; font-weight: 700; margin: 0 0 14px; }
-                ul { list-style: none; margin: 0; padding-left: 0; }
-                li { font-size: 12.5px; line-height: 2.05; }
-                li .val { font-weight: 700; }
-                /* Reference codes must not break: half of "BIL-2026-000186" on a
-                   second line reads as two different numbers. */
-                li .code { font-size: 11px; font-weight: 700; white-space: nowrap; }
+                h1.title { font-size: 31px; font-weight: 700; margin: 42px 0 30px; text-align: center; }
 
-                table.grid { border: 1px solid #c9cccf; border-collapse: collapse; margin-top: 34px; table-layout: fixed; width: 100%%; }
-                table.grid td, table.grid th { border: 1px solid #c9cccf; font-size: 13px; padding: 13px 16px; text-align: left; }
-                table.grid th { color: #9aa0a6; font-size: 12.5px; font-weight: 700; }
-                table.grid td.amt { width: 50%%; }
-                table.grid td.strong { font-weight: 700; }
+                table.party-layout { border-collapse: collapse; table-layout: fixed; width: 100%%; }
+                table.party-layout td.party-cell { padding: 0 8px 0 0; vertical-align: top; width: 50%%; }
+                table.party-layout td.party-cell.last { padding: 0 0 0 8px; }
+                .box { border: 1px solid #c9dcf2; border-radius: 7px; overflow: hidden; }
+                table.detail, table.grid { border-collapse: collapse; table-layout: fixed; width: 100%%; }
+                table.detail th, table.grid th, .summary-head { background: #e6f1ff; font-size: 17px; font-weight: 700; padding: 13px 15px; text-align: left; }
+                table.detail td { border-top: 1px solid #c9dcf2; font-size: 11.5px; padding: 10px 12px; vertical-align: middle; }
+                table.detail td.label { background: #f0f6ff; color: #4f5d78; width: 39%%; }
+                table.detail td.value { border-left: 1px solid #c9dcf2; font-weight: 700; overflow-wrap: break-word; width: 61%%; }
+                table.detail td.code { font-size: 10.5px; white-space: nowrap; }
 
-                .note { font-size: 13px; margin-top: 40px; }
-                .folio { color: #b6babe; font-size: 12px; margin-top: 46px; text-align: right; }
+                .charges { margin-top: 26px; }
+                table.grid th { border-right: 1px solid #c9dcf2; font-size: 15px; }
+                table.grid th:last-child { border-right: 0; width: 34%%; }
+                table.grid td { border-top: 1px solid #c9dcf2; font-size: 12px; padding: 11px 15px; }
+                table.grid td.amt { width: 34%%; }
+
+                .summary { margin-top: 22px; }
+                .summary-head { border-bottom: 1px solid #c9dcf2; }
+                .summary table.grid td.amt { text-align: right; }
+                .summary table.grid tr.total td { font-size: 18px; font-weight: 700; padding-bottom: 15px; padding-top: 15px; }
+                .summary table.grid tr.total td.amt { font-size: 25px; }
+
+                .note { color: #4f5d78; font-size: 11px; margin-top: 28px; }
+                .folio { color: #a7b0c0; font-size: 9px; margin-top: 28px; text-align: right; }
               </style>
             </head>
             <body>
-              <table class="band">
+              <table class="letterhead">
                 <tr>
-                  <td class="art"><img alt="" height="70" src="%s" width="200" /></td>
+                  <td class="brand">
+                    <div class="brand-mark">
+                      <div class="roof"></div>
+                      <div class="house"><span class="window"></span><span class="window"></span></div>
+                      <div class="ground"></div>
+                      <div class="brand-caption">COMFORT LIVES HERE</div>
+                    </div>
+                  </td>
                   <td class="who">
-                    <h1>%s</h1>
+                    <div class="property-name">%s</div>
                     %s
                   </td>
-                  <td class="marks">
-                    <img alt="" height="26" src="%s" width="26" />
-                    <img alt="" height="26" src="%s" width="26" />
+                  <td class="motto">
+                    <div class="motto-line">SAFE SPACES</div>
+                    <div class="motto-line">HAPPIER DAYS</div>
+                    <div class="motto-rule"></div>
                   </td>
                 </tr>
               </table>
 
-              <div class="sheet">
-                <h2 class="title">Tenancy Bill Receipt</h2>
+              <h1 class="title">Tenancy Bill Receipt</h1>
 
-                <table class="parties">
-                  <tr>
-                    <td>
-                      <h3>Bill Details</h3>
-                      <ul>
-                        <li>Bill Number: <span class="code">%s</span></li>
-                        <li>Bill Cycle: <span class="val">%s</span></li>
-                        <li>Bill Date: <span class="val">%s</span></li>
-                        <li>Due Date: <span class="val">%s</span></li>
-                        <li>Bill Status: <span class="val">%s</span></li>
-                        <li>Paid On: <span class="val">%s</span></li>
-                      </ul>
-                    </td>
-                    <td class="last">
-                      <h3>Bill To</h3>
-                      <ul>
-                        <li>Name: <span class="val">%s</span></li>
-                        <li>Tenancy ID: <span class="code">%s</span></li>
-                        <li>Phone: <span class="val">%s</span></li>
+              <table class="party-layout">
+                <tr>
+                  <td class="party-cell">
+                    <div class="box">
+                      <table class="detail">
+                        <tr><th colspan="2">Bill Details</th></tr>
                         %s
-                        <li>Room No: <span class="val">%s</span></li>
-                      </ul>
-                    </td>
-                  </tr>
-                </table>
+                      </table>
+                    </div>
+                  </td>
+                  <td class="party-cell last">
+                    <div class="box">
+                      <table class="detail">
+                        <tr><th colspan="2">Bill To</th></tr>
+                        %s
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
+              <div class="box charges">
                 <table class="grid">
-                  <tr><th>Charges(Incl.Taxes)</th><th>Amount</th></tr>
+                  <tr><th>Charges (Incl. Taxes)</th><th>Amount</th></tr>
                   %s
                 </table>
-
-                <table class="grid">
-                  %s
-                  %s
-                </table>
-
-                %s
-                <div class="folio">01</div>
               </div>
+
+              <div class="box summary">
+                <div class="summary-head">Summary</div>
+                <table class="grid">
+                  %s
+                  %s
+                </table>
+              </div>
+
+              %s
+              <div class="folio">01</div>
             </body>
             </html>
             """.formatted(
-                roadCloudsUri,
                 escape(blankToDash(letterhead.propertyName())),
                 contact.toString(),
-                monumentUri,
-                flagUri,
-                escape(cycle.referenceCode()),
-                escape(billTitle(cycle)),
-                date(cycle.createdAt()),
-                date(cycle.rentDueDate()),
-                escape(humanize(cycle.status().name())),
-                date(paidOn),
-                escape(blankToDash(cycle.tenantNameSnapshot())),
-                escape(nullToEmpty(cycle.tenancyReferenceCode())),
-                escape(notBlank(cycle.tenantPhone()) ? phone(cycle.tenantPhone()) : ""),
-                tenantEmailLine,
-                escape(nullToEmpty(cycle.roomNumber())),
+                billDetails,
+                billTo,
                 charges.toString(),
                 row("Subtotal", money(subtotal), false),
                 row("Total Amount Due", money(cycle.totalAmountPaise()), true),
@@ -272,9 +273,14 @@ public class BillReceiptPdfService {
     }
 
     private static String row(String label, String amount, boolean strong) {
-        String cls = strong ? " class=\"strong\"" : "";
-        return "<tr><td" + cls + ">" + escape(label) + "</td><td class=\"amt" + (strong ? " strong" : "") + "\">"
+        String rowClass = strong ? " class=\"total\"" : "";
+        return "<tr" + rowClass + "><td>" + escape(label) + "</td><td class=\"amt\">"
                 + escape(amount) + "</td></tr>";
+    }
+
+    private static String detailRow(String label, String value, boolean code) {
+        return "<tr><td class=\"label\">" + escape(label) + "</td><td class=\"value"
+                + (code ? " code" : "") + "\">" + escape(blankToDash(value)) + "</td></tr>";
     }
 
     /** Rent cycles are numbered; a one-off bill takes its first line's label. */
@@ -363,15 +369,6 @@ public class BillReceiptPdfService {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&apos;");
-    }
-
-    /** Read once at startup — the artwork never changes between receipts. */
-    private static String dataUri(String path) {
-        try (InputStream in = new ClassPathResource(path).getInputStream()) {
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(in.readAllBytes());
-        } catch (IOException ex) {
-            throw new IllegalStateException("Receipt artwork missing from the classpath: " + path, ex);
-        }
     }
 
     private static InputStream font(String path) {

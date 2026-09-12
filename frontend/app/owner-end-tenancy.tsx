@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AlertTriangle, Check, DoorOpen, Info, Plus, Shield, Trash2 } from "lucide-react-native";
 
@@ -11,7 +10,9 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SheetShell } from "@/components/sheet-shell";
 import { OwnerEndTenancySkeleton } from "@/components/skeletons/owner";
+import { SingleOptionPicker } from "@/components/option-picker";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -19,13 +20,13 @@ import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import {
   ActionButton,
-  ChoiceButton,
   ConfirmDialog,
   FormInput,
   NoticeBar,
   formatMoneyPaise,
   rupeesToPaise,
 } from "@/features/owner/owner-ui";
+import { DepositAccountDetail } from "@/features/billing/deposit-account-ui";
 import { SingleImageField } from "@/features/uploads/single-image-field";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -33,7 +34,6 @@ import {
   useGetManagedTenancyDepositQuery,
   useListManagedTenancyBillingCyclesQuery,
 } from "@/store/services/billing-api";
-import { isDepositCredit } from "@/store/services/billing-api";
 import type { DepositAccount } from "@/store/services/billing-api";
 import { useGetPropertyExitPoliciesQuery } from "@/store/services/property-api";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
@@ -45,9 +45,7 @@ import type {
 } from "@/store/services/tenancy-api";
 import {
   useEndTenancyMutation,
-  useGetScheduledTenancyExitQuery,
   useListPropertyTenanciesQuery,
-  useScheduleTenancyExitMutation,
 } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -59,6 +57,8 @@ const COLLECTION_METHODS: { label: string; value: ExitCollectionMethod }[] = [
   { label: "Cheque", value: "CHEQUE" },
   { label: "Other", value: "OTHER" },
 ];
+
+const PAYMENT_METHOD_OPTIONS = COLLECTION_METHODS.filter((option) => option.value !== "OTHER");
 
 const INSTRUMENT_OPTIONS: { label: string; value: ExitChargeInstrument }[] = [
   { label: "From deposit", value: "DEPOSIT" },
@@ -86,21 +86,8 @@ export default function OwnerEndTenancyScreen() {
   // cannot be used, a server that says no. There is no field to correct, so
   // they all go to the modal.
   const opErrors = useFormErrors<never>();
-  const {
-    edit: editParam,
-    mode: modeParam,
-    requestId: requestIdParam,
-    tenancyId: tenancyIdParam,
-  } = useLocalSearchParams<{
-    edit?: string;
-    mode?: string;
-    requestId?: string;
-    tenancyId?: string;
-  }>();
+  const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
   const tenancyId = typeof tenancyIdParam === "string" ? tenancyIdParam : "";
-  const requestId = typeof requestIdParam === "string" ? requestIdParam : "";
-  const isScheduling = modeParam === "schedule" && Boolean(requestId);
-  const editingSchedule = isScheduling && editParam === "1";
 
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties } = useAvailableAccounts();
@@ -241,52 +228,6 @@ export default function OwnerEndTenancyScreen() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const [endTenancy, endState] = useEndTenancyMutation();
-  const [scheduleTenancyExit, scheduleState] = useScheduleTenancyExitMutation();
-  const scheduledExitQuery = useGetScheduledTenancyExitQuery(requestId, {
-    skip: !editingSchedule,
-  });
-  const hydratedScheduleId = useRef<string | null>(null);
-
-  useEffect(() => {
-    const saved = scheduledExitQuery.data;
-    if (!saved || hydratedScheduleId.current === saved.id || policiesQuery.isFetching) {
-      return;
-    }
-
-    const configuration = saved.configuration;
-    const exitCharges = configuration.earlyExitCharges ?? [];
-    const exitTotal = exitCharges.reduce((sum, charge) => sum + charge.amountPaise, 0);
-    const depositCharge = exitCharges.find((charge) => charge.instrument === "DEPOSIT");
-    const billedCharge = exitCharges.find((charge) => charge.instrument === "ONE_OFF_BILL");
-    const damages = configuration.damages;
-
-    setEarlyExitRupees(exitTotal > 0 ? String(exitTotal / 100) : "");
-    setEarlyExitInstrument(
-      exitCharges.length === 0
-        ? null
-        : depositCharge
-          ? "DEPOSIT"
-          : "ONE_OFF_BILL",
-    );
-    setSplitDepositPaise(depositCharge && billedCharge ? depositCharge.amountPaise : null);
-    setCollectedVia(billedCharge?.collectedVia ?? damages?.collectedVia ?? "CASH");
-    setDepositPayable(configuration.depositPayable ?? true);
-    setDamageSelected(
-      Object.fromEntries((damages?.itemNames ?? []).map((name) => [name, true])),
-    );
-    setCustomCharges(damages?.customCharges ?? []);
-    setDamageInstrument(damages?.instrument ?? null);
-    setChecked(
-      Object.fromEntries(
-        checklist.map((item, index) => [
-          index,
-          (configuration.checklistConfirmed ?? []).includes(item),
-        ]),
-      ),
-    );
-    setProofImageUrl(configuration.proofImageUrl ?? "");
-    hydratedScheduleId.current = saved.id;
-  }, [checklist, policiesQuery.isFetching, scheduledExitQuery.data]);
 
   // Mirrors the server's running-balance rule so the actor sees the problem
   // while they can still fix it, rather than as a rejection after submitting.
@@ -358,7 +299,7 @@ export default function OwnerEndTenancyScreen() {
   // nothing to photograph and the field would be asking for a fiction.
   const collectsMoney = billedEarlyExitPaise > 0 || (damageInstrument === "ONE_OFF_BILL" && damageTotalPaise > 0);
 
-  const blockingMessage = !isScheduling && !duesCleared
+  const blockingMessage = !duesCleared
     ? unpaidBills.length === 1
       ? "Clear the outstanding bill before ending the tenancy."
       : "Clear all outstanding bills before ending the tenancy."
@@ -376,34 +317,10 @@ export default function OwnerEndTenancyScreen() {
     // The button is already disabled while anything is blocking, and the reason
     // is stated on screen in the "Action needed" bar — repeating it here would
     // be a second copy of a message the reader is already looking at.
-    if (!tenancyId || blockingMessage || (isScheduling && !requestId)) {
+    if (!tenancyId || blockingMessage) {
       return;
     }
     try {
-      if (isScheduling) {
-        await scheduleTenancyExit({
-          configuration: {
-            checklistConfirmed: checklist.filter((_, index) => checked[index]),
-            damages:
-              damageInstrument != null && (selectedDamageNames.length > 0 || customCharges.length > 0)
-                ? {
-                    collectedVia: damageInstrument === "ONE_OFF_BILL" ? collectedVia : null,
-                    customCharges,
-                    instrument: damageInstrument,
-                    itemNames: selectedDamageNames,
-                  }
-                : null,
-            depositPayable: isDaily || !deposit ? null : depositPayable,
-            earlyExitCharges,
-            proofImageUrl: collectsMoney ? proofImageUrl.trim() || null : null,
-          },
-          requestId,
-        }).unwrap();
-        toast.success(editingSchedule ? "Scheduled exit updated." : "Exit added to the schedule.");
-        router.back();
-        return;
-      }
-
       await endTenancy({
         checklistConfirmed: checklist.filter((_, index) => checked[index]),
         // Narrowed on the instrument: a damage charge with none chosen is
@@ -428,18 +345,11 @@ export default function OwnerEndTenancyScreen() {
       toast.success("Tenancy ended.");
       router.back();
     } catch (error) {
-      opErrors.failFromServer(
-        errorMessage(error)
-          || (isScheduling
-            ? "Could not save the scheduled exit. Please try again."
-            : "Could not end the tenancy. Please try again."),
-      );
+      opErrors.failFromServer(errorMessage(error) || "Could not end the tenancy. Please try again.");
     }
   }
 
-  const loading =
-    (tenanciesQuery.isFetching && !tenancy)
-    || (editingSchedule && scheduledExitQuery.isFetching && !scheduledExitQuery.data);
+  const loading = tenanciesQuery.isFetching && !tenancy;
 
   // Numbering is derived from what is on screen. A daily stay shows only damage
   // charges; a monthly stay at the end of its term shows deposit and damages but
@@ -456,16 +366,12 @@ export default function OwnerEndTenancyScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
         <ScreenHeader
-          title={isScheduling ? "Schedule" : "End"}
-          italicTail={isScheduling ? "exit." : "tenancy."}
+          title="End"
+          italicTail="tenancy."
           subtitle={
             tenancy
-              ? isScheduling
-                ? `Configure the checkout for ${tenancy.tenantName?.trim() || "the tenant"} before its due date.`
-                : `Check out ${tenancy.tenantName?.trim() || "the tenant"} and settle up.`
-              : isScheduling
-                ? "Configuring a scheduled exit."
-                : "Ending a tenancy."
+              ? `Check out ${tenancy.tenantName?.trim() || "the tenant"} and settle up.`
+              : "Ending a tenancy."
           }
         />
 
@@ -485,33 +391,11 @@ export default function OwnerEndTenancyScreen() {
               tone={currentBillTone}
             />
 
-            {isScheduling && !duesCleared ? (
-              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xs }}>
-                <View
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.primarySoft,
-                    borderRadius: 999,
-                    height: 28,
-                    justifyContent: "center",
-                    width: 28,
-                  }}
-                >
-                  <Info color={colors.primaryDeep} size={17} strokeWidth={2.3} />
-                </View>
-                <Text style={[type.caption, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 }]}>
-                  <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 13 }]}>Execution-day payment check. </Text>
-                  Every bill is checked again before the exit runs. If anything remains unpaid or unconfirmed,
-                  nothing changes and the owner is notified.
-                </Text>
-              </View>
-            ) : null}
-
             {/* Sits with the dues gate rather than beside the section that
                 caused it: both answer the same question — why the button at the
                 bottom will not move — so they belong in one place the actor
                 reads before scrolling, not scattered down the page. */}
-            {blockingMessage && (duesCleared || isScheduling) ? (
+            {blockingMessage && duesCleared ? (
               <NoticeBar message={blockingMessage} title="Action needed" tone="warning" />
             ) : null}
 
@@ -1017,20 +901,10 @@ export default function OwnerEndTenancyScreen() {
       {tenancy ? (
         <PinnedFooter fade={false}>
           <ActionButton
-            disabled={endState.isLoading || scheduleState.isLoading || Boolean(blockingMessage)}
-            label={
-              isScheduling
-                ? scheduleState.isLoading
-                  ? "Saving..."
-                  : editingSchedule
-                    ? "Update scheduled exit"
-                    : "Add to scheduled exits"
-                : endState.isLoading
-                  ? "Ending..."
-                  : "End tenancy"
-            }
+            disabled={endState.isLoading || Boolean(blockingMessage)}
+            label={endState.isLoading ? "Ending..." : "End tenancy"}
             onPress={() => void end()}
-            variant={isScheduling ? undefined : "danger"}
+            variant="danger"
           />
         </PinnedFooter>
       ) : null}
@@ -1207,14 +1081,6 @@ export default function OwnerEndTenancyScreen() {
         <DepositSheet
           deposit={deposit}
           onClose={() => setDepositSheetOpen(false)}
-          pending={[
-            ...earlyExitCharges
-              .filter((charge) => charge.instrument === "DEPOSIT")
-              .map((charge) => ({ amountPaise: charge.amountPaise, reason: charge.reason ?? "Early exit charge" })),
-            ...(damageInstrument === "DEPOSIT" && damageTotalPaise > 0
-              ? [{ amountPaise: damageTotalPaise, reason: "Damage charges" }]
-              : []),
-          ]}
         />
       ) : null}
     </View>
@@ -1250,7 +1116,7 @@ function DepositDeductionSheet({
   const shortfall = Math.abs(remaining);
 
   return (
-    <SheetShell onRequestClose={onCancel} title="Deduct from deposit">
+    <SheetShell animated onClose={onCancel} title="Deduct from deposit">
       <Row label="Deposit held" value={formatMoneyPaise(balancePaise)} />
       <Row label={label} value={`− ${formatMoneyPaise(chargePaise)}`} />
       <View style={{ backgroundColor: colors.border, height: 1 }} />
@@ -1308,95 +1174,11 @@ function DepositDeductionSheet({
   );
 }
 
-/**
- * The deposit ledger, read-only, including what this screen is about to do.
- *
- * <p>Shows the settled movements and then the pending ones side by side. The
- * ledger alone would still read as the opening balance while the actor has
- * already committed a deduction upstairs, which makes the screen look broken
- * and — worse — invites them to answer the payability question against a figure
- * that is no longer true.
- *
- * <p>No add or deduct controls. Every movement at this point belongs to the
- * exit and is applied in one transaction when the tenancy ends; a correction
- * made here would land outside that and break the running balance.
- */
-function DepositSheet({
-  deposit,
-  onClose,
-  pending,
-}: {
-  deposit: DepositAccount;
-  onClose: () => void;
-  /** Deductions decided on this screen, not yet applied. */
-  pending: { amountPaise: number; reason: string }[];
-}) {
-  const { colors, type } = useTheme();
-  const pendingTotal = pending.reduce((sum, row) => sum + row.amountPaise, 0);
-  const projected = Math.max(deposit.currentBalancePaise - pendingTotal, 0);
-
+/** The existing Deposit Manager account UI, presented read-only during exit setup. */
+function DepositSheet({ deposit, onClose }: { deposit: DepositAccount; onClose: () => void }) {
   return (
-    <SheetShell onRequestClose={onClose} title="Deposit">
-      <Text selectable style={[type.metric, { color: colors.ink, fontSize: 26, lineHeight: 30 }]}>
-        {formatMoneyPaise(projected)}
-      </Text>
-      <Text style={[type.caption, { color: colors.muted }]}>
-        {pendingTotal > 0
-          ? `After the charges on this screen. ${formatMoneyPaise(deposit.currentBalancePaise)} is held now.`
-          : "Balance held now."}
-      </Text>
-
-      <Text style={[type.eyebrow, { color: colors.kicker, marginBottom: -spacing.sm }]}>
-        Movements
-      </Text>
-      {deposit.movements.length === 0 && pending.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
-          No movements yet.
-        </Text>
-      ) : (
-        <>
-          {deposit.movements.map((movement) => (
-            <View
-              key={movement.id}
-              style={{ borderBottomColor: colors.border, borderBottomWidth: 1, gap: 2, paddingVertical: spacing.sm }}
-            >
-              <Text selectable style={[type.body, { color: colors.ink }]}>
-                {movement.reason}
-              </Text>
-              <Text
-                selectable
-                style={[type.caption, { color: isDepositCredit(movement.type) ? colors.jade : colors.danger }]}
-              >
-                {isDepositCredit(movement.type) ? "+" : "−"}
-                {formatMoneyPaise(movement.amountPaise)}
-              </Text>
-            </View>
-          ))}
-
-          {pending.map((row, index) => (
-            <View
-              key={`pending-${index}`}
-              style={{ borderBottomColor: colors.border, borderBottomWidth: 1, gap: 2, paddingVertical: spacing.sm }}
-            >
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Text selectable style={[type.body, { color: colors.ink }]}>
-                  {row.reason}
-                </Text>
-                <View style={{ borderColor: colors.warningText, borderWidth: 1, paddingHorizontal: spacing.xs }}>
-                  <Text style={[type.caption, { color: colors.warningText, fontSize: 10 }]}>
-                    PENDING
-                  </Text>
-                </View>
-              </View>
-              <Text selectable style={[type.caption, { color: colors.danger }]}>
-                − {formatMoneyPaise(row.amountPaise)}
-              </Text>
-            </View>
-          ))}
-        </>
-      )}
-
-      <ActionButton label="Close" onPress={onClose} variant="secondary" />
+    <SheetShell animated onClose={onClose} title="Deposit account">
+      <DepositAccountDetail busy={false} canManage deposit={deposit} />
     </SheetShell>
   );
 }
@@ -1428,10 +1210,10 @@ function BillPreviewSheet({
   reason?: string;
   tenantName: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
 
   return (
-    <SheetShell onRequestClose={onCancel} title="One-off bill">
+    <SheetShell animated onClose={onCancel} title="One-off bill">
       <Row label="Billed to" value={tenantName} />
       <Row label="Reason" value={reason} />
       <View style={{ backgroundColor: colors.border, height: 1 }} />
@@ -1446,22 +1228,18 @@ function BillPreviewSheet({
         <Row label="Amount" strong value={formatMoneyPaise(amountPaise)} />
       )}
 
-      {/* The bill is written down as paid, so the method has to be the real one.
-          Defaulting silently to cash files a payment record that is wrong in a
-          way nobody notices until someone reconciles. */}
-      <Text style={[type.label, { color: colors.ink }]}>
-        Collected by
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {COLLECTION_METHODS.map((option) => (
-          <ChoiceButton
-            active={method === option.value}
-            key={option.value}
-            label={option.label}
-            onPress={() => onChangeMethod(option.value)}
-          />
-        ))}
-      </View>
+      {/* The same single-choice payment picker as Billing's Mark paid flow. */}
+      <SingleOptionPicker<ExitCollectionMethod>
+        centered
+        emptyLabel="Select how it was paid"
+        label="Payment method"
+        onChange={onChangeMethod}
+        options={PAYMENT_METHOD_OPTIONS}
+        required
+        showIcon={false}
+        title="Payment method"
+        value={method}
+      />
 
       <NoticeBar
         message="This bill is recorded as already paid. Collect the money from the tenant during the exit — nothing will chase it afterwards."
@@ -1507,7 +1285,7 @@ function AddDamageChargeSheet({
   }
 
   return (
-    <SheetShell onRequestClose={onCancel} title="Add damage charge">
+    <SheetShell animated onClose={onCancel} title="Add damage charge">
       <FormInput
         error={form.errors.item}
         label="Item"
@@ -1546,50 +1324,6 @@ function AddDamageChargeSheet({
         </View>
       </View>
     </SheetShell>
-  );
-}
-
-/**
- * Bottom-sheet chrome shared by the sheets on this screen.
- *
- * <p>Uses a plain ScrollView rather than ScreenScrollView: the latter applies
- * screen-level safe-area insets and pinned-footer clearance measured against
- * the window, which inside a Modal — its own window on Android — pushes the
- * content off the bottom of the sheet and leaves it looking empty or unusable
- * on a device.
- */
-function SheetShell({
-  children,
-  onRequestClose,
-  title,
-}: {
-  children: React.ReactNode;
-  onRequestClose: () => void;
-  title: string;
-}) {
-  const { colors, type } = useTheme();
-
-  return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onRequestClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            backgroundColor: colors.background,
-            borderTopColor: colors.borderStrong,
-            borderTopWidth: 1,
-            maxHeight: "85%",
-          }}
-        >
-          <ScrollView contentContainerStyle={{ gap: spacing.md, padding: spacing.lg }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              {title}
-            </Text>
-            {children}
-          </ScrollView>
-          <SafeAreaView edges={["bottom"]} />
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -1652,12 +1386,16 @@ function ExitInfoPanel({
   emphasis = "title",
   message,
   onInfo,
+  onTrailingInfo,
+  trailingInfoLabel = "More information",
   title,
   tone,
 }: {
   emphasis?: "message" | "title";
   message: string;
   onInfo?: () => void;
+  onTrailingInfo?: () => void;
+  trailingInfoLabel?: string;
   title: string;
   tone: "danger" | "info" | "success" | "warning";
 }) {
@@ -1763,6 +1501,25 @@ function ExitInfoPanel({
           {message}
         </Text>
       </View>
+      {onTrailingInfo ? (
+        <AnimatedPressable
+          accessibilityLabel={trailingInfoLabel}
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onTrailingInfo}
+          style={{
+            alignItems: "center",
+            alignSelf: "flex-start",
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            height: 28,
+            justifyContent: "center",
+            width: 28,
+          }}
+        >
+          <Info color={colors.muted} size={16} strokeWidth={2.2} />
+        </AnimatedPressable>
+      ) : null}
     </View>
   );
 }

@@ -45,7 +45,22 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     List<Enquiry> findOpenPastExpiry(Instant now);
 
-    long countByPropertyIdAndStatus(UUID propertyId, EnquiryStatus status);
+    /**
+     * Enquiries still genuinely waiting on an answer.
+     *
+     * <p>Counting by status alone counted the ones whose deadline had passed but
+     * whose sweep had not run yet, so every badge in the app read high between
+     * the cron's runs — and pointed the owner at questions the enquirer had
+     * already been freed to raise again.
+     */
+    @Query("""
+            SELECT COUNT(enquiry)
+            FROM Enquiry enquiry
+            WHERE enquiry.propertyId = :propertyId
+              AND enquiry.status = com.khatiyan.d_modules.enquiry.model.EnquiryStatus.NEW
+              AND enquiry.expiresAt > :now
+            """)
+    long countAwaitingAnswer(UUID propertyId, Instant now);
 
     /**
      * The open enquiry this person already has against this property, if any.

@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { compareFloors, formatFloor } from "@/features/property/floor";
 import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -31,7 +32,6 @@ import {
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { AlertModal } from "@/components/alert-modal";
-import { SheetShell } from "@/components/sheet-shell";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { FieldError } from "@/components/field-error";
@@ -48,20 +48,16 @@ import { OwnerRoomInventorySkeleton, OwnerRoomMetricsSkeleton } from "@/componen
 import { RoomCarousel } from "@/features/owner/room-carousel";
 import {
   ActionButton,
-  ChoiceButton,
   ConfirmDialog,
   FormInput,
   IconButton,
   formatMoneyPaise,
   humanizeToken,
-  rupeesToPaise,
   ViewOnlyChip,
 } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
-  ROOM_CONDITIONINGS,
-  ROOM_TYPES,
   useDeactivateRoomMutation,
   useListAllPropertyRoomsQuery,
   useListMyPropertiesQuery,
@@ -69,12 +65,9 @@ import {
   useReactivateRoomMutation,
   useUpdateRoomMaintenanceMutation,
   useUpdateRoomMutation,
-  type CreateRoomPayload,
   type OwnerProperty,
   type OwnerRoom,
-  type RoomConditioning,
   type RoomStatus,
-  type RoomType,
 } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
@@ -83,31 +76,6 @@ import { CountTabPills } from "@/components/filter-bubbles";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 
 const NO_BEDS_ILLUSTRATION = require("../assets/workspace/No-Beds_512x512.png");
-
-type RoomFormState = {
-  prefix: string;
-  roomNumber: string;
-  floor: string;
-  capacity: string;
-  roomType: RoomType;
-  conditioning: RoomConditioning;
-  rent: string;
-};
-
-
-// Default bed count implied by a room type. DORMITORY is variable, so it is
-// left out and the existing capacity is kept when that type is chosen.
-const CAPACITY_BY_TYPE: Partial<Record<RoomType, number>> = {
-  DOUBLE: 2,
-  FOUR_SHARING: 4,
-  SINGLE: 1,
-  TRIPLE: 3,
-};
-
-function roomTypePatch(value: RoomType): Partial<RoomFormState> {
-  const capacity = CAPACITY_BY_TYPE[value];
-  return capacity != null ? { capacity: String(capacity), roomType: value } : { roomType: value };
-}
 
 export default function OwnerRoomsScreen() {
   // Both of these are refused by the server, not by anything on screen.
@@ -176,7 +144,8 @@ export default function OwnerRoomsScreen() {
   const occupiedBeds = rooms.reduce((sum, room) => sum + room.occupiedCount, 0);
   const maintenanceCount = rooms.filter((room) => room.status === "MAINTENANCE").length;
   const occupiedRoomsCount = rooms.filter((room) => room.occupiedCount > 0).length;
-  const floors = Array.from(new Set(allRooms.map((room) => room.floor ?? ""))).sort((left, right) => left.localeCompare(right));
+  // Numerically, so floor 10 sits above floor 2 rather than beside floor 1.
+  const floors = Array.from(new Set(allRooms.map((room) => room.floor ?? ""))).sort(compareFloors);
 
   // Auto-select the first floor; fall back gracefully if the list changes.
   const activeFloor = selectedFloor != null && floors.includes(selectedFloor) ? selectedFloor : floors[0] ?? null;
@@ -257,8 +226,8 @@ export default function OwnerRoomsScreen() {
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={Wrench} iconPlacement="side" label="Out of service" value={String(maintenanceCount)} hint="Under maintenance" tone={maintenanceCount > 0 ? "danger" : "default"} />
-            <MetricTile icon={BedSingle} iconPlacement="side" label="Occupied / partial" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
+            <MetricTile icon={Wrench} iconPlacement="side" label="In service" value={String(rooms.length - maintenanceCount)} hint={`${maintenanceCount} under maintenance`} />
+            <MetricTile icon={BedSingle} iconPlacement="side" label="Occupied" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
           </View></>}
 
           {/* Both paths kept. One room is the common act and wants one field;
@@ -444,7 +413,7 @@ function floorLabel(floor: string | null) {
   if (floor == null) {
     return "Select floor";
   }
-  return floor ? `Floor ${floor}` : "Unassigned";
+  return formatFloor(floor);
 }
 
 function FloorSelector({ active, floors, onSelect }: { active: string | null; floors: string[]; onSelect: (floor: string) => void }) {
@@ -890,265 +859,6 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ChoiceRow<T extends string>({
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  label: string;
-  onChange: (value: T) => void;
-  options: readonly T[];
-  value: T;
-}) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-        {label}
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {options.map((option) => (
-          <ChoiceButton active={option === value} key={option} label={humanizeToken(option)} onPress={() => onChange(option)} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-/**
- * How many beds a type fixes, or null when it leaves capacity to the owner.
- * Shown on each option because picking a type also rewrites the capacity field,
- * which is otherwise a silent edit two rows further down.
- */
-function roomTypeBeds(value: RoomType) {
-  const capacity = CAPACITY_BY_TYPE[value];
-  return capacity != null ? `${capacity} bed${capacity === 1 ? "" : "s"}` : "Capacity you set";
-}
-
-/**
- * Occupancy picker for a room, in the same shape as the floor picker above.
- *
- * <p>A pill row was wrong for six options: they wrapped across three lines,
- * which made the room type the visually heaviest thing in a form where it is
- * one field among eight, and left no room to say what each type does to the
- * capacity field.
- */
-function RoomTypePicker({ onChange, value }: { onChange: (value: RoomType) => void; value: RoomType }) {
-  const { colors, fonts, type } = useTheme();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-        Room type
-      </Text>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.sm,
-          minHeight: 48,
-          paddingHorizontal: spacing.md,
-        }}
-      >
-        <BedDouble color={colors.kicker} size={19} strokeWidth={2} />
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
-          {humanizeToken(value)}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
-          {roomTypeBeds(value)}
-        </Text>
-        <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
-      </Pressable>
-
-      {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Choose room type">
-          <View style={{ gap: spacing.xs }}>
-            {ROOM_TYPES.map((option) => {
-              const selected = option === value;
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  key={option}
-                  onPress={() => {
-                    onChange(option);
-                    setOpen(false);
-                  }}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: selected ? colors.ink : colors.surfaceSunken,
-                    borderColor: selected ? colors.ink : colors.border,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    flexDirection: "row",
-                    gap: spacing.sm,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.md,
-                  }}
-                >
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold, fontSize: 15, }}>
-                      {humanizeToken(option)}
-                    </Text>
-                    <Text style={[type.caption, { color: selected ? colors.surface : colors.muted, opacity: selected ? 0.75 : 1 }]}>
-                      {roomTypeBeds(option)}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </SheetShell>
-      ) : null}
-    </View>
-  );
-}
-
-function RoomFieldset({
-  errors,
-  form,
-  onClearField,
-  setForm,
-  showPrefix = true,
-}: {
-  errors?: Partial<Record<RoomField, string>>;
-  form: RoomFormState;
-  /** Clears one field's error as it is edited, releasing the submit gate. */
-  onClearField?: (field: RoomField) => void;
-  setForm: (patch: Partial<RoomFormState>) => void;
-  showPrefix?: boolean;
-}) {
-  const edit = (field: RoomField, patch: Partial<RoomFormState>) => {
-    setForm(patch);
-    onClearField?.(field);
-  };
-
-  return (
-    <>
-      {showPrefix ? (
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <FormInput label="Prefix (optional)" onChangeText={(value) => setForm({ prefix: value })} placeholder="R, A-..." value={form.prefix} />
-          </View>
-          <View style={{ flex: 2 }}>
-            <FormInput
-              error={errors?.roomNumber}
-              label="Room number"
-              onChangeText={(value) => edit("roomNumber", { roomNumber: value })}
-              placeholder="101"
-              value={form.roomNumber}
-            />
-          </View>
-        </View>
-      ) : (
-        <FormInput
-          error={errors?.roomNumber}
-          label="Room number"
-          onChangeText={(value) => edit("roomNumber", { roomNumber: value })}
-          placeholder="101"
-          value={form.roomNumber}
-        />
-      )}
-      <FormInput
-        error={errors?.floor}
-        label="Floor"
-        onChangeText={(value) => edit("floor", { floor: value })}
-        placeholder="Ground, 1, 2..."
-        value={form.floor}
-      />
-      <RoomTypePicker onChange={(value) => setForm(roomTypePatch(value))} value={form.roomType} />
-      {/* Every type but Dormitory fixes its own bed count, so the field was
-          asking for something already decided — and an owner could contradict
-          it, leaving a "Single" with three beds. Dormitory has no fixed size,
-          so it is the one type that still has to be told. */}
-      {form.roomType === "DORMITORY" ? (
-        <FormInput
-          error={errors?.capacity}
-          keyboardType="number-pad"
-          label="Beds in this dormitory"
-          onChangeText={(value) => edit("capacity", { capacity: value })}
-          placeholder="8"
-          value={form.capacity}
-        />
-      ) : null}
-      <ChoiceRow label="Conditioning" onChange={(value: RoomConditioning) => setForm({ conditioning: value })} options={ROOM_CONDITIONINGS} value={form.conditioning} />
-      <FormInput
-        error={errors?.rent}
-        keyboardType="decimal-pad"
-        label="Base rent"
-        onChangeText={(value) => edit("rent", { rent: value })}
-        placeholder="0"
-        prefix="₹"
-        value={form.rent}
-      />
-    </>
-  );
-}
-
-/** The fields the room form can complain about. */
-export type RoomField = "roomNumber" | "floor" | "capacity" | "rent";
-
-/**
- * Validates the room form and builds its payload.
- *
- * <p>Returns EVERY problem, each keyed to the field that owns it. It used to
- * return the first as a bare string, which meant a form with three empty fields
- * was corrected one submit at a time, and the message named a field the reader
- * then had to go find.
- *
- * <p>`payload` is null exactly when `errors` is non-empty.
- */
-function buildRoomPayload(form: RoomFormState): {
-  errors: Partial<Record<RoomField, string>>;
-  payload: CreateRoomPayload | null;
-} {
-  const errors: Partial<Record<RoomField, string>> = {};
-
-  if (!form.roomNumber.trim()) {
-    errors.roomNumber = "Enter a room number.";
-  }
-  if (!form.floor.trim()) {
-    errors.floor = "Enter a floor.";
-  }
-
-  const capacity = Number(form.capacity);
-  if (!Number.isInteger(capacity) || capacity < 1) {
-    errors.capacity = "Capacity must be at least 1.";
-  }
-
-  const baseRentPaise = form.rent.trim() ? rupeesToPaise(form.rent) : null;
-  if (!form.rent.trim()) {
-    errors.rent = "Enter the base rent.";
-  } else if (baseRentPaise == null) {
-    errors.rent = "Enter a valid base rent.";
-  }
-
-  if (Object.keys(errors).length > 0 || baseRentPaise == null) {
-    return { errors, payload: null };
-  }
-
-  return {
-    errors,
-    payload: {
-      baseRentPaise,
-      capacity,
-      conditioning: form.conditioning,
-      floor: form.floor.trim(),
-      roomNumber: `${form.prefix.trim()}${form.roomNumber.trim()}`,
-      roomType: form.roomType,
-    },
-  };
-}
-
-
 function ModalShell({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   const { colors, fonts } = useTheme();
   const keyboardInset = useKeyboardInset();
@@ -1186,20 +896,6 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
 }
 
 
-
-
-/** What a closed custom-list row shows in place of its form. */
-function customRoomSummary(room: RoomFormState) {
-  const number = `${room.prefix.trim()}${room.roomNumber.trim()}`.trim();
-  const beds = Number(room.capacity);
-  return [
-    number || "No number yet",
-    humanizeToken(room.roomType),
-    Number.isInteger(beds) && beds > 0 ? `${beds} bed${beds === 1 ? "" : "s"}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 
 
 function StatusModal({ onClose, propertyId, room }: { onClose: () => void; propertyId: string; room: OwnerRoom }) {

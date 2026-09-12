@@ -58,64 +58,15 @@ public class ExitSettlementService {
             UUID tenancyId,
             UUID propertyId,
             ApplyExitPolicyRequest request) {
+        ResolvedExit resolved = resolve(propertyId, request);
+        List<ExitDeduction> depositDeductions = resolved.depositDeductions();
+        List<BilledCharge> billedCharges = resolved.billedCharges();
 
-        // Ordered: the early-exit charge is taken first, so the payability
-        // question the actor answered was asked of this same remainder.
-        List<ExitDeduction> depositDeductions = new ArrayList<>();
-        List<BilledCharge> billedCharges = new ArrayList<>();
-
-        if (request.earlyExitCharges() != null) {
-            for (ApplyExitPolicyRequest.ExitCharge earlyExit : request.earlyExitCharges()) {
-                String reason = earlyExit.reason() != null && !earlyExit.reason().isBlank()
-                        ? earlyExit.reason().trim()
-                        : "Early exit charge";
-                if (earlyExit.instrument() == ExitChargeInstrument.DEPOSIT) {
-                    depositDeductions.add(new ExitDeduction(reason, earlyExit.amountPaise()));
-                } else {
-                    billedCharges.add(new BilledCharge(reason, earlyExit.amountPaise(), earlyExit.collectedVia()));
-                }
-            }
-        }
-
-        ApplyExitPolicyRequest.DamageCharge damages = request.damages();
-        if (damages != null) {
-            long scheduleTotalPaise = depositManagerService.resolveDamageTotal(propertyId, damages.itemNames());
-            boolean fromDeposit = damages.instrument() == ExitChargeInstrument.DEPOSIT;
-
-            if (scheduleTotalPaise > 0) {
-                if (fromDeposit) {
-                    depositDeductions.add(new ExitDeduction("Damage charges", scheduleTotalPaise));
-                } else {
-                    billedCharges.add(new BilledCharge("Damage charges", scheduleTotalPaise, damages.collectedVia()));
-                }
-            }
-            if (damages.customCharges() != null) {
-                for (ApplyExitPolicyRequest.CustomCharge custom : damages.customCharges()) {
-                    if (fromDeposit) {
-                        depositDeductions.add(new ExitDeduction(custom.reason().trim(), custom.amountPaise()));
-                    } else {
-                        billedCharges.add(
-                                new BilledCharge(custom.reason().trim(), custom.amountPaise(), damages.collectedVia()));
-                    }
-                }
-            }
-        }
-
-        // A stay with no deposit account — every daily stay — has nothing to
-        // deduct from and no payability to decide. Anything the actor routed to
-        // the deposit would silently vanish, so refuse it rather than drop it.
-        boolean hasDepositAccount = depositAccountRepository.findByTenancyId(tenancyId).isPresent();
-        if (!hasDepositAccount && !depositDeductions.isEmpty()) {
-            throw new ValidationException(
-                    "This stay has no deposit to charge against — use a one-off bill instead");
-        }
-
-        if (hasDepositAccount) {
+        if (hasDepositAccountFor(tenancyId, depositDeductions)) {
             // Null payability only reaches here on a stay that has no deposit, which
-            // the branch above already excluded; treat a missing decision as "keep
+            // the check above already excluded; treat a missing decision as "keep
             // it", never as a forfeit.
-            boolean payable = request.depositPayable() == null || request.depositPayable();
-            depositManagerService.applyExitDeductions(actorUserId, tenancyId, depositDeductions, payable);
+            depositManagerService.applyExitDeductions(actorUserId, tenancyId, depositDeductions, payable(request));
         }
 
         // ONE bill for everything billed at this exit, not one per charge. The
@@ -171,6 +122,77 @@ public class ExitSettlementService {
                 actorUserId,
                 depositDeductions.size(),
                 billedCharges.size());
+    }
+
+    /**
+     * Sorts an assessment into what comes off the deposit and what is billed.
+     *
+     * <p>Ordered: the early-exit charge is taken first, so the payability
+     * question the actor answered was asked of this same remainder.
+     */
+    private ResolvedExit resolve(UUID propertyId, ApplyExitPolicyRequest request) {
+        List<ExitDeduction> depositDeductions = new ArrayList<>();
+        List<BilledCharge> billedCharges = new ArrayList<>();
+
+        if (request.earlyExitCharges() != null) {
+            for (ApplyExitPolicyRequest.ExitCharge earlyExit : request.earlyExitCharges()) {
+                String reason = earlyExit.reason() != null && !earlyExit.reason().isBlank()
+                        ? earlyExit.reason().trim()
+                        : "Early exit charge";
+                if (earlyExit.instrument() == ExitChargeInstrument.DEPOSIT) {
+                    depositDeductions.add(new ExitDeduction(reason, earlyExit.amountPaise()));
+                } else {
+                    billedCharges.add(new BilledCharge(reason, earlyExit.amountPaise(), earlyExit.collectedVia()));
+                }
+            }
+        }
+
+        ApplyExitPolicyRequest.DamageCharge damages = request.damages();
+        if (damages != null) {
+            long scheduleTotalPaise = depositManagerService.resolveDamageTotal(propertyId, damages.itemNames());
+            boolean fromDeposit = damages.instrument() == ExitChargeInstrument.DEPOSIT;
+
+            if (scheduleTotalPaise > 0) {
+                if (fromDeposit) {
+                    depositDeductions.add(new ExitDeduction("Damage charges", scheduleTotalPaise));
+                } else {
+                    billedCharges.add(new BilledCharge("Damage charges", scheduleTotalPaise, damages.collectedVia()));
+                }
+            }
+            if (damages.customCharges() != null) {
+                for (ApplyExitPolicyRequest.CustomCharge custom : damages.customCharges()) {
+                    if (fromDeposit) {
+                        depositDeductions.add(new ExitDeduction(custom.reason().trim(), custom.amountPaise()));
+                    } else {
+                        billedCharges.add(
+                                new BilledCharge(custom.reason().trim(), custom.amountPaise(), damages.collectedVia()));
+                    }
+                }
+            }
+        }
+
+        return new ResolvedExit(depositDeductions, billedCharges);
+    }
+
+    /**
+     * A stay with no deposit account — every daily stay — has nothing to deduct
+     * from and no payability to decide. Anything the actor routed to the deposit
+     * would silently vanish, so it is refused rather than dropped.
+     */
+    private boolean hasDepositAccountFor(UUID tenancyId, List<ExitDeduction> depositDeductions) {
+        boolean hasDepositAccount = depositAccountRepository.findByTenancyId(tenancyId).isPresent();
+        if (!hasDepositAccount && !depositDeductions.isEmpty()) {
+            throw new ValidationException(
+                    "This stay has no deposit to charge against — use a one-off bill instead");
+        }
+        return hasDepositAccount;
+    }
+
+    private static boolean payable(ApplyExitPolicyRequest request) {
+        return request.depositPayable() == null || request.depositPayable();
+    }
+
+    private record ResolvedExit(List<ExitDeduction> depositDeductions, List<BilledCharge> billedCharges) {
     }
 
     /** A charge collected as a one-off bill, with how the money actually arrived. */

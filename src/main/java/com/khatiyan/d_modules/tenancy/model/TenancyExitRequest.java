@@ -51,7 +51,26 @@ public class TenancyExitRequest extends BaseEntity {
      */
     public static final int REVIEW_WINDOW_DAYS = 5;
     public static final int WITHDRAWAL_WINDOW_DAYS = 3;
-    public static final int RE_RAISE_WINDOW_DAYS = 3;
+
+    /**
+     * How long the re-raise carve-out stays open, and how far a chain may run.
+     *
+     * <p>48 hours, down from 72. The carve-out exists so a request that lapsed
+     * can be corrected without waiting out the cycle, and correcting a date is
+     * the work of a minute once the rejection reason is read. A third day only
+     * postponed the tenant's real decision while the notice clock kept running
+     * off the original anchor.
+     *
+     * <p>Two re-raises per original request, counted by {@link #reRaiseCount}.
+     * Without a cap every re-raise opened a fresh window of its own, so a tenant
+     * and an owner could volley the same request back and forth all month —
+     * each round outside the payment window, each one inheriting the first
+     * attempt's anchor, and the whole chain landing in the queue as separate
+     * rows. Two corrections is a correction. A third is a disagreement, and that
+     * is a conversation, not a queue.
+     */
+    public static final int RE_RAISE_WINDOW_HOURS = 48;
+    public static final int RE_RAISE_LIMIT = 2;
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -141,6 +160,16 @@ public class TenancyExitRequest extends BaseEntity {
     private UUID supersededRequestId;
 
     /**
+     * How many re-raises stand between this request and the original.
+     *
+     * <p>Zero on a request the tenant raised fresh. Stored rather than walked,
+     * because the cap is checked on every attempt and the chain is only ever
+     * read backwards one link at a time.
+     */
+    @Column(name = "re_raise_count", nullable = false)
+    private int reRaiseCount;
+
+    /**
      * When this request stops being interactive and drops into history.
      *
      * <p>Separate from {@link #status} on purpose: an approved exit stays
@@ -166,7 +195,8 @@ public class TenancyExitRequest extends BaseEntity {
             LocalDate requestedCheckoutDate,
             String tenantReason,
             LocalDate noticeAnchorDate,
-            UUID supersededRequestId) {
+            UUID supersededRequestId,
+            int reRaiseCount) {
         if (tenancyId == null || tenantUserId == null || propertyId == null || roomId == null) {
             throw new ValidationException("Exit request tenancy details are required");
         }
@@ -195,6 +225,7 @@ public class TenancyExitRequest extends BaseEntity {
         // unconditionally; only a re-raise passes an inherited value.
         this.noticeAnchorDate = noticeAnchorDate != null ? noticeAnchorDate : LocalDate.now(REQUEST_ZONE);
         this.supersededRequestId = supersededRequestId;
+        this.reRaiseCount = reRaiseCount;
         this.expiresAt = Instant.now().plus(Duration.ofDays(REVIEW_WINDOW_DAYS));
     }
 
@@ -236,6 +267,7 @@ public class TenancyExitRequest extends BaseEntity {
                 .tenantReason(reason)
                 .noticeAnchorDate(superseded == null ? null : superseded.getNoticeAnchorDate())
                 .supersededRequestId(superseded == null ? null : superseded.getId())
+                .reRaiseCount(superseded == null ? 0 : superseded.getReRaiseCount() + 1)
                 .build();
     }
 
@@ -270,6 +302,7 @@ public class TenancyExitRequest extends BaseEntity {
                 .tenantReason(reason)
                 .noticeAnchorDate(superseded == null ? null : superseded.getNoticeAnchorDate())
                 .supersededRequestId(superseded == null ? null : superseded.getId())
+                .reRaiseCount(superseded == null ? 0 : superseded.getReRaiseCount() + 1)
                 .build();
     }
 
@@ -340,7 +373,7 @@ public class TenancyExitRequest extends BaseEntity {
 
         this.status = TenancyExitRequestStatus.REJECTED;
         // Stays interactive for the re-raise window.
-        this.expiresAt = Instant.now().plus(Duration.ofDays(RE_RAISE_WINDOW_DAYS));
+        this.expiresAt = Instant.now().plus(Duration.ofHours(RE_RAISE_WINDOW_HOURS));
         this.adminNotes = reason;
         this.decidedByUserId = actorUserId;
         this.decidedAt = Instant.now();
@@ -354,8 +387,11 @@ public class TenancyExitRequest extends BaseEntity {
     public void expire() {
         ensureRequested();
         this.status = TenancyExitRequestStatus.EXPIRED;
-        // Unreviewed expiry still leaves the re-raise carve-out open.
-        this.expiresAt = Instant.now().plus(Duration.ofDays(RE_RAISE_WINDOW_DAYS));
+        // Unreviewed expiry still leaves the re-raise carve-out open. It also
+        // leaves the wider door open: once this window shuts the tenant may
+        // raise a completely new request in the same cycle, because nobody ever
+        // answered this one. See TenancyExitRequestService.
+        this.expiresAt = Instant.now().plus(Duration.ofHours(RE_RAISE_WINDOW_HOURS));
     }
 
     /**
@@ -450,13 +486,16 @@ public class TenancyExitRequest extends BaseEntity {
         if (status != TenancyExitRequestStatus.EXPIRED && status != TenancyExitRequestStatus.REJECTED) {
             return false;
         }
+        if (reRaiseCount >= RE_RAISE_LIMIT) {
+            return false;
+        }
         return expiresAt != null && expiresAt.isAfter(now);
     }
 
     /**
      * Compatibility helper for date-based domain tests. API and service paths
      * use {@link #allowsReRaiseAt(Instant)} so the real deadline remains an
-     * exact 72-hour window.
+     * exact 48-hour window.
      */
     @Deprecated(forRemoval = false)
     public boolean allowsReRaiseOn(LocalDate today) {
@@ -468,7 +507,7 @@ public class TenancyExitRequest extends BaseEntity {
             return false;
         }
         LocalDate lapsedOn = lapsedAt.atZone(REQUEST_ZONE).toLocalDate();
-        return !today.isBefore(lapsedOn) && !today.isAfter(lapsedOn.plusDays(RE_RAISE_WINDOW_DAYS));
+        return !today.isBefore(lapsedOn) && !today.isAfter(lapsedOn.plusDays(RE_RAISE_WINDOW_HOURS / 24));
     }
 
     public void markExecuted() {

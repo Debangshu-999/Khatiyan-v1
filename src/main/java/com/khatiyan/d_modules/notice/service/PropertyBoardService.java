@@ -201,15 +201,20 @@ public class PropertyBoardService {
                 item.getPropertyId(),
                 request.categoryId());
 
-        item.updateDetails(
+        boolean changed = item.updateDetails(
                 category,
                 request.title(),
                 request.body(),
                 request.displayOrder());
 
-        previousCategory.markContentChanged();
-        if (!previousCategory.getId().equals(category.getId())) {
-            category.markContentChanged();
+        // Only when something moved. Tenant views sort sections by this
+        // timestamp, so a save that changed nothing used to lift a category to
+        // the top of the board for having been opened and closed again.
+        if (changed) {
+            previousCategory.markContentChanged();
+            if (!previousCategory.getId().equals(category.getId())) {
+                category.markContentChanged();
+            }
         }
         return PropertyBoardItemResponse.from(item);
     }

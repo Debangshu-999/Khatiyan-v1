@@ -28,7 +28,6 @@ public enum NotificationAudience {
         return switch (subtype) {
             case CONCERN_RAISED, CONCERN_ASSIGNED, CONCERN_REOPENED,
                     TENANCY_EXIT_REQUESTED, TENANCY_EXIT_CANCELLED,
-                    TENANCY_EXIT_SCHEDULE_FAILED,
                     MANAGER_ASSIGNED, MANAGER_REMOVED,
                     ROOM_MAINTENANCE_STARTED, ROOM_MAINTENANCE_ENDED,
                     ROOM_DEACTIVATED, ROOM_REACTIVATED,
@@ -89,6 +88,14 @@ public enum NotificationAudience {
                     // and what their rent becomes; the owner needs the bed
                     // change reflected in their workspace.
                     TENANCY_ROOM_CHANGE_EXECUTED,
+                    // Dual-audience: a room change that could not run is
+                    // cancelled, and both sides need to know. The tenant hears
+                    // what it means for them, management hears why. The listener
+                    // names the audience per recipient group.
+                    TENANCY_ROOM_CHANGE_EXECUTION_FAILED,
+                    // Scheduled exits were removed on 2026-09-12. Nothing sends
+                    // this any more, but stored notifications still carry it.
+                    TENANCY_EXIT_SCHEDULE_FAILED,
                     MANAGER_EMPLOYMENT_UPDATED,
                     // Both sides need to know a request lapsed unreviewed: the
                     // tenant so they can re-raise without losing notice time, the

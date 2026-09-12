@@ -120,6 +120,36 @@ class PropertyBoardServiceTest {
         assertThat(category.getUpdatedAt()).isNotNull();
     }
 
+    /**
+     * A save that changed nothing is not activity. Tenant views sort sections by
+     * this timestamp, so bumping it lifted a category to the top of the board for
+     * having been opened and closed again.
+     */
+    @Test
+    void resavingAnItemUnchangedLeavesItsCategoryWhereItWas() {
+        PropertyBoardCategory category = category("Rules");
+        PropertyBoardItem item = PropertyBoardItem.create(
+                PROPERTY,
+                ACTOR,
+                category,
+                "Keep it clean",
+                "Please leave shared spaces tidy.",
+                0);
+        when(itemRepository.findBoardItemById(item.getId())).thenReturn(Optional.of(item));
+        when(categoryRepository.findCategoryById(category.getId())).thenReturn(Optional.of(category));
+
+        service.updateItem(
+                ACTOR,
+                item.getId(),
+                new UpdatePropertyBoardItemRequest(
+                        category.getId(),
+                        "Keep it clean",
+                        "Please leave shared spaces tidy.",
+                        0));
+
+        assertThat(category.getUpdatedAt()).isNull();
+    }
+
     private PropertyBoardCategory category(String name) {
         return PropertyBoardCategory.create(
                 PROPERTY,

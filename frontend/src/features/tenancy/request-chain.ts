@@ -1,5 +1,5 @@
 import {
-  RE_RAISE_WINDOW_DAYS,
+  RE_RAISE_WINDOW_HOURS,
   type TenancyExitRequest,
   type TenancyExitRequestStatus,
   type TenancyRoomChangeRequest,
@@ -153,8 +153,15 @@ export function exitRequestTimeline(
       steps.push({
         actor: "SYSTEM",
         at: closedAt,
-        detail: "The window to raise this again has closed.",
-        label: "Request expired",
+        // An expiry and a rejection close differently. Nobody ever answered an
+        // expired request, so what lapses is only the original notice date —
+        // the tenant may still raise a completely new request this cycle. A
+        // rejection is an answer, and it closes the cycle.
+        detail:
+          request.status === "EXPIRED"
+            ? "The window to keep your original notice date has closed. You can still raise a new request."
+            : "The window to raise this again has closed.",
+        label: request.status === "EXPIRED" ? "Notice date lapsed" : "Request expired",
       });
     }
   }
@@ -358,7 +365,7 @@ function reRaiseWindowClosedAt(request: TenancyExitRequest) {
   }
 
   const closesAt = new Date(lapsedAt);
-  closesAt.setDate(closesAt.getDate() + RE_RAISE_WINDOW_DAYS);
+  closesAt.setHours(closesAt.getHours() + RE_RAISE_WINDOW_HOURS);
 
   return closesAt.getTime() <= Date.now() ? closesAt.toISOString() : null;
 }

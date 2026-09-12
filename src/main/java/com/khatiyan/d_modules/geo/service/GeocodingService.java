@@ -32,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GeocodingService {
 
     private static final String SEARCH_KEY_PREFIX = "khatiyan:geo:search:";
+    private static final String PLACES_KEY_PREFIX = "khatiyan:geo:places:";
     private static final String REVERSE_KEY_PREFIX = "khatiyan:geo:reverse:";
     private static final TypeReference<List<GeoSuggestionResponse>> SUGGESTION_LIST =
             new TypeReference<>() {
@@ -46,6 +47,7 @@ public class GeocodingService {
     private final int reverseRatePerMinute;
     private final Duration searchCacheTtl;
     private final Duration reverseCacheTtl;
+    private final Duration placesCacheTtl;
 
     public GeocodingService(
             List<GeocodingProvider> providers,
@@ -56,7 +58,11 @@ public class GeocodingService {
             @Value("${app.geo.search-rate-per-minute:60}") int searchRatePerMinute,
             @Value("${app.geo.reverse-rate-per-minute:30}") int reverseRatePerMinute,
             @Value("${app.geo.cache.search-ttl-hours:24}") long searchCacheTtlHours,
-            @Value("${app.geo.cache.reverse-ttl-hours:168}") long reverseCacheTtlHours) {
+            @Value("${app.geo.cache.reverse-ttl-hours:168}") long reverseCacheTtlHours,
+            // Thirty days. A metro station does not move, and this is the
+            // difference between one vendor call a month per city and one per
+            // search.
+            @Value("${app.geo.cache.places-ttl-hours:720}") long placesCacheTtlHours) {
         this.providers = new EnumMap<>(GeocodingProviderType.class);
         providers.forEach(provider -> this.providers.put(provider.type(), provider));
         this.valkeyTemplate = valkeyTemplate;
@@ -67,6 +73,38 @@ public class GeocodingService {
         this.reverseRatePerMinute = reverseRatePerMinute;
         this.searchCacheTtl = Duration.ofHours(searchCacheTtlHours);
         this.reverseCacheTtl = Duration.ofHours(reverseCacheTtlHours);
+        this.placesCacheTtl = Duration.ofHours(placesCacheTtlHours);
+    }
+
+    /**
+     * Every place of one kind around a point, cached hard.
+     *
+     * <p>No per-user rate limit, because the cache key is a coarse point and a
+     * category rather than anything a person typed: everybody searching the
+     * same city for the same kind of landmark shares one vendor call. The key
+     * rounds the centre to two decimals — roughly a kilometre — so small
+     * differences in where a search was anchored do not each buy their own
+     * copy of the same station list.
+     */
+    public List<GeoSuggestionResponse> systemPlaces(
+            String category, double latitude, double longitude, int radiusMeters, int limit) {
+        if (category == null || category.isBlank()) {
+            return List.of();
+        }
+        String cacheKey = PLACES_KEY_PREFIX + category
+                + ":" + round(latitude, 2) + ":" + round(longitude, 2)
+                + ":" + radiusMeters + ":" + limit;
+        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            return readSuggestions(cached);
+        }
+
+        List<GeoSuggestionResponse> places =
+                activeProvider().places(category, latitude, longitude, radiusMeters, limit);
+        if (!places.isEmpty()) {
+            writeCache(cacheKey, places, placesCacheTtl);
+        }
+        return places;
     }
 
     public List<GeoSuggestionResponse> search(UUID userId, String query, Double nearLatitude, Double nearLongitude) {
@@ -87,11 +125,24 @@ public class GeocodingService {
      * rate limit — callers bound their own batch size instead.
      */
     public List<GeoSuggestionResponse> systemSearch(String query) {
+        return systemSearch(query, null, null);
+    }
+
+    /**
+     * The same, biased towards a point so the nearest match ranks first.
+     *
+     * <p>Needed for a named landmark inside a region somebody already chose:
+     * "Sister Nivedita University" unbiased can answer with a same-named
+     * campus in another state, and measuring a Kolkata search against it puts
+     * every listing hundreds of kilometres from the thing they asked to be
+     * near.
+     */
+    public List<GeoSuggestionResponse> systemSearch(String query, Double nearLatitude, Double nearLongitude) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.length() < 2) {
             return List.of();
         }
-        return cachedSearch(normalized, query.trim(), null, null);
+        return cachedSearch(normalized, query.trim(), nearLatitude, nearLongitude);
     }
 
     /** False while the keyless LOG fallback is active — jobs skip vendor work then. */

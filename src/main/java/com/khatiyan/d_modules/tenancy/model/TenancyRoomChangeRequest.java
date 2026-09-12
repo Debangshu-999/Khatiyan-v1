@@ -29,8 +29,19 @@ public class TenancyRoomChangeRequest extends BaseEntity {
 
     /** Mirrors the exit request's review window; both sweeps share the value. */
     public static final int REVIEW_WINDOW_DAYS = 5;
-    public static final int RE_RAISE_WINDOW_DAYS = 3;
     public static final int DECISION_VISIBILITY_DAYS = 3;
+
+    /**
+     * The re-raise carve-out, on the same terms as an exit request's.
+     *
+     * <p>48 hours to correct a rejected move, and two corrections per original
+     * request. A room change costs nothing to re-raise and reserves a bed the
+     * moment it is approved, so an uncapped chain is worse here than on the exit
+     * side: the same tenant can keep a stream of requests pointed at a room
+     * somebody else is waiting for.
+     */
+    public static final int RE_RAISE_WINDOW_HOURS = 48;
+    public static final int RE_RAISE_LIMIT = 2;
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -90,6 +101,10 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     @Column(name = "superseded_request_id")
     private UUID supersededRequestId;
 
+    /** How many re-raises stand between this request and the original. */
+    @Column(name = "re_raise_count", nullable = false)
+    private int reRaiseCount;
+
     /**
      * When this request stops being interactive.
      *
@@ -112,7 +127,8 @@ public class TenancyRoomChangeRequest extends BaseEntity {
             LocalDate effectiveTransferDate,
             String tenantReason,
             long requestedRoomRentAmountPaise,
-            UUID supersededRequestId) {
+            UUID supersededRequestId,
+            int reRaiseCount) {
         if (tenancyId == null || tenantUserId == null || propertyId == null || currentRoomId == null
                 || targetRoomId == null || billingCycleId == null) {
             throw new ValidationException("Room change request tenancy details are required");
@@ -143,6 +159,7 @@ public class TenancyRoomChangeRequest extends BaseEntity {
         this.tenantReason = clean(tenantReason);
         this.requestedRoomRentAmountPaise = requestedRoomRentAmountPaise;
         this.supersededRequestId = supersededRequestId;
+        this.reRaiseCount = reRaiseCount;
         this.expiresAt = Instant.now().plus(java.time.Duration.ofDays(REVIEW_WINDOW_DAYS));
     }
 
@@ -186,6 +203,7 @@ public class TenancyRoomChangeRequest extends BaseEntity {
                 .tenantReason(tenantReason)
                 .requestedRoomRentAmountPaise(requestedRoomRentAmountPaise)
                 .supersededRequestId(superseded == null ? null : superseded.getId())
+                .reRaiseCount(superseded == null ? 0 : superseded.getReRaiseCount() + 1)
                 .build();
     }
 
@@ -201,7 +219,7 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     public void reject(UUID actorUserId, String adminNotes) {
         ensureRequested();
         this.status = TenancyRoomChangeRequestStatus.REJECTED;
-        this.expiresAt = Instant.now().plus(java.time.Duration.ofDays(RE_RAISE_WINDOW_DAYS));
+        this.expiresAt = Instant.now().plus(java.time.Duration.ofHours(RE_RAISE_WINDOW_HOURS));
         this.adminNotes = clean(adminNotes);
         this.decidedByUserId = actorUserId;
         this.decidedAt = Instant.now();
@@ -231,15 +249,22 @@ public class TenancyRoomChangeRequest extends BaseEntity {
     }
 
     /**
-     * Scheduler recovery for an approved move whose execution prerequisites no
-     * longer hold. This is not limited by the UI reversal window: its purpose is
-     * to stop an invalid approval from holding a bed indefinitely.
+     * Closes an approved move whose scheduled run could not complete.
+     *
+     * <p>
+     * Cancelled, not reopened. Putting it back in the decision queue kept its
+     * transfer date and billing cycle, both already past, so approving it again
+     * ran it against stale values. It is closed with the reason instead, the
+     * service releases its reserved bed and tells everyone, and the tenant raises
+     * a fresh request if they still want to move.
      */
-    public void reopenAfterExecutionBlocked(Instant now, String reason) {
+    public void cancelAfterExecutionFailure(Instant now, String reason) {
         if (status != TenancyRoomChangeRequestStatus.APPROVED || executedAt != null) {
-            throw new ValidationException("Only an unexecuted approved room change can be reopened");
+            throw new ValidationException("Only an unexecuted approved room change can be cancelled");
         }
-        reopenForDecision(now, reason);
+        this.status = TenancyRoomChangeRequestStatus.CANCELLED;
+        this.expiresAt = now;
+        this.adminNotes = truncate(clean(reason), 500);
     }
 
     /**
@@ -270,9 +295,13 @@ public class TenancyRoomChangeRequest extends BaseEntity {
         return expiresAt == null || expiresAt.isAfter(now);
     }
 
-    /** A rejected request may be corrected and re-raised for exactly 72 hours. */
+    /**
+     * A rejected request may be corrected and re-raised for exactly 48 hours,
+     * and only twice before the tenant has to start over.
+     */
     public boolean allowsReRaiseAt(Instant now) {
         return status == TenancyRoomChangeRequestStatus.REJECTED
+                && reRaiseCount < RE_RAISE_LIMIT
                 && expiresAt != null
                 && expiresAt.isAfter(now);
     }
@@ -312,6 +341,10 @@ public class TenancyRoomChangeRequest extends BaseEntity {
         this.adminNotes = clean(notes);
         this.decidedByUserId = null;
         this.decidedAt = null;
+    }
+
+    private static String truncate(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
     }
 
     private static String clean(String value) {

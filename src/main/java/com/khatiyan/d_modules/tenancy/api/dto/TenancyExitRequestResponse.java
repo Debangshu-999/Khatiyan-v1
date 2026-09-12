@@ -88,6 +88,21 @@ public record TenancyExitRequestResponse(
             TenancyExitRequest request,
             LocalDate today,
             Map<UUID, String> names) {
+        return from(request, today, names, false);
+    }
+
+    /**
+     * @param supersededByNewer whether a later request has already replaced this
+     *              one. The re-raise window stays open for 48 hours after a
+     *              request lapses and does not close when the tenant uses it, so
+     *              without this an already-replaced request keeps offering the
+     *              action that replaced it.
+     */
+    public static TenancyExitRequestResponse from(
+            TenancyExitRequest request,
+            LocalDate today,
+            Map<UUID, String> names,
+            boolean supersededByNewer) {
         return new TenancyExitRequestResponse(
             request.getId(),
             request.getReferenceCode(),
@@ -118,7 +133,7 @@ public record TenancyExitRequestResponse(
             nameOf(names, request.getWithdrawalDecidedByUserId()),
             request.getWithdrawalAdminNotes(),
             request.withdrawalWindowOpen(today),
-            request.allowsReRaiseAt(Instant.now()),
+            !supersededByNewer && request.allowsReRaiseAt(Instant.now()),
             request.getExpiresAt(),
             request.getCreatedAt(),
             request.getUpdatedAt()

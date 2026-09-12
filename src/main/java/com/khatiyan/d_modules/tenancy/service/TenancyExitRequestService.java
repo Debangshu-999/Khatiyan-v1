@@ -79,6 +79,8 @@ public class TenancyExitRequestService {
     /** Calendar dates follow the property's timezone, not the server's. */
     private static final ZoneId EXIT_ZONE = ZoneId.of("Asia/Kolkata");
     public static final int MIN_EXIT_LEAD_DAYS = 10;
+    /** How many cycles past the notice cycle the checkout window may roll forward. */
+    private static final int MAX_ROLL_FORWARD_CYCLES = 2;
 
     private final AuthModule authModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
@@ -168,7 +170,14 @@ public class TenancyExitRequestService {
 
         TenancyExitRequest reRaised = findReRaisableRequest(tenancy.getId(), today, cycle);
         if (reRaised == null) {
-            ensureInsideNoticeWindow(today, cycle);
+            // One request per cycle, and the payment window on top of it. The
+            // single exception is a request nobody ever answered: that tenant
+            // starts over, and is not held to a window that shut days before
+            // their request expired.
+            boolean startingOverAfterSilence = ensureCycleHasRoomForANewRequest(tenancy.getId(), cycle);
+            if (!startingOverAfterSilence) {
+                ensureInsideNoticeWindow(today, cycle);
+            }
         }
 
         // The notice clock starts when the tenant first asked, not when the owner
@@ -255,6 +264,11 @@ public class TenancyExitRequestService {
         }
         ensureNoOpenRequest(tenancy.getId());
         ensureNoBlockingRoomChangeRequest(tenancy.getId());
+        // Breaking a lock-in spends the cycle's one request like any other. This
+        // route has no payment window of its own, so without the cap it was the
+        // open door: a tenant could raise, be rejected, and raise again the same
+        // afternoon, indefinitely.
+        ensureCycleHasRoomForANewRequest(tenancy.getId(), currentCycle);
 
         TenancyExitRequest request = TenancyExitRequest.premature(
                 referenceCodeGenerator.nextCode("TEX"),
@@ -490,7 +504,18 @@ public class TenancyExitRequestService {
             throw new ValidationException("A daily stay has no agreement term to exit early from");
         }
 
-        UUID approvedRequestId = exitRequestRepository.findByTenancyId(tenancyId).stream()
+        List<TenancyExitRequest> exitRequests = exitRequestRepository.findByTenancyId(tenancyId);
+        // A pending withdrawal is a question the tenant asked that nobody has
+        // answered. Ending the stay underneath it used to take the no-request
+        // branch below, close the tenancy, and leave the request and any schedule
+        // behind it waiting forever on a stay that no longer existed.
+        if (exitRequests.stream()
+                .anyMatch(existing -> existing.getStatus() == TenancyExitRequestStatus.WITHDRAWAL_REQUESTED)) {
+            throw new ValidationException(
+                    "The tenant has asked to withdraw their exit. Decide that request before ending this stay.");
+        }
+
+        UUID approvedRequestId = exitRequests.stream()
                 .filter(existing -> existing.getStatus() == TenancyExitRequestStatus.APPROVED)
                 .map(TenancyExitRequest::getId)
                 .findFirst()
@@ -551,19 +576,6 @@ public class TenancyExitRequestService {
         tenancyAccessPolicy.ensureCanViewExitRequests(actorUserId, propertyId);
 
         return withNames(exitRequestRepository.findByPropertyId(propertyId));
-    }
-
-    /**
-     * Scheduler entry point. It deliberately reuses the same locked execution
-     * path as the end-tenancy screen so billing and settlement rules cannot
-     * drift between manual and scheduled exits.
-     */
-    @Transactional
-    public TenancyExitRequestResponse executeScheduledApprovedRequest(
-            UUID actorUserId,
-            UUID requestId,
-            EndTenancyRequest endRequest) {
-        return executeApprovedRequest(actorUserId, getRequest(requestId), endRequest);
     }
 
     private TenancyExitRequestResponse executeApprovedRequest(
@@ -710,8 +722,14 @@ public class TenancyExitRequestService {
         // tenancy started, so the window is that one date. Running notice
         // arithmetic here would compute a checkout the agreement already fixed,
         // and could push it past the day the tenancy ends.
-        if (tenancy.hasFixedTerm()) {
-            LocalDate termEnd = tenancy.getAgreementEndDate();
+        //
+        // Only while that date is still at least the lead time away. Inside the
+        // last ten days of the term, or after it, the agreed date can no longer be
+        // given notice for, and the stay falls back to its ordinary notice below,
+        // which rolls forward to a date that can. Refusing outright left a
+        // fixed-term tenant near the end of their term with no exit route at all.
+        LocalDate termEnd = tenancy.hasFixedTerm() ? tenancy.getAgreementEndDate() : null;
+        if (termEnd != null && !earliestPossible.isAfter(termEnd)) {
             LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, termEnd, prematureAllowed);
             ensureWindowAvailable(effectiveFloor, termEnd);
             return ExitCheckoutWindowResponse.of(noticePeriod, anchor, termEnd, termEnd,
@@ -719,8 +737,19 @@ public class TenancyExitRequestService {
         }
 
         if (noticePeriod.isWholeMonths()) {
+            int extraCycles = noticePeriod.extraCyclesBeyondCurrent();
             LocalDate checkout = billingModule.periodEndAfterCycles(
-                    tenancy.getId(), cycle.periodStartDate(), noticePeriod.extraCyclesBeyondCurrent());
+                    tenancy.getId(), cycle.periodStartDate(), extraCycles);
+            // Rolled forward, not refused. Inside the last ten days of the notice
+            // cycle the computed date is too close, and a later cycle's end is the
+            // first one the lead time allows. The window used to throw instead, so
+            // a tenant giving notice late in a cycle saw an error and no date.
+            while (earliestPossible.isAfter(checkout)
+                    && extraCycles < noticePeriod.extraCyclesBeyondCurrent() + MAX_ROLL_FORWARD_CYCLES) {
+                extraCycles = extraCycles + 1;
+                checkout = billingModule.periodEndAfterCycles(
+                        tenancy.getId(), cycle.periodStartDate(), extraCycles);
+            }
             LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, checkout, prematureAllowed);
             ensureWindowAvailable(effectiveFloor, checkout);
             return ExitCheckoutWindowResponse.of(noticePeriod, anchor, checkout, checkout,
@@ -734,6 +763,13 @@ public class TenancyExitRequestService {
         }
 
         LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, earliest, prematureAllowed);
+        // The same roll-forward for a sub-month notice. When the lead time lands
+        // past this cycle's end, the window reaches into the next cycle instead of
+        // closing. Leaving then means that cycle is owed, as it always would be.
+        for (int extraCycles = 1; effectiveFloor.isAfter(latest) && extraCycles <= MAX_ROLL_FORWARD_CYCLES;
+                extraCycles++) {
+            latest = billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), extraCycles);
+        }
         ensureWindowAvailable(effectiveFloor, latest);
         return ExitCheckoutWindowResponse.of(noticePeriod, anchor, earliest, latest,
                 effectiveFloor, prematureAllowed, MIN_EXIT_LEAD_DAYS, restrictionMessage, reRaise);
@@ -869,6 +905,43 @@ public class TenancyExitRequestService {
     }
 
     /**
+     * One exit request per billing cycle, with one way back in.
+     *
+     * <p>A cycle's requests are counted by notice anchor, so an entire re-raise
+     * chain occupies the single slot it inherited rather than three of them.
+     * Once that slot is spent — rejected, withdrawn, cancelled — the tenant
+     * waits for the next cycle. This is the rule the payment window used to
+     * approximate and never actually enforced: inside those first few days a
+     * tenant could raise, be rejected, and raise again as often as they liked,
+     * and the agreement route had no window at all.
+     *
+     * <p>The exception is a request that expired with nobody ever looking at it.
+     * Silence is not an answer, and the harm of treating it as one falls
+     * entirely on the tenant: they lose a month of their own time for something
+     * the owner failed to do. So an unreviewed expiry returns the slot. Within
+     * 48 hours of the expiry the better route is still the re-raise, which keeps
+     * the original notice anchor. After that the tenant may raise a completely
+     * new request, at today's anchor and free of the payment window — later
+     * checkout than they would have had, but a route, and the only one that does
+     * not reward an owner for ignoring the queue.
+     *
+     * @return true when this is that fresh start, which also excuses the payment
+     *         window
+     */
+    private boolean ensureCycleHasRoomForANewRequest(UUID tenancyId, BillingCycleResponse cycle) {
+        TenancyExitRequest latest = exitRequestRepository.findLatestByTenancyId(tenancyId).orElse(null);
+        if (latest == null || !isInsideCycle(latest.getNoticeAnchorDate(), cycle)) {
+            return false;
+        }
+        if (latest.getStatus() == TenancyExitRequestStatus.EXPIRED) {
+            return true;
+        }
+        throw new ValidationException(
+                "An exit request has already been raised for this billing cycle. "
+                        + "A new one can be raised from " + cycle.periodEndDate().plusDays(1) + ".");
+    }
+
+    /**
      * Whether the original notice anchor still sits in the cycle being billed.
      *
      * <p>This is what stops a stale anchor producing a checkout date in the
@@ -914,8 +987,16 @@ public class TenancyExitRequestService {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
         LocalDate today = LocalDate.now(EXIT_ZONE);
 
+        // Every request a newer one already replaces. A chain is loaded whole,
+        // so the successor is in this same list.
+        Set<UUID> superseded = requests.stream()
+                .map(TenancyExitRequest::getSupersededRequestId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
         return requests.stream()
-                .map(request -> TenancyExitRequestResponse.from(request, today, names))
+                .map(request -> TenancyExitRequestResponse.from(
+                        request, today, names, superseded.contains(request.getId())))
                 .toList();
     }
 }

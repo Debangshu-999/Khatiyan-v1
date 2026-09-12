@@ -11,6 +11,7 @@ import {
   ImageOff,
   MapPin,
   Navigation,
+  Sparkles,
   Utensils,
   Zap,
   type LucideProps,
@@ -30,12 +31,45 @@ import { formatMoneyPaise } from "../discovery-format";
 type PropertyListingCardProps = {
   property: PropertyDiscoveryCard;
   filters?: PropertyFilterState;
+  /**
+   * Withholds the distance on a search that is not measured from the device.
+   *
+   * Distinct from having no distance to show: nothing is missing, so the card
+   * claims nothing. The slot still holds its space, because the row below the
+   * name must not move depending on what a search was anchored to.
+   */
+  hideDistance?: boolean;
+  /**
+   * A match worked out by the server, used instead of computing one here.
+   *
+   * AI search scores requirements the filter sheet cannot express — a property
+   * type, a deposit ceiling, a facility, a distance from a metro station — and
+   * writes the reason lines from the same figures. Computing the strength again
+   * on this side would eventually disagree with the sentence printed under it.
+   */
+  match?: FilterMatch | null;
+  /** The nearest landmark of the kind asked for, when one was. */
+  nearest?: { name: string; km: number } | null;
+  /** The AI's line for this card. */
+  reason?: string | null;
   onView: () => void;
 };
 
-export function PropertyListingCard({ filters, property, onView }: PropertyListingCardProps) {
+export function PropertyListingCard({
+  filters,
+  hideDistance = false,
+  match: serverMatch,
+  nearest,
+  reason,
+  property,
+  onView,
+}: PropertyListingCardProps) {
   const { colors, fonts } = useTheme();
-  const match = filters ? computeFilterMatches(filters, property) : null;
+  const match = serverMatch !== undefined
+    ? serverMatch
+    : filters
+      ? computeFilterMatches(filters, property)
+      : null;
   const imageUri = property.imageUrls?.find(Boolean) ?? property.profileImageUrl ?? null;
   // Pincode included: it was the one part of an Indian address a reader looks
   // for to place somewhere exactly, and the line was assembled without it.
@@ -139,23 +173,50 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
               {addressLine}
             </Text>
           </View>
-          {property.distanceKm != null ? (
-            <View
-              style={{
-                alignItems: "center",
-                alignSelf: "flex-start",
-                flexDirection: "row",
-                gap: 4,
-              }}
-            >
-              <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
-              <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
-                {property.distanceKm < 1
-                  ? `${Math.round(property.distanceKm * 1000)} m`
-                  : `${property.distanceKm.toFixed(1)} km`}
-              </Text>
-            </View>
-          ) : null}
+          {/* Always a row, whatever is in it. This column is a fixed height laid
+              out with space-between, so dropping the distance let the address
+              fall to the bottom and opened a gap under the name that read as a
+              rendering fault. The row keeps its height in all three states —
+              a real figure, no figure to show, or a figure deliberately
+              withheld — so the address never moves.
+
+              Grey, never the jade of a real figure: an absent measurement must
+              not look like a measurement. */}
+          <View
+            style={{
+              alignItems: "center",
+              alignSelf: "flex-start",
+              flexDirection: "row",
+              gap: 4,
+              minHeight: 15,
+            }}
+          >
+            {nearest ? (
+              <>
+                <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
+                <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+                  {nearest.km < 1 ? `${Math.round(nearest.km * 1000)} m` : `${nearest.km.toFixed(1)} km`} from{" "}
+                  {nearest.name}
+                </Text>
+              </>
+            ) : hideDistance ? null : property.distanceKm != null ? (
+              <>
+                <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
+                <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+                  {property.distanceKm < 1
+                    ? `${Math.round(property.distanceKm * 1000)} m`
+                    : `${property.distanceKm.toFixed(1)} km`}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Navigation color={colors.kicker} size={11} strokeWidth={2} />
+                <Text style={{ color: colors.kicker, fontFamily: fonts.sansMedium, fontSize: 11 }}>
+                  Distance unavailable
+                </Text>
+              </>
+            )}
+          </View>
         </View>
       </View>
 
@@ -218,6 +279,12 @@ export function PropertyListingCard({ filters, property, onView }: PropertyListi
         </View>
       ) : null}
 
+      {reason ? (
+        <View style={[section, { paddingHorizontal: 0 }]}>
+          <ReasonLine reason={reason} />
+        </View>
+      ) : null}
+
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
         <IconButton icon={Eye} label="View" muted onPress={onView} style={{ flex: 1 }} />
         <IconButton icon={DirectionsIcon} label="Directions" onPress={openDirections} style={{ flex: 1 }} />
@@ -234,6 +301,43 @@ function DirectionsIcon({ color, size }: LucideProps) {
       name="directions"
       size={typeof size === "number" ? size + 3 : 20}
     />
+  );
+}
+
+/**
+ * The AI's line for this card.
+ *
+ * <p>On the pale blue the AI panel uses, which is the one thing that tint means
+ * anywhere in the app: these are words a model wrote, not a fact the property
+ * stated. Everything factual on the card keeps its ordinary treatment.
+ */
+function ReasonLine({ reason }: { reason: string }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View
+      style={{
+        alignItems: "flex-start",
+        backgroundColor: colors.primarySoft,
+        borderCurve: "continuous",
+        borderRadius: 10,
+        flexDirection: "row",
+        gap: spacing.sm,
+        padding: spacing.sm,
+      }}
+    >
+      <Sparkles color={colors.primary} size={15} strokeWidth={2.2} style={{ marginTop: 1 }} />
+      <Text
+        style={{
+          color: colors.ink,
+          flex: 1,
+          fontFamily: fonts.sansMedium,
+          fontSize: 11.5,
+          lineHeight: 16,
+        }}
+      >
+        {reason}
+      </Text>
+    </View>
   );
 }
 

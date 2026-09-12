@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, BackHandler, Easing, Image, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType } from "react-native";
+import { Animated, BackHandler, Easing, Image, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Building2, MapPin } from "lucide-react-native";
@@ -10,6 +10,7 @@ import { HeaderNote } from "@/components/header-note";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
+import { AiResults } from "@/features/discovery/components/ai-results";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
@@ -33,9 +34,16 @@ import {
   type PropertyDiscoveryCard,
 } from "@/store/services/discovery-api";
 import { useLazyReverseGeocodeQuery, useSearchLocationsQuery, type GeoSuggestion } from "@/store/services/geo-api";
+import {
+  useGetAiCapabilitiesQuery,
+  useSmartSearchMutation,
+  type InterpretStatus,
+  type SmartSearchListing,
+  type SmartSearchResult,
+} from "@/store/services/intelligence-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { SkeletonList } from "@/components/skeleton";
+import { ListingResultsSkeleton } from "@/components/skeletons/discovery/listing-results";
 
 type SubmittedSearch = {
   text: string;
@@ -56,6 +64,56 @@ type LocationScope = {
   city: string;
   state: string;
 };
+
+/**
+ * Query pieces a sentence produced that the filter sheet has no control for.
+ *
+ * <p>Kept beside the filters rather than inside them, because the filter sheet
+ * is the person's own copy of their search — putting values in it that it
+ * cannot show or clear would leave a search nobody could undo. These clear
+ * whenever the location is chosen by hand again.
+ */
+type AiSearchExtras = {
+  foodIncluded: boolean | null;
+  latitude: number | null;
+  longitude: number | null;
+  radiusKm: number | null;
+};
+
+const noAiExtras: AiSearchExtras = {
+  foodIncluded: null,
+  latitude: null,
+  longitude: null,
+  radiusKm: null,
+};
+
+/**
+ * What to say when a sentence could not be run.
+ *
+ * <p>Every one of these still applies the filters it did understand, so the
+ * wording points at the control that finishes the job rather than apologising.
+ */
+const AI_NOTICES: Record<InterpretStatus, string | null> = {
+  LOCATION_NEEDED: "Name a place in your search, or use the city and area pickers below.",
+  LOCATION_NOT_FOUND: "AI could not place that location. Try the city and area pickers below.",
+  OUTSIDE_INDIA: "That place is outside India. Khatiyan only lists stays in India.",
+  READY: null,
+};
+
+/** Listings per page. Enough to fill a screen and a bit more. */
+const PAGE_SIZE = 12;
+
+/**
+ * How many AI results are drawn at once.
+ *
+ * <p>A sentence is answered in one call — up to two hundred ranked listings
+ * arrive together — so there is nothing to fetch as somebody scrolls. This is
+ * purely about not mounting two hundred cards to show ten.
+ */
+const AI_WINDOW = 8;
+
+/** Pixels from the bottom at which the next page is asked for. */
+const LOAD_MORE_SLACK = 700;
 
 const DISCOVERY_HERO = require("../../assets/discovery-hero.png");
 const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/discovery-empty-search.png");
@@ -119,6 +177,59 @@ export default function DiscoveryScreen() {
   const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [page, setPage] = useState(0);
   const debouncedSearchText = useDebouncedValue(searchText, 300);
+
+  // ---- Search in your own words -------------------------------------------
+  const [aiOn, setAiOn] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiNotUsed, setAiNotUsed] = useState<string[]>([]);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [aiExtras, setAiExtras] = useState<AiSearchExtras>(noAiExtras);
+  /**
+   * The answer to the last sentence, results and all.
+   *
+   * <p>Held here rather than read from the mutation's own cache because it
+   * survives the filter edits somebody makes afterwards: the chips and the
+   * reason lines describe the search that was run, not whatever the controls
+   * say now.
+   */
+  const [aiResult, setAiResult] = useState<SmartSearchResult | null>(null);
+  const [aiVisible, setAiVisible] = useState(AI_WINDOW);
+  // Re-asked when the screen is entered and the answer is over a minute old.
+  // A query that failed once stays failed in RTK, so a call that landed while
+  // the server was restarting hid the whole feature until the app was
+  // reloaded — an outage of ten seconds reading as a feature that does not
+  // exist.
+  const capabilitiesQuery = useGetAiCapabilitiesQuery(undefined, { refetchOnMountOrArgChange: 60 });
+  const [smartSearch, smartSearchState] = useSmartSearchMutation();
+  const aiInFlight = useRef(false);
+  const aiAvailable = capabilitiesQuery.data?.smartSearch ?? false;
+  /**
+   * While AI search is on, it is the ONLY input method.
+   *
+   * <p>Not just while it is composing. A sentence writes its resolved place
+   * into the box below, which made that box look like an editable search that
+   * had already been run — and editing it, or the pickers, would silently
+   * compete with the sentence for the same search. The toggle is the way back,
+   * and it is immediately above them.
+   */
+  const aiLocked = aiOn;
+
+  // The composer resets when the tab is left, so coming back is a fresh
+  // sentence rather than a stale one with its answer scrolled off. The applied
+  // filters and the results themselves stay — those are the search, and the
+  // person did not ask to lose it.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setAiOn(false);
+        setAiQuery("");
+        setAiNotUsed([]);
+        setAiNotice(null);
+        setAiResult(null);
+      },
+      [],
+    ),
+  );
 
   const tabs = useMemo<DiscoveryTabItem[]>(
     () =>
@@ -189,21 +300,31 @@ export default function DiscoveryScreen() {
       // Always the user's actual current location, so "X km away" is accurate
       // no matter which region they browse. Manual city/area/place selection only
       // scopes which results appear — it never moves the distance reference point.
-      latitude: location.latitude ?? null,
-      longitude: location.longitude ?? null,
-      radiusKm: null,
+      //
+      // One exception, and only one: a sentence that asked for a distance from a
+      // named place ("within 2 km of Salt Lake"). A radius is measured from this
+      // same point, so leaving the device here would answer "within 2 km of
+      // wherever you are standing" — an empty screen for anyone searching a city
+      // they are not in. The AI point is set only when a radius came with it.
+      latitude: aiExtras.latitude ?? location.latitude ?? null,
+      longitude: aiExtras.longitude ?? location.longitude ?? null,
+      radiusKm: aiExtras.radiusKm,
       pgFor: appliedFilters.pgFor,
       minRentPaise: appliedFilters.minRentPaise,
       maxRentPaise: appliedFilters.maxRentPaise,
       preferredFor: appliedFilters.preferredFor,
-      foodIncluded: appliedFilters.mealTypes.length > 0 ? true : null,
+      // A ticked meal implies food, and so does saying "with food" — the filter
+      // sheet has no control for the second, so it is carried alongside.
+      foodIncluded: appliedFilters.mealTypes.length > 0 ? true : aiExtras.foodIncluded,
       mealTypes: appliedFilters.mealTypes,
       electricityIncluded: appliedFilters.electricityIncluded,
       bathroomType: appliedFilters.bathroomType,
       sharingTypes: appliedFilters.sharingTypes,
-      size: 50,
+      // Small, because the list now grows as somebody scrolls. Fifty was one
+      // bulk fetch of everything in the region.
+      size: PAGE_SIZE,
     }),
-    [appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState],
+    [aiExtras, appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState],
   );
 
   const citiesQuery = useListLocationCitiesQuery();
@@ -216,7 +337,12 @@ export default function DiscoveryScreen() {
       nearLat: location.latitude ?? undefined,
       nearLng: location.longitude ?? undefined,
     },
-    { skip: debouncedSearchText.trim().length < 2 },
+    // Not while AI search owns the input. A resolved place written into the box
+    // is a perfectly good autocomplete query, so the geocoder answered it and
+    // the dropdown opened over results nobody had asked it to change. Skipping
+    // the query also stops a sentence from spending somebody's geocoder
+    // allowance on a place it had already resolved.
+    { skip: debouncedSearchText.trim().length < 2 || aiOn },
   );
   const [reverseGeocode] = useLazyReverseGeocodeQuery();
   // Nothing is searched until the user picks/types a location or the device
@@ -233,8 +359,15 @@ export default function DiscoveryScreen() {
     { skip: !selectedPropertyId },
   );
   function handleSearch() {
+    // The toggle chooses the input method, so it chooses what Search does.
+    if (aiOn) {
+      void runAiSearch();
+      return;
+    }
+
     setSelectedPropertyId(null);
     setPage(0);
+    setAiExtras(noAiExtras);
 
     const typed = searchText.trim();
     const autoHint = (location.searchHint ?? "").trim();
@@ -268,6 +401,112 @@ export default function DiscoveryScreen() {
     }
   }
 
+  /**
+   * Reads the sentence, then runs the ordinary search with what it produced.
+   *
+   * <p>Two calls, never one. The server interprets and stops, and this puts the
+   * result into the same filter and scope state a hand-made search uses — so a
+   * misreading shows up as a wrong filter the person can see and change, rather
+   * than as results that quietly do not match what they asked for.
+   */
+  async function runAiSearch() {
+    const query = aiQuery.trim();
+    // The flag from the hook is a render behind a fast second press, so the
+    // in-flight guard is a ref. Every call here spends from a metered
+    // allowance, and a double tap must not spend twice.
+    if (!query || aiInFlight.current) {
+      return;
+    }
+
+    aiInFlight.current = true;
+    setSelectedPropertyId(null);
+    setPage(0);
+    setAiNotice(null);
+    // The previous answer goes now, not when the next one lands. The skeleton
+    // takes its place, so nobody reads the last search as this one.
+    setAiResult(null);
+
+    try {
+      const result = await smartSearch({
+        // Only so "near me" and a bare distance have something to measure from.
+        device:
+          location.latitude != null && location.longitude != null
+            ? { latitude: location.latitude, longitude: location.longitude }
+            : null,
+        query,
+      }).unwrap();
+      applyInterpretation(result);
+      setAiResult(result);
+      setAiVisible(AI_WINDOW);
+    } catch (error) {
+      // Whatever went wrong, the controls below have to open up — a refusal
+      // that leaves somebody with no way to search is worse than no AI at all.
+      setAiNotUsed([]);
+      setAiResult(null);
+      const status = (error as { status?: number } | undefined)?.status;
+      setAiNotice(
+        status === 429
+          ? "The AI search allowance is used up for now. Try again later, or switch AI search off to use the filters."
+          : "AI could not read that search. Try again, or switch AI search off to use the filters.",
+      );
+    } finally {
+      aiInFlight.current = false;
+    }
+  }
+
+  /**
+   * Puts an interpretation into the screen's own state.
+   *
+   * <p>The filters are applied whatever the status, because a sentence that
+   * named a place we could not find still named a budget we could. Only the
+   * location scope waits for READY — searching with no region is how a Kolkata
+   * search ends up showing Bengaluru.
+   */
+  function applyInterpretation(result: SmartSearchResult) {
+    const args = result.searchArgs;
+
+    // Conflicts sit in the same line as the unused phrases. Both answer the one
+    // question a reader has: which part of what I typed is not in this search.
+    setAiNotUsed([...result.unresolvedRequirements, ...result.conflicts]);
+    setAiNotice(AI_NOTICES[result.status]);
+
+    const filters: PropertyFilterState = {
+      bathroomType: args.bathroomType,
+      electricityIncluded: args.electricityIncluded,
+      maxRentPaise: args.maxRentPaise,
+      mealTypes: args.mealTypes,
+      minRentPaise: args.minRentPaise,
+      pgFor: args.pgFor,
+      preferredFor: args.preferredFor,
+      sharingTypes: args.sharingTypes,
+    };
+    setAppliedFilters(filters);
+    setDraftFilters(filters);
+
+    const hasPoint = args.latitude != null && args.longitude != null;
+    setAiExtras({
+      foodIncluded: args.foodIncluded,
+      // See the note in propertyQueryArgs: the point moves only to serve a
+      // radius, so an ordinary search keeps measuring from the device.
+      latitude: args.radiusKm != null && hasPoint ? args.latitude : null,
+      longitude: args.radiusKm != null && hasPoint ? args.longitude : null,
+      radiusKm: args.radiusKm,
+    });
+
+    if (result.status !== "READY") {
+      return;
+    }
+
+    // The sentence is a text search, so it writes the text scope and clears the
+    // pickers — the same one-scope-at-a-time rule every other entry point uses.
+    clearPickers();
+    setManualSelection(true);
+    const label = args.locality || args.city || result.resolvedLocation?.displayName || "";
+    setSearchText(label);
+    setTextScope({ area: args.locality ?? "", city: args.city ?? "", state: args.state ?? "" });
+    setSubmittedSearch({ text: label });
+  }
+
   // Clearing the search box clears the whole location scope in one action — text
   // and picked city/area/state — so the pills don't linger after the address is
   // emptied. Falls back to the auto device-location search.
@@ -281,6 +520,10 @@ export default function DiscoveryScreen() {
     setSubmittedSearch(defaultSearch);
     setSelectedPropertyId(null);
     setPage(0);
+    setAiExtras(noAiExtras);
+    setAiNotUsed([]);
+    setAiNotice(null);
+    setAiResult(null);
   }
 
   function applyPropertyFilters(filters: PropertyFilterState) {
@@ -294,6 +537,9 @@ export default function DiscoveryScreen() {
     setDraftFilters(emptyPropertyFilters);
     setAppliedFilters(emptyPropertyFilters);
     setPage(0);
+    // Reset means every filter, including the one the sheet cannot show.
+    setAiExtras((previous) => ({ ...previous, foodIncluded: null }));
+    setAiNotUsed([]);
   }
 
   async function selectSuggestion(suggestion: GeoSuggestion) {
@@ -303,6 +549,7 @@ export default function DiscoveryScreen() {
     setSelectedPropertyId(null);
     setPage(0);
     setSubmittedSearch({ text: label });
+    setAiExtras(noAiExtras);
 
     // The pickers are the other scope, and only one may be live. Cleared here
     // rather than merged, so a city left over from an earlier pick cannot
@@ -353,6 +600,54 @@ export default function DiscoveryScreen() {
   // The live scope's state, not the picker's — on a text search the picker is
   // empty and this would have read "elsewhere in " with nothing after it.
   const nearbyCityLabel = searchedCity || searchedState || (location.state ?? "").trim();
+  // "4 km away" means away from YOU everywhere in this tab. A sentence that
+  // asked for a radius around a named place moves the search point to that
+  // place, so the figure would quietly start meaning something else — and one
+  // list labelling two different reference points is worse than a list that
+  // does not label this one at all. The distance is withheld on those searches
+  // only, and the cards keep the space so nothing shifts.
+  const distanceIsNotFromHere = aiExtras.latitude != null;
+  // AI results replace the ordinary ones while they stand. They are a
+  // different answer to a different question — a sentence, with its own
+  // ranking and its own account of each listing — and showing both at once
+  // would be two lists competing to be the result.
+  const showingAiResults = aiOn && aiResult !== null;
+  const aiSearching = smartSearchState.isLoading;
+  /**
+   * A fresh search, as opposed to another page of the same one.
+   *
+   * <p>The skeleton stands in for the whole list, so it may only appear when
+   * the list is being replaced. Appending page two behind a full-screen
+   * skeleton would throw away the page somebody is reading to show them a
+   * loading state for the part below it.
+   */
+  const reloadingResults = propertiesQuery.isFetching && page === 0;
+  const loadingMore = propertiesQuery.isFetching && page > 0;
+
+  /**
+   * Asks for more when the end comes into view.
+   *
+   * <p>Both lists grow the same way from the reader's side. The ordinary
+   * search fetches its next page, and AI results — which all arrived at once —
+   * simply draw more of what is already here.
+   */
+  function handleResultsScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - LOAD_MORE_SLACK;
+    if (!atEnd) {
+      return;
+    }
+    if (showingAiResults && aiResult) {
+      const total = aiResult.matching.length + aiResult.related.length;
+      if (aiVisible < total) {
+        setAiVisible((shown) => Math.min(shown + AI_WINDOW, total));
+      }
+      return;
+    }
+    if (activeTab === "properties" && hasActiveSearch && propertyPage?.hasNext && !propertiesQuery.isFetching) {
+      setPage((current) => current + 1);
+    }
+  }
   const activeFilterCount = countActivePropertyFilters(appliedFilters);
   const noPropertiesFound = Boolean(
     hasActiveSearch &&
@@ -451,7 +746,7 @@ export default function DiscoveryScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
       <DiscoveryHeader />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
@@ -459,6 +754,29 @@ export default function DiscoveryScreen() {
       {activeTab === "properties" ? (
         <>
           <DiscoverySearchCard
+            aiAvailable={aiAvailable}
+            aiBusy={aiSearching}
+            aiLocked={aiLocked}
+            aiNotUsed={aiNotUsed}
+            aiNotice={aiNotice}
+            aiOn={aiOn}
+            aiQuery={aiQuery}
+            onAiOnChange={(on) => {
+              setAiOn(on);
+              // Either direction is a fresh start. The two input methods do not
+              // inherit each other's work: a sentence should not begin against
+              // filters somebody set by hand, and turning AI off should not
+              // leave its results and its chips sitting above controls that no
+              // longer produced them.
+              clearSearch();
+              setAiQuery("");
+              setAppliedFilters(emptyPropertyFilters);
+              setDraftFilters(emptyPropertyFilters);
+            }}
+            onAiQueryChange={(value) => {
+              setAiQuery(value);
+              setAiNotice(null);
+            }}
             areaOptions={areas}
             cityOptions={cities}
             loadingSuggestions={suggestionsQuery.isFetching}
@@ -470,6 +788,7 @@ export default function DiscoveryScreen() {
             onAreaSelect={(area) => {
               setManualSelection(true);
               setTextScope(null);
+              setAiExtras(noAiExtras);
               setSelectedArea(area?.area ?? "");
               setSelectedCity(area?.city ?? selectedCity);
               setSelectedState(area?.state ?? selectedState);
@@ -482,6 +801,7 @@ export default function DiscoveryScreen() {
             onCitySelect={(city) => {
               setManualSelection(true);
               setTextScope(null);
+              setAiExtras(noAiExtras);
               setSelectedCity(city?.city ?? "");
               setSelectedState(city?.state ?? "");
               setSelectedArea("");
@@ -522,7 +842,13 @@ export default function DiscoveryScreen() {
             visible={filtersOpen}
           />
 
-          {hasActiveSearch ? (
+          {aiSearching ? <ListingResultsSkeleton reasons rows={3} /> : null}
+
+          {showingAiResults && !aiSearching ? (
+            <AiResults onView={setSelectedPropertyId} result={aiResult} visible={aiVisible} />
+          ) : null}
+
+          {hasActiveSearch && !showingAiResults && !aiSearching ? (
             <>
           <Card style={{ borderRadius: 28, overflow: "hidden" }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
@@ -623,7 +949,12 @@ export default function DiscoveryScreen() {
             ) : null}
           </Card>
 
-          {propertiesQuery.isError ? (
+          {/* Only when there is nothing else to show. A failed REFETCH keeps
+              the previous listings in the cache, so this card used to appear
+              above a perfectly good list that had just been counted in the
+              heading — "19 listings found" and "could not load properties" on
+              one screen. */}
+          {propertiesQuery.isError && !propertyPage ? (
             <DiscoveryEmptyState
               title="Could not load properties"
               description="Check the backend connection and try searching again."
@@ -631,15 +962,17 @@ export default function DiscoveryScreen() {
           ) : null}
 
 
-          {/* Listing-shaped, not a spinner in the heading row. A search that
-              takes a moment reserved no height at all, so the results shoved
-              the page down the instant they arrived. isLoading, not isFetching:
-              a re-search keeps the listings already on screen. */}
-          {propertiesQuery.isLoading ? <SkeletonList rows={3} /> : null}
+          {/* Listing-shaped, not a spinner in the heading row, and on EVERY
+              search rather than only the first. A re-search used to leave the
+              previous listings sitting there while the next set loaded, which
+              gave no sign anything had happened and invited reading the old
+              answer as the new one. */}
+          {reloadingResults ? <ListingResultsSkeleton rows={3} /> : null}
 
-          {exactProperties.map((property) => (
+          {reloadingResults ? null : exactProperties.map((property) => (
             <PropertyListingCard
               filters={appliedFilters}
+              hideDistance={distanceIsNotFromHere}
               key={property.propertyId}
               onView={() => setSelectedPropertyId(property.propertyId)}
               property={property}
@@ -648,7 +981,9 @@ export default function DiscoveryScreen() {
 
           {/* Same-city listings outside the searched area, shown under a light
               inline label rather than a heavy section header. */}
-          {nearbyProperties.length > 0 ? (
+          {loadingMore ? <ListingResultsSkeleton rows={1} /> : null}
+
+          {nearbyProperties.length > 0 && !reloadingResults ? (
             <>
               <Text style={[type.caption, { color: colors.muted, fontWeight: "700", marginTop: spacing.xs }]}>
                 {nearbyProperties.length} listing{nearbyProperties.length === 1 ? "" : "s"}
@@ -657,6 +992,7 @@ export default function DiscoveryScreen() {
               {nearbyProperties.map((property) => (
                 <PropertyListingCard
                   filters={appliedFilters}
+                  hideDistance={distanceIsNotFromHere}
                   key={property.propertyId}
                   onView={() => setSelectedPropertyId(property.propertyId)}
                   property={property}
@@ -665,11 +1001,17 @@ export default function DiscoveryScreen() {
             </>
           ) : null}
             </>
-          ) : (
+          ) : null}
+
+          {/* Only when nothing at all is happening. This used to be the
+              else branch of the results block, so the moment AI results
+              took that block's place the prompt appeared underneath them,
+              inviting a search from somebody who had just made one. */}
+          {!hasActiveSearch && !showingAiResults && !aiSearching ? (
             <Card>
               <EmptySearchPrompt />
             </Card>
-          )}
+          ) : null}
         </>
       ) : (
         <>

@@ -274,6 +274,36 @@ export const discoveryApi = api.injectEndpoints({
           size: params.size ?? 10,
         }),
       }),
+      /**
+       * Pages accumulate into one list, for infinite scroll.
+       *
+       * <p>`page` is left out of the cache key so every page of one search
+       * shares a single entry, `merge` appends the new page onto it, and
+       * `forceRefetch` asks for the next one even though the key has not
+       * changed. Without the three together, scrolling would either refetch
+       * page 0 forever or replace the list with page 2.
+       *
+       * <p>Changing any OTHER argument — a filter, an area — is a different
+       * key and therefore a fresh list, which is right: that is a new search,
+       * not more of this one. The screen resets its page counter at the same
+       * moment.
+       */
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}(${JSON.stringify({ ...queryArgs, page: undefined })})`,
+      merge: (cache, incoming, { arg }) => {
+        if ((arg.page ?? 0) === 0) {
+          return incoming;
+        }
+        const seen = new Set(cache.items.map((item) => item.propertyId));
+        cache.items.push(...incoming.items.filter((item) => !seen.has(item.propertyId)));
+        cache.page = incoming.page;
+        cache.hasNext = incoming.hasNext;
+        cache.totalElements = incoming.totalElements;
+        cache.totalPages = incoming.totalPages;
+        return cache;
+      },
+      forceRefetch: ({ currentArg, previousArg }) =>
+        (currentArg?.page ?? 0) !== (previousArg?.page ?? 0),
       providesTags: ["Discovery"],
     }),
     getDiscoveryProperty: builder.query<PropertyDiscoveryDetail, { propertyId: string; latitude?: number | null; longitude?: number | null }>({

@@ -87,15 +87,25 @@ public class PropertyBoardItem extends BaseEntity {
                 displayOrder);
     }
 
-    public void updateDetails(
+    /**
+     * @return whether anything actually changed, so a save that changed nothing
+     *         does not count as activity on the board
+     */
+    public boolean updateDetails(
             PropertyBoardCategory category,
             String title,
             String body,
             int displayOrder) {
+        boolean changed = !this.category.getId().equals(category.getId())
+                || !java.util.Objects.equals(this.title, title)
+                || !java.util.Objects.equals(this.body, body)
+                || this.displayOrder != displayOrder;
+
         this.category = category;
         this.title = title;
         this.body = body;
         this.displayOrder = displayOrder;
+        return changed;
     }
 
     public void deactivate() {

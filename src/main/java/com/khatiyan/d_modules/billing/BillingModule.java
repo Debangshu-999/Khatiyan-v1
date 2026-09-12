@@ -173,6 +173,20 @@ public class BillingModule {
         return billingCycleService.getCurrentMyRentCycle(tenantUserId, onDate);
     }
 
+    /**
+     * Moves the rent cycles generated after {@code raisedAgainstCycleId} to the
+     * tenant's new room and rent, or refuses if one has already opened.
+     * Authorization belongs to the caller.
+     */
+    public void applyRoomTransferToUpcomingCycles(
+            UUID tenancyId,
+            UUID raisedAgainstCycleId,
+            UUID newRoomId,
+            long newRentAmountPaise) {
+        billingCycleService.applyRoomTransferToUpcomingCycles(
+                tenancyId, raisedAgainstCycleId, newRoomId, newRentAmountPaise);
+    }
+
     public BillingCycleResponse getMyCycle(UUID tenantUserId, UUID billingCycleId) {
         return billingCycleService.getMyCycle(tenantUserId, billingCycleId);
     }

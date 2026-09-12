@@ -38,11 +38,11 @@ class RequestActivityExpiryTest {
     }
 
     /** Roughly-equal window check, tolerant of the clock ticking mid-test. */
-    private static void expiresInAbout(TenancyExitRequest request, int days) {
+    private static void expiresInAbout(TenancyExitRequest request, Duration window) {
         Duration remaining = Duration.between(Instant.now(), request.getExpiresAt());
         assertThat(remaining)
-                .as("expires in about %d days", days)
-                .isBetween(Duration.ofDays(days).minusMinutes(1), Duration.ofDays(days).plusMinutes(1));
+                .as("expires in about %s", window)
+                .isBetween(window.minusMinutes(1), window.plusMinutes(1));
     }
 
     @Test
@@ -50,7 +50,7 @@ class RequestActivityExpiryTest {
     void newRequestExpiresAfterTheReviewWindow() {
         TenancyExitRequest request = newExit();
 
-        expiresInAbout(request, TenancyExitRequest.REVIEW_WINDOW_DAYS);
+        expiresInAbout(request, Duration.ofDays(TenancyExitRequest.REVIEW_WINDOW_DAYS));
         assertThat(request.isActivelyOpen(Instant.now())).isTrue();
     }
 
@@ -60,7 +60,7 @@ class RequestActivityExpiryTest {
         TenancyExitRequest request = newExit();
         request.approveNormal(OWNER, null, null, null, null);
 
-        expiresInAbout(request, TenancyExitRequest.WITHDRAWAL_WINDOW_DAYS);
+        expiresInAbout(request, Duration.ofDays(TenancyExitRequest.WITHDRAWAL_WINDOW_DAYS));
     }
 
     @Test
@@ -85,7 +85,7 @@ class RequestActivityExpiryTest {
         TenancyExitRequest request = newExit();
         request.reject(OWNER, "wrong date");
 
-        expiresInAbout(request, TenancyExitRequest.RE_RAISE_WINDOW_DAYS);
+        expiresInAbout(request, Duration.ofHours(TenancyExitRequest.RE_RAISE_WINDOW_HOURS));
         assertThat(request.isActivelyOpen(Instant.now())).isTrue();
     }
 
@@ -98,7 +98,7 @@ class RequestActivityExpiryTest {
         assertThat(request.getStatus()).isEqualTo(TenancyExitRequestStatus.EXPIRED);
         // Lapsing was not the tenant's doing, so they keep the window to ask
         // again on the original notice anchor.
-        expiresInAbout(request, TenancyExitRequest.RE_RAISE_WINDOW_DAYS);
+        expiresInAbout(request, Duration.ofHours(TenancyExitRequest.RE_RAISE_WINDOW_HOURS));
     }
 
     @Test
@@ -135,7 +135,7 @@ class RequestActivityExpiryTest {
         request.rejectWithdrawal(OWNER, null);
 
         assertThat(request.getStatus()).isEqualTo(TenancyExitRequestStatus.APPROVED);
-        expiresInAbout(request, TenancyExitRequest.WITHDRAWAL_WINDOW_DAYS);
+        expiresInAbout(request, Duration.ofDays(TenancyExitRequest.WITHDRAWAL_WINDOW_DAYS));
     }
 
     @Test
@@ -177,8 +177,46 @@ class RequestActivityExpiryTest {
         assertThat(rejected.isActivelyOpen(Instant.now().plusSeconds(1))).isTrue();
         assertThat(rejected.allowsReRaiseAt(Instant.now())).isTrue();
         assertThat(rejected.allowsReRaiseAt(
-                Instant.now().plus(Duration.ofDays(TenancyRoomChangeRequest.RE_RAISE_WINDOW_DAYS + 1))))
+                Instant.now().plus(Duration.ofHours(TenancyRoomChangeRequest.RE_RAISE_WINDOW_HOURS + 1))))
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("a room change stops offering re-raise once the chain has run twice")
+    void aRoomChangeChainIsCappedAtTwoReRaises() {
+        TenancyRoomChangeRequest original = newRoomChange();
+        original.reject(OWNER, "that room is spoken for");
+        assertThat(original.allowsReRaiseAt(Instant.now())).isTrue();
+
+        TenancyRoomChangeRequest first = reRaiseOf(original);
+        assertThat(first.getReRaiseCount()).isEqualTo(1);
+        first.reject(OWNER, "so is that one");
+        assertThat(first.allowsReRaiseAt(Instant.now())).isTrue();
+
+        TenancyRoomChangeRequest second = reRaiseOf(first);
+        assertThat(second.getReRaiseCount()).isEqualTo(2);
+        second.reject(OWNER, "and that one");
+
+        // A room change reserves a bed the moment it is approved, so an endless
+        // chain lets one tenant keep pointing requests at a room other people
+        // are waiting for. Two corrections, then they start again.
+        assertThat(second.allowsReRaiseAt(Instant.now())).isFalse();
+        assertThat(second.isActivelyOpen(Instant.now())).isTrue();
+    }
+
+    private static TenancyRoomChangeRequest reRaiseOf(TenancyRoomChangeRequest superseded) {
+        return TenancyRoomChangeRequest.request(
+                null,
+                superseded.getTenancyId(),
+                TENANT,
+                superseded.getPropertyId(),
+                superseded.getCurrentRoomId(),
+                superseded.getTargetRoomId(),
+                superseded.getBillingCycleId(),
+                LocalDate.of(2026, 12, 31),
+                "closer to work",
+                10_000_00L,
+                superseded);
     }
 
     @Test
@@ -253,16 +291,30 @@ class RequestActivityExpiryTest {
     }
 
     @Test
-    @DisplayName("the scheduler can safely reopen a blocked approval after the manual window")
-    void schedulerRecoveryCanReopenAnOlderApproval() {
+    @DisplayName("a scheduled move that could not run is cancelled, never reopened for a decision")
+    void failedScheduledRunCancelsTheApproval() {
         TenancyRoomChangeRequest request = newRoomChange();
         request.approve(OWNER, null);
+        // Past the manual reversal window, which a failed run does not depend on.
         ReflectionTestUtils.setField(request, "expiresAt", Instant.now().minusSeconds(1));
+        Instant now = Instant.now();
 
-        request.reopenAfterExecutionBlocked(Instant.now(), "Tenancy is no longer active");
+        request.cancelAfterExecutionFailure(now, "The tenancy is no longer active at this property.");
+
+        assertThat(request.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.CANCELLED);
+        assertThat(request.getAdminNotes()).isEqualTo("The tenancy is no longer active at this property.");
+        assertThat(request.isActivelyOpen(now.plusSeconds(1))).isFalse();
+    }
+
+    @Test
+    @DisplayName("only an approved move that has not run can be cancelled after a failed run")
+    void failedRunCancellationNeedsAnApprovedMove() {
+        TenancyRoomChangeRequest request = newRoomChange();
+
+        assertThatThrownBy(() -> request.cancelAfterExecutionFailure(Instant.now(), "anything"))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Only an unexecuted approved room change can be cancelled");
 
         assertThat(request.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.REQUESTED);
-        assertThat(request.getAdminNotes()).isEqualTo("Tenancy is no longer active");
-        assertThat(request.isActivelyOpen(Instant.now())).isTrue();
     }
 }

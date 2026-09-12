@@ -66,7 +66,6 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Mirrors the backend cap on discovery.property_images. */
 const MAX_PROPERTY_IMAGES = 10;
-/** Mirrors Property.MIN_NOTICE_PERIOD_DAYS. */
 
 /**
  * Editing a property, as a screen rather than a sheet.
@@ -153,6 +152,7 @@ type EditField =
   | "graceDays"
   | "name"
   | "nonAcRate"
+  | "noticePeriod"
   | "pincode"
   | "state";
 
@@ -197,7 +197,14 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [facilities, setFacilities] = useState<PropertyFacility[]>(property.facilities);
   const [customFacilities, setCustomFacilities] = useState<string[]>(property.customFacilities);
   const [deposit, setDeposit] = useState(paiseToRupees(property.standardDepositPaise));
-  const [noticePeriod, setNoticePeriod] = useState<NoticePeriod>(property.noticePeriod);
+  // Null when the property sits on a notice period that is no longer offered,
+  // which today means the retired FIVE_DAYS. Seeding it anyway would leave the
+  // picker reading "Select" while quietly saving the old value back — the field
+  // would look unset and be anything but. Empty and required is the honest
+  // version: the owner picks one before this screen will save.
+  const [noticePeriod, setNoticePeriod] = useState<NoticePeriod | null>(
+    NOTICE_PERIOD_OPTIONS.includes(property.noticePeriod) ? property.noticePeriod : null,
+  );
   const [graceDays, setGraceDays] = useState(String(property.rentGraceDays));
   const [lateFee, setLateFee] = useState(paiseToRupees(property.rentLateFeePerDayPaise));
   // Opt-in, as at registration. Without the toggle the rate fields were
@@ -330,7 +337,6 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     const depositPaise = rupeesToPaise(deposit);
     const acRatePaise = offersDailyStays ? rupeesToPaise(acRate) : null;
     const nonAcRatePaise = offersDailyStays ? rupeesToPaise(nonAcRate) : null;
-    // Notice is a picker now, so there is no invalid value left to guard.
     const grace = Number(graceDays);
     const cleared = form.validate({
       ...(name.trim() ? {} : { name: "Enter the property name." }),
@@ -340,6 +346,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       ...(state.trim() ? {} : { state: "Enter the state." }),
       ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
       ...(depositPaise == null ? { deposit: "Enter a valid standard deposit." } : {}),
+      ...(noticePeriod ? {} : { noticePeriod: "Choose a notice period." }),
       ...(Number.isInteger(grace) && grace >= MIN_RENT_GRACE_DAYS && grace <= MAX_RENT_GRACE_DAYS
         ? {}
         : { graceDays: `Grace days must be a whole number between ${MIN_RENT_GRACE_DAYS} and ${MAX_RENT_GRACE_DAYS}.` }),
@@ -356,8 +363,8 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
         ? { nonAcRate: "Enter the non-AC rate, or turn daily stays off." }
         : {}),
     });
-    // The deposit re-check is the type narrowing the validate map cannot express.
-    if (!cleared || depositPaise == null) {
+    // The re-checks are the type narrowing the validate map cannot express.
+    if (!cleared || depositPaise == null || noticePeriod == null) {
       // Sections are tabs now, so a blamed field can be on a tab nobody is
       // looking at — Save would refuse and the reason would be one screen away
       // with nothing on this one to explain it. Go to the first offender.
@@ -584,8 +591,9 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   </View>
                 </View>
                 <SingleOptionPicker
+                  error={form.errors.noticePeriod}
                   label="Notice period"
-                  onChange={setNoticePeriod}
+                  onChange={(next) => { setNoticePeriod(next); form.clearField("noticePeriod"); }}
                   options={NOTICE_PERIOD_OPTIONS.map((option) => ({
                     label: NOTICE_PERIOD_LABELS[option],
                     value: option,
@@ -712,6 +720,7 @@ const TAB_OF_FIELD: Record<EditField, EditTab> = {
   graceDays: "pricing",
   name: "basics",
   nonAcRate: "pricing",
+  noticePeriod: "pricing",
   pincode: "basics",
   state: "basics",
 };

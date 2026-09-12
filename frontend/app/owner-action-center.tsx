@@ -33,7 +33,7 @@ type ActionRoute =
   | "/owner-tenancy"
   // Opens the tenancy screen with its Upcoming exits sheet already up. The
   // route gate matches on the path alone, so the param does not ungate it.
-  | "/owner-upcoming-exits";
+  | "/owner-tenancy?open=upcoming-exits";
 type ActionSource = "billing" | "concern" | "tenancy" | "budget" | "enquiry" | "staff";
 type ActionFilter = ActionSource | "all";
 type ActionTone = "primary" | "warning" | "danger";
@@ -163,7 +163,7 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
     items.push({ badge: String(attention.pendingRoomChangeRequests), detail: "Awaiting your review", emphasize: false, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", tone: "primary" });
   }
   if (attention.upcomingExits > 0) {
-    items.push({ badge: String(attention.upcomingExits), detail: "Review and configure scheduled checkout", emphasize: false, icon: CalendarClock, key: "upcoming", label: "Upcoming exits", route: "/owner-upcoming-exits", source: "tenancy", tone: "primary" });
+    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: CalendarClock, key: "upcoming", label: "Upcoming exits", route: "/owner-tenancy?open=upcoming-exits", source: "tenancy", tone: "primary" });
   }
   if (attention.tenantsOnNotice > 0) {
     items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });

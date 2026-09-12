@@ -692,8 +692,68 @@ public class BillingCycleService {
                 .stream()
                 .findFirst()
                 .orElseThrow(() -> new ValidationException(
-                        "No active rent cycle covers the selected checkout date"));
+                        "Requests can be raised once your current billing cycle has started."));
         return toResponse(cycle);
+    }
+
+    /**
+     * Carries an executed room change onto the rent cycles already generated
+     * after the one it was raised against.
+     *
+     * <p>
+     * A room change runs at the end of its cycle, and the next cycle is generated
+     * {@code upcomingCycleLeadDays} before it opens. So by the time the move runs,
+     * the next bill always exists already, at the old room and the old rent. That
+     * used to be refused outright ("cannot execute after the next billing cycle
+     * is generated"), which since the UPCOMING lead time meant every approved move
+     * failed on its transfer date.
+     *
+     * <p>
+     * An UPCOMING cycle is still the owner's mutable workspace, so it moves to the
+     * new room and its system rent line is repriced, keeping any charges already
+     * attached. A later cycle that has opened is a bill the tenant may already be
+     * paying, and refuses the move instead.
+     *
+     * <p>Authorization belongs to the caller.
+     */
+    @Transactional
+    public void applyRoomTransferToUpcomingCycles(
+            UUID tenancyId,
+            UUID raisedAgainstCycleId,
+            UUID newRoomId,
+            long newRentAmountPaise) {
+        BillingCycle raisedAgainst = billingCycleRepository.findById(raisedAgainstCycleId)
+                .filter(cycle -> cycle.getTenancyId().equals(tenancyId))
+                .orElseThrow(() -> new ValidationException(
+                        "The billing cycle this room change was raised against no longer exists"));
+        if (raisedAgainst.getCycleNumber() == null) {
+            throw new ValidationException("A room change must be raised against a rent cycle");
+        }
+
+        List<BillingCycle> later = billingCycleRepository.findRentCyclesAfter(
+                tenancyId, raisedAgainst.getCycleNumber());
+        for (BillingCycle cycle : later) {
+            if (!cycle.isUpcoming()) {
+                throw new ValidationException(
+                        "The next billing cycle has already opened at the old rent, so this room change cannot run");
+            }
+        }
+
+        for (BillingCycle cycle : later) {
+            cycle.moveUpcomingToRoom(newRoomId);
+            for (BillingCycleLineItem rentLine : lineItemRepository.findByBillingCycleIdAndType(
+                    cycle.getId(), BillingCycleLineItemType.RENT)) {
+                rentLine.replaceSystemRent(newRentAmountPaise);
+            }
+            lineItemRepository.flush();
+            calculateCycle(cycle);
+            log.info(
+                    "Upcoming billing cycle moved with room change billingCycleId={} tenancyId={} newRoomId={} newRentAmount={}",
+                    cycle.getId(),
+                    tenancyId,
+                    newRoomId,
+                    newRentAmountPaise);
+        }
     }
 
     /**
@@ -1970,7 +2030,11 @@ public class BillingCycleService {
                 .map(lineItem -> BillingCycleLineItemResponse.from(lineItem, actorName(actorNames, lineItem)))
                 .toList();
 
-        UserSummaryResponse tenant = authModule.findById(cycle.getTenantUserId()).orElse(null);
+        // A guest stay has no account behind it, and Spring Data throws on a null
+        // id rather than answering empty.
+        UserSummaryResponse tenant = cycle.getTenantUserId() == null
+                ? null
+                : authModule.findById(cycle.getTenantUserId()).orElse(null);
         return BillingCycleResponse.from(
                 cycle,
                 lineItems,

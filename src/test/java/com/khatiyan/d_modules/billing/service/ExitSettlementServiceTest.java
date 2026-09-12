@@ -346,4 +346,5 @@ class ExitSettlementServiceTest {
 
         verify(depositManagerService).applyExitDeductions(eq(ACTOR), eq(TENANCY), eq(List.of()), eq(true));
     }
+
 }

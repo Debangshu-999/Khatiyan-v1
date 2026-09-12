@@ -24,6 +24,10 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
  * <p>The list answers two questions at once: can this channel carry a reply, and
  * did the enquirer agree to it. Either one failing withholds the channel, so the
  * tests below come in two halves.
+ *
+ * <p>Chat is the exception to both halves. It became a real reply path when the
+ * chat module landed, and it hands the responder nothing they could keep, so it
+ * is always offered, carries no target, and needs no consent.
  */
 class EnquiryChannelTest {
 
@@ -53,7 +57,7 @@ class EnquiryChannelTest {
         var channels = EnquiryService.reachableChannels(user("+919000000000", null, false), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK);
+                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
         assertThat(channels.get(0).target()).isEqualTo("+919000000000");
     }
 
@@ -62,7 +66,10 @@ class EnquiryChannelTest {
         var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL);
+                .containsExactly(
+                        EnquiryResponseChannel.CALL_BACK,
+                        EnquiryResponseChannel.EMAIL,
+                        EnquiryResponseChannel.CHAT);
         assertThat(channels.get(1).target()).isEqualTo("anita@example.com");
     }
 
@@ -75,7 +82,7 @@ class EnquiryChannelTest {
         var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", false), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK);
+                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
     }
 
     @Test
@@ -83,18 +90,26 @@ class EnquiryChannelTest {
         var channels = EnquiryService.reachableChannels(user("+919000000000", "   ", true), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK);
+                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
     }
 
-    /** Chat is not a channel anyone can be reached on until chat exists. */
+    /**
+     * Chat is never stored as a consent and never asked for, so consenting to it
+     * changes nothing. It is offered exactly once either way, with no target
+     * beside it — a conversation is not a detail the responder can keep.
+     */
     @Test
-    void neverOffersChat() {
+    void alwaysOffersChatAndIgnoresConsentForIt() {
         var channels = EnquiryService.reachableChannels(
                 user("+919000000000", "anita@example.com", true),
                 Set.of(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL, EnquiryResponseChannel.CHAT));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .doesNotContain(EnquiryResponseChannel.CHAT);
+                .containsExactly(
+                        EnquiryResponseChannel.CALL_BACK,
+                        EnquiryResponseChannel.EMAIL,
+                        EnquiryResponseChannel.CHAT);
+        assertThat(channels.get(2).target()).isNull();
     }
 
     @Test
@@ -117,7 +132,7 @@ class EnquiryChannelTest {
                 Set.of(EnquiryResponseChannel.EMAIL));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.EMAIL);
+                .containsExactly(EnquiryResponseChannel.EMAIL, EnquiryResponseChannel.CHAT);
     }
 
     @Test
@@ -127,17 +142,18 @@ class EnquiryChannelTest {
                 Set.of(EnquiryResponseChannel.CALL_BACK));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK);
+                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
     }
 
     /**
-     * Nothing consented means nothing reachable, which is what stops an enquiry
-     * being raised at all until chat gives it a reply path of its own.
+     * Declining both details is a complete answer rather than a dead end. Chat
+     * carries the reply, so the enquiry can still be raised and answered.
      */
     @Test
-    void offersNothingWithoutConsent() {
+    void offersChatWhenNothingElseIsConsentedTo() {
         assertThat(EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true), Set.of()))
-                .isEmpty();
+                .extracting(ReachableChannelResponse::channel)
+                .containsExactly(EnquiryResponseChannel.CHAT);
     }
 
     // The footnote tells the enquirer to fix the one thing that is missing —

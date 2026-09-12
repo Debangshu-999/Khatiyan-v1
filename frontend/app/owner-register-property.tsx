@@ -63,7 +63,6 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Mirrors the backend cap on discovery.property_images. */
 const MAX_PROPERTY_IMAGES = 10;
-/** Mirrors Property.MIN_NOTICE_PERIOD_DAYS. */
 
 /** Every field the submit check can point at. */
 type FormField =

@@ -308,6 +308,24 @@ public class BillingCycle extends BaseEntity {
     }
 
     /**
+     * Re-points a cycle that has not opened yet at the room its tenant is moving to.
+     *
+     * <p>Only an UPCOMING cycle may move. It is generated ahead of its window, so
+     * a room change running at the end of the current cycle always finds the next
+     * one already built at the old room. A cycle that has opened is a bill the
+     * tenant may already be paying, and is never re-pointed.
+     */
+    public void moveUpcomingToRoom(UUID newRoomId) {
+        if (!isUpcoming()) {
+            throw new ValidationException("Only a billing cycle that has not opened yet can move to a new room");
+        }
+        if (newRoomId == null) {
+            throw new ValidationException("Room is required");
+        }
+        this.roomId = newRoomId;
+    }
+
+    /**
      * Whether this cycle counts as money billed.
      *
      * <p>Only CANCELLED is excluded. An UPCOMING cycle is a real bill: it has been

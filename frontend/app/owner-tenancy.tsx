@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useLocalSearchParams } from "expo-router";
 import { AlertModal } from "@/components/alert-modal";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useToast } from "@/components/toast";
@@ -34,13 +35,14 @@ import {
   type TenancySummary,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
-  useListUpcomingTenancyExitsQuery,
 } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 
 import { useTheme } from "@/theme/use-theme";
 import { HeaderGradient } from "@/components/header-gradient";
+
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
 
@@ -58,6 +60,8 @@ export default function OwnerTenancyWorkspaceScreen() {
   // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
   // row is about the stays listed in this sheet — not the exit REQUESTS screen,
   // which is a different queue.
+  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
+  const [upcomingOpen, setUpcomingOpen] = useState(openParam === "upcoming-exits");
   // Withdrawing a stay the tenant never accepted. Held here rather than in the
   // card so one dialog serves the whole list.
   const [pendingRemoval, setPendingRemoval] = useState<TenancySummary | null>(null);
@@ -86,10 +90,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   // inside instead.
   const { canManage, canView } = usePropertyPermissions(selectedProperty?.id);
   const { dialog: accessDialog, guard } = useScreenAccessGuard(selectedProperty?.id);
-  const upcomingExitsQuery = useListUpcomingTenancyExitsQuery(selectedProperty?.id ?? "", {
-    skip: !selectedProperty || !canView("EXIT_REQUESTS"),
-  });
-
   const dashboardQuery = useGetOwnerDashboardQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const activeTenanciesQuery = useListActivePropertyTenanciesQuery(
     // Only filter the active query while the active tab is showing, so the "Active"
@@ -113,6 +113,26 @@ export default function OwnerTenancyWorkspaceScreen() {
   // Stays whose checkout falls in the next 7 days, IST — the same window the
   // dashboard's upcomingExits counts, derived here from the list already loaded
   // rather than fetched again.
+  const upcomingExits = useMemo(() => {
+    const today = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()));
+    const horizon = new Date(today);
+    horizon.setDate(horizon.getDate() + 7);
+
+    return (activeTenancies?.items ?? [])
+      .filter((tenancy) => {
+        const checkout = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
+        if (!checkout) {
+          return false;
+        }
+        const date = new Date(checkout);
+        return date >= today && date <= horizon;
+      })
+      .sort((a, b) => {
+        const left = (a.billingType === "DAILY" ? a.plannedEndDate : a.endDate) ?? "";
+        const right = (b.billingType === "DAILY" ? b.plannedEndDate : b.endDate) ?? "";
+        return left.localeCompare(right);
+      });
+  }, [activeTenancies]);
   const tenancySnapshot = dashboardQuery.data?.tenancy;
 
   function openActiveTenancy(tenancy: TenancySummary) {
@@ -264,11 +284,11 @@ export default function OwnerTenancyWorkspaceScreen() {
                     onPress: () => guard("TENANCIES", "Tenancy history", () => setHistoryOpen(true)),
                   },
                   {
-                    badge: upcomingExitsQuery.data?.length ?? 0,
+                    badge: upcomingExits.length,
                     icon: LogOut,
                     key: "upcoming-exits",
                     label: "Upcoming exits",
-                    onPress: () => guard("EXIT_REQUESTS", "Upcoming exits", () => router.push("/owner-upcoming-exits")),
+                    onPress: () => guard("TENANCIES", "Upcoming exits", () => setUpcomingOpen(true)),
                   },
                 ]}
               />
@@ -433,6 +453,35 @@ export default function OwnerTenancyWorkspaceScreen() {
       </SheetShell>
     ) : null}
 
+    {upcomingOpen ? (
+      <SheetShell onClose={() => setUpcomingOpen(false)} title="Upcoming exits">
+        {upcomingExits.length === 0 ? (
+          <EmptyState
+            description="No stay is due to end in the next seven days."
+            artwork={CONCERN_EMPTY_ILLUSTRATION}
+            title="All clear"
+          />
+        ) : (
+          upcomingExits.map((tenancy) => (
+            <ActiveTenancyCard
+              key={tenancy.id}
+              canEndTenancy={canManage("TENANCIES")}
+              ending={false}
+              onEndTenancy={() => {
+                setUpcomingOpen(false);
+                router.push({ pathname: "/owner-end-tenancy", params: { tenancyId: tenancy.id } });
+              }}
+              onOpen={() => {
+                setUpcomingOpen(false);
+                openActiveTenancy(tenancy);
+              }}
+              roomLabel={rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? null}
+              tenancy={tenancy}
+            />
+          ))
+        )}
+      </SheetShell>
+    ) : null}
     </>
   );
 }

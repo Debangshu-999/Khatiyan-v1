@@ -211,7 +211,7 @@ public class EnquiryService {
     @Transactional(readOnly = true)
     public long countOpenForProperty(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
-        return enquiryRepository.countByPropertyIdAndStatus(propertyId, EnquiryStatus.NEW);
+        return enquiryRepository.countAwaitingAnswer(propertyId, Instant.now());
     }
 
     @Transactional

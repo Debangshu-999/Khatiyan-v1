@@ -64,7 +64,7 @@ public class AgreementExpiryReminderService {
      */
     @Scheduled(
             cron = "${app.tenancy.agreement-expiry-reminder-cron:0 5 0 * * *}",
-            zone = "${app.tenancy.exit-execution-zone:Asia/Kolkata}")
+            zone = "${app.tenancy.agreement-expiry-reminder-zone:Asia/Kolkata}")
     @SchedulerLock(
             name = "tenancy-agreementExpiryReminders",
             lockAtMostFor = "PT10M",

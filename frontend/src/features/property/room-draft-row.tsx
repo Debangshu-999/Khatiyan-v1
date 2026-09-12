@@ -5,6 +5,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { AmenityPicker } from "@/features/property/amenity-picker";
+import { FLOOR_PLACEHOLDER, MAX_FLOOR_DIGITS, sanitizeFloorInput } from "@/features/property/floor";
 import { MoldPicker, moldLabel } from "@/features/property/mold-picker";
 import type { RoomAmenity, RoomMold } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
@@ -144,9 +145,11 @@ export function RoomDraftRow({
           <FormInput
             disabled={!mold}
             error={errors?.floor}
+            keyboardType="number-pad"
             label="Floor"
-            onChangeText={(next) => onChange({ floor: next })}
-            placeholder="Ground, 1, 2…"
+            maxLength={MAX_FLOOR_DIGITS}
+            onChangeText={(next) => onChange({ floor: sanitizeFloorInput(next) })}
+            placeholder={FLOOR_PLACEHOLDER}
             required
             value={draft.floor}
           />
@@ -186,26 +189,22 @@ export function RoomDraftRow({
   );
 
   if (standalone) {
-    // No card. The amenities block draws its own border, so a card around
-    // everything put a box inside a box — and with one room on the screen the
-    // card was separating the fields from nothing.
-    return fields;
+    // One room, one card. The fields used to sit bare on the page, which left
+    // the screen as a column of inputs with nothing saying where the room
+    // begins and the page ends.
+    return <Card>{fields}</Card>;
   }
 
   return (
+    // A card per room, inset like every other card in the app. Edge to edge
+    // with the sides and the radius stripped, each row was a full-width strip
+    // ruled top and bottom — so the first one opened with a hairline across the
+    // screen above "Room 1", which reads as a divider under a heading that is
+    // not there rather than as the top of a card.
     <Card
       style={{
-        borderColor: faulted ? colors.danger : colors.border,
+        borderColor: faulted ? colors.danger : colors.borderStrong,
         gap: expanded ? spacing.md : 0,
-        // Edge to edge. A list of rooms IS the screen here, not a stack of
-        // widgets sitting on one, and inset cards left the fields inside them
-        // giving up a second gutter on top of the screen's own. The side
-        // borders and the corner radius go with the inset: a rounded edge flush
-        // to the screen reads as a mistake.
-        borderLeftWidth: 0,
-        borderRadius: 0,
-        borderRightWidth: 0,
-        marginHorizontal: -spacing.lg,
       }}
     >
       <AnimatedPressable

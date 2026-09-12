@@ -80,6 +80,25 @@ public class BillingAccessPolicy {
         propertyModule.ensureCanView(actorUserId, propertyId, ManagerResource.DEPOSITS);
     }
 
+    /**
+     * Reading one tenancy's deposit, for whoever is working that stay.
+     *
+     * <p>The deposit is settled by the exit, not beside it: the person ending a
+     * stay decides what comes off it and whether the remainder is refunded, so
+     * they have to see the balance they are deciding against. Requiring
+     * {@code DEPOSITS} for the read while the exit's own deduction needs nothing
+     * left that screen showing "no deposit account" to a manager who was about
+     * to deduct from it.
+     *
+     * <p>{@code TENANCIES} therefore also opens this read. Everything that
+     * changes the ledger on its own — corrections, settlement, the
+     * property-wide list — still needs {@code DEPOSITS}.
+     */
+    public void ensureCanViewDepositsForStay(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanViewAny(
+                actorUserId, propertyId, ManagerResource.DEPOSITS, ManagerResource.TENANCIES);
+    }
+
     /** Corrections, deductions and settlement. */
     public void ensureCanManageDeposits(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.DEPOSITS);

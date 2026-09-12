@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { ActivityIndicator, Keyboard, Modal, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Keyboard, Modal, ScrollView, Switch, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { ChevronDown, LocateFixed, MapPin, Search, SlidersHorizontal, X } from "lucide-react-native";
+import { ChevronDown, LocateFixed, MapPin, Pencil, Search, SlidersHorizontal, Sparkles, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -12,7 +12,37 @@ import { useTheme } from "@/theme/use-theme";
 
 import { DiscoveryButton } from "./discovery-button";
 
+/** Matches app.ai.smart-search.max-query-chars on the server. */
+const AI_QUERY_MAX_CHARS = 300;
+
+const AI_QUERY_PLACEHOLDER = "Describe what you're looking for";
+
 type DiscoverySearchCardProps = {
+  /**
+   * Whether this deployment offers smart search at all. False hides the whole
+   * block — an absent feature should not read as a broken one.
+   */
+  aiAvailable: boolean;
+  aiOn: boolean;
+  onAiOnChange: (on: boolean) => void;
+  aiQuery: string;
+  onAiQueryChange: (value: string) => void;
+  aiBusy: boolean;
+  /**
+   * Phrases the sentence asked for that could not become a filter.
+   *
+   * Shown rather than dropped. A search that quietly ignores half of what
+   * somebody typed reads as a place with no stock.
+   */
+  aiNotUsed: string[];
+  /** Why a sentence could not be run, in plain words. Null when it ran. */
+  aiNotice: string | null;
+  /**
+   * True while the sentence is the input method, which blocks every control
+   * below it — the place box included, since a sentence writes its resolved
+   * place in there.
+   */
+  aiLocked: boolean;
   areaOptions: LocationArea[];
   cityOptions: LocationCity[];
   loadingSuggestions: boolean;
@@ -31,6 +61,15 @@ type DiscoverySearchCardProps = {
 };
 
 export function DiscoverySearchCard({
+  aiAvailable,
+  aiOn,
+  onAiOnChange,
+  aiQuery,
+  onAiQueryChange,
+  aiBusy,
+  aiNotUsed,
+  aiNotice,
+  aiLocked,
   areaOptions,
   cityOptions,
   loadingSuggestions,
@@ -61,14 +100,120 @@ export function DiscoverySearchCard({
   //
   // So a pick is recorded explicitly and holds until the text is edited again.
   const [pickedFromList, setPickedFromList] = useState(false);
+  // Never while AI search owns the input: the place it wrote into the box is
+  // itself a valid query, so the dropdown opened by itself over results the
+  // reader had just asked for.
   const showSuggestions =
-    focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
+    !aiLocked && focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
   const selectedLocationLabel = selectedArea || selectedCity || searchText.trim();
 
   return (
     <Card>
+      {aiAvailable ? (
+        <View
+          style={{
+            // The one place in the app that carries a pale blue fill, and only
+            // while it is switched on. This panel is a different KIND of input
+            // from the controls under it — a sentence rather than a set of
+            // choices — and the tint is what says so at a glance. Switched off
+            // it is an outline like anything else, because then it is just a
+            // control somebody has not turned on.
+            backgroundColor: aiOn ? colors.primarySoft : "transparent",
+            borderColor: aiOn ? colors.primarySoft : colors.border,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            borderWidth: 1,
+            gap: spacing.sm,
+            padding: spacing.md,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Sparkles color={colors.primary} size={20} strokeWidth={2.2} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                Start AI search
+              </Text>
+              <Text
+                numberOfLines={2}
+                style={{
+                  color: colors.muted,
+                  fontFamily: fonts.sansMedium,
+                  fontSize: 11,
+                  lineHeight: 15,
+                }}
+              >
+                Get smarter, more relevant results.
+              </Text>
+            </View>
+            <Switch
+              disabled={aiBusy}
+              onValueChange={onAiOnChange}
+              thumbColor={colors.surface}
+              trackColor={{ false: colors.neutralSoft, true: colors.primary }}
+              value={aiOn}
+            />
+          </View>
+
+          {aiOn ? (
+            <View style={{ gap: spacing.sm }}>
+              <View
+                style={{
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderCurve: "continuous",
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  opacity: aiBusy ? 0.6 : 1,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                }}
+              >
+                <Pencil color={colors.kicker} size={18} strokeWidth={2.2} style={{ marginTop: 2 }} />
+                <AppTextInput
+                  accessibilityLabel="Describe what you are looking for"
+                  editable={!aiBusy}
+                  // The server refuses anything longer, so the field stops
+                  // there rather than letting somebody type a paragraph and
+                  // then be told no.
+                  maxLength={AI_QUERY_MAX_CHARS}
+                  multiline
+                  onChangeText={onAiQueryChange}
+                  placeholder={AI_QUERY_PLACEHOLDER}
+                  placeholderTextColor={colors.kicker}
+                  style={{
+                    color: colors.ink,
+                    flex: 1,
+                    fontFamily: fonts.sansMedium,
+                    fontSize: 12,
+                    lineHeight: 17,
+                    minHeight: 46,
+                    padding: 0,
+                    textAlignVertical: "top",
+                  }}
+                  value={aiQuery}
+                />
+              </View>
+              {aiNotice ? (
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 11, lineHeight: 15 }}>
+                  {aiNotice}
+                </Text>
+              ) : null}
+
+              {aiNotUsed.length > 0 ? (
+                <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 11, lineHeight: 15 }}>
+                  AI could not use: {aiNotUsed.join(", ")}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {aiLocked ? null : (
       <View
         style={{
           alignItems: "center",
@@ -157,6 +302,7 @@ export function DiscoverySearchCard({
           ) : null}
         </AnimatedPressable>
       </View>
+      )}
 
       {showSuggestions ? (
         <View
@@ -208,6 +354,7 @@ export function DiscoverySearchCard({
         </View>
       ) : null}
 
+      {aiLocked ? null : (
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <FilterPickerButton
           label="City"
@@ -223,15 +370,20 @@ export function DiscoverySearchCard({
           style={{ flex: 1 }}
         />
       </View>
+      )}
 
-      <DiscoveryButton label="Search" onPress={onSearch} />
+      <DiscoveryButton
+        disabled={aiBusy || (aiOn && aiQuery.trim().length === 0)}
+        label={aiBusy ? "AI is searching" : aiOn ? "Search with AI" : "Search"}
+        onPress={onSearch}
+      />
 
       <View
         style={{
           alignItems: "center",
           alignSelf: "center",
-          backgroundColor: colors.neutralSoft,
-          borderColor: colors.border,
+          backgroundColor: aiOn ? colors.primarySoft : colors.neutralSoft,
+          borderColor: aiOn ? colors.primarySoft : colors.border,
           borderRadius: 9,
           borderWidth: 1,
           flexDirection: "row",
@@ -241,9 +393,18 @@ export function DiscoverySearchCard({
           paddingVertical: 7,
         }}
       >
-        <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
+        {aiOn ? (
+          <Sparkles color={colors.primary} size={16} strokeWidth={2.2} />
+        ) : (
+          <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
+        )}
         <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
-          Searching around {selectedLocationLabel || "your selected location"}
+          {aiOn ? (
+            <Text style={{ color: colors.primary, fontFamily: fonts.sansBold }}>AI searching</Text>
+          ) : (
+            <Text>Searching</Text>
+          )}
+          {" "}around {selectedLocationLabel || "your selected location"}
         </Text>
       </View>
 

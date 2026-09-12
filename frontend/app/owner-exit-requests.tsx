@@ -4,7 +4,7 @@ import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarClock, CalendarDays, Check, Clock, DoorOpen, FileClock, FileText, History, IndianRupee, Info, LockOpen, LogOut, ReceiptText, UserRound, WalletCards, X, type LucideProps } from "lucide-react-native";
+import { CalendarDays, Check, Clock, DoorOpen, FileClock, FileText, History, IndianRupee, Info, LockOpen, LogOut, ReceiptText, UserRound, WalletCards, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -37,7 +37,6 @@ import { useListManagedTenancyBillingCyclesQuery } from "@/store/services/billin
 import {
   useApproveExitRequestMutation,
   useListPropertyExitRequestsQuery,
-  useListUpcomingTenancyExitsQuery,
   useListPropertyTenanciesQuery,
   useDecideExitWithdrawalMutation,
   useRejectExitRequestMutation,
@@ -55,6 +54,10 @@ const EXIT_REQUEST_ARTWORK = require("../assets/workspace/exit-request.png");
 const REQUEST_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 type ReviewMode = "approve" | "reject";
+type WithdrawalDecision = {
+  approved: boolean;
+  request: TenancyExitRequest;
+};
 
 export default function OwnerExitRequestsScreen() {
   const router = useGuardedRouter();
@@ -79,10 +82,8 @@ export default function OwnerExitRequestsScreen() {
   // the tap, where the control should never have invited one.
   const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
   const canManageExits = canManageResource("EXIT_REQUESTS");
-  const canScheduleExits = canManageExits && canManageResource("TENANCIES");
 
   const requestsQuery = useListPropertyExitRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
-  const upcomingExitsQuery = useListUpcomingTenancyExitsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const tenanciesQuery = useListPropertyTenanciesQuery(
     { includePast: true, propertyId: selectedProperty?.id ?? "" },
@@ -106,14 +107,9 @@ export default function OwnerExitRequestsScreen() {
   const [selected, setSelected] = useState<TenancyExitRequest | null>(null);
   const [mode, setMode] = useState<ReviewMode | null>(null);
   const [pastOpen, setPastOpen] = useState(false);
+  const [withdrawalDecision, setWithdrawalDecision] = useState<WithdrawalDecision | null>(null);
 
   const allRequests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
-  const scheduledRequestIds = new Set(
-    (upcomingExitsQuery.data ?? [])
-      .filter((item) => item.schedule != null)
-      .map((item) => item.request.id),
-  );
-
   // Chains are built over EVERY request, because a live re-raise points back at
   // ones already rejected or expired.
   const chains = buildExitRequestChains(allRequests);
@@ -286,23 +282,10 @@ export default function OwnerExitRequestsScreen() {
                     roomLabel={roomLabels[request.roomId]}
                     canManage={canManageExits}
                     chain={activeChainByHeadId.get(request.id)}
-                    onAllowWithdrawal={() => void decideWithdrawal(request, true)}
+                    onAllowWithdrawal={() => setWithdrawalDecision({ approved: true, request })}
                     onApprove={() => openReview(request, "approve")}
-                    onRefuseWithdrawal={() => void decideWithdrawal(request, false)}
+                    onRefuseWithdrawal={() => setWithdrawalDecision({ approved: false, request })}
                     onReject={() => openReview(request, "reject")}
-                    onSchedule={() =>
-                      router.push({
-                        pathname: "/owner-end-tenancy",
-                        params: {
-                          edit: scheduledRequestIds.has(request.id) ? "1" : "0",
-                          mode: "schedule",
-                          requestId: request.id,
-                          tenancyId: request.tenancyId,
-                        },
-                      })
-                    }
-                    scheduled={scheduledRequestIds.has(request.id)}
-                    canSchedule={canScheduleExits}
                   />
                 ))}
                 {activeRequests.length > 0 ? (
@@ -328,6 +311,24 @@ export default function OwnerExitRequestsScreen() {
       ) : null}
       {pastOpen ? <PastExitRequestsModal chainByHeadId={activeChainByHeadId} onClose={() => setPastOpen(false)} requests={expiredRequests} roomLabels={roomLabels} /> : null}
       {decisionErrors.serverError ? <AlertModal message={decisionErrors.serverError} onClose={decisionErrors.dismissServerError} /> : null}
+      {withdrawalDecision ? (
+        <ConfirmDialog
+          confirmLabel={withdrawalDecision.approved ? "Let them stay" : "Exit stands"}
+          destructive={!withdrawalDecision.approved}
+          message={
+            withdrawalDecision.approved
+              ? `This approves ${withdrawalDecision.request.tenantName ?? "the tenant"}'s withdrawal, cancels the approved exit and keeps the tenancy active.`
+              : `This refuses ${withdrawalDecision.request.tenantName ?? "the tenant"}'s withdrawal. The approved checkout and exit will remain in place.`
+          }
+          onCancel={() => setWithdrawalDecision(null)}
+          onConfirm={() => {
+            const decision = withdrawalDecision;
+            setWithdrawalDecision(null);
+            void decideWithdrawal(decision.request, decision.approved);
+          }}
+          title={withdrawalDecision.approved ? "Let this tenant stay?" : "Keep this exit in place?"}
+        />
+      ) : null}
     </ScreenScrollView>
   );
 }
@@ -431,28 +432,22 @@ function ExitRequestCard({
   // The past-requests list reuses this card purely to read, so the decision
   // handlers are optional there — nothing in a settled request is actionable.
   canManage = true,
-  canSchedule = true,
   chain,
   onAllowWithdrawal = () => {},
   onApprove = () => {},
   onRefuseWithdrawal = () => {},
   onReject = () => {},
-  onSchedule = () => {},
   request,
   roomLabel,
-  scheduled = false,
 }: {
   canManage?: boolean;
-  canSchedule?: boolean;
   chain?: ExitRequestChain;
   onAllowWithdrawal?: () => void;
   onApprove?: () => void;
   onRefuseWithdrawal?: () => void;
   onReject?: () => void;
-  onSchedule?: () => void;
   request: TenancyExitRequest;
   roomLabel?: string;
-  scheduled?: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
   const pending = request.status === "REQUESTED";
@@ -485,11 +480,25 @@ function ExitRequestCard({
               >
                 {request.tenantName ?? "Tenant"}
               </Text>
-              <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
-                {request.referenceCode}
-              </Text>
+              {/* The request status can be as long as "Withdrawal Requested".
+                  Keeping it beside the tenant name made the name collapse to a
+                  few characters. The metadata row may wrap instead, while the
+                  name keeps the full header width. */}
+              <View
+                style={{
+                  alignItems: "center",
+                  columnGap: spacing.sm,
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  rowGap: 2,
+                }}
+              >
+                <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+                  {request.referenceCode}
+                </Text>
+                <StatusBadge status={request.status} />
+              </View>
             </View>
-            <StatusBadge status={request.status} />
           </View>
 
           <View
@@ -567,13 +576,6 @@ function ExitRequestCard({
               <ActionButton disabled={!canManage} label="Approve" onPress={onApprove} />
               <ActionButton disabled={!canManage} label="Reject" onPress={onReject} variant="danger" />
             </View>
-          ) : request.status === "APPROVED" ? (
-            <ActionButton
-              disabled={!canSchedule}
-              icon={CalendarClock}
-              label={scheduled ? "Edit scheduled exit" : "Add to scheduled exits"}
-              onPress={onSchedule}
-            />
           ) : null}
 
           <View style={{ flexDirection: "row" }}>

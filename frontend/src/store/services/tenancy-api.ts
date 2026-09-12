@@ -88,47 +88,6 @@ export type EndTenancyPayload = {
   proofImageUrl: string | null;
 };
 
-export type ExitExecutionConfiguration = Omit<EndTenancyPayload, "tenancyId">;
-
-export type ScheduledTenancyExitStatus =
-  | "SCHEDULED"
-  | "COMPLETED"
-  | "REVERSED"
-  | "UNSCHEDULED";
-
-export type ScheduledTenancyExit = {
-  id: string;
-  exitRequestId: string;
-  tenancyId: string;
-  propertyId: string;
-  tenantUserId: string;
-  scheduledCheckoutDate: string;
-  configuredByUserId: string;
-  nextAttemptAt: string;
-  lastAttemptAt: string | null;
-  attemptCount: number;
-  lastFailureCode: string | null;
-  lastFailureMessage: string | null;
-  status: ScheduledTenancyExitStatus;
-  closedAt: string | null;
-  closureReason: string | null;
-  configuration: ExitExecutionConfiguration;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ExitScheduleSettings = {
-  propertyId: string;
-  /** Local property time, serialized by Spring as HH:mm:ss. */
-  executionTime: string;
-};
-
-export type UpcomingTenancyExit = {
-  request: TenancyExitRequest;
-  executionTime: string;
-  schedule: ScheduledTenancyExit | null;
-};
-
 export type TenancySummary = {
   id: string;
   referenceCode: string;
@@ -212,12 +171,14 @@ export type TenantActiveTenancy = {
 
 /**
  * How long a lapsed exit request stays re-raisable on its original notice
- * anchor. Mirrors TenancyExitRequest.RE_RAISE_WINDOW_DAYS on the server.
+ * anchor. Mirrors TenancyExitRequest.RE_RAISE_WINDOW_HOURS on the server.
  *
- * Once this passes, a rejected or expired request is finally dead — the tenant
- * can still leave, but through a fresh request in the next payment window.
+ * Once this passes, a rejected request is finally dead — the tenant can still
+ * leave, but through a fresh request in the next payment window. An expired one
+ * is different: nobody ever answered it, so the tenant may raise a completely
+ * new request in the same cycle once this window shuts.
  */
-export const RE_RAISE_WINDOW_DAYS = 3;
+export const RE_RAISE_WINDOW_HOURS = 48;
 
 export type TenancyExitRequestType = "NORMAL_NOTICE" | "PREMATURE";
 export type TenancyExitRequestStatus =
@@ -550,53 +511,6 @@ export const tenancyApi = api.injectEndpoints({
       providesTags: ["Tenancy"],
     }),
 
-    listUpcomingTenancyExits: builder.query<UpcomingTenancyExit[], string>({
-      query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/upcoming-exits`,
-      providesTags: ["Tenancy"],
-    }),
-
-    getExitScheduleSettings: builder.query<ExitScheduleSettings, string>({
-      query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/exit-schedule-settings`,
-      providesTags: ["Tenancy"],
-    }),
-
-    updateExitScheduleSettings: builder.mutation<
-      ExitScheduleSettings,
-      { propertyId: string; executionTime: string }
-    >({
-      query: ({ executionTime, propertyId }) => ({
-        body: { executionTime },
-        method: "PUT",
-        url: `/api/v1/tenancies/properties/${propertyId}/exit-schedule-settings`,
-      }),
-      invalidatesTags: ["Tenancy"],
-    }),
-
-    getScheduledTenancyExit: builder.query<ScheduledTenancyExit, string>({
-      query: (requestId) => `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
-      providesTags: ["Tenancy"],
-    }),
-
-    scheduleTenancyExit: builder.mutation<
-      ScheduledTenancyExit,
-      { configuration: ExitExecutionConfiguration; requestId: string }
-    >({
-      query: ({ configuration, requestId }) => ({
-        body: configuration,
-        method: "POST",
-        url: `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
-      }),
-      invalidatesTags: ["Tenancy", "Notification"],
-    }),
-
-    unscheduleTenancyExit: builder.mutation<void, string>({
-      query: (requestId) => ({
-        method: "DELETE",
-        url: `/api/v1/tenancies/exit-requests/${requestId}/schedule`,
-      }),
-      invalidatesTags: ["Tenancy", "Notification"],
-    }),
-
     listPropertyRoomChangeRequests: builder.query<TenancyRoomChangeRequest[], string>({
       query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/room-change-requests`,
       providesTags: ["Tenancy"],
@@ -688,8 +602,6 @@ export const {
   useCreateExitRequestMutation,
   useDecideExitWithdrawalMutation,
   useGetExitCheckoutWindowQuery,
-  useGetExitScheduleSettingsQuery,
-  useGetScheduledTenancyExitQuery,
   useWithdrawApprovedExitRequestMutation,
   useCreateRoomChangeRequestMutation,
   useGetMyActiveTenancyQuery,
@@ -699,7 +611,6 @@ export const {
   useListMyRoomChangeRequestsQuery,
   useListMyTenanciesQuery,
   useListPropertyExitRequestsQuery,
-  useListUpcomingTenancyExitsQuery,
   useListPropertyRoomChangeRequestsQuery,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
@@ -708,7 +619,4 @@ export const {
   useRejectExitRequestMutation,
   useRejectRoomChangeRequestMutation,
   useRevertRoomChangeApprovalMutation,
-  useScheduleTenancyExitMutation,
-  useUnscheduleTenancyExitMutation,
-  useUpdateExitScheduleSettingsMutation,
 } = tenancyApi;

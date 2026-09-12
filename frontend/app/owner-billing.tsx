@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { MoneyIcon } from "@/components/artwork-icon";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
-import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, TimerReset, Undo2, Users, Wallet, WalletCards, X } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, SlidersHorizontal, TimerReset, Undo2, Users, Wallet, WalletCards, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
+import { PickerOptionRow } from "@/components/picker-option-row";
 
 import { StatusPill as Pill } from "@/components/status-pill";
 import { MonthSelector } from "@/components/month-selector";
@@ -74,6 +75,24 @@ type CycleView = "cycles" | "other";
 type PaymentHistoryStatus = "ON_TIME" | "OVERDUE" | "UNPAID";
 type ReportActionMode = "actions" | "month-picker";
 type SummaryFilter = "all" | "cycles" | "other" | "overdue" | "paid" | "unpaid" | "outstanding" | "collectable" | "discount";
+type BillingStatusFilter =
+  | "ALL"
+  | "UPCOMING"
+  | "UNPAID"
+  | "OVERDUE"
+  | "CONFIRMATION_PENDING"
+  | "PAID"
+  | "LATE_PAY";
+
+const BILLING_STATUS_FILTER_OPTIONS: { label: string; value: BillingStatusFilter }[] = [
+  { label: "Any status", value: "ALL" },
+  { label: "Upcoming", value: "UPCOMING" },
+  { label: "Unpaid", value: "UNPAID" },
+  { label: "Overdue", value: "OVERDUE" },
+  { label: "Confirming", value: "CONFIRMATION_PENDING" },
+  { label: "Paid", value: "PAID" },
+  { label: "Late Pay", value: "LATE_PAY" },
+];
 
 // Both controls in a bill card's action row are locked to this, so the circle
 // can never render larger than the button beside it.
@@ -108,6 +127,7 @@ function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): Bil
     case "overdue":
       return cycles.filter((cycle) => cycle.status === "OVERDUE");
     case "paid":
+      return cycles.filter((cycle) => cycle.status === "PAID");
     case "unpaid":
       return cycles.filter((cycle) => cycle.status === "UNPAID");
     case "outstanding":
@@ -120,6 +140,19 @@ function filterSummaryCycles(cycles: BillingCycle[], filter: SummaryFilter): Bil
     default:
       return cycles;
   }
+}
+
+function filterBillingCyclesByStatus(cycles: BillingCycle[], filter: BillingStatusFilter): BillingCycle[] {
+  if (filter === "ALL") {
+    return cycles;
+  }
+  if (filter === "LATE_PAY") {
+    return cycles.filter((cycle) => cycle.status === "PAID" && paymentHistoryStatus(cycle) === "OVERDUE");
+  }
+  if (filter === "PAID") {
+    return cycles.filter((cycle) => cycle.status === "PAID" && paymentHistoryStatus(cycle) === "ON_TIME");
+  }
+  return cycles.filter((cycle) => cycle.status === filter);
 }
 
 function summaryFilterTitle(filter: SummaryFilter): string {
@@ -235,6 +268,8 @@ export default function OwnerBillingScreen() {
   const [cycleView, setCycleView] = useState<CycleView>("cycles");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [billingStatusFilter, setBillingStatusFilter] = useState<BillingStatusFilter>("ALL");
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [reportMonth, setReportMonth] = useState(currentMonth());
   const [selectedCycle, setSelectedCycle] = useState<BillingCycle | null>(null);
@@ -298,8 +333,10 @@ export default function OwnerBillingScreen() {
   const cycleListLoading = cyclesQuery.isFetching && !cyclesQuery.data;
   // Rent cycles vs one-off bills (penalties, ad-hoc charges) shown as separate
   // segmented lists. The summary filter modal still spans all categories.
-  const rentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
-  const oneOffCycles = visibleCycles.filter((cycle) => cycle.category === "ONE_OFF");
+  const statusFilteredCycles = filterBillingCyclesByStatus(visibleCycles, billingStatusFilter);
+  const allRentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
+  const rentCycles = statusFilteredCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
+  const oneOffCycles = statusFilteredCycles.filter((cycle) => cycle.category === "ONE_OFF");
   const listedCycles = cycleView === "cycles" ? rentCycles : oneOffCycles;
   const visibleQuery = cycleSearchQuery;
   // For the current month, cycles are generated lazily on each tenancy's due
@@ -312,9 +349,9 @@ export default function OwnerBillingScreen() {
   // cycle was still pending when it was already sitting in the list above.
   // Suppressed while searching: the list is filtered then, so the projection
   // (which is property-wide) has nothing to subtract against.
-  const createdRentCycleCount = rentCycles.filter((cycle) => cycle.status !== "CANCELLED").length;
+  const createdRentCycleCount = allRentCycles.filter((cycle) => cycle.status !== "CANCELLED").length;
   const notGeneratedCount =
-    monthSummary && summaryMonth === currentMonth() && !cycleSearchQuery
+    monthSummary && summaryMonth === currentMonth() && !cycleSearchQuery && billingStatusFilter === "ALL"
       ? Math.max(0, monthSummary.activeCycleCount - createdRentCycleCount)
       : 0;
 
@@ -445,11 +482,34 @@ export default function OwnerBillingScreen() {
             onPageChange={setPage}
             page={page}
             query={visibleQuery}
+            narrowed={Boolean(visibleQuery) || billingStatusFilter !== "ALL"}
             loading={cycleListLoading}
             searchField={
               <SearchField
                 onChangeText={setSearchDraft}
                 placeholder="Search tenant name, phone or tenancy reference"
+                trailing={
+                  <AnimatedPressable
+                    accessibilityLabel="Filter bills by status"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: billingStatusFilter !== "ALL" }}
+                    onPress={() => setStatusPickerOpen(true)}
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: billingStatusFilter === "ALL" ? colors.surfaceSunken : colors.primary,
+                      borderRadius: 999,
+                      height: 34,
+                      justifyContent: "center",
+                      width: 34,
+                    }}
+                  >
+                    <SlidersHorizontal
+                      color={billingStatusFilter === "ALL" ? colors.ink : colors.onPrimary}
+                      size={17}
+                      strokeWidth={2.3}
+                    />
+                  </AnimatedPressable>
+                }
                 value={searchDraft}
               />
             }
@@ -485,6 +545,16 @@ export default function OwnerBillingScreen() {
           onClose={() => setReportActionMode(null)}
           onDownload={downloadMonthlyReport}
           onSelectMode={setReportActionMode}
+        />
+      ) : null}
+      {statusPickerOpen ? (
+        <BillingStatusFilterDialog
+          onClose={() => setStatusPickerOpen(false)}
+          onSelect={(value) => {
+            setBillingStatusFilter(value);
+            setPage(0);
+          }}
+          value={billingStatusFilter}
         />
       ) : null}
       {summaryFilter ? (
@@ -685,6 +755,7 @@ function BillingCyclesSection({
   cycles,
   fallbackLateFeePerDayPaise,
   month,
+  narrowed,
   loading = false,
   noun = "billing cycle",
   notGeneratedCount,
@@ -698,6 +769,7 @@ function BillingCyclesSection({
   cycles: BillingCycle[];
   fallbackLateFeePerDayPaise?: number | null;
   month: string;
+  narrowed: boolean;
   loading?: boolean;
   noun?: string;
   notGeneratedCount: number;
@@ -734,10 +806,10 @@ function BillingCyclesSection({
       ) : cycles.length === 0 ? (
         <EmptyState
           artwork={NO_BILL_ILLUSTRATION}
-          title={!query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
+          title={narrowed ? "No matching bills" : !query && notGeneratedCount > 0 ? "Cycles not generated yet" : "No billing cycles found"}
           description={
-            query
-              ? "No cycle matched that tenant name or tenancy ID for this billing month."
+            narrowed
+              ? "No bill matched that tenant, tenancy reference or status for this billing month."
               : notGeneratedCount > 0
                 ? notGeneratedCount + " cycle" + (notGeneratedCount === 1 ? "" : "s") + " " + (notGeneratedCount === 1 ? "has" : "have") + " not been generated yet — each appears automatically a few days before its due date, so you can adjust it before it goes live."
                 : "No billing cycles started in this month."
@@ -768,6 +840,72 @@ function BillingCyclesSection({
         </View>
       )}
     </Section>
+  );
+}
+
+function BillingStatusFilterDialog({
+  onClose,
+  onSelect,
+  value,
+}: {
+  onClose: () => void;
+  onSelect: (value: BillingStatusFilter) => void;
+  value: BillingStatusFilter;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <Pressable
+        accessibilityLabel="Close"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.overlay,
+          flex: 1,
+          justifyContent: "center",
+          paddingHorizontal: spacing.xl,
+        }}
+      >
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            backgroundColor: colors.surface,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            overflow: "hidden",
+            width: "100%",
+          }}
+        >
+          <Text
+            style={{
+              color: colors.muted,
+              fontFamily: fonts.display,
+              fontSize: 19,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.md,
+            }}
+          >
+            Bill status
+          </Text>
+
+          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+            {BILLING_STATUS_FILTER_OPTIONS.map((option) => (
+              <PickerOptionRow
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onSelect(option.value);
+                  onClose();
+                }}
+                selected={option.value === value}
+              />
+            ))}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 

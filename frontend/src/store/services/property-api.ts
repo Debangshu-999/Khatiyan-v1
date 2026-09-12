@@ -86,8 +86,17 @@ export type NoticePeriod =
   | "TWO_MONTHS"
   | "THREE_MONTHS";
 
+/**
+ * What an owner may choose, which is narrower than what the server stores.
+ *
+ * FIVE_DAYS is retired. It stays in the type and in NOTICE_PERIOD_LABELS
+ * because properties already on it must keep rendering everywhere they are
+ * read, but it is no longer offered when registering or editing a property.
+ * Five days never worked against monthly billing: notice is served inside the
+ * payment window at the start of a cycle, so anything shorter than a cycle
+ * lands mid-month and leaves the exit machinery with a part-month to settle.
+ */
 export const NOTICE_PERIOD_OPTIONS: NoticePeriod[] = [
-  "FIVE_DAYS",
   "FIFTEEN_DAYS",
   "ONE_MONTH",
   "TWO_MONTHS",
@@ -103,7 +112,7 @@ export const NOTICE_PERIOD_LABELS: Record<NoticePeriod, string> = {
 };
 
 /** Shown under the picker so an owner knows the bounds without trial and error. */
-export const NOTICE_PERIOD_RANGE_HINT = "Min 5 days, max 3 months.";
+export const NOTICE_PERIOD_RANGE_HINT = "Min 15 days, max 3 months.";
 
 /**
  * Rent grace ceiling, mirroring Property.MAX_RENT_GRACE_DAYS on the server.

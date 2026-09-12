@@ -17,6 +17,7 @@ dist/
 .classpath
 .settings/
 .claude/
+.codex-remote-attachments/
 
 # OS files
 .DS_Store

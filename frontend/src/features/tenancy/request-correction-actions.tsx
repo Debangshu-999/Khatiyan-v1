@@ -27,6 +27,7 @@ import {
   type TenancyRoomChangeRequest,
   type TenantRoomSummary,
 } from "@/store/services/tenancy-api";
+import { formatFloor } from "@/features/property/floor";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -687,9 +688,6 @@ function roomLabel(room: TenantRoomSummary | null, fallbackId: string) {
   return room ? `Room ${room.roomNumber}${room.floor ? ` · ${formatFloor(room.floor)}` : ""}` : `Room ${fallbackId.slice(0, 8).toUpperCase()}`;
 }
 
-function formatFloor(value: string) {
-  return /^floor\s/i.test(value) ? value : `Floor ${value}`;
-}
 
 function parseISODate(value: string) {
   const parsed = parseISODateOrNull(value);

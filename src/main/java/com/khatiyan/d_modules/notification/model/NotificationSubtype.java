@@ -39,7 +39,10 @@ public enum NotificationSubtype {
     TENANCY_ROOM_CHANGE_APPROVED,
     TENANCY_ROOM_CHANGE_REJECTED,
     TENANCY_ROOM_CHANGE_EXECUTED,
+    TENANCY_ROOM_CHANGE_EXECUTION_FAILED,
     TENANCY_EXIT_EXECUTED,
+    // Scheduled exits were removed on 2026-09-12. Nothing sends this any more,
+    // but notifications already stored with it must still load.
     TENANCY_EXIT_SCHEDULE_FAILED,
     TENANCY_EXIT_EXPIRED,
     TENANCY_EXIT_WITHDRAWAL_REQUESTED,
