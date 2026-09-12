@@ -108,6 +108,7 @@ public class GroqProviderConfiguration {
                         // rejecting it, so ask for the smallest value it will
                         // honour instead of relying on that.
                         .temperature(0.01)
+                        .reasoningEffort(properties.providers().groq().reasoningEffort())
                         .build())
                 .build();
     }

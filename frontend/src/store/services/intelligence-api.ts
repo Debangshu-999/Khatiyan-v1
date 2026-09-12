@@ -78,6 +78,11 @@ export type SmartSearchListing = {
   requirementCount: number;
   nearestName: string | null;
   nearestKm: number | null;
+  /**
+   * The meter, decided by the server. For a landmark it follows the distance
+   * scale: within 3 km strong, 3 to 5 km moderate, 5 to 15 km weak.
+   */
+  strength: "STRONG" | "MODERATE" | "WEAK" | null;
   /** The AI line for this card. Null past the first page, or if none was written. */
   reason: string | null;
 };
@@ -139,6 +144,28 @@ export const intelligenceApi = api.injectEndpoints({
       }),
     }),
 
+    /**
+     * Example sentences for the empty AI box, written from listings nearby.
+     *
+     * <p>No model call and nothing spent from the allowance. `round` is never
+     * sent — it is only part of the cache key, so bumping it asks for a fresh
+     * set, which is how each opening of the box gets new ones.
+     */
+    getSmartSearchSuggestions: builder.query<
+      { suggestions: string[] },
+      { state: string | null; latitude: number | null; longitude: number | null; round: number }
+    >({
+      keepUnusedDataFor: 0,
+      query: ({ latitude, longitude, state }) => ({
+        params: {
+          latitude: latitude ?? undefined,
+          longitude: longitude ?? undefined,
+          state: state || undefined,
+        },
+        url: "/api/v1/ai/discovery/suggestions",
+      }),
+    }),
+
     interpretSearch: builder.mutation<
       InterpretSearchResult,
       { query: string; device?: { latitude: number; longitude: number } | null }
@@ -156,5 +183,9 @@ export const intelligenceApi = api.injectEndpoints({
   overrideExisting: __DEV__ ? true : "throw",
 });
 
-export const { useGetAiCapabilitiesQuery, useInterpretSearchMutation, useSmartSearchMutation } =
-  intelligenceApi;
+export const {
+  useGetAiCapabilitiesQuery,
+  useGetSmartSearchSuggestionsQuery,
+  useInterpretSearchMutation,
+  useSmartSearchMutation,
+} = intelligenceApi;

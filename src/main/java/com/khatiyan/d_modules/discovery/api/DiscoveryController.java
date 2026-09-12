@@ -19,6 +19,7 @@ import com.khatiyan.d_modules.discovery.api.dto.LocationAreaResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationCityResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationSuggestionResponse;
 import com.khatiyan.d_modules.discovery.api.dto.NearbyPlacesResponse;
+import com.khatiyan.d_modules.discovery.api.dto.DiscoverySort;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyLocalPlaceResponse;
@@ -60,6 +61,7 @@ public class DiscoveryController {
             @RequestParam(required = false) Boolean electricityIncluded,
             @RequestParam(required = false) BathroomType bathroomType,
             @RequestParam(required = false) List<SharingType> sharingTypes,
+            @RequestParam(defaultValue = "RELEVANCE") DiscoverySort sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return discoveryModule.searchVisibleProperties(
@@ -79,6 +81,7 @@ public class DiscoveryController {
                 electricityIncluded,
                 bathroomType,
                 sharingTypes,
+                sort,
                 page,
                 size);
     }

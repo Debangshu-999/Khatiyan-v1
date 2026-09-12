@@ -36,6 +36,24 @@ import com.khatiyan.d_modules.property.model.PropertyFacility;
 @Service
 public class SmartSearchRanker {
 
+    /**
+     * The distance scale for every landmark, kind or name (user, 2026-09-13).
+     *
+     * <p>Graded, not a single cut-off. A threshold made 0.9 km a strong match
+     * and 1.1 km a moderate one, which reads as arbitrary on a card that prints
+     * the distance right beside the meter. Within three kilometres is a strong
+     * answer, three to five moderate, five to fifteen weak — and past fifteen
+     * the listing is not an answer to "near" at all, so it is left out.
+     *
+     * <p>A distance stated in the sentence overrides the strong band: "within
+     * 2 km of a metro" means exactly that. It never shrinks the fifteen-kilometre
+     * edge, and a stated distance beyond it widens it, since dropping a listing
+     * the sentence explicitly allowed would contradict what was typed.
+     */
+    static final double STRONG_WITHIN_KM = 3.0;
+    static final double MODERATE_WITHIN_KM = 5.0;
+    static final double CONSIDERED_WITHIN_KM = 15.0;
+
     /** One listing, with what it matched and why it is where it is. */
     public record Scored(
             PropertyDiscoveryCardResponse property,
@@ -43,7 +61,9 @@ public class SmartSearchRanker {
             List<String> missedTags,
             int requirementCount,
             Nearest nearestLandmark,
-            boolean answersEverything) {
+            boolean answersEverything,
+            /** The meter's verdict, distance included. Null when nothing was asked. */
+            MatchStrength strength) {
 
         public int matchedCount() {
             return matchedTags.size();
@@ -61,23 +81,29 @@ public class SmartSearchRanker {
             LandmarkSet landmarks,
             Double nearKm) {
 
-        // The sentence wins when it states a distance. Otherwise the default
-        // depends on what was named: a walk to one of many stations, or the
-        // same side of the city as one particular place.
-        double limit = nearKm != null
-                ? nearKm
-                : landmarks == null ? LandmarkResolver.DEFAULT_NEAR_KIND_KM : landmarks.defaultNearKm();
+        boolean measuring = landmarks != null && !landmarks.isEmpty();
+        double edge = nearKm == null ? CONSIDERED_WITHIN_KM : Math.max(CONSIDERED_WITHIN_KM, nearKm);
         List<Scored> scored = candidates.stream()
-                .map(property -> score(property, args, preferences, landmarks, limit))
+                .map(property -> score(property, args, preferences, landmarks, nearKm))
+                // Past the edge a listing is not near what was asked about, so
+                // it is not a related result either — it is simply not shown.
+                // A listing that cannot be measured at all (no coordinates) is
+                // kept, in related, rather than dropped for missing data.
+                .filter(entry -> !measuring
+                        || entry.nearestLandmark() == null
+                        || entry.nearestLandmark().distanceKm() <= edge)
                 .toList();
 
-        // Closest first when a landmark was asked for, because that is the
-        // thing that was asked for. Otherwise the listing that answers most of
-        // the sentence leads.
+        // Closest to the landmark first when one was asked for, because that is
+        // the thing that was asked for. Otherwise the listing that answers most
+        // of the sentence leads, and among equals the nearest one does — it used
+        // to fall through to the name, which put "Action Area Homes" at 10.9 km
+        // above a listing 4.8 km away for no reason a reader could see.
         Comparator<Scored> order = landmarks != null && !landmarks.isEmpty()
                 ? Comparator.comparingDouble(SmartSearchRanker::landmarkDistance)
                         .thenComparing(Comparator.comparingInt(Scored::matchedCount).reversed())
                 : Comparator.comparingInt(Scored::matchedCount).reversed()
+                        .thenComparingDouble(SmartSearchRanker::listingDistance)
                         .thenComparing(entry -> entry.property().name());
 
         return new Ranked(
@@ -89,12 +115,20 @@ public class SmartSearchRanker {
         return scored.nearestLandmark() == null ? Double.MAX_VALUE : scored.nearestLandmark().distanceKm();
     }
 
+    /** The card's own distance. Unknown goes last, never first. */
+    private static double listingDistance(Scored scored) {
+        Double km = scored.property().distanceKm();
+        return km == null ? Double.MAX_VALUE : km;
+    }
+
     private Scored score(
             PropertyDiscoveryCardResponse property,
             SearchArgs args,
             AttributePreferences preferences,
             LandmarkSet landmarks,
-            double nearKm) {
+            // Nullable: most sentences state no distance, and then the graded
+            // scale applies. A primitive here unboxed that null and threw.
+            Double nearKm) {
 
         List<String> matched = new ArrayList<>();
         List<String> missed = new ArrayList<>();
@@ -173,20 +207,71 @@ public class SmartSearchRanker {
 
         // ---- the landmark, resolved live --------------------------------
         Nearest nearest = null;
+        MatchStrength distanceBand = null;
         if (landmarks != null && !landmarks.isEmpty()) {
             requirements++;
             nearest = landmarks.nearestTo(property.latitude(), property.longitude()).orElse(null);
-            if (nearest != null && nearest.distanceKm() <= nearKm) {
-                matched.add(distanceLabel(nearest) + " from " + describeNearest(nearest, landmarks));
-            } else if (nearest != null) {
-                missed.add(distanceLabel(nearest) + " from " + describeNearest(nearest, landmarks));
+            if (nearest == null) {
+                // Two different things, said differently. A listing with no
+                // coordinates cannot be measured at all; one measured by a
+                // vendor that looks only 10 km out simply has nothing that close.
+                boolean unmeasurable = property.latitude() == null || property.longitude() == null;
+                missed.add(!unmeasurable && landmarks.reachKm() != null
+                        ? "no " + landmarks.label() + " within " + Math.round(landmarks.reachKm()) + " km"
+                        : "distance to " + landmarks.label() + " unknown");
+                distanceBand = MatchStrength.WEAK;
             } else {
-                missed.add("nothing found near " + landmarks.label());
+                double km = nearest.distanceKm();
+                String tag = distanceLabel(nearest) + " from " + describeNearest(nearest, landmarks);
+                distanceBand = band(km, nearKm);
+                // Strong and moderate both answer "near". Weak is shown, but as
+                // something that misses it — which puts it in related.
+                if (distanceBand == MatchStrength.WEAK) {
+                    // Says WHY it missed. A bare "5.9 km from X" under "missed"
+                    // was read by the reason writer as a distance that is not
+                    // known, and a card showing 5.9 km got a line saying the
+                    // PG does not list its distance.
+                    missed.add(tag + ", further than " + (nearKm != null
+                            ? Math.round(nearKm) + " km as asked"
+                            : Math.round(MODERATE_WITHIN_KM) + " km"));
+                } else {
+                    matched.add(tag);
+                }
             }
         }
 
+        MatchStrength strength = byCount(matched.size(), requirements);
+        if (strength != null) {
+            strength = strength.atMost(distanceBand);
+        }
+
         return new Scored(
-                property, List.copyOf(matched), List.copyOf(missed), requirements, nearest, missed.isEmpty());
+                property, List.copyOf(matched), List.copyOf(missed), requirements, nearest, missed.isEmpty(),
+                strength);
+    }
+
+    /** Where a distance falls on the scale. */
+    private static MatchStrength band(double km, Double statedKm) {
+        if (statedKm != null) {
+            return km <= statedKm ? MatchStrength.STRONG : MatchStrength.WEAK;
+        }
+        if (km <= STRONG_WITHIN_KM) {
+            return MatchStrength.STRONG;
+        }
+        return km <= MODERATE_WITHIN_KM ? MatchStrength.MODERATE : MatchStrength.WEAK;
+    }
+
+    /**
+     * The same thresholds the manual search's card uses, so "strong" means
+     * the same thing in both halves of the screen: everything met, at least
+     * half met, less than half.
+     */
+    private static MatchStrength byCount(int matched, int requirements) {
+        if (requirements == 0) {
+            return null;
+        }
+        double ratio = (double) matched / requirements;
+        return ratio >= 1 ? MatchStrength.STRONG : ratio >= 0.5 ? MatchStrength.MODERATE : MatchStrength.WEAK;
     }
 
     private static void record(boolean ok, List<String> matched, List<String> missed, String hit, String miss) {
@@ -226,7 +311,12 @@ public class SmartSearchRanker {
      * itself, where the label IS the name, and repeating it reads as a stutter.
      */
     private static String describeNearest(Nearest nearest, LandmarkSet landmarks) {
-        return nearest.name().equalsIgnoreCase(landmarks.label())
+        // Also when the name already says it: the index calls one station
+        // "Nalban Metro Station", and appending the kind made it "Nalban Metro
+        // Station metro station".
+        String name = nearest.name().toLowerCase(java.util.Locale.ROOT);
+        String label = landmarks.label().toLowerCase(java.util.Locale.ROOT);
+        return name.equals(label) || name.contains(label)
                 ? nearest.name()
                 : nearest.name() + " " + landmarks.label();
     }

@@ -31,6 +31,7 @@ import {
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionButton, humanizeToken } from "@/features/owner/owner-ui";
+import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
 import { PROPERTY_FACILITIES, type PropertyFacility } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -61,67 +62,135 @@ type FacilitiesFieldProps = {
   facilities: PropertyFacility[];
   onChangeCustom: (next: string[]) => void;
   onChangeFacilities: (next: PropertyFacility[]) => void;
+  /**
+   * How the picked facilities are shown.
+   *
+   * <p>"chips" is the compact card registration uses. "grid" is the property
+   * screen's own facility grid — collapsed past three rows behind "n selected,
+   * tap to expand", with Edit in the heading so it stays reachable in both
+   * states. Editing uses the grid, so an owner sees the listing as it reads.
+   */
+  layout?: "chips" | "grid";
 };
 
 // Inline form field: a tappable "selections card" summarising the chosen
 // facilities (predefined with their icon, custom ones with a spanner), plus a
 // full picker modal with an icon grid and a custom-facility adder.
-export function FacilitiesField({ customFacilities, facilities, onChangeCustom, onChangeFacilities }: FacilitiesFieldProps) {
+export function FacilitiesField({
+  customFacilities,
+  facilities,
+  layout = "chips",
+  onChangeCustom,
+  onChangeFacilities,
+}: FacilitiesFieldProps) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
   const total = facilities.length + customFacilities.length;
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>
-        Facilities & amenities
-      </Text>
-
-      <AnimatedPressable
-        accessibilityHint="Opens the facilities picker"
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={{
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 14,
-          borderWidth: 1,
-          gap: spacing.sm,
-          padding: spacing.md,
-        }}
-      >
-        {total === 0 ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Plus color={colors.primary} size={18} strokeWidth={2.4} />
-            <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-              Select facilities & amenities
-            </Text>
-            <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
-          </View>
-        ) : (
-          <>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-              {facilities.map((facility) => (
-                <SelectedChip icon={FACILITY_ICONS[facility]} key={facility} label={humanizeToken(facility)} />
-              ))}
-              {customFacilities.map((custom) => (
-                <SelectedChip icon={Wrench} key={`custom-${custom}`} label={custom} tone="custom" />
-              ))}
-            </View>
-            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-                {total} selected
+    <View style={{ gap: layout === "grid" ? 6 : spacing.sm, marginTop: layout === "grid" ? spacing.md : 0 }}>
+      {layout === "grid" ? (
+        // Styled as the picker fields above it label themselves ("Available
+        // sharing types"), with Edit beside it so it is there whether the grid
+        // is collapsed or expanded.
+        <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={[type.label, { color: colors.muted }]}>
+            Facilities & amenities
+          </Text>
+          {total > 0 ? (
+            <AnimatedPressable
+              accessibilityLabel="Edit facilities"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => setOpen(true)}
+              // A grey pill with no border, flush with the grid's right edge.
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.neutralSoft,
+                borderRadius: 999,
+                flexDirection: "row",
+                gap: spacing.xxs,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: 5,
+              }}
+            >
+              <Pencil color={colors.primary} size={14} strokeWidth={2.3} />
+              <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
+                Edit
               </Text>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                <Pencil color={colors.primary} size={14} strokeWidth={2.3} />
-                <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
-                  Edit
-                </Text>
-              </View>
+            </AnimatedPressable>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={[type.label, { color: colors.inkSoft }]}>
+          Facilities & amenities
+        </Text>
+      )}
+
+      {total === 0 ? (
+        <AnimatedPressable
+          accessibilityHint="Opens the facilities picker"
+          accessibilityRole="button"
+          onPress={() => setOpen(true)}
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 14,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            padding: spacing.md,
+          }}
+        >
+          <Plus color={colors.primary} size={18} strokeWidth={2.4} />
+          <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
+            Select facilities & amenities
+          </Text>
+          <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
+        </AnimatedPressable>
+      ) : layout === "grid" ? (
+        // The grid the owner's property screen shows, so what is picked here
+        // reads exactly as the listing will.
+        <FacilityOverviewGrid
+          collapsedLabel={() => `${total} selected, tap to expand`}
+          facilities={[...facilities, ...customFacilities]}
+        />
+      ) : (
+        <AnimatedPressable
+          accessibilityHint="Opens the facilities picker"
+          accessibilityRole="button"
+          onPress={() => setOpen(true)}
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 14,
+            borderWidth: 1,
+            gap: spacing.sm,
+            padding: spacing.md,
+          }}
+        >
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+            {facilities.map((facility) => (
+              <SelectedChip icon={FACILITY_ICONS[facility]} key={facility} label={humanizeToken(facility)} />
+            ))}
+            {customFacilities.map((custom) => (
+              <SelectedChip icon={Wrench} key={`custom-${custom}`} label={custom} tone="custom" />
+            ))}
+          </View>
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
+              {total} selected
+            </Text>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+              <Pencil color={colors.primary} size={14} strokeWidth={2.3} />
+              <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
+                Edit
+              </Text>
             </View>
-          </>
-        )}
-      </AnimatedPressable>
+          </View>
+        </AnimatedPressable>
+      )}
 
       {open ? (
         <FacilitiesPickerModal

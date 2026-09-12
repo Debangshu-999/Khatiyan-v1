@@ -18,6 +18,7 @@ import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.d_modules.discovery.api.dto.DiscoverySort;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryProfileResponse;
@@ -81,6 +82,33 @@ public class PropertyDiscoveryService {
             Boolean electricityIncluded,
             BathroomType bathroomType,
             Set<SharingType> sharingTypes,
+            int page,
+            int size) {
+        return searchVisibleProperties(
+                state, city, countryCode, locality, latitude, longitude, radiusKm, pgFor,
+                minRentPaise, maxRentPaise, preferredFor, foodIncluded, mealTypes,
+                electricityIncluded, bathroomType, sharingTypes, DiscoverySort.RELEVANCE, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
+            String state,
+            String city,
+            String countryCode,
+            String locality,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            Double radiusKm,
+            PgFor pgFor,
+            Long minRentPaise,
+            Long maxRentPaise,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            Set<MealType> mealTypes,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            Set<SharingType> sharingTypes,
+            DiscoverySort sort,
             int page,
             int size) {
         // Every listed property is in India. A resolved foreign country code
@@ -175,16 +203,23 @@ public class PropertyDiscoveryService {
 
         boolean hasArea = hasText(resolvedLocality);
         String areaText = resolvedLocality;
+        Comparator<PropertyDiscoveryCardResponse> exactOrder = ordered(
+                sort, byMatchCount.thenComparing(byDistance)
+                        .thenComparing(locationRelevanceComparator(areaText, resolvedCity, resolvedState)));
+        Comparator<PropertyDiscoveryCardResponse> nearbyOrder = ordered(
+                sort, byMatchCount.thenComparing(byDistance)
+                        .thenComparing(locationRelevanceComparator(null, resolvedCity, resolvedState)));
+
         List<PropertyDiscoveryCardResponse> exact = (hasArea
                 ? scoped.stream().filter(response -> matchesLocality(response, areaText))
                 : scoped.stream())
-                .sorted(byMatchCount.thenComparing(byDistance).thenComparing(locationRelevanceComparator(areaText, resolvedCity, resolvedState)))
+                .sorted(exactOrder)
                 .toList();
 
         List<PropertyDiscoveryCardResponse> nearby = (hasArea && hasRegionScope)
                 ? scoped.stream()
                         .filter(response -> !matchesLocality(response, areaText))
-                        .sorted(byMatchCount.thenComparing(byDistance).thenComparing(locationRelevanceComparator(null, resolvedCity, resolvedState)))
+                        .sorted(nearbyOrder)
                         .toList()
                 : List.of();
 
@@ -204,6 +239,34 @@ public class PropertyDiscoveryService {
                 locality);
 
         return PageResponse.of(responses, page, size);
+    }
+
+    /**
+     * The order a sort asks for, with relevance as the tie-break.
+     *
+     * <p>A missing value always sorts LAST, in either direction. "Rent on
+     * request" is not the cheapest rent and not the dearest either, and a
+     * listing with no known distance is not zero kilometres away — putting
+     * either first would make the top of a sorted list its least informative
+     * part.
+     */
+    private static Comparator<PropertyDiscoveryCardResponse> ordered(
+            DiscoverySort sort, Comparator<PropertyDiscoveryCardResponse> relevance) {
+        if (sort == null || sort == DiscoverySort.RELEVANCE) {
+            return relevance;
+        }
+        Comparator<PropertyDiscoveryCardResponse> primary = switch (sort) {
+            case DISTANCE -> Comparator.comparing(
+                    PropertyDiscoveryCardResponse::distanceKm, Comparator.nullsLast(Comparator.naturalOrder()));
+            case RENT_LOW -> Comparator.comparing(
+                    PropertyDiscoveryCardResponse::startingRoomRentPaise, Comparator.nullsLast(Comparator.naturalOrder()));
+            case RENT_HIGH -> Comparator.comparing(
+                    PropertyDiscoveryCardResponse::startingRoomRentPaise, Comparator.nullsLast(Comparator.reverseOrder()));
+            case DEPOSIT_LOW -> Comparator.comparingLong(PropertyDiscoveryCardResponse::standardDepositPaise);
+            case DEPOSIT_HIGH -> Comparator.comparingLong(PropertyDiscoveryCardResponse::standardDepositPaise).reversed();
+            case RELEVANCE -> relevance;
+        };
+        return primary.thenComparing(relevance);
     }
 
     @Transactional(readOnly = true)

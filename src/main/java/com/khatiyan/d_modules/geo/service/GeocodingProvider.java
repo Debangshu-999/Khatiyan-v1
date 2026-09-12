@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
+import com.khatiyan.d_modules.geo.api.dto.NearbyPlaceResponse;
 import com.khatiyan.d_modules.geo.api.dto.ReverseGeocodeResponse;
 
 /**
@@ -15,6 +16,17 @@ import com.khatiyan.d_modules.geo.api.dto.ReverseGeocodeResponse;
 public interface GeocodingProvider {
 
     GeocodingProviderType type();
+
+    /**
+     * Whether this vendor has what it needs to answer at all.
+     *
+     * <p>Lets a lookup chain skip a vendor that is present in the code but
+     * has no credentials yet, instead of calling it, logging a warning, and
+     * getting nothing back on every single search.
+     */
+    default boolean isConfigured() {
+        return true;
+    }
 
     /**
      * Autocomplete candidates for a typed query, optionally biased towards a
@@ -40,5 +52,22 @@ public interface GeocodingProvider {
     default List<GeoSuggestionResponse> places(
             String category, double latitude, double longitude, int radiusMeters, int limit) {
         return List.of();
+    }
+
+    /**
+     * Places of the given categories nearest to a point, each with its distance
+     * from that point, nearest first. Empty means this vendor cannot answer.
+     */
+    default List<NearbyPlaceResponse> nearby(
+            String categoryCodes, double latitude, double longitude, int radiusMeters) {
+        return List.of();
+    }
+
+    /**
+     * The centre of an Indian pincode, as {latitude, longitude}. Empty means this
+     * vendor cannot place it.
+     */
+    default Optional<double[]> postcodeCentroid(String pincode) {
+        return Optional.empty();
     }
 }

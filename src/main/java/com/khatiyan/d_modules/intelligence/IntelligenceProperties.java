@@ -37,7 +37,26 @@ public record IntelligenceProperties(
             @DefaultValue("8s") Duration timeout,
             @DefaultValue("6") int userLimitPerMinute,
             @DefaultValue("40") int userLimitPerDay,
-            @DefaultValue("24h") Duration cacheTtl) {
+            /** How long the reading of a sentence is reused. */
+            @DefaultValue("24h") Duration cacheTtl,
+            /**
+             * How long a repeated search returns the identical answer.
+             *
+             * <p>Short, because the answer includes listings and listings
+             * change. Past it the reading is still reused, but the listings are
+             * fetched and ranked again.
+             */
+            @DefaultValue("15m") Duration answerTtl,
+            /**
+             * Whether our own allowances are applied at all.
+             *
+             * <p>Off under the dev profile, by decision: testing the feature
+             * spends searches far faster than any tenant would, and a limit
+             * that refills one search every 36 minutes made the thing being
+             * built nearly impossible to try. The provider's own limits still
+             * apply either way — this only removes the ones we impose.
+             */
+            @DefaultValue("true") boolean enforceLimits) {
     }
 
     public record Providers(
@@ -57,6 +76,15 @@ public record IntelligenceProperties(
              * send nothing that would matter if they were.
              */
             @DefaultValue("false") boolean zeroDataRetentionConfirmed,
+            /**
+             * How hard gpt-oss thinks before answering: low, medium or high.
+             *
+             * <p>Its hidden reasoning is billed against the same per-minute
+             * token limit as the prompt and the answer, and at the default it
+             * was the largest part of a search's cost. Configurable rather than
+             * fixed so the effect on quality can be measured, not assumed.
+             */
+            @DefaultValue("low") String reasoningEffort,
             @DefaultValue Models models,
             @DefaultValue Budget budget) {
     }

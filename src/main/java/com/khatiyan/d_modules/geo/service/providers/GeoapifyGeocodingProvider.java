@@ -58,6 +58,11 @@ public class GeoapifyGeocodingProvider implements GeocodingProvider {
     }
 
     @Override
+    public boolean isConfigured() {
+        return !apiKey.isBlank();
+    }
+
+    @Override
     public List<GeoSuggestionResponse> search(String query, Double nearLatitude, Double nearLongitude) {
         if (apiKey.isBlank()) {
             log.warn("Geoapify search skipped: API key not configured (app.geo.geoapify.api-key)");
@@ -141,6 +146,40 @@ public class GeoapifyGeocodingProvider implements GeocodingProvider {
         }
     }
 
+    /**
+     * Where an Indian pincode is, by the pincode alone.
+     *
+     * <p>Alone on purpose. Placing a Mappls result by its full street address
+     * put Ruby General Hospital on a road 41 km away, and adding the locality
+     * sent Acropolis Mall 33 km off — the extra text gets matched against
+     * something else. The bare pincode placed six Kolkata landmarks within
+     * 0.2 to 1.4 km of where Mappls says they are, every time.
+     */
+    @Override
+    public Optional<double[]> postcodeCentroid(String pincode) {
+        if (apiKey.isBlank() || pincode == null || !pincode.matches("[1-9][0-9]{5}")) {
+            return Optional.empty();
+        }
+        try {
+            String url = UriComponentsBuilder.fromUriString(baseUrl + "/search")
+                    .queryParam("text", pincode + ", India")
+                    .queryParam("filter", countryFilter.isBlank() ? "countrycode:in" : countryFilter)
+                    .queryParam("limit", 1)
+                    .queryParam("apiKey", apiKey)
+                    .build()
+                    .toUriString();
+            JsonNode body = restClient.get().uri(url).retrieve().body(JsonNode.class);
+            JsonNode properties = body == null ? null : body.path("features").path(0).path("properties");
+            if (properties == null || !properties.path("lat").isNumber() || !properties.path("lon").isNumber()) {
+                return Optional.empty();
+            }
+            return Optional.of(new double[] {properties.path("lat").asDouble(), properties.path("lon").asDouble()});
+        } catch (RuntimeException exception) {
+            log.warn("Geoapify pincode lookup failed pincode={}", pincode, exception);
+            return Optional.empty();
+        }
+    }
+
     private List<GeoSuggestionResponse> parseSuggestions(JsonNode body) {
         List<GeoSuggestionResponse> suggestions = new ArrayList<>();
         if (body == null) {
@@ -156,7 +195,8 @@ public class GeoapifyGeocodingProvider implements GeocodingProvider {
                     properties.path("lon").isNumber() ? properties.path("lon").asDouble() : null,
                     text(properties, "postcode"),
                     text(properties, "result_type"),
-                    text(properties, "place_id")));
+                    text(properties, "place_id"),
+                    null));
         }
         return suggestions;
     }

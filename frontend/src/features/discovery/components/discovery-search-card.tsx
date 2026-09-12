@@ -1,13 +1,35 @@
-import { useState } from "react";
-import { ActivityIndicator, Keyboard, Modal, ScrollView, Switch, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Keyboard,
+  Modal,
+  ScrollView,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { ChevronDown, LocateFixed, MapPin, Pencil, Search, SlidersHorizontal, Sparkles, X } from "lucide-react-native";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  LocateFixed,
+  MapPin,
+  Pencil,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { MarqueeText } from "@/components/marquee-text";
 import type { LocationArea, LocationCity } from "@/store/services/discovery-api";
 import type { GeoSuggestion } from "@/store/services/geo-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { DiscoveryButton } from "./discovery-button";
@@ -28,6 +50,12 @@ type DiscoverySearchCardProps = {
   aiQuery: string;
   onAiQueryChange: (value: string) => void;
   aiBusy: boolean;
+  /**
+   * Example sentences written from real listings nearby, at most three. Shown
+   * under the empty box, and tapping one searches it straight away.
+   */
+  aiSuggestions: string[];
+  onAiSuggestionPress: (suggestion: string) => void;
   /**
    * Phrases the sentence asked for that could not become a filter.
    *
@@ -67,6 +95,8 @@ export function DiscoverySearchCard({
   aiQuery,
   onAiQueryChange,
   aiBusy,
+  aiSuggestions,
+  onAiSuggestionPress,
   aiNotUsed,
   aiNotice,
   aiLocked,
@@ -207,6 +237,45 @@ export function DiscoverySearchCard({
                 <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 11, lineHeight: 15 }}>
                   AI could not use: {aiNotUsed.join(", ")}
                 </Text>
+              ) : null}
+
+              {/* Only while the box is empty. Once somebody starts writing, the
+                  examples have done their job and would only push the button
+                  further from the sentence. */}
+              {aiSuggestions.length > 0 && aiQuery.trim().length === 0 && !aiBusy ? (
+                <View style={{ gap: spacing.xs }}>
+                  <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 11 }}>
+                    Suggested searches
+                  </Text>
+                  {aiSuggestions.map((suggestion) => (
+                    <AnimatedPressable
+                      accessibilityLabel={`Search for ${suggestion}`}
+                      accessibilityRole="button"
+                      key={suggestion}
+                      onPress={() => onAiSuggestionPress(suggestion)}
+                      style={{
+                        alignItems: "center",
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                        borderCurve: "continuous",
+                        borderRadius: radii.card,
+                        borderWidth: 1,
+                        flexDirection: "row",
+                        gap: spacing.xs,
+                        paddingHorizontal: spacing.sm,
+                        paddingVertical: 9,
+                      }}
+                    >
+                      <Search color={colors.primary} size={14} strokeWidth={2.4} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 12 }}>
+                          {suggestion}
+                        </MarqueeText>
+                      </View>
+                      <ArrowUpRight color={colors.kicker} size={14} strokeWidth={2.2} />
+                    </AnimatedPressable>
+                  ))}
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -374,8 +443,12 @@ export function DiscoverySearchCard({
 
       <DiscoveryButton
         disabled={aiBusy || (aiOn && aiQuery.trim().length === 0)}
-        label={aiBusy ? "AI is searching" : aiOn ? "Search with AI" : "Search"}
+        icon={aiOn ? <AiSearchIcon color={colors.onPrimary} searching={aiBusy} /> : undefined}
+        label={aiOn ? "Search with AI" : "Search"}
         onPress={onSearch}
+        // Not dimmed while it works. The moving glass is the signal, and a
+        // faded button reads as unavailable rather than busy.
+        style={aiBusy ? { opacity: 1 } : undefined}
       />
 
       <View
@@ -456,6 +529,71 @@ export function DiscoverySearchCard({
         visible={areaModalOpen}
       />
     </Card>
+  );
+}
+
+/** How far the glass travels from rest, in points, while searching. */
+// Kept small and slow on purpose: a hint that it is working, not a spinner.
+const ORBIT_RADIUS = 1.2;
+const ORBIT_MS = 2000;
+const ORBIT_STEPS = 16;
+
+/**
+ * A magnifying glass with sparkles, circling while AI search works.
+ *
+ * <p>Composed from two glyphs because the icon set has no single one for it.
+ * The circle is sampled at sixteen points rather than four — interpolating
+ * between four gives a diamond, and the eye catches the corners.
+ *
+ * <p>Still for anyone who has asked their phone to reduce motion; the button
+ * is disabled while busy, which says the same thing without movement.
+ */
+function AiSearchIcon({ color, searching }: { color: string; searching: boolean }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => {
+        if (active) setReduceMotion(enabled);
+      })
+      .catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    progress.stopAnimation();
+    progress.setValue(0);
+    if (!searching || reduceMotion) {
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(progress, { duration: ORBIT_MS, easing: Easing.linear, toValue: 1, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [progress, reduceMotion, searching]);
+
+  const inputRange = Array.from({ length: ORBIT_STEPS + 1 }, (_, index) => index / ORBIT_STEPS);
+  const translateX = progress.interpolate({
+    inputRange,
+    outputRange: inputRange.map((step) => Math.cos(step * Math.PI * 2) * ORBIT_RADIUS - ORBIT_RADIUS),
+  });
+  const translateY = progress.interpolate({
+    inputRange,
+    outputRange: inputRange.map((step) => Math.sin(step * Math.PI * 2) * ORBIT_RADIUS),
+  });
+
+  return (
+    <Animated.View style={{ height: 20, transform: [{ translateX }, { translateY }], width: 22 }}>
+      <Search color={color} size={18} strokeWidth={2.5} style={{ left: 0, position: "absolute", top: 2 }} />
+      <Sparkles color={color} size={10} strokeWidth={2.4} style={{ position: "absolute", right: 0, top: 0 }} />
+    </Animated.View>
   );
 }
 

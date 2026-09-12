@@ -11,6 +11,7 @@ import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { AiResults } from "@/features/discovery/components/ai-results";
+import { ListingSortButton, ListingSortModal } from "@/features/discovery/components/listing-sort";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
@@ -31,11 +32,13 @@ import {
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
   useSearchDiscoveryPropertiesQuery,
+  type ListingSort,
   type PropertyDiscoveryCard,
 } from "@/store/services/discovery-api";
 import { useLazyReverseGeocodeQuery, useSearchLocationsQuery, type GeoSuggestion } from "@/store/services/geo-api";
 import {
   useGetAiCapabilitiesQuery,
+  useGetSmartSearchSuggestionsQuery,
   useSmartSearchMutation,
   type InterpretStatus,
   type SmartSearchListing,
@@ -194,6 +197,11 @@ export default function DiscoveryScreen() {
    */
   const [aiResult, setAiResult] = useState<SmartSearchResult | null>(null);
   const [aiVisible, setAiVisible] = useState(AI_WINDOW);
+  // Two orders, kept apart: the manual search's is sent to the server with the
+  // query, and the AI one re-orders an answer already in hand.
+  const [listingSort, setListingSort] = useState<ListingSort>("RELEVANCE");
+  const [aiSort, setAiSort] = useState<ListingSort>("RELEVANCE");
+  const [sortSheet, setSortSheet] = useState<"search" | "ai" | null>(null);
   // Re-asked when the screen is entered and the answer is over a minute old.
   // A query that failed once stays failed in RTK, so a call that landed while
   // the server was restarting hid the whole feature until the app was
@@ -214,22 +222,24 @@ export default function DiscoveryScreen() {
    */
   const aiLocked = aiOn;
 
-  // The composer resets when the tab is left, so coming back is a fresh
-  // sentence rather than a stale one with its answer scrolled off. The applied
-  // filters and the results themselves stay — those are the search, and the
-  // person did not ask to lose it.
-  useFocusEffect(
-    useCallback(
-      () => () => {
-        setAiOn(false);
-        setAiQuery("");
-        setAiNotUsed([]);
-        setAiNotice(null);
-        setAiResult(null);
-      },
-      [],
-    ),
+  // Nothing resets when the tab is left. AI mode, the sentence and its answer
+  // are all still there on the way back — leaving to check a chat is not asking
+  // to lose a search, and it used to drop somebody back into manual mode with
+  // their results gone.
+
+  // Bumped each time AI search is switched on, so every opening of the box
+  // gets a fresh set of examples rather than the ones from last time.
+  const [suggestionRound, setSuggestionRound] = useState(0);
+  const suggestionsForAi = useGetSmartSearchSuggestionsQuery(
+    {
+      latitude: location.latitude ?? null,
+      longitude: location.longitude ?? null,
+      round: suggestionRound,
+      state: location.state ?? null,
+    },
+    { skip: !aiOn || !aiAvailable },
   );
+  const aiSuggestions = suggestionsForAi.data?.suggestions ?? [];
 
   const tabs = useMemo<DiscoveryTabItem[]>(
     () =>
@@ -320,11 +330,12 @@ export default function DiscoveryScreen() {
       electricityIncluded: appliedFilters.electricityIncluded,
       bathroomType: appliedFilters.bathroomType,
       sharingTypes: appliedFilters.sharingTypes,
+      sort: listingSort,
       // Small, because the list now grows as somebody scrolls. Fifty was one
       // bulk fetch of everything in the region.
       size: PAGE_SIZE,
     }),
-    [aiExtras, appliedFilters, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState],
+    [aiExtras, appliedFilters, listingSort, location.countryCode, location.latitude, location.longitude, manualSelection, page, searchedArea, searchedCity, searchedState],
   );
 
   const citiesQuery = useListLocationCitiesQuery();
@@ -409,8 +420,8 @@ export default function DiscoveryScreen() {
    * misreading shows up as a wrong filter the person can see and change, rather
    * than as results that quietly do not match what they asked for.
    */
-  async function runAiSearch() {
-    const query = aiQuery.trim();
+  async function runAiSearch(sentence: string = aiQuery) {
+    const query = sentence.trim();
     // The flag from the hook is a render behind a fast second press, so the
     // in-flight guard is a ref. Every call here spends from a metered
     // allowance, and a double tap must not spend twice.
@@ -438,15 +449,19 @@ export default function DiscoveryScreen() {
       applyInterpretation(result);
       setAiResult(result);
       setAiVisible(AI_WINDOW);
+      setAiSort("RELEVANCE");
     } catch (error) {
       // Whatever went wrong, the controls below have to open up — a refusal
       // that leaves somebody with no way to search is worse than no AI at all.
       setAiNotUsed([]);
       setAiResult(null);
       const status = (error as { status?: number } | undefined)?.status;
+      // A 429 is a limit, never a problem with the sentence. It used to fall
+      // through to "could not read that search", which told somebody to reword
+      // a search that was fine.
       setAiNotice(
         status === 429
-          ? "The AI search allowance is used up for now. Try again later, or switch AI search off to use the filters."
+          ? "You have run out of smart searches. Please try again after some time. You can switch to manual search in the meanwhile."
           : "AI could not read that search. Try again, or switch AI search off to use the filters.",
       );
     } finally {
@@ -756,6 +771,14 @@ export default function DiscoveryScreen() {
           <DiscoverySearchCard
             aiAvailable={aiAvailable}
             aiBusy={aiSearching}
+            aiSuggestions={aiSuggestions}
+            onAiSuggestionPress={(suggestion) => {
+              // Written into the box first, so the sentence that ran stays
+              // visible and editable, exactly as if it had been typed.
+              setAiQuery(suggestion);
+              setAiNotice(null);
+              void runAiSearch(suggestion);
+            }}
             aiLocked={aiLocked}
             aiNotUsed={aiNotUsed}
             aiNotice={aiNotice}
@@ -763,6 +786,9 @@ export default function DiscoveryScreen() {
             aiQuery={aiQuery}
             onAiOnChange={(on) => {
               setAiOn(on);
+              if (on) {
+                setSuggestionRound((round) => round + 1);
+              }
               // Either direction is a fresh start. The two input methods do not
               // inherit each other's work: a sentence should not begin against
               // filters somebody set by hand, and turning AI off should not
@@ -770,6 +796,8 @@ export default function DiscoveryScreen() {
               // longer produced them.
               clearSearch();
               setAiQuery("");
+              setListingSort("RELEVANCE");
+              setAiSort("RELEVANCE");
               setAppliedFilters(emptyPropertyFilters);
               setDraftFilters(emptyPropertyFilters);
             }}
@@ -845,7 +873,13 @@ export default function DiscoveryScreen() {
           {aiSearching ? <ListingResultsSkeleton reasons rows={3} /> : null}
 
           {showingAiResults && !aiSearching ? (
-            <AiResults onView={setSelectedPropertyId} result={aiResult} visible={aiVisible} />
+            <AiResults
+              onOpenSort={() => setSortSheet("ai")}
+              onView={setSelectedPropertyId}
+              result={aiResult}
+              sort={aiSort}
+              visible={aiVisible}
+            />
           ) : null}
 
           {hasActiveSearch && !showingAiResults && !aiSearching ? (
@@ -875,6 +909,11 @@ export default function DiscoveryScreen() {
                       : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${listingAreaLabel ? ` for "${listingAreaLabel}"` : ""}`
                     : "Loading listing results"}
                 </Text>
+                {(propertyPage?.items.length ?? 0) > 1 ? (
+                  <View style={{ alignSelf: "flex-start", marginTop: 2 }}>
+                    <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
+                  </View>
+                ) : null}
               </View>
               <View
                 style={{
@@ -1009,9 +1048,35 @@ export default function DiscoveryScreen() {
               inviting a search from somebody who had just made one. */}
           {!hasActiveSearch && !showingAiResults && !aiSearching ? (
             <Card>
-              <EmptySearchPrompt />
+              {aiOn ? (
+                // The ordinary prompt pointed at the city and area inputs, which
+                // AI search hides. This one points at the box that is there.
+                <EmptySearchPrompt
+                  description="Describe the stay you want above, the area, your budget or a place to be near."
+                  title="Tell AI what you're looking for"
+                />
+              ) : (
+                <EmptySearchPrompt />
+              )}
             </Card>
           ) : null}
+
+          <ListingSortModal
+            context={sortSheet ?? "search"}
+            onChange={(next) => {
+              if (sortSheet === "ai") {
+                setAiSort(next);
+                setAiVisible(AI_WINDOW);
+              } else {
+                // A new order is a new first page, not a re-shuffle of what loaded.
+                setListingSort(next);
+                setPage(0);
+              }
+            }}
+            onClose={() => setSortSheet(null)}
+            sort={sortSheet === "ai" ? aiSort : listingSort}
+            visible={sortSheet !== null}
+          />
         </>
       ) : (
         <>

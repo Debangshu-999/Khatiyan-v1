@@ -1,11 +1,17 @@
-import { Text, type TextStyle, type ViewStyle } from "react-native";
+import type { ReactNode } from "react";
+import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+/** Width reserved for a leading icon, mirrored on the right to keep the label centred. */
+const ICON_SLOT = 22;
+
 type DiscoveryButtonProps = {
   label: string;
+  /** Drawn to the left of the label. */
+  icon?: ReactNode;
   onPress: () => void;
   muted?: boolean;
   disabled?: boolean;
@@ -13,7 +19,7 @@ type DiscoveryButtonProps = {
   textStyle?: TextStyle;
 };
 
-export function DiscoveryButton({ label, onPress, muted = false, disabled = false, style, textStyle }: DiscoveryButtonProps) {
+export function DiscoveryButton({ label, icon, onPress, muted = false, disabled = false, style, textStyle }: DiscoveryButtonProps) {
   const { colors } = useTheme();
 
   return (
@@ -36,15 +42,22 @@ export function DiscoveryButton({ label, onPress, muted = false, disabled = fals
         ...style,
       }}
     >
-      <Text
-        style={{
-          color: muted ? colors.primary : colors.onPrimary,
-          fontWeight: "900",
-          ...textStyle,
-        }}
-      >
-        {label}
-      </Text>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
+        {icon}
+        <Text
+          style={{
+            color: muted ? colors.primary : colors.onPrimary,
+            fontWeight: "900",
+            ...textStyle,
+          }}
+        >
+          {label}
+        </Text>
+        {/* A blank the width of the icon, so the LABEL sits dead centre and the
+            icon hangs to its left, rather than the pair being centred together
+            and the word drifting right. */}
+        {icon ? <View style={{ width: ICON_SLOT }} /> : null}
+      </View>
     </AnimatedPressable>
   );
 }

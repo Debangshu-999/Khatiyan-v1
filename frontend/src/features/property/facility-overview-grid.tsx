@@ -23,7 +23,18 @@ const FACILITIES_PER_ROW = 2;
  * Collapses past three rows behind a blurred "tap to expand", because a property
  * with twenty facilities would otherwise push everything below it off screen.
  */
-export function FacilityOverviewGrid({ facilities }: { facilities: string[] }) {
+export function FacilityOverviewGrid({
+  collapsedLabel,
+  facilities,
+}: {
+  /**
+   * What the expand bar says, given how many are hidden. Defaults to the
+   * tenant-facing "n more facilities". An owner editing wants the total they
+   * have picked instead.
+   */
+  collapsedLabel?: (hidden: number) => string;
+  facilities: string[];
+}) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const collapsedLimit = COLLAPSED_FACILITY_ROWS * FACILITIES_PER_ROW;
@@ -103,7 +114,9 @@ export function FacilityOverviewGrid({ facilities }: { facilities: string[] }) {
                 }}
               />
               <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "900" }}>
-                {facilities.length - visibleFacilities.length} more facilities. Tap to expand
+                {collapsedLabel
+                  ? collapsedLabel(facilities.length - visibleFacilities.length)
+                  : `${facilities.length - visibleFacilities.length} more facilities. Tap to expand`}
               </Text>
             </BlurView>
           </Pressable>

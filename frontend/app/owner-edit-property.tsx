@@ -1,8 +1,19 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft } from "lucide-react-native";
+import {
+  ArrowLeft,
+  Bath,
+  GraduationCap,
+  Mars,
+  UsersRound,
+  UtensilsCrossed,
+  Venus,
+  Zap,
+  type LucideProps,
+} from "lucide-react-native";
 
+import { ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
@@ -66,6 +77,14 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Mirrors the backend cap on discovery.property_images. */
 const MAX_PROPERTY_IMAGES = 10;
+
+/** The discovery filter's glyphs for these choices. Anyone is left as a word. */
+const PG_FOR_ICONS: Partial<Record<PgFor, ComponentType<LucideProps>>> = {
+  FEMALE: Venus,
+  MALE: Mars,
+};
+
+const YES_NO = ["YES", "NO"] as const;
 
 /**
  * Editing a property, as a screen rather than a sheet.
@@ -509,34 +528,53 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   value={propertyType}
                 />
 
-                <Labeled label="PG for">
-                  {PG_FOR_OPTIONS.map((option) => (
-                    <ChoiceButton active={option === pgFor} key={option} label={humanizeToken(option)} onPress={() => setPgFor(option)} square />
-                  ))}
-                </Labeled>
+                {/* The same sections the discovery filter sheet uses, so an owner
+                    declares these in the control a searcher filters them with.
+                    No "Any" where the filter has one only to mean "no filter":
+                    a property's electricity and bathroom are one thing or the
+                    other. "Anyone" stays where it is a real answer. */}
+                <ChoiceSection description="Who can stay at this property?" icon={UsersRound} title="PG/Hostel for">
+                  <ChoiceGrid
+                    getIcon={(option) => PG_FOR_ICONS[option]}
+                    getLabel={humanizeToken}
+                    onSelect={setPgFor}
+                    options={PG_FOR_OPTIONS}
+                    selected={pgFor}
+                  />
+                </ChoiceSection>
 
-                <Labeled label="Preferred for">
-                  {PREFERRED_TENANT_OPTIONS.map((option) => (
-                    <ChoiceButton active={option === preferredFor} key={option} label={humanizeToken(option)} onPress={() => setPreferredFor(option)} square />
-                  ))}
-                </Labeled>
+                <ChoiceSection description="Who is this property suitable for?" icon={GraduationCap} title="Preferred for">
+                  <ChoiceGrid
+                    getLabel={(option) => (option === "PROFESSIONAL" ? "Working" : humanizeToken(option))}
+                    onSelect={setPreferredFor}
+                    options={PREFERRED_TENANT_OPTIONS}
+                    selected={preferredFor}
+                  />
+                </ChoiceSection>
 
-                <Labeled label="Meals included (optional)">
-                  {MEAL_TYPES.map((meal) => (
-                    <ChoiceButton active={includedMeals.includes(meal)} key={meal} label={humanizeToken(meal)} onPress={() => toggleMeal(meal)} square />
-                  ))}
-                </Labeled>
+                {/* None ticked is how a property says food is not included —
+                    the same reading the filter gives an empty selection. */}
+                <ChoiceSection
+                  description="Which meals are included in the rent?"
+                  footnote="Leave all unselected if no meals are included."
+                  icon={UtensilsCrossed}
+                  title="Meals included"
+                >
+                  <MultiChoiceGrid getLabel={humanizeToken} onToggle={toggleMeal} options={MEAL_TYPES} selected={includedMeals} />
+                </ChoiceSection>
 
-                <Labeled label="Electricity included">
-                  <ChoiceButton active={electricityIncluded} label="Yes" onPress={() => setElectricityIncluded(true)} square />
-                  <ChoiceButton active={!electricityIncluded} label="No" onPress={() => setElectricityIncluded(false)} square />
-                </Labeled>
+                <ChoiceSection description="Is electricity included in the rent?" icon={Zap} title="Electricity included">
+                  <ChoiceGrid
+                    getLabel={(option) => (option === "YES" ? "Yes" : "No")}
+                    onSelect={(option) => setElectricityIncluded(option === "YES")}
+                    options={YES_NO}
+                    selected={electricityIncluded ? "YES" : "NO"}
+                  />
+                </ChoiceSection>
 
-                <Labeled label="Bathroom type">
-                  {BATHROOM_TYPES.map((option) => (
-                    <ChoiceButton active={option === bathroomType} key={option} label={humanizeToken(option)} onPress={() => setBathroomType(option)} square />
-                  ))}
-                </Labeled>
+                <ChoiceSection description="Choose the bathroom arrangement" icon={Bath} title="Bathroom type">
+                  <ChoiceGrid getLabel={humanizeToken} onSelect={setBathroomType} options={BATHROOM_TYPES} selected={bathroomType} />
+                </ChoiceSection>
 
                 <OptionPicker
                   emptyLabel="No sharing types selected"
@@ -549,6 +587,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 />
 
                 <FacilitiesField
+                  layout="grid"
                   customFacilities={customFacilities}
                   facilities={facilities}
                   onChangeCustom={setCustomFacilities}
@@ -674,7 +713,10 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
           Out here it pins to the screen, which is where "pinned to the bottom"
           was always meant to mean. The scroll content keeps its keyboard
           avoidance; only the footer stops moving. */}
-      <PinnedFooter>
+      {/* Opaque in the page's own colour, with no fade and no rule — the way the
+          chat composer sits under its messages. The dimming veil read as a grey
+          band laid over the form. */}
+      <PinnedFooter fade={false}>
         <ActionButton disabled={isLoading || form.blocked} label={isLoading ? "Saving..." : "Save property"} onPress={() => void submit()} />
       </PinnedFooter>
 

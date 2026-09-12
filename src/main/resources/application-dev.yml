@@ -1,0 +1,10 @@
+# Development overrides. Loaded when SPRING_PROFILES_ACTIVE=dev.
+
+app:
+  ai:
+    smart-search:
+      # Our own smart-search allowances are off while developing: testing spends
+      # searches far faster than any tenant, and a bucket refilling one search
+      # every 36 minutes made the feature impractical to try. Groq's own limits
+      # still apply. Production keeps the default (true).
+      enforce-limits: false

@@ -1,18 +1,24 @@
 package com.khatiyan.d_modules.intelligence.api;
 
+import java.math.BigDecimal;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.intelligence.api.dto.InterpretSearchRequest;
 import com.khatiyan.d_modules.intelligence.api.dto.InterpretSearchResponse;
+import com.khatiyan.d_modules.intelligence.api.dto.SearchSuggestionsResponse;
 import com.khatiyan.d_modules.intelligence.api.dto.SmartSearchResponse;
 import com.khatiyan.d_modules.intelligence.discovery.SmartSearchResultsService;
 import com.khatiyan.d_modules.intelligence.discovery.SmartSearchService;
+import com.khatiyan.d_modules.intelligence.discovery.SmartSearchSuggestions;
 
 import jakarta.validation.Valid;
 
@@ -40,11 +46,15 @@ public class IntelligenceController {
 
     private final SmartSearchService smartSearchService;
     private final SmartSearchResultsService resultsService;
+    private final SmartSearchSuggestions suggestions;
 
     public IntelligenceController(
-            SmartSearchService smartSearchService, SmartSearchResultsService resultsService) {
+            SmartSearchService smartSearchService,
+            SmartSearchResultsService resultsService,
+            SmartSearchSuggestions suggestions) {
         this.smartSearchService = smartSearchService;
         this.resultsService = resultsService;
+        this.suggestions = suggestions;
     }
 
     /**
@@ -63,6 +73,22 @@ public class IntelligenceController {
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody InterpretSearchRequest request) {
         return resultsService.search(user.userId(), request);
+    }
+
+    /**
+     * Example sentences for the empty AI search box.
+     *
+     * <p>No model call and nothing spent from anybody's allowance, so it is
+     * asked for every time the box opens and answers differently each time.
+     * The device point and state only choose which listings to write from and
+     * are never stored.
+     */
+    @GetMapping("/discovery/suggestions")
+    public SearchSuggestionsResponse suggestions(
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude) {
+        return new SearchSuggestionsResponse(suggestions.suggest(state, latitude, longitude));
     }
 
     /**

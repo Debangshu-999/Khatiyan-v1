@@ -1,13 +1,19 @@
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { Sparkles } from "lucide-react-native";
 
 import { Card } from "@/components/card";
+import { MarqueeText } from "@/components/marquee-text";
+import type { ListingSort } from "@/store/services/discovery-api";
 import type { SmartSearchListing, SmartSearchResult } from "@/store/services/intelligence-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import type { FilterMatch, MatchStrength } from "../discovery-match";
+import { ListingSortButton, sortListings } from "./listing-sort";
 import { PropertyListingCard } from "./property-listing-card";
+
+/** The sparkle beside "Found n results". The chips under it indent by this. */
+const HEADER_ICON_SIZE = 16;
 
 /**
  * The answer to a sentence.
@@ -25,12 +31,17 @@ import { PropertyListingCard } from "./property-listing-card";
  * again here would eventually contradict the sentence printed beneath it.
  */
 export function AiResults({
+  onOpenSort,
   onView,
   result,
+  sort,
   visible,
 }: {
+  onOpenSort: () => void;
   onView: (propertyId: string) => void;
   result: SmartSearchResult;
+  /** Re-orders each section on the device. Both arrived whole, so this is exact. */
+  sort: ListingSort;
   /**
    * How many cards to draw, across both sections.
    *
@@ -44,41 +55,58 @@ export function AiResults({
   const found = result.matching.length;
   // The matching section fills first: those are the answers, and the related
   // ones only start appearing once somebody has scrolled past them.
-  const matching = result.matching.slice(0, visible);
-  const related = result.related.slice(0, Math.max(0, visible - result.matching.length));
+  const matching = sortListings(result.matching, sort).slice(0, visible);
+  const related = sortListings(result.related, sort).slice(0, Math.max(0, visible - result.matching.length));
   const hidden =
     result.matching.length + result.related.length - matching.length - related.length;
 
   return (
     <>
-      {result.requirements.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-          {result.requirements.map((requirement) => (
-            <View
-              key={requirement}
-              style={{
-                backgroundColor: colors.primarySoft,
-                borderCurve: "continuous",
-                borderRadius: 999,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: 5,
-              }}
-            >
-              <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
-                {requirement}
-              </Text>
-            </View>
-          ))}
+      <View style={{ gap: spacing.sm }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+          <Sparkles color={colors.primary} size={HEADER_ICON_SIZE} strokeWidth={2.2} />
+          {/* One line, always. On a phone the sentence wrapped beside the sort
+              button, and the sparkle centred itself between the two lines. */}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+              {found === 0
+                ? "No results match your search"
+                : `Found ${found} result${found === 1 ? "" : "s"} matching your search`}
+            </MarqueeText>
+          </View>
+          {found + result.related.length > 1 ? <ListingSortButton onPress={onOpenSort} sort={sort} /> : null}
         </View>
-      ) : null}
 
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Sparkles color={colors.primary} size={16} strokeWidth={2.2} />
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
-          {found === 0
-            ? "No results match your search"
-            : `Found ${found} result${found === 1 ? "" : "s"} matching your search`}
-        </Text>
+        {/* Under the count they describe, not above it: they say what "matching
+            your search" meant for this sentence. */}
+        {/* One line that slides sideways. Wrapping grew the header by a row
+            for every few requirements and pushed the first card down. */}
+        {result.requirements.length > 0 ? (
+          <ScrollView
+            // Starts under the word "Found", not under the sparkle: the icon
+            // plus the row's gap. They slide under the icon once scrolled.
+            contentContainerStyle={{ gap: spacing.xs, paddingLeft: HEADER_ICON_SIZE + spacing.xs }}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+          >
+            {result.requirements.map((requirement) => (
+              <View
+                key={requirement}
+                style={{
+                  backgroundColor: colors.primarySoft,
+                  borderCurve: "continuous",
+                  borderRadius: 999,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 5,
+                }}
+              >
+                <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
+                  {requirement}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
       </View>
 
       {found === 0 && result.related.length === 0 ? (
@@ -101,17 +129,25 @@ export function AiResults({
 
       {related.length > 0 ? (
         <>
-          <Text
-            style={[
-              type.caption,
-              { color: colors.muted, fontWeight: "700", marginTop: spacing.xs },
-            ]}
-          >
-            Related results
-          </Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            These match part of your search. Each one says what it does not.
-          </Text>
+          {/* One block, so the explanation sits right under its heading
+              instead of at the list's own spacing, and the section reads as a
+              clear break from the answers above it. */}
+          <View style={{ gap: 2, marginTop: spacing.md }}>
+            <Text
+              style={{
+                color: colors.ink,
+                fontFamily: fonts.sansBold,
+                fontSize: 17,
+                letterSpacing: -0.3,
+                lineHeight: 22,
+              }}
+            >
+              Related results
+            </Text>
+            <Text style={[type.caption, { color: colors.muted }]}>
+              These match part of your search. Each one says what it does not.
+            </Text>
+          </View>
           {related.map((listing) => (
             <Listing
               hideDeviceDistance={result.landmark !== null}
@@ -160,19 +196,19 @@ function Listing({
 }
 
 /**
- * The server's count, in the shape the existing match meter reads.
+ * The server's verdict, in the shape the existing match meter reads.
  *
- * <p>Same thresholds as the manual search's own calculation, so a "strong
- * match" means the same thing in both halves of the screen.
+ * <p>The strength is taken as given, never recomputed from the counts. A
+ * landmark's distance moves it on its own scale, so two listings that both meet
+ * "near a metro" can be strong and moderate — and a count alone would call them
+ * the same.
  */
 function toMatch(listing: SmartSearchListing): FilterMatch {
   const active = listing.requirementCount;
   const matched = listing.matchedTags.length;
-  let strength: MatchStrength | null = null;
-  if (active > 0) {
-    const ratio = matched / active;
-    strength = ratio >= 1 ? "strong" : ratio >= 0.5 ? "moderate" : "weak";
-  }
+  const strength: MatchStrength | null = listing.strength
+    ? (listing.strength.toLowerCase() as MatchStrength)
+    : null;
   return {
     activeCount: active,
     matchedCount: matched,

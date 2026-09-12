@@ -17,6 +17,7 @@ import {
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { ChoiceChip, ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import {
   BATHROOM_TYPES,
   MEAL_TYPES,
@@ -199,7 +200,7 @@ export function PropertyFilterModal({
             {/* "PG for" understated the results. Discovery draws from every
                 visible profile with no property-type restriction, so hostels
                 come back alongside PGs — the heading has to cover both. */}
-            <FilterSection
+            <ChoiceSection
               description="Who can stay at this property?"
               icon={UsersRound}
               title="PG/Hostel for"
@@ -211,9 +212,9 @@ export function PropertyFilterModal({
                 selected={filters.pgFor ?? "ANYONE"}
                 onSelect={(value) => update({ pgFor: value === "ANYONE" ? null : value })}
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               contentStyle={{ marginLeft: 0 }}
               description="Set your preferred monthly budget"
               icon={Wallet}
@@ -229,9 +230,9 @@ export function PropertyFilterModal({
                   })
                 }
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               description="Who is this property suitable for?"
               icon={GraduationCap}
               title="Preferred for"
@@ -242,21 +243,22 @@ export function PropertyFilterModal({
                 selected={filters.preferredFor ?? "ANYONE"}
                 onSelect={(value) => update({ preferredFor: value === "ANYONE" ? null : value })}
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               description="Which meals should be included?"
               icon={UtensilsCrossed}
               title="Meals included"
             >
               <MultiChoiceGrid
+                getLabel={humanizeToken}
                 onToggle={toggleMeal}
                 options={MEAL_TYPES}
                 selected={filters.mealTypes}
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               description="Is electricity included in the rent?"
               icon={Zap}
               title="Electricity included"
@@ -265,34 +267,35 @@ export function PropertyFilterModal({
                 value={filters.electricityIncluded}
                 onChange={(value) => update({ electricityIncluded: value })}
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               description="Choose the bathroom arrangement"
               icon={Bath}
               title="Bathroom type"
             >
               <ChoiceGrid
+                getLabel={(option) => (option === "ANY" ? "Any" : humanizeToken(option))}
                 options={["ANY", ...BATHROOM_TYPES]}
                 selected={filters.bathroomType ?? "ANY"}
                 onSelect={(value) => update({ bathroomType: value === "ANY" ? null : (value as BathroomType) })}
               />
-            </FilterSection>
+            </ChoiceSection>
 
-            <FilterSection
+            <ChoiceSection
               description="Select one or more room occupancies"
               icon={BedDouble}
               title="Room sharing"
             >
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                <FilterChip
+                <ChoiceChip
                   columns={2}
                   label="Any sharing"
                   onPress={() => update({ sharingTypes: [] })}
                   selected={filters.sharingTypes.length === 0}
                 />
                 {ROOM_TYPES.map((sharingType) => (
-                  <FilterChip
+                  <ChoiceChip
                     columns={2}
                     key={sharingType}
                     label={humanizeToken(sharingType)}
@@ -301,7 +304,7 @@ export function PropertyFilterModal({
                   />
                 ))}
               </View>
-            </FilterSection>
+            </ChoiceSection>
           </ScrollView>
 
           <View
@@ -334,188 +337,13 @@ export function PropertyFilterModal({
   );
 }
 
-function FilterSection({
-  children,
-  contentStyle,
-  description,
-  icon: Icon,
-  title,
-}: {
-  children: React.ReactNode;
-  contentStyle?: ViewStyle;
-  description: string;
-  icon: LucideIcon;
-  title: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 16,
-        borderWidth: 1,
-        elevation: 1,
-        gap: spacing.sm,
-        padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 3, width: 0 },
-        shadowOpacity: 0.28,
-        shadowRadius: 9,
-      }}
-    >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.neutralSoft,
-            borderRadius: 999,
-            height: 48,
-            justifyContent: "center",
-            width: 48,
-          }}
-        >
-          <Icon color={colors.inkSoft} size={23} strokeWidth={2.2} />
-        </View>
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text
-            style={[
-              type.eyebrow,
-              {
-                color: colors.inkSoft,
-                fontFamily: fonts.sansBold,
-                fontSize: 11.5,
-                letterSpacing: 0.65,
-              },
-            ]}
-          >
-            {title}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 17 }]}>
-            {description}
-          </Text>
-        </View>
-      </View>
-      <View style={[{ marginLeft: 62 }, contentStyle]}>{children}</View>
-    </View>
-  );
-}
-
-function ChoiceGrid<T extends string>({
-  getIcon,
-  getLabel,
-  onSelect,
-  options,
-  selected,
-}: {
-  getIcon?: (value: T) => LucideIcon;
-  getLabel?: (value: T) => string;
-  onSelect: (value: T) => void;
-  options: T[];
-  selected: T;
-}) {
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {options.map((option) => (
-        <FilterChip
-          icon={getIcon?.(option)}
-          key={option}
-          label={getLabel?.(option) ?? (option === "ANY" ? "Any" : humanizeToken(option))}
-          onPress={() => onSelect(option)}
-          selected={option === selected}
-        />
-      ))}
-    </View>
-  );
-}
-
-function MultiChoiceGrid<T extends string>({
-  onToggle,
-  options,
-  selected,
-}: {
-  onToggle: (value: T) => void;
-  options: T[];
-  selected: T[];
-}) {
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {options.map((option) => (
-        <FilterChip
-          key={option}
-          label={humanizeToken(option)}
-          onPress={() => onToggle(option)}
-          selected={selected.includes(option)}
-        />
-      ))}
-    </View>
-  );
-}
-
 function BooleanChoice({ onChange, value }: { onChange: (value: boolean | null) => void; value: boolean | null }) {
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      <FilterChip label="Any" selected={value === null} onPress={() => onChange(null)} />
-      <FilterChip label="Yes" selected={value === true} onPress={() => onChange(true)} />
-      <FilterChip label="No" selected={value === false} onPress={() => onChange(false)} />
+      <ChoiceChip label="Any" selected={value === null} onPress={() => onChange(null)} />
+      <ChoiceChip label="Yes" selected={value === true} onPress={() => onChange(true)} />
+      <ChoiceChip label="No" selected={value === false} onPress={() => onChange(false)} />
     </View>
-  );
-}
-
-function FilterChip({
-  columns = 3,
-  icon: Icon,
-  label,
-  onPress,
-  selected,
-}: {
-  columns?: 2 | 3;
-  icon?: LucideIcon;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: selected ? colors.inkSoft : colors.surface,
-        borderColor: selected ? colors.inkSoft : colors.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        flexBasis: columns === 2 ? "46%" : "28%",
-        flexDirection: "row",
-        flexGrow: 1,
-        flexShrink: 1,
-        gap: spacing.xs,
-        justifyContent: "center",
-        minHeight: 48,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      {Icon ? <Icon color={selected ? colors.surface : colors.inkSoft} size={17} strokeWidth={2.3} /> : null}
-      <Text
-        numberOfLines={1}
-        style={[
-          type.caption,
-          {
-            color: selected ? colors.surface : colors.ink,
-            fontFamily: fonts.sansBold,
-            fontSize: label.length > 11 ? 10.25 : label.length > 8 ? 11.25 : 12.5,
-            textAlign: "center",
-          },
-        ]}
-      >
-        {label}
-      </Text>
-    </AnimatedPressable>
   );
 }
 

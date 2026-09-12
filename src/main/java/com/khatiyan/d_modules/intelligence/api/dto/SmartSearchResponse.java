@@ -7,6 +7,7 @@ import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.intelligence.api.dto.InterpretSearchResponse.ResolvedLocation;
 import com.khatiyan.d_modules.intelligence.api.dto.InterpretSearchResponse.SearchArgs;
 import com.khatiyan.d_modules.intelligence.discovery.InterpretStatus;
+import com.khatiyan.d_modules.intelligence.discovery.MatchStrength;
 
 /**
  * A sentence, answered.
@@ -63,6 +64,11 @@ public record SmartSearchResponse(
             int requirementCount,
             String nearestName,
             Double nearestKm,
+            /**
+             * The card's meter, decided here. A distance moves it in a way a
+             * count of requirements cannot, so the client does not recompute.
+             */
+            MatchStrength strength,
             String reason) {
 
         public UUID propertyId() {

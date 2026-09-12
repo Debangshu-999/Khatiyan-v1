@@ -72,6 +72,12 @@ export type PropertyDiscoveryDetail = PropertyDiscoveryCard & {
   showManagerContact: boolean;
 };
 
+/**
+ * How a search orders its listings. Applied by the server, because the list is
+ * paged and sorting on the device would order only the pages already loaded.
+ */
+export type ListingSort = "RELEVANCE" | "DISTANCE" | "RENT_LOW" | "RENT_HIGH" | "DEPOSIT_LOW" | "DEPOSIT_HIGH";
+
 export type PropertyDiscoverySearch = {
   state?: string;
   city?: string;
@@ -89,6 +95,7 @@ export type PropertyDiscoverySearch = {
   electricityIncluded?: boolean | null;
   bathroomType?: BathroomType | null;
   sharingTypes?: RoomType[];
+  sort?: ListingSort;
   page?: number;
   size?: number;
 };
@@ -270,6 +277,7 @@ export const discoveryApi = api.injectEndpoints({
           electricityIncluded: params.electricityIncluded,
           bathroomType: params.bathroomType,
           sharingTypes: params.sharingTypes?.join(","),
+          sort: params.sort,
           page: params.page ?? 0,
           size: params.size ?? 10,
         }),

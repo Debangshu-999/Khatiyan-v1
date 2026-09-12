@@ -34,38 +34,58 @@ import java.util.Optional;
  */
 public enum LandmarkKind {
 
-    METRO("public_transport.subway", "metro station",
+    METRO("public_transport.subway", "TRNMET", "metro station",
             "metro", "subway", "metro station"),
 
-    RAILWAY("public_transport.train", "railway station",
+    RAILWAY("public_transport.train", "TRNRAL;TRNRAM;TRNLOC", "railway station",
             "railway", "train station", "railway station", "train"),
 
-    BUS("public_transport.bus", "bus stop",
+    BUS("public_transport.bus", "TRNBST", "bus stop",
             "bus stand", "bus stop", "bus terminus"),
 
-    COLLEGE("education.college,education.university", "college",
+    COLLEGE("education.college,education.university", "COMCLG;UNVSTT;CLGMDC", "college",
             "college", "university", "campus", "institute"),
 
-    SCHOOL("education.school", "school",
+    SCHOOL("education.school", "COMSCH;SCHNSS", "school",
             "school"),
 
-    HOSPITAL("healthcare.hospital", "hospital",
+    HOSPITAL("healthcare.hospital", "HLTHSP", "hospital",
             "hospital", "nursing home"),
 
-    MARKET("commercial.supermarket,commercial.marketplace", "market",
+    MARKET("commercial.supermarket,commercial.marketplace", "MKTMAN;MKTMJR;MKTSRT", "market",
             "market", "bazaar", "bazar", "supermarket", "grocery", "kirana"),
 
-    AIRPORT("airport", "airport",
+    /*
+     * No Mappls codes. Its nearby search reaches 10 km and an airport is
+     * usually further out than that — Kolkata's is about 13 km from the centre —
+     * so every listing would read "no airport within 10 km". Geoapify's
+     * city-wide category search measures it properly.
+     */
+    AIRPORT("airport", null, "airport",
             "airport");
 
     private final String vendorCategory;
+    private final String mapplsCodes;
     private final String noun;
     private final List<String> keywords;
 
-    LandmarkKind(String vendorCategory, String noun, String... keywords) {
+    LandmarkKind(String vendorCategory, String mapplsCodes, String noun, String... keywords) {
         this.vendorCategory = vendorCategory;
+        this.mapplsCodes = mapplsCodes;
         this.noun = noun;
         this.keywords = List.of(keywords);
+    }
+
+    /**
+     * Mappls category codes for this kind, several joined with ";", or null when
+     * Mappls should not be used for it.
+     *
+     * <p>Learned from live responses, not guessed: each was the code Mappls put
+     * on the places a plain search for the kind returned, checked from a real
+     * listing to sort by distance correctly.
+     */
+    public String mapplsCodes() {
+        return mapplsCodes;
     }
 
     /** The vendor's category identifier, or several separated by commas. */

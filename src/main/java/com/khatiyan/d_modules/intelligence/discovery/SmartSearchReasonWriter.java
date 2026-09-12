@@ -97,6 +97,8 @@ public class SmartSearchReasonWriter {
             - One or two complete sentences, about 25 words, never more than 50. Short
               and useful, not clipped: full sentences with verbs, no comma-separated
               fragments and no bare labels.
+            - A missed fact that carries a distance means the place is that far away,
+              which is too far. It never means the distance is unknown.
             - Always name the landmark when the facts give you one. "630 m from Nalban
               Metro Station" — the name is the most useful thing on the line.
             - Plain English. No marketing words.
@@ -154,16 +156,21 @@ public class SmartSearchReasonWriter {
             // to make on their behalf. When the ceiling says no, the results
             // are already correct and simply arrive without their lines.
             quotaService.claimProviderBudget();
-            ReasonList answer = ChatClient.create(chatModel)
-                    .prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(facts(query, subject))
-                    .call()
-                    .entity(CONVERTER);
+            org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, ReasonList>
+                    call = ChatClient.create(chatModel)
+                            .prompt()
+                            .system(SYSTEM_PROMPT)
+                            .user(facts(query, subject))
+                            .call()
+                            .responseEntity(CONVERTER);
+            ReasonList answer = call.entity();
+            org.springframework.ai.chat.metadata.Usage usage = SmartSearchService.usageOf(call.response());
 
             auditService.record(AiInvocation.answered(
                             AiCapability.SMART_SEARCH, AiProvider.GROQ, model, actorUserId,
-                            null, null, elapsed(startedAt))
+                            usage == null ? null : usage.getPromptTokens(),
+                            usage == null ? null : usage.getCompletionTokens(),
+                            elapsed(startedAt))
                     .withVersions(SmartSearchService.INTENT_VERSION, SmartSearchService.INTENT_VERSION, null));
 
             return collect(answer, subject);

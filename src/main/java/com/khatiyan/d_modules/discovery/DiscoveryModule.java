@@ -118,6 +118,49 @@ public class DiscoveryModule {
                 size);
     }
 
+    /** The same search, in the order a person chose. */
+    public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
+            String state,
+            String city,
+            String countryCode,
+            String locality,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            Double radiusKm,
+            PgFor pgFor,
+            Long minRentPaise,
+            Long maxRentPaise,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            List<MealType> mealTypes,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            List<SharingType> sharingTypes,
+            com.khatiyan.d_modules.discovery.api.dto.DiscoverySort sort,
+            int page,
+            int size) {
+        return propertyDiscoveryService.searchVisibleProperties(
+                state,
+                city,
+                countryCode,
+                locality,
+                latitude,
+                longitude,
+                radiusKm,
+                pgFor,
+                minRentPaise,
+                maxRentPaise,
+                preferredFor,
+                foodIncluded,
+                mealTypes == null ? null : Set.copyOf(mealTypes),
+                electricityIncluded,
+                bathroomType,
+                sharingTypes == null ? null : Set.copyOf(sharingTypes),
+                sort,
+                page,
+                size);
+    }
+
     public PropertyDiscoveryDetailResponse getVisibleProperty(
             UUID propertyId,
             BigDecimal latitude,

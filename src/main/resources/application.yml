@@ -186,7 +186,13 @@ app:
       timeout: 8s
       user-limit-per-minute: 6
       user-limit-per-day: 40
+      # Our own allowances. Switched off in application-dev.yml so testing is
+      # not throttled; Groq's limits apply regardless.
+      enforce-limits: ${AI_ENFORCE_LIMITS:true}
       cache-ttl: 24h
+      # A repeat of the same search inside this window returns the identical
+      # answer with no model call. Case, spacing and punctuation are ignored.
+      answer-ttl: 15m
     providers:
       groq:
         base-url: https://api.groq.com/openai/v1
@@ -199,6 +205,10 @@ app:
         # account. Until then assume prompts are kept up to 30 days for abuse
         # monitoring, and send nothing that would matter if they were.
         zero-data-retention-confirmed: ${GROQ_ZDR_CONFIRMED:false}
+        # low | medium | high. Measured 2026-09-13: at low an interpret call is
+        # ~1,900 tokens with no quality loss on the test set, and medium returned
+        # empty completions (reasoning used the whole output) on the same query.
+        reasoning-effort: ${GROQ_REASONING_EFFORT:low}
         models:
           structured-fast: openai/gpt-oss-20b
           structured-strong: openai/gpt-oss-120b
@@ -309,6 +319,12 @@ app:
   geo:
     # log = keyless dev fallback (empty results); mappls = live geocoding.
     provider: ${GEO_PROVIDER:log}
+    # Named landmarks for smart search ("near Sister Nivedita University") go
+    # through this chain in order, skipping any vendor with no credentials.
+    # Mappls leads because its coverage of Indian institutions is far better
+    # than OpenStreetMap's; Geoapify is the fallback and, until Mappls keys are
+    # set, the only lookup. Ordinary autocomplete stays on `provider`.
+    landmark-lookup: ${GEO_LANDMARK_LOOKUP:mappls,geoapify}
     search-rate-per-minute: ${GEO_SEARCH_RATE_PER_MINUTE:60}
     # Panning the picker fires a reverse lookup per settle; keep headroom.
     reverse-rate-per-minute: ${GEO_REVERSE_RATE_PER_MINUTE:60}
@@ -321,12 +337,13 @@ app:
       local-place-cron: ${GEO_BACKFILL_LOCAL_PLACE_CRON:0 15 1 * * *}
       zone: ${GEO_BACKFILL_ZONE:Asia/Kolkata}
     mappls:
-      token-url: ${MAPPLS_TOKEN_URL:https://outpost.mappls.com/api/security/oauth/token}
-      autosuggest-url: ${MAPPLS_AUTOSUGGEST_URL:https://atlas.mappls.com/api/places/search/json}
+      # Static-key APIs: the key goes on every request as access_token. It must
+      # be a cloud-type key (IP-whitelisted) — a mobile app's key is locked to
+      # the app and refuses server calls. Used only by smart search today.
+      autosuggest-url: ${MAPPLS_AUTOSUGGEST_URL:https://search.mappls.com/search/places/autosuggest/json}
+      nearby-url: ${MAPPLS_NEARBY_URL:https://search.mappls.com/search/places/nearby/json}
       # %s is replaced with the REST key (Mappls carries it in the URL path).
       reverse-url: ${MAPPLS_REVERSE_URL:https://apis.mappls.com/advancedmaps/v1/%s/rev_geocode}
-      client-id: ${MAPPLS_CLIENT_ID:}
-      client-secret: ${MAPPLS_CLIENT_SECRET:}
       rest-key: ${MAPPLS_REST_KEY:}
     geoapify:
       base-url: ${GEOAPIFY_BASE_URL:https://api.geoapify.com/v1/geocode}

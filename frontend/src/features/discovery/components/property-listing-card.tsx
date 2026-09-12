@@ -20,6 +20,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { Card } from "@/components/card";
 import { IconButton } from "@/components/icon-button";
+import { MarqueeText } from "@/components/marquee-text";
 import type { PropertyDiscoveryCard } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -188,16 +189,20 @@ export function PropertyListingCard({
               alignSelf: "flex-start",
               flexDirection: "row",
               gap: 4,
+              maxWidth: "100%",
               minHeight: 15,
             }}
           >
             {nearest ? (
               <>
                 <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
-                <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
-                  {nearest.km < 1 ? `${Math.round(nearest.km * 1000)} m` : `${nearest.km.toFixed(1)} km`} from{" "}
-                  {nearest.name}
-                </Text>
+                <View style={{ flexShrink: 1, minWidth: 0 }}>
+                  <MarqueeText
+                    style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}
+                  >
+                    {`${nearest.km < 1 ? `${Math.round(nearest.km * 1000)} m` : `${nearest.km.toFixed(1)} km`} from ${nearest.name}`}
+                  </MarqueeText>
+                </View>
               </>
             ) : hideDistance ? null : property.distanceKm != null ? (
               <>
@@ -456,15 +461,23 @@ function FeatureTag({ label }: { label: string }) {
         borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
+        // A tag may never be wider than the card. Landmark names made that
+        // happen — "1.7 km from Subway to CTC Bus Stand and Road Crossing
+        // metro station" ran straight off the right edge — so the tag yields
+        // and its label scrolls, the same way a status pill does.
+        flexShrink: 1,
         gap: 4,
+        maxWidth: "100%",
         paddingHorizontal: 7,
         paddingVertical: 5,
       }}
     >
       <FeatureIcon color={colors.inkSoft} label={label} />
-      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 11.25 }}>
-        {displayLabel}
-      </Text>
+      <View style={{ flexShrink: 1, minWidth: 0 }}>
+        <MarqueeText style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 11.25 }}>
+          {displayLabel}
+        </MarqueeText>
+      </View>
     </View>
   );
 }

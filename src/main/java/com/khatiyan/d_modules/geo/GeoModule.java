@@ -55,9 +55,27 @@ public class GeoModule {
      * callers must treat as "no landmarks to measure against" rather than as
      * an error.
      */
-    /** Autocomplete biased to a point, for resolving a named landmark. */
+    /**
+     * A named landmark, near a point — through the landmark lookup chain
+     * (Mappls first when configured), not the everyday autocomplete provider.
+     */
     public List<GeoSuggestionResponse> systemSearchNear(String query, double latitude, double longitude) {
-        return geocodingService.systemSearch(query, latitude, longitude);
+        return geocodingService.landmarkSearch(query, latitude, longitude);
+    }
+
+    /** Whether nearest-place distances can be measured per point (Mappls configured). */
+    public boolean canMeasureNearby() {
+        return geocodingService.canMeasureNearby();
+    }
+
+    /**
+     * Places of the given categories nearest a point, each with its distance
+     * from that point, nearest first. Empty when nothing is within range or the
+     * vendor is not configured.
+     */
+    public List<com.khatiyan.d_modules.geo.api.dto.NearbyPlaceResponse> nearby(
+            String categoryCodes, double latitude, double longitude, int radiusMeters) {
+        return geocodingService.nearby(categoryCodes, latitude, longitude, radiusMeters);
     }
 
     public List<GeoSuggestionResponse> places(

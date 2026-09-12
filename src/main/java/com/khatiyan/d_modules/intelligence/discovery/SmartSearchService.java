@@ -8,6 +8,9 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.converter.BeanOutputConverter;
 
 import tools.jackson.databind.DeserializationFeature;
@@ -20,6 +23,7 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import com.khatiyan.c_shared.exception.TooManyRequestsException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.geo.GeoModule;
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
@@ -66,7 +70,7 @@ public class SmartSearchService {
      * <p>It is part of the cache key, so an interpretation produced by an older
      * version is never replayed against newer rules.
      */
-    static final String INTENT_VERSION = "discovery-intent-v7";
+    static final String INTENT_VERSION = "discovery-intent-v12";
 
     /**
      * English only for now.
@@ -132,6 +136,7 @@ public class SmartSearchService {
     private final AiQuotaService quotaService;
     private final AiInvocationAuditService auditService;
     private final IntelligenceProperties properties;
+    private final SmartSearchCache cache;
 
     public SmartSearchService(
             OpenAiChatModel groqFastChatModel,
@@ -139,13 +144,15 @@ public class SmartSearchService {
             GeoModule geoModule,
             AiQuotaService quotaService,
             AiInvocationAuditService auditService,
-            IntelligenceProperties properties) {
+            IntelligenceProperties properties,
+            SmartSearchCache cache) {
         this.groqFastChatModel = groqFastChatModel;
         this.mapper = mapper;
         this.geoModule = geoModule;
         this.quotaService = quotaService;
         this.auditService = auditService;
         this.properties = properties;
+        this.cache = cache;
     }
 
     /**
@@ -178,12 +185,22 @@ public class SmartSearchService {
             throw new ValidationException("Type what you are looking for.");
         }
 
-        // Before any token is spent. A refusal has to be free, or the thing
-        // protecting the budget is itself spending it.
-        quotaService.claimSmartSearch(actorUserId);
-
         long startedAt = System.currentTimeMillis();
-        DiscoveryIntentDraft draft = askModel(query, actorUserId, startedAt);
+
+        // A repeat of a sentence already read is not a new search. It spends
+        // nothing from the person's allowance and makes no model call — the
+        // reading is reused, and everything after it still runs fresh.
+        DiscoveryIntentDraft draft = cache.draft(query).orElse(null);
+        if (draft != null) {
+            auditService.record(AiInvocation.fromCache(
+                    AiCapability.SMART_SEARCH, actorUserId, elapsed(startedAt)));
+        } else {
+            // Before any token is spent. A refusal has to be free, or the thing
+            // protecting the budget is itself spending it.
+            quotaService.claimSmartSearch(actorUserId);
+            draft = askModel(query, actorUserId, startedAt);
+            cache.putDraft(query, draft);
+        }
         // The sentence goes in with the draft: the airlock needs it to tell a
         // requirement somebody typed from a field the model filled in anyway.
         DiscoveryIntentMapper.MappedIntent mapped = mapper.map(draft, query);
@@ -231,21 +248,36 @@ public class SmartSearchService {
     private DiscoveryIntentDraft askModel(String query, UUID actorUserId, long startedAt) {
         String model = properties.providers().groq().models().structuredFast();
         try {
-            DiscoveryIntentDraft draft = ask(query);
+            ResponseEntity<ChatResponse, DiscoveryIntentDraft> answer = ask(query);
+            DiscoveryIntentDraft draft = answer.entity();
 
             if (draft == null) {
                 throw new ValidationException("Could not read that search. Try rephrasing it.");
             }
 
+            Usage usage = usageOf(answer.response());
             auditService.record(AiInvocation.answered(
                             AiCapability.SMART_SEARCH, AiProvider.GROQ, model, actorUserId,
-                            null, null, elapsed(startedAt))
+                            usage == null ? null : usage.getPromptTokens(),
+                            usage == null ? null : usage.getCompletionTokens(),
+                            elapsed(startedAt))
                     .withVersions(INTENT_VERSION, INTENT_VERSION, null));
             return draft;
 
         } catch (ValidationException exception) {
             throw exception;
         } catch (RuntimeException exception) {
+            // Groq refusing on its own per-minute token limit is, to the person
+            // searching, the same thing as our allowance running out: wait, or
+            // search by hand. It gets the same message and the same 429.
+            if (isProviderRateLimit(exception)) {
+                auditService.record(AiInvocation.failed(
+                        AiCapability.SMART_SEARCH, AiProvider.GROQ, model, actorUserId,
+                        com.khatiyan.d_modules.intelligence.audit.AiOutcome.REFUSED_BUDGET,
+                        "provider-rate-limit", elapsed(startedAt)));
+                log.warn("Smart search refused by the provider's rate limit");
+                throw new TooManyRequestsException(AiQuotaService.OUT_OF_SEARCHES, 60);
+            }
             // The provider failed, or returned something that would not fit the
             // schema. Recorded, then turned into a refusal — the ordinary
             // filters still work and saying so is more use than a stack trace.
@@ -267,7 +299,7 @@ public class SmartSearchService {
      * perfectly good search could not be read. Exactly one retry — a provider
      * that is genuinely down must not be hammered, and the budget is metered.
      */
-    private DiscoveryIntentDraft ask(String query) {
+    private ResponseEntity<ChatResponse, DiscoveryIntentDraft> ask(String query) {
         try {
             return call(query);
         } catch (RuntimeException first) {
@@ -279,13 +311,33 @@ public class SmartSearchService {
         }
     }
 
-    private DiscoveryIntentDraft call(String query) {
+    private ResponseEntity<ChatResponse, DiscoveryIntentDraft> call(String query) {
         return ChatClient.create(groqFastChatModel)
                 .prompt()
                 .system(SYSTEM_PROMPT)
                 .user(query)
                 .call()
-                .entity(DRAFT_CONVERTER);
+                .responseEntity(DRAFT_CONVERTER);
+    }
+
+    /**
+     * Tokens actually spent, for the audit row.
+     *
+     * <p>Recorded because the limit that runs out is a token limit, and a table
+     * that only counted calls could not say why two searches a minute were
+     * enough to hit it. Completion tokens include gpt-oss's hidden reasoning.
+     */
+    static Usage usageOf(ChatResponse response) {
+        return response == null || response.getMetadata() == null ? null : response.getMetadata().getUsage();
+    }
+
+    private static boolean isProviderRateLimit(RuntimeException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof com.openai.errors.RateLimitException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isEmptyCompletion(RuntimeException exception) {

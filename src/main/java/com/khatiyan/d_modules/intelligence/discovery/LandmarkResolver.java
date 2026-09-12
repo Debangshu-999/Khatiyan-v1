@@ -2,7 +2,12 @@ package com.khatiyan.d_modules.intelligence.discovery;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 import org.springframework.stereotype.Service;
 
@@ -38,28 +43,6 @@ public class LandmarkResolver {
 
     private static final double EARTH_RADIUS_KM = 6371.0088;
 
-    /**
-     * What "near a metro station" means when nobody said how near.
-     *
-     * <p>A kilometre, because that is what people mean by walking distance to
-     * one of many identical things. Stretching this would make the requirement
-     * meaningless: a city has metro stations everywhere, so "within 15 km of a
-     * station" is satisfied by every listing in it and the filter stops
-     * filtering.
-     */
-    public static final double DEFAULT_NEAR_KIND_KM = 1.0;
-
-    /**
-     * What "near Sister Nivedita University" means when nobody said.
-     *
-     * <p>Far more generous, because a named place is ONE point and somebody
-     * asking to be near it is describing which part of the city they want, not
-     * a walk. Fifteen kilometres is the same side of a large Indian city, and
-     * results are still ordered by distance, so the nearest are on top either
-     * way. An empty screen is the failure to avoid here.
-     */
-    public static final double DEFAULT_NEAR_NAMED_KM = 15.0;
-
     private final GeoModule geoModule;
 
     public LandmarkResolver(GeoModule geoModule) {
@@ -75,26 +58,55 @@ public class LandmarkResolver {
     }
 
     /**
-     * The places a search is measured against, and what to call them.
+     * What a search is measured against, and what to call it.
      *
-     * <p>Either every place of a KIND — all the metro stations in a city — or
-     * the single place somebody NAMED. The two behave identically from here on,
-     * which is why they share one type: a set of points and a label.
+     * <p>Two ways of measuring, one shape. {@link Points} holds the places
+     * themselves and measures each listing to the nearest of them. {@link
+     * Measured} holds no places at all and asks a vendor, per listing, what is
+     * nearest and how far. The ranker never needs to know which it has.
+     *
+     * <p>How near counts as near is not decided here. One graded scale applies
+     * to every landmark, kind or name alike — see {@link SmartSearchRanker}.
+     */
+    public sealed interface LandmarkSet permits Points, Measured {
+
+        /** How to name this in a sentence — "metro station", or a place's own name. */
+        String label();
+
+        /** True when there is nothing to measure against at all. */
+        boolean isEmpty();
+
+        Optional<Nearest> nearestTo(BigDecimal latitude, BigDecimal longitude);
+
+        /**
+         * How far this set can see, or null when it covers the whole region.
+         *
+         * <p>A vendor that looks only so far cannot tell 12 km from 20 km, so
+         * "nothing found" means "nothing within this reach", and the card has to
+         * say so in those words.
+         */
+        Double reachKm();
+    }
+
+    /**
+     * Every landmark of one kind in the region, or the one place somebody named,
+     * placed and ready to measure against.
      *
      * <p>An empty list is a real answer and not an error: the vendor may not
      * cover this kind of place, or the region may genuinely have none. Callers
      * must say so rather than return an unfiltered list as though the
      * requirement had been met.
-     *
-     * @param label         how to name this in a sentence — "metro station", or
-     *                      the place's own name
-     * @param defaultNearKm how near counts as near when the sentence did not say,
-     *                      which differs for a kind and for a named place
      */
-    public record LandmarkSet(String label, List<Landmark> landmarks, double defaultNearKm) {
+    public record Points(String label, List<Landmark> landmarks) implements LandmarkSet {
 
+        @Override
         public boolean isEmpty() {
             return landmarks.isEmpty();
+        }
+
+        @Override
+        public Double reachKm() {
+            return null;
         }
 
         public Optional<Nearest> nearestTo(BigDecimal latitude, BigDecimal longitude) {
@@ -115,6 +127,105 @@ public class LandmarkResolver {
             return closest == null ? Optional.empty() : Optional.of(new Nearest(closest.name(), best));
         }
     }
+
+    /**
+     * A kind of place, measured per listing by Mappls.
+     *
+     * <p>Holds no places. For each listing it asks Mappls Nearby for the closest
+     * place of the kind and how far it is — Mappls will not give coordinates on
+     * a standard key, but it measures from any point it is handed, which is
+     * exactly the number a card shows. Its station data is also better than
+     * OpenStreetMap's: places carry a proper category code, so a pedestrian
+     * underpass cannot come back as a metro station.
+     *
+     * <p>A call per listing, so {@link #warm} runs them side by side before
+     * ranking, and every answer is cached for a month in the geo module —
+     * neither listings nor stations move.
+     */
+    public static final class Measured implements LandmarkSet {
+
+        private final String label;
+        private final String categoryCodes;
+        private final GeoModule geoModule;
+        private final Map<String, Optional<Nearest>> measured = new ConcurrentHashMap<>();
+
+        Measured(String label, String categoryCodes, GeoModule geoModule) {
+            this.label = label;
+            this.categoryCodes = categoryCodes;
+            this.geoModule = geoModule;
+        }
+
+        @Override
+        public String label() {
+            return label;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return false;
+        }
+
+        @Override
+        public Double reachKm() {
+            return MEASURED_REACH_METERS / 1000.0;
+        }
+
+        @Override
+        public Optional<Nearest> nearestTo(BigDecimal latitude, BigDecimal longitude) {
+            if (latitude == null || longitude == null) {
+                return Optional.empty();
+            }
+            return measured.computeIfAbsent(latitude.toPlainString() + "," + longitude.toPlainString(), key ->
+                    geoModule.nearby(categoryCodes, latitude.doubleValue(), longitude.doubleValue(), MEASURED_REACH_METERS)
+                            .stream()
+                            // Mappls's categories are good, not perfect. The same
+                            // backstop as the other path, taking the nearest
+                            // place that is plausibly the place itself.
+                            .filter(place -> isPlausibleName(place.name()))
+                            .findFirst()
+                            .map(place -> new Nearest(place.name(), place.distanceMeters() / 1000.0)));
+        }
+
+        /**
+         * Measures many listings side by side.
+         *
+         * <p>Ranking asks one listing at a time, and twenty listings at 300 ms
+         * each is six seconds in a row. Asked together, a few at a time so the
+         * vendor is not flooded, the first search in a city costs well under a
+         * second, and every later one is answered from cache.
+         */
+        void warm(List<BigDecimal[]> points) {
+            Semaphore gate = new Semaphore(MAX_PARALLEL_MEASURES);
+            try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+                for (BigDecimal[] point : points) {
+                    pool.submit(() -> {
+                        try {
+                            gate.acquire();
+                            try {
+                                nearestTo(point[0], point[1]);
+                            } finally {
+                                gate.release();
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        } catch (RuntimeException ignored) {
+                            // Measured again, one at a time, when ranked.
+                        }
+                    });
+                }
+            }
+        }
+
+        /** Whether any listing had one of these within reach. */
+        boolean foundAny() {
+            return measured.values().stream().anyMatch(Optional::isPresent);
+        }
+    }
+
+    /** Mappls Nearby looks no further than this. */
+    static final int MEASURED_REACH_METERS = 10_000;
+
+    private static final int MAX_PARALLEL_MEASURES = 8;
 
     /**
      * Resolves whatever somebody named into places to measure against.
@@ -145,22 +256,30 @@ public class LandmarkResolver {
 
         Optional<LandmarkKind> kind = LandmarkKind.of(phrase);
         if (kind.isPresent() && namesNothingElse(phrase, kind.get())) {
-            return Optional.of(new LandmarkSet(
+            // Mappls when it can measure this kind — better data, measured from
+            // each listing. Geoapify's city-wide category search otherwise, and
+            // always for the kinds Mappls's 10 km reach cannot serve.
+            if (kind.get().mapplsCodes() != null && geoModule.canMeasureNearby()) {
+                return Optional.of(new Measured(kind.get().noun(), kind.get().mapplsCodes(), geoModule));
+            }
+            return Optional.of(new Points(
                     kind.get().noun(),
                     placed(geoModule.places(
-                            kind.get().vendorCategory(), lat, lng, SEARCH_RADIUS_METERS, MAX_LANDMARKS)),
-                    DEFAULT_NEAR_KIND_KM));
+                                    kind.get().vendorCategory(), lat, lng, SEARCH_RADIUS_METERS, MAX_LANDMARKS))
+                            .stream()
+                            .filter(LandmarkResolver::isPlausibleLandmark)
+                            .toList()));
         }
 
         List<Landmark> named = byName(phrase.trim(), lat, lng);
         if (named.isEmpty()) {
-            return Optional.of(new LandmarkSet(phrase.trim(), List.of(), DEFAULT_NEAR_NAMED_KM));
+            return Optional.of(new Points(phrase.trim(), List.of()));
         }
         // The top match only. A named place is one place, and the runners-up
         // are other places with similar names — measuring against those would
         // quietly widen the search to somewhere nobody asked about.
         Landmark best = named.get(0);
-        return Optional.of(new LandmarkSet(best.name(), List.of(best), DEFAULT_NEAR_NAMED_KM));
+        return Optional.of(new Points(best.name(), List.of(best)));
     }
 
     /**
@@ -209,14 +328,24 @@ public class LandmarkResolver {
      * kind threw the name away and measured against colleges nobody mentioned.
      */
     private static boolean namesNothingElse(String phrase, LandmarkKind kind) {
-        String remainder = phrase.toLowerCase(java.util.Locale.ROOT);
-        for (String keyword : kind.keywords()) {
-            remainder = remainder.replace(keyword, " ");
+        String remainder = " " + phrase.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", " ") + " ";
+        // Longest keyword first. Removing "metro" before "metro station" left
+        // the word "station" behind, so "metro station" read as the NAME of a
+        // place — and the geocoder obligingly matched "Beleghata Metro Station
+        // Road", measuring every listing from a road instead of from the 62
+        // actual stations.
+        List<String> keywords = kind.keywords().stream()
+                .sorted(java.util.Comparator.comparingInt(String::length).reversed())
+                .toList();
+        for (String keyword : keywords) {
+            remainder = remainder.replace(" " + keyword + " ", " ");
         }
-        for (String filler : FILLER_WORDS) {
-            remainder = remainder.replace(filler, " ");
-        }
-        return remainder.isBlank();
+        // Whatever is left must be words that name nothing — including a
+        // plural "s" or "stations" once the keyword itself is gone.
+        return java.util.Arrays.stream(remainder.trim().split("\\s+"))
+                .filter(token -> !token.isBlank())
+                .allMatch(FILLER_WORDS::contains);
     }
 
     private static String withoutGenericWords(String phrase) {
@@ -228,8 +357,9 @@ public class LandmarkResolver {
     }
 
     /** Words that carry no name of their own. */
-    private static final List<String> FILLER_WORDS =
-            List.of(" a ", " an ", " the ", " any ", " some ", " near ", " nearby ", " close ", " to ", " of ", "s ");
+    private static final java.util.Set<String> FILLER_WORDS = java.util.Set.of(
+            "a", "an", "the", "any", "some", "near", "nearby", "nearest", "close", "closest",
+            "to", "of", "by", "around", "s", "es", "station", "stations", "stop", "stops");
 
     /**
      * Generic nouns dropped on a second attempt at a name.
@@ -242,6 +372,38 @@ public class LandmarkResolver {
             "hospital", "nursing", "home", "clinic",
             "mall", "market", "bazaar", "complex",
             "station", "metro", "railway", "stadium", "park", "the");
+
+    /**
+     * Drops category results that are obviously not the place itself.
+     *
+     * <p>The map data is wrong in ways no field reveals. "Subway to CTC Bus
+     * Stand and Road Crossing" — a pedestrian underpass — is tagged
+     * {@code railway=station, station=subway, subway=yes}, exactly like
+     * Kalighat or Central Park, so it came back as a metro station and a
+     * listing was described as 1.7 km from it. Nothing structural separates
+     * it, which leaves the name.
+     *
+     * <p>Deliberately phrases, not single words. "Road" alone would remove
+     * Jessore Road and Mahatma Gandhi Road, which are real stations; "road
+     * crossing" removes neither. Crude, and meant as a backstop until a
+     * verified landmarks table exists for the cities that matter.
+     */
+    static boolean isPlausibleLandmark(Landmark landmark) {
+        return isPlausibleName(landmark.name());
+    }
+
+    static boolean isPlausibleName(String placeName) {
+        if (placeName == null || placeName.isBlank()) {
+            return false;
+        }
+        String name = " " + placeName.toLowerCase(java.util.Locale.ROOT) + " ";
+        return NOT_A_LANDMARK.stream().noneMatch(name::contains);
+    }
+
+    private static final List<String> NOT_A_LANDMARK = List.of(
+            "subway to ", " crossing ", "road crossing", "underpass", "foot over bridge", " fob ",
+            "skywalk", " entrance", " exit ", "exit gate", "gate no", " gate ",
+            "parking", "ticket counter", "booking office", "platform no", " platform ");
 
     private static List<Landmark> placed(List<GeoSuggestionResponse> places) {
         return places.stream()

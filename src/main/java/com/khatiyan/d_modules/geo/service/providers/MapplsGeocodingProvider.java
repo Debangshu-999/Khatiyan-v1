@@ -1,6 +1,5 @@
 package com.khatiyan.d_modules.geo.service.providers;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -8,10 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -22,6 +18,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 // like an error.
 import tools.jackson.databind.JsonNode;
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
+import com.khatiyan.d_modules.geo.api.dto.NearbyPlaceResponse;
 import com.khatiyan.d_modules.geo.api.dto.ReverseGeocodeResponse;
 import com.khatiyan.d_modules.geo.service.GeocodingProvider;
 import com.khatiyan.d_modules.geo.service.GeocodingProviderType;
@@ -29,12 +26,27 @@ import com.khatiyan.d_modules.geo.service.GeocodingProviderType;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Mappls (MapMyIndia) adapter. Autosuggest uses OAuth client credentials (the
- * bearer token is cached until shortly before expiry); reverse geocoding uses
- * the REST key in the URL path, per Mappls' API split. All URLs are
- * configurable so vendor changes never require a code change. Vendor failures
- * log a warning and return empty results — the picker degrades, the app does
- * not break.
+ * Mappls (MapmyIndia) adapter, used for smart search's landmarks.
+ *
+ * <p><b>Why Mappls for this.</b> Its index of Indian institutions and transit is
+ * far better than OpenStreetMap's. Geoapify has no Sister Nivedita University
+ * and files a pedestrian underpass as a metro station; Mappls finds the
+ * university in New Town and categorises stations with a proper code
+ * ({@code TRNMET}), so an underpass never comes back as one.
+ *
+ * <p><b>Authentication is a static key</b> on every request, as an
+ * {@code access_token} query parameter. This replaced an OAuth client-credentials
+ * flow against an older host; a cloud-type key, whitelisted by IP, is what
+ * server-side calls need.
+ *
+ * <p><b>No coordinates.</b> On a standard key neither autosuggest nor nearby
+ * returns latitude or longitude — those are a premium field of Place Details.
+ * What they return instead is enough: autosuggest gives a place's real address
+ * and pincode, and nearby gives a place's distance from any point we ask about.
+ * {@link com.khatiyan.d_modules.geo.service.GeocodingService} builds on both.
+ *
+ * <p>Vendor failures log a warning and return empty — smart search then falls
+ * back to Geoapify rather than failing.
  */
 @Slf4j
 @Component
@@ -43,30 +55,21 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
     private static final Pattern PINCODE = Pattern.compile("\\b[1-9][0-9]{5}\\b");
 
     private final RestClient restClient;
-    private final String tokenUrl;
     private final String autosuggestUrl;
+    private final String nearbyUrl;
     private final String reverseUrlTemplate;
-    private final String clientId;
-    private final String clientSecret;
     private final String restKey;
-
-    private volatile String accessToken;
-    private volatile Instant accessTokenExpiry = Instant.EPOCH;
 
     public MapplsGeocodingProvider(
             RestClient.Builder restClientBuilder,
-            @Value("${app.geo.mappls.token-url:https://outpost.mappls.com/api/security/oauth/token}") String tokenUrl,
-            @Value("${app.geo.mappls.autosuggest-url:https://atlas.mappls.com/api/places/search/json}") String autosuggestUrl,
+            @Value("${app.geo.mappls.autosuggest-url:https://search.mappls.com/search/places/autosuggest/json}") String autosuggestUrl,
+            @Value("${app.geo.mappls.nearby-url:https://search.mappls.com/search/places/nearby/json}") String nearbyUrl,
             @Value("${app.geo.mappls.reverse-url:https://apis.mappls.com/advancedmaps/v1/%s/rev_geocode}") String reverseUrlTemplate,
-            @Value("${app.geo.mappls.client-id:}") String clientId,
-            @Value("${app.geo.mappls.client-secret:}") String clientSecret,
             @Value("${app.geo.mappls.rest-key:}") String restKey) {
         this.restClient = restClientBuilder.build();
-        this.tokenUrl = tokenUrl;
         this.autosuggestUrl = autosuggestUrl;
+        this.nearbyUrl = nearbyUrl;
         this.reverseUrlTemplate = reverseUrlTemplate;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
         this.restKey = restKey;
     }
 
@@ -76,33 +79,85 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
     }
 
     @Override
+    public boolean isConfigured() {
+        return !restKey.isBlank();
+    }
+
+    /**
+     * Places matching a name, nearest to a point first.
+     *
+     * <p>Each result carries its address, pincode and straight-line distance
+     * from the bias point — but no coordinates.
+     */
+    @Override
     public List<GeoSuggestionResponse> search(String query, Double nearLatitude, Double nearLongitude) {
-        if (clientId.isBlank() || clientSecret.isBlank()) {
-            log.warn("Mappls search skipped: client credentials not configured (app.geo.mappls.client-id/secret)");
+        if (!isConfigured()) {
             return List.of();
         }
         try {
             UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(autosuggestUrl)
-                    .queryParam("query", query);
+                    .queryParam("query", query)
+                    .queryParam("region", "IND")
+                    .queryParam("access_token", restKey);
             if (nearLatitude != null && nearLongitude != null) {
                 uri.queryParam("location", nearLatitude + "," + nearLongitude);
             }
-            JsonNode body = restClient.get()
-                    .uri(uri.build().toUri())
-                    .header("Authorization", "bearer " + token())
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode body = restClient.get().uri(uri.build().toUri()).retrieve().body(JsonNode.class);
             return parseSuggestions(body);
         } catch (RuntimeException exception) {
-            log.warn("Mappls autosuggest failed query='{}'", query, exception);
+            // Not the query: it is a person's search and stays out of the log.
+            log.warn("Mappls autosuggest failed", exception);
+            return List.of();
+        }
+    }
+
+    /**
+     * The places of the given categories closest to a point, nearest first.
+     *
+     * <p>Category codes rather than free text. Free text from a busy centre came
+     * back unsorted — "Apollo Hospitals, 6 m" from the middle of Kolkata — while
+     * the codes sort properly from every point tried.
+     *
+     * @param categoryCodes Mappls codes, several joined with ";" for OR
+     * @param radiusMeters  at most 10 000; the vendor does not look further
+     */
+    @Override
+    public List<NearbyPlaceResponse> nearby(String categoryCodes, double latitude, double longitude, int radiusMeters) {
+        if (!isConfigured() || categoryCodes == null || categoryCodes.isBlank()) {
+            return List.of();
+        }
+        try {
+            String url = UriComponentsBuilder.fromUriString(nearbyUrl)
+                    .queryParam("keywords", categoryCodes)
+                    .queryParam("refLocation", latitude + "," + longitude)
+                    .queryParam("radius", Math.min(radiusMeters, 10_000))
+                    .queryParam("sortBy", "dist:asc")
+                    .queryParam("region", "IND")
+                    .queryParam("access_token", restKey)
+                    .build()
+                    .toUriString();
+            JsonNode body = restClient.get().uri(url).retrieve().body(JsonNode.class);
+            List<NearbyPlaceResponse> places = new ArrayList<>();
+            if (body == null) {
+                return places;
+            }
+            for (JsonNode node : body.path("suggestedLocations")) {
+                String name = text(node, "placeName");
+                if (name == null || !node.path("distance").isNumber()) {
+                    continue;
+                }
+                places.add(new NearbyPlaceResponse(name, text(node, "placeAddress"), node.path("distance").asInt()));
+            }
+            return places;
+        } catch (RuntimeException exception) {
+            log.warn("Mappls nearby failed categories={}", categoryCodes, exception);
             return List.of();
         }
     }
 
     @Override
     public Optional<ReverseGeocodeResponse> reverse(double latitude, double longitude) {
-        if (restKey.isBlank()) {
-            log.warn("Mappls reverse skipped: REST key not configured (app.geo.mappls.rest-key)");
+        if (!isConfigured()) {
             return Optional.empty();
         }
         try {
@@ -131,9 +186,10 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
                     address,
                     node.path("latitude").isNumber() ? node.path("latitude").asDouble() : null,
                     node.path("longitude").isNumber() ? node.path("longitude").asDouble() : null,
-                    extractPincode(address),
+                    lastPincode(address),
                     node.path("type").asText(null),
-                    node.path("eLoc").asText(null)));
+                    node.path("eLoc").asText(null),
+                    node.path("distance").isNumber() ? node.path("distance").asInt() : null));
         }
         return suggestions;
     }
@@ -155,35 +211,23 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
                 longitude));
     }
 
-    // Bearer tokens last hours; refresh through a single flight a minute early.
-    private synchronized String token() {
-        if (accessToken != null && Instant.now().isBefore(accessTokenExpiry.minusSeconds(60))) {
-            return accessToken;
-        }
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("grant_type", "client_credentials");
-        form.add("client_id", clientId);
-        form.add("client_secret", clientSecret);
-        JsonNode body = restClient.post()
-                .uri(tokenUrl)
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(form)
-                .retrieve()
-                .body(JsonNode.class);
-        if (body == null || body.path("access_token").isMissingNode()) {
-            throw new IllegalStateException("Mappls token response missing access_token");
-        }
-        accessToken = body.path("access_token").asText();
-        accessTokenExpiry = Instant.now().plusSeconds(body.path("expires_in").asLong(3600));
-        return accessToken;
-    }
-
-    private static String extractPincode(String address) {
+    /**
+     * The pincode at the END of an address.
+     *
+     * <p>The last six-digit number, not the first: an address such as
+     * "DG 1/2, Rajarhat ..." can carry other digits earlier on, and the pincode
+     * is always the tail.
+     */
+    private static String lastPincode(String address) {
         if (address == null) {
             return null;
         }
         Matcher matcher = PINCODE.matcher(address);
-        return matcher.find() ? matcher.group() : null;
+        String last = null;
+        while (matcher.find()) {
+            last = matcher.group();
+        }
+        return last;
     }
 
     private static String text(JsonNode node, String field) {
