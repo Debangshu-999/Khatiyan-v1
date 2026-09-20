@@ -25,15 +25,71 @@ import { useTheme } from "@/theme/use-theme";
  */
 export function ClickwrapConsent({
   checked,
+  expanded = false,
   onToggle,
   statement,
 }: {
   checked: boolean;
+  /**
+   * Show the declaration in full, scrolling, with the tick beneath it.
+   *
+   * <p>For a screen that has room. The two-line form exists because five
+   * paragraphs above a button is five paragraphs nobody reads and it pushed the
+   * button off the screen — neither is true on a step whose whole job is this
+   * one decision, and there the summary makes somebody open a window to read
+   * what they are about to agree to.
+   *
+   * <p>Off by default, so the owner's onboarding declaration keeps the compact
+   * form it was designed for.
+   */
+  expanded?: boolean;
   onToggle: () => void;
   statement: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [open, setOpen] = useState(false);
+
+  if (expanded) {
+    return (
+      // No box of its own. This already sits inside the step's card, and a
+      // second border around it drew a card inside a card — the scrollbar is
+      // what says the text continues, not a frame.
+      <View style={{ gap: spacing.md }}>
+        {/* A fixed height, not one that grows with the text. The tick has to
+            stay where it is whichever declaration is showing, and a body that
+            resized with the wording would move the control under the reader's
+            thumb. */}
+        <ScrollView
+          contentContainerStyle={{ paddingRight: spacing.sm }}
+          nestedScrollEnabled
+          // Kept on screen rather than fading after a moment. It is the only
+          // thing telling a reader there is more declaration below the fold,
+          // and a bar that has already faded tells them nothing.
+          persistentScrollbar
+          showsVerticalScrollIndicator
+          style={{ height: 230 }}
+        >
+          <Text style={[type.caption, { color: colors.inkSoft, lineHeight: 20 }]}>{statement}</Text>
+        </ScrollView>
+
+        <View style={{ backgroundColor: colors.border, height: 1 }} />
+
+        {/* Pinned under the words it agrees to. Pressing the text scrolls it,
+            pressing the box agrees — the same separation the compact form
+            keeps, for the same reason. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <ConsentTick checked={checked} onToggle={onToggle} />
+          <Text
+            onPress={onToggle}
+            style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5 }}
+            suppressHighlighting
+          >
+            I have read and agree to this declaration
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View

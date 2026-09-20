@@ -98,7 +98,7 @@ export function billingCycleStatusDisplay(cycle: BillingCycle): {
   // reads as a system state; the owner needs to know a person is waiting on
   // them, and the tenant needs to know the bill is not theirs to act on.
   if (cycle.status === "CONFIRMATION_PENDING") {
-    return { label: "Confirming", tone: "warning" };
+    return { label: "Awaiting", tone: "warning" };
   }
   return { label: humanizeToken(cycle.status), tone: "primary" };
 }
@@ -559,6 +559,14 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
           {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
         </Text>
       </View>
+
+      {/* Why it was cancelled, kept on the bill so it does not just turn grey. */}
+      {cycle.status === "CANCELLED" && cycle.cancellationReason ? (
+        <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+          Cancelled: {cycle.cancellationReason}
+        </Text>
+      ) : null}
+
     </View>
   );
 }

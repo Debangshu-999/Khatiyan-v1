@@ -68,6 +68,7 @@ public class PropertyModule {
         return propertyService.listOwnerProperties(ownerId);
     }
 
+
     public PropertyBillingPolicyResponse getBillingPolicy(UUID propertyId) {
         return propertyService.getBillingPolicy(propertyId);
     }

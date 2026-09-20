@@ -11,7 +11,7 @@ import { SheetShell } from "@/components/sheet-shell";
 import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { ActionButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { isDepositCredit, type DepositAccount, type DepositMovement } from "@/store/services/billing-api";
-import type { TenancySummary } from "@/store/services/tenancy-api";
+import { tenancyStatusLabel, type TenancySummary } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -88,7 +88,7 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityLabel={"Choose another tenancy. Current tenant: " + (tenancy.tenantName ?? "Unnamed tenant") + ", " + humanizeToken(tenancy.status)}
+      accessibilityLabel={"Choose another tenancy. Current tenant: " + (tenancy.tenantName ?? "Unnamed tenant") + ", " + tenancyStatusLabel(tenancy.status)}
       onPress={onPress}
       style={{
         // The picker card's design exactly, so choosing a tenancy and having
@@ -153,7 +153,9 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
           background={active ? colors.successSoft : onNotice ? colors.warningSoft : colors.neutralSoft}
           color={statusColor}
           icon={active ? Landmark : onNotice ? Clock3 : CheckCircle2}
-          label={humanizeToken(tenancy.status)}
+          // "On notice" for both notice kinds. "On Premature Notice" was long
+          // enough to push the name and tenancy code out of the card.
+          label={tenancyStatusLabel(tenancy.status)}
         />
       </View>
       <ChevronRight color={colors.muted} size={20} strokeWidth={2} />

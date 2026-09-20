@@ -131,12 +131,20 @@ function notificationDetails(notification: NotificationItem) {
   const details: Array<{ label: string; value: string }> = [];
 
   switch (notification.subtype) {
+    // Onboarding carries the same facts as a start — the bed is reserved and
+    // the date is set — so it reads the same way. What differs is the title,
+    // which says the tenancy has not begun yet.
+    case "TENANT_ONBOARDED":
     case "TENANCY_STARTED":
     case "TENANCY_ENDED":
       add(details, "Property", data.propertyName);
       add(details, "Room", data.roomNumber);
       add(details, "Tenancy ID", shortId(data.tenancyId));
-      add(details, notification.subtype === "TENANCY_STARTED" ? "Start date" : "End date", formatDate(data.startDate ?? data.endDate));
+      add(
+        details,
+        notification.subtype === "TENANCY_ENDED" ? "End date" : "Start date",
+        formatDate(data.startDate ?? data.endDate),
+      );
       break;
     // No room number and no dates: the tenancy never started, so the only
     // facts are which offer it was and who ended it. "Cancelled by" is the one
@@ -204,6 +212,10 @@ function notificationDetails(notification: NotificationItem) {
     case "BILLING_CYCLE_GENERATED":
       add(details, "Cycle", data.cycleNumber);
       add(details, "Due date", formatDate(data.rentDueDate));
+      add(details, "Amount", formatPaise(data.totalAmountPaise));
+      add(details, "Tenancy ID", shortId(data.tenancyId));
+      break;
+    case "BILLING_CYCLE_CANCELLED":
       add(details, "Amount", formatPaise(data.totalAmountPaise));
       add(details, "Tenancy ID", shortId(data.tenancyId));
       break;

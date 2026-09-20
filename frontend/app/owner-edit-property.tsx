@@ -1,19 +1,9 @@
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  ArrowLeft,
-  Bath,
-  GraduationCap,
-  Mars,
-  UsersRound,
-  UtensilsCrossed,
-  Venus,
-  Zap,
-  type LucideProps,
-} from "lucide-react-native";
+import { ArrowLeft, CalendarDays } from "lucide-react-native";
 
-import { ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
+import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
 import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
@@ -30,7 +20,6 @@ import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-
 import { FacilitiesField } from "@/features/owner/facilities-field";
 import {
   ActionButton,
-  ChoiceButton,
   FormInput,
   IconButton,
   humanizeToken,
@@ -40,21 +29,18 @@ import {
 import { PropertyImagesSection } from "@/features/property/property-images-section";
 import { ROOM_TYPE_INTRO } from "@/features/property/room-type-board";
 import { RoomTypesSection } from "@/features/property/room-types-section";
+import { StayChoiceSections } from "@/features/property/stay-choice-sections";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
 import {
-  BATHROOM_TYPES,
   MAX_RENT_GRACE_DAYS,
-  MEAL_TYPES,
   MIN_RENT_GRACE_DAYS,
   NOTICE_PERIOD_LABELS,
   NOTICE_PERIOD_OPTIONS,
   NOTICE_PERIOD_RANGE_HINT,
-  PG_FOR_OPTIONS,
-  PREFERRED_TENANT_OPTIONS,
   PROPERTY_TYPES,
   RENT_GRACE_RANGE_HINT,
   ROOM_TYPES,
@@ -77,12 +63,6 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Mirrors the backend cap on discovery.property_images. */
 const MAX_PROPERTY_IMAGES = 10;
-
-/** The discovery filter's glyphs for these choices. Anyone is left as a word. */
-const PG_FOR_ICONS: Partial<Record<PgFor, ComponentType<LucideProps>>> = {
-  FEMALE: Venus,
-  MALE: Mars,
-};
 
 const YES_NO = ["YES", "NO"] as const;
 
@@ -194,6 +174,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [preferredFor, setPreferredFor] = useState<PreferredTenantType>(property.preferredFor ?? "ANYONE");
   const [includedMeals, setIncludedMeals] = useState<MealType[]>(property.includedMeals ?? []);
   const [electricityIncluded, setElectricityIncluded] = useState(Boolean(property.electricityIncluded));
+  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean | null>(property.visitorsAllowed ?? null);
   const [bathroomType, setBathroomType] = useState<BathroomType>(property.bathroomType ?? "COMMON");
   const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>(property.availableSharingTypes ?? []);
   const [tab, setTab] = useState<EditTab>("basics");
@@ -285,6 +266,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     pgFor !== (property.pgFor ?? "ANYONE") ||
     preferredFor !== (property.preferredFor ?? "ANYONE") ||
     electricityIncluded !== Boolean(property.electricityIncluded) ||
+    visitorsAllowed !== (property.visitorsAllowed ?? null) ||
     bathroomType !== (property.bathroomType ?? "COMMON") ||
     includedMeals.join() !== (property.includedMeals ?? []).join() ||
     availableSharingTypes.join() !== (property.availableSharingTypes ?? []).join() ||
@@ -408,6 +390,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       availableSharingTypes,
       bathroomType,
       electricityIncluded,
+      visitorsAllowed,
       facilities,
       foodIncluded: includedMeals.length > 0,
       includedMeals,
@@ -520,70 +503,40 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
 
               {tab === "rooms" ? (
               <ModalSection title="Rooms & inclusions">
-                <SingleOptionPicker
-                  label="Property type"
-                  required
-                  onChange={setPropertyType}
-                  options={PROPERTY_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
-                  value={propertyType}
-                />
-
-                {/* The same sections the discovery filter sheet uses, so an owner
-                    declares these in the control a searcher filters them with.
-                    No "Any" where the filter has one only to mean "no filter":
-                    a property's electricity and bathroom are one thing or the
-                    other. "Anyone" stays where it is a real answer. */}
-                <ChoiceSection description="Who can stay at this property?" icon={UsersRound} title="PG/Hostel for">
-                  <ChoiceGrid
-                    getIcon={(option) => PG_FOR_ICONS[option]}
-                    getLabel={humanizeToken}
-                    onSelect={setPgFor}
-                    options={PG_FOR_OPTIONS}
-                    selected={pgFor}
+                {/* What the property is and what it offers, together: the two
+                    answers that decide every room type under the next tab. */}
+                <ChoiceCard style={{ gap: spacing.md }}>
+                  <SingleOptionPicker
+                    label="Property type"
+                    required
+                    onChange={setPropertyType}
+                    options={PROPERTY_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
+                    value={propertyType}
                   />
-                </ChoiceSection>
-
-                <ChoiceSection description="Who is this property suitable for?" icon={GraduationCap} title="Preferred for">
-                  <ChoiceGrid
-                    getLabel={(option) => (option === "PROFESSIONAL" ? "Working" : humanizeToken(option))}
-                    onSelect={setPreferredFor}
-                    options={PREFERRED_TENANT_OPTIONS}
-                    selected={preferredFor}
+                  <OptionPicker
+                    emptyLabel="No sharing types selected"
+                    label="Available sharing types"
+                    required
+                    onChange={setAvailableSharingTypes}
+                    options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
+                    title="Choose occupancies"
+                    value={availableSharingTypes}
                   />
-                </ChoiceSection>
+                </ChoiceCard>
 
-                {/* None ticked is how a property says food is not included —
-                    the same reading the filter gives an empty selection. */}
-                <ChoiceSection
-                  description="Which meals are included in the rent?"
-                  footnote="Leave all unselected if no meals are included."
-                  icon={UtensilsCrossed}
-                  title="Meals included"
-                >
-                  <MultiChoiceGrid getLabel={humanizeToken} onToggle={toggleMeal} options={MEAL_TYPES} selected={includedMeals} />
-                </ChoiceSection>
-
-                <ChoiceSection description="Is electricity included in the rent?" icon={Zap} title="Electricity included">
-                  <ChoiceGrid
-                    getLabel={(option) => (option === "YES" ? "Yes" : "No")}
-                    onSelect={(option) => setElectricityIncluded(option === "YES")}
-                    options={YES_NO}
-                    selected={electricityIncluded ? "YES" : "NO"}
-                  />
-                </ChoiceSection>
-
-                <ChoiceSection description="Choose the bathroom arrangement" icon={Bath} title="Bathroom type">
-                  <ChoiceGrid getLabel={humanizeToken} onSelect={setBathroomType} options={BATHROOM_TYPES} selected={bathroomType} />
-                </ChoiceSection>
-
-                <OptionPicker
-                  emptyLabel="No sharing types selected"
-                  label="Available sharing types"
-                  required
-                  onChange={setAvailableSharingTypes}
-                  options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
-                  title="Choose occupancies"
-                  value={availableSharingTypes}
+                <StayChoiceSections
+                  bathroomType={bathroomType}
+                  electricityIncluded={electricityIncluded}
+                  includedMeals={includedMeals}
+                  onBathroomType={setBathroomType}
+                  onElectricityIncluded={setElectricityIncluded}
+                  onPgFor={setPgFor}
+                  onPreferredFor={setPreferredFor}
+                  onToggleMeal={toggleMeal}
+                  onVisitorsAllowed={setVisitorsAllowed}
+                  pgFor={pgFor}
+                  preferredFor={preferredFor}
+                  visitorsAllowed={visitorsAllowed}
                 />
 
                 <FacilitiesField
@@ -598,29 +551,33 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
 
               {tab === "types" ? (
               <ModalSection title="Room types">
-                <View style={{ gap: 4 }}>
-                  {ROOM_TYPE_INTRO.map((line) => (
-                    <Text key={line} style={[type.body, { color: colors.muted }]}>
-                      {"• "}
-                      {line}
-                    </Text>
-                  ))}
-                </View>
+                <ChoiceCard style={{ gap: spacing.md }}>
+                  <View style={{ gap: 4 }}>
+                    {ROOM_TYPE_INTRO.map((line) => (
+                      <Text key={line} style={[type.body, { color: colors.muted }]}>
+                        {"• "}
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
 
-                {/* Saves as it goes, like the images below it — a room type is
-                    not a field of the property, and making it wait for Save
-                    would let an owner edit a type, discard the form, and have no
-                    way to tell which of the two had happened. */}
-                <RoomTypesSection
-                  occupancies={availableSharingTypes}
-                  onChanged={() => setPhotosTouched(true)}
-                  propertyId={property.id}
-                />
+                  {/* Saves as it goes, like the images below it — a room type is
+                      not a field of the property, and making it wait for Save
+                      would let an owner edit a type, discard the form, and have no
+                      way to tell which of the two had happened. */}
+                  <RoomTypesSection
+                    occupancies={availableSharingTypes}
+                    onChanged={() => setPhotosTouched(true)}
+                    propertyId={property.id}
+                    tabBleed={0}
+                  />
+                </ChoiceCard>
               </ModalSection>
               ) : null}
 
               {tab === "pricing" ? (
               <ModalSection title="Pricing & policy">
+                <ChoiceCard style={{ gap: spacing.md }}>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
                     <FormInput keyboardType="decimal-pad" label="Std. deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="Amount" prefix="₹" value={deposit} required />
@@ -651,12 +608,14 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   value={graceDays}
                 />
                 <FieldHint text={RENT_GRACE_RANGE_HINT} />
-                <Labeled label="Offers daily stays">
-                  <ChoiceButton active={offersDailyStays} label="Yes" onPress={() => setDailyStays(true)} square />
-                  <ChoiceButton active={!offersDailyStays} label="No" onPress={() => setDailyStays(false)} square />
-                </Labeled>
-                {offersDailyStays ? (
-                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                </ChoiceCard>
+
+                {/* The same section the Rooms tab uses for its yes-or-no
+                    questions. The rates it opens up sit full width beneath the
+                    choice, where their labels have room. */}
+                <ChoiceSection
+                  below={offersDailyStays ? (
+                  <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
                     <View style={{ flex: 1 }}>
                       <FormInput
                         error={form.errors.acRate}
@@ -682,7 +641,18 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                       />
                     </View>
                   </View>
-                ) : null}
+                  ) : null}
+                  description="Can guests book short stays by the day?"
+                  icon={CalendarDays}
+                  title="Offers daily stays"
+                >
+                  <ChoiceGrid
+                    getLabel={(option) => (option === "YES" ? "Yes" : "No")}
+                    onSelect={(option) => setDailyStays(option === "YES")}
+                    options={YES_NO}
+                    selected={offersDailyStays ? "YES" : "NO"}
+                  />
+                </ChoiceSection>
               </ModalSection>
               ) : null}
 
@@ -713,10 +683,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
           Out here it pins to the screen, which is where "pinned to the bottom"
           was always meant to mean. The scroll content keeps its keyboard
           avoidance; only the footer stops moving. */}
-      {/* Opaque in the page's own colour, with no fade and no rule — the way the
-          chat composer sits under its messages. The dimming veil read as a grey
-          band laid over the form. */}
-      <PinnedFooter fade={false}>
+      <PinnedFooter>
         <ActionButton disabled={isLoading || form.blocked} label={isLoading ? "Saving..." : "Save property"} onPress={() => void submit()} />
       </PinnedFooter>
 
@@ -798,18 +765,6 @@ function ModalSection({ children, title, trailing }: { children: ReactNode; titl
         {trailing}
       </View>
       <View style={{ gap: spacing.md }}>{children}</View>
-    </View>
-  );
-}
-
-function Labeled({ children, label }: { children: ReactNode; label: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>
-        {label}
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>{children}</View>
     </View>
   );
 }

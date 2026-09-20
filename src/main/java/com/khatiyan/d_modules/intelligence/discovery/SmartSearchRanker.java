@@ -187,10 +187,10 @@ public class SmartSearchRanker {
         }
 
         // ---- property data no filter asks about -------------------------
-        if (preferences.propertyType() != null) {
+        if (args.propertyType() != null) {
             requirements++;
-            boolean ok = property.type() == preferences.propertyType();
-            String label = humanise(preferences.propertyType().name());
+            boolean ok = property.type() == args.propertyType();
+            String label = humanise(args.propertyType().name());
             record(ok, matched, missed, label, "a " + humanise(property.type().name()) + ", not a " + label);
         }
         if (preferences.maxDepositPaise() != null) {
@@ -389,8 +389,8 @@ public class SmartSearchRanker {
             chips.add(humanise(args.bathroomType().name()) + " bathroom");
         }
         args.sharingTypes().forEach(sharing -> chips.add(humanise(sharing.name()) + " sharing"));
-        if (preferences.propertyType() != null) {
-            chips.add(humanise(preferences.propertyType().name()));
+        if (args.propertyType() != null) {
+            chips.add(humanise(args.propertyType().name()));
         }
         if (preferences.maxDepositPaise() != null) {
             chips.add("Deposit under " + rupees(preferences.maxDepositPaise()));

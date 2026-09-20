@@ -29,7 +29,21 @@ import { useTheme } from "@/theme/use-theme";
  * PENDING_ACCEPTANCE: the full agreement, an explicit consent checkbox, and
  * Accept / Decline. Accepting activates the tenancy; declining cancels it.
  */
-export function AgreementAcceptanceView({ propertyName }: { propertyName: string }) {
+export function AgreementAcceptanceView({
+  hideDocument = false,
+  propertyName,
+}: {
+  /**
+   * Drop the deed and the standing notice, leaving only the consent and the
+   * signing code.
+   *
+   * <p>For the stepped flow, where reading the agreement is its own step and
+   * repeating the whole document above the signature would bury the one thing
+   * that step is for.
+   */
+  hideDocument?: boolean;
+  propertyName: string;
+}) {
   const { colors, type } = useTheme();
   const toast = useToast();
   // Accept and decline are one-tap operations — a refusal has no field to blame.
@@ -150,17 +164,21 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
           It is a precaution to read while deciding — the same thing NoticeBar
           exists for everywhere else — and "info" is the right tone: this
           explains what accepting does, it does not warn against it. */}
-      <NoticeBar
-        message={`${propertyName} requires you to read and accept these terms. Your tenancy — and its billing — starts only after you accept. If something looks wrong, contact the owner before accepting, or decline to cancel.`}
-        title="Before your tenancy begins"
-        tone="info"
-      />
+      {hideDocument ? null : (
+        <>
+          <NoticeBar
+            message={`${propertyName} requires you to read and accept these terms. Your tenancy — and its billing — starts only after you accept. If something looks wrong, contact the owner before accepting, or decline to cancel.`}
+            title="Before your tenancy begins"
+            tone="info"
+          />
 
-      <AgreementDocument
-        acceptedAt={agreement.acceptedAt}
-        clauses={agreement.clauses}
-        preamble={agreement.preamble}
-      />
+          <AgreementDocument
+            acceptedAt={agreement.acceptedAt}
+            clauses={agreement.clauses}
+            preamble={agreement.preamble}
+          />
+        </>
+      )}
 
       <Card>
         {/* The same block the owner ticks at onboarding. Two consents with the
@@ -168,6 +186,10 @@ export function AgreementAcceptanceView({ propertyName }: { propertyName: string
             server's, fetched with the signing code rather than shipped here. */}
         <ClickwrapConsent
           checked={consented}
+          // Signing has a screen to itself now, so the declaration is read
+          // here rather than summarised into two lines with the rest behind a
+          // window nobody opens.
+          expanded
           onToggle={() => setConsented((current) => !current)}
           statement={statementQuery.data?.text ?? ""}
         />

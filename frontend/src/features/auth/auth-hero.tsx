@@ -1,9 +1,10 @@
 import { useEffect, useRef, type ComponentType } from "react";
-import { Animated, Easing, ImageBackground, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, ImageBackground, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { KeyRound, Lock, Mail, ShieldCheck, ShieldPlus, UserPlus, type LucideProps } from "lucide-react-native";
 
+import { BRAND_LOGO_BACKGROUND, BrandLogo } from "@/components/brand-logo";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -123,24 +124,28 @@ export function heroTintColor(copy: AuthHeroCopy, colors: { primary: string; jad
  * Full-bleed brand band at the very top of the auth screens: a photograph of
  * residential buildings under open sky, covered by a step-tinted scrim so the
  * band still reads blue on login, jade on account setup and amber on PIN
- * recovery. A floating white icon badge and the brand tagline sit on top, and
- * the content sheet below overlaps it by {@link AUTH_SHEET_OVERLAP}.
+ * recovery. The Khatiyan logo floats on top in its own tile, and the content
+ * sheet below overlaps it by {@link AUTH_SHEET_OVERLAP}.
+ *
+ * <p>
+ * The logo replaced a step icon badge and a one-line tagline. The logo carries
+ * its own tagline, so keeping the old line would have said two things at once.
  *
  * <p>
  * The photo replaced a hand-drawn SVG skyline: the illustration read as filler,
  * where a real building says what the product is about before a word is read.
  */
 export function AuthHero({ copy }: { copy: AuthHeroCopy }) {
-  const { colors, fonts } = useTheme();
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const Icon = copy.icon;
   const tint = heroTintColor(copy, colors);
 
   const compact = windowHeight < 760;
-  const badgeSize = compact ? 56 : 64;
+  const tileSize = compact ? 124 : 148;
+  const tilePadding = compact ? 6 : 8;
 
-  // A single gentle float on the icon badge — quiet ambient motion.
+  // A single gentle float on the logo tile — quiet ambient motion.
   const float = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const bob = Animated.loop(
@@ -192,35 +197,26 @@ export function AuthHero({ copy }: { copy: AuthHeroCopy }) {
       <Animated.View
         style={{
           alignItems: "center",
-          // Outlined, not filled: the app-wide icon rule, and against a
-          // photograph a hairline ring reads as a mark where a white slab reads
-          // as a button someone forgot to wire up. The glyph is white because
-          // ink would vanish into the scrim.
-          borderColor: "rgba(255,255,255,0.9)",
+          // The logo's own background, so the artwork has no visible edge
+          // inside the tile. A tile rather than the bare image: the logo is a
+          // flat picture, and laid straight onto the tinted photo its navy
+          // wordmark would sink into the scrim.
+          backgroundColor: isDark ? BRAND_LOGO_BACKGROUND.dark : BRAND_LOGO_BACKGROUND.light,
           borderCurve: "continuous",
-          borderRadius: Math.round(badgeSize * 0.34),
-          borderWidth: 1.5,
-          height: badgeSize,
+          borderRadius: Math.round(tileSize * 0.18),
+          elevation: 6,
+          height: tileSize,
           justifyContent: "center",
+          shadowColor: "#000000",
+          shadowOffset: { height: 6, width: 0 },
+          shadowOpacity: 0.22,
+          shadowRadius: 14,
           transform: [{ translateY }],
-          width: badgeSize,
+          width: tileSize,
         }}
       >
-        <Icon color="#FFFFFF" size={Math.round(badgeSize * 0.46)} strokeWidth={1.9} />
+        <BrandLogo size={tileSize - tilePadding * 2} />
       </Animated.View>
-
-      <Text
-        style={{
-          color: "#FFFFFF",
-          fontFamily: fonts.sansBold,
-          fontSize: compact ? 15 : 16.5,
-          lineHeight: compact ? 21 : 23,
-          maxWidth: 320,
-          textAlign: "center",
-        }}
-      >
-        One place for your stays, rent{"\n"}and properties.
-      </Text>
     </View>
   );
 }

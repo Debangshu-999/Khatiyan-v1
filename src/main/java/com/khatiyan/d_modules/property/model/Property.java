@@ -107,6 +107,16 @@ public class Property extends BaseEntity {
     @Column(name = "bathroom_type", nullable = false, length = 20)
     private BathroomType bathroomType;
 
+    /**
+     * Whether tenants may have visitors. Null until the owner says, which the
+     * listing shows as "Not specified" rather than guessing either way.
+     *
+     * <p>Stay information, not a discovery filter: it is shown on the listing
+     * and read by smart search, but nobody filters on it.
+     */
+    @Column(name = "visitors_allowed")
+    private Boolean visitorsAllowed;
+
     @Column(name = "is_active", nullable = false)
     private boolean active;
 
@@ -396,6 +406,16 @@ public class Property extends BaseEntity {
         updateDepositPolicy(standardDepositPaise);
         updateExitPolicy(noticePeriod);
         replaceFacilities(facilities, customFacilities);
+    }
+
+    /**
+     * Records the visitor rule. A null leaves the current answer in place, so a
+     * client that does not know about this field cannot wipe it on save.
+     */
+    public void updateVisitorsAllowed(Boolean visitorsAllowed) {
+        if (visitorsAllowed != null) {
+            this.visitorsAllowed = visitorsAllowed;
+        }
     }
 
     private void updateDiscoveryFilters(

@@ -58,6 +58,13 @@ export function computeFilterMatches(filters: PropertyFilterState, property: Pro
     }
   }
 
+  if (filters.propertyType !== null) {
+    active += 1;
+    if (property.type === filters.propertyType) {
+      tags.push(humanizeToken(filters.propertyType));
+    }
+  }
+
   if (filters.sharingTypes.length > 0) {
     active += 1;
     const matched = filters.sharingTypes.filter((sharing) => property.availableSharingTypes.includes(sharing));

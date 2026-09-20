@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CalendarDays } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
@@ -16,7 +17,9 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal } from "@/features/geo/map-location-picker";
+import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
 import { FacilitiesField } from "@/features/owner/facilities-field";
+import { StayChoiceSections } from "@/features/property/stay-choice-sections";
 import {
   ROOM_TYPE_INTRO,
   RoomTypeBoard,
@@ -30,18 +33,14 @@ import { useToast } from "@/components/toast";
 import { AddPhotoTarget, PhotoRow, UploadProgress } from "@/features/property/photo-list";
 import { uploadAssets, type UploadedAsset } from "@/features/uploads/upload-asset";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
-import { ActionButton, ChoiceButton, FormInput, humanizeToken, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, humanizeToken, rupeesToPaise } from "@/features/owner/owner-ui";
 import { useAppDispatch } from "@/store/hooks";
 import {
-  BATHROOM_TYPES,
   MAX_RENT_GRACE_DAYS,
-  MEAL_TYPES,
   MIN_RENT_GRACE_DAYS,
   NOTICE_PERIOD_LABELS,
   NOTICE_PERIOD_OPTIONS,
   NOTICE_PERIOD_RANGE_HINT,
-  PG_FOR_OPTIONS,
-  PREFERRED_TENANT_OPTIONS,
   PROPERTY_TYPES,
   RENT_GRACE_RANGE_HINT,
   ROOM_TYPES,
@@ -63,6 +62,8 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Mirrors the backend cap on discovery.property_images. */
 const MAX_PROPERTY_IMAGES = 10;
+
+const YES_NO = ["YES", "NO"] as const;
 
 /** Every field the submit check can point at. */
 type FormField =
@@ -247,6 +248,9 @@ export default function OwnerRegisterPropertyScreen() {
   const [preferredFor, setPreferredFor] = useState<PreferredTenantType>("ANYONE");
   const [includedMeals, setIncludedMeals] = useState<MealType[]>([]);
   const [electricityIncluded, setElectricityIncluded] = useState(false);
+  // Unanswered until the owner picks one. Registering without it is allowed,
+  // and the listing then says "Not specified" rather than guessing.
+  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean | null>(null);
   const [bathroomType, setBathroomType] = useState<BathroomType>("COMMON");
   const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>([]);
   const [facilities, setFacilities] = useState<PropertyFacility[]>([]);
@@ -356,6 +360,7 @@ export default function OwnerRegisterPropertyScreen() {
         discoveryProfileImageUrl: images[0]?.url ?? null,
         electricityIncluded,
         facilities,
+        visitorsAllowed,
         foodIncluded: includedMeals.length > 0,
         includedMeals,
         latitude: coords?.latitude ?? null,
@@ -516,7 +521,7 @@ export default function OwnerRegisterPropertyScreen() {
       >
 
       {step === "basics" ? (
-      <FormSection eyebrow="Basics" title="Name & location">
+      <FormSection title="Name & location">
         <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="e.g. Sunrise Residency" value={name} required />
         <LocationPinCard
           addressSummary={addressSummaryLine(area, city, pincode)}
@@ -539,66 +544,56 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "rooms" ? (
-      <FormSection eyebrow="Setup" title="Rooms & inclusions">
-        <SingleOptionPicker
-          label="Property type"
-          required
-          onChange={setPropertyType}
-          options={PROPERTY_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
-          value={propertyType}
-        />
+      <FormSection title="Rooms & inclusions">
+        {/* What the property is and what it offers, together: the two answers
+            that decide every room type on the next step. */}
+        <ChoiceCard style={{ gap: spacing.md }}>
+          <SingleOptionPicker
+            label="Property type"
+            required
+            onChange={setPropertyType}
+            options={PROPERTY_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
+            value={propertyType}
+          />
+          <OptionPicker
+            emptyLabel="No sharing types selected"
+            error={form.errors.sharing}
+            label="Available sharing types"
+            required
+            onChange={(next) => {
+              setAvailableSharingTypes(next);
+              // Untick an occupancy and its types go with it. The board only
+              // shows tabs for occupancies on offer, so a draft left behind here
+              // would be invisible and still get POSTed after registration.
+              setRoomTypes((current) => current.filter((entry) => next.includes(entry.sharingType)));
+              form.clearField("sharing");
+            }}
+            options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
+            title="Choose occupancies"
+            value={availableSharingTypes}
+          />
+        </ChoiceCard>
 
-        <OptionGroup label="PG for">
-          {PG_FOR_OPTIONS.map((option) => (
-            <ChoiceButton active={option === pgFor} key={option} label={humanizeToken(option)} onPress={() => setPgFor(option)} square />
-          ))}
-        </OptionGroup>
-
-        <OptionGroup label="Preferred for">
-          {PREFERRED_TENANT_OPTIONS.map((option) => (
-            <ChoiceButton active={option === preferredFor} key={option} label={humanizeToken(option)} onPress={() => setPreferredFor(option)} square />
-          ))}
-        </OptionGroup>
-
-        <OptionGroup label="Meals included (optional)">
-          {MEAL_TYPES.map((meal) => (
-            <ChoiceButton active={includedMeals.includes(meal)} key={meal} label={humanizeToken(meal)} onPress={() => toggleMeal(meal)} square />
-          ))}
-        </OptionGroup>
-
-        <OptionGroup label="Electricity included">
-          <ChoiceButton active={electricityIncluded} label="Yes" onPress={() => setElectricityIncluded(true)} square />
-          <ChoiceButton active={!electricityIncluded} label="No" onPress={() => setElectricityIncluded(false)} square />
-        </OptionGroup>
-
-        <OptionGroup label="Bathroom type">
-          {BATHROOM_TYPES.map((option) => (
-            <ChoiceButton active={option === bathroomType} key={option} label={humanizeToken(option)} onPress={() => setBathroomType(option)} square />
-          ))}
-        </OptionGroup>
-
-        <OptionPicker
-          emptyLabel="No sharing types selected"
-          error={form.errors.sharing}
-          label="Available sharing types"
-          required
-          onChange={(next) => {
-            setAvailableSharingTypes(next);
-            // Untick an occupancy and its types go with it. The board only
-            // shows tabs for occupancies on offer, so a draft left behind here
-            // would be invisible and still get POSTed after registration.
-            setRoomTypes((current) => current.filter((entry) => next.includes(entry.sharingType)));
-            form.clearField("sharing");
-          }}
-          options={ROOM_TYPES.map((option) => ({ label: humanizeToken(option), value: option }))}
-          title="Choose occupancies"
-          value={availableSharingTypes}
+        <StayChoiceSections
+          bathroomType={bathroomType}
+          electricityIncluded={electricityIncluded}
+          includedMeals={includedMeals}
+          onBathroomType={setBathroomType}
+          onElectricityIncluded={setElectricityIncluded}
+          onPgFor={setPgFor}
+          onPreferredFor={setPreferredFor}
+          onToggleMeal={toggleMeal}
+          onVisitorsAllowed={setVisitorsAllowed}
+          pgFor={pgFor}
+          preferredFor={preferredFor}
+          visitorsAllowed={visitorsAllowed}
         />
 
         <View style={{ gap: 6 }}>
           <FacilitiesField
             customFacilities={customFacilities}
             facilities={facilities}
+            layout="grid"
             onChangeCustom={(next) => {
               setCustomFacilities(next);
               form.clearField("facilities");
@@ -615,113 +610,135 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "types" ? (
-      <FormSection eyebrow="Setup" title="Room types">
-        <View style={{ gap: 4 }}>
-          {ROOM_TYPE_INTRO.map((line) => (
-            <Text key={line} style={[type.body, { color: colors.muted }]}>
-              {"• "}
-              {line}
-            </Text>
-          ))}
-        </View>
+      <FormSection title="Room types">
+        <ChoiceCard style={{ gap: spacing.md }}>
+          <View style={{ gap: 4 }}>
+            {ROOM_TYPE_INTRO.map((line) => (
+              <Text key={line} style={[type.body, { color: colors.muted }]}>
+                {"• "}
+                {line}
+              </Text>
+            ))}
+          </View>
 
-        <RoomTypeBoard
-          entries={roomTypes}
-          occupancies={availableSharingTypes}
-          onCreate={(sharingType, conditioning) => setEditingType({ conditioning, entry: null, sharingType })}
-          onEdit={(entry) => setEditingType({ conditioning: entry.conditioning, entry, sharingType: entry.sharingType })}
-          onRemove={setRemovingType}
-        />
+          <RoomTypeBoard
+            entries={roomTypes}
+            occupancies={availableSharingTypes}
+            onCreate={(sharingType, conditioning) => setEditingType({ conditioning, entry: null, sharingType })}
+            onEdit={(entry) => setEditingType({ conditioning: entry.conditioning, entry, sharingType: entry.sharingType })}
+            onRemove={setRemovingType}
+            tabBleed={0}
+          />
+        </ChoiceCard>
 
         <FieldError message={form.errors.types} />
       </FormSection>
       ) : null}
 
       {step === "pricing" ? (
-      <FormSection eyebrow="Money" title="Pricing & policy">
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="10000" prefix="₹" value={deposit} required />
-          </View>
-          <View style={{ flex: 1 }}>
-            <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
-          </View>
-        </View>
-        <SingleOptionPicker
-          label="Notice period"
-          onChange={setNoticePeriod}
-          options={NOTICE_PERIOD_OPTIONS.map((option) => ({
-            label: NOTICE_PERIOD_LABELS[option],
-            value: option,
-          }))}
-          required
-          title="Notice period"
-          value={noticePeriod}
-        />
-        <FieldHint text={NOTICE_PERIOD_RANGE_HINT} />
-        <FormInput
-          keyboardType="number-pad"
-          label="Grace days"
-          error={form.errors.graceDays} onChangeText={(next) => { setGraceDays(next); form.clearField("graceDays"); }}
-          placeholder={`e.g. 3 — max ${MAX_RENT_GRACE_DAYS}`}
-          required
-          value={graceDays}
-        />
-        <FieldHint text={RENT_GRACE_RANGE_HINT} />
-        <OptionGroup label="Offers daily stays">
-          <ChoiceButton active={offersDailyStays} label="Yes" onPress={() => setOffersDailyStays(true)} square />
-          <ChoiceButton active={!offersDailyStays} label="No" onPress={() => setOffersDailyStays(false)} square />
-        </OptionGroup>
-        {offersDailyStays ? (
+      <FormSection title="Pricing & policy">
+        <ChoiceCard style={{ gap: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <View style={{ flex: 1 }}>
-              <FormInput keyboardType="decimal-pad" label="Guest AC/day" error={form.errors.acRate} onChangeText={(next) => { setAcRate(next); form.clearField("acRate"); }} placeholder="800" prefix="₹" value={acRate} required />
+              <FormInput keyboardType="decimal-pad" label="Deposit" error={form.errors.deposit} onChangeText={(next) => { setDeposit(next); form.clearField("deposit"); }} placeholder="10000" prefix="₹" value={deposit} required />
             </View>
             <View style={{ flex: 1 }}>
-              <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" error={form.errors.nonAcRate} onChangeText={(next) => { setNonAcRate(next); form.clearField("nonAcRate"); }} placeholder="600" prefix="₹" value={nonAcRate} required />
+              <FormInput keyboardType="decimal-pad" label="Late fee/day" onChangeText={setLateFee} placeholder="Optional" prefix="₹" value={lateFee} />
             </View>
           </View>
-        ) : null}
+          <SingleOptionPicker
+            label="Notice period"
+            onChange={setNoticePeriod}
+            options={NOTICE_PERIOD_OPTIONS.map((option) => ({
+              label: NOTICE_PERIOD_LABELS[option],
+              value: option,
+            }))}
+            required
+            title="Notice period"
+            value={noticePeriod}
+          />
+          <FieldHint text={NOTICE_PERIOD_RANGE_HINT} />
+          <FormInput
+            keyboardType="number-pad"
+            label="Grace days"
+            error={form.errors.graceDays} onChangeText={(next) => { setGraceDays(next); form.clearField("graceDays"); }}
+            placeholder={`e.g. 3 — max ${MAX_RENT_GRACE_DAYS}`}
+            required
+            value={graceDays}
+          />
+          <FieldHint text={RENT_GRACE_RANGE_HINT} />
+        </ChoiceCard>
+
+        {/* The same yes-or-no section as edit property. The rates it opens up
+            sit full width beneath the choice, where their labels have room. */}
+        <ChoiceSection
+          below={offersDailyStays ? (
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <FormInput keyboardType="decimal-pad" label="Guest AC/day" error={form.errors.acRate} onChangeText={(next) => { setAcRate(next); form.clearField("acRate"); }} placeholder="800" prefix="₹" value={acRate} required />
+              </View>
+              <View style={{ flex: 1 }}>
+                <FormInput keyboardType="decimal-pad" label="Guest non-AC/day" error={form.errors.nonAcRate} onChangeText={(next) => { setNonAcRate(next); form.clearField("nonAcRate"); }} placeholder="600" prefix="₹" value={nonAcRate} required />
+              </View>
+            </View>
+          ) : null}
+          description="Can guests book short stays by the day?"
+          icon={CalendarDays}
+          title="Offers daily stays"
+        >
+          <ChoiceGrid
+            getLabel={(option) => (option === "YES" ? "Yes" : "No")}
+            onSelect={(option) => setOffersDailyStays(option === "YES")}
+            options={YES_NO}
+            selected={offersDailyStays ? "YES" : "NO"}
+          />
+        </ChoiceSection>
       </FormSection>
 
       ) : null}
 
       {step === "images" ? (
-      <FormSection eyebrow="Photos" title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
-        {images.length < MAX_PROPERTY_IMAGES ? (
-          <AddPhotoTarget busy={uploading} onPress={() => void pickImages()} />
-        ) : null}
+      <FormSection title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
+        <ChoiceCard style={{ gap: spacing.md }}>
+          {images.length < MAX_PROPERTY_IMAGES ? (
+            <AddPhotoTarget busy={uploading} onPress={() => void pickImages()} />
+          ) : null}
 
-        <UploadProgress progress={uploadProgress} />
+          <UploadProgress progress={uploadProgress} />
 
-        <View style={{ gap: spacing.xs }}>
-          {images.map((asset, index) => (
-            <PhotoRow
-              busy={uploading}
-              cover={index === 0}
-              key={asset.publicId}
-              muted
-              // No pencil: the create endpoint takes a URL and an id, so a
-              // caption written here would have nowhere to be saved. They are
-              // added from the property once it exists.
-              onMakeCover={() =>
-                setImages((current) => [current[index], ...current.filter((_, at) => at !== index)])
-              }
-              onRemove={() => setImages((current) => current.filter((entry) => entry.publicId !== asset.publicId))}
-              title={index === 0 ? "Cover photo" : `Photo ${index + 1}`}
-              uri={asset.url}
-            />
-          ))}
-        </View>
+          {images.length > 0 ? (
+            <View style={{ gap: spacing.xs }}>
+              {images.map((asset, index) => (
+                <PhotoRow
+                  busy={uploading}
+                  cover={index === 0}
+                  key={asset.publicId}
+                  muted
+                  // No pencil: the create endpoint takes a URL and an id, so a
+                  // caption written here would have nowhere to be saved. They are
+                  // added from the property once it exists.
+                  onMakeCover={() =>
+                    setImages((current) => [current[index], ...current.filter((_, at) => at !== index)])
+                  }
+                  onRemove={() => setImages((current) => current.filter((entry) => entry.publicId !== asset.publicId))}
+                  title={index === 0 ? "Cover photo" : `Photo ${index + 1}`}
+                  uri={asset.url}
+                />
+              ))}
+            </View>
+          ) : null}
+        </ChoiceCard>
         <FieldError message={form.errors.images} />
       </FormSection>
 
       ) : null}
 
       {step === "listing" ? (
-      <FormSection eyebrow="Listing" title="Discovery profile">
-        <FormInput autoCapitalize="sentences" label="Headline" onChangeText={setHeadline} placeholder="Optional — short listing headline" value={headline} />
-        <FormInput label="Description" multiline onChangeText={setDescription} placeholder="Optional — what should prospects know?" value={description} />
+      <FormSection title="Discovery profile">
+        <ChoiceCard style={{ gap: spacing.md }}>
+          <FormInput autoCapitalize="sentences" label="Headline" onChangeText={setHeadline} placeholder="Optional — short listing headline" value={headline} />
+          <FormInput label="Description" multiline onChangeText={setDescription} placeholder="Optional — what should prospects know?" value={description} />
+        </ChoiceCard>
       </FormSection>
       ) : null}
 
@@ -817,38 +834,21 @@ export default function OwnerRegisterPropertyScreen() {
 }
 
 /**
- * One step's worth of form: a heading and its fields, straight on the page.
+ * One step's worth of form: its heading, then its fields.
  *
- * <p>No card. A step holds exactly one of these, so the card was never
- * separating it from anything — all it did was take an 18pt gutter of its own
- * on top of the scroll view's, which the fields inside then gave up again,
- * leaving the inputs visibly narrower than the button under them. Dropping the
- * surface is what widens them.
- *
- * <p>The fields keep their own white fill and hairline, so they are still the
- * surfaces — which is what makes them look like the things you fill in.
+ * <p>No eyebrow over the title. The step header above already says where the
+ * owner is, and a second label naming the same step left two headings for one
+ * section. The cards inside are the steps' own, matching edit property.
  */
-/**
- * One step's worth of form, on its own white card.
- *
- * <p>The card is what makes a section a section: on the page ground it defines
- * where one group of fields ends and the next begins, and it gives the white
- * fields inside it something other than the page to sit on.
- */
-function FormSection({ children, eyebrow, title, trailing }: { children: ReactNode; eyebrow: string; title: string; trailing?: ReactNode }) {
-  const { colors, fonts, type } = useTheme();
+function FormSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
+  const { colors, fonts } = useTheme();
 
   return (
     <View style={{ gap: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.accent }]}>
-            {eyebrow}
-          </Text>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
-            {title}
-          </Text>
-        </View>
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
+          {title}
+        </Text>
         {trailing}
       </View>
       <View style={{ gap: spacing.md }}>{children}</View>
@@ -856,14 +856,3 @@ function FormSection({ children, eyebrow, title, trailing }: { children: ReactNo
   );
 }
 
-function OptionGroup({ children, label }: { children: ReactNode; label: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>
-        {label}
-      </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>{children}</View>
-    </View>
-  );
-}

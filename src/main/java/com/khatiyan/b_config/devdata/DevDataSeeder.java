@@ -316,6 +316,7 @@ public class DevDataSeeder implements ApplicationRunner {
                 5,
                 depositPaise,
                 NoticePeriod.ONE_MONTH,
+                null,
                 seed.name() + " in " + seed.area(),
                 "Seeded test property in " + seed.area() + ", " + seed.city() + ". Not a real listing.",
                 null,

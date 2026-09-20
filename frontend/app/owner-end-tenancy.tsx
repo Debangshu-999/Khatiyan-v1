@@ -899,7 +899,7 @@ export default function OwnerEndTenancyScreen() {
       </ScreenScrollView>
 
       {tenancy ? (
-        <PinnedFooter fade={false}>
+        <PinnedFooter>
           <ActionButton
             disabled={endState.isLoading || Boolean(blockingMessage)}
             label={endState.isLoading ? "Ending..." : "End tenancy"}

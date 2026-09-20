@@ -77,14 +77,16 @@ public class SmartSearchCache {
      *
      * <p>Lower case, every run of punctuation and whitespace collapsed to a
      * single space. Letters and digits from any script survive, so a Bengali or
-     * Hindi place name is not flattened into nothing.
+     * Hindi place name is not flattened into nothing — and so do combining
+     * marks: the vowel signs and viramas of Bengali and Devanagari are marks,
+     * not letters, and dropping them broke "সল্টলেক" into fragments.
      */
     static String sameSearch(String query) {
         if (query == null) {
             return "";
         }
         return query.toLowerCase(Locale.ROOT)
-                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .replaceAll("[^\\p{L}\\p{M}\\p{N}]+", " ")
                 .trim();
     }
 

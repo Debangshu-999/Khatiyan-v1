@@ -27,10 +27,9 @@ import com.khatiyan.d_modules.expense.api.dto.ExpenseResponse;
 import com.khatiyan.d_modules.expense.api.dto.ReverseExpenseRequest;
 import com.khatiyan.d_modules.expense.model.Expense;
 import com.khatiyan.d_modules.expense.model.ExpenseCategory;
-import com.khatiyan.d_modules.expense.model.ExpenseBudgetSettings;
 import com.khatiyan.d_modules.expense.model.ExpenseEntryType;
 import com.khatiyan.d_modules.expense.repository.ExpenseBudgetRaiseRepository;
-import com.khatiyan.d_modules.expense.repository.ExpenseBudgetSettingsRepository;
+import com.khatiyan.d_modules.expense.repository.ExpenseBudgetVersionRepository;
 import com.khatiyan.d_modules.expense.repository.ExpenseCategoryRepository;
 import com.khatiyan.d_modules.expense.repository.ExpenseRepository;
 import com.khatiyan.d_modules.staff.StaffModule;
@@ -41,7 +40,7 @@ public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository categoryRepository;
-    private final ExpenseBudgetSettingsRepository budgetSettingsRepository;
+    private final ExpenseBudgetVersionRepository budgetVersionRepository;
     private final ExpenseBudgetRaiseRepository budgetRaiseRepository;
     private final FinanceAccessPolicy financeAccessPolicy;
     private final StaffModule staffModule;
@@ -49,13 +48,13 @@ public class ExpenseService {
     public ExpenseService(
             ExpenseRepository expenseRepository,
             ExpenseCategoryRepository categoryRepository,
-            ExpenseBudgetSettingsRepository budgetSettingsRepository,
+            ExpenseBudgetVersionRepository budgetVersionRepository,
             ExpenseBudgetRaiseRepository budgetRaiseRepository,
             FinanceAccessPolicy financeAccessPolicy,
             StaffModule staffModule) {
         this.expenseRepository = expenseRepository;
         this.categoryRepository = categoryRepository;
-        this.budgetSettingsRepository = budgetSettingsRepository;
+        this.budgetVersionRepository = budgetVersionRepository;
         this.budgetRaiseRepository = budgetRaiseRepository;
         this.financeAccessPolicy = financeAccessPolicy;
         this.staffModule = staffModule;
@@ -139,9 +138,9 @@ public class ExpenseService {
         byCategory.sort(Comparator.comparingLong(ExpenseCategoryTotal::amountPaise).reversed());
 
         long total = expenses.stream().mapToLong(Expense::getAmountPaise).sum() + projectedSalary;
-        Long defaultBudget = budgetSettingsRepository.findByPropertyId(propertyId)
-                .map(ExpenseBudgetSettings::getDefaultMonthlyBudgetPaise)
-                .orElse(null);
+        // The budget in force that month, not today's: an edit applies from the
+        // month it was made, so an earlier month keeps the budget it ran on.
+        Long defaultBudget = budgetVersionRepository.defaultFor(propertyId, start).orElse(null);
         long raised = budgetRaiseRepository.sumForMonth(propertyId, start);
         Long budget = (defaultBudget == null && raised == 0)
                 ? null

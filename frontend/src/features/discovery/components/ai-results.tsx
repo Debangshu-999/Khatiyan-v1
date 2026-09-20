@@ -1,6 +1,7 @@
-import { ScrollView, Text, View } from "react-native";
-import { Sparkles } from "lucide-react-native";
+import { Image, ScrollView, Text, View } from "react-native";
+import { Search, Sparkles } from "lucide-react-native";
 
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { MarqueeText } from "@/components/marquee-text";
 import type { ListingSort } from "@/store/services/discovery-api";
@@ -11,6 +12,8 @@ import { useTheme } from "@/theme/use-theme";
 import type { FilterMatch, MatchStrength } from "../discovery-match";
 import { ListingSortButton, sortListings } from "./listing-sort";
 import { PropertyListingCard } from "./property-listing-card";
+
+const EMPTY_SEARCH_ILLUSTRATION = require("../../../../assets/discovery-empty-search.png");
 
 /** The sparkle beside "Found n results". The chips under it indent by this. */
 const HEADER_ICON_SIZE = 16;
@@ -32,12 +35,15 @@ const HEADER_ICON_SIZE = 16;
  */
 export function AiResults({
   onOpenSort,
+  onTryAgain,
   onView,
   result,
   sort,
   visible,
 }: {
   onOpenSort: () => void;
+  /** Clears the sentence and its answer, for the empty state's button. */
+  onTryAgain: () => void;
   onView: (propertyId: string) => void;
   result: SmartSearchResult;
   /** Re-orders each section on the device. Both arrived whole, so this is exact. */
@@ -109,12 +115,61 @@ export function AiResults({
         ) : null}
       </View>
 
+      {/* The same empty state the ordinary search shows, so an empty answer
+          reads as "nothing matched" rather than as a different kind of screen. */}
       {found === 0 && result.related.length === 0 ? (
         <Card>
-          <Text style={[type.body, { color: colors.muted }]}>
-            Nothing here answers that yet. Try widening the area, or switch AI search off to set the
-            filters by hand.
-          </Text>
+          <View
+            style={{
+              alignItems: "center",
+              gap: spacing.sm,
+              paddingBottom: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingTop: spacing.sm,
+            }}
+          >
+            <Image
+              accessibilityIgnoresInvertColors
+              resizeMode="contain"
+              source={EMPTY_SEARCH_ILLUSTRATION}
+              style={{ height: 144, width: 144 }}
+            />
+            <Text
+              style={{
+                color: colors.ink,
+                fontFamily: fonts.display,
+                fontSize: 21,
+                letterSpacing: -0.25,
+                textAlign: "center",
+              }}
+            >
+              No listings found
+            </Text>
+            <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+              Nothing matches that search yet. Try a wider area or fewer requirements.
+            </Text>
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={onTryAgain}
+              style={{
+                alignItems: "center",
+                borderColor: colors.primary,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                flexDirection: "row",
+                gap: spacing.sm,
+                justifyContent: "center",
+                marginTop: spacing.sm,
+                minHeight: 48,
+                paddingHorizontal: spacing.lg,
+              }}
+            >
+              <Search color={colors.primary} size={19} strokeWidth={2.3} />
+              <Text style={{ color: colors.primary, fontFamily: fonts.displaySoft, fontSize: 15 }}>
+                Try a different search
+              </Text>
+            </AnimatedPressable>
+          </View>
         </Card>
       ) : null}
 

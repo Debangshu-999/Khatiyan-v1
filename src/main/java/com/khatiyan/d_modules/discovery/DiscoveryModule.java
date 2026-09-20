@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyContactResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocalPlaceCategoryResponse;
+import com.khatiyan.d_modules.discovery.api.dto.LocalPlacesMapResponse;
 import com.khatiyan.d_modules.discovery.api.dto.NearbyPlacesResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
@@ -23,6 +24,7 @@ import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.SharingType;
 
 @Component
@@ -136,6 +138,7 @@ public class DiscoveryModule {
             Boolean electricityIncluded,
             BathroomType bathroomType,
             List<SharingType> sharingTypes,
+            PropertyType propertyType,
             com.khatiyan.d_modules.discovery.api.dto.DiscoverySort sort,
             int page,
             int size) {
@@ -156,6 +159,7 @@ public class DiscoveryModule {
                 electricityIncluded,
                 bathroomType,
                 sharingTypes == null ? null : Set.copyOf(sharingTypes),
+                propertyType,
                 sort,
                 page,
                 size);
@@ -185,6 +189,10 @@ public class DiscoveryModule {
             BigDecimal latitude,
             BigDecimal longitude) {
         return nearbyPlacesSearchService.searchMine(tenantUserId, query, latitude, longitude);
+    }
+
+    public LocalPlacesMapResponse myLocalPlacesMap(UUID tenantUserId, String query) {
+        return propertyLocalPlaceService.myLocalPlacesMap(tenantUserId, query);
     }
 
     public List<LocalPlaceCategoryResponse> listMyLocalPlaceTaxonomy(UUID tenantUserId) {

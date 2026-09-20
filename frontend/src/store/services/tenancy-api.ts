@@ -406,7 +406,9 @@ export const tenancyApi = api.injectEndpoints({
 
     onboardDailyStay: builder.mutation<TenancyOnboardingResult, OnboardDailyStayPayload>({
       query: (body) => ({ body, method: "POST", url: "/api/v1/tenancies" }),
-      invalidatesTags: ["Tenancy", "Notification"],
+      // A daily stay takes a room slot in the same transaction. Room pickers
+      // must not keep offering the old vacancy count after it is created.
+      invalidatesTags: ["Tenancy", "Property", "Notification"],
     }),
 
     getMyActiveTenancy: builder.query<TenantActiveTenancy, void>({

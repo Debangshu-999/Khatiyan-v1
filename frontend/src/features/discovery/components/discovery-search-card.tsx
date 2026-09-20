@@ -163,7 +163,7 @@ export function DiscoverySearchCard({
             <Sparkles color={colors.primary} size={20} strokeWidth={2.2} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
-                Start AI search
+                Smart search
               </Text>
               <Text
                 numberOfLines={2}

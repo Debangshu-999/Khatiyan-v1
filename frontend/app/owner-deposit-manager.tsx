@@ -44,7 +44,7 @@ import {
   useSettleManagedDepositMutation,
 } from "@/store/services/billing-api";
 import type { TenancyStatus, TenancySummary } from "@/store/services/tenancy-api";
-import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import { tenancyStatusLabel, useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { PropertyArtwork } from "@/components/artwork-icon";
@@ -355,7 +355,7 @@ function TenancyPicker({
   const { colors, fonts, type } = useTheme();
   const title = selectedTenancy ? selectedTenancy.tenantName ?? "Unnamed tenant" : "Select a tenancy";
   const subtitle = selectedTenancy
-    ? `${selectedTenancy.referenceCode} · ${humanizeToken(selectedTenancy.status)}`
+    ? `${selectedTenancy.referenceCode} · ${tenancyStatusLabel(selectedTenancy.status)}`
     : activeTenancies.length > 0
       ? "Choose an active tenant to manage their deposit."
       : "No active monthly tenancies on this property.";
@@ -524,12 +524,17 @@ function TenancyOptionRow({
               <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
                 {tenancy.referenceCode}
               </Text>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-                  <View style={{ backgroundColor: tenancy.status === "ACTIVE" ? colors.jade : colors.warning, borderRadius: 3, height: 6, width: 6 }} />
+              {/* Only when it says something. Every tenant in this list holds a
+                  live deposit, so "Active" on each row was noise. On notice is
+                  the one worth seeing here. */}
+              {tenancy.status !== "ACTIVE" ? (
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                  <View style={{ backgroundColor: colors.warning, borderRadius: 3, height: 6, width: 6 }} />
                   <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
-                    {humanizeToken(tenancy.status)}
+                    {tenancyStatusLabel(tenancy.status)}
                   </Text>
                 </View>
+              ) : null}
                           </View>
           </View>
           <ChevronRight color={colors.muted} size={18} strokeWidth={2} />

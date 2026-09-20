@@ -12,7 +12,7 @@ const TAB_BAR_HEIGHT_PX = 60;
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SkeletonCard } from "@/components/skeleton";
+import { ChatThreadListSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { ChatAccessListSheet } from "@/features/chat/chat-access-list-sheet";
@@ -42,6 +42,7 @@ import { useTheme } from "@/theme/use-theme";
 const NO_CHATS_ILLUSTRATION = require("../../assets/workspace/No-Chats_512x512.png");
 
 type Section = "TENANTS" | "MINE" | "ENQUIRIES";
+type PersonalSection = "MINE" | "ENQUIRIES";
 
 /**
  * The conversation route, carrying its own header text.
@@ -103,7 +104,9 @@ function ManagementChats() {
     (properties.length === 1 ? properties[0] : null);
   const propertyId = property?.id ?? "";
 
-  const [section, setSection] = useState<Section>("TENANTS");
+  // My chats first. The person's own conversations are what they open the tab
+  // for most often, and the Tenants desk is one tap away.
+  const [section, setSection] = useState<Section>("MINE");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [accessListOpen, setAccessListOpen] = useState(false);
 
@@ -208,12 +211,19 @@ function ManagementChats() {
 
   if (!property) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.chatSurface}>
-        <EmptyState
-          description="Choose an active property from Home to see its conversations."
-          icon={MessageCircle}
-          title="No property selected"
-        />
+      <ScreenScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        safeAreaEdges={["top", "bottom"]}
+        surface={colors.chatSurface}
+      >
+        <CentredEmpty>
+          <EmptyState
+            compact
+            description="Choose an active property from Home to see its conversations."
+            icon={MessageCircle}
+            title="No property selected"
+          />
+        </CentredEmpty>
       </ScreenScrollView>
     );
   }
@@ -224,6 +234,7 @@ function ManagementChats() {
       // The shared default invalidates a fixed set of tags that does not
       // include Chat, so without this the pull gesture spun and changed
       // nothing on the one screen where people reach for it most.
+      contentContainerStyle={{ flexGrow: 1 }}
       onRefresh={async () => {
         await Promise.all([tenants.refetch(), mine.refetch(), enquiries.refetch()]);
       }}
@@ -269,15 +280,17 @@ function ManagementChats() {
         />
       </View>
 
-      {active.isLoading ? <SkeletonCard /> : null}
+      {active.isLoading ? <ChatThreadListSkeleton /> : null}
 
       {!active.isLoading && threads.length === 0 ? (
-        <EmptyState
-          compact
-          description={emptyCopy(section)}
-          artwork={NO_CHATS_ILLUSTRATION}
-          title={emptyTitle(section)}
-        />
+        <CentredEmpty>
+          <EmptyState
+            compact
+            description={emptyCopy(section)}
+            artwork={NO_CHATS_ILLUSTRATION}
+            title={emptyTitle(section)}
+          />
+        </CentredEmpty>
       ) : null}
 
       {threads.length > 0 ? (
@@ -364,6 +377,17 @@ function ManagementChats() {
       {selection.dialog}
     </View>
   );
+}
+
+/**
+ * Holds an empty state in the middle of the space left under the header.
+ *
+ * <p>Needs the scroll content to grow to the screen (flexGrow: 1 on the
+ * ScreenScrollView's content). The empty state used to sit straight under the
+ * section pills, leaving the bottom half of the screen blank.
+ */
+function CentredEmpty({ children }: { children: ReactNode }) {
+  return <View style={{ flex: 1, justifyContent: "center" }}>{children}</View>;
 }
 
 /**
@@ -541,7 +565,12 @@ function PersonalChats() {
 
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
   const teamThread = threads.find((thread) => thread.kind === "TEAM") ?? null;
-  const others = threads.filter((thread) => thread.kind !== "TEAM");
+  // The same split management has: a person's own conversations, and the
+  // enquiries a property answered. One list mixed both, so the chat with the
+  // place someone lives sat among conversations about places they only asked
+  // about.
+  const personal = threads.filter((thread) => thread.kind !== "TEAM" && thread.origin !== "ENQUIRY");
+  const enquiries = threads.filter((thread) => thread.origin === "ENQUIRY");
 
   /**
    * The pinned row exists because the tenancy does, not because a conversation
@@ -616,11 +645,19 @@ function PersonalChats() {
     }
   }
 
-  const nothingAtAll = !pinned && others.length === 0 && !threadsQuery.isLoading;
+  // Opens on My chats for a tenant or anyone with a personal chat. Someone who
+  // only ever enquired has nothing there, so they open on Enquiries instead.
+  const [chosenSection, setChosenSection] = useState<PersonalSection | null>(null);
+  const section: PersonalSection =
+    chosenSection ?? (pinned || personal.length > 0 || enquiries.length === 0 ? "MINE" : "ENQUIRIES");
+  const others = section === "MINE" ? personal : enquiries;
+  const showPinned = section === "MINE" ? pinned : null;
+  const sectionEmpty = !showPinned && others.length === 0 && !threadsQuery.isLoading;
 
   return (
     <View style={{ flex: 1 }}>
     <ScreenScrollView
+      contentContainerStyle={{ flexGrow: 1 }}
       onRefresh={async () => {
         await threadsQuery.refetch();
       }}
@@ -643,17 +680,39 @@ function PersonalChats() {
         <DeleteThreadButton selection={selection} />
       </View>
 
-      {threadsQuery.isLoading ? <SkeletonCard /> : null}
-
-      {nothingAtAll ? (
-        <EmptyState
-          description="Conversations with a property you rent, or about an enquiry you sent, appear here."
-          artwork={NO_CHATS_ILLUSTRATION}
-          title="No conversations yet"
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+        <SectionPill
+          count={(pinned?.unread ? 1 : 0) + personal.filter((thread) => thread.unread).length}
+          label="My chats"
+          onPress={() => setChosenSection("MINE")}
+          selected={section === "MINE"}
         />
+        <SectionPill
+          count={enquiries.filter((thread) => thread.unread).length}
+          label="Enquiries"
+          onPress={() => setChosenSection("ENQUIRIES")}
+          selected={section === "ENQUIRIES"}
+        />
+      </View>
+
+      {threadsQuery.isLoading ? <ChatThreadListSkeleton /> : null}
+
+      {sectionEmpty ? (
+        <CentredEmpty>
+          <EmptyState
+            compact
+            description={
+              section === "MINE"
+                ? "Conversations with the property you rent appear here."
+                : "When a property answers your enquiry over chat, it appears here."
+            }
+            artwork={NO_CHATS_ILLUSTRATION}
+            title={section === "MINE" ? "No chats yet" : "No enquiry chats"}
+          />
+        </CentredEmpty>
       ) : null}
 
-      {pinned || others.length > 0 ? (
+      {showPinned || others.length > 0 ? (
         <View
           style={{
             backgroundColor: colors.surface,
@@ -667,13 +726,12 @@ function PersonalChats() {
             marginHorizontal: -spacing.lg,
           }}
         >
-          {pinned ? (
+          {showPinned ? (
             <ThreadRow
-              onLongPress={pinned.id ? () => selection.select(pinned.id!) : undefined}
+              onLongPress={showPinned.id ? () => selection.select(showPinned.id!) : undefined}
               onPress={() => (selection.selectedId ? selection.clear() : void openPinned())}
-              selected={selection.selectedId === pinned.id}
-              subtitle="Property management team"
-              thread={pinned}
+              selected={selection.selectedId === showPinned.id}
+              thread={showPinned}
             />
           ) : null}
           {others.map((thread) => (
@@ -704,7 +762,7 @@ function PersonalChats() {
       {/* Only a tenant has anyone to write to. A non-tenant user is here because
           somebody answered their enquiry, and there is nobody for them to start
           a conversation with — so the button is absent rather than disabled. */}
-      {tenancy ? (
+      {tenancy && section === "MINE" ? (
         <FloatingActions>
           <FloatingAction
             accessibilityLabel="Start a new chat"

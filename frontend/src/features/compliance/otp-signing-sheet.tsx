@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
-import { AppTextInput } from "@/components/app-text-input";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { CodeField } from "@/features/auth/auth-ui";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -96,7 +96,14 @@ export function OtpSigningSheet({
               agreement to the terms you just read.
             </Text>
 
-            <CodeBoxes onChange={setOtp} value={otp} />
+            {/* The same one field the auth screens use, not six boxes over a
+                hidden input. That arrangement stretched a zero-opacity
+                TextInput across the boxes to hold focus, and a field nobody
+                can see is a field whose taps are one layout change away from
+                landing nowhere — which is exactly how it ended up unusable
+                inside the signing screen. One real input cannot fail that way,
+                and it keeps paste, autofill and the SMS suggestion. */}
+            <CodeField label="Six-digit code" onChangeText={setOtp} value={otp} />
 
             {/* Side by side: confirming and asking again are the two answers to
                 the same question, and stacking them made the resend read as a
@@ -124,81 +131,5 @@ export function OtpSigningSheet({
         </View>
       </KeyboardAvoidingView>
     </Modal>
-  );
-}
-
-/**
- * Six boxes over one hidden field.
- *
- * <p>Six real inputs would mean six refs, focus juggling on every keystroke and
- * a backspace that has to decide which box it belongs to. One input holds the
- * whole code and the boxes are only a rendering of it, so paste, autofill and
- * the SMS one-tap suggestion all keep working — none of which survive being
- * split across six fields.
- */
-function CodeBoxes({ onChange, value }: { onChange: (value: string) => void; value: string }) {
-  const { colors, fonts } = useTheme();
-  const input = useRef<TextInput>(null);
-  const [focused, setFocused] = useState(false);
-
-  const digits = Array.from({ length: CODE_LENGTH }, (_, at) => value[at] ?? "");
-  // The box the next digit lands in, so exactly one carries the caret.
-  const active = Math.min(value.length, CODE_LENGTH - 1);
-
-  return (
-    <Pressable
-      accessibilityLabel="Enter the six-digit code"
-      onPress={() => input.current?.focus()}
-      style={{ flexDirection: "row", gap: spacing.sm }}
-    >
-      {digits.map((digit, at) => {
-        const caret = focused && at === active;
-
-        return (
-          <View
-            key={at}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceRaised,
-              borderColor: caret ? colors.primary : digit ? colors.ink : colors.borderStrong,
-              borderCurve: "continuous",
-              borderRadius: 12,
-              borderWidth: caret ? 1.8 : 1.2,
-              flex: 1,
-              height: 54,
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 22 }}>
-              {digit}
-            </Text>
-          </View>
-        );
-      })}
-
-      {/* Invisible rather than unmounted: it has to stay in the tree to hold
-          focus and the keyboard. Zero opacity over the boxes, not off-screen,
-          because Android will not open the keyboard for a field it considers
-          out of view. */}
-      <AppTextInput
-        autoFocus
-        keyboardType="number-pad"
-        maxLength={CODE_LENGTH}
-        onBlur={() => setFocused(false)}
-        onChangeText={(next) => onChange(next.replace(/[^0-9]/g, ""))}
-        onFocus={() => setFocused(true)}
-        ref={input}
-        style={{
-          bottom: 0,
-          left: 0,
-          opacity: 0,
-          position: "absolute",
-          right: 0,
-          top: 0,
-        }}
-        textContentType="oneTimeCode"
-        value={value}
-      />
-    </Pressable>
   );
 }

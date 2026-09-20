@@ -20,7 +20,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useGetManagedTenancyDepositQuery } from "@/store/services/billing-api";
 import { useAppSelector } from "@/store/hooks";
-import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import { tenancyStatusLabel, useListPropertyTenanciesQuery, type TenancyStatus } from "@/store/services/tenancy-api";
 import { useListTenantThreadsQuery, useOpenTeamThreadMutation, type ChatThread } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -273,27 +273,17 @@ export default function OwnerActiveTenancyDetailScreen() {
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenant details" />
         <FlatCard>
-          {guestStay ? null : (
-            <>
-              <FieldPair
-                left={
-                  <ReadonlyField
-                    label="Phone verified"
-                    status={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"}
-                    value={params.tenantPhoneVerified === "true" ? "Verified" : "Pending"}
-                  />
-                }
-                right={<ReadonlyField label="Document verified" value="Pending" />}
-              />
-              <CardRule />
-            </>
-          )}
           <FieldRow>
             <ReadonlyField label={guestStay ? "Guest name" : "Tenant name"} value={tenantName} />
           </FieldRow>
           <CardRule />
           <FieldRow>
-            <ReadonlyField label="Phone" prefix={<DialCodePrefix />} value={formatLocalPhone(tenantPhone)} />
+            <ReadonlyField
+              label="Phone"
+              prefix={<DialCodePrefix />}
+              status={guestStay ? undefined : params.tenantPhoneVerified === "true" ? "Verified" : "Pending"}
+              value={formatLocalPhone(tenantPhone)}
+            />
           </FieldRow>
           <CardRule />
           <FieldRow>
@@ -322,11 +312,32 @@ export default function OwnerActiveTenancyDetailScreen() {
         </FlatCard>
       </View>
 
+      {guestStay ? null : (
+        <View style={{ gap: spacing.sm }}>
+          <SectionTitle title="Tenant verification" />
+          <FlatCard>
+            {/* Placeholder until onboarding returns the verification services
+                enabled for this tenancy. The section shape is final; only the
+                rows will become data-driven. */}
+            <FieldPair
+              left={<ReadonlyField label="Aadhaar verification" tone="danger" value="Pending" />}
+              right={<ReadonlyField label="PAN verification" tone="danger" value="Pending" />}
+            />
+          </FlatCard>
+        </View>
+      )}
+
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenancy details" />
         <FlatCard>
           <FieldPair
-            left={<ReadonlyField label="Tenancy status" value={humanizeToken(stringParam(params.status) || "-")} />}
+            left={
+              <ReadonlyField
+                label="Tenancy status"
+                value={stringParam(params.status) ? tenancyStatusLabel(stringParam(params.status) as TenancyStatus) : "-"}
+                valueLines={2}
+              />
+            }
             right={<ReadonlyField label="Billing type" value={humanizeToken(billingType)} />}
           />
           <CardRule />

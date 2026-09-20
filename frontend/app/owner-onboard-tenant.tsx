@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentProps, type ComponentType } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, MapPin, Phone, Plus, Trash2, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, Trash2, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { HeaderNote } from "@/components/header-note";
@@ -33,12 +34,22 @@ import { DateOfBirthField } from "@/features/account/date-of-birth-field";
 import { emailProblem } from "@/features/forms/email-validation";
 import { GENDER_LABELS, GenderPicker } from "@/features/account/gender-picker";
 import { ClickwrapConsent } from "@/features/compliance/clickwrap-consent";
+import {
+  MAX_ATTEMPTS,
+  MIN_ATTEMPTS,
+  VerificationOrderSummary,
+  VerificationServicePicker,
+  orderTotalPaise,
+  orderedServices,
+  type VerificationOrder,
+  type VerificationServiceKey,
+} from "@/features/compliance/verification-services";
 import { formatFloor } from "@/features/property/floor";
 import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { AgreementTemplateEditor } from "@/features/compliance/agreement-template-editor";
 import { OnboardingGateBoard } from "@/features/compliance/onboarding-gate-board";
 import { Section } from "@/components/section";
-import { ActionButton, FormInput } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -67,7 +78,7 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type Step = "type" | "tenant" | "details" | "review" | "agreement" | "done";
+type Step = "type" | "tenant" | "details" | "verify" | "review" | "agreement" | "done";
 type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | "PAN" | "OTHER";
 
 /**
@@ -77,11 +88,12 @@ type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | 
  * than a sixth task, and including it would leave the bar short of full on the
  * screen that says the work is finished.
  */
-const STEP_ORDER: Step[] = ["type", "tenant", "details", "review", "agreement"];
+const STEP_ORDER: Step[] = ["type", "tenant", "details", "verify", "review", "agreement"];
 
 const STEP_TITLE: Record<Step, string> = {
   agreement: "Agreement",
   details: "Room and dates",
+  verify: "Verify tenant",
   done: "Complete",
   review: "Review",
   tenant: "Tenant",
@@ -98,9 +110,22 @@ const STEP_TITLE: Record<Step, string> = {
 const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
   agreement: "review",
   details: "tenant",
-  review: "details",
+  review: "verify",
   tenant: "type",
+  verify: "details",
 };
+
+/**
+ * How the tenant's identity was established.
+ *
+ * <p>Two routes to the same fact, and the tenancy records which was used. The
+ * manual one is the owner's own declaration, which is where the legal duty
+ * actually sits. The digital one is a check somebody else carried out, which is
+ * only worth more than the declaration because nobody involved could fake it.
+ */
+type VerificationMode = "MANUAL" | "KYC";
+
+
 type BillingKind = "MONTHLY" | "DAILY";
 
 function dateToStr(d: Date) {
@@ -259,6 +284,42 @@ export default function OwnerOnboardTenantScreen() {
   // did, which is where the legal duty actually sits.
   const [idCheckConfirmed, setIdCheckConfirmed] = useState(false);
 
+  // Which route the owner took, and how far a digital check has got.
+  //
+  // Null until they choose: presenting one as preselected would make the other
+  // look like the unusual thing to do, and for most owners today the manual
+  // check is still the ordinary one.
+  const [verificationMode, setVerificationMode] = useState<VerificationMode | null>(null);
+  // What the owner has ordered for this tenancy, and how many attempts each
+  // check gets. The owner never sees an Aadhaar number or an OTP: they choose
+  // the checks, the tenant does them from their own phone.
+  const [verificationOrder, setVerificationOrder] = useState<VerificationOrder>({});
+
+  function toggleVerificationService(key: VerificationServiceKey) {
+    setVerificationOrder((current) => {
+      const next = { ...current };
+      if ((next[key] ?? 0) > 0) {
+        delete next[key];
+        return next;
+      }
+      next[key] = MIN_ATTEMPTS;
+      return next;
+    });
+  }
+
+  function setVerificationAttempts(key: VerificationServiceKey, attempts: number) {
+    setVerificationOrder((current) => ({
+      ...current,
+      [key]: Math.min(Math.max(attempts, MIN_ATTEMPTS), MAX_ATTEMPTS),
+    }));
+  }
+
+  const orderedVerificationServices = orderedServices(verificationOrder);
+  // What this costs IF the tenant uses every attempt. Nothing is set aside:
+  // Khatiyan pays the provider, and the owner's balance is charged per attempt
+  // as it is used, so unused attempts cost nothing by construction.
+  const verificationMaxPaise = orderTotalPaise(verificationOrder);
+
   // The tenant's own particulars, which the deed names them by.
   //
   // Collected here because the account may not exist yet. For one that does, the
@@ -400,6 +461,21 @@ export default function OwnerOnboardTenantScreen() {
     [previewQuery.data],
   );
   const clauseCountLabel = `${mainClauses.length} ${mainClauses.length === 1 ? "clause" : "clauses"}`;
+
+  // Both the deed and the clause editor hang off the property's stored template,
+  // so one failed read blanks both halves of this step. Say so rather than
+  // rendering two empty sections.
+  const agreementUnavailable =
+    withAgreement
+    && !previewQuery.data
+    && !previewQuery.isFetching
+    && !settingsQuery.isFetching
+    && (settingsQuery.isError
+      || previewQuery.isError
+      // Answered, but with nothing to seed the deed from. Checked against the
+      // response rather than the seeded state, which is still null for the one
+      // frame between the settings arriving and the effect copying them.
+      || (settingsQuery.isSuccess && !settingsQuery.data?.template));
   const termSummary = fixedTerm ? `Fixed term, ${termMonths ?? 11} months` : "Indefinite";
 
   // Daily renting is available when the property has at least one nightly rate
@@ -584,7 +660,7 @@ export default function OwnerOnboardTenantScreen() {
       setMessage("Rent must be greater than zero.");
       return;
     }
-    setStep("review");
+    setStep("verify");
   }
 
   /** Blocks every route out of review until the owner has declared the ID check. */
@@ -596,6 +672,16 @@ export default function OwnerOnboardTenantScreen() {
    * made yet.
    */
   function idCheckMissing() {
+    if (verificationMode === "KYC") {
+      // Nothing for the owner to declare here. They are ordering checks the
+      // tenant will carry out, so the only requirement is that they ordered at
+      // least one.
+      if (orderedVerificationServices.length === 0) {
+        setMessage("Choose at least one check, or switch to checking the ID yourself.");
+        return true;
+      }
+      return false;
+    }
     const cleared = form.validate({
       ...(idDocumentType ? {} : { idDocumentType: "Select which ID you checked." }),
       ...(/^[0-9]{4}$/.test(idLastFour) ? {} : { idLastFour: "Enter the last four digits." }),
@@ -610,12 +696,32 @@ export default function OwnerOnboardTenantScreen() {
     return false;
   }
 
-  /** What every onboarding path sends about the ID check. */
-  const idCheckPayload = {
-    confirmed: idCheckConfirmed,
-    documentType: idDocumentType,
-    lastFour: idLastFour,
-  };
+  /**
+   * Two routes, and the request carries exactly one.
+   *
+   * <p>An owner either declares they checked an ID themselves, or orders
+   * checks the TENANT will run. The stand-in that used to send a fake
+   * declaration on the digital route is gone: the owner declares nothing there,
+   * because the tenant has not done anything yet, and the server now refuses a
+   * request that carries both or neither.
+   */
+  const idCheckPayload =
+    verificationMode === "KYC"
+      ? null
+      : {
+          confirmed: idCheckConfirmed,
+          documentType: idDocumentType,
+          lastFour: idLastFour,
+        };
+
+  /** What the owner ordered, priced and charged per attempt the tenant uses. */
+  const verificationPayload =
+    verificationMode === "KYC"
+      ? orderedVerificationServices.map((service) => ({
+          attempts: verificationOrder[service.key] ?? 1,
+          serviceCode: service.key,
+        }))
+      : null;
 
   /**
    * Books the daily stay. The only path that reaches this — a monthly tenancy
@@ -636,7 +742,13 @@ export default function OwnerOnboardTenantScreen() {
         guestGender: tenantGender!,
         guestName: tenantName.trim(),
         guestPhone: phone.trim(),
-        idCheck: idCheckPayload,
+        // A guest stay has no account, so nobody could ever run a check on
+        // themselves. The daily path is the manual route and only that.
+        idCheck: idCheckPayload ?? {
+          confirmed: idCheckConfirmed,
+          documentType: idDocumentType,
+          lastFour: idLastFour,
+        },
         plannedEndDate: dateToStr(plannedEndDate),
         propertyId: selectedProperty.id,
         roomId,
@@ -673,9 +785,10 @@ export default function OwnerOnboardTenantScreen() {
         roomId,
         startDate: dateToStr(startDate),
         idCheck: idCheckPayload,
-        // Sent back verbatim so the server can refuse a build showing wording
-        // it did not write, and hashed into the record either way.
-        idCheckStatementText: idStatement,
+        // Only with a declaration. On the other route there is no statement to
+        // send, because nobody made one.
+        idCheckStatementText: idCheckPayload ? idStatement : null,
+        verification: verificationPayload,
         device: deviceFingerprint(),
         tenantName: tenantName.trim() ? tenantName.trim() : null,
         tenantPhone: phone.trim(),
@@ -690,6 +803,13 @@ export default function OwnerOnboardTenantScreen() {
   const wizardHeader = usePinnedWizardHeader();
   const stepIndex = STEP_ORDER.indexOf(step);
   const onDone = step === "done";
+  const tenantStepCanContinue = isDaily || Boolean(lookup?.canOnboard);
+  const hasStandardFooter =
+    (step === "tenant" && tenantStepCanContinue) ||
+    step === "details" ||
+    (step === "verify" && verificationMode !== null) ||
+    step === "review" ||
+    step === "done";
 
   /**
    * Leaves the wizard, asking first once there is something to lose.
@@ -751,7 +871,10 @@ export default function OwnerOnboardTenantScreen() {
       // the first field on another. lg, not sm: the panel is an object with a
       // curved edge, and content arriving right against that curve reads as
       // clipped rather than as passing beneath it.
-      contentContainerStyle={{ paddingTop: wizardHeader.contentInset + spacing.xl }}
+      contentContainerStyle={{
+        paddingBottom: hasStandardFooter ? PINNED_FOOTER_CLEARANCE : undefined,
+        paddingTop: wizardHeader.contentInset + spacing.xl,
+      }}
       surface={colors.formSurface}
     >
       {step === "type" ? (
@@ -802,7 +925,6 @@ export default function OwnerOnboardTenantScreen() {
             addressError={form.errors.tenantAddress}
             age={guestAge}
             ageError={form.errors.guestAge}
-            blocked={form.blocked}
             email={tenantEmail}
             emailError={form.errors.tenantEmail}
             gender={tenantGender}
@@ -821,7 +943,6 @@ export default function OwnerOnboardTenantScreen() {
               setTenantName(value);
               form.clearField("tenantName");
             }}
-            onContinue={goToRoomAndDatesForGuest}
             onEmail={(value) => {
               setTenantEmail(value);
               form.clearField("tenantEmail");
@@ -855,7 +976,6 @@ export default function OwnerOnboardTenantScreen() {
               <LookupResultCard
                 address={tenantAddress}
                 addressError={form.errors.tenantAddress}
-                blocked={form.blocked}
                 canOnboard={lookup.canOnboard}
                 dob={tenantDob}
                 exists={lookup.exists}
@@ -872,7 +992,6 @@ export default function OwnerOnboardTenantScreen() {
                   setTenantName(value);
                   form.clearField("tenantName");
                 }}
-                onContinue={goToRoomAndDates}
                 onDob={setTenantDob}
                 onGender={setTenantGender}
                 onPincode={(value) => {
@@ -1066,62 +1185,48 @@ export default function OwnerOnboardTenantScreen() {
                 </>
               ) : null}
 
-              <PrimaryButton label="Review" onPress={goToReview} />
             </Card>
           ) : null}
         </>
       ) : null}
 
-      {step === "review" ? (
+      {step === "verify" ? (
         <Card>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            Review before creating
-          </Text>
-          <OverviewBox
-            rows={[
-              { label: isDaily ? "Guest" : "Tenant", value: tenantName.trim() || lookup?.fullName || phone.trim() },
-              { label: "Phone", value: phone.trim(), mono: true },
-              // The register entry itself, reviewed before it is written. There
-              // is no deed behind a guest stay, so this screen is the last look
-              // the owner gets at what their record will say.
-              ...(isDaily
-                ? [
-                    { label: "Age", value: guestAge.trim() || "-" },
-                    { label: "Gender", value: tenantGender ? GENDER_LABELS[tenantGender] : "-" },
-                    { label: "Email", value: tenantEmail.trim() || "Not given" },
-                  ]
-                : []),
-              { label: "Type", value: isDaily ? "Daily" : "Monthly" },
-              { label: "Property", value: selectedProperty?.name ?? "-" },
-              { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
-              ...(isDaily
-                ? [
-                    { label: "Daily rate", value: dailyRatePaise != null ? rupees(dailyRatePaise) : "-", mono: true },
-                    { label: "Start date", value: formatDateLong(startDate) },
-                    { label: "Checkout date", value: formatDateLong(plannedEndDate) },
-                    { label: "Nights", value: String(nights) },
-                    { label: "Estimated total", value: dailyRatePaise != null ? rupees(dailyRatePaise * nights) : "-", mono: true },
-                  ]
-                : [
-                    { label: "Rent / month", value: rupees(Math.round(Number(rent) * 100)), mono: true },
-                    { label: "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
-                    { label: "Start date", value: formatDateLong(startDate) },
-                  ]),
-            ]}
-          />
-          {!isDaily ? (
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Every monthly tenancy needs an accepted agreement. The tenancy stays pending until the
-              tenant accepts.
-            </Text>
-          ) : null}
-          <View style={{ gap: spacing.sm }}>
-            {/* Which document, then its last four. Never Aadhaar by default: a
-                private landlord cannot require it, so the tenant's choice is
-                what gets recorded. */}
-            {/* Single choice, so the single picker: it commits on tap and has
-                no tick column, which on a one-of-six field only marked the row
-                the sheet was about to close over anyway. */}
+          {/* A stack, not a long page. The picker is the whole card until a
+              route is chosen, and then the route is the whole card with its own
+              way back — so there is only ever one thing being answered. */}
+          {verificationMode === null ? (
+            <>
+              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
+                Establish who this person is before the tenancy is created. Whichever route you take is
+                recorded on the tenancy.
+              </Text>
+              <SelectRow
+                icon={ClipboardList}
+                onPress={() => setVerificationMode("MANUAL")}
+                selected={false}
+                subtitle="You check a government photo ID yourself and record what you saw."
+                title="Manual verification"
+              />
+              <SelectRow
+                icon={ShieldCheck}
+                onPress={() => setVerificationMode("KYC")}
+                selected={false}
+                subtitle="The tenant proves their own identity through an official check."
+                title="KYC verification"
+              />
+            </>
+          ) : (
+            <>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                <HeaderButton icon={ArrowLeft} onPress={() => setVerificationMode(null)} subtle />
+                <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
+                  {verificationMode === "MANUAL" ? "Manual verification" : "KYC verification"}
+                </Text>
+              </View>
+
+              {verificationMode === "MANUAL" ? (
+                <View style={{ gap: spacing.md }}>
             <SingleOptionPicker<IdDocumentType>
               emptyLabel="Select the ID you checked"
               error={form.errors.idDocumentType}
@@ -1150,35 +1255,180 @@ export default function OwnerOnboardTenantScreen() {
               />
             </Field>
 
+                  <ClickwrapConsent
+                    checked={idCheckConfirmed}
+                    onToggle={() => setIdCheckConfirmed((value) => !value)}
+                    statement={idStatement}
+                  />
+                </View>
+              ) : null}
+
+              {verificationMode === "KYC" ? (
+                <View style={{ gap: spacing.md }}>
+                  <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
+                    Choose what this tenant must complete. They do each check from their own phone.
+                  </Text>
+
+                  <VerificationServicePicker onToggle={toggleVerificationService} order={verificationOrder} />
+                </View>
+              ) : null}
+
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {/* Outside the card on purpose: this is what the list above produced, not
+          another section of it. Only once something is in it — an empty total
+          under an empty list says nothing worth the space. */}
+      {step === "verify" && verificationMode === "KYC" ? (
+        <>
+          <VerificationOrderSummary
+            onAttemptsChange={setVerificationAttempts}
+            order={verificationOrder}
+          />
+
+        </>
+      ) : null}
+
+      {step === "review" ? (
+        <>
+          {/* The page's own title, not an 11px eyebrow. The sections below are
+              eyebrows now, and a heading set in the same style as the things it
+              contains gives a reader nothing to climb. */}
+          <View style={{ gap: 4 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.35 }}>
+              Review before creating
+            </Text>
+            <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 20 }]}>
+              {isDaily
+                ? "This is the register entry for the stay."
+                : "These are the terms the tenancy is created with."}
+            </Text>
           </View>
 
-          {withAgreement ? (
-            <PrimaryButton
-              disabled={!idCheckConfirmed}
-              label="Continue to agreement"
-              onPress={() => {
-                if (idCheckMissing()) return;
-                setStep("agreement");
-              }}
-            />
-          ) : (
-            <PrimaryButton
-              busy={onboardState.isLoading}
-              disabled={!idCheckConfirmed}
-              label="Confirm and create tenancy"
-              onPress={handleConfirm}
-            />
-          )}
-
-          {/* Under the button it gates. The header's own back arrow already
-              steps to the previous screen, so a second Back here was a third
-              control doing what two others do. */}
-          <ClickwrapConsent
-            checked={idCheckConfirmed}
-            onToggle={() => setIdCheckConfirmed((value) => !value)}
-            statement={idStatement}
+          <Card style={{ gap: spacing.lg, padding: spacing.md }}>
+          {/* Grouped, not one long list of twelve rows. Who, where, what it
+              costs, and how they were checked are four different questions, and
+              an owner scanning for the rent should not have to read past the
+              guest's email to find it. */}
+          <ReviewGroup
+            rows={[
+              { label: "Name", value: tenantName.trim() || lookup?.fullName || phone.trim() },
+              { label: "Phone", value: phone.trim(), mono: true },
+              ...(isDaily
+                ? [
+                    { label: "Age", value: guestAge.trim() || "-" },
+                    { label: "Gender", value: tenantGender ? GENDER_LABELS[tenantGender] : "-" },
+                    { label: "Email", value: tenantEmail.trim() || "Not given" },
+                  ]
+                : []),
+            ]}
+            materialIcon="account"
+            title={isDaily ? "Guest" : "Tenant"}
           />
-        </Card>
+
+          <ReviewGroup
+            rows={[
+              { label: "Type", value: isDaily ? "Daily" : "Monthly" },
+              { label: "Property", value: selectedProperty?.name ?? "-" },
+              { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
+              { label: "Start date", value: formatDateLong(startDate) },
+              ...(isDaily
+                ? [
+                    { label: "Checkout date", value: formatDateLong(plannedEndDate) },
+                    { label: "Nights", value: String(nights) },
+                  ]
+                : []),
+            ]}
+            materialIcon="home"
+            title="Stay"
+          />
+
+          <ReviewGroup
+            rows={
+              isDaily
+                ? [
+                    { label: "Daily rate", value: dailyRatePaise != null ? rupees(dailyRatePaise) : "-", mono: true },
+                    {
+                      label: `Total for ${nights} ${nights === 1 ? "night" : "nights"}`,
+                      mono: true,
+                      strong: true,
+                      value: dailyRatePaise != null ? rupees(dailyRatePaise * nights) : "-",
+                    },
+                  ]
+                : [
+                    { label: "Rent / month", mono: true, strong: true, value: rupees(Math.round(Number(rent) * 100)) },
+                    { label: "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
+                  ]
+            }
+            materialIcon="currency-inr"
+            title="Money"
+          />
+
+          {/* A consequence, not a caption. What the owner is about to create
+              does not start on the day it is created, and that sentence set as
+              muted 12px under a group of rows was the quietest thing on a page
+              it changes the meaning of. */}
+          {!isDaily ? (
+            <NoticeBar
+              icon={Clock3}
+              message="The tenancy and its billing start only when the tenant accepts the agreement in their app."
+              title="Stays pending until accepted"
+              tone="warning"
+            />
+          ) : null}
+
+          {/* The identity check happened on its own step, so this states what
+              was asked for rather than asking again. "Change" goes back to that
+              step — it is the one thing on this page worth reopening. */}
+          <ReviewGroup
+            action={{ label: "Change", onPress: () => setStep("verify") }}
+            footer={
+              verificationMode === "KYC" ? undefined : "You confirmed you saw this document yourself."
+            }
+            rows={
+              verificationMode === "KYC"
+                ? [
+                    { label: "Route", value: "Tenant verifies" },
+                    // A receipt line: the count rides with the thing counted,
+                    // and the money stays in the money column with every other
+                    // figure on the page.
+                    ...orderedVerificationServices.map((service) => {
+                      const attempts = verificationOrder[service.key] ?? 1;
+                      return {
+                        label: `${service.shortLabel} ×${attempts}`,
+                        value: formatMoneyPaise(service.pricePaise * attempts),
+                        mono: true,
+                      };
+                    }),
+                    { label: "Most it can cost", mono: true, strong: true, value: formatMoneyPaise(verificationMaxPaise) },
+                  ]
+                : [
+                    { label: "Route", value: "Checked by you" },
+                    {
+                      label: "Document",
+                      value: `${ID_DOCUMENT_OPTIONS.find((option) => option.value === idDocumentType)?.label ?? "ID"} ending ${idLastFour || "----"}`,
+                    },
+                  ]
+            }
+            title="Verification"
+          />
+
+          {/* What the money does, said where the money is. The same notice
+              shape as the one below it, in blue: this explains a mechanism,
+              where that one warns about a state the tenancy sits in. */}
+          {verificationMode === "KYC" && orderedVerificationServices.length > 0 ? (
+            <NoticeBar
+              icon={Wallet}
+              message={`Nothing is set aside now. Each attempt is charged to your Service balance only when the tenant uses it, so ${formatMoneyPaise(verificationMaxPaise)} is the most this can come to and attempts they never use cost nothing.`}
+              title="Charged as they are used"
+              tone="info"
+            />
+          ) : null}
+
+          </Card>
+        </>
       ) : null}
 
       {/* A wall, not a warning. The deed names the property owner as Landlord, so
@@ -1219,6 +1469,30 @@ export default function OwnerOnboardTenantScreen() {
                 clauses={previewQuery.data.clauses}
                 preamble={previewQuery.data.preamble}
               />
+            ) : null}
+            {/* A deed that failed to load used to render as an empty section,
+                which reads as "this agreement has no terms" — the one thing a
+                document preview must never imply. The clause editor below is
+                hidden by the same failure, because it needs the same template. */}
+            {agreementUnavailable ? (
+              <View style={{ gap: spacing.md }}>
+                <NoticeBar
+                  message="The agreement could not be loaded, so its clauses cannot be shown or changed. Check your connection and try again."
+                  title="Preview unavailable"
+                  tone="warning"
+                />
+                <ActionButton
+                  label="Try again"
+                  onPress={() => {
+                    if (settingsQuery.isError) {
+                      void settingsQuery.refetch();
+                    }
+                    if (previewQuery.isError) {
+                      void previewQuery.refetch();
+                    }
+                  }}
+                />
+              </View>
             ) : null}
           </CollapsibleSection>
 
@@ -1286,89 +1560,118 @@ export default function OwnerOnboardTenantScreen() {
           </CollapsibleSection>
 
 
-          {/* Measured, not guessed. PINNED_FOOTER_CLEARANCE assumes the tall
-              faded footer; this one has no runway and carries a note, so its
-              height is its own business — reading it back is the only way the
-              two stay in step. */}
+          {/* Measured, not guessed. PINNED_FOOTER_CLEARANCE assumes a single
+              button; this footer carries a note as well, so its height is its
+              own business — reading it back is the only way the two stay in
+              step. */}
           <View style={{ height: footerHeight || PINNED_FOOTER_CLEARANCE }} />
         </>
       ) : null}
 
       {step === "done" && result ? (
-        <Card>
-          <View style={{ alignItems: "center", gap: spacing.sm }}>
-            <View
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.successSoft,
-                borderRadius: 999,
-                height: 56,
-                justifyContent: "center",
-                width: 56,
-              }}
-            >
-              <Check color={colors.successText} size={28} strokeWidth={2.4} />
-            </View>
-            {/* The outcome, then its status, then what happens next — three
-                statements on three lines. They were one run-on sentence held
-                together by two dashes, which put "awaiting acceptance" and a
-                three-day deadline in the same breath as the good news. */}
-            <Text style={[type.bodyStrong, { color: colors.ink, textAlign: "center" }]}>
-              {result.tenantAccountCreated ? "Tenant account and tenancy created" : "Tenancy created"}
+        <>
+          <View style={{ gap: 4 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.35 }}>
+              Tenancy created
             </Text>
+            <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 20 }]}>
+              {result.tenancy.guestStay
+                ? "This is the register entry for the completed onboarding."
+                : "These are the terms the tenancy was created with."}
+            </Text>
+          </View>
+
+          <Card style={{ gap: spacing.lg, padding: spacing.md }}>
+            <NoticeBar
+              icon={Check}
+              message={
+                result.tenantAccountCreated
+                  ? "The tenant account and tenancy were created successfully."
+                  : "The tenancy was created successfully."
+              }
+              title="Onboarding complete"
+              tone="success"
+            />
 
             {result.tenancy.status === "PENDING_ACCEPTANCE" ? (
-              <>
-                <Text
-                  style={{
-                    color: colors.accent,
-                    fontFamily: fonts.sansSemiBold,
-                    fontSize: 13,
-                    textAlign: "center",
-                  }}
-                >
-                  Awaiting acceptance
-                </Text>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18, textAlign: "center" }]}>
-                  The bed is reserved. The tenancy and billing start once the tenant accepts the
-                  agreement in their app. Pending tenancies auto-cancel after 3 days.
-                </Text>
-              </>
+              <NoticeBar
+                icon={Clock3}
+                message="The bed is reserved. The tenancy and billing start once the tenant accepts the agreement in their app. Pending tenancies auto-cancel after 3 days."
+                title="Awaiting acceptance"
+                tone="warning"
+              />
             ) : null}
-          </View>
-          <OverviewBox
-            rows={[
-              { label: "Tenancy", value: result.tenancy.referenceCode, mono: true },
-              { label: "Type", value: result.tenancy.billingType === "DAILY" ? "Daily" : "Monthly" },
-              ...(result.tenancy.billingType === "DAILY"
-                ? [
-                    { label: "Daily rate", value: rupees(result.tenancy.dailyRatePaise ?? 0), mono: true },
-                    { label: "Start date", value: result.tenancy.startDate },
-                    { label: "Checkout date", value: result.tenancy.plannedEndDate ?? "-" },
-                  ]
-                : [
-                    { label: "Rent / month", value: rupees(result.tenancy.rentAmountPaise ?? 0), mono: true },
-                    { label: "Deposit", value: rupees(result.tenancy.depositAmountPaise ?? 0), mono: true },
-                    { label: "Start date", value: result.tenancy.startDate },
-                  ]),
-            ]}
-          />
-          {result.tenantAccountCreated ? (
-            <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
-              The tenant can now sign up with this phone number to set their PIN.
-            </Text>
-          ) : null}
-          {/* Said plainly, because it changes what the owner has to do next.
-              Nothing reaches this guest through the app, so bills, reminders
-              and anything they raise are handled by you in person. */}
-          {result.tenancy.guestStay ? (
-            <Text style={[type.body, { color: colors.muted, fontSize: 13 }]}>
-              No account was created and the guest is not sent anything. Raise the bill and mark it
-              paid here, and handle anything else with them directly.
-            </Text>
-          ) : null}
-          <PrimaryButton label="Done" onPress={() => router.back()} />
-        </Card>
+
+            <ReviewGroup
+              materialIcon="file-document-check"
+              rows={[
+                { label: "Reference", value: result.tenancy.referenceCode, mono: true },
+                { label: "Type", value: result.tenancy.billingType === "DAILY" ? "Daily" : "Monthly" },
+              ]}
+              title="Tenancy"
+            />
+
+            <ReviewGroup
+              materialIcon="account"
+              rows={[
+                { label: "Name", value: tenantName.trim() || lookup?.fullName || phone.trim() },
+                { label: "Phone", value: phone.trim(), mono: true },
+              ]}
+              title={result.tenancy.guestStay ? "Guest" : "Tenant"}
+            />
+
+            <ReviewGroup
+              materialIcon="home"
+              rows={[
+                { label: "Property", value: selectedProperty?.name ?? "-" },
+                { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
+                { label: "Start date", value: formatDateLong(new Date(result.tenancy.startDate)) },
+                ...(result.tenancy.billingType === "DAILY"
+                  ? [
+                      {
+                        label: "Checkout date",
+                        value: result.tenancy.plannedEndDate
+                          ? formatDateLong(new Date(result.tenancy.plannedEndDate))
+                          : "-",
+                      },
+                    ]
+                  : []),
+              ]}
+              title="Stay"
+            />
+
+            <ReviewGroup
+              materialIcon="currency-inr"
+              rows={
+                result.tenancy.billingType === "DAILY"
+                  ? [
+                      { label: "Daily rate", mono: true, strong: true, value: rupees(result.tenancy.dailyRatePaise ?? 0) },
+                    ]
+                  : [
+                      { label: "Rent / month", mono: true, strong: true, value: rupees(result.tenancy.rentAmountPaise ?? 0) },
+                      { label: "Deposit", value: rupees(result.tenancy.depositAmountPaise ?? 0), mono: true },
+                    ]
+              }
+              title="Money"
+            />
+
+            {result.tenantAccountCreated ? (
+              <NoticeBar
+                message="The tenant can now sign up with this phone number to set their PIN."
+                title="They can sign in now"
+                tone="info"
+              />
+            ) : null}
+
+            {result.tenancy.guestStay ? (
+              <NoticeBar
+                message="No account was created and the guest is not sent anything. Raise the bill and mark it paid here, and handle anything else with them directly."
+                title="Everything here is yours to do"
+                tone="info"
+              />
+            ) : null}
+          </Card>
+        </>
       ) : null}
 
 
@@ -1389,15 +1692,67 @@ export default function OwnerOnboardTenantScreen() {
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
     </ScreenScrollView>
 
+      {step === "tenant" && tenantStepCanContinue ? (
+        <PinnedFooter>
+          <ActionButton
+            disabled={form.blocked}
+            label="Continue"
+            onPress={isDaily ? goToRoomAndDatesForGuest : goToRoomAndDates}
+          />
+        </PinnedFooter>
+      ) : null}
+
+      {step === "details" ? (
+        <PinnedFooter>
+          <ActionButton disabled={!roomId} label="Continue" onPress={goToReview} />
+        </PinnedFooter>
+      ) : null}
+
+      {step === "verify" && verificationMode !== null ? (
+        <PinnedFooter>
+          <ActionButton
+            disabled={
+              verificationMode === "MANUAL"
+                ? !idCheckConfirmed || form.blocked
+                : orderedVerificationServices.length === 0
+            }
+            label="Continue to review"
+            onPress={() => {
+              if (idCheckMissing()) return;
+              setStep("review");
+            }}
+          />
+        </PinnedFooter>
+      ) : null}
+
+      {step === "review" ? (
+        <PinnedFooter>
+          <ActionButton
+            disabled={!withAgreement && onboardState.isLoading}
+            label={
+              withAgreement
+                ? "Continue to agreement"
+                : onboardState.isLoading
+                  ? "Creating tenancy…"
+                  : "Confirm and create tenancy"
+            }
+            onPress={withAgreement ? () => setStep("agreement") : () => void handleConfirm()}
+          />
+        </PinnedFooter>
+      ) : null}
+
+      {step === "done" ? (
+        <PinnedFooter>
+          <ActionButton label="Done" onPress={() => router.back()} />
+        </PinnedFooter>
+      ) : null}
+
       {/* Pinned rather than scrolled to. It is the one action of this step, and
           on a long agreement it was several clauses below the fold — PinnedFooter
           also handles the system bar inset, which a button inside the scroll
           view never did. */}
-      {step === "agreement" ? (
-        <PinnedFooter
-          fade={false}
-          onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
-        >
+      {step === "agreement" && !gateBlocked ? (
+        <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
           {/* ActionButton, the same one every other pinned footer uses. The
               local PrimaryButton drops to opacity 0.65 when disabled, which
               inside a footer lets the page scroll visibly through it — the
@@ -1453,7 +1808,6 @@ function GuestStayCard({
   addressError,
   age,
   ageError,
-  blocked,
   email,
   emailError,
   gender,
@@ -1463,7 +1817,6 @@ function GuestStayCard({
   onAddress,
   onAge,
   onChangeName,
-  onContinue,
   onEmail,
   onGender,
   onPhone,
@@ -1474,8 +1827,6 @@ function GuestStayCard({
   addressError?: string;
   age: string;
   ageError?: string;
-  /** True while any field on this card is in error. */
-  blocked: boolean;
   email: string;
   emailError?: string;
   gender: Gender | null;
@@ -1485,7 +1836,6 @@ function GuestStayCard({
   onAddress: (value: string) => void;
   onAge: (value: string) => void;
   onChangeName: (value: string) => void;
-  onContinue: () => void;
   onEmail: (value: string) => void;
   onGender: (value: Gender | null) => void;
   onPhone: (value: string) => void;
@@ -1587,10 +1937,6 @@ function GuestStayCard({
         ) : null}
       </View>
 
-      {/* Held until every blamed field is corrected, per the form-error
-          contract — otherwise the same invalid details can be fired at the next
-          step repeatedly, each time producing the identical set of messages. */}
-      <PrimaryButton disabled={blocked} label="Continue" onPress={onContinue} />
     </Card>
   );
 }
@@ -1605,7 +1951,6 @@ function GuestStayCard({
 function LookupResultCard({
   address,
   addressError,
-  blocked,
   canOnboard,
   dob,
   exists,
@@ -1616,7 +1961,6 @@ function LookupResultCard({
   nameError,
   onAddress,
   onChangeName,
-  onContinue,
   onDob,
   onGender,
   onPincode,
@@ -1628,8 +1972,6 @@ function LookupResultCard({
   prefill,
 }: {
   address: string;
-  /** True while any field on this card is in error. */
-  blocked: boolean;
   addressError?: string;
   canOnboard: boolean;
   dob: string;
@@ -1641,7 +1983,6 @@ function LookupResultCard({
   nameError?: string;
   onAddress: (value: string) => void;
   onChangeName: (value: string) => void;
-  onContinue: () => void;
   onDob: (value: string) => void;
   onGender: (value: Gender | null) => void;
   onPincode: (value: string) => void;
@@ -1741,9 +2082,15 @@ function LookupResultCard({
         </Field>
       ) : null}
 
+      {/* Sharper than "as it appears on their ID" since verification went in.
+          A check compares the two names exactly, so a middle name left off here
+          fails the tenant at the last step of onboarding — after the owner has
+          already paid for the attempt. Said where the name is typed, because by
+          the time anyone reads it on the verify step it is too late. */}
       {canOnboard && !nameLocked && !nameError ? (
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          This name goes on the agreement, so enter it as it appears on the ID you check.
+        <Text style={[type.caption, { color: colors.kicker, lineHeight: 18 }]}>
+          This name goes on the agreement. Enter it exactly as printed on their ID, middle name
+          included, or an identity check will not pass.
         </Text>
       ) : null}
       {canOnboard && nameLocked ? (
@@ -1820,10 +2167,6 @@ function LookupResultCard({
         </>
       ) : null}
 
-      {/* Held until every blamed field is corrected, per the form-error
-          contract — otherwise the same invalid details can be fired at the next
-          step repeatedly, each time producing the identical set of messages. */}
-      {canOnboard ? <PrimaryButton disabled={blocked} label="Continue" onPress={onContinue} /> : null}
     </Card>
   );
 }
@@ -2259,12 +2602,15 @@ function SelectRow({
   subtitle,
   selected,
   disabled,
+  icon: Icon,
   onPress,
 }: {
   title: string;
   subtitle: string;
   selected: boolean;
   disabled?: boolean;
+  /** Optional, so the stay-type rows stay exactly as they were. */
+  icon?: ComponentType<LucideProps>;
   onPress: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -2291,6 +2637,24 @@ function SelectRow({
         padding: spacing.md,
       }}
     >
+      {/* A grey ground rather than an outline. Beside a row that already has
+          its own border and its own selection rule, a second outlined box read
+          as another edge competing with those two. */}
+      {Icon ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.neutralSoft,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            height: 36,
+            justifyContent: "center",
+            width: 36,
+          }}
+        >
+          <Icon color={colors.ink} size={18} strokeWidth={2} />
+        </View>
+      ) : null}
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5 }}>
           {title}
@@ -2307,41 +2671,119 @@ function SelectRow({
   );
 }
 
-type OverviewRowData = { label: string; value: string; mono?: boolean };
+type ReviewRowData = { label: string; value: string; mono?: boolean; strong?: boolean };
 
-function OverviewBox({ rows }: { rows: OverviewRowData[] }) {
-  const { colors } = useTheme();
+/**
+ * A titled group of facts on the review page.
+ *
+ * <p>A caps label, a rule, and rows divided by hairlines — no panel. The review
+ * page is already a card, and the boxed list that used to sit inside it drew a
+ * second border around content that belongs to the card it is in. What a reader
+ * needs here is the grouping, not another frame: the box made twelve rows one
+ * undifferentiated block, which is why the rent was as hard to find as the
+ * guest's email.
+ */
+function ReviewGroup({
+  action,
+  footer,
+  materialIcon,
+  rows,
+  title,
+}: {
+  /** Sends the owner back to the step that decided this group. */
+  action?: { label: string; onPress: () => void };
+  /** A sentence under the rows, for a rule the rows imply but cannot state. */
+  footer?: string;
+  materialIcon?: ComponentProps<typeof MaterialCommunityIcons>["name"];
+  rows: ReviewRowData[];
+  title: string;
+}) {
+  const { colors, fonts, type } = useTheme();
+
   return (
-    <View
-      style={{
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: radii.card,
-        borderWidth: 1,
-        overflow: "hidden",
-      }}
-    >
+    <View style={{ gap: spacing.xs }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        {materialIcon ? (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.primarySoft,
+              borderRadius: 999,
+              height: 34,
+              justifyContent: "center",
+              width: 34,
+            }}
+          >
+            <MaterialCommunityIcons color={colors.primary} name={materialIcon} size={20} />
+          </View>
+        ) : null}
+        {/* Ink and Bold, where an eyebrow is normally grey and SemiBold. These
+            labels are not chrome above a section — they are the only thing
+            dividing four groups of rows set in the same size, so they have to
+            outweigh the rows rather than sit quietly over them. */}
+        <Text style={[type.eyebrow, { color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 12.5, letterSpacing: 0.7 }]}>
+          {title}
+        </Text>
+        {action ? (
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={action.onPress}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.surfaceSunken,
+              borderRadius: 999,
+              justifyContent: "center",
+              marginTop: 5,
+              minHeight: 28,
+              paddingHorizontal: spacing.sm,
+            }}
+          >
+            <Text style={[type.caption, { color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }]}>
+              {action.label}
+            </Text>
+          </AnimatedPressable>
+        ) : null}
+      </View>
       {rows.map((row, index) => (
         <View key={row.label}>
-          {index > 0 ? <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: spacing.md, opacity: 0.8 }} /> : null}
-          <OverviewRow label={row.label} value={row.value} mono={row.mono} />
+          {index > 0 ? <View style={{ backgroundColor: colors.border, height: 1 }} /> : null}
+          <ReviewRow label={row.label} mono={row.mono} strong={row.strong} value={row.value} />
         </View>
       ))}
+
+      {footer ? (
+        <Text style={[type.caption, { color: colors.muted, lineHeight: 18, marginTop: 2 }]}>
+          {footer}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
-function OverviewRow({ label, value, mono }: OverviewRowData) {
+/** Label left, answer right. `strong` is for the one figure that matters most. */
+function ReviewRow({ label, mono, strong, value }: ReviewRowData) {
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between", padding: spacing.md }}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-        {label}
-      </Text>
+    <View
+      style={{
+        alignItems: "flex-start",
+        flexDirection: "row",
+        gap: spacing.md,
+        justifyContent: "space-between",
+        paddingVertical: 11,
+      }}
+    >
+      <Text style={[type.body, { color: colors.muted, flexShrink: 1, fontSize: 14 }]}>{label}</Text>
       <Text
         style={[
           type.body,
-          { color: colors.ink, flex: 1, fontFamily: mono ? fonts.mono : fonts.sans, fontWeight: "800", textAlign: "right" },
+          {
+            color: colors.ink,
+            flexShrink: 1,
+            fontFamily: mono ? fonts.mono : strong ? fonts.display : fonts.sansBold,
+            fontSize: strong ? 15 : 14,
+            textAlign: "right",
+          },
         ]}
       >
         {value}
@@ -2349,9 +2791,6 @@ function OverviewRow({ label, value, mono }: OverviewRowData) {
     </View>
   );
 }
-
-
-
 
 function PrimaryButton({
   label,

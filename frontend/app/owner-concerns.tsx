@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, ArrowUp, Building2, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
+import { Activity, AlertCircle, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
 
 import { Image, type ImageSourcePropType } from "react-native";
 
@@ -329,7 +329,7 @@ function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void
       active={tab}
       onChange={onChange}
       options={[
-        { icon: Building2, label: "Property", value: "property" },
+        { icon: PropertyIcon, label: "Property", value: "property" },
         { icon: UserRound, label: "My concerns", value: "mine" },
       ]}
     />

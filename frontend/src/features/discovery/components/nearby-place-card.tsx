@@ -91,7 +91,7 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
       ) : null}
 
       {/* View mode: Call + Directions. Manage mode: only Edit/Remove. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, width: "100%" }}>
         {!manage ? (
           <>
             <CardButton
@@ -113,7 +113,8 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
           <View
             style={{
               alignItems: "center",
-              borderColor: colors.border,
+              backgroundColor: colors.accentSoft,
+              borderColor: colors.accent,
               borderRadius: 10,
               borderWidth: 1,
               flexDirection: "row",
@@ -122,11 +123,10 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
               paddingVertical: 6,
             }}
           >
-            <Star color={colors.ink} fill={colors.ink} size={12} strokeWidth={2} />
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12 }}>Recommended</Text>
+            <Star color={colors.accent} fill={colors.accent} size={12} strokeWidth={2} />
+            <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 12 }}>Recommended</Text>
           </View>
         ) : null}
-        <View style={{ flex: 1 }} />
       </View>
     </View>
   );

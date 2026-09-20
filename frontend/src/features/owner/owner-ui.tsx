@@ -2,7 +2,7 @@ import { useState, type ComponentType } from "react";
 import { Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { statusTonePalette, type StatusTone } from "@/components/status-icon";
-import { ArrowLeft, X, type LucideProps } from "lucide-react-native";
+import { ArrowLeft, CircleAlert, CircleCheck, Info, X, type LucideProps } from "lucide-react-native";
 type LucideIcon = ComponentType<LucideProps>;
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -476,16 +476,19 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
  * A standing notice on the screen: a precaution to read while deciding, not
  * something to dismiss.
  *
- * <p>The tone is carried by one quiet rule on the left. Keeping the title and
- * message in one text column makes longer notices easier to scan and avoids
- * putting a decorative status icon beside every heading.
+ * <p>The tone is carried by a borderless tinted surface and a compact icon
+ * well. A caller may replace the default status mark when the notice describes
+ * a specific mechanism, such as a pending clock or Service balance wallet.
  */
 export function NoticeBar({
+  icon: NoticeIcon,
   message,
   messageStyle,
   title,
   tone = "success",
 }: {
+  /** A context-specific mark, such as a clock for a pending state. */
+  icon?: LucideIcon;
   message: string;
   messageStyle?: TextStyle;
   title: string;
@@ -496,28 +499,54 @@ export function NoticeBar({
   // "danger" predates the shared tones; it means the same as error.
   const statusTone: StatusTone = tone === "danger" ? "error" : tone;
   const { fill } = statusTonePalette(statusTone, colors);
+  const Icon = NoticeIcon ?? {
+    error: CircleAlert,
+    info: Info,
+    success: CircleCheck,
+    warning: CircleAlert,
+  }[statusTone];
+  const backgroundColor = {
+    error: colors.dangerSoft,
+    info: colors.primarySoft,
+    success: colors.jadeSoft,
+    warning: colors.warningSoft,
+  }[statusTone];
 
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderLeftColor: fill,
-        borderLeftWidth: 4,
-        gap: spacing.xs,
-        paddingLeft: spacing.md,
-        paddingVertical: spacing.xs,
+        alignItems: "flex-start",
+        backgroundColor,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        flexDirection: "row",
+        gap: spacing.sm,
+        padding: spacing.md,
       }}
     >
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 0.8 }}>
-        {title}
-      </Text>
-      <Text selectable style={[type.caption, { color: colors.muted, lineHeight: 18 }, messageStyle]}>
-        {message}
-      </Text>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: `${fill}14`,
+          borderRadius: 999,
+          height: 36,
+          justifyContent: "center",
+          width: 36,
+        }}
+      >
+        <Icon color={fill} size={20} strokeWidth={2.2} />
+      </View>
+      <View style={{ flex: 1, gap: 3, paddingTop: 1 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
+          {title}
+        </Text>
+        <Text selectable style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 18 }, messageStyle]}>
+          {message}
+        </Text>
+      </View>
     </View>
   );
 }
-
 
 export function ConfirmDialog({
   acknowledgeOnly,

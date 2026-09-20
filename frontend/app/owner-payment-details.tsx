@@ -51,7 +51,7 @@ export default function OwnerPaymentDetailsScreen() {
   const hydrated = useAppSelector((state) => state.auth.hydrated);
   const detailsQuery = useGetPropertyPaymentDetailsQuery(propertyId ?? "", { skip: !propertyId });
   const [save, saveState] = useUpdatePropertyPaymentDetailsMutation();
-  const form = useFormErrors<"bankAccountNumber" | "bankIfsc" | "upiPhone" | "upiVpa">();
+  const form = useFormErrors<"bankAccountNumber" | "bankIfsc" | "payeeName" | "upiPhone" | "upiQr" | "upiVpa">();
 
   const [upiVpa, setUpiVpa] = useState("");
   const [payeeName, setPayeeName] = useState("");
@@ -79,16 +79,23 @@ export default function OwnerPaymentDetailsScreen() {
   }, [held, propertyId]);
 
   /**
-   * A QR on its own leaves the tenant with nothing to press.
+   * The four UPI details go together: all of them, or none.
    *
    * <p>
-   * The QR is scanned from a SECOND device — the tenant cannot photograph a
-   * code on the phone they are holding. "Scan and pay" is the way out of that,
-   * and it fires a {@code upi://pay} link, which needs the address. So a
-   * property with a QR and no address is one where the tenant on their own
-   * phone sees a picture and no way to act on it.
+   * Each covers a way a tenant pays. The QR is scanned from a second device,
+   * the address powers Scan and pay on the phone they are holding, the phone
+   * number is what many UPI apps pay to, and the receiver name is how the
+   * tenant checks the money is going to the right person. A partial set leaves
+   * some tenants a picture with no button, or a button with no name to check.
+   * The server enforces the same rule.
    */
-  const qrNeedsAddress = Boolean(upiQrImageUrl) && !upiVpa.trim();
+  const upiFilled = {
+    payeeName: Boolean(payeeName.trim()),
+    upiPhone: Boolean(upiPhone.trim()),
+    upiQr: Boolean(upiQrImageUrl),
+    upiVpa: Boolean(upiVpa.trim()),
+  };
+  const anyUpi = Object.values(upiFilled).some(Boolean);
 
   const isDirty =
     Boolean(held) &&
@@ -100,16 +107,25 @@ export default function OwnerPaymentDetailsScreen() {
       bankIfsc.trim() !== (held?.bankIfsc ?? "") ||
       bankAccountHolder.trim() !== (held?.bankAccountHolder ?? ""));
 
+  function clearUpiErrors() {
+    form.clearField("upiQr");
+    form.clearField("upiVpa");
+    form.clearField("upiPhone");
+    form.clearField("payeeName");
+  }
+
   async function submit() {
     // Both halves of the bank reference or neither — the server refuses one
     // without the other, because a tenant cannot transfer to an account number
     // with no IFSC.
     const account = bankAccountNumber.trim();
     const ifsc = bankIfsc.trim();
+    const incomplete = "Add this too, or clear the other UPI details.";
     const cleared = form.validate({
-      ...(qrNeedsAddress
-        ? { upiVpa: "Add your UPI address too, or the QR has no Scan and pay button under it." }
-        : {}),
+      ...(anyUpi && !upiFilled.upiQr ? { upiQr: incomplete } : {}),
+      ...(anyUpi && !upiFilled.upiVpa ? { upiVpa: incomplete } : {}),
+      ...(anyUpi && !upiFilled.upiPhone ? { upiPhone: incomplete } : {}),
+      ...(anyUpi && !upiFilled.payeeName ? { payeeName: incomplete } : {}),
       ...(Boolean(account) === Boolean(ifsc)
         ? {}
         : account
@@ -213,24 +229,21 @@ export default function OwnerPaymentDetailsScreen() {
           <Section title="UPI">
             <Card>
               <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                Add any of these and tenants can pay their bills from the app. With none of them they are not offered
-                the option at all.
+                Add all four to let tenants pay from the app. Leave all empty to keep collecting offline.
               </Text>
 
-              {/* Clears the address error as well as setting the image. Taking
-                  the QR off is the other way to resolve it, and without this the
-                  owner would fix the problem and stay locked out of Save. */}
+              {/* Changing any one UPI detail can resolve another's "add this
+                  too" error (clearing everything is a valid answer), so each
+                  change clears all four rather than only its own. */}
               <UpiQrField
+                error={form.errors.upiQr}
                 onChange={(value) => {
                   setUpiQrImageUrl(value);
-                  form.clearField("upiVpa");
+                  clearUpiErrors();
                 }}
+                required={anyUpi}
                 url={upiQrImageUrl}
               />
-              <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
-                Shown to tenants. Add your UPI address with it so they also get a Scan and pay button, for paying on
-                the phone they are holding.
-              </Text>
 
               <FormInput
                 autoCapitalize="none"
@@ -238,14 +251,14 @@ export default function OwnerPaymentDetailsScreen() {
                 label="UPI address"
                 onChangeText={(text) => {
                   setUpiVpa(text);
-                  form.clearField("upiVpa");
+                  clearUpiErrors();
                 }}
                 placeholder="name@bank"
                 radius={FIELD_RADIUS}
-                // Only once a QR is attached. It is genuinely optional on a
-                // property collecting by bank transfer alone, and a permanent
+                // Only once any UPI detail is filled. A property collecting by
+                // bank transfer alone needs none of them, and a permanent
                 // asterisk would be a lie on that form.
-                required={Boolean(upiQrImageUrl)}
+                required={anyUpi}
                 value={upiVpa}
               />
               <FormInput
@@ -255,17 +268,23 @@ export default function OwnerPaymentDetailsScreen() {
                 maxLength={10}
                 onChangeText={(text) => {
                   setUpiPhone(text.replace(/[^0-9]/g, ""));
-                  form.clearField("upiPhone");
+                  clearUpiErrors();
                 }}
                 placeholder="10 digits"
                 radius={FIELD_RADIUS}
+                required={anyUpi}
                 value={upiPhone}
               />
               <FormInput
-                label="Payee name"
-                onChangeText={setPayeeName}
+                error={form.errors.payeeName}
+                label="Receiver name"
+                onChangeText={(text) => {
+                  setPayeeName(text);
+                  clearUpiErrors();
+                }}
                 placeholder="What tenants will see in their UPI app"
                 radius={FIELD_RADIUS}
+                required={anyUpi}
                 value={payeeName}
               />
 

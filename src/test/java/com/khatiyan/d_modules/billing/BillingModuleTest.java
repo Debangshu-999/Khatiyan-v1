@@ -187,7 +187,7 @@ class BillingModuleTest {
                 null,
                 null,
                 null,
-                List.of());
+                List.of(), null);
     }
 
     private static BillingCycleLineItemResponse lineItemResponse() {

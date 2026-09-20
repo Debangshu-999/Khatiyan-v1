@@ -6,7 +6,7 @@ import {
   AirVent,
   BatteryCharging,
   BookOpen,
-  Brush,
+  BrushCleaning,
   Cctv,
   ChevronRight,
   CircleParking,
@@ -20,7 +20,7 @@ import {
   Refrigerator,
   ShieldCheck,
   Shirt,
-  Sparkles,
+  SprayCan,
   Utensils,
   WashingMachine,
   Wifi,
@@ -43,14 +43,14 @@ const FACILITY_ICONS: Record<PropertyFacility, ComponentType<LucideProps>> = {
   DRINKING_WATER: GlassWater,
   GYM: Dumbbell,
   HOT_WATER: Flame,
-  HOUSEKEEPING: Brush,
+  HOUSEKEEPING: BrushCleaning,
   LAUNDRY_SERVICE: Shirt,
   LIFT: MoveVertical,
   MESS: Utensils,
   PARKING: CircleParking,
   POWER_BACKUP: BatteryCharging,
   REFRIGERATOR: Refrigerator,
-  ROOM_CLEANING: Sparkles,
+  ROOM_CLEANING: SprayCan,
   SECURITY: ShieldCheck,
   STUDY_AREA: BookOpen,
   WASHING_MACHINE: WashingMachine,
@@ -449,12 +449,13 @@ function FacilityTile({
       onPress={onPress}
       style={{
         alignItems: "center",
-        // The app's selection green, not a pale blue wash: primarySoft is not a
-        // fill anywhere, and this was the last place still using it as one.
-        backgroundColor: active ? colors.jadeSoft : colors.surface,
-        borderColor: active ? colors.jade : colors.border,
+        // A soft blue wash with no outline when picked (user, 2026-09-13).
+        // The border stays one pixel wide in both states and only turns
+        // transparent, so picking a tile does not nudge the grid around it.
+        backgroundColor: active ? colors.primarySoft : colors.surface,
+        borderColor: active ? "transparent" : colors.border,
         borderRadius: 16,
-        borderWidth: active ? 1.5 : 1,
+        borderWidth: 1,
         gap: spacing.xs,
         paddingHorizontal: spacing.xs,
         paddingVertical: spacing.md,

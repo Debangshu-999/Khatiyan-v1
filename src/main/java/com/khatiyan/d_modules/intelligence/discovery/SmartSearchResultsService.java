@@ -173,11 +173,15 @@ public class SmartSearchResultsService {
         // Measured landmarks cost a vendor call per listing. Ask for them all at
         // once, before ranking walks the list one listing at a time.
         if (landmarks instanceof LandmarkResolver.Measured measured) {
-            measured.warm(page.items().stream()
+            List<BigDecimal[]> points = page.items().stream()
                     .filter(item -> item.latitude() != null && item.longitude() != null)
                     .map(item -> new BigDecimal[] {item.latitude(), item.longitude()})
-                    .toList());
-            if (!measured.foundAny()) {
+                    .toList();
+            measured.warm(points);
+            // Only a verdict when something was measured. With no listings to
+            // measure from, "no metro station around there" was a false report
+            // about the city laid on top of an empty search.
+            if (!points.isEmpty() && !measured.foundAny()) {
                 // A city with no metro at all is not a city where every listing
                 // is a weak match. Say it could not be found and search without it.
                 unresolved.add("No " + landmarks.label() + " could be found around there.");

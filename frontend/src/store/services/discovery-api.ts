@@ -1,5 +1,13 @@
 import { api } from "@/store/api";
-import type { BathroomType, MealType, PgFor, PreferredTenantType, RoomMold, RoomType } from "@/store/services/property-api";
+import type {
+  BathroomType,
+  MealType,
+  PgFor,
+  PreferredTenantType,
+  PropertyType,
+  RoomMold,
+  RoomType,
+} from "@/store/services/property-api";
 import type { NoticePeriod } from "@/store/services/property-api";
 
 export type PageResponse<T> = {
@@ -51,6 +59,8 @@ export type PropertyDiscoveryCard = {
 };
 
 export type PropertyDiscoveryDetail = PropertyDiscoveryCard & {
+  /** Null when the owner has not said. */
+  visitorsAllowed: boolean | null;
   ownerId: string;
   ownerName: string | null;
   ownerPhone: string | null;
@@ -95,6 +105,8 @@ export type PropertyDiscoverySearch = {
   electricityIncluded?: boolean | null;
   bathroomType?: BathroomType | null;
   sharingTypes?: RoomType[];
+  /** PG or hostel. A preference like food: counted in the match, not a hard limit. */
+  propertyType?: PropertyType | null;
   sort?: ListingSort;
   page?: number;
   size?: number;
@@ -120,6 +132,50 @@ export type LocationArea = {
   city: string;
   state: string;
   area: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/**
+ * One map screen's worth of data.
+ *
+ * <p>The property is the anchor: every distance is measured from it rather
+ * than from the device, because a tenant looking at their own neighbourhood is
+ * asking how far things are from home.
+ */
+export type LocalPlacesMap = {
+  property: {
+    name: string;
+    addressText: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  };
+  listedPlaces: PropertyLocalPlace[];
+  liveResults: LivePlace[];
+  /**
+   * False when the vendor could not be asked at all.
+   *
+   * <p>Distinct from an empty result on purpose: "nothing matched" and "we
+   * could not look" are different sentences, and a tenant told the first when
+   * the second is true concludes their area is empty.
+   */
+  liveSearchAvailable: boolean;
+  /** Chips under the search box. Suggestions, not the limit on what can be searched. */
+  suggestedCategories: { label: string; query: string }[];
+};
+
+/**
+ * A place the vendor knows about but we do not store.
+ *
+ * <p>Pinned by whichever handle arrived. Mappls returns `eLoc` and no
+ * coordinates on a standard key; the named-place lookup can fall through to
+ * Geoapify, which is the reverse. At least one is always present.
+ */
+export type LivePlace = {
+  name: string;
+  address: string | null;
+  eLoc: string | null;
+  distanceMeters: number | null;
   latitude: number | null;
   longitude: number | null;
 };
@@ -277,6 +333,7 @@ export const discoveryApi = api.injectEndpoints({
           electricityIncluded: params.electricityIncluded,
           bathroomType: params.bathroomType,
           sharingTypes: params.sharingTypes?.join(","),
+          propertyType: params.propertyType,
           sort: params.sort,
           page: params.page ?? 0,
           size: params.size ?? 10,
@@ -335,6 +392,13 @@ export const discoveryApi = api.injectEndpoints({
       query: ({ q, latitude, longitude }) => ({
         url: "/api/v1/discovery/me/local-places/search",
         params: cleanParams({ q: q?.trim(), latitude, longitude }),
+      }),
+      providesTags: ["Discovery"],
+    }),
+    getMyLocalPlacesMap: builder.query<LocalPlacesMap, { q?: string | null }>({
+      query: ({ q }) => ({
+        url: "/api/v1/discovery/me/local-places/map",
+        params: cleanParams({ q: q?.trim() }),
       }),
       providesTags: ["Discovery"],
     }),
@@ -542,6 +606,7 @@ export const {
   useMakePropertyImageCoverMutation,
   useRemovePropertyImageMutation,
   useListMyLocalPlacesQuery,
+  useGetMyLocalPlacesMapQuery,
   useListMyLocalPlaceTaxonomyQuery,
   usePublishOwnerDiscoveryProfileMutation,
   useSearchManagedLocalPlacesQuery,

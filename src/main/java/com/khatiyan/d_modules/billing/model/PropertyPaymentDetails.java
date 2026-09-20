@@ -176,6 +176,19 @@ public class PropertyPaymentDetails extends BaseEntity {
             throw new ValidationException("An account number is 6 to 18 digits.");
         }
 
+        // The four UPI details go together, all or none. Each serves a way the
+        // tenant pays (the QR from a second device, the address and phone from
+        // the phone they hold) and the receiver name is how they check the money
+        // goes to the right person. A partial set strands some of those tenants.
+        String trimmedQr = trimmedOrNull(upiQrImageUrl);
+        String trimmedPayee = trimmedOrNull(payeeName);
+        int upiFilled = (trimmedVpa != null ? 1 : 0) + (trimmedPhone != null ? 1 : 0)
+                + (trimmedQr != null ? 1 : 0) + (trimmedPayee != null ? 1 : 0);
+        if (upiFilled > 0 && upiFilled < 4) {
+            throw new ValidationException(
+                    "Add the UPI QR code, UPI address, UPI phone number and receiver name together, or leave all of them empty.");
+        }
+
         // Either both halves or neither. A tenant cannot transfer to an account
         // number with no IFSC, so half of one is not a partial answer — it is a
         // bank tab that cannot be acted on.
@@ -184,9 +197,9 @@ public class PropertyPaymentDetails extends BaseEntity {
         }
 
         this.upiVpa = trimmedVpa;
-        this.payeeName = trimmedOrNull(payeeName);
+        this.payeeName = trimmedPayee;
         this.upiPhone = trimmedPhone;
-        this.upiQrImageUrl = trimmedOrNull(upiQrImageUrl);
+        this.upiQrImageUrl = trimmedQr;
         this.bankAccountNumber = trimmedAccount;
         this.bankIfsc = trimmedIfsc;
         this.bankAccountHolder = trimmedOrNull(bankAccountHolder);

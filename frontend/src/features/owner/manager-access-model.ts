@@ -57,6 +57,24 @@ export type AccessModule = {
 
 export const ACCESS_MODULES: AccessModule[] = [
   {
+    key: "food",
+    label: "Food preference",
+    description: "Food items, profiles, weekly menus, subscribers and cooking forecasts.",
+    manageable: true,
+    sections: [
+      {
+        blockedBehaviour: "toast",
+        screens: [
+          {
+            resource: "FOOD",
+            label: "Food management",
+            description: "View food service setup. Manage also allows changing items, profiles, menus and module status.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     key: "concern",
     label: "Concerns",
     description: "The tenant concern queue.",

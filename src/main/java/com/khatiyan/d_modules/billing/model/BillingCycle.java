@@ -129,6 +129,16 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "paid_at")
     private Instant paidAt;
 
+    /** Management's reason, set only when a one-off bill is cancelled. */
+    @Column(name = "cancellation_reason", length = 200)
+    private String cancellationReason;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "cancelled_by_user_id")
+    private UUID cancelledByUserId;
+
     /**
      * Late-fee rate in force when this cycle's payment window opened. Null while
      * the cycle is UPCOMING — until then the property's current rate applies, so
@@ -521,6 +531,39 @@ public class BillingCycle extends BaseEntity {
     public void cancel() {
         ensureNotPaidOrCancelled();
         this.status = BillingCycleStatus.CANCELLED;
+    }
+
+    /**
+     * Cancels a one-off bill that was raised by mistake.
+     *
+     * <p>Only one-off bills, and only while the tenant still owes them (UNPAID or
+     * OVERDUE). A rent cycle is the tenancy's own record and is corrected with a
+     * discount, never deleted. A bill whose payment the tenant has already
+     * reported is refused: cancelling it would leave a claimed payment hanging
+     * on a bill that no longer exists, so the claim is decided first.
+     */
+    public void cancelOneOff(String reason, UUID actorUserId, Instant now) {
+        if (category != BillingCycleCategory.ONE_OFF) {
+            throw new ValidationException("Only one-off bills can be cancelled.");
+        }
+        if (status == BillingCycleStatus.CONFIRMATION_PENDING) {
+            throw new ValidationException(
+                    "The tenant has reported paying this bill. Confirm or reject their payment first.");
+        }
+        if (status == BillingCycleStatus.PAID) {
+            throw new ValidationException("A paid bill can't be cancelled.");
+        }
+        if (status == BillingCycleStatus.CANCELLED) {
+            throw new ValidationException("This bill is already cancelled.");
+        }
+        if (status != BillingCycleStatus.UNPAID && status != BillingCycleStatus.OVERDUE) {
+            throw new ValidationException("Only an unpaid or overdue bill can be cancelled.");
+        }
+
+        this.status = BillingCycleStatus.CANCELLED;
+        this.cancellationReason = reason;
+        this.cancelledAt = now;
+        this.cancelledByUserId = actorUserId;
     }
 
     public boolean isPaid() {

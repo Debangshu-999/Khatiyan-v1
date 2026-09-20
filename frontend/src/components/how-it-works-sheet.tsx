@@ -1,13 +1,18 @@
+import type { ReactNode } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { IconButton } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type HowItWorksStep = {
   body: string;
+  /**
+   * Shown under the body, for a point that is clearer shown than described:
+   * the billing status chips, drawn exactly as they appear on a bill.
+   */
+  extra?: ReactNode;
   title: string;
 };
 
@@ -60,14 +65,34 @@ export function HowItWorksSheet({
             padding: spacing.lg,
           }}
         >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>{eyebrow}</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
                 {title}
               </Text>
             </View>
-            <IconButton accessibilityLabel={`Close ${title.toLowerCase()}`} icon={X} onPress={onClose} />
+            {/* Aligned to the top of the heading block and lifted clear of it.
+                Centred against a two-line title it drifted down beside the
+                words rather than sitting in the corner it belongs in. */}
+            <AnimatedPressable
+              accessibilityLabel={`Close ${title.toLowerCase()}`}
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={onClose}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.neutralSoft,
+                borderCurve: "continuous",
+                borderRadius: 999,
+                height: 32,
+                justifyContent: "center",
+                marginTop: -spacing.xs,
+                width: 32,
+              }}
+            >
+              <X color={colors.ink} size={17} strokeWidth={2.4} />
+            </AnimatedPressable>
           </View>
 
           <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -77,18 +102,20 @@ export function HowItWorksSheet({
                 style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
               >
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                  {/* A step deeper than the card it sits on. `neutralSoft` is
+                      one point off `surfaceSunken`, so the disc was there in
+                      the code and invisible on the screen. */}
                   <View
                     style={{
                       alignItems: "center",
-                      borderColor: colors.ink,
-                      borderWidth: 1,
+                      backgroundColor: colors.borderStrong,
                       borderRadius: 999,
                       height: 22,
                       justifyContent: "center",
                       width: 22,
                     }}
                   >
-                    <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11 }}>
+                    <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11 }}>
                       {index + 1}
                     </Text>
                   </View>
@@ -99,6 +126,7 @@ export function HowItWorksSheet({
                 <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
                   {step.body}
                 </Text>
+                {step.extra ? <View style={{ marginTop: spacing.xs }}>{step.extra}</View> : null}
               </View>
             ))}
           </ScrollView>

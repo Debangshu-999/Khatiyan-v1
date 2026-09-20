@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { AirVent } from "lucide-react-native";
 
 import { humanizeToken } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
@@ -152,7 +153,13 @@ function FacilityOverviewCell({ facility, showDivider }: { facility: string; sho
         paddingVertical: spacing.md,
       }}
     >
-      <MaterialCommunityIcons color={colors.muted} name={iconName} size={25} />
+      {/* AC is drawn with lucide's air vent, as everywhere else in the app.
+          Material's air-conditioner glyph is a different picture of it. */}
+      {facility === "AIR_CONDITIONING" ? (
+        <AirVent color={colors.muted} size={25} strokeWidth={1.9} />
+      ) : (
+        <MaterialCommunityIcons color={colors.muted} name={iconName} size={25} />
+      )}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           numberOfLines={2}
@@ -201,8 +208,9 @@ function iconForFacility(facility: string): keyof typeof MaterialCommunityIcons.
     case "LAUNDRY_SERVICE":
       return "washing-machine";
     case "HOUSEKEEPING":
-    case "ROOM_CLEANING":
       return "broom";
+    case "ROOM_CLEANING":
+      return "spray-bottle";
     case "POWER_BACKUP":
       return "power-plug-battery-outline";
     case "LIFT":

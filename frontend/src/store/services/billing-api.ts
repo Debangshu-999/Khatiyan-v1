@@ -101,6 +101,8 @@ export type BillingCycle = {
   createdAt: string;
   updatedAt: string;
   lineItems: BillingCycleLineItem[];
+  /** Management's reason, present only on a cancelled one-off bill. */
+  cancellationReason: string | null;
 };
 
 // A bill's display title: rent cycles are numbered; one-off bills (e.g. an
@@ -376,6 +378,19 @@ export const billingApi = api.injectEndpoints({
       invalidatesTags: ["BillingCycle", "Notification"],
     }),
 
+    /**
+     * Cancels a one-off bill raised by mistake. The server allows it only while
+     * the bill is unpaid or overdue, and tells the tenant with the reason.
+     */
+    cancelOneOffBill: builder.mutation<BillingCycle, { billingCycleId: string; reason: string }>({
+      query: ({ billingCycleId, reason }) => ({
+        body: { reason },
+        method: "POST",
+        url: `/api/v1/billing/cycles/${billingCycleId}/cancel`,
+      }),
+      invalidatesTags: ["BillingCycle", "Notification"],
+    }),
+
     listManualPayments: builder.query<ManualPayment[], string>({
       query: (billingCycleId) => `/api/v1/billing/cycles/${billingCycleId}/manual-payments`,
       providesTags: (_result, _error, billingCycleId) => [{ type: "BillingCycle", id: billingCycleId }],
@@ -478,6 +493,7 @@ export const {
   useListPropertyBillingCyclesQuery,
   useListPropertyDepositsQuery,
   useListUpcomingPropertyCyclesQuery,
+  useCancelOneOffBillMutation,
   useCreateOneOffBillMutation,
   useListManualPaymentsQuery,
   useRecordManualPaymentMutation,

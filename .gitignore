@@ -88,3 +88,9 @@ LICENSE
 frontend/tsc-trace/
 # Local service secrets
 .secrets/
+
+# Mappls SDK credentials (Auth Console config files, bound to package + signing key)
+*.a.olf
+*.a.conf
+*.i.olf
+*.i.conf

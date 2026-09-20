@@ -8,7 +8,7 @@ export type RoomConditioning = "AC" | "NON_AC";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
 export type PgFor = "MALE" | "FEMALE" | "ANYONE";
 export type PreferredTenantType = "STUDENT" | "PROFESSIONAL" | "ANYONE";
-export type MealType = "BREAKFAST" | "LUNCH" | "DINNER";
+export type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "EVENING_SNACKS";
 export type BathroomType = "ATTACHED" | "COMMON";
 /**
  * What comes with a room.
@@ -64,7 +64,7 @@ export const ROOM_CONDITIONINGS: RoomConditioning[] = ["AC", "NON_AC"];
 export const PROPERTY_TYPES: PropertyType[] = ["PG", "HOSTEL", "APARTMENT", "SOCIETY"];
 export const PG_FOR_OPTIONS: PgFor[] = ["ANYONE", "MALE", "FEMALE"];
 export const PREFERRED_TENANT_OPTIONS: PreferredTenantType[] = ["ANYONE", "STUDENT", "PROFESSIONAL"];
-export const MEAL_TYPES: MealType[] = ["BREAKFAST", "LUNCH", "DINNER"];
+export const MEAL_TYPES: MealType[] = ["BREAKFAST", "LUNCH", "DINNER", "EVENING_SNACKS"];
 export const BATHROOM_TYPES: BathroomType[] = ["ATTACHED", "COMMON"];
 /** Mirrors Property.MAX_ACTIVE_PER_OWNER. Counted over ACTIVE properties only. */
 export const MAX_OWNER_PROPERTIES = 4;
@@ -142,6 +142,8 @@ export type OwnerProperty = {
   foodIncluded: boolean;
   includedMeals: MealType[];
   electricityIncluded: boolean;
+  /** Null until the owner says. Shown on the listing as "Not specified". */
+  visitorsAllowed: boolean | null;
   bathroomType: BathroomType;
   availableSharingTypes: RoomType[];
   facilities: PropertyFacility[];
@@ -220,6 +222,8 @@ export type UpdatePropertyPayload = {
   foodIncluded?: boolean | null;
   includedMeals?: MealType[];
   electricityIncluded?: boolean | null;
+  /** Null keeps whatever the property already says. */
+  visitorsAllowed?: boolean | null;
   bathroomType?: BathroomType | null;
   availableSharingTypes?: RoomType[];
   facilities: PropertyFacility[];
@@ -343,6 +347,7 @@ export type ManagerResource =
   | "NEARBY_PLACES"
   | "NOTICES"
   | "CONCERNS"
+  | "FOOD"
   /**
    * The property's shared conversations — the chat screen's Tenants section.
    *

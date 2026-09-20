@@ -38,6 +38,9 @@ type ScreenScrollViewProps = ScrollViewProps & {
   // False disables pull-to-refresh entirely (e.g. auth screens, where a
   // refresh spinner makes no sense and the pull gesture feels like scrolling).
   refreshable?: boolean;
+  // How far down the pull-to-refresh spinner appears. For a screen that draws
+  // something over its own top edge, so the spinner is not hidden beneath it.
+  refreshOffset?: number;
   // True locks scrolling while the content fits the viewport, re-enabling it
   // automatically when it overflows (small/zoomed displays, keyboard open).
   scrollOnlyWhenNeeded?: boolean;
@@ -53,6 +56,7 @@ export function ScreenScrollView({
   onRefresh,
   onScroll,
   refreshable = true,
+  refreshOffset,
   scrollOnlyWhenNeeded = false,
   safeAreaEdges,
   style,
@@ -164,6 +168,7 @@ export function ScreenScrollView({
             "Payment",
             "Session",
             "Staff",
+            "Food",
           ]),
         );
       }
@@ -210,6 +215,7 @@ export function ScreenScrollView({
           refreshable ? (
             <RefreshControl
               colors={[colors.primary]}
+              progressViewOffset={refreshOffset}
               onRefresh={handleRefresh}
               progressBackgroundColor={colors.surface}
               refreshing={refreshing}

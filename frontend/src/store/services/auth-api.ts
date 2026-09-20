@@ -126,6 +126,14 @@ export const authApi = api.injectEndpoints({
       providesTags: ["Session"],
     }),
 
+    /**
+     * Ends THIS device's session on the server. Called before the app forgets
+     * its token, which is the only moment it still has one to send.
+     */
+    signOutCurrentSession: builder.mutation<void, void>({
+      query: () => ({ url: "/api/v1/auth/sessions/current", method: "DELETE" }),
+    }),
+
     revokeSession: builder.mutation<void, string>({
       query: (sessionId) => ({ url: `/api/v1/auth/sessions/${sessionId}`, method: "DELETE" }),
       invalidatesTags: ["Session"],
@@ -216,6 +224,7 @@ export const {
   useRequestOtpMutation,
   useRequestPinResetMutation,
   useRevokeSessionMutation,
+  useSignOutCurrentSessionMutation,
   useSetPinMutation,
   useUpdateMyIdentityMutation,
   useUpdateProfileMutation,

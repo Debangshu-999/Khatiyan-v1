@@ -188,6 +188,7 @@ class PropertyServiceTest {
                 4,
                 10_000_00L,
                 NoticePeriod.ONE_MONTH,
+                null,
                 "Near metro PG",
                 "Clean managed PG near metro.",
                 "https://cdn.example.com/pg.jpg",

@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Home, ShieldCheck, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BrandLoadingScreen } from "@/components/brand-logo";
 import { Card } from "@/components/card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -69,12 +70,10 @@ export default function AccountSelectScreen() {
     router.replace("/(tabs)");
   }
 
+  // Right after signing in this is on screen while the accounts load, then the
+  // tabs layout waits too. Both use the logo screen, so the wait reads as one.
   if (loading || accounts.length <= 1 || activeAccount) {
-    return (
-      <View style={{ alignItems: "center", backgroundColor: colors.background, flex: 1, justifyContent: "center" }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <BrandLoadingScreen />;
   }
 
   return (

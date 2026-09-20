@@ -70,7 +70,7 @@ public class SmartSearchService {
      * <p>It is part of the cache key, so an interpretation produced by an older
      * version is never replayed against newer rules.
      */
-    static final String INTENT_VERSION = "discovery-intent-v12";
+    static final String INTENT_VERSION = "discovery-intent-v15";
 
     /**
      * English only for now.
@@ -201,6 +201,15 @@ public class SmartSearchService {
             draft = askModel(query, actorUserId, startedAt);
             cache.putDraft(query, draft);
         }
+        // No place named means "near me", when the device can say where that
+        // is. Before this, such a search had no coordinates at all — which made
+        // a landmark unresolvable ("nothing called a metro station could be
+        // found") and a radius meaningless ("a distance without a place to
+        // measure it from"), both printed over results that had been found
+        // anyway. Done here rather than in the prompt so a cached draft is
+        // rescued too, and so the behaviour does not depend on the model.
+        draft = anchoredToDeviceWhenUnplaced(draft, request);
+
         // The sentence goes in with the draft: the airlock needs it to tell a
         // requirement somebody typed from a field the model filled in anyway.
         DiscoveryIntentMapper.MappedIntent mapped = mapper.map(draft, query);
@@ -348,6 +357,22 @@ public class SmartSearchService {
             }
         }
         return false;
+    }
+
+    /**
+     * A sentence with no place in it is a search around the person.
+     *
+     * <p>Only when the device actually reported coordinates. Without them there
+     * is still nowhere to measure from, and the tab keeps the scope it had —
+     * which is the older behaviour, preserved for exactly that case.
+     */
+    private static DiscoveryIntentDraft anchoredToDeviceWhenUnplaced(
+            DiscoveryIntentDraft draft, InterpretSearchRequest request) {
+        SearchAnchor anchor = draft.anchor() == null ? SearchAnchor.NONE : draft.anchor();
+        if (anchor != SearchAnchor.NONE || !request.hasDevice()) {
+            return draft;
+        }
+        return draft.withAnchor(SearchAnchor.DEVICE);
     }
 
     // ---------------------------------------------------------- the location

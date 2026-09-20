@@ -4,21 +4,23 @@
     "slug": "khatiyan",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand/logo-light.png",
     "scheme": "khatiyan",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": {
+        "light": "./assets/brand/logo-light.png",
+        "dark": "./assets/brand/logo-dark.png"
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FEFEFE",
+        "foregroundImage": "./assets/brand/adaptive-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.khatiyan"
+      "package": "com.khatiyan.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -43,7 +45,22 @@
       ],
       "@maplibre/maplibre-react-native",
       "expo-font",
-      "./plugins/with-upi-intent-launcher"
+      "./plugins/with-upi-intent-launcher",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FEFEFE",
+          "image": "./assets/brand/logo-light.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0A0E14",
+            "image": "./assets/brand/logo-dark.png"
+          }
+        }
+      ],
+      "./plugins/with-mappls-sdk",
+      "expo-web-browser"
     ]
   }
 }

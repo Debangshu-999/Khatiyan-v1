@@ -1,5 +1,8 @@
 import { Image, Text, View } from "react-native";
-import { PropertyIcon } from "@/components/property-icon";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+
+import { useIsSkeleton } from "@/components/skeletons/boundary";
+import { Skeleton } from "@/components/skeletons/primitives";
 
 import { initialsOf } from "@/features/chat/chat-time";
 import { useTheme } from "@/theme/use-theme";
@@ -21,10 +24,22 @@ export function ChatAvatar({
   name: string;
   photoUrl?: string | null;
   size?: number;
-  /** A property rather than a person: marked with a building rather than initials. */
+  /**
+   * The property's management team rather than a person: marked as a group.
+   *
+   * <p>A group glyph rather than a building. The tenant is writing to whoever
+   * manages the place, several people behind one thread, and a building read
+   * as "the property" instead of "the people you are talking to".
+   */
   team?: boolean;
 }) {
   const { colors } = useTheme();
+  const isSkeleton = useIsSkeleton();
+
+  // A plain disc while a list is loading, so sample names never show as initials.
+  if (isSkeleton) {
+    return <Skeleton height={size} radius={999} width={size} />;
+  }
 
   if (team) {
     return (
@@ -39,7 +54,7 @@ export function ChatAvatar({
           width: size,
         }}
       >
-        <PropertyIcon color={colors.primary} size={size * 0.48} strokeWidth={2.2} />
+        <MaterialCommunityIcons color={colors.primary} name="account-group" size={Math.round(size * 0.52)} />
       </View>
     );
   }

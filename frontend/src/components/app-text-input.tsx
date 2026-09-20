@@ -28,7 +28,7 @@ export type AppTextInputProps = TextInputProps & {
   /**
    * When a single-line placeholder is too long to fit, scroll it back and
    * forth (marquee) instead of ellipsising it. On by default; set false to keep
-   * the static ellipsised placeholder (used by the map picker's search box).
+   * a static ellipsised placeholder.
    */
   marqueePlaceholder?: boolean;
 };
@@ -49,7 +49,7 @@ const END_GAP = 24; // trailing breathing room so the last glyph isn't flush at 
 const HOLD_MS = 900; // pause at each end before reversing
 const MIN_SCROLL_MS = 1400;
 const MS_PER_PX = 16;
-const OVERFLOW_SLOP = 6; // ignore sub-pixel/tiny overflow — not worth animating
+const OVERFLOW_SLOP = 6; // overflow this small is ellipsised rather than animated
 
 /**
  * App-wide text input. Behaviours applied to every field:
@@ -127,14 +127,20 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
   const available = fieldWidth - padLeft - padRight - borderLeft - borderRight;
 
   const measured = !multiline && Boolean(placeholder) && fieldWidth > 0 && placeholderWidth != null;
-  const overflows = measured && (placeholderWidth as number) > available + OVERFLOW_SLOP;
+  const overflowPx = measured ? (placeholderWidth as number) - available : 0;
+  // ANY overflow counts. A placeholder a few pixels too long used to be treated
+  // as fitting, and Android then wrapped it onto a second line — the one thing
+  // this component exists to prevent. Tiny overflows are ellipsised below;
+  // only a real overflow is worth scrolling.
+  const overflows = overflowPx > 0;
 
   const currentValue = value !== undefined ? value : internalValue;
   const isEmpty = (currentValue ?? "").length === 0;
 
   // The placeholder disappears the moment the field is FOCUSED (not on first
   // keystroke): tapping a field signals intent, so the hint yields immediately.
-  const marqueeActive = Boolean(placeholder) && overflows && isEmpty && !focused && marqueePlaceholder && !reduceMotion;
+  const marqueeActive =
+    Boolean(placeholder) && overflowPx > OVERFLOW_SLOP && isEmpty && !focused && marqueePlaceholder && !reduceMotion;
   const travel = marqueeActive ? (placeholderWidth as number) - available + END_GAP : 0;
 
   // Static ellipsis — used when overflow can't/shouldn't animate (reduce motion,
@@ -189,6 +195,16 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
   innerStyle.width = "100%";
 
   const needsMeasure = !multiline && Boolean(placeholder);
+
+  // Android gives a TextInput an inner horizontal inset of its own when the
+  // style sets none, which the measurement above cannot see: the text box is
+  // narrower than the width it was compared against, so a placeholder judged to
+  // fit wrapped anyway. Pinning it to 0 makes the measured width the real one.
+  const setsHorizontalPadding = [flat.padding, flat.paddingHorizontal, flat.paddingLeft, flat.paddingRight, flat.paddingStart, flat.paddingEnd]
+    .some((entry) => entry !== undefined);
+  if (needsMeasure && !setsHorizontalPadding) {
+    innerStyle.paddingHorizontal = 0;
+  }
 
   const handleChangeText = (text: string) => {
     const clean = sanitizeInputText(text);

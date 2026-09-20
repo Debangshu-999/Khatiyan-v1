@@ -147,8 +147,7 @@ export default function OwnerTenancyAgreementScreen() {
       <ScreenScrollView
         // The measured height clears the footer exactly, which leaves the last
         // card flush against its top edge and reading as clipped. The extra gap
-        // is the breathing room the fade used to provide before this footer went
-        // opaque.
+        // is breathing room above the strip.
         contentContainerStyle={{
           paddingBottom: (footerHeight || PINNED_FOOTER_CLEARANCE) + spacing.xl,
           paddingTop: spacing.sm,
@@ -289,7 +288,7 @@ export default function OwnerTenancyAgreementScreen() {
           Add sits left of Preview: writing a clause is what this screen is for,
           reading the document is the check afterwards. */}
       {property && draft ? (
-        <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)} solid>
+        <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
           <View style={{ gap: spacing.sm }}>
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               {!readOnly ? (

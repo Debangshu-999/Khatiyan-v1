@@ -490,6 +490,7 @@ function TenantBills({
           </View>
         ) : null}
       </Section>
+
     </>
   );
 }

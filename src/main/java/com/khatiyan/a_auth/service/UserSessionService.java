@@ -193,6 +193,30 @@ public class UserSessionService {
     }
 
     /**
+     * Signs the caller out: ends the session their own token belongs to.
+     *
+     * <p>Sign-out used to be client-only — the app forgot its token and the
+     * server went on counting the session as live until the token expired. Four
+     * sign-in/sign-out cycles inside that hour filled the device cap on one
+     * phone, and the fifth sign-in was refused as if four devices were in use.
+     *
+     * <p>Quiet when there is nothing to end: a token minted before sessions
+     * existed, or a session already revoked. Signing out must always succeed.
+     */
+    @Transactional
+    public void revokeOwn(UUID userId, UUID sessionId, Instant now) {
+        if (sessionId == null) {
+            return;
+        }
+        userSessionRepository.findByJti(sessionId)
+                .filter(session -> session.getUserId().equals(userId))
+                .ifPresent(session -> {
+                    session.revoke(now);
+                    blockUntilExpiry(session, now);
+                });
+    }
+
+    /**
      * Ends every session a user holds.
      *
      * <p>Pairs with a {@code credentialVersion} bump, which already kills the

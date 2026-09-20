@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, BackHandler, Easing, Image, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Animated, BackHandler, Easing, Image, ImageBackground, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Building2, MapPin } from "lucide-react-native";
+import { ArrowUpRight, MapPin } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { HeaderNote } from "@/components/header-note";
+import { PropertyIcon } from "@/components/property-icon";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
@@ -16,6 +17,8 @@ import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-e
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
 import { NearbyPlacesView } from "@/features/discovery/components/nearby-places-view";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { foodIcon } from "@/features/food/food-ui";
 import {
   countActivePropertyFilters,
   emptyPropertyFilters,
@@ -122,9 +125,58 @@ const DISCOVERY_HERO = require("../../assets/discovery-hero.png");
 const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/discovery-empty-search.png");
 const LISTING_RESULTS_ILLUSTRATION = require("../../assets/listing-results-illustration.jpg");
 const NO_LOCATION_ILLUSTRATION = require("../../assets/workspace/No-Location_512x512.png");
+const NEARBY_MAP_PREVIEW = require("../../assets/nearby-map-preview.png");
+const NearbyMapIcon = foodIcon("map-search-outline");
+
+function NearbyMapCard({ onPress }: { onPress: () => void }) {
+  const { colors, isDark, type } = useTheme();
+
+  return (
+    <AnimatedPressable accessibilityLabel="View nearby places on map" accessibilityRole="button" onPress={onPress}>
+      <ImageBackground
+        imageStyle={{ borderRadius: 20 }}
+        resizeMode="cover"
+        source={NEARBY_MAP_PREVIEW}
+        style={{
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 20,
+          borderWidth: 1,
+          overflow: "hidden",
+        }}
+      >
+        <View
+          style={{
+            alignItems: "flex-start",
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.62)" : "rgba(255, 255, 255, 0.18)",
+            flexDirection: "row",
+            gap: spacing.md,
+            padding: spacing.lg,
+          }}
+        >
+          <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+            <NearbyMapIcon color={colors.ink} size={22} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+              <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 19, lineHeight: 25 }]}>
+                View on map
+              </Text>
+              <ArrowUpRight color={colors.kicker} size={18} strokeWidth={2} style={{ marginTop: 3 }} />
+            </View>
+            <Text style={[type.body, { color: colors.inkSoft }]}>
+              See what your property listed, and search anything around you.
+            </Text>
+          </View>
+        </View>
+      </ImageBackground>
+    </AnimatedPressable>
+  );
+}
 
 export default function DiscoveryScreen() {
   const { colors, fonts, type } = useTheme();
+  const router = useGuardedRouter();
   const user = useAppSelector((state) => state.auth.user);
   const location = useAppSelector((state) => state.location);
   const isActiveTenant = Boolean(user?.activeTenant);
@@ -246,10 +298,10 @@ export default function DiscoveryScreen() {
       isActiveTenant
         ? [
             { icon: MapPin, label: "Nearby Locations", value: "locations" },
-            { icon: Building2, label: "Properties", value: "properties" },
+            { icon: PropertyIcon, label: "Properties", value: "properties" },
           ]
         : [
-            { icon: Building2, label: "Properties", value: "properties" },
+            { icon: PropertyIcon, label: "Properties", value: "properties" },
             { icon: MapPin, label: "Nearby Locations", value: "locations" },
           ],
     [isActiveTenant],
@@ -329,6 +381,7 @@ export default function DiscoveryScreen() {
       mealTypes: appliedFilters.mealTypes,
       electricityIncluded: appliedFilters.electricityIncluded,
       bathroomType: appliedFilters.bathroomType,
+      propertyType: appliedFilters.propertyType,
       sharingTypes: appliedFilters.sharingTypes,
       sort: listingSort,
       // Small, because the list now grows as somebody scrolls. Fifty was one
@@ -455,14 +508,17 @@ export default function DiscoveryScreen() {
       // that leaves somebody with no way to search is worse than no AI at all.
       setAiNotUsed([]);
       setAiResult(null);
-      const status = (error as { status?: number } | undefined)?.status;
-      // A 429 is a limit, never a problem with the sentence. It used to fall
-      // through to "could not read that search", which told somebody to reword
-      // a search that was fine.
+      const status = (error as { status?: number | string } | undefined)?.status;
+      // Two messages only. A 429 is the limit, and says so. Anything else — a
+      // dropped connection, a timeout, the provider failing — is the feature
+      // being down for now, never a problem with the sentence. The old blanket
+      // "could not read that search" told somebody to reword a search that was
+      // fine, and transport wording like "could not reach the backend" means
+      // nothing to the person holding the phone.
       setAiNotice(
         status === 429
           ? "You have run out of smart searches. Please try again after some time. You can switch to manual search in the meanwhile."
-          : "AI could not read that search. Try again, or switch AI search off to use the filters.",
+          : "AI search is unavailable at the moment. Please try again later.",
       );
     } finally {
       aiInFlight.current = false;
@@ -487,6 +543,7 @@ export default function DiscoveryScreen() {
 
     const filters: PropertyFilterState = {
       bathroomType: args.bathroomType,
+      propertyType: args.propertyType ?? null,
       electricityIncluded: args.electricityIncluded,
       maxRentPaise: args.maxRentPaise,
       mealTypes: args.mealTypes,
@@ -875,6 +932,17 @@ export default function DiscoveryScreen() {
           {showingAiResults && !aiSearching ? (
             <AiResults
               onOpenSort={() => setSortSheet("ai")}
+              // A fresh start in AI mode: the answer and the sentence go, the
+              // filters it set go with them, and the empty box brings back its
+              // suggested searches.
+              onTryAgain={() => {
+                clearSearch();
+                setAiQuery("");
+                setAiSort("RELEVANCE");
+                setAppliedFilters(emptyPropertyFilters);
+                setDraftFilters(emptyPropertyFilters);
+                setSuggestionRound((round) => round + 1);
+              }}
               onView={setSelectedPropertyId}
               result={aiResult}
               sort={aiSort}
@@ -1081,7 +1149,13 @@ export default function DiscoveryScreen() {
       ) : (
         <>
           {isActiveTenant ? (
-            <NearbyPlacesView mode="tenant" />
+            <>
+              {/* Above the list, not inside it: the map is another way to read
+                  the same places, so it belongs before them rather than as a
+                  row among them. */}
+              <NearbyMapCard onPress={() => router.push("/tenancy-nearby-map")} />
+              <NearbyPlacesView mode="tenant" />
+            </>
           ) : (
             /* An owner standing on this tab never reaches NearbyPlacesView —
                the places list belongs to the property somebody is STAYING in —

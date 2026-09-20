@@ -4,8 +4,10 @@ import * as ImagePicker from "expo-image-picker";
 import { ImagePlus, QrCode, Trash2 } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { FieldError } from "@/components/field-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, IconButton } from "@/features/owner/owner-ui";
+import { ActionButton, RequiredMark } from "@/features/owner/owner-ui";
 import { uploadAsset, UploadError } from "@/features/uploads/upload-asset";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -38,10 +40,16 @@ const FRAME_RADIUS = 6;
  */
 export function UpiQrField({
   disabled,
+  error,
   onChange,
+  required,
   url,
 }: {
   disabled?: boolean;
+  /** Shown under the field, like any input's own error. */
+  error?: string;
+  /** Marks the label, the same way a required input does. */
+  required?: boolean;
   /** The stored URL, or "" once cleared. Never a device URI. */
   onChange: (value: string) => void;
   url: string;
@@ -95,7 +103,10 @@ export function UpiQrField({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>UPI QR code</Text>
+      <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
+        UPI QR code
+        <RequiredMark required={required} />
+      </Text>
 
       {/* No container around this. The square already reads as a bounded object,
           and a border around a bordered preview made two frames for one field —
@@ -131,14 +142,36 @@ export function UpiQrField({
           ) : (
             <QrCode color={colors.kicker} size={54} strokeWidth={1.6} />
           )}
+
+          {/* Inside the frame, bottom right, on its own disc so it stays visible
+              over a white QR. A caption and a separate row under the image only
+              pushed the form down for a control that belongs to the image. */}
+          {url && !uploading ? (
+            <AnimatedPressable
+              accessibilityLabel="Remove QR code"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => onChange("")}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: 999,
+                borderWidth: 1,
+                bottom: spacing.xs,
+                height: 32,
+                justifyContent: "center",
+                position: "absolute",
+                right: spacing.xs,
+                width: 32,
+              }}
+            >
+              <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+            </AnimatedPressable>
+          ) : null}
         </View>
 
-        {url ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Text style={[type.caption, { color: colors.muted }]}>This is what tenants will scan.</Text>
-            <IconButton accessibilityLabel="Remove QR code" icon={Trash2} onPress={() => onChange("")} />
-          </View>
-        ) : (
+        {url ? null : (
           <ActionButton
             disabled={busy}
             icon={ImagePlus}
@@ -148,6 +181,8 @@ export function UpiQrField({
           />
         )}
       </View>
+
+      <FieldError message={error} />
 
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />

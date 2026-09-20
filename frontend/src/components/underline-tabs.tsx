@@ -60,10 +60,11 @@ export function UnderlineTabs<T extends string>({
    * its label — for a strip that IS the screen's navigation, where the chosen
    * section has to be obvious from across the room rather than merely findable.
    */
-  tone?: "soft" | "strong";
+  tone?: "plain" | "soft" | "strong";
 }) {
   const { colors, fonts } = useTheme();
   const strong = tone === "strong";
+  const plain = tone === "plain";
 
   return (
     <View
@@ -101,17 +102,23 @@ export function UnderlineTabs<T extends string>({
               // tab met the header's rule above and its own rule below, so the
               // selection read as a pill dropped between two lines rather than
               // as the span between them.
-              backgroundColor: selected ? (strong ? colors.tabSelected : colors.jadeSoft) : "transparent",
+              backgroundColor: selected
+                ? strong
+                  ? colors.tabSelected
+                  : plain
+                    ? "transparent"
+                    : colors.jadeSoft
+                : "transparent",
               flex: 1,
               gap: 5,
               // Taller on the strong tone. There the strip IS the screen's
               // navigation and sits alone between two rules, so it has to hold
               // that band; on the soft tone it is one control among the fields
               // of a form and a bigger target would shout over them.
-              paddingBottom: strong ? spacing.md : spacing.sm,
+              paddingBottom: strong || plain ? spacing.md : spacing.sm,
               // Matches the bottom, so the tinted body is evenly weighted top
               // and bottom and fills the strip rather than sitting low in it.
-              paddingTop: strong ? spacing.md : spacing.sm,
+              paddingTop: strong || plain ? spacing.md : spacing.sm,
             }}
           >
             {option.icon ? (
@@ -124,9 +131,15 @@ export function UnderlineTabs<T extends string>({
               <Text
                 numberOfLines={1}
                 style={{
-                  color: selected ? (strong ? colors.onTabSelected : colors.ink) : colors.muted,
+                  color: selected
+                    ? strong
+                      ? colors.onTabSelected
+                      : plain
+                        ? colors.primary
+                        : colors.ink
+                    : colors.muted,
                   fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
-                  fontSize: strong ? 14 : 12,
+                  fontSize: strong || plain ? 14 : 12,
                 }}
               >
                 {option.label}
@@ -142,11 +155,17 @@ export function UnderlineTabs<T extends string>({
 
             <View
               style={{
-                backgroundColor: selected ? (strong ? colors.tabSelectedDeep : colors.jade) : "transparent",
+                backgroundColor: selected
+                  ? strong
+                    ? colors.tabSelectedDeep
+                    : plain
+                      ? colors.primary
+                      : colors.jade
+                  : "transparent",
                 // Sits ON the rule and covers it, so the chosen tab breaks the
                 // line rather than perching above it.
                 bottom: strong ? -2 : -1,
-                height: strong ? 3 : 2,
+                height: strong || plain ? 3 : 2,
                 left: 0,
                 position: "absolute",
                 right: 0,

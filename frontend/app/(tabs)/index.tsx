@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BlurTargetView, BlurView } from "expo-blur";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, CalendarDays, ChartColumn, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Clock, Clock3, Compass, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Radar, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
+import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Clock, Clock3, Compass, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { PropertyIcon } from "@/components/property-icon";
+import { ScreenHeader } from "@/components/screen-header";
+import { useToast } from "@/components/toast";
+import { takeWelcome } from "@/features/auth/pending-welcome";
 import { CollectedIcon, CollectionIcon, ExpenseIcon, MoneyIcon, NoticeIcon, PaymentClaimsIcon, PropertyArtwork } from "@/components/artwork-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
@@ -76,6 +81,9 @@ import { clearActiveAccount } from "@/store/slices/account-slice";
 import { clearSession } from "@/store/slices/auth-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
 import type { PaymentIntentDigest } from "@/store/services/payment-intent-api";
+import { useGetServiceBalanceQuery } from "@/store/services/service-balance-api";
+import { useGetMyFoodAvailabilityQuery } from "@/store/services/food-api";
+import { foodIcon } from "@/features/food/food-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
@@ -91,9 +99,19 @@ const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy", Imag
   vacancy: require("../../assets/workspace/vacancy-header.png"),
 };
 
+/** How long Home is on screen before the greeting can appear over it. */
+const HOME_SETTLE_MS = 450;
+/** The gap between the greeting and the location permission prompt. */
+const LOCATION_PROMPT_DELAY_MS = 700;
+
 export default function HomeScreen() {
   const { colors, fonts, isDark, type } = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
+  const statusGlassTarget = useRef<View | null>(null);
+  // A gentle curve kept well inside the strip. At the strip's full height the
+  // two quarter-circles met the top edge and the ends looked pinched rather
+  // than rounded.
+  const statusGlassRadius = Math.round(Math.min(18, safeAreaInsets.top * 0.5));
   const dispatch = useAppDispatch();
   const router = useGuardedRouter();
   const auth = useAppSelector((state) => state.auth);
@@ -105,11 +123,42 @@ export default function HomeScreen() {
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
   const [ownerSelectorOpen, setOwnerSelectorOpen] = useState(false);
 
+  // Home first, then anything that talks over it. The sign-in greeting and the
+  // location permission prompt both used to fire before Home had painted —
+  // the prompt from this screen's first effect, the greeting from the sign-in
+  // screen — so they appeared over the loading screen. They now wait until
+  // Home has been on screen for a beat. If the tabs layout swaps Home back out
+  // for the loading screen in that window, the cleanup cancels and the next
+  // mount tries again, so neither can land on the wrong screen.
+  const toast = useToast();
+  const [homeSettled, setHomeSettled] = useState(false);
   useEffect(() => {
-    if (location.status === "idle") {
-      void dispatch(fetchCurrentLocation());
+    const timer = setTimeout(() => setHomeSettled(true), HOME_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!homeSettled) {
+      return;
     }
-  }, [dispatch, location.status]);
+    const welcome = takeWelcome();
+    if (welcome) {
+      toast.success(welcome);
+    }
+    // takeWelcome is one-shot, so this must run once per settle, not per toast
+    // identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeSettled]);
+
+  useEffect(() => {
+    if (!homeSettled || location.status !== "idle") {
+      return;
+    }
+    // A moment after the greeting, so the toast is seen before the system
+    // dialog dims the screen.
+    const timer = setTimeout(() => void dispatch(fetchCurrentLocation()), LOCATION_PROMPT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [dispatch, homeSettled, location.status]);
 
   const greeting = useMemo(() => getGreeting(), []);
   const firstName = getDisplayFirstName(user?.fullName);
@@ -148,6 +197,11 @@ export default function HomeScreen() {
         : "";
 
   return (
+    <View style={{ flex: 1 }}>
+    {/* The blur's source on Android. BlurView there can only blur what sits
+        inside a BlurTargetView, so the whole scroll view lives in one; the glass
+        strip is its sibling, outside it, so it never blurs itself. */}
+    <BlurTargetView ref={statusGlassTarget} style={{ flex: 1 }}>
     <ScreenScrollView
       // Flush to the safe area, unlike every other screen. Home opens on the
       // location bar and the greeting rather than a title, and the gap that
@@ -158,7 +212,12 @@ export default function HomeScreen() {
         paddingTop: 0,
       }}
       scrollOnlyWhenNeeded={isWorkspace && ownerSelectorOpen}
-      safeAreaEdges={isWorkspace ? ["bottom"] : ["top", "bottom"]}
+      // No top safe area: the glass strip below sits over the status bar
+      // instead. A safe area would stop the page at the clock and leave a strip
+      // that has to be recoloured as the page scrolls; glass takes its colour
+      // from whatever passes beneath it, so it never needs to.
+      refreshOffset={safeAreaInsets.top}
+      safeAreaEdges={["bottom"]}
     >
       {/* Left column stacks the location bar and the greeting so the greeting
           hugs the location; the profile + live-events stay pinned top-right. */}
@@ -179,7 +238,11 @@ export default function HomeScreen() {
           // more attention than the content passing under the clock does. The
           // extra sm is the gap the old safe area used to give for free —
           // padding of exactly the inset put the location bar against it.
-          paddingTop: isWorkspace ? safeAreaInsets.top + spacing.sm : 0,
+          //
+          // The other Home modes pad by the inset too, now that no mode takes
+          // a top safe area: their header starts below the clock, and what
+          // scrolls up passes under it.
+          paddingTop: safeAreaInsets.top + (isWorkspace ? spacing.sm : 0),
         }}
       >
         <View style={{ flex: 1, gap: spacing.sm }}>
@@ -302,6 +365,44 @@ export default function HomeScreen() {
         <NonTenantHome onNavigate={router.push} />
       )}
     </ScreenScrollView>
+    </BlurTargetView>
+
+      {/* Frosted glass over the status bar. Content scrolls up beneath it and
+          shows through blurred and softened, so the clock stays readable
+          without the page ever sitting on top of it — and at rest over the
+          workspace's blue band it simply reads as that blue, frosted.
+
+          The lightest wash expo-blur offers. On Android the real blur needs
+          API 31 or later; older phones get the translucent wash alone.
+
+          Rounded along the bottom to follow the curve of the phone's own screen
+          corners. The rounding and clipping belong to a plain View around the
+          blur: a native blur view does not reliably clip itself to a radius on
+          Android, but a clipped parent always does. No outline: the tint alone
+          sets the glass apart from the band beneath it, and a bottom-only
+          border faded out before the corners, which made the edge look rough. */}
+      <View
+        pointerEvents="none"
+        style={{
+          borderBottomLeftRadius: statusGlassRadius,
+          borderBottomRightRadius: statusGlassRadius,
+          height: safeAreaInsets.top,
+          left: 0,
+          overflow: "hidden",
+          position: "absolute",
+          right: 0,
+          top: 0,
+        }}
+      >
+        <BlurView
+          blurMethod="dimezisBlurViewSdk31Plus"
+          blurTarget={statusGlassTarget}
+          intensity={isDark ? 55 : 60}
+          style={StyleSheet.absoluteFill}
+          tint={isDark ? "dark" : "default"}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -558,6 +659,62 @@ function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<
   );
 }
 
+/**
+ * The owner's prepaid balance, one tap from Home.
+ *
+ * <p>Sits ABOVE the workspace card because it is money: an owner should see
+ * what they have before they walk into the tools that spend it.
+ *
+ * <p>Owner-only. A manager runs the property but does not hold the purse, and
+ * the server refuses them anyway, so showing them a balance they cannot read
+ * would only be a locked door.
+ */
+const SERVICE_BALANCE_ILLUSTRATION = require("../../assets/workspace/payroll-payable-wallet.png");
+
+function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  const balance = useGetServiceBalanceQuery(undefined, { refetchOnFocus: true }).data;
+
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: radii.card,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.md,
+        }}
+      >
+        {/* The payroll wallet artwork, so the two money cards in this app read
+            as the same kind of thing. */}
+        <Image
+          accessibilityIgnoresInvertColors
+          resizeMode="contain"
+          source={SERVICE_BALANCE_ILLUSTRATION}
+          style={{ height: 46, width: 56 }}
+        />
+
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[type.eyebrow, { color: colors.muted }]}>SERVICE BALANCE</Text>
+          {/* Zero is a real answer, so the figure renders either way rather
+              than holding the row empty until the first read lands. */}
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
+            {formatMoneyPaise(balance?.availablePaise ?? 0)}
+          </Text>
+        </View>
+
+        <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
 function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owner" | "Manager" }) {
   return (
     <GradientCtaCard
@@ -570,8 +727,8 @@ function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owne
   );
 }
 
-// Header button for the dashboard's latest events. Opens a modal that closes on
-// an outside tap, and shows a blinking dot when a new event arrives.
+// Header button for the dashboard's latest events. Opens the full-screen feed,
+// and shows a blinking dot when a new event arrives.
 function LatestEventsButton({
   activity,
   disabled,
@@ -637,7 +794,8 @@ function LatestEventsButton({
           width: 32,
         }}
       >
-        <Radar color={inverse ? colors.onPrimary : colors.ink} size={23} strokeWidth={2.1} />
+        {/* A timeline with a clock: what happened recently. The radar it replaced read as scanning for something. */}
+        <MaterialCommunityIcons color={inverse ? colors.onPrimary : colors.ink} name="timeline-clock-outline" size={24} />
         {hasNew && !disabled ? <BlinkingDot inverse={inverse} /> : null}
       </AnimatedPressable>
       {open ? (
@@ -704,6 +862,7 @@ const ACTIVITY_BUCKET_EMPTY: Record<ActivityDayBucket, string> = {
 type ActivityCategory = "all" | "tenancy" | "billing" | "concern" | "notice" | "room" | "staff";
 
 const ACTIVITY_CATEGORY: Record<RecentActivityType, Exclude<ActivityCategory, "all">> = {
+  TENANT_ONBOARDED: "tenancy",
   TENANCY_STARTED: "tenancy",
   TENANCY_ENDED: "tenancy",
   TENANCY_ROOM_CHANGED: "tenancy",
@@ -785,67 +944,28 @@ function LatestEventsModal({
   const groups = useMemo(() => groupActivityByDay(visible), [visible]);
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
-        {/* Full screen width, edge to edge: this is a feed, and side gutters
-            cost it room without making it easier to read. */}
+    // A full screen rather than a sheet over Home. The feed is a thing you read
+    // through, filter and scroll, and at 85% of the height with Home dimmed
+    // behind it, it read as a popup to dismiss rather than a place to be.
+    // The device back button runs the same close as the arrow (onRequestClose).
+    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      <View style={{ backgroundColor: colors.background, flex: 1 }}>
         <View
           style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: 26,
-            borderTopRightRadius: 26,
-            // Fixed, not min/max: a sheet that grows as sections expand jumps
-            // under the thumb. It holds its size and the list scrolls instead.
-            height: "85%",
+            flex: 1,
             paddingBottom: insets.bottom + spacing.md,
+            paddingTop: insets.top + spacing.sm,
           }}
         >
-          {/* Grab handle so the sheet reads as something you pull, not a dialog. */}
-          <View style={{ alignItems: "center", paddingBottom: spacing.xs }}>
-            <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, width: 38 }} />
-          </View>
-
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              gap: spacing.sm,
-              justifyContent: "space-between",
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              {/* Names the property, because the feed only ever covers one and a
-                  reader with several needs to know which they are looking at.
-                  Allowed to wrap rather than truncate — a half-shown property
-                  name is worse than a two-line eyebrow. */}
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                {propertyName ? `Activity in ${propertyName}` : "Activity"}
-              </Text>
-              <Text
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, lineHeight: 29 }}
-              >
-                Latest events
-              </Text>
-            </View>
-            <AnimatedPressable
-              accessibilityLabel="Close latest events"
-              accessibilityRole="button"
-              onPress={onClose}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: 999,
-                borderWidth: 1,
-                height: 36,
-                justifyContent: "center",
-                width: 36,
-              }}
-            >
-              <X color={colors.ink} size={18} strokeWidth={2.2} />
-            </AnimatedPressable>
+          {/* No back row: the title leads the screen, and the device back
+              button closes it (onRequestClose above). The property sits in the
+              subtitle, because the feed only ever covers one and a reader with
+              several needs to know which. */}
+          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xs }}>
+            <ScreenHeader
+              subtitle={propertyName ? `Activity in ${propertyName}` : undefined}
+              title="Latest events"
+            />
           </View>
 
           {!propertyName ? (
@@ -1058,13 +1178,14 @@ function TenantHome({
   onNavigate,
   onOpenBoardItem,
 }: {
-  onNavigate: (href: "/tenancy" | "/property-board" | "/property-notices" | "/discovery" | "/concerns") => void;
+  onNavigate: (href: "/tenancy" | "/property-board" | "/property-notices" | "/discovery" | "/concerns" | "/tenancy-food") => void;
   onOpenBoardItem: (itemId: string) => void;
 }) {
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const activeTenancy = activeTenancyQuery.data;
   const boardQuery = useListMyPropertyBoardItemsQuery();
   const noticesQuery = useListMyVisibleNoticesQuery();
+  const foodQuery = useGetMyFoodAvailabilityQuery(undefined, { skip: !activeTenancy });
   const boardItems = selectPropertyBoardPreviewItems(boardQuery.data ?? []);
   const noticeCount = noticesQuery.data?.length ?? 0;
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority).slice(0, 3);
@@ -1088,6 +1209,16 @@ function TenantHome({
   return (
     <>
       <TenantCurrentPropertyCard activeTenancy={activeTenancy} />
+
+      {foodQuery.data?.foodAvailableInProperty ? (
+        <ActionCard
+          description={foodQuery.data.moduleEnabled ? "View available meal profiles, weekly menus and your subscription." : "Food is managed directly by your property right now."}
+          icon={foodIcon("silverware-fork-knife")}
+          meta={foodQuery.data.moduleEnabled ? undefined : "Managed manually"}
+          onPress={() => onNavigate("/tenancy-food")}
+          title="Food preference"
+        />
+      ) : null}
 
       {boardQuery.isFetching && !boardQuery.data ? (
         <SkeletonCard />
@@ -1213,6 +1344,7 @@ type OwnerRoute =
   | "/owner-deposit-manager"
   | "/owner-onboard-tenant"
   | "/owner-exit-requests"
+  | "/owner-exits-today"
   | "/owner-room-change-requests"
   | "/owner-property"
   | "/owner-rooms"
@@ -1223,6 +1355,8 @@ type OwnerRoute =
   | "/owner-vacancy-finder"
   | "/owner-staff"
   | "/owner-expenses"
+  | "/owner-service-balance"
+  | "/owner-food"
   | "/owner-pnl";
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
@@ -1420,12 +1554,17 @@ function OwnerHome({
 
 type SnapshotKey = "collection" | "property" | "tenancy" | "expense" | "pnl";
 
+/** A line graph for the Dashboard tab: a trend rather than the bar chart it was. */
+function DashboardGlyph({ color, size }: LucideProps) {
+  return <MaterialCommunityIcons color={color} name="chart-line" size={Number(size ?? 24)} />;
+}
+
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
   const { colors, fonts, isDark } = useTheme();
   const [tabBarWidth, setTabBarWidth] = useState(0);
   const options: { icon: ComponentType<LucideProps>; label: string; value: OwnerTab }[] = [
     { icon: LayoutGrid, label: "Workspace", value: "workspace" },
-    { icon: ChartColumn, label: "Dashboard", value: "dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", value: "dashboard" },
   ];
   const tabWidth = tabBarWidth / options.length;
   const activeLeft = tab === "workspace" ? 0 : tabWidth;
@@ -2090,10 +2229,9 @@ function signedCompactPaise(paise: number) {
   return `${paise < 0 ? "−" : ""}${compactMoneyPaise(Math.abs(paise))}`;
 }
 
-/** The dashed box's own inset and frame, and the floor a tile never shrinks to. */
+/** The panel's own inset and frame. */
 const PINNED_BOX_PADDING = spacing.sm;
 const PINNED_BOX_BORDER = 1;
-const PINNED_TILE_MIN_HEIGHT = 104;
 
 function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; propertyId: string | null }) {
   const { colors, fonts, type } = useTheme();
@@ -2109,65 +2247,107 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
     .filter((module) => !module.resources?.length || module.resources.some((resource) => canView(resource)));
 
 
-  // The box is sized from its own width rather than a fixed number, because a
-  // tile is square and as wide as a third of the row — so its height is a
-  // function of the screen, and a hard-coded two-row height would be wrong on
-  // every device but one.
+  /**
+   * Open or closed, as the reader last left it this session.
+   *
+   * <p>Null until they tap, and until then it follows what is pinned: open when
+   * there is something to show, closed when there is only the explanation.
+   * Derived rather than set once on mount, because the pins are read from
+   * storage after Home first renders — deciding on that first render would
+   * always see nothing pinned and start closed.
+   */
+  const [chosenOpen, setChosenOpen] = useState<boolean | null>(null);
+  const open = chosenOpen ?? modules.length > 0;
+
+  // The panel is sized from its own width rather than a fixed number, because
+  // a tile is square and as wide as a third of the row — so its height is a
+  // function of the screen.
   const [boxWidth, setBoxWidth] = useState(0);
   // onLayout reports the BORDER box, so the frame comes off as well as the
   // padding. Missing the two border pixels made each tile a third of a pixel
-  // too wide, which is enough to overflow the row and wrap it after two — the
-  // box went three rows of two instead of two rows of three.
+  // too wide, which is enough to overflow the row and wrap it after two.
   const innerWidth = Math.max(0, boxWidth - PINNED_BOX_PADDING * 2 - PINNED_BOX_BORDER * 2);
-  // Three to a row, from the width actually available. The tiles used to be
-  // sized in percentages — 32% each — which ignores the two gaps between them,
-  // so three never fitted. Floored, because a fractional width that adds back
-  // up to exactly the row is one rounding error away from wrapping again.
+  // Three to a row, from the width actually available. Floored, because a
+  // fractional width that adds back up to exactly the row is one rounding
+  // error away from wrapping again.
   const tileWidth = innerWidth > 0 ? Math.floor((innerWidth - spacing.sm * 2) / 3) : 0;
-  const tileHeight = Math.max(PINNED_TILE_MIN_HEIGHT, tileWidth);
-  const twoRows =
-    tileHeight * 2 + spacing.sm + PINNED_BOX_PADDING * 2 + PINNED_BOX_BORDER * 2;
 
   return (
-    /* One box, pinned or not. Empty, the dashed outline says this is somewhere
-       things go — a single line of grey text said nothing was there and left
-       the reader to work out that it was a place at all. Holding two rows'
-       height in both states also stops Home shifting under the thumb the
-       moment the first pin lands. */
+    /* A dropdown rather than a standing box. Closed it is one row, so an owner
+       with nothing pinned is not handed two rows of empty dashed space above
+       the things they came to Home for. */
     <View
       onLayout={(event) => setBoxWidth(event.nativeEvent.layout.width)}
       style={{
+        backgroundColor: colors.surface,
         borderColor: colors.borderStrong,
-        // Square corners: the tiles inside are square, and RN on Android
-        // quietly renders a dashed border as solid once it has a radius.
-        borderRadius: 0,
-        borderStyle: "dashed",
+        borderCurve: "continuous",
+        borderRadius: radii.card,
         borderWidth: PINNED_BOX_BORDER,
-        justifyContent: modules.length === 0 ? "center" : "flex-start",
-        minHeight: twoRows,
-        padding: PINNED_BOX_PADDING,
+        overflow: "hidden",
       }}
     >
-      {/* No heading. With nothing pinned the line below IS the heading, and once
-          something is pinned the tiles say what they are — a label above them
-          was naming a section the reader had just filled themselves. */}
-      {modules.length === 0 ? (
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          {/* The Manage tab's pin, at reading size: same glyph, same primary,
-              same lean. The rotation goes on a wrapping View, never on the icon
-              — a lucide glyph fills its own viewBox edge to edge and the SVG
-              clips to that box, so rotating the SVG shears the tip off. */}
-          <View style={{ transform: [{ rotate: "32deg" }] }}>
-            <Pin color={colors.primary} fill={colors.primary} size={16} strokeWidth={2.1} />
-          </View>
-          <Text style={[type.caption, { color: colors.muted, flex: 1, fontSize: 11, lineHeight: 16 }]}>
-            Pinned management services appear here, pin them from the{" "}
+      <AnimatedPressable
+        accessibilityLabel={`Pinned services, ${modules.length} pinned`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setChosenOpen(!open)}
+        style={{
+          alignItems: "center",
+          flexDirection: "row",
+          gap: spacing.sm,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.md,
+        }}
+      >
+        {/* The Manage tab's pin: same glyph, same lean. The rotation goes on a
+            wrapping View, never on the icon — rotating the SVG shears the tip. */}
+        <View style={{ transform: [{ rotate: "32deg" }] }}>
+          <Pin color={colors.primary} fill={colors.primary} size={16} strokeWidth={2.1} />
+        </View>
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          Pinned services
+        </Text>
+        {modules.length > 0 ? (
+          <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold }]}>
+            {modules.length}
+          </Text>
+        ) : null}
+        {/* Swapped, never rotated: a transform on a lucide icon does not reach
+            the SVG, so a rotated chevron keeps pointing down. */}
+        {open ? (
+          <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
+        ) : (
+          <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
+        )}
+      </AnimatedPressable>
+
+      {!open ? null : modules.length === 0 ? (
+        <View
+          style={{
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.md,
+          }}
+        >
+          <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 17 }]}>
+            Pinned management services appear here. Pin them from the{" "}
             <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold }}>MANAGE</Text> tab to keep
             them one tap away.
           </Text>
         </View>
       ) : (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        <View
+          style={{
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: spacing.sm,
+            padding: PINNED_BOX_PADDING,
+          }}
+        >
           {modules.map((module) => (
               <View
                 key={module.key}
@@ -2201,16 +2381,20 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
                       width: module.artworkVariant === "wide" ? 90 : module.artworkVariant === "large" ? 68 : 64,
                     }}
                   >
-                    <Image
-                      accessibilityIgnoresInvertColors
-                      accessible={false}
-                      resizeMode="contain"
-                      source={module.artwork}
-                      style={{
-                        height: module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
-                        width: module.artworkVariant === "wide" ? 88 : module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
-                      }}
-                    />
+                    {module.artwork ? (
+                      <Image
+                        accessibilityIgnoresInvertColors
+                        accessible={false}
+                        resizeMode="contain"
+                        source={module.artwork}
+                        style={{
+                          height: module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                          width: module.artworkVariant === "wide" ? 88 : module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                        }}
+                      />
+                    ) : (
+                      <module.icon color={colors.ink} size={32} strokeWidth={1.8} />
+                    )}
                   </View>
                   <Text
                     style={{
@@ -2249,10 +2433,15 @@ function WorkspaceTab({
   const actionCenterCount = attentionCount(dashboard);
   return (
     <>
-      <Section title="Workspace">
+      {/* No "Workspace" heading. The tab directly above already says it, and
+          the pinned services dropdown carries its own header. */}
+      <View style={{ gap: spacing.md }}>
         <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} />
+        {workspaceRole === "Owner" ? (
+          <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
+        ) : null}
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
-      </Section>
+      </View>
 
       <Section title="Tools">
         {/* Every tool stays on screen whatever the manager holds. Tapping a
@@ -2322,7 +2511,9 @@ function WorkspaceTab({
               highlight={today.tenanciesEndingToday > 0}
               icon={LogOut}
               label="Move-outs"
-              onPress={() => onNavigate("/owner-exit-requests")}
+              // Only the tenants leaving today, each with End tenancy. The exit
+              // requests queue buried them among pending and future requests.
+              onPress={() => onNavigate("/owner-exits-today")}
               value={String(today.tenanciesEndingToday)}
             />
           </View>
@@ -2358,10 +2549,13 @@ function WorkspaceTabLoading({
 }) {
   return (
     <>
-      <Section title="Workspace">
+      <View style={{ gap: spacing.md }}>
         <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={propertyId} />
+        {workspaceRole === "Owner" ? (
+          <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
+        ) : null}
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
-      </Section>
+      </View>
 
       <Section title="Tools">
         <View style={{ gap: spacing.sm }}>
@@ -3795,4 +3989,3 @@ function initialsFor(name: string) {
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 }
-

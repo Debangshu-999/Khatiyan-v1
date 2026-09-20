@@ -242,12 +242,18 @@ public class MainClauseTemplates {
                 + " agreement shall vacate the said Premises without delay with all their goods and belongings."
                 + " In the event of the Tenant failing to remove themselves and / or their articles from the said"
                 + " Premises on expiry of this agreement or sooner, the Landlord shall be entitled to recover"
-                + " damages at the rate of double the amount of compensation per day; or alternatively the"
+                // "double the amount of compensation per day" read as a figure the
+                // parties had agreed to, which they never did — nothing in this
+                // deed defines that compensation. A reasonable rate is what a
+                // court would award anyway, and it does not invent a number.
+                + " damages at a reasonable rate, or alternatively the"
                 + " Landlord shall be entitled to remove the Tenant and their belongings from the Premises,"
                 + " without recourse to the court of law."));
 
         if (!facts.exitChecklist().isEmpty()) {
-            body.add(ClauseParagraph.text("Before the deposit is settled, the Tenant shall:"));
+            // The list is what has to happen, not a duty pinned on one party:
+            // some of these are the Landlord's to carry out or to check.
+            body.add(ClauseParagraph.text("Before the deposit is settled, the following must be done:"));
             facts.exitChecklist().forEach(entry -> body.add(ClauseParagraph.bullet(entry)));
         }
 

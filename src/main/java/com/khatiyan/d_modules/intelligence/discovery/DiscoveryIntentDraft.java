@@ -72,6 +72,37 @@ public record DiscoveryIntentDraft(
         List<String> unsupportedPhrases,
         Double confidence) {
 
+    /**
+     * The same draft, measured from somewhere else.
+     *
+     * <p>Used when a sentence names no place at all. "Girls PG near a metro
+     * station" is a real search, but with no anchor there is no point to
+     * measure the metro from — so the landmark resolves to nothing and the
+     * person is told no metro station could be found, next to results that
+     * plainly found some.
+     */
+    public DiscoveryIntentDraft withAnchor(SearchAnchor replacement) {
+        return new DiscoveryIntentDraft(
+                locationText,
+                landmarkText,
+                replacement,
+                radiusKm,
+                pgFor,
+                minRentRupees,
+                maxRentRupees,
+                preferredFor,
+                foodIncluded,
+                mealTypes,
+                electricityIncluded,
+                bathroomType,
+                sharingTypes,
+                propertyType,
+                maxDepositRupees,
+                facilities,
+                unsupportedPhrases,
+                confidence);
+    }
+
     /** Null-safe accessors, because a model may omit a list entirely. */
     public List<MealType> mealTypesOrEmpty() {
         return mealTypes == null ? List.of() : mealTypes;

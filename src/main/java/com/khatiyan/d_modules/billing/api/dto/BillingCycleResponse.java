@@ -52,7 +52,9 @@ public record BillingCycleResponse(
     Instant paidAt,
     Instant createdAt,
     Instant updatedAt,
-    List<BillingCycleLineItemResponse> lineItems
+    List<BillingCycleLineItemResponse> lineItems,
+    // Management's reason, present only on a cancelled one-off bill.
+    String cancellationReason
 ) {
     public static BillingCycleResponse from(
             BillingCycle cycle,
@@ -105,7 +107,8 @@ public record BillingCycleResponse(
             cycle.getPaidAt(),
             cycle.getCreatedAt(),
             cycle.getUpdatedAt(),
-            lineItems
+            lineItems,
+            cycle.getCancellationReason()
         );
     }
 }

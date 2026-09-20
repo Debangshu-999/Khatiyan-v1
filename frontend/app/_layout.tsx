@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { Provider } from "react-redux";
@@ -19,6 +20,12 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { store } from "@/store/store";
 import { useAppFonts } from "@/theme/use-app-fonts";
 import { useTheme } from "@/theme/use-theme";
+
+// Keep the native splash (the logo) up until the typefaces are in, instead of
+// hiding it on the first frame and showing a blank screen while they load.
+// Global scope and not awaited, as Expo documents: called any later, the splash
+// may already be gone.
+void SplashScreen.preventAutoHideAsync();
 
 function ThemedRootStack() {
   const dispatch = useAppDispatch();
@@ -66,8 +73,17 @@ function ThemedRootStack() {
     };
   }, [dispatch]);
 
-  // Hold on a plain background until the typefaces are in. Rendering first and
-  // reflowing when they land flashes the whole app on every cold start.
+  // From here the loading screen in app/index.tsx carries the same logo on the
+  // same background, so the hand-off does not show.
+  useEffect(() => {
+    if (fontsLoaded) {
+      void SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  // Hold on a plain background (under the splash) until the typefaces are in.
+  // Rendering first and reflowing when they land flashes the whole app on every
+  // cold start.
   if (!fontsLoaded) {
     return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
   }
@@ -112,6 +128,11 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-exits-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-service-balance" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-food" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-food-menu" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-food-forecast" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
@@ -253,6 +274,9 @@ function ThemedRootStack() {
             presentation: "card",
           }}
         />
+        <Stack.Screen name="tenancy-nearby-map" options={{ headerShown: false, presentation: "card" }} />
+        <Stack.Screen name="tenancy-food" options={{ headerShown: false, presentation: "card" }} />
+        <Stack.Screen name="tenancy-food-menu" options={{ headerShown: false, presentation: "card" }} />
         <Stack.Screen
           name="account-settings"
           options={{

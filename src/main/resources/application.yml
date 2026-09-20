@@ -74,6 +74,9 @@ spring:
       - classpath:db/migration/nudge
       - classpath:db/migration/enquiry
       - classpath:db/migration/chat
+      - classpath:db/migration/servicebalance
+      - classpath:db/migration/verification
+      - classpath:db/migration/food
 
   modulith:
     events:
@@ -415,6 +418,96 @@ app:
       enabled: ${PAYMENT_IFSC_ENABLED:true}
       timeout-ms: ${PAYMENT_IFSC_TIMEOUT_MS:3000}
     razorpay:
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+  verification:
+    # Off until a vendor contract exists. A half-configured identity check is
+    # worse than none: it takes an owner's money and then fails their tenant at
+    # the last step of onboarding.
+    enabled: ${VERIFICATION_ENABLED:false}
+    # Named, never inferred from whichever credentials happen to be set. A
+    # missing secret must fail at startup, not quietly fall back to the adapter
+    # that talks to nobody — a production deployment verifying every tenant
+    # against a stub is the worst failure this module has.
+    provider: ${VERIFICATION_PROVIDER:DEV}
+    # Stated to the provider and recorded by UIDAI. It has to be the real
+    # reason: this is the sentence read back to us if anybody audits what we
+    # used Aadhaar for.
+    # Under 50 characters, which Decentro enforces on the FIRST call — a
+    # purpose one character too long does not degrade the service, it stops
+    # every check outright. Startup refuses a longer one rather than letting a
+    # tenant discover it.
+    purpose: ${VERIFICATION_PURPOSE:Tenant identity verification for rental agreement}
+    # Salts the hash UIDAI computes over the registered mobile. Ours, not the
+    # tenant's, which is what makes that hash reproducible on our side. Blank
+    # means the phone check simply does not run.
+    share-code: ${VERIFICATION_SHARE_CODE:}
+    otp-validity-minutes: ${VERIFICATION_OTP_VALIDITY_MINUTES:10}
+    # Attempts cost the OWNER money, so a tenant who can retry without limit is
+    # a tenant spending somebody else's balance.
+    max-attempts-per-day: ${VERIFICATION_MAX_ATTEMPTS_PER_DAY:5}
+    resend-cooldown-seconds: ${VERIFICATION_RESEND_COOLDOWN_SECONDS:60}
+    # What the DEV provider says the tenant is called. Set it to the name on the
+    # tenancy you are testing with and the strict match passes, instead of
+    # having to name a test tenant "DEV TEST USER". Ignored by every real
+    # provider.
+    dev-name: ${VERIFICATION_DEV_NAME:DEV TEST USER}
+    decentro:
+      # Staging by default, which is the safe one. A deployment that forgot to
+      # set this talks to a sandbox and fails visibly, rather than quietly
+      # spending money against a real person's Aadhaar.
+      base-url: ${DECENTRO_BASE_URL:https://in.staging.decentro.tech}
+      client-id: ${DECENTRO_CLIENT_ID:}
+      client-secret: ${DECENTRO_CLIENT_SECRET:}
+      # Bounded on purpose. With no timeout we waited as long as Decentro waits
+      # on UIDAI, measured at 45 seconds, with the tenant watching a spinner.
+      connect-timeout: ${DECENTRO_CONNECT_TIMEOUT:5s}
+      read-timeout: ${DECENTRO_READ_TIMEOUT:30s}
+
+  service-balance:
+    # Off until the gateway account and webhook are live. With it off the screen
+    # still reads, so an owner sees a balance of zero rather than an error.
+    enabled: ${SERVICE_BALANCE_ENABLED:false}
+    currency: ${SERVICE_BALANCE_CURRENCY:INR}
+    # This balance buys identity checks costing a few rupees each, so the bounds
+    # are deliberately small. A large prepaid balance serves nobody and only
+    # makes the refund conversation bigger.
+    min-top-up-paise: ${SERVICE_BALANCE_MIN_TOP_UP_PAISE:10000}
+    max-top-up-paise: ${SERVICE_BALANCE_MAX_TOP_UP_PAISE:2500000}
+    quick-amounts-paise: ${SERVICE_BALANCE_QUICK_AMOUNTS_PAISE:50000,100000,250000}
+    checkout-expiry-minutes: ${SERVICE_BALANCE_CHECKOUT_EXPIRY_MINUTES:30}
+    # A service may run on an empty balance, so we carry the provider's bill
+    # until the next top-up. Rs 250 is the ceiling on that exposure, after which
+    # services stop until the dues are cleared.
+    max-outstanding-paise: ${SERVICE_BALANCE_MAX_OUTSTANDING_PAISE:25000}
+    # Dues plus every check ordered and not yet used, less what the owner has
+    # paid in. Ordering creates no debt until a tenant runs a check, so the dues
+    # ceiling above cannot see a queue of ordered work building up behind it.
+    max-exposure-paise: ${SERVICE_BALANCE_MAX_EXPOSURE_PAISE:100000}
+    # What each paid service costs, in paise. Configuration rather than code:
+    # prices change, and a charge made last month must not start looking wrong
+    # the day one does. Confirm against the provider's own rate before launch.
+    prices-paise:
+      AADHAAR_OKYC: ${SERVICE_PRICE_AADHAAR_OKYC_PAISE:1500}
+    # Asks the gateway about checkouts that never finished. The webhook is the
+    # fast path; this is what makes a lost webhook a delay instead of a loss.
+    reconcile-cron: ${SERVICE_BALANCE_RECONCILE_CRON:0 */5 * * * *}
+    reconcile-zone: ${SERVICE_BALANCE_RECONCILE_ZONE:Asia/Kolkata}
+    expiry-cron: ${SERVICE_BALANCE_EXPIRY_CRON:0 */15 * * * *}
+    expiry-zone: ${SERVICE_BALANCE_EXPIRY_ZONE:Asia/Kolkata}
+    # Where the phone's browser can reach this server. Blank means "use the host
+    # the app just called us on", which is the one address that phone is known
+    # to resolve. Set it in production, where the domain is known and a forged
+    # Host header must not decide where owners are sent to pay.
+    public-base-url: ${SERVICE_BALANCE_PUBLIC_BASE_URL:}
+    # The app's scheme. Redirecting here closes the in-app browser tab and
+    # brings the phone's browser back to the app.
+    return-url: ${SERVICE_BALANCE_RETURN_URL:khatiyan://service-balance}
+    razorpay:
+      # The same gateway account as the parked payment module. Khatiyan is the
+      # merchant of record for a top-up because it is selling its own service,
+      # so none of that module's split-settlement machinery applies here.
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}
       webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}

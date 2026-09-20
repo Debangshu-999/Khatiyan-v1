@@ -24,6 +24,7 @@ import com.khatiyan.d_modules.staff.event.StaffMemberEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitRequestedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyActivatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
 
 import java.time.Instant;
@@ -53,13 +54,37 @@ public class ActivityFeedListener {
         this.authModule = authModule;
     }
 
+    /**
+     * A tenancy was created. Whether it has STARTED is a different question.
+     *
+     * <p>A monthly tenancy is reserved and then waits for a signature, so the
+     * feed said "Tenancy started" about a tenancy that had not. A guest stay
+     * begins the moment it is booked, so for that one the old line was right.
+     */
     @ApplicationModuleListener
     public void onTenancyStarted(TenancyStartedEvent event) {
         activityEventService.record(
                 event.propertyId(),
+                event.pendingAcceptance()
+                        ? RecentActivityType.TENANT_ONBOARDED
+                        : RecentActivityType.TENANCY_STARTED,
+                event.pendingAcceptance() ? "Tenant onboarded" : "Tenancy started",
+                event.pendingAcceptance()
+                        ? "Waiting for them to sign the agreement"
+                        : "Moving in on " + event.startDate(),
+                event.actorUserId(),
+                event.tenancyId(),
+                Instant.now());
+    }
+
+    /** They signed, so it has actually started now. */
+    @ApplicationModuleListener
+    public void onTenancyActivated(TenancyActivatedEvent event) {
+        activityEventService.record(
+                event.propertyId(),
                 RecentActivityType.TENANCY_STARTED,
                 "Tenancy started",
-                "Moving in on " + event.startDate(),
+                "Agreement signed, starting " + event.startDate(),
                 event.actorUserId(),
                 event.tenancyId(),
                 Instant.now());

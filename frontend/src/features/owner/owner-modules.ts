@@ -5,11 +5,13 @@ import type { ManagerResource } from "@/store/services/property-api";
 import { AlertCircle, Banknote, BriefcaseBusiness, Megaphone, UsersRound, type LucideProps } from "lucide-react-native";
 
 import { PropertyIcon } from "@/components/property-icon";
+import { foodIcon } from "@/features/food/food-ui";
 
 export type OwnerModuleKey =
   | "tenancy"
   | "billing"
   | "property"
+  | "food"
   | "notice"
   | "concern"
   | "staff";
@@ -17,7 +19,7 @@ export type OwnerModuleKey =
 export type OwnerModuleRoute = string | { pathname: string; params: Record<string, string> };
 
 export type OwnerModule = {
-  artwork: ImageSourcePropType;
+  artwork?: ImageSourcePropType;
   artworkVariant?: "compact" | "large" | "wide";
   key: OwnerModuleKey;
   title: string;
@@ -73,6 +75,15 @@ export const OWNER_MODULES: OwnerModule[] = [
     resources: ["PROPERTY_SETTINGS", "ROOMS", "PROPERTY_BOARD", "NEARBY_PLACES"],
     route: "/owner-property",
     title: "Property",
+  },
+  {
+    artwork: require("../../../assets/workspace/food-preference-module-card.png"),
+    description: "Food items, meal profiles, weekly menus, subscribers and cooking forecasts.",
+    icon: foodIcon("silverware-fork-knife"),
+    key: "food",
+    resources: ["FOOD"],
+    route: "/owner-food",
+    title: "Food preference",
   },
   {
     artwork: require("../../../assets/workspace/notice-module.png"),

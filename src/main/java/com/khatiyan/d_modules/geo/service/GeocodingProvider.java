@@ -56,11 +56,21 @@ public interface GeocodingProvider {
 
     /**
      * Places of the given categories nearest to a point, each with its distance
-     * from that point, nearest first. Empty means this vendor cannot answer.
+     * from that point, nearest first.
+     *
+     * <p>An empty OPTIONAL means the vendor did not answer — not configured,
+     * refused the call, or errored. An empty LIST inside it means the vendor
+     * answered and there is genuinely nothing of that kind in range.
+     *
+     * <p>The distinction exists so the caller can tell a fact from a failure.
+     * Both used to arrive as an empty list, and the answer was cached for a
+     * month either way — so one refused call taught the system that a property
+     * has no metro station, and kept saying so long after the call would have
+     * succeeded.
      */
-    default List<NearbyPlaceResponse> nearby(
+    default Optional<List<NearbyPlaceResponse>> nearby(
             String categoryCodes, double latitude, double longitude, int radiusMeters) {
-        return List.of();
+        return Optional.empty();
     }
 
     /**

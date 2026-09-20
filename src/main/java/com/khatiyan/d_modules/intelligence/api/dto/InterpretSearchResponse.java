@@ -9,6 +9,7 @@ import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.SharingType;
 
 /**
@@ -63,6 +64,9 @@ public record InterpretSearchResponse(
      * search.
      *
      * <p>Rent is in paise here, converted from the rupees the model returned.
+     *
+     * <p>{@link #propertyType} is the same PG-or-hostel filter the filter sheet
+     * sets, so a sentence asking for a hostel shows up there as that filter.
      */
     public record SearchArgs(
             String state,
@@ -79,6 +83,7 @@ public record InterpretSearchResponse(
             List<MealType> mealTypes,
             Boolean electricityIncluded,
             BathroomType bathroomType,
-            List<SharingType> sharingTypes) {
+            List<SharingType> sharingTypes,
+            PropertyType propertyType) {
     }
 }

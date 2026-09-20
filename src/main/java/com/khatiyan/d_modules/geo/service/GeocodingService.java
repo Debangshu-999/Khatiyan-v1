@@ -35,6 +35,7 @@ public class GeocodingService {
     private static final String SEARCH_KEY_PREFIX = "khatiyan:geo:search:";
     private static final String PLACES_KEY_PREFIX = "khatiyan:geo:places:";
     private static final String LANDMARK_KEY_PREFIX = "khatiyan:geo:landmark:";
+    private static final String LANDMARK_ALL_KEY_PREFIX = "khatiyan:geo:landmark-all:";
     private static final String NEARBY_KEY_PREFIX = "khatiyan:geo:nearby:";
     private static final String PINCODE_KEY_PREFIX = "khatiyan:geo:pincode:";
 
@@ -124,6 +125,30 @@ public class GeocodingService {
      * be measured from, so the chain moves on rather than returning it.
      */
     public List<GeoSuggestionResponse> landmarkSearch(String query, double latitude, double longitude) {
+        return landmarkLookup(query, latitude, longitude, true);
+    }
+
+    /**
+     * Every named place matching the phrase, and none of them placed.
+     *
+     * <p>The difference from {@link #landmarkSearch} is what the answer is
+     * FOR. Smart search needs one point to measure listings from, so it takes
+     * the best match and insists on a coordinate for it. A map needs all of
+     * them: "LTIMindtree" in Hyderabad is several offices, and the nearest one
+     * alone is not an answer to the question that was asked.
+     *
+     * <p>Nothing is placed here because nothing needs to be — Mappls returns
+     * its own place code for every hit and a map pins by that directly. That
+     * is also what rescues the results the pincode trick discarded: it could
+     * place only the top hit, and only when a second vendor agreed about where
+     * its pincode was.
+     */
+    public List<GeoSuggestionResponse> landmarkSearchAll(String query, double latitude, double longitude) {
+        return landmarkLookup(query, latitude, longitude, false);
+    }
+
+    private List<GeoSuggestionResponse> landmarkLookup(
+            String query, double latitude, double longitude, boolean singlePlaced) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.length() < 2) {
             return List.of();
@@ -133,7 +158,12 @@ public class GeocodingService {
             if (provider == null || !provider.isConfigured()) {
                 continue;
             }
-            String cacheKey = LANDMARK_KEY_PREFIX + type + ":" + normalized
+            // Separate prefixes, because the two answers to the same phrase are
+            // different lists. Sharing a key would serve one caller's single
+            // placed anchor to the other, which is the bug this method exists
+            // to fix.
+            String cacheKey = (singlePlaced ? LANDMARK_KEY_PREFIX : LANDMARK_ALL_KEY_PREFIX)
+                    + type + ":" + normalized
                     + ":" + round(latitude, 2) + ":" + round(longitude, 2);
             String cached = valkeyTemplate.opsForValue().get(cacheKey);
             if (cached != null) {
@@ -145,21 +175,49 @@ public class GeocodingService {
             }
 
             List<GeoSuggestionResponse> hits = provider.search(query.trim(), latitude, longitude);
-            List<GeoSuggestionResponse> placed = type == GeocodingProviderType.MAPPLS
-                    ? placeByPincode(hits, latitude, longitude)
-                    : hits.stream().filter(hit -> hit.latitude() != null && hit.longitude() != null).toList();
+            List<GeoSuggestionResponse> kept = singlePlaced
+                    ? placedAnchor(hits, type, latitude, longitude)
+                    : pinnable(hits, type);
 
             // Remembered either way. A name that finds nothing would otherwise
             // be looked up again on every search, at two vendors.
-            writeCache(cacheKey, placed, searchCacheTtl);
-            if (!placed.isEmpty()) {
+            writeCache(cacheKey, kept, searchCacheTtl);
+            if (!kept.isEmpty()) {
                 // The resolved name only — never the phrase that was typed,
                 // which is a person's search and stays out of the log.
-                log.info("Landmark resolved provider={} place='{}'", type, placed.get(0).name());
-                return placed;
+                log.info("Landmark resolved provider={} matches={} place='{}'",
+                        type, kept.size(), kept.get(0).name());
+                return kept;
             }
         }
         return List.of();
+    }
+
+    /** One match, with a coordinate, for a search that has to measure from it. */
+    private List<GeoSuggestionResponse> placedAnchor(
+            List<GeoSuggestionResponse> hits,
+            GeocodingProviderType type,
+            double latitude,
+            double longitude) {
+        return type == GeocodingProviderType.MAPPLS
+                ? placeByPincode(hits, latitude, longitude)
+                : hits.stream().filter(hit -> hit.latitude() != null && hit.longitude() != null).toList();
+    }
+
+    /**
+     * The hits a map can actually draw: a coordinate, or a Mappls place code.
+     *
+     * <p>Insisting on a coordinate would throw away everything Mappls returns,
+     * since a standard key gives none.
+     */
+    private static List<GeoSuggestionResponse> pinnable(
+            List<GeoSuggestionResponse> hits, GeocodingProviderType type) {
+        return hits.stream()
+                .filter(hit -> (hit.latitude() != null && hit.longitude() != null)
+                        || (type == GeocodingProviderType.MAPPLS
+                                && hit.providerPlaceId() != null
+                                && !hit.providerPlaceId().isBlank()))
+                .toList();
     }
 
     /**
@@ -242,23 +300,43 @@ public class GeocodingService {
      * asking again would spend a call to learn the same thing.
      */
     public List<NearbyPlaceResponse> nearby(String categoryCodes, double latitude, double longitude, int radiusMeters) {
+        return nearbyAnswered(categoryCodes, latitude, longitude, radiusMeters).orElseGet(List::of);
+    }
+
+    /**
+     * The same lookup, saying whether the vendor answered at all.
+     *
+     * <p>An empty Optional means it could not be asked — no key, a refusal, an
+     * error. A screen offering live search needs that apart from "nothing
+     * matched": told the second when the first is true, a person concludes
+     * their neighbourhood is empty.
+     */
+    public Optional<List<NearbyPlaceResponse>> nearbyAnswered(
+            String categoryCodes, double latitude, double longitude, int radiusMeters) {
         GeocodingProvider mappls = providers.get(GeocodingProviderType.MAPPLS);
         if (mappls == null || !mappls.isConfigured() || categoryCodes == null || categoryCodes.isBlank()) {
-            return List.of();
+            return Optional.empty();
         }
         String cacheKey = NEARBY_KEY_PREFIX + categoryCodes + ":" + radiusMeters
                 + ":" + round(latitude, 4) + ":" + round(longitude, 4);
         String cached = valkeyTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
             try {
-                return objectMapper.readValue(cached, NEARBY_LIST);
+                return Optional.of(objectMapper.readValue(cached, NEARBY_LIST));
             } catch (Exception exception) {
                 log.warn("Corrupt geo nearby cache entry dropped", exception);
             }
         }
-        List<NearbyPlaceResponse> places = mappls.nearby(categoryCodes, latitude, longitude, radiusMeters);
-        writeCache(cacheKey, places, NEARBY_TTL);
-        return places;
+        Optional<List<NearbyPlaceResponse>> answer =
+                mappls.nearby(categoryCodes, latitude, longitude, radiusMeters);
+        if (answer.isEmpty()) {
+            // The vendor did not answer. Saying so is right, caching it is not:
+            // a month is a long time to remember a refusal as a fact about the
+            // world.
+            return Optional.empty();
+        }
+        writeCache(cacheKey, answer.get(), NEARBY_TTL);
+        return answer;
     }
 
     private static double distanceKm(double lat1, double lng1, double lat2, double lng2) {

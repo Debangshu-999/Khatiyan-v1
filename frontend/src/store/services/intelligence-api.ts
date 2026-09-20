@@ -2,7 +2,7 @@ import { api } from "@/store/api";
 
 // RoomType is the app's name for what the backend calls SharingType.
 import type { PropertyDiscoveryCard } from "./discovery-api";
-import type { MealType, PgFor, PreferredTenantType, RoomType } from "./property-api";
+import type { MealType, PgFor, PreferredTenantType, PropertyType, RoomType } from "./property-api";
 
 /**
  * What the app understood from a sentence.
@@ -39,6 +39,8 @@ export type SmartSearchArgs = {
   electricityIncluded: boolean | null;
   bathroomType: BathroomType | null;
   sharingTypes: RoomType[];
+  /** PG or hostel, when the sentence named one. Fills the filter sheet's Property type. */
+  propertyType: PropertyType | null;
 };
 
 export type ResolvedLocation = {

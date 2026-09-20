@@ -198,6 +198,19 @@ public class AuthController {
     }
 
     /**
+     * Signs THIS device out, server-side.
+     *
+     * <p>A literal path, so it wins over {@code /sessions/{sessionId}} below. The
+     * app calls it before forgetting its token. Without it the session stayed
+     * live until the token expired and counted against the device cap.
+     */
+    @DeleteMapping("/sessions/current")
+    public ResponseEntity<Void> signOut(@AuthenticationPrincipal UserPrincipal user) {
+        authService.signOut(user.userId(), user.sessionId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * Signs one other device out. Refuses the caller's own session — that is a
      * sign-out, and doing it from a list of other devices is almost certainly a
      * misfire.

@@ -5,6 +5,7 @@ import { BedDouble, Check, Plus, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
+import { ChoiceCard } from "@/components/choice-section";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { SheetShell } from "@/components/sheet-shell";
@@ -187,46 +188,50 @@ export function RoomTypeSheet({
   return (
     <SheetShell onClose={onClose} title={title}>
       <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }} keyboardShouldPersistTaps="handled">
-        {fixedBeds == null ? (
-          <FormInput
-            error={form.errors.beds}
-            keyboardType="number-pad"
-            label="Beds in the room"
-            onChangeText={(next) => {
-              setBeds(next);
-              form.clearField("beds");
-            }}
-            placeholder="6"
-            required
-            value={beds}
-          />
-        ) : (
-          <LockedRow
-            note={`Fixed by ${humanizeToken(sharingType).toLowerCase()}`}
-            value={`${fixedBeds} ${fixedBeds === 1 ? "bed" : "beds"}`}
-          />
-        )}
-
-        <View style={{ gap: 6 }}>
-          <FormInput
-            error={form.errors.rent}
-            keyboardType="decimal-pad"
-            label="Rent per bed, per month"
-            onChangeText={(next) => {
-              setRent(next);
-              form.clearField("rent");
-            }}
-            placeholder="8000"
-            prefix="₹"
-            required
-            value={rent}
-          />
-          {siblingRentPaise == null ? null : (
-            <Text style={[type.caption, { color: colors.muted }]}>
-              {conditioning === "AC" ? "Non-AC" : "AC"} is {formatMoneyPaise(siblingRentPaise)}.
-            </Text>
+        {/* Beds and rent together: the two facts that make a type what it is,
+            set apart from the optional amenities and photos below. */}
+        <ChoiceCard style={{ gap: spacing.md }}>
+          {fixedBeds == null ? (
+            <FormInput
+              error={form.errors.beds}
+              keyboardType="number-pad"
+              label="Beds in the room"
+              onChangeText={(next) => {
+                setBeds(next);
+                form.clearField("beds");
+              }}
+              placeholder="6"
+              required
+              value={beds}
+            />
+          ) : (
+            <LockedRow
+              note={`Fixed by ${humanizeToken(sharingType).toLowerCase()}`}
+              value={`${fixedBeds} ${fixedBeds === 1 ? "bed" : "beds"}`}
+            />
           )}
-        </View>
+
+          <View style={{ gap: 6 }}>
+            <FormInput
+              error={form.errors.rent}
+              keyboardType="decimal-pad"
+              label="Rent per bed, per month"
+              onChangeText={(next) => {
+                setRent(next);
+                form.clearField("rent");
+              }}
+              placeholder="8000"
+              prefix="₹"
+              required
+              value={rent}
+            />
+            {siblingRentPaise == null ? null : (
+              <Text style={[type.caption, { color: colors.muted }]}>
+                {conditioning === "AC" ? "Non-AC" : "AC"} is {formatMoneyPaise(siblingRentPaise)}.
+              </Text>
+            )}
+          </View>
+        </ChoiceCard>
 
         <AmenityPicker
           amenities={amenities}

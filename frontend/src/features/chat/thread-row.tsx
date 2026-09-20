@@ -1,7 +1,8 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { Ban, FileText, Image as ImageIcon } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { GhostText } from "@/components/skeletons/boundary";
 import { selectHaptic } from "@/lib/haptics";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
 import { threadStamp } from "@/features/chat/chat-time";
@@ -17,6 +18,14 @@ import { useTheme } from "@/theme/use-theme";
  * have not named to themselves.
  */
 const AVATAR_SIZE = 52;
+
+/**
+ * A bar width that follows the text it stands for, so a loading list of sample
+ * rows does not look ruled. Only read inside a SkeletonBoundary.
+ */
+function ghostWidthFor(text: string | null | undefined, min: number, max: number): `${number}%` {
+  return `${Math.min(max, min + (text?.length ?? 0) * 2)}%`;
+}
 
 /**
  * One conversation in a list.
@@ -102,7 +111,8 @@ export function ThreadRow({
         }}
       >
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-        <Text
+        <GhostText
+          ghostWidth={ghostWidthFor(thread.title, 32, 62)}
           numberOfLines={1}
           // The family is the weight. Left to `fontWeight` alone the name
           // fell back to the platform face and Android bolded it a second
@@ -115,14 +125,14 @@ export function ThreadRow({
           }}
         >
           {thread.title}
-        </Text>
+        </GhostText>
 
         <Preview thread={thread} />
 
         {subtitle ? (
-          <Text style={[type.caption, { color: colors.kicker, fontSize: 11 }]} numberOfLines={1}>
+          <GhostText style={[type.caption, { color: colors.kicker, fontSize: 11 }]} numberOfLines={1}>
             {subtitle}
-          </Text>
+          </GhostText>
         ) : null}
       </View>
 
@@ -132,9 +142,9 @@ export function ThreadRow({
           belongs to. */}
       <View style={{ alignItems: "flex-end", gap: 6 }}>
         {started ? (
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+          <GhostText ghostWidth={34} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
             {threadStamp(thread.lastMessageAt)}
-          </Text>
+          </GhostText>
         ) : null}
 
         {/* A dot, not a count. A thread either wants attention or it does not,
@@ -160,9 +170,9 @@ function Preview({ thread }: { thread: ChatThread }) {
 
   if (!thread.lastMessageAt) {
     return (
-      <Text style={[type.caption, { color: colors.muted }]}>
+      <GhostText style={[type.caption, { color: colors.muted }]}>
         Tap to start a conversation
-      </Text>
+      </GhostText>
     );
   }
 
@@ -173,7 +183,8 @@ function Preview({ thread }: { thread: ChatThread }) {
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
       {deleted || attachment ? <Icon color={colors.muted} size={13} strokeWidth={2.2} /> : null}
-      <Text
+      <GhostText
+        ghostWidth={ghostWidthFor(thread.lastMessagePreview, 50, 88)}
         numberOfLines={1}
         style={{
           // Withdrawn text stays muted even in an unread row. Bolding it would
@@ -185,7 +196,7 @@ function Preview({ thread }: { thread: ChatThread }) {
         }}
       >
         {thread.lastMessagePreview ?? ""}
-      </Text>
+      </GhostText>
     </View>
   );
 }

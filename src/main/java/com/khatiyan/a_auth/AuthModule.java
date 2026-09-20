@@ -90,6 +90,26 @@ public class AuthModule {
                 userId, permanentAddress, permanentAddressPincode, dateOfBirth, gender);
     }
 
+    /**
+     * Records the identity a government check established, and freezes it.
+     *
+     * <p>For the verification module alone. The values REPLACE what was typed
+     * rather than being merged with it — an address from UIDAI and one typed
+     * into a form will never agree character for character, and the
+     * government's is the one worth keeping.
+     */
+    public void applyVerifiedIdentity(
+            UUID userId,
+            String fullName,
+            LocalDate dateOfBirth,
+            String permanentAddress,
+            String permanentAddressPincode,
+            String source,
+            java.time.Instant verifiedAt) {
+        authService.applyVerifiedIdentity(
+                userId, fullName, dateOfBirth, permanentAddress, permanentAddressPincode, source, verifiedAt);
+    }
+
     public UUID provisionManagerUser(String phone, String fullName, UUID provisionedBy) {
         return authService.provisionManagerUser(phone, fullName, provisionedBy);
     }

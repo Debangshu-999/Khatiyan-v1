@@ -115,6 +115,7 @@ public class PropertyService {
                 request.rentGraceDays(),
                 request.standardDepositPaise(),
                 request.noticePeriod());
+        property.updateVisitorsAllowed(request.visitorsAllowed());
 
         Property saved = propertyRepository.save(property);
         log.info(
@@ -328,6 +329,7 @@ public class PropertyService {
                 request.rentGraceDays(),
                 request.standardDepositPaise(),
                 request.noticePeriod());
+        property.updateVisitorsAllowed(request.visitorsAllowed());
 
         log.info(
                 "Property updated propertyId={} actorUserId={} name={} city={}",

@@ -191,7 +191,7 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           />
           <DetailCard icon="clock-outline" label="Notice period" value={NOTICE_PERIOD_LABELS[property.noticePeriod]} />
           <DetailCard
-            icon="file-document-outline"
+            icon="timer-sand"
             label="Rent grace"
             value={property.rentGraceDays > 0 ? `${property.rentGraceDays} days` : "None"}
           />
@@ -227,7 +227,13 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
             value={property.electricityIncluded ? "Included" : "Not included"}
           />
           <PreferenceCard icon="silverware-fork-knife" label="Food" value={foodPreference(property)} />
-          <PreferenceCard icon="account-question-outline" label="Visitors" value="Not specified" />
+          <PreferenceCard
+            icon="human-greeting"
+            label="Visitors"
+            value={
+              property.visitorsAllowed == null ? "Not specified" : property.visitorsAllowed ? "Allowed" : "Not allowed"
+            }
+          />
         </View>
       </ProfileSection>
 
@@ -651,8 +657,9 @@ function iconForFacility(facility: string): MaterialIconName {
     case "LAUNDRY_SERVICE":
       return "washing-machine";
     case "HOUSEKEEPING":
-    case "ROOM_CLEANING":
       return "broom";
+    case "ROOM_CLEANING":
+      return "spray-bottle";
     case "POWER_BACKUP":
       return "power-plug-battery-outline";
     case "LIFT":

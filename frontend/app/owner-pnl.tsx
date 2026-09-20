@@ -422,7 +422,10 @@ function Breakdown({
   totalPaise: number;
 }) {
   const { colors, fonts, type } = useTheme();
-  const max = lines.reduce((peak, item) => Math.max(peak, Math.abs(item.amountPaise)), 0);
+  // Each bar is its line's share of the section total, so the bars add up to
+  // the whole. Scaled to the largest line instead, the biggest always filled
+  // its bar and read as if it were the entire income or expense.
+  const whole = totalPaise > 0 ? totalPaise : lines.reduce((sum, item) => sum + Math.abs(item.amountPaise), 0);
 
   return (
     <Section title={title}>
@@ -451,7 +454,11 @@ function Breakdown({
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
                 </View>
-                <ProgressBar color={accent ? colors.jade : colors.primary} height={8} ratio={max > 0 ? Math.max(0.04, Math.abs(item.amountPaise) / max) : 0} />
+                <ProgressBar
+                  color={accent ? colors.jade : colors.primary}
+                  height={8}
+                  ratio={whole > 0 && item.amountPaise !== 0 ? Math.min(1, Math.max(0.02, Math.abs(item.amountPaise) / whole)) : 0}
+                />
               </View>
             ))}
             {footer ? <View style={{ flexDirection: "row" }}>{footer}</View> : null}

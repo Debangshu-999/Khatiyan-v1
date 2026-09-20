@@ -26,9 +26,9 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+// The screen's empty state. It used to be the header artwork, with a borrowed
+// concerns illustration for the empty state.
 const ENQUIRIES_ILLUSTRATION = require("../assets/workspace/enquiries.png");
-
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
 
 type EnquiryFilter = "new" | "all";
 
@@ -122,7 +122,6 @@ export default function OwnerEnquiriesScreen() {
       scrollEventThrottle={16}
     >
       <ScreenHeader
-        artwork={ENQUIRIES_ILLUSTRATION}
         italicTail="received."
         subtitle={
           selectedProperty
@@ -170,7 +169,7 @@ export default function OwnerEnquiriesScreen() {
                   ? "Nothing is waiting on you."
                   : "People who find this property in discovery can ask a question from its profile."
               }
-              artwork={CONCERN_EMPTY_ILLUSTRATION}
+              artwork={ENQUIRIES_ILLUSTRATION}
               title={enquiries.length > 0 ? "All answered" : "No enquiries yet"}
             />
           ) : (

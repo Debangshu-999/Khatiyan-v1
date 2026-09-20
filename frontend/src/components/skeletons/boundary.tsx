@@ -79,8 +79,11 @@ export function GhostText({
   // a filled block, not as a line of text waiting to appear.
   const bar = Math.max(8, Math.round(fontSize * 0.72));
 
+  // The text's own flex carries over. Text that fills a row (flex: 1 beside an
+  // icon) would otherwise ghost as a box with no width, and a percentage bar
+  // inside a zero-width box draws nothing.
   return (
-    <View style={{ height: lineHeight, justifyContent: "center" }}>
+    <View style={{ flex: flat.flex, height: lineHeight, justifyContent: "center" }}>
       <Skeleton height={bar} radius={Math.round(bar / 2)} width={ghostWidth ?? "68%"} />
     </View>
   );

@@ -137,6 +137,7 @@ class PropertyModuleTest {
                 NoticePeriod.ONE_MONTH,
                 0,
                 null,
+                null,
                 true,
                 true);
     }

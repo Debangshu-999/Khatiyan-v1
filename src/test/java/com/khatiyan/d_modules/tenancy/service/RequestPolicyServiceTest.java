@@ -634,7 +634,7 @@ class RequestPolicyServiceTest {
                 null, null, null, false, Set.of(), false, null, Set.of(), Set.of(), Set.of(),
                 null, null, null,
                 BillingCollectionTiming.CYCLE_START, 3, 10_000_00L, noticePeriod, 0,
-                null, false, true);
+                null, null, false, true);
     }
 
     private static RoomResponse vacantTargetRoom() {
@@ -700,7 +700,7 @@ class RequestPolicyServiceTest {
                 null,
                 null,
                 null,
-                List.of());
+                List.of(), null);
     }
 
     private static TenancyExitRequest pendingExit(Tenancy tenancy) {

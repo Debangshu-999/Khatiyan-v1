@@ -282,6 +282,30 @@ class TenancyServiceTest {
         // Both pages are reads of the stays list.
         verify(tenancyAccessPolicy, org.mockito.Mockito.times(2)).ensureCanViewStays(ACTOR_ID, PROPERTY_ID);
     }
+
+    @Test
+    void batchedTenancyLookupIncludesAccountNameAndPhone() {
+        Tenancy tenancy = Tenancy.start(
+                TENANT_ID,
+                PROPERTY_ID,
+                ROOM_ID,
+                ACTOR_ID,
+                12_000_00,
+                10_000_00,
+                LocalDate.of(2026, 6, 1));
+        when(tenancyRepository.findAllById(java.util.List.of(tenancy.getId())))
+                .thenReturn(java.util.List.of(tenancy));
+        when(authModule.findByIds(java.util.List.of(TENANT_ID)))
+                .thenReturn(java.util.Map.of(TENANT_ID, userSummary(false)));
+
+        TenancyResponse response = tenancyService
+                .findByIds(java.util.List.of(tenancy.getId()))
+                .get(tenancy.getId());
+
+        assertThat(response.tenantName()).isEqualTo("Test Tenant");
+        assertThat(response.tenantPhone()).isEqualTo("+919007433360");
+    }
+
     private static UserSummaryResponse userSummary(boolean activeTenant) {
         return new UserSummaryResponse(
                 TENANT_ID,
@@ -438,6 +462,7 @@ class TenancyServiceTest {
                 10_000_00,
                 NoticePeriod.ONE_MONTH,
                 0,
+                null,
                 null,
                 true,
                 true);

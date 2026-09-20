@@ -190,6 +190,12 @@ export function TenantBillCard({
         </View>
       </View>
 
+      {cycle.status === "CANCELLED" && cycle.cancellationReason ? (
+        <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+          Cancelled by the property: {cycle.cancellationReason}
+        </Text>
+      ) : null}
+
       {awaitingConfirmation ? (
         <Text style={[type.caption, { color: colors.jade, lineHeight: 17 }]}>
           Waiting for the property to confirm your payment. No late fee is added while this is open.

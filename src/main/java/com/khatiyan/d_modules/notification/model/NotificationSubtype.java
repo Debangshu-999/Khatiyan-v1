@@ -18,6 +18,15 @@ public enum NotificationSubtype {
     NEW_DEVICE_SIGNED_IN,
 
     // Tenancy lifecycle.
+    /**
+     * A tenancy was created and is waiting on the tenant's signature.
+     *
+     * <p>Not the same as {@link #TENANCY_STARTED}, which is what it used to be
+     * sent as. Nothing has started: the bed is reserved, the agreement is
+     * unsigned and billing has not begun.
+     */
+    TENANT_ONBOARDED,
+
     TENANCY_STARTED,
     TENANCY_ENDED,
     /**
@@ -79,6 +88,7 @@ public enum NotificationSubtype {
 
     // Billing cycles + line edits + payment outcomes.
     BILLING_CYCLE_GENERATED,
+    BILLING_CYCLE_CANCELLED,
     BILLING_LATE_FEE_APPLIED,
     BILLING_LINE_ITEM_CHANGED,
     PAYMENT_SUCCEEDED,

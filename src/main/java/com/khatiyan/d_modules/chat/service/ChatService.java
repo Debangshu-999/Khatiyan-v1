@@ -533,6 +533,43 @@ public class ChatService {
         return mine.stream().filter(thread -> isUnread(thread, positions)).count();
     }
 
+    /**
+     * The same badge for a management account, scoped to one property.
+     *
+     * <p>Management reads chats a property at a time, so the badge has to count
+     * what that property's Chats screen would show — its Tenants, My chats and
+     * Enquiries sections — and nothing else. Counted across every thread the
+     * person belongs to, the dot lit up for an enquiry on a property that was not
+     * selected, and the Chats screen it pointed at had nothing unread in it.
+     *
+     * <p>Each part follows its section's own rules: Tenants only for someone with
+     * team access, and only for current tenancies (the roster drops the rest);
+     * My chats and Enquiries only where the person is a member.
+     */
+    @Transactional(readOnly = true)
+    public long countUnreadForProperty(UUID actorUserId, UUID propertyId) {
+        List<ChatThread> counted = new ArrayList<>();
+
+        if (chatAccessService.hasTeamAccess(actorUserId, propertyId)) {
+            Set<UUID> currentTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
+                    .filter(tenancy -> tenancy.userId() != null)
+                    .map(TenancyResponse::id)
+                    .collect(Collectors.toSet());
+            chatThreadRepository.findSection(propertyId, ChatThreadKind.TEAM, ChatThreadOrigin.TENANCY).stream()
+                    .filter(thread -> currentTenancies.contains(thread.getOriginId()))
+                    .forEach(counted::add);
+        }
+
+        chatThreadRepository.findSection(propertyId, ChatThreadKind.DIRECT, ChatThreadOrigin.PERSONAL).stream()
+                .filter(thread -> chatAccessService.isMember(actorUserId, thread.getId()))
+                .forEach(counted::add);
+        counted.addAll(chatThreadRepository.findEnquirySectionFor(propertyId, actorUserId));
+
+        List<ChatThread> visible = stillVisibleTo(actorUserId, counted);
+        Map<UUID, Long> positions = readPositionsFor(actorUserId, visible);
+        return visible.stream().filter(thread -> isUnread(thread, positions)).count();
+    }
+
     // ------------------------------------------------------------------
     // Closing
     // ------------------------------------------------------------------

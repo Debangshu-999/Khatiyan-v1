@@ -17,6 +17,7 @@ type LucideIcon = ComponentType<LucideProps>;
  * looking at the same control.
  */
 export function ChoiceSection({
+  below,
   children,
   contentStyle,
   description,
@@ -24,6 +25,12 @@ export function ChoiceSection({
   icon: Icon,
   title,
 }: {
+  /**
+   * Full-width content under the indented choices, for fields a choice opens
+   * up (the daily rates under "Offers daily stays"). Indented, two inputs side
+   * by side would be too narrow to read their labels.
+   */
+  below?: ReactNode;
   children: ReactNode;
   contentStyle?: ViewStyle;
   description: string;
@@ -35,21 +42,7 @@ export function ChoiceSection({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 16,
-        borderWidth: 1,
-        elevation: 1,
-        gap: spacing.sm,
-        padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 3, width: 0 },
-        shadowOpacity: 0.28,
-        shadowRadius: 9,
-      }}
-    >
+    <ChoiceCard>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
         <View
           style={{
@@ -88,6 +81,40 @@ export function ChoiceSection({
           <Text style={[type.caption, { color: colors.kicker, fontSize: 11.5, lineHeight: 16 }]}>{footnote}</Text>
         ) : null}
       </View>
+      {below}
+    </ChoiceCard>
+  );
+}
+
+/**
+ * The raised card a {@link ChoiceSection} sits in, on its own.
+ *
+ * <p>For fields that are not a row of chips — a picker, a board — but sit among
+ * choice sections and should read as the same kind of block.
+ */
+export function ChoiceCard({ children, style }: { children: ReactNode; style?: ViewStyle }) {
+  const { colors } = useTheme();
+
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: 16,
+          borderWidth: 1,
+          elevation: 1,
+          gap: spacing.sm,
+          padding: spacing.md,
+          shadowColor: colors.shadow,
+          shadowOffset: { height: 3, width: 0 },
+          shadowOpacity: 0.28,
+          shadowRadius: 9,
+        },
+        style,
+      ]}
+    >
+      {children}
     </View>
   );
 }

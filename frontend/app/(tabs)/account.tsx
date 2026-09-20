@@ -12,7 +12,6 @@ import {
   Check,
   ChevronRight,
   CircleAlert,
-  Cog,
   Hash,
   Home,
   Mail,
@@ -28,13 +27,13 @@ import {
   UserRound,
   type LucideProps,
 } from "lucide-react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { clearStoredSession, saveSession } from "@/auth/session-storage";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { Skeleton } from "@/components/skeletons";
-import { AccountSwitchRowsSkeleton } from "@/components/skeletons/account";
 import { OwnerInsetListSkeleton } from "@/components/skeletons/owner";
 import { Lightbox } from "@/components/image-carousel";
 import { Section } from "@/components/section";
@@ -53,7 +52,7 @@ import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { uploadAsset } from "@/features/uploads/upload-asset";
 import { api } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { useGetEmailRecoveryStatusQuery, useGetMyIdentityQuery, useGetProfileQuery, useRequestEmailVerificationMutation, useUpdateProfileMutation, useUpdateRecoveryEmailMutation, type UserIdentity } from "@/store/services/auth-api";
+import { useGetEmailRecoveryStatusQuery, useGetMyIdentityQuery, useGetProfileQuery, useRequestEmailVerificationMutation, useSignOutCurrentSessionMutation, useUpdateProfileMutation, useUpdateRecoveryEmailMutation, type UserIdentity } from "@/store/services/auth-api";
 import { MAX_OWNER_PROPERTIES, useListMyPropertiesQuery } from "@/store/services/property-api";
 import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-slice";
 import { clearSession, setSession } from "@/store/slices/auth-slice";
@@ -63,6 +62,8 @@ import { useTheme } from "@/theme/use-theme";
 
 /** The pencil beside the profile name, and the spacer that balances it. */
 const NAME_EDIT_SLOT = 15;
+/** How long sign-out waits for the server before signing out locally anyway. */
+const SIGN_OUT_TIMEOUT_MS = 3000;
 
 export default function AccountScreen() {
   const router = useGuardedRouter();
@@ -83,12 +84,21 @@ export default function AccountScreen() {
   const [updateRecoveryEmail, updateRecoveryEmailState] = useUpdateRecoveryEmailMutation();
   const [requestEmailVerification, requestEmailVerificationState] = useRequestEmailVerificationMutation();
   const [updateProfile, updateProfileState] = useUpdateProfileMutation();
+  const [signOutCurrentSession] = useSignOutCurrentSessionMutation();
   const user = profileQuery.data ?? auth.user;
   const { accounts, loading: accountsLoading } = useAvailableAccounts();
   const ownerPropertiesQuery = useListMyPropertiesQuery(undefined, { skip: !accounts.includes("owner") });
   const ownerPropertyCount = ownerPropertiesQuery.data?.length ?? 0;
   // The server refuses past this too — the button is the courtesy, not the gate.
   const atPropertyCap = ownerPropertyCount >= MAX_OWNER_PROPERTIES;
+  /**
+   * Whether this session is the owner side.
+   *
+   * <p>Falls back to the account's own role while the active account is still
+   * being resolved, so a setting does not flash in and out on load.
+   */
+  const isOwnerAccount = activeAccount === "owner" || (!activeAccount && user?.role === "OWNER");
+
   const accessLabel = activeAccount
     ? accountLabel(activeAccount)
     : accountsLoading
@@ -107,6 +117,15 @@ export default function AccountScreen() {
   }
 
   async function handleLogout() {
+    // End the session on the server first, while there is still a token to
+    // send. Without this the session stayed live until the token expired and
+    // counted against the device cap, so a few sign-in/sign-out cycles on one
+    // phone were refused as "too many devices". Best effort and time-boxed: a
+    // sign-out must never hang or fail because the network did.
+    await Promise.race([
+      signOutCurrentSession().unwrap().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, SIGN_OUT_TIMEOUT_MS)),
+    ]);
     dispatch(clearActiveAccount());
     dispatch(setPinnedOwnerModules([]));
     void saveActiveAccount(null);
@@ -303,7 +322,7 @@ export default function AccountScreen() {
         title={user?.activeTenant ? "Tenant" : "Your"}
         italicTail="profile."
         subtitle="Your identity, account access and saved details."
-        trailing={<HeaderIconButton icon={Cog} label="Open settings" onPress={() => router.push("/account-settings")} />}
+        trailing={<HeaderIconButton icon={SettingsGlyph} label="Open settings" onPress={() => router.push("/account-settings")} />}
       />
 
       <View style={{ alignItems: "center", gap: spacing.md }}>
@@ -533,7 +552,7 @@ export default function AccountScreen() {
           <AddressField
             loading={identityLoading}
             pincode={identity?.permanentAddressPincode ?? null}
-            requiredForTenantOnboarding={activeAccount === "owner" || (!activeAccount && user?.role === "OWNER")}
+            requiredForTenantOnboarding={isOwnerAccount}
             value={identity?.permanentAddress ?? null}
           />
         </PersonalInfoCard>
@@ -543,41 +562,43 @@ export default function AccountScreen() {
         </PersonalInfoCard>
       </View>
 
-      {/* Directly under the card holding the phone and email, because this is
+      {/* Tenant side only. This is the standing decision about how a PROPERTY
+          may reply to an enquiry YOU made — an owner receives enquiries and
+          never makes one, so on their account it was a control over something
+          that cannot happen.
+
+          Directly under the card holding the phone and email, because this is
           the section that says who is allowed to use them. Splitting the two
           across screens would put the detail in one place and the permission
-          over it in another. */}
-      {/* md, not sm: the box under this heading is bordered, so at sm its top
-          edge sat almost on the section rule and read as one doubled line. */}
-      <View style={{ gap: spacing.md }}>
-        <SectionTitle title="Enquiry replies" />
-        <EnquiryReplySettings />
-      </View>
+          over it in another.
 
-      {/* Always rendered. Hiding it when there is only one account left people
-          wondering whether switching exists at all; saying "one account" answers
-          the question outright. */}
-      <View style={{ gap: spacing.sm }}>
-        <SectionTitle title="Switch account" />
-        {/* The same row either way, so the one account you have looks like an
-            account rather than like a paragraph explaining that you have one.
-            With nothing to switch to it is simply the only option, already
-            ticked, and the line under it says why there is no second. */}
-        {accountsLoading && accounts.length === 0 ? (
-          <AccountSwitchRowsSkeleton />
-        ) : (
+          md, not sm: the box under this heading is bordered, so at sm its top
+          edge sat almost on the section rule and read as one doubled line. */}
+      {isOwnerAccount ? null : (
+        <View style={{ gap: spacing.md }}>
+          <SectionTitle title="Enquiry replies" />
+          <EnquiryReplySettings />
+        </View>
+      )}
+
+      {/* Only when there is something to switch to. A switcher offering one
+          option, already ticked, with a line underneath explaining that there
+          is no second — that is a section whose entire content is the reason it
+          should not be there.
+
+          Gated on the count rather than the loading flag, so the common
+          single-account case renders nothing at all instead of a skeleton that
+          appears and then vanishes. */}
+      {accounts.length > 1 ? (
+        <View style={{ gap: spacing.sm }}>
+          <SectionTitle title="Switch account" />
           <View style={{ gap: spacing.sm }}>
             {accounts.map((account) => (
               <AccountRow account={account} active={account === activeAccount} key={account} onPress={() => switchAccount(account)} />
             ))}
           </View>
-        )}
-        {!accountsLoading && accounts.length <= 1 ? (
-          <Text style={[type.caption, { color: colors.muted }]}>
-            Only one account available for this phone.
-          </Text>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
 
       {accounts.includes("owner") ? (
         <View style={{ gap: spacing.sm }}>
@@ -1161,6 +1182,11 @@ function AccountRow({ account, active, onPress }: { account: AccountType; active
       )}
     </AnimatedPressable>
   );
+}
+
+/** A round, solid settings gear with evenly spaced teeth, from Ionicons, in the header's ink. */
+function SettingsGlyph({ color, size }: LucideProps) {
+  return <Ionicons color={color} name="settings" size={Number(size ?? 24)} />;
 }
 
 function HeaderIconButton({

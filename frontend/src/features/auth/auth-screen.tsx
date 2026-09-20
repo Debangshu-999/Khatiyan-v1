@@ -15,6 +15,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { useToast } from "@/components/toast";
 import { loadThemeModeForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { AUTH_SHEET_OVERLAP, AuthHero, authHeroCopy, type AuthMode, type AuthStep } from "@/features/auth/auth-hero";
+import { queueWelcome } from "@/features/auth/pending-welcome";
 import {
   AuthAlertModal,
   AuthBackground,
@@ -224,23 +225,28 @@ export function AuthScreen() {
    * Retrying then "worked", because the transient failure did not recur.
    *
    * <p>
-   * Two rules follow. The session is written before anything that can throw, so
-   * a later failure cannot leave the person authenticated-but-not-persisted.
-   * And the cosmetic extras are best-effort: a theme that would not load is not
-   * a reason to bounce someone back to the login screen.
+   * Three rules follow. The cosmetic extras are best-effort: a theme that would
+   * not load is not a reason to bounce someone back to the login screen, so they
+   * sit in their own try and cannot stop the session being saved.
+   *
+   * <p>
+   * The resets run BEFORE the session is set, never after. Setting the session
+   * is what starts everything downstream: this screen's redirect, the account
+   * check, and account select choosing the only account and opening Home. With
+   * the resets after it, `clearActiveAccount()` landed once Home was already up
+   * and wiped the account account select had just chosen. Home dropped back to
+   * the loading screen, then played its entrance again with the welcome toast.
+   *
+   * <p>
+   * Navigation is left to the redirect effect above, which fires the moment the
+   * session exists. A second `router.replace` here could land after it and play
+   * the transition twice.
    */
   async function persistTokenSession(response: TokenResponse) {
     const firstName = response.user?.fullName?.trim().split(/\s+/)[0];
-    // Fired here so the toast survives the redirect and greets the user on Home.
-    toast.success(firstName ? `Welcome back, ${firstName}!` : "Welcome back!");
-
-    const session = {
-      accessToken: response.accessToken,
-      user: response.user,
-    };
-
-    dispatch(setSession(session));
-    await saveSession(session);
+    // Queued, not shown: Home shows it once it is on screen. Shown here it landed
+    // over the loading screen, before Home had appeared.
+    queueWelcome(firstName ? `Welcome back, ${firstName}!` : "Welcome back!");
 
     try {
       dispatch(clearActiveAccount());
@@ -252,7 +258,13 @@ export function AuthScreen() {
       console.warn("Post-login setup failed; continuing with the session", error);
     }
 
-    router.replace("/account-select");
+    const session = {
+      accessToken: response.accessToken,
+      user: response.user,
+    };
+
+    dispatch(setSession(session));
+    await saveSession(session);
   }
 
   function validatePhone(value: string) {

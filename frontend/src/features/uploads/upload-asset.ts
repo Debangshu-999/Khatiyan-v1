@@ -51,6 +51,7 @@ export type UploadTarget =
   | "PROFILE_PHOTO"
   | "PROPERTY_IMAGE"
   | "ROOM_TYPE_IMAGE"
+  | "FOOD_ITEM_IMAGE"
   | "LOCAL_PLACE_PHOTO"
   | "NOTICE_IMAGE"
   | "NOTICE_DOCUMENT"

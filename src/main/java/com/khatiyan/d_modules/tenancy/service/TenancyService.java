@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -37,6 +38,7 @@ import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancellationRoute;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyActivatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
 import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
@@ -202,7 +204,10 @@ public class TenancyService {
                 actorUserId,
                 tenancy.getPropertyId(),
                 tenancy.getRoomId(),
-                tenancy.getStartDate()));
+                tenancy.getStartDate(),
+                // Waiting on a signature means nothing has started yet. The bed
+                // is taken either way, which is why this event still fires.
+                holdForAcceptance));
 
         log.info(
                 "Tenancy created tenancyId={} userId={} actorUserId={} propertyId={} roomId={} billingType={} startDate={}",
@@ -333,7 +338,10 @@ public class TenancyService {
                 actorUserId,
                 tenancy.getPropertyId(),
                 tenancy.getRoomId(),
-                tenancy.getStartDate()));
+                tenancy.getStartDate(),
+                // A guest stay begins the moment it is booked. There is nothing
+                // to sign and nothing to wait for.
+                false));
 
         log.info(
                 "Daily guest stay created tenancyId={} actorUserId={} propertyId={} roomId={} startDate={} plannedEndDate={}",
@@ -392,6 +400,17 @@ public class TenancyService {
         tenancy.acceptTos();
         authModule.markActiveTenant(tenancy.getUserId());
         billingModule.initializeStartedTenancy(tenancy.getCreatedByUserId(), TenancyResponse.from(tenancy));
+
+        // NOW it has started. The bed was taken at creation, so nothing
+        // occupancy-related listens to this — only the people who need telling
+        // that the waiting is over.
+        eventPublisher.publishEvent(new TenancyActivatedEvent(
+                tenancy.getId(),
+                tenancy.getUserId(),
+                tenancy.getCreatedByUserId(),
+                tenancy.getPropertyId(),
+                tenancy.getRoomId(),
+                tenancy.getStartDate()));
 
         log.info(
                 "Pending tenancy activated after agreement acceptance tenancyId={} userId={}",
@@ -817,9 +836,15 @@ public class TenancyService {
             return Collections.emptyMap();
         }
 
-        return tenancyRepository.findAllById(tenancyIds)
-                .stream()
-                .map(tenancy -> TenancyResponse.from(tenancy))
+        List<Tenancy> tenancies = tenancyRepository.findAllById(tenancyIds);
+        Map<UUID, UserSummaryResponse> users = authModule.findByIds(
+                tenancies.stream()
+                        .map(Tenancy::getUserId)
+                        .filter(Objects::nonNull)
+                        .toList());
+
+        return tenancies.stream()
+                .map(tenancy -> TenancyResponse.from(tenancy, users.get(tenancy.getUserId())))
                 .collect(Collectors.toMap(TenancyResponse::id, Function.identity(), (left, right) -> left));
     }
 

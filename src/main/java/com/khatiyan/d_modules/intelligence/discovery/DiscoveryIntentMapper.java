@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
@@ -67,29 +69,27 @@ public class DiscoveryIntentMapper {
     /**
      * Requirements that every property already answers, but no filter asks.
      *
-     * <p>A property's type, its deposit and its facilities are on every card
-     * and in every row. They cannot go into {@link SearchArgs} because the
-     * discovery search has no parameter for them — but they can still rank
-     * results and decide what belongs in the main list rather than the related
-     * one. Kept apart from the filters for exactly that reason: these are
-     * scored, not filtered, so a listing that misses one is demoted and
-     * explained rather than hidden.
+     * <p>A property's deposit and its facilities are on every card and in
+     * every row. They cannot go into {@link SearchArgs} because the discovery
+     * search has no filter for them — but they can still rank results and
+     * decide what belongs in the main list rather than the related one. Kept
+     * apart from the filters for exactly that reason: these are scored, not
+     * filtered, so a listing that misses one is demoted and explained rather
+     * than hidden. (The property type used to live here too, until the filter
+     * sheet gained a control for it.)
      *
      * @param maxDepositPaise the most deposit asked for, in paise
      */
     public record AttributePreferences(
-            PropertyType propertyType,
             Long maxDepositPaise,
             List<PropertyFacility> facilities) {
 
         public boolean isEmpty() {
-            return propertyType == null && maxDepositPaise == null && facilities.isEmpty();
+            return maxDepositPaise == null && facilities.isEmpty();
         }
 
         public int count() {
-            return (propertyType == null ? 0 : 1)
-                    + (maxDepositPaise == null ? 0 : 1)
-                    + facilities.size();
+            return (maxDepositPaise == null ? 0 : 1) + facilities.size();
         }
     }
 
@@ -147,6 +147,17 @@ public class DiscoveryIntentMapper {
     private static final List<String> TYPE_WORDS = List.of(
             "pg", "paying guest", "hostel", "apartment", "flat", "room");
 
+    /**
+     * Words that show a figure was about the rent.
+     *
+     * <p>Rent is the one hard filter a sentence can set, so it is the costliest
+     * to invent. Asked to read a sentence naming only a deposit limit, the model
+     * put the same 10,000 into the rent ceiling as well — and every listing with
+     * rent on request fell out of the search, leaving nothing at all.
+     */
+    private static final List<String> RENT_WORDS = List.of(
+            "rent", "budget", "month", "monthly", "/mo", " pm", "p.m", "price", "cost", "afford", "per bed");
+
     /** Words that show a student or working-professional stay was asked for. */
     private static final List<String> TENANT_TYPE_WORDS = List.of(
             "student", "college", "university", "school", "campus",
@@ -156,8 +167,21 @@ public class DiscoveryIntentMapper {
         List<String> conflicts = new ArrayList<>();
         List<String> unresolved = new ArrayList<>(draft.unsupportedPhrasesOrEmpty());
 
-        Long minRentPaise = rentToPaise(draft.minRentRupees(), "minimum rent", unresolved);
-        Long maxRentPaise = rentToPaise(draft.maxRentRupees(), "maximum rent", unresolved);
+        String sentence = query == null ? "" : query.toLowerCase(Locale.ROOT);
+
+        // One amount, said about a deposit, and nothing said about rent: that
+        // amount is the deposit, wherever the model put it. "Deposit under 10K"
+        // came back as a rent ceiling with no deposit at all, and the hard rent
+        // filter emptied the search.
+        boolean onlyTheDeposit = sentence.contains("deposit")
+                && !mentions(sentence, RENT_WORDS)
+                && amountsIn(sentence) <= 1;
+        Integer depositRupees = draft.maxDepositRupees() != null
+                ? draft.maxDepositRupees()
+                : onlyTheDeposit ? draft.maxRentRupees() : null;
+
+        Long minRentPaise = rentToPaise(onlyTheDeposit ? null : draft.minRentRupees(), "minimum rent", unresolved);
+        Long maxRentPaise = rentToPaise(onlyTheDeposit ? null : draft.maxRentRupees(), "maximum rent", unresolved);
 
         // Kept, both of them, and flagged. See the class note.
         if (minRentPaise != null && maxRentPaise != null && minRentPaise > maxRentPaise) {
@@ -172,8 +196,6 @@ public class DiscoveryIntentMapper {
         List<MealType> meals = draft.mealTypesOrEmpty();
         Boolean foodIncluded = !meals.isEmpty() ? Boolean.TRUE : onlyIfTrue(draft.foodIncluded());
 
-        String sentence = query == null ? "" : query.toLowerCase(Locale.ROOT);
-
         SearchArgs args = new SearchArgs(
                 null, null, null, null, null,   // region scope and point are filled in after geocoding
                 radiusKm,
@@ -185,11 +207,11 @@ public class DiscoveryIntentMapper {
                 meals,
                 onlyIfTrue(draft.electricityIncluded()),
                 mentions(sentence, BATHROOM_WORDS) ? draft.bathroomType() : null,
-                draft.sharingTypesOrEmpty());
+                draft.sharingTypesOrEmpty(),
+                mentions(sentence, TYPE_WORDS) ? draft.propertyType() : null);
 
         AttributePreferences preferences = new AttributePreferences(
-                mentions(sentence, TYPE_WORDS) ? draft.propertyType() : null,
-                deposit(draft.maxDepositRupees(), sentence, unresolved),
+                deposit(depositRupees, sentence, unresolved),
                 draft.facilitiesOrEmpty().stream()
                         .filter(facility -> FacilityWords.mentioned(facility, sentence))
                         .distinct()
@@ -215,7 +237,7 @@ public class DiscoveryIntentMapper {
                 state, city, locality, latitude, longitude,
                 args.radiusKm(), args.pgFor(), args.minRentPaise(), args.maxRentPaise(),
                 args.preferredFor(), args.foodIncluded(), args.mealTypes(),
-                args.electricityIncluded(), args.bathroomType(), args.sharingTypes());
+                args.electricityIncluded(), args.bathroomType(), args.sharingTypes(), args.propertyType());
     }
 
     /**
@@ -280,6 +302,44 @@ public class DiscoveryIntentMapper {
             return null;
         }
         return rupees * 100L;
+    }
+
+    /**
+     * A money-sized number: digits with optional commas, and an optional
+     * k / thousand / lakh after it. Not followed by more letters, so "2 km" and
+     * "3bhk" are not amounts.
+     */
+    private static final Pattern AMOUNT = Pattern.compile(
+            "(?<![\\p{L}\\p{N}])(\\d[\\d,]*(?:\\.\\d+)?)\\s*(k|thousand|lakh|lac)?(?![\\p{L}\\p{N}])");
+
+    /**
+     * How many money figures the sentence states, each time one is written.
+     *
+     * <p>Counted per mention, not per distinct value: "under 10k, deposit under
+     * 10k" names two limits that happen to match, and both apply. Anything
+     * under 100 is a count or a distance ("2 km", "3 sharing"), not money.
+     */
+    static int amountsIn(String sentence) {
+        Matcher matcher = AMOUNT.matcher(sentence);
+        List<Long> amounts = new ArrayList<>();
+        while (matcher.find()) {
+            double value;
+            try {
+                value = Double.parseDouble(matcher.group(1).replace(",", ""));
+            } catch (NumberFormatException notANumber) {
+                continue;
+            }
+            String unit = matcher.group(2);
+            if ("k".equals(unit) || "thousand".equals(unit)) {
+                value *= 1_000;
+            } else if ("lakh".equals(unit) || "lac".equals(unit)) {
+                value *= 100_000;
+            }
+            if (value >= 100) {
+                amounts.add(Math.round(value));
+            }
+        }
+        return amounts.size();
     }
 
     /**

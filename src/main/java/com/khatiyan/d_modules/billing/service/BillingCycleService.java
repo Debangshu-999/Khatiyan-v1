@@ -25,6 +25,7 @@ import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
+import com.khatiyan.d_modules.billing.api.dto.CancelOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -36,6 +37,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
+import com.khatiyan.d_modules.billing.event.BillingCycleCancelledEvent;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
@@ -1704,6 +1706,51 @@ public class BillingCycleService {
                 tenancyId,
                 actorUserId,
                 request.amountPaise());
+
+        // The tenant is told, as for a rent cycle. This used to be missing, so a
+        // one-off bill appeared in the tenant's bills with no notification.
+        publishBillingCycleGenerated(saved);
+
+        return toResponse(saved);
+    }
+
+    /**
+     * Cancels a one-off bill raised by mistake, with the reason kept on the bill.
+     *
+     * <p>The rules live on {@link BillingCycle#cancelOneOff}: one-off only, and
+     * only while UNPAID or OVERDUE. A cancelled bill already drops out of every
+     * total and out of the exit payment gate, so nothing else needs undoing. The
+     * tenant is told, with the reason, so a bill they saw does not just vanish.
+     */
+    @Transactional
+    public BillingCycleResponse cancelOneOffBill(
+            UUID actorUserId,
+            UUID billingCycleId,
+            CancelOneOffBillRequest request) {
+        BillingCycle bill = getManagedCycle(actorUserId, billingCycleId);
+
+        String reason = request.reason() == null ? "" : request.reason().trim();
+        if (reason.isEmpty()) {
+            throw new ValidationException("Give a reason for cancelling this bill");
+        }
+
+        bill.cancelOneOff(reason, actorUserId, Instant.now());
+        BillingCycle saved = billingCycleRepository.saveAndFlush(bill);
+
+        log.info(
+                "One-off bill cancelled billingCycleId={} tenancyId={} actorUserId={} amountPaise={}",
+                saved.getId(),
+                saved.getTenancyId(),
+                actorUserId,
+                saved.getTotalAmountPaise());
+
+        eventPublisher.publishEvent(new BillingCycleCancelledEvent(
+                saved.getId(),
+                saved.getTenancyId(),
+                saved.getTenantUserId(),
+                saved.getPropertyId(),
+                saved.getTotalAmountPaise(),
+                reason));
 
         return toResponse(saved);
     }

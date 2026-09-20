@@ -1,11 +1,13 @@
 import { Modal, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowUpDown, X } from "lucide-react-native";
+import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import type { ListingSort } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+import { DiscoveryButton } from "./discovery-button";
 
 /**
  * Which orders a list offers.
@@ -25,6 +27,19 @@ const LABELS: Record<ListingSort, string> = {
   RENT_HIGH: "Rent high to low",
   RENT_LOW: "Rent low to high",
 };
+
+/** What the pill beside a results header says once an order is chosen. */
+const SHORT_LABELS: Record<ListingSort, string> = {
+  DEPOSIT_HIGH: "Deposit",
+  DEPOSIT_LOW: "Deposit",
+  DISTANCE: "Distance",
+  RELEVANCE: "Sort",
+  RENT_HIGH: "Rent",
+  RENT_LOW: "Rent",
+};
+
+/** Orders that run low to high. Nearest first is shortest distance first. */
+const ASCENDING = new Set<ListingSort>(["DEPOSIT_LOW", "DISTANCE", "RENT_LOW"]);
 
 /**
  * The button beside a results header.
@@ -55,10 +70,23 @@ export function ListingSortButton({ onPress, sort }: { onPress: () => void; sort
         paddingVertical: 4,
       }}
     >
-      <ArrowUpDown color={active ? colors.primary : colors.inkSoft} size={12} strokeWidth={2.4} />
-      <Text style={{ color: active ? colors.primary : colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11 }}>
-        {active ? LABELS[sort] : "Sort"}
-      </Text>
+      {active ? (
+        <>
+          <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11 }}>{SHORT_LABELS[sort]}</Text>
+          {/* Down is low to high, up is high to low. The arrow says the
+              direction so the pill can stay one word. */}
+          {ASCENDING.has(sort) ? (
+            <ArrowDown color={colors.primary} size={12} strokeWidth={2.6} />
+          ) : (
+            <ArrowUp color={colors.primary} size={12} strokeWidth={2.6} />
+          )}
+        </>
+      ) : (
+        <>
+          <ArrowUpDown color={colors.inkSoft} size={12} strokeWidth={2.4} />
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11 }}>Sort</Text>
+        </>
+      )}
     </AnimatedPressable>
   );
 }
@@ -135,14 +163,14 @@ export function ListingSortModal({
             }}
           >
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.45 }}>
-                Sort listings
-              </Text>
-              <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
-                {context === "ai"
-                  ? "Closest to what you asked for comes first by default"
-                  : "Best matches come first by default"}
-              </Text>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.45 }}>
+              Sort listings
+            </Text>
+            <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
+              {context === "ai"
+                ? "Closest to what you asked for comes first by default."
+                : "Best matches come first by default."}
+            </Text>
             </View>
             <AnimatedPressable
               accessibilityLabel="Close sort"
@@ -151,14 +179,17 @@ export function ListingSortModal({
               onPress={onClose}
               style={{
                 alignItems: "center",
+                // Level with the title rather than centred on title and
+                // description together, which sat it low beside the heading.
+                alignSelf: "flex-start",
                 backgroundColor: colors.neutralSoft,
                 borderRadius: 999,
-                height: 46,
+                height: 34,
                 justifyContent: "center",
-                width: 46,
+                width: 34,
               }}
             >
-              <X color={colors.muted} size={22} strokeWidth={2.3} />
+              <X color={colors.muted} size={17} strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
 
@@ -168,9 +199,17 @@ export function ListingSortModal({
             ) : null}
             <SortGroup options={["RENT_LOW", "RENT_HIGH"]} onChoose={choose} sort={sort} title="Rent" />
             <SortGroup options={["DEPOSIT_LOW", "DEPOSIT_HIGH"]} onChoose={choose} sort={sort} title="Deposit" />
-            <Text style={[type.caption, { color: colors.kicker, paddingHorizontal: spacing.xs }]}>
-              Tap a selected option again to undo it. Listings with rent on request always stay at the end.
-            </Text>
+
+            {/* Last, full width. Dimmed while there is nothing to clear. */}
+            <DiscoveryButton
+              disabled={sort === "RELEVANCE"}
+              label="Clear all filters"
+              onPress={() => {
+                onChange("RELEVANCE");
+                onClose();
+              }}
+              style={{ marginTop: spacing.xs }}
+            />
           </View>
         </View>
       </View>
@@ -210,7 +249,9 @@ function SortGroup({
                 borderRadius: 12,
                 borderWidth: 1,
                 flexBasis: "46%",
+                flexDirection: "row",
                 flexGrow: 1,
+                gap: 6,
                 justifyContent: "center",
                 minHeight: 48,
                 paddingHorizontal: spacing.sm,
@@ -220,6 +261,7 @@ function SortGroup({
                 numberOfLines={1}
                 style={{
                   color: selected ? colors.surface : colors.ink,
+                  flexShrink: 1,
                   fontFamily: fonts.sansBold,
                   fontSize: 12.5,
                 }}

@@ -197,6 +197,7 @@ export function ReadonlyField({
   status,
   tone = "default",
   value,
+  valueLines = 1,
 }: {
   /**
    * A glyph on the label, naming the KIND of fact.
@@ -215,6 +216,8 @@ export function ReadonlyField({
   status?: string;
   tone?: "default" | "danger";
   value: string;
+  /** Lets an unusually long value wrap without changing every compact field. */
+  valueLines?: number;
 }) {
   const { colors, fonts, type } = useTheme();
   const valueColor = tone === "danger" ? colors.danger : colors.ink;
@@ -225,7 +228,7 @@ export function ReadonlyField({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 24 }}>
         {prefix}
         <Text
-          numberOfLines={1}
+          numberOfLines={valueLines}
           style={{
             color: valueColor,
             flex: 1,
@@ -236,6 +239,7 @@ export function ReadonlyField({
             // rather than as the footnote a reference number is. The face and
             // the ink colour still separate it from its muted label.
             fontSize: mono ? 13 : 15,
+            lineHeight: valueLines > 1 ? 19 : undefined,
           }}
         >
           {value}

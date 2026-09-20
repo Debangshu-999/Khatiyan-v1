@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, Text, View, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
+import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, Text, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
@@ -87,8 +87,33 @@ export function SheetShell({
     };
   }, [insets.bottom]);
   // Far enough to be off-screen from any starting point, and the distance a
-  // dismissing drag travels. The sheet itself is at most 92% of this.
+  // dismissing drag travels.
   const travel = Dimensions.get("window").height;
+
+  /**
+   * How tall the sheet may actually get, in pixels.
+   *
+   * <p>It used to be a flat 92% of the window, which is measured against the
+   * WHOLE window while the keyboard lift below is applied outside it as a
+   * margin. A tall sheet with the keyboard up was therefore allowed its full
+   * 92% and then shoved another keyboard's height upwards — off the top of the
+   * screen and through the status bar, with its title and search field behind
+   * the clock.
+   *
+   * <p>So the room the sheet is given is what is actually left: the window,
+   * less the keyboard, less the status bar, less a margin so it never sits
+   * flush against it. Capped at the old 92% as well, so a sheet that was
+   * fitting comfortably before is not made taller by this.
+   *
+   * <p>Android only. iOS keeps the percentage because its avoider pads the
+   * PARENT, so 92% there already resolves against the window minus the
+   * keyboard — a pixel figure worked out from the whole window would overflow
+   * it instead of fixing anything.
+   */
+  const maxSheetHeight: DimensionValue =
+    Platform.OS === "android"
+      ? Math.min(travel * 0.92, Math.max(240, travel - keyboardInset - insets.top - spacing.md))
+      : "92%";
   // How far down the sheet is sitting: 0 open, travel gone. Drives the slide and
   // the backdrop together, so a half-dragged sheet has a half-lit page behind
   // it and the gesture feels attached to something.
@@ -318,7 +343,7 @@ export function SheetShell({
             // Lifted clear of the keyboard rather than padded behind it, so the
             // sheet's rounded bottom edge stays visible sitting on top of it.
             marginBottom: keyboardInset,
-            maxHeight: "92%",
+            maxHeight: maxSheetHeight,
             // The safe-area inset is the nav bar's. With the keyboard up the
             // keyboard covers it, so applying both leaves a dead strip.
             paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,

@@ -108,6 +108,9 @@ public record CreatePropertyRequest(
     // the enum has no invalid members, which is why it replaced a raw integer.
     NoticePeriod noticePeriod,
 
+    // Null when the owner skipped it; shown as "Not specified".
+    Boolean visitorsAllowed,
+
     @Size(max = 160)
     String discoveryHeadline,
 

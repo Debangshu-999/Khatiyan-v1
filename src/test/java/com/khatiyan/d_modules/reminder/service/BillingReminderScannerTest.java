@@ -119,6 +119,6 @@ class BillingReminderScannerTest {
                 null,
                 Instant.now(),
                 Instant.now(),
-                List.of());
+                List.of(), null);
     }
 }

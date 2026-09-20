@@ -101,6 +101,9 @@ public record UpdatePropertyRequest(
     Long standardDepositPaise,
 
     // Null takes the server default of one month; the enum admits no bad values.
-    NoticePeriod noticePeriod
+    NoticePeriod noticePeriod,
+
+    // Null keeps whatever the property already says.
+    Boolean visitorsAllowed
 ) {
 }

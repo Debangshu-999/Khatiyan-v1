@@ -106,8 +106,23 @@ public class GlobalExceptionHandler {
             .body(ErrorResponse.of("CONSTRAINT_VIOLATION", e.getMessage()));
     }
 
+    /**
+     * A body Jackson could not read.
+     *
+     * <p><b>The cause is logged, and that is the whole point of this method.</b>
+     * The client is told nothing useful on purpose — "malformed" is all a caller
+     * needs — but silently discarding the reason turned every mapping mistake
+     * into a blind 400 that could only be found by bisecting the payload. One
+     * omitted primitive in a record has cost this project a debugging session
+     * already.
+     *
+     * <p>Only the exception's own message is logged, never the body: request
+     * bodies here carry PINs, OTPs and Aadhaar numbers.
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        log.warn("Unreadable request body: {}: {}", cause.getClass().getSimpleName(), cause.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse.of("INVALID_REQUEST_BODY", "Request body is missing or malformed"));
     }

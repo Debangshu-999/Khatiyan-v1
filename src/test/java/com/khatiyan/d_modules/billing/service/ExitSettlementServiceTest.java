@@ -84,7 +84,7 @@ class ExitSettlementServiceTest {
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), LocalDate.of(2026, 6, 4),
                 BillingCollectionTiming.CYCLE_START, 3,
                 3_000_00, 0, 0, 0L, 0, 3_000_00,
-                BillingCycleStatus.UNPAID, null, null, null, List.of());
+                BillingCycleStatus.UNPAID, null, null, null, List.of(), null);
         when(billingCycleService.createOneOffBill(eq(ACTOR), eq(TENANCY), any())).thenReturn(bill);
     }
 

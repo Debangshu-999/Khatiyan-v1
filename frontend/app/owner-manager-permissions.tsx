@@ -143,10 +143,9 @@ export default function OwnerManagerPermissionsScreen() {
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        // PINNED_FOOTER_CLEARANCE, not a hand-picked number. The footer is 132pt
-        // tall once its fade and safe-area gap are counted, and this was padding
-        // 66 — so the last module card could never be scrolled out from under
-        // it. The footer adds insets.bottom itself, which is why the scroll view
+        // PINNED_FOOTER_CLEARANCE, not a hand-picked number. This was padding 66,
+        // shorter than the footer, so the last module card could never be
+        // scrolled out from under it. The footer adds insets.bottom itself, which is why the scroll view
         // does NOT also take a "bottom" safe-area edge: that would pad for the
         // navigation bar twice.
         contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}

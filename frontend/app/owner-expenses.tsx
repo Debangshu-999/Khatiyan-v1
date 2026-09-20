@@ -161,7 +161,11 @@ export default function OwnerExpensesScreen() {
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <ToolBox icon={Plus} label="Add expense" onPress={() => setSheet("add")} />
                 <ToolBox icon={Repeat2} label="Recurring" onPress={() => setSheet("recurring")} />
-                <ToolBox icon={CalendarClock} label="Set budget" onPress={() => setSheet("set-budget")} />
+                <ToolBox
+                  icon={CalendarClock}
+                  label={budget?.defaultMonthlyBudgetPaise != null ? "Edit budget" : "Set budget"}
+                  onPress={() => setSheet("set-budget")}
+                />
               </View>
             </Section>
 
@@ -296,9 +300,17 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
           {hasBudget ? `${formatMoneyPaise(budget.spentPaise)} spent of ${formatMoneyPaise(effective)}` : "Set a monthly budget to track spending and savings."}
         </Text>
 
+        {/* Raise only. Changing the budget itself lives in Expense tools, where
+            the button reads Edit budget once one is set — two ways to edit one
+            figure, side by side, made a one-off raise and a permanent change
+            look like the same thing. With no budget yet, this is the prompt to
+            set one. */}
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <ActionButton icon={Wallet} label={hasBudget ? "Edit budget" : "Set budget"} onPress={onSetBudget} variant={hasBudget ? "secondary" : "primary"} />
-          {hasBudget ? <ActionButton icon={Plus} label="Raise budget" onPress={onRaise} variant="primary" /> : null}
+          {hasBudget ? (
+            <ActionButton icon={Plus} label="Raise budget" onPress={onRaise} variant="primary" />
+          ) : (
+            <ActionButton icon={Wallet} label="Set budget" onPress={onSetBudget} variant="primary" />
+          )}
         </View>
       </View>
     </Card>
@@ -307,7 +319,10 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
 
 function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: boolean; totalSpentPaise: number; totals: { categoryId: string | null; categoryName: string; amountPaise: number }[] }) {
   const { colors, fonts, type } = useTheme();
-  const max = totals.reduce((peak, item) => Math.max(peak, item.amountPaise), 0);
+  // Each bar is its category's share of the month's total, so the bars add up
+  // to the whole. They were scaled to the largest category instead, which put
+  // salary — usually the biggest — at a full bar, as if it were all the spend.
+  const whole = totalSpentPaise > 0 ? totalSpentPaise : totals.reduce((sum, item) => sum + Math.abs(item.amountPaise), 0);
 
   return (
     <Section title="By category">
@@ -338,7 +353,11 @@ function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: bool
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
                 </View>
-                <ProgressBar color={item.categoryId == null ? colors.accent : colors.primary} height={8} ratio={max > 0 ? Math.max(0.04, item.amountPaise / max) : 0} />
+                <ProgressBar
+                  color={item.categoryId == null ? colors.accent : colors.primary}
+                  height={8}
+                  ratio={whole > 0 && item.amountPaise > 0 ? Math.min(1, Math.max(0.02, item.amountPaise / whole)) : 0}
+                />
               </View>
             ))}
           </View>
@@ -831,7 +850,7 @@ function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defa
 
   return (
     <Sheet onClose={onClose} title="Monthly budget">
-      <BodyNote>This is the recurring monthly budget. Set it once — it carries forward every month and can be edited anytime.</BodyNote>
+      <BodyNote>This is the recurring monthly budget. It carries forward every month. A change applies from this month on, and earlier months keep the budget they had.</BodyNote>
       <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Monthly budget" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
       <ActionButton disabled={state.isLoading || form.blocked} label={state.isLoading ? "Saving" : "Save budget"} onPress={() => void submit()} />
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}

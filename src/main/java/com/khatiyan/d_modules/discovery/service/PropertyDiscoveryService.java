@@ -32,6 +32,7 @@ import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.SharingType;
 
 import lombok.extern.slf4j.Slf4j;
@@ -44,22 +45,19 @@ public class PropertyDiscoveryService {
     private final PropertyModule propertyModule;
     private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final AuthModule authModule;
-    private final PropertyImageService propertyImageService;
-    private final PropertyContactService propertyContactService;
+    private final PropertyImageService propertyImageService;    private final PropertyContactService propertyContactService;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
             PropertyModule propertyModule,
             DiscoveryAccessPolicy discoveryAccessPolicy,
             AuthModule authModule,
-            PropertyImageService propertyImageService,
-            PropertyContactService propertyContactService) {
+            PropertyImageService propertyImageService,            PropertyContactService propertyContactService) {
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
         this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.authModule = authModule;
-        this.propertyImageService = propertyImageService;
-        this.propertyContactService = propertyContactService;
+        this.propertyImageService = propertyImageService;        this.propertyContactService = propertyContactService;
     }
 
     // Public/user side property discovery
@@ -87,7 +85,8 @@ public class PropertyDiscoveryService {
         return searchVisibleProperties(
                 state, city, countryCode, locality, latitude, longitude, radiusKm, pgFor,
                 minRentPaise, maxRentPaise, preferredFor, foodIncluded, mealTypes,
-                electricityIncluded, bathroomType, sharingTypes, DiscoverySort.RELEVANCE, page, size);
+                electricityIncluded, bathroomType, sharingTypes, null,
+                DiscoverySort.RELEVANCE, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -108,6 +107,7 @@ public class PropertyDiscoveryService {
             Boolean electricityIncluded,
             BathroomType bathroomType,
             Set<SharingType> sharingTypes,
+            PropertyType propertyType,
             DiscoverySort sort,
             int page,
             int size) {
@@ -155,7 +155,8 @@ public class PropertyDiscoveryService {
                         mealTypes,
                         electricityIncluded,
                         bathroomType,
-                        sharingTypes))
+                        sharingTypes,
+                        propertyType))
                 .toList();
 
         // Region scope = the same state (preferred) or city. This is what the
@@ -191,7 +192,8 @@ public class PropertyDiscoveryService {
         // first), then fall back to location relevance and name.
         Comparator<PropertyDiscoveryCardResponse> byMatchCount = Comparator
                 .<PropertyDiscoveryCardResponse>comparingInt(response -> countAttributeMatches(
-                        response, pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes))
+                        response, pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes,
+                        propertyType))
                 .reversed();
 
         // With a search point, closer properties rank first among equal
@@ -723,7 +725,8 @@ public class PropertyDiscoveryService {
             Set<MealType> mealTypes,
             Boolean electricityIncluded,
             BathroomType bathroomType,
-            Set<SharingType> sharingTypes) {
+            Set<SharingType> sharingTypes,
+            PropertyType propertyType) {
         // Budget (and the location scope applied separately) are hard filters —
         // results must always comply.
         if (!matchesRentRange(response.startingRoomRentPaise(), minRentPaise, maxRentPaise)) {
@@ -733,12 +736,14 @@ public class PropertyDiscoveryService {
         // property qualifies if it matches at least one. Result ranking by match
         // count is applied during sorting.
         int activeAttributeFilters = countActiveAttributeFilters(
-                pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes);
+                pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes,
+                propertyType);
         if (activeAttributeFilters == 0) {
             return true;
         }
         return countAttributeMatches(
-                response, pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes) > 0;
+                response, pgFor, preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes,
+                propertyType) > 0;
     }
 
     private int countActiveAttributeFilters(
@@ -748,8 +753,10 @@ public class PropertyDiscoveryService {
             Set<MealType> mealTypes,
             Boolean electricityIncluded,
             BathroomType bathroomType,
-            Set<SharingType> sharingTypes) {
+            Set<SharingType> sharingTypes,
+            PropertyType propertyType) {
         int count = 0;
+        if (propertyType != null) count++;
         if (pgFor != null && pgFor != PgFor.ANYONE) count++;
         if (preferredFor != null && preferredFor != PreferredTenantType.ANYONE) count++;
         if (mealTypes != null && !mealTypes.isEmpty()) count++;
@@ -768,8 +775,10 @@ public class PropertyDiscoveryService {
             Set<MealType> mealTypes,
             Boolean electricityIncluded,
             BathroomType bathroomType,
-            Set<SharingType> sharingTypes) {
+            Set<SharingType> sharingTypes,
+            PropertyType propertyType) {
         int matches = 0;
+        if (propertyType != null && response.type() == propertyType) matches++;
         if (pgFor != null && pgFor != PgFor.ANYONE && matchesPgFor(response.pgFor(), pgFor)) matches++;
         if (preferredFor != null && preferredFor != PreferredTenantType.ANYONE
                 && matchesPreferredFor(response.preferredFor(), preferredFor)) matches++;

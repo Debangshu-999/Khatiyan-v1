@@ -4,6 +4,7 @@ package com.khatiyan.d_modules.dashboard.api.dto;
  * Kind of event shown in the owner dashboard recent-activity feed.
  */
 public enum RecentActivityType {
+    TENANT_ONBOARDED,
     TENANCY_STARTED,
     TENANCY_ENDED,
     TENANCY_ROOM_CHANGED,

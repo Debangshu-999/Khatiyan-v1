@@ -40,6 +40,8 @@ public enum ManagerResource {
     PROPERTY_SETTINGS,
     PROPERTY_BOARD,
     NEARBY_PLACES,
+    /** Food catalogue, profiles, weekly menus, subscriptions and forecasts. */
+    FOOD,
 
     // --- Operations ---
     NOTICES,

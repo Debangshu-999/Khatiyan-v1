@@ -38,6 +38,8 @@ public record PropertyDiscoveryDetailResponse(
         boolean foodIncluded,
         Set<MealType> includedMeals,
         boolean electricityIncluded,
+        /** Whether visitors are allowed. Null when the owner has not said. */
+        Boolean visitorsAllowed,
         BathroomType bathroomType,
         Set<SharingType> availableSharingTypes,
         Set<PropertyFacility> facilities,
@@ -135,6 +137,7 @@ public record PropertyDiscoveryDetailResponse(
                 property.foodIncluded(),
                 property.includedMeals(),
                 property.electricityIncluded(),
+                property.visitorsAllowed(),
                 property.bathroomType(),
                 property.availableSharingTypes(),
                 property.facilities(),

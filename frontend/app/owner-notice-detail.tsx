@@ -75,7 +75,12 @@ export default function OwnerNoticeDetailScreen() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [priority, setPriority] = useState<NoticePriority>("NORMAL");
-  const attachments = useNoticeAttachments(undefined, noticeId ?? null);
+  // Whether a file was added or removed in this editing session. Attachments
+  // save the moment they are picked, so they never make the form dirty — but
+  // Save still has to count them, or adding a photo and pressing Save told the
+  // person "No changes have been made" about a change that had already landed.
+  const [attachmentsChanged, setAttachmentsChanged] = useState(false);
+  const attachments = useNoticeAttachments(() => setAttachmentsChanged(true), noticeId ?? null);
 
   // Which field's inline editor is open. Only one at a time — a screen with
   // three inputs live at once stops reading as a notice.
@@ -136,6 +141,7 @@ export default function OwnerNoticeDetailScreen() {
     unsaved.guard(() => {
       setField(null);
       setEditRequested(false);
+      setAttachmentsChanged(false);
       if (notice) {
         setTitle(notice.title);
         setBody(notice.body);
@@ -153,6 +159,15 @@ export default function OwnerNoticeDetailScreen() {
     // Saving an untouched notice would fire a request and drop out of edit
     // mode, reporting success for a change nobody made.
     if (!dirty) {
+      if (attachmentsChanged) {
+        // The files are already saved and the text is unchanged, so there is
+        // nothing to send. Confirm and leave edit mode as a save would.
+        setField(null);
+        setEditRequested(false);
+        setAttachmentsChanged(false);
+        toast.show("Notice saved.", "success");
+        return;
+      }
       toast.warning("No changes have been made.");
       return;
     }
@@ -180,6 +195,7 @@ export default function OwnerNoticeDetailScreen() {
       unsaved.markSaved();
       setField(null);
       setEditRequested(false);
+      setAttachmentsChanged(false);
       toast.show("Notice saved.", "success");
     } catch (error) {
       // Surface the backend's own words. The one that matters here is the

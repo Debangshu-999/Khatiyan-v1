@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { Bed, Pencil, Plus, Trash2, type LucideProps } from "lucide-react-native";
+import { AirVent, Bed, Fan, Pencil, Plus, Trash2, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -109,12 +109,19 @@ export function RoomTypeBoard({
   onCreate,
   onEdit,
   onRemove,
+  tabBleed = spacing.lg,
 }: {
   entries: RoomTypeEntry[];
   occupancies: RoomType[];
   onCreate: (sharingType: RoomType, conditioning: RoomConditioning) => void;
   onEdit: (entry: RoomTypeEntry) => void;
   onRemove: (entry: RoomTypeEntry) => void;
+  /**
+   * How far the tab strip reaches past its container. The screen gutter when
+   * the board sits straight on the page. Zero inside a card, where reaching
+   * out pushed the chosen tab's fill past the card's edges.
+   */
+  tabBleed?: number;
 }) {
   const { colors, type } = useTheme();
 
@@ -154,7 +161,7 @@ export function RoomTypeBoard({
     <View style={{ gap: spacing.md }}>
       <UnderlineTabs
         active={tab}
-        bleed={spacing.lg}
+        bleed={tabBleed}
         onChange={setActive}
         options={tabs.map((option) => ({
           // Ticked once EITHER variant exists: a property may well let a double
@@ -269,7 +276,14 @@ function VariantSection({
   return (
     <View style={{ gap: spacing.sm }}>
       {entries.map((entry) => (
-        <TypeCard entry={entry} key={entry.id} label={label} onEdit={onEdit} onRemove={onRemove} />
+        <TypeCard
+          conditioning={conditioning}
+          entry={entry}
+          key={entry.id}
+          label={label}
+          onEdit={onEdit}
+          onRemove={onRemove}
+        />
       ))}
 
       {entries.length > 0 && !multiple ? null : (
@@ -312,11 +326,13 @@ function VariantSection({
  * and the sheet that sets it says what it is per.
  */
 function TypeCard({
+  conditioning,
   entry,
   label,
   onEdit,
   onRemove,
 }: {
+  conditioning: RoomConditioning;
   entry: RoomTypeEntry;
   label: string;
   onEdit: (entry: RoomTypeEntry) => void;
@@ -325,11 +341,17 @@ function TypeCard({
   const { colors, fonts, type } = useTheme();
 
   const amenityCount = entry.amenities.length + entry.customAmenities.length;
+  // A vent for AC and a fan for non-AC, beside the word, so the two variants
+  // tell apart at a glance down a long list.
+  const VariantIcon = conditioning === "AC" ? AirVent : Fan;
 
   return (
     <Card style={{ gap: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>{label}</Text>
+        <View style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: 6 }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>{label}</Text>
+          <VariantIcon color={colors.inkSoft} size={17} strokeWidth={2.2} />
+        </View>
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
           {formatMoneyPaise(entry.baseRentPaise)}
         </Text>

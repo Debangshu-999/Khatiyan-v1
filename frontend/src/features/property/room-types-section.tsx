@@ -45,6 +45,7 @@ export function RoomTypesSection({
   occupancies,
   onChanged,
   propertyId,
+  tabBleed,
 }: {
   /**
    * Which occupancies get a tab.
@@ -57,6 +58,8 @@ export function RoomTypesSection({
   /** Fired after any change lands, so a surrounding form can note it happened. */
   onChanged?: () => void;
   propertyId: string;
+  /** Passed to the board. Zero when this sits inside a card. */
+  tabBleed?: number;
 }) {
   const toast = useToast();
 
@@ -120,6 +123,7 @@ export function RoomTypesSection({
         onCreate={(sharingType, conditioning) => setEditing({ conditioning, entry: null, sharingType })}
         onEdit={(entry) => setEditing({ conditioning: entry.conditioning, entry, sharingType: entry.sharingType })}
         onRemove={setRemoving}
+        tabBleed={tabBleed}
       />
 
       {editing ? (

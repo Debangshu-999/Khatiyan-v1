@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Location from "expo-location";
 import type { CameraRef } from "@maplibre/maplibre-react-native";
-import { ArrowLeft, Crosshair, Home, MapPin } from "lucide-react-native";
+import { ArrowLeft, Home, LocateFixed, MapPin } from "lucide-react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -275,7 +276,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
       {/* Fixed pin: the map pans underneath; the tip marks the picked point. */}
       <View pointerEvents="none" style={{ alignItems: "center", bottom: 0, justifyContent: "center", left: 0, position: "absolute", right: 0, top: 0 }}>
         <View style={{ transform: [{ translateY: -17 }] }}>
-          <MapPin color={colors.danger} fill={colors.dangerSoft} size={34} strokeWidth={2.2} />
+          <FilledMapPin color={colors.danger} size={34} />
         </View>
       </View>
 
@@ -290,7 +291,7 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
             <ArrowLeft color={colors.ink} size={20} strokeWidth={2.2} />
           </AnimatedPressable>
           <View style={{ flex: 1 }}>
-            <SearchField animatePlaceholder={false} onChangeText={onSearchChange} placeholder="Search area, landmark or pincode" value={searchDraft} />
+            <SearchField onChangeText={onSearchChange} placeholder="Search area, landmark or pincode" value={searchDraft} />
           </View>
         </View>
 
@@ -340,9 +341,9 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
           <AnimatedPressable
             accessibilityLabel="Use my location"
             onPress={() => void useMyLocation()}
-            style={{ alignItems: "center", borderColor: colors.ink, borderRadius: 21, borderWidth: 1, height: 42, justifyContent: "center", width: 42 }}
+            style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: 21, height: 42, justifyContent: "center", width: 42 }}
           >
-            {locating ? <ActivityIndicator color={colors.ink} size="small" /> : <Crosshair color={colors.primary} size={20} strokeWidth={2.2} />}
+            {locating ? <ActivityIndicator color={colors.ink} size="small" /> : <LocateFixed color={colors.primary} size={20} strokeWidth={2.2} />}
           </AnimatedPressable>
         </View>
         <ActionButton disabled={!center || resolvingAddress} label="Confirm location" onPress={confirm} />
@@ -360,13 +361,32 @@ function DevBuildRequiredScreen({ onBack }: { onBack: () => void }) {
   return (
     <View style={{ backgroundColor: colors.background, flex: 1, gap: spacing.lg, justifyContent: "center", padding: spacing.lg, paddingTop: insets.top + spacing.lg }}>
       <EmptyState
-        icon={MapPin}
-        title="Maps need a dev build"
+        icon={MapPin}        title="Maps need a dev build"
         description={
           "The map picker uses a native module that Expo Go cannot load. Build and install the development app once with: npx expo run:android — then reopen this screen."
         }
       />
       <ActionButton label="Go back" onPress={onBack} variant="secondary" />
     </View>
+  );
+}
+
+/** Lucide's MapPin outline, the same shape as everywhere else in the app. */
+const MAP_PIN_PATH =
+  "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0";
+
+/**
+ * The picked-point pin, solid with a white centre dot.
+ *
+ * <p>Drawn by hand rather than with Lucide's `fill` prop, because that fills
+ * the centre dot as well and the pin loses the hole that makes it read as a
+ * map pin at a glance.
+ */
+function FilledMapPin({ color, size }: { color: string; size: number }) {
+  return (
+    <Svg height={size} viewBox="0 0 24 24" width={size}>
+      <Path d={MAP_PIN_PATH} fill={color} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} />
+      <Circle cx={12} cy={10} fill="#FFFFFF" r={3} />
+    </Svg>
   );
 }

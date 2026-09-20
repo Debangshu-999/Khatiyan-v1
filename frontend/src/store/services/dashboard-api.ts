@@ -101,6 +101,9 @@ export type ConcernQueueSummary = {
 };
 
 export type RecentActivityType =
+  // A tenant was added and is waiting to sign. Distinct from TENANCY_STARTED,
+  // which now means what it says: they signed and it began.
+  | "TENANT_ONBOARDED"
   | "TENANCY_STARTED"
   | "TENANCY_ENDED"
   | "TENANCY_ROOM_CHANGED"

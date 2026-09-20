@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
+import com.khatiyan.d_modules.billing.event.BillingCycleCancelledEvent;
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
 import com.khatiyan.d_modules.billing.event.BillingLateFeeAppliedEvent;
@@ -47,11 +48,12 @@ public class BillingCycleNotificationEventListener {
         data.put("rentDueDate", event.rentDueDate().toString());
         data.put("totalAmountPaise", Long.toString(event.totalAmountPaise()));
 
-        // One-off bills (null cycle number) get a generic "new bill" message.
-        String title = event.cycleNumber() != null ? "Rent bill generated" : "New bill generated";
+        // One-off bills (null cycle number) are due the day they are raised, so
+        // the amount is the useful part of the message rather than the date.
+        String title = event.cycleNumber() != null ? "Rent bill generated" : "New bill raised";
         String body = event.cycleNumber() != null
                 ? "Your billing cycle " + event.cycleNumber() + " is ready. Due date: " + event.rentDueDate() + "."
-                : "A new bill is ready. Due date: " + event.rentDueDate() + ".";
+                : "A one-off bill of " + formatAmount(event.totalAmountPaise()) + " has been raised. It is due now.";
 
         notificationModule.notifyUser(
                 event.tenantUserId(),
@@ -60,6 +62,36 @@ public class BillingCycleNotificationEventListener {
                 NotificationCategory.PAYMENT,
                 NotificationPriority.NORMAL,
                 NotificationSubtype.BILLING_CYCLE_GENERATED,
+                event.billingCycleId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    /**
+     * A one-off bill the tenant may already have seen was cancelled. Told with
+     * the reason, so the bill does not simply disappear from their list.
+     */
+    @ApplicationModuleListener
+    public void onBillingCycleCancelled(BillingCycleCancelledEvent event) {
+        if (event.tenantUserId() == null) {
+            return;
+        }
+
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("billingCycleId", event.billingCycleId().toString());
+        data.put("tenancyId", event.tenancyId().toString());
+        data.put("propertyId", event.propertyId().toString());
+        data.put("tenantUserId", event.tenantUserId().toString());
+        data.put("totalAmountPaise", Long.toString(event.totalAmountPaise()));
+
+        notificationModule.notifyUser(
+                event.tenantUserId(),
+                "Bill cancelled",
+                "A one-off bill of " + formatAmount(event.totalAmountPaise()) + " was cancelled. Reason: "
+                        + event.reason(),
+                NotificationCategory.PAYMENT,
+                NotificationPriority.NORMAL,
+                NotificationSubtype.BILLING_CYCLE_CANCELLED,
                 event.billingCycleId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);

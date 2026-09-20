@@ -78,6 +78,12 @@ public class GeoModule {
         return geocodingService.nearby(categoryCodes, latitude, longitude, radiusMeters);
     }
 
+    /** As {@link #nearby}, but empty when the vendor could not be asked at all. */
+    public Optional<List<com.khatiyan.d_modules.geo.api.dto.NearbyPlaceResponse>> nearbyAnswered(
+            String categoryCodes, double latitude, double longitude, int radiusMeters) {
+        return geocodingService.nearbyAnswered(categoryCodes, latitude, longitude, radiusMeters);
+    }
+
     public List<GeoSuggestionResponse> places(
             String category, double latitude, double longitude, int radiusMeters, int limit) {
         return geocodingService.systemPlaces(category, latitude, longitude, radiusMeters, limit);

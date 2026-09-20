@@ -14,6 +14,7 @@ import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.api.dto.CancelOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
@@ -230,6 +231,13 @@ public class BillingModule {
             UUID tenancyId,
             CreateOneOffBillRequest request) {
         return billingCycleService.createOneOffBill(actorUserId, tenancyId, request);
+    }
+
+    public BillingCycleResponse cancelOneOffBill(
+            UUID actorUserId,
+            UUID billingCycleId,
+            CancelOneOffBillRequest request) {
+        return billingCycleService.cancelOneOffBill(actorUserId, billingCycleId, request);
     }
 
     public BillingCycleResponse addDiscount(

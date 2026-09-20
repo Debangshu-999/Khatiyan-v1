@@ -1,13 +1,17 @@
 package com.khatiyan.d_modules.compliance.api.dto;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
 
+import com.khatiyan.d_modules.servicebalance.model.ServiceCode;
+
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -56,7 +60,6 @@ public record OnboardTenancyWithAgreementRequest(
      * review screen refuses to move on, and the server has to agree rather than
      * merely trust that it did.
      */
-    @NotNull(message = "Confirm you have checked the tenant's ID proof and photograph before onboarding")
     @Valid IdCheckDeclarationInput idCheck,
 
     /**
@@ -66,7 +69,18 @@ public record OnboardTenancyWithAgreementRequest(
      * old or altered build cannot record somebody as having declared something
      * we did not write.
      */
-    @NotBlank String idCheckStatementText,
+    String idCheckStatementText,
+
+    /**
+     * Checks the tenant will run on themselves, instead of the owner declaring.
+     *
+     * <p>The other route. An owner either says "I looked at their passport" or
+     * asks for a government check the TENANT performs on their own phone —
+     * never both, and never neither. Ordering these costs the owner money and
+     * is refused if their Service balance will not carry it, which is the only
+     * point at which a paid check can be refused at all.
+     */
+    @Valid List<VerificationOrderInput> verification,
 
     /** How the owner's device described itself. Optional throughout. */
     @Valid DeviceFingerprintInput device,
@@ -102,6 +116,51 @@ public record OnboardTenancyWithAgreementRequest(
     @Valid
     AgreementTermInput term
 ) {
+
+    /**
+     * Exactly one route, never both and never neither.
+     *
+     * <p>Cross-field rather than per-field, because neither half is required on
+     * its own and requiring both would make the manual route impossible. Left
+     * to the fields alone, a request carrying neither would create a tenancy
+     * with nothing established about who the tenant is — which is the one
+     * outcome onboarding exists to prevent.
+     */
+    @AssertTrue(message = "Choose how this tenant's identity is established: check their ID yourself, or order a verification")
+    public boolean isIdentityRouteChosen() {
+        boolean declared = idCheck != null;
+        boolean ordered = verification != null && !verification.isEmpty();
+        return declared ^ ordered;
+    }
+
+    /**
+     * The declaration wording is only needed by the route that uses it.
+     *
+     * <p>An owner ordering a check declares nothing — the tenant has not done
+     * it yet — so demanding the sentence there would have meant sending a
+     * statement nobody made.
+     */
+    @AssertTrue(message = "This version of the app is showing an outdated declaration")
+    public boolean isDeclarationTextPresentWhenDeclaring() {
+        return idCheck == null || (idCheckStatementText != null && !idCheckStatementText.isBlank());
+    }
+
+    /**
+     * One check, and how many tries the tenant gets at it.
+     *
+     * <p>The attempts are the owner's decision and their cost. The bounds match
+     * the picker the app shows, and are repeated here because a client is not a
+     * place to enforce a limit that spends money.
+     */
+    public record VerificationOrderInput(
+            @NotNull(message = "Choose which check to order")
+            ServiceCode serviceCode,
+
+            @NotNull(message = "Choose how many attempts to give")
+            @Min(value = 1, message = "At least one attempt")
+            @Max(value = 5, message = "At most five attempts")
+            Integer attempts) {
+    }
 
     public record AgreementTermInput(
             @Min(value = 1, message = "A fixed term must be at least 1 month")

@@ -97,9 +97,19 @@ public class ChatController {
         return chatService.listMine(user.userId());
     }
 
+    /**
+     * The Chats tab badge. With a property it counts that property's management
+     * sections, which is what a management account's Chats screen shows; without
+     * one, everything the reader is a member of, which is what a tenant's shows.
+     */
     @GetMapping("/unread-count")
-    public Map<String, Long> unreadCount(@AuthenticationPrincipal UserPrincipal user) {
-        return Map.of("count", chatService.countUnread(user.userId()));
+    public Map<String, Long> unreadCount(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) UUID propertyId) {
+        long count = propertyId == null
+                ? chatService.countUnread(user.userId())
+                : chatService.countUnreadForProperty(user.userId(), propertyId);
+        return Map.of("count", count);
     }
 
     // --- Opening ---

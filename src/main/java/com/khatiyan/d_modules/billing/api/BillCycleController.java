@@ -28,6 +28,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
+import com.khatiyan.d_modules.billing.api.dto.CancelOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
@@ -183,6 +184,18 @@ public class BillCycleController {
             @Valid @RequestBody CreateOneOffBillRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(billingModule.createOneOffBill(user.userId(), tenancyId, request));
+    }
+
+    /**
+     * Cancels a one-off bill raised by mistake. One-off only, and only while it
+     * is unpaid or overdue; the reason is kept on the bill and sent to the tenant.
+     */
+    @PostMapping("/cycles/{billingCycleId}/cancel")
+    public BillingCycleResponse cancelOneOffBill(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId,
+            @Valid @RequestBody CancelOneOffBillRequest request) {
+        return billingModule.cancelOneOffBill(user.userId(), billingCycleId, request);
     }
 
     @PostMapping("/tenancies/{tenancyId}/discounts")

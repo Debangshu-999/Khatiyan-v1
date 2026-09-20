@@ -30,6 +30,7 @@ import com.khatiyan.d_modules.compliance.model.AttestationKind;
 import com.khatiyan.d_modules.compliance.model.DeviceFingerprint;
 import com.khatiyan.d_modules.compliance.model.LegalStatement;
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.exception.BusinessException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementDeedResponse;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementPreviewQuery;
@@ -48,6 +49,7 @@ import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.model.DeductionCategory;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
+import com.khatiyan.d_modules.verification.VerificationModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
@@ -72,6 +74,15 @@ public class TenancyAgreementService {
     private final ComplianceAccessPolicy complianceAccessPolicy;
     private final AttestationService attestationService;
     private final AuthModule authModule;
+    /**
+     * Identity checks an owner may order instead of declaring.
+     *
+     * <p>Held here rather than in the tenancy module because onboarding is
+     * orchestrated from this side already — the same reason the ID declaration
+     * is recorded here — and because a dependency the other way would close a
+     * cycle.
+     */
+    private final VerificationModule verificationModule;
     /**
      * Dedicated mapper for {@link #contentHash}, pinned to NON_NULL inclusion.
      *
@@ -103,6 +114,7 @@ public class TenancyAgreementService {
             ComplianceAccessPolicy complianceAccessPolicy,
             AttestationService attestationService,
             AuthModule authModule,
+            VerificationModule verificationModule,
             ObjectMapper objectMapper) {
         this.agreementRepository = agreementRepository;
         this.agreementService = agreementService;
@@ -113,6 +125,7 @@ public class TenancyAgreementService {
         this.complianceAccessPolicy = complianceAccessPolicy;
         this.attestationService = attestationService;
         this.authModule = authModule;
+        this.verificationModule = verificationModule;
         this.hashMapper = objectMapper.copy().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
@@ -471,7 +484,10 @@ public class TenancyAgreementService {
             UUID sessionJti) {
 
         LegalStatement idStatement = LegalStatement.TENANT_ID_DECLARATION;
-        if (!idStatement.text().equals(request.idCheckStatementText())) {
+        // Only the declaring route has a statement to check. An owner ordering
+        // a verification declares nothing — the tenant has not done it yet —
+        // so demanding the sentence here would mean recording one nobody made.
+        if (request.idCheck() != null && !idStatement.text().equals(request.idCheckStatementText())) {
             throw new ValidationException(
                     "This version of the app is showing an outdated declaration. Update the app and try again.");
         }
@@ -497,7 +513,8 @@ public class TenancyAgreementService {
         // needed a dependency back on compliance and closed a cycle. Onboarding
         // is already orchestrated from this side, so the declaration and the
         // tenancy it is about are written in one transaction either way.
-        attestationService.record(Attestation.builder()
+        if (request.idCheck() != null) {
+            attestationService.record(Attestation.builder()
                 .kind(AttestationKind.TENANT_ID_DECLARATION)
                 .subjectId(tenancy.id())
                 .actorUserId(actorUserId)
@@ -514,6 +531,23 @@ public class TenancyAgreementService {
                         "idLastFour", request.idCheck().lastFour(),
                         "tenantPhone", request.tenantPhone()))
                 .build());
+        }
+
+        // Ordered inside this transaction, so an owner whose balance will not
+        // carry the checks does not end up with a tenancy that quietly has
+        // none. The refusal takes the whole onboarding with it.
+        if (request.verification() != null && !request.verification().isEmpty()) {
+            verificationModule.order(
+                    tenancy.id(),
+                    property.ownerId(),
+                    request.propertyId(),
+                    tenancy.userId(),
+                    request.verification().stream()
+                            .collect(java.util.stream.Collectors.toMap(
+                                    OnboardTenancyWithAgreementRequest.VerificationOrderInput::serviceCode,
+                                    OnboardTenancyWithAgreementRequest.VerificationOrderInput::attempts)),
+                    actorUserId);
+        }
 
         // Choosing clauses is a TENANCY_RULES power, but creating the tenancy is
         // TENANCY_CREATE — a manager can hold one without the other. Falling back
@@ -672,6 +706,15 @@ public class TenancyAgreementService {
         TenancyResponse tenancy = getMyTenancy(tenantUserId);
         TenancyAgreement agreement = getAgreementByTenancyId(tenancy.id());
         ensurePending(agreement);
+
+        // The whole reason an owner ordered checks. A tenant who could sign
+        // without completing them would leave the owner paying for a
+        // verification that gates nothing.
+        if (!verificationModule.isSatisfied(tenancy.id())) {
+            throw new BusinessException(
+                    "VERIFICATION_PENDING",
+                    "Complete your identity verification before signing the agreement.");
+        }
 
         String sentTo = authModule.startAgreementSigning(tenantUserId, requestIpAddress);
         LegalStatement statement = LegalStatement.TENANCY_AGREEMENT_ACCEPTANCE;

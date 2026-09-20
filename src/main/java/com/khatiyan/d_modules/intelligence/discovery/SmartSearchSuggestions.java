@@ -156,6 +156,7 @@ public class SmartSearchSuggestions {
                         null,
                         null,
                         List.of(),
+                        null,
                         DiscoverySort.DISTANCE,
                         0,
                         CANDIDATE_PAGE_SIZE)

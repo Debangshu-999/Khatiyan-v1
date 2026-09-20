@@ -23,6 +23,7 @@ import com.khatiyan.d_modules.tenancy.event.TenancyCancellationRoute;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyActivatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
 
 /**
@@ -53,14 +54,24 @@ public class TenancyNotificationEventListener {
         // A daily guest has no account, so there is nobody to tell. Skipping is
         // the correct outcome and not a gap: the stay is management-side by
         // design, and the owner is still told below.
+        // A tenancy waiting on a signature has NOT started, and saying so to
+        // the person who has not signed yet is worse than saying nothing: it
+        // tells them the thing they still have to do is already done.
+        boolean waiting = event.pendingAcceptance();
+        NotificationSubtype subtype =
+                waiting ? NotificationSubtype.TENANT_ONBOARDED : NotificationSubtype.TENANCY_STARTED;
+
         if (event.userId() != null) {
             notificationModule.notifyUser(
                     event.userId(),
-                    "Tenancy started",
-                    "Your tenancy has started at " + property.name() + ".",
+                    waiting ? "You have been onboarded" : "Tenancy started",
+                    waiting
+                            ? "You have been added at " + property.name()
+                                    + ". Read and sign your agreement to begin your tenancy."
+                            : "Your tenancy has started at " + property.name() + ".",
                     NotificationCategory.TENANCY,
                     NotificationPriority.NORMAL,
-                    NotificationSubtype.TENANCY_STARTED,
+                    subtype,
                     event.tenancyId(),
                     data,
                     NotificationDeliveryMode.IN_APP_AND_PUSH,
@@ -69,8 +80,52 @@ public class TenancyNotificationEventListener {
 
         notificationModule.notifyUsers(
                 adminRecipients(property),
+                waiting ? "Tenant onboarded" : "Tenancy started",
+                waiting
+                        ? "A tenant has been onboarded at " + property.name()
+                                + ", waiting for them to sign."
+                        : "A tenancy has started at " + property.name() + ".",
+                NotificationCategory.TENANCY,
+                NotificationPriority.NORMAL,
+                subtype,
+                event.tenancyId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
+    }
+
+    /**
+     * They signed, so the tenancy has actually started.
+     *
+     * <p>The second of the two moments a monthly tenancy has. The first told
+     * everybody somebody had been onboarded; this one is the tenancy itself
+     * beginning, with billing alongside it.
+     */
+    @ApplicationModuleListener
+    public void onTenancyActivated(TenancyActivatedEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        RoomResponse room = propertyModule.getActiveRoom(event.propertyId(), event.roomId());
+        Map<String, String> data = baseTenancyData(event.tenancyId(), event.userId(), property);
+        data.put("roomId", event.roomId().toString());
+        data.put("roomNumber", room.roomNumber());
+        data.put("startDate", event.startDate().toString());
+
+        notificationModule.notifyUser(
+                event.userId(),
                 "Tenancy started",
-                "A tenancy has started at " + property.name() + ".",
+                "Your tenancy has started at " + property.name() + ".",
+                NotificationCategory.TENANCY,
+                NotificationPriority.NORMAL,
+                NotificationSubtype.TENANCY_STARTED,
+                event.tenancyId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.TENANT);
+
+        notificationModule.notifyUsers(
+                adminRecipients(property),
+                "Tenancy started",
+                "A tenant has signed their agreement at " + property.name() + ".",
                 NotificationCategory.TENANCY,
                 NotificationPriority.NORMAL,
                 NotificationSubtype.TENANCY_STARTED,

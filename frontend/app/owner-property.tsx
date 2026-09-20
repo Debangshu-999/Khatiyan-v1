@@ -6,6 +6,7 @@ import { BedDouble, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPi
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
+import { foodIcon } from "@/features/food/food-ui";
 import { ActionCard } from "@/components/action-card";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
@@ -68,6 +69,7 @@ type PropertyRoute =
   | "/owner-rooms"
   | "/owner-staff"
   | "/owner-board"
+  | "/owner-food"
   | "/owner-nearby-places";
 
 export default function OwnerPropertyScreen() {
@@ -210,6 +212,15 @@ export default function OwnerPropertyScreen() {
               title="Property board"
               description="Always-on info for tenants - rules, timings and contacts, organised by category."
               onPress={() => open(router, "/owner-board")}
+            />
+            {/* Food hangs off the property, not off tenancy: what the kitchen
+                cooks is a property-level operation, and the meals it can plan
+                for are the ones this property advertises. */}
+            <ActionCard
+              icon={foodIcon("silverware-fork-knife")}
+              title="Food preference"
+              description="Food items, meal profiles, weekly menus and how much to cook each day."
+              onPress={() => open(router, "/owner-food")}
             />
             <ActionCard
               icon={MapPin}

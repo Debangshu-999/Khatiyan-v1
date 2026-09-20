@@ -19,7 +19,7 @@ export function SearchField({
   trailing,
   value,
 }: {
-  // Marquee a long placeholder that overflows the box; off for the map picker.
+  // Marquee a long placeholder that overflows the box instead of ellipsising it.
   animatePlaceholder?: boolean;
   /**
    * "characters" for screens searched by reference code — the request queues

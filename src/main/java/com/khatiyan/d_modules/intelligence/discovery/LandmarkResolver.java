@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.khatiyan.d_modules.geo.GeoModule;
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
+import com.khatiyan.d_modules.geo.LandmarkKind;
 
 /**
  * Finds the landmarks a search is measured against, and measures.
@@ -339,7 +340,11 @@ public class LandmarkResolver {
                 .sorted(java.util.Comparator.comparingInt(String::length).reversed())
                 .toList();
         for (String keyword : keywords) {
-            remainder = remainder.replace(" " + keyword + " ", " ");
+            // Plural too. Removing only " hospital " left "hospitals" behind in
+            // "near hospitals", which then read as the NAME of a place — and the
+            // geocoder matched one particular hospital, measuring every listing
+            // from it instead of from the nearest of all of them.
+            remainder = remainder.replaceAll(" " + java.util.regex.Pattern.quote(keyword) + "(?:e?s)? ", " ");
         }
         // Whatever is left must be words that name nothing — including a
         // plural "s" or "stations" once the keyword itself is gone.

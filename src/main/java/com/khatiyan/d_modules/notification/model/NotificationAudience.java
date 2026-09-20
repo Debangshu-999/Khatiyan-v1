@@ -50,6 +50,7 @@ public enum NotificationAudience {
             case CONCERN_UNDER_REVIEW, CONCERN_IN_PROGRESS, CONCERN_RELEASED,
                     CONCERN_RESOLVED, TENANCY_EXIT_APPROVED, TENANCY_EXIT_REJECTED,
                     TENANCY_EXIT_EXECUTED, NOTICE_PUBLISHED, BILLING_CYCLE_GENERATED,
+                    BILLING_CYCLE_CANCELLED,
                     BILLING_LATE_FEE_APPLIED, BILLING_LINE_ITEM_CHANGED,
                     PAYMENT_SUCCEEDED, PAYMENT_FAILED,
                     // The owner could not find their payment — the tenant's
@@ -78,7 +79,7 @@ public enum NotificationAudience {
                     // per recipient group.
                     CHAT_MESSAGE_RECEIVED,
                     USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
-                    TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
+                    TENANT_ONBOARDED, TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
                     // Dual-audience by definition: whichever side did NOT
                     // cancel is the side that needs telling, and all three
                     // routes have a different one. The listener names the

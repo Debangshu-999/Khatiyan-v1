@@ -17,6 +17,7 @@ import {
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { PropertyIcon } from "@/components/property-icon";
 import { ChoiceChip, ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import {
   BATHROOM_TYPES,
@@ -28,6 +29,7 @@ import {
   type MealType,
   type PgFor,
   type PreferredTenantType,
+  type PropertyType,
   type RoomType,
 } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
@@ -52,7 +54,14 @@ export type PropertyFilterState = {
   electricityIncluded: boolean | null;
   bathroomType: BathroomType | null;
   sharingTypes: RoomType[];
+  propertyType: PropertyType | null;
 };
+
+/**
+ * The kinds a searcher can ask for. Apartments and societies exist in the model
+ * for later but are not listed in v1, so offering them would only find nothing.
+ */
+const DISCOVERABLE_PROPERTY_TYPES: PropertyType[] = ["PG", "HOSTEL"];
 
 export const emptyPropertyFilters: PropertyFilterState = {
   bathroomType: null,
@@ -62,6 +71,7 @@ export const emptyPropertyFilters: PropertyFilterState = {
   minRentPaise: null,
   pgFor: null,
   preferredFor: null,
+  propertyType: null,
   sharingTypes: [],
 };
 
@@ -83,6 +93,7 @@ export function countActivePropertyFilters(filters: PropertyFilterState) {
   if (filters.electricityIncluded !== null) count += 1;
   if (filters.bathroomType !== null) count += 1;
   if (filters.sharingTypes.length > 0) count += 1;
+  if (filters.propertyType !== null) count += 1;
   return count;
 }
 
@@ -172,18 +183,20 @@ export function PropertyFilterModal({
             <AnimatedPressable
               accessibilityLabel="Close filters"
               accessibilityRole="button"
-              hitSlop={8}
+              // A smaller disc than before, the same 34pt as the sort sheet's
+              // close. The wider hitSlop keeps the tap target as large as it was.
+              hitSlop={14}
               onPress={onClose}
               style={{
                 alignItems: "center",
                 backgroundColor: colors.neutralSoft,
                 borderRadius: 999,
-                height: 46,
+                height: 34,
                 justifyContent: "center",
-                width: 46,
+                width: 34,
               }}
             >
-              <X color={colors.muted} size={22} strokeWidth={2.3} />
+              <X color={colors.muted} size={18} strokeWidth={2.3} />
             </AnimatedPressable>
           </View>
 
@@ -197,6 +210,19 @@ export function PropertyFilterModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
+            <ChoiceSection
+              description="What kind of place are you looking for?"
+              icon={PropertyIcon}
+              title="Property type"
+            >
+              <ChoiceGrid
+                getLabel={(option) => (option === "ANY" ? "Any" : humanizeToken(option))}
+                options={["ANY", ...DISCOVERABLE_PROPERTY_TYPES]}
+                selected={filters.propertyType ?? "ANY"}
+                onSelect={(value) => update({ propertyType: value === "ANY" ? null : (value as PropertyType) })}
+              />
+            </ChoiceSection>
+
             {/* "PG for" understated the results. Discovery draws from every
                 visible profile with no property-type restriction, so hostels
                 come back alongside PGs — the heading has to cover both. */}
@@ -323,7 +349,15 @@ export function PropertyFilterModal({
               right: 0,
             }}
           >
-            <FilterFooterButton label="Reset" muted onPress={onReset} style={{ flex: 1 }} />
+            {/* Blocked while every filter is already at its default: there is
+                nothing to reset, and a live button that does nothing reads as
+                broken. */}
+            <FilterFooterButton
+              disabled={countActivePropertyFilters(filters) === 0}
+              label="Reset"
+              onPress={onReset}
+              style={{ flex: 1 }}
+            />
             <FilterFooterButton
               icon={Search}
               label="Search"
@@ -348,29 +382,34 @@ function BooleanChoice({ onChange, value }: { onChange: (value: boolean | null) 
 }
 
 function FilterFooterButton({
+  disabled = false,
   icon: Icon,
   label,
-  muted = false,
   onPress,
   style,
 }: {
+  disabled?: boolean;
   icon?: LucideIcon;
   label: string;
-  muted?: boolean;
   onPress: () => void;
   style?: ViewStyle;
 }) {
   const { colors, fonts } = useTheme();
+  const foreground = disabled ? colors.muted : colors.onPrimary;
 
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      onPress={onPress}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={disabled ? undefined : onPress}
       style={[
         {
           alignItems: "center",
-          backgroundColor: muted ? colors.surface : colors.primary,
-          borderColor: colors.primary,
+          // Both footer buttons are the same blue fill. A disabled one goes
+          // grey, so "nothing to do" is visible rather than a dead blue button.
+          backgroundColor: disabled ? colors.neutralSoft : colors.primary,
+          borderColor: disabled ? colors.neutralSoft : colors.primary,
           borderRadius: 14,
           borderWidth: 1.5,
           flexDirection: "row",
@@ -382,10 +421,10 @@ function FilterFooterButton({
         style,
       ]}
     >
-      {Icon ? <Icon color={muted ? colors.primary : colors.onPrimary} size={21} strokeWidth={2.3} /> : null}
+      {Icon ? <Icon color={foreground} size={21} strokeWidth={2.3} /> : null}
       <Text
         style={{
-          color: muted ? colors.primary : colors.onPrimary,
+          color: foreground,
           fontFamily: fonts.displaySoft,
           fontSize: 15,
         }}

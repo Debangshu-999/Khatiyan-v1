@@ -122,9 +122,10 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
      * @param radiusMeters  at most 10 000; the vendor does not look further
      */
     @Override
-    public List<NearbyPlaceResponse> nearby(String categoryCodes, double latitude, double longitude, int radiusMeters) {
+    public Optional<List<NearbyPlaceResponse>> nearby(
+            String categoryCodes, double latitude, double longitude, int radiusMeters) {
         if (!isConfigured() || categoryCodes == null || categoryCodes.isBlank()) {
-            return List.of();
+            return Optional.empty();
         }
         try {
             String url = UriComponentsBuilder.fromUriString(nearbyUrl)
@@ -139,19 +140,26 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
             JsonNode body = restClient.get().uri(url).retrieve().body(JsonNode.class);
             List<NearbyPlaceResponse> places = new ArrayList<>();
             if (body == null) {
-                return places;
+                return Optional.empty();
             }
             for (JsonNode node : body.path("suggestedLocations")) {
                 String name = text(node, "placeName");
                 if (name == null || !node.path("distance").isNumber()) {
                     continue;
                 }
-                places.add(new NearbyPlaceResponse(name, text(node, "placeAddress"), node.path("distance").asInt()));
+                places.add(new NearbyPlaceResponse(
+                        name,
+                        text(node, "placeAddress"),
+                        node.path("distance").asInt(),
+                        text(node, "eLoc")));
             }
-            return places;
+            return Optional.of(places);
         } catch (RuntimeException exception) {
+            // Refusals look like this too. A cloud key is whitelisted by IP, so
+            // a moved office or a changed home address answers 401 on every
+            // call — which must not be recorded as "there is no hospital here".
             log.warn("Mappls nearby failed categories={}", categoryCodes, exception);
-            return List.of();
+            return Optional.empty();
         }
     }
 

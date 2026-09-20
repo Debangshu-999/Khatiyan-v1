@@ -15,6 +15,7 @@ import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.discovery.api.dto.LocalPlaceCategoryResponse;
+import com.khatiyan.d_modules.discovery.api.dto.LocalPlacesMapResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationAreaResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationCityResponse;
 import com.khatiyan.d_modules.discovery.api.dto.LocationSuggestionResponse;
@@ -28,6 +29,7 @@ import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
 import com.khatiyan.d_modules.property.model.PreferredTenantType;
+import com.khatiyan.d_modules.property.model.PropertyType;
 import com.khatiyan.d_modules.property.model.SharingType;
 
 @RestController
@@ -61,6 +63,7 @@ public class DiscoveryController {
             @RequestParam(required = false) Boolean electricityIncluded,
             @RequestParam(required = false) BathroomType bathroomType,
             @RequestParam(required = false) List<SharingType> sharingTypes,
+            @RequestParam(required = false) PropertyType propertyType,
             @RequestParam(defaultValue = "RELEVANCE") DiscoverySort sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -81,6 +84,7 @@ public class DiscoveryController {
                 electricityIncluded,
                 bathroomType,
                 sharingTypes,
+                propertyType,
                 sort,
                 page,
                 size);
@@ -124,6 +128,19 @@ public class DiscoveryController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude) {
         return discoveryModule.searchMyLocalPlaces(user.userId(), q, latitude, longitude);
+    }
+
+    /**
+     * The tenant map: their property plus the places management listed.
+     *
+     * <p>One call because the screen is one view — a map that drew its pins
+     * from two requests would show the property before the places around it.
+     */
+    @GetMapping("/me/local-places/map")
+    public LocalPlacesMapResponse myLocalPlacesMap(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) String q) {
+        return discoveryModule.myLocalPlacesMap(user.userId(), q);
     }
 
     @GetMapping("/me/local-places/taxonomy")

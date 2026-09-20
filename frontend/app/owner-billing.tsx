@@ -6,7 +6,7 @@ import { MoneyIcon } from "@/components/artwork-icon";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
-import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, SlidersHorizontal, TimerReset, Undo2, Users, Wallet, WalletCards, X } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, SlidersHorizontal, TimerReset, Undo2, Users, Wallet, WalletCards, X, XCircle } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -45,6 +45,7 @@ import {
   billTitle,
   useAddTenancyDiscountMutation,
   useAddTenancyExtraChargesMutation,
+  useCancelOneOffBillMutation,
   useGetPropertyMonthSummaryQuery,
   useLazyExportPropertyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
@@ -70,7 +71,7 @@ import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-
 
 const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
 
-type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge";
+type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge" | "cancel";
 type CycleView = "cycles" | "other";
 type PaymentHistoryStatus = "ON_TIME" | "OVERDUE" | "UNPAID";
 type ReportActionMode = "actions" | "month-picker";
@@ -89,7 +90,7 @@ const BILLING_STATUS_FILTER_OPTIONS: { label: string; value: BillingStatusFilter
   { label: "Upcoming", value: "UPCOMING" },
   { label: "Unpaid", value: "UNPAID" },
   { label: "Overdue", value: "OVERDUE" },
-  { label: "Confirming", value: "CONFIRMATION_PENDING" },
+  { label: "Awaiting", value: "CONFIRMATION_PENDING" },
   { label: "Paid", value: "PAID" },
   { label: "Late Pay", value: "LATE_PAY" },
 ];
@@ -1489,6 +1490,13 @@ function BillingCycleCard({
         </View>
       </View>
 
+      {/* Why it was cancelled, kept on the bill so it does not just turn grey. */}
+      {cycle.status === "CANCELLED" && cycle.cancellationReason ? (
+        <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+          Cancelled: {cycle.cancellationReason}
+        </Text>
+      ) : null}
+
       {/* Recording the payment is the thing an owner does on a bill constantly;
           receipts, discounts and extra charges are occasional. So it gets the
           wide button and everything else lives behind the overflow dots. */}
@@ -1675,10 +1683,11 @@ function BillingActionModal({
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeDescription, setChargeDescription] = useState("");
   const [chargeAdjustFromDeposit, setChargeAdjustFromDeposit] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   // Per field, under the field. The old single line at the foot of the sheet
   // said "Enter a charge label" below a form of four inputs and left the reader
   // to work out which one, and it scrolled out of sight on a short screen.
-  const form = useFormErrors<"amount" | "label" | "percent" | "method" | "proof">();
+  const form = useFormErrors<"amount" | "label" | "percent" | "method" | "proof" | "reason">();
   const [confirm, setConfirm] = useState<{ message: string; title: string } | null>(null);
   const insets = useSafeAreaInsets();
 
@@ -1722,9 +1731,15 @@ function BillingActionModal({
   const [recordManualPayment, manualPaymentState] = useRecordManualPaymentMutation();
   const [addDiscount, discountState] = useAddTenancyDiscountMutation();
   const [addExtraCharges, extraChargeState] = useAddTenancyExtraChargesMutation();
-  const busy = manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading;
+  const [cancelOneOffBill, cancelState] = useCancelOneOffBillMutation();
+  const busy =
+    manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading || cancelState.isLoading;
   const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const editable = isCycleEditable(cycle);
+  // One-off bills only, and only while still owed. A bill the tenant has
+  // reported paying is decided first, and a rent cycle is corrected with a
+  // discount, never cancelled.
+  const cancellable = canManage && cycle.category === "ONE_OFF" && payable;
 
   const chosenMethod = manualPaymentMethods.find((item) => item.value === method) ?? null;
 
@@ -1738,6 +1753,9 @@ function BillingActionModal({
     if (mode === "discount") {
       return "Add discount";
     }
+    if (mode === "cancel") {
+      return "Cancel bill";
+    }
     return "Add extra charge";
   }, [mode]);
 
@@ -1750,7 +1768,11 @@ function BillingActionModal({
    * label, then the amount, then the label again is three round trips for one
    * form.
    */
-  function problems(): Partial<Record<"amount" | "label" | "percent" | "method" | "proof", string>> {
+  function problems(): Partial<Record<"amount" | "label" | "percent" | "method" | "proof" | "reason", string>> {
+    if (mode === "cancel") {
+      return cancelReason.trim() ? {} : { reason: "Add a reason. The tenant is sent it." };
+    }
+
     if (mode === "discount") {
       const percent = Number(discountPercent);
       if (!discountPercent.trim()) {
@@ -1816,6 +1838,14 @@ function BillingActionModal({
       return;
     }
 
+    if (mode === "cancel") {
+      setConfirm({
+        message: `${cycle.referenceCode} for ${formatMoney(cycle.totalAmountPaise)} will no longer be owed. The tenant is told, with your reason. This can't be undone.`,
+        title: "Cancel this bill?",
+      });
+      return;
+    }
+
     if (mode === "extra-charge") {
       const amountPaise = Math.round(Number(chargeAmount) * 100);
       setConfirm({
@@ -1836,7 +1866,9 @@ function BillingActionModal({
           ? `${cycle.referenceCode} marked paid.`
           : mode === "discount"
             ? `${discountPercent}% discount applied to ${cycle.referenceCode}.`
-            : `Charge added to ${cycle.referenceCode}.`;
+            : mode === "cancel"
+              ? `${cycle.referenceCode} cancelled.`
+              : `Charge added to ${cycle.referenceCode}.`;
       if (mode === "manual-payment") {
         await recordManualPayment({
           billingCycleId: cycle.id,
@@ -1857,6 +1889,8 @@ function BillingActionModal({
           },
           tenancyId: cycle.tenancyId,
         }).unwrap();
+      } else if (mode === "cancel") {
+        await cancelOneOffBill({ billingCycleId: cycle.id, reason: cancelReason.trim() }).unwrap();
       } else if (mode === "extra-charge") {
         const amountPaise = Math.round(Number(chargeAmount) * 100);
         await addExtraCharges({
@@ -1979,6 +2013,16 @@ function BillingActionModal({
                   }}
                   variant="secondary"
                 />
+              ) : null}
+              {/* Last, and red: the one action here that removes a charge
+                  rather than changing it. */}
+              {cancellable ? (
+                <ActionButton icon={XCircle} label="Cancel bill" onPress={() => onSelectMode("cancel")} variant="danger" />
+              ) : null}
+              {canManage && cycle.category === "ONE_OFF" && cycle.status === "CONFIRMATION_PENDING" ? (
+                <Text style={[type.caption, { color: colors.muted }]}>
+                  The tenant has reported paying this bill. Confirm or reject their payment before cancelling it.
+                </Text>
               ) : null}
               {!payable || !editable ? (
                 <Text style={[type.caption, { color: colors.muted }]}>
@@ -2123,6 +2167,27 @@ function BillingActionModal({
             </>
           ) : null}
 
+          {mode === "cancel" ? (
+            <>
+              <Text style={[type.caption, { color: colors.muted }]}>
+                {cycle.referenceCode} stays on record as Cancelled and stops counting towards what the tenant owes.
+                The tenant is sent a notification with your reason.
+              </Text>
+              <FormInput
+                error={form.errors.reason}
+                label="Reason"
+                maxLength={200}
+                onChangeText={(next) => {
+                  setCancelReason(next);
+                  form.clearField("reason");
+                }}
+                placeholder="Wrong amount, raised twice"
+                required
+                value={cancelReason}
+              />
+            </>
+          ) : null}
+
           {mode === "extra-charge" ? (
             <>
               <FormInput
@@ -2167,9 +2232,10 @@ function BillingActionModal({
           {mode !== "menu" ? (
             <ActionButton
               disabled={busy || form.blocked}
-              icon={IndianRupee}
-              label={busy ? "Saving" : "Save"}
+              icon={mode === "cancel" ? XCircle : IndianRupee}
+              label={busy ? "Saving" : mode === "cancel" ? "Cancel bill" : "Save"}
               onPress={handleSave}
+              variant={mode === "cancel" ? "danger" : "primary"}
             />
           ) : null}
         </View>
@@ -2590,11 +2656,12 @@ function ActionButton({
   icon: typeof Search;
   label: string;
   onPress: () => void;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "danger";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
-  const foreground = disabled ? colors.muted : primary ? colors.onPrimary : colors.primary;
+  const danger = variant === "danger";
+  const foreground = disabled ? colors.muted : primary ? colors.onPrimary : danger ? colors.danger : colors.primary;
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -2602,7 +2669,13 @@ function ActionButton({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: disabled ? colors.neutralSoft : primary ? colors.primary : colors.primarySoft,
+        backgroundColor: disabled
+          ? colors.neutralSoft
+          : primary
+            ? colors.primary
+            : danger
+              ? colors.dangerSoft
+              : colors.primarySoft,
         borderRadius: 14,
         flex: fill ? 1 : undefined,
         flexDirection: "row",
@@ -2624,8 +2697,73 @@ function ActionButton({
 // How the cycle lifecycle works, for an owner who has just watched a bill
 // appear on its own and wants to know what they can still change.
 /** Billing's own copy. The sheet around it is shared with payment claims. */
+/**
+ * What each status chip on a bill means, with the chip itself.
+ *
+ * <p>The chips are BillStatusPill, the component the bill cards render, fed a
+ * minimal bill in each state. A hand-drawn copy would drift the day a chip's
+ * colour or icon changed on the card.
+ */
+const STATUS_LEGEND: { cycle: Pick<BillingCycle, "paidAt" | "rentDueDate" | "status">; meaning: string }[] = [
+  {
+    cycle: { paidAt: null, rentDueDate: "2026-01-05", status: "UPCOMING" },
+    meaning: "Created early and not payable yet. You can still add a discount or a charge.",
+  },
+  {
+    cycle: { paidAt: null, rentDueDate: "2026-01-05", status: "UNPAID" },
+    meaning: "Live and waiting for the tenant to pay.",
+  },
+  {
+    cycle: { paidAt: null, rentDueDate: "2026-01-05", status: "OVERDUE" },
+    meaning: "Past its due date and still unpaid. A late fee applies if the property has one.",
+  },
+  {
+    cycle: { paidAt: null, rentDueDate: "2026-01-05", status: "CONFIRMATION_PENDING" },
+    meaning: "The tenant says they paid. Confirm or reject their payment.",
+  },
+  {
+    cycle: { paidAt: "2026-01-04T10:00:00Z", rentDueDate: "2026-01-05", status: "PAID" },
+    meaning: "Paid on or before the due date.",
+  },
+  {
+    cycle: { paidAt: "2026-01-09T10:00:00Z", rentDueDate: "2026-01-05", status: "PAID" },
+    meaning: "Paid, but after the due date.",
+  },
+  {
+    cycle: { paidAt: null, rentDueDate: "2026-01-05", status: "CANCELLED" },
+    meaning: "A one-off bill that was cancelled. It no longer counts as owed.",
+  },
+];
+
+function BillStatusLegend() {
+  const { colors, type } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {STATUS_LEGEND.map((entry) => (
+        <View
+          key={`${entry.cycle.status}-${entry.cycle.paidAt ?? "none"}`}
+          style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+        >
+          {/* A fixed column so every meaning starts at the same edge. */}
+          <View style={{ width: 96 }}>
+            <BillStatusPill cycle={entry.cycle as BillingCycle} />
+          </View>
+          {/* Same colour and line height as every point's own description. */}
+          <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]}>{entry.meaning}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function BillingRulesModal({ onClose }: { onClose: () => void }) {
   const rules: HowItWorksStep[] = [
+    {
+      title: "What each status on a bill means",
+      body: "Every bill carries one of these chips, in the same colour and icon as on the bill.",
+      extra: <BillStatusLegend />,
+    },
     {
       title: "The first bill of a tenancy stays open",
       body: "It is created and opened the moment you onboard the tenant, so it never gets an early window like the others. Discounts, extra charges and reverting them all stay available on it until it is paid.",
@@ -3151,7 +3289,7 @@ function billingCycleStatusDisplay(cycle: BillingCycle): { label: string; tone: 
   // reads as a system state; the owner needs to know a person is waiting on
   // them, and the tenant needs to know the bill is not theirs to act on.
   if (cycle.status === "CONFIRMATION_PENDING") {
-    return { label: "Confirming", tone: "warning" };
+    return { label: "Awaiting", tone: "warning" };
   }
 
   return { label: humanizeToken(cycle.status), tone: "primary" };

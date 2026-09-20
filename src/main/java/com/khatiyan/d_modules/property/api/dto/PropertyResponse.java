@@ -57,6 +57,8 @@ public record PropertyResponse(
      * PREMATURE_EXIT clause for indefinite terms.
      */
     String prematureExitPolicy,
+    /** Whether visitors are allowed. Null when the owner has not said. */
+    Boolean visitorsAllowed,
     boolean discoveryProfileCreated,
     boolean active
 ) {
@@ -93,6 +95,7 @@ public record PropertyResponse(
             property.getNoticePeriod(),
             property.getNoticePeriod().days(),
             property.getPrematureExitPolicy(),
+            property.getVisitorsAllowed(),
             property.isDiscoveryProfileCreated(),
             property.isCurrentlyActive()
         );

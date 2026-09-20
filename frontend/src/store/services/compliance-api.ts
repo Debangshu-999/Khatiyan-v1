@@ -203,13 +203,33 @@ export type OnboardWithAgreementPayload = {
   rentAmountPaise?: number | null;
   depositAmountPaise?: number | null;
   startDate: string;
-  idCheck: {
+  /**
+   * The owner's own declaration that they checked an ID.
+   *
+   * <p>One of two routes, and the server refuses a request carrying both or
+   * neither. Omitted when the owner ordered checks instead — they are
+   * declaring nothing, because the tenant has not done them yet.
+   */
+  idCheck?: {
     confirmed: boolean;
     documentType: string | null;
     lastFour: string;
-  };
-  /** The declaration wording as displayed; the server refuses a mismatch. */
-  idCheckStatementText: string;
+  } | null;
+  /**
+   * The declaration wording as displayed; the server refuses a mismatch.
+   *
+   * <p>Only sent with a declaration. Sending it on the other route would mean
+   * recording a statement nobody made.
+   */
+  idCheckStatementText?: string | null;
+  /**
+   * Checks the TENANT will run on themselves, instead of the owner declaring.
+   *
+   * <p>Costs the owner money, so the server refuses the whole onboarding if
+   * their Service balance will not carry it. That refusal is the only point at
+   * which a paid check can be refused at all.
+   */
+  verification?: { serviceCode: string; attempts: number }[] | null;
   device: {
     appVersion: string | null;
     brand: string | null;
@@ -382,7 +402,10 @@ export const complianceApi = api.injectEndpoints({
 
     onboardTenantWithAgreement: builder.mutation<OnboardWithAgreementResult, OnboardWithAgreementPayload>({
       query: (body) => ({ body, method: "POST", url: "/api/v1/compliance/tenancies/onboard-with-agreement" }),
-      invalidatesTags: ["Compliance", "Tenancy", "Notification"],
+      // The pending tenancy holds the room immediately, before the agreement is
+      // accepted. Refresh the room list as well so another onboarding flow sees
+      // the reduced vacancy count instead of reusing its pre-creation cache.
+      invalidatesTags: ["Compliance", "Tenancy", "Property", "Notification"],
     }),
 
     getTenancyAgreement: builder.query<TenancyAgreement, string>({

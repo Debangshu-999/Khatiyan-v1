@@ -198,8 +198,14 @@ export const chatApi = api.injectEndpoints({
       providesTags: ["Chat"],
     }),
 
-    getChatUnreadCount: builder.query<{ count: number }, void>({
-      query: () => `${base}/unread-count`,
+    /**
+     * The Chats tab dot. Management passes the selected property, so the dot
+     * matches that property's Chats screen; a tenant passes nothing and gets
+     * everything they are a member of.
+     */
+    getChatUnreadCount: builder.query<{ count: number }, { propertyId?: string } | void>({
+      query: (args) =>
+        args?.propertyId ? `${base}/unread-count?propertyId=${args.propertyId}` : `${base}/unread-count`,
       providesTags: ["ChatUnread"],
     }),
 

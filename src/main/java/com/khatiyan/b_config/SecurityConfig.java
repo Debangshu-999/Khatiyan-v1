@@ -80,6 +80,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/properties/{propertyId}/local-places",
                                 "/api/v1/properties/{propertyId}/local-places/**").authenticated()
                         .requestMatchers("/api/v1/properties/{propertyId}/property-board/**").authenticated()
+                        .requestMatchers("/api/v1/properties/{propertyId}/food/**").authenticated()
+                        .requestMatchers("/api/v1/food/me/**").hasRole("USER")
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties/{propertyId}/notices").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/properties/{propertyId}/notices/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties/{propertyId}/recurring-notices").authenticated()
@@ -106,6 +108,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/checkout/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhooks/razorpay").permitAll()
                         .requestMatchers("/api/v1/payments/**").authenticated()
+                        // The gateway cannot carry a token. Authenticated by
+                        // HMAC signature inside the handler instead, and it
+                        // reveals nothing about whose account was touched.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/service-balance/webhooks/razorpay").permitAll()
+                        // The checkout page opens in the phone's own browser,
+                        // which carries no token. Addressed by an unguessable
+                        // id and shows only an amount and a gateway order.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/service-balance/checkout/*").permitAll()
+                        // Owner-only, reads included: managers run properties,
+                        // they do not hold the purse.
+                        .requestMatchers("/api/v1/service-balance/**").hasRole("OWNER")
                         .requestMatchers("/api/v1/dashboard/**").authenticated()
                         // A tenant reads only their own nudges; sending and the
                         // Sent tab are property-scoped and gated by

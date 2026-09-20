@@ -1,11 +1,13 @@
-import { useEffect, type ComponentType, type ReactNode } from "react";
+import { useEffect, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { Redirect, Tabs } from "expo-router";
-import { ActivityIndicator, Pressable, Text, View, type ColorValue } from "react-native";
+import { Pressable, Text, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Bell, Compass, Home, KeyRound, MessageCircle, ShieldCheck, UserRound, Wrench, type LucideProps } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { type LucideProps } from "lucide-react-native";
 
 
 import { clearStoredSession } from "@/auth/session-storage";
+import { BrandLoadingScreen } from "@/components/brand-logo";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
@@ -61,20 +63,34 @@ type TabBarProps = {
  * then the ordinary outlined glyph on top in the page colour. The second pass
  * carries no fill, so every path — including ones the silhouette swallowed —
  * comes back as a clean knocked-out line.
+ *
+ * <p>A Material glyph needs none of that: the icon set ships an outline and a
+ * solid version of the same picture, so selection simply swaps one for the
+ * other. Home uses one — the same house as the listing's "Property type" row.
  */
 function TabIcon({
   color,
   focused,
+  glyph,
   icon: Icon,
 }: {
   // Expo Router types this as ColorValue, which is wider than a hex string.
   color: ColorValue;
   focused: boolean;
+  /** A Material glyph pair, drawn instead of `icon`. */
+  glyph?: { outline: ComponentProps<typeof MaterialCommunityIcons>["name"]; solid: ComponentProps<typeof MaterialCommunityIcons>["name"] };
   // Any icon-shaped component, not one specific lucide export: the property
-  // tab draws its own SVG, which is a plain function component.
-  icon: ComponentType<LucideProps>;
+  // tab draws its own mark, which is a plain function component.
+  icon?: ComponentType<LucideProps>;
 }) {
   const { colors } = useTheme();
+
+  if (glyph) {
+    return <MaterialCommunityIcons color={color} name={focused ? glyph.solid : glyph.outline} size={22} />;
+  }
+  if (!Icon) {
+    return null;
+  }
 
   if (!focused) {
     return <Icon color={color} size={20} strokeWidth={2} />;
@@ -204,12 +220,22 @@ export default function TabLayout() {
 
   // Conversations with something unread, counted server-side. Polled slowly:
   // the tab is a glance, and the thread list refreshes properly when opened.
-  const unreadChats =
-    useGetChatUnreadCountQuery(undefined, {
+  //
+  // Scoped to what the Chats screen will show. A management account's Chats is
+  // one property's, so the count is that property's, and with no property
+  // chosen there is no count at all (the tab is disabled then). Counting every
+  // property lit the dot for an enquiry on a property that was not selected,
+  // pointing at a screen with nothing unread on it.
+  const unreadScopePropertyId = showOwnerTab ? resolvedManagedProperty?.id ?? null : null;
+  const unreadChatsQuery = useGetChatUnreadCountQuery(
+    unreadScopePropertyId ? { propertyId: unreadScopePropertyId } : undefined,
+    {
       pollingInterval: 20_000,
       refetchOnFocus: true,
-      skip: !auth.accessToken,
-    }).data?.count ?? 0;
+      skip: !auth.accessToken || (showOwnerTab && !unreadScopePropertyId),
+    },
+  );
+  const unreadChats = showOwnerTab && !unreadScopePropertyId ? 0 : unreadChatsQuery.data?.count ?? 0;
 
   useEffect(() => {
     const status =
@@ -247,11 +273,7 @@ export default function TabLayout() {
   }, [accountKey, accounts, accountsLoading, activeAccount, auth.user?.id, dispatch]);
 
   if (!auth.hydrated) {
-    return (
-      <View style={{ alignItems: "center", backgroundColor: colors.background, flex: 1, justifyContent: "center" }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <BrandLoadingScreen />;
   }
 
   if (!auth.accessToken) {
@@ -259,11 +281,7 @@ export default function TabLayout() {
   }
 
   if (accountsLoading || (!activeAccount && accounts.length === 1)) {
-    return (
-      <View style={{ alignItems: "center", backgroundColor: colors.background, flex: 1, justifyContent: "center" }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <BrandLoadingScreen />;
   }
 
   if (!activeAccount && accounts.length > 1) {
@@ -310,7 +328,9 @@ export default function TabLayout() {
           headerShown: false,
           title: "Home",
           tabBarLabel: "HOME",
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Home} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} glyph={{ outline: "home-outline", solid: "home" }} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -319,7 +339,9 @@ export default function TabLayout() {
           headerShown: false,
           tabBarLabel: "DISCOVER",
           title: "Discovery",
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Compass} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} glyph={{ outline: "compass-outline", solid: "compass" }} />
+          ),
         }}
       />
       {/* Third for everybody. Tenancy and Owner are each conditional, so
@@ -333,7 +355,7 @@ export default function TabLayout() {
           tabBarLabel: "CHATS",
           tabBarIcon: ({ color, focused }) => (
             <View>
-              <TabIcon color={color} focused={focused} icon={MessageCircle} />
+              <TabIcon color={color} focused={focused} glyph={{ outline: "chat-outline", solid: "chat" }} />
               {/* A dot rather than a number: the tab says "somebody wrote",
                   and how many conversations is the list's job to show. */}
               {unreadChats > 0 ? (
@@ -362,7 +384,9 @@ export default function TabLayout() {
           title: "Tenancy",
           tabBarLabel: "TENANCY",
           href: showTenancyTab ? undefined : null,
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={KeyRound} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} glyph={{ outline: "key-outline", solid: "key" }} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -379,7 +403,9 @@ export default function TabLayout() {
           // what you go there to do — and the property glyph names a THING,
           // which is why it belongs on the selector and the module headers
           // rather than in the navigation.
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={Wrench} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} glyph={{ outline: "wrench-outline", solid: "wrench" }} />
+          ),
         }}
       />
       {/* Off the tab bar. Notifications open from the bell on Home, which is
@@ -392,7 +418,9 @@ export default function TabLayout() {
           headerShown: false,
           title: "Account",
           tabBarLabel: "ACCOUNT",
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} icon={UserRound} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} glyph={{ outline: "account-outline", solid: "account" }} />
+          ),
         }}
       />
       </Tabs>

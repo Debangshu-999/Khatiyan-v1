@@ -59,8 +59,25 @@ public record AgreementPreviewQuery(
          * response, and without this flag it fell through to the tenancy path,
          * which read a term the screen never sends and so rendered every
          * agreement as indefinite.
+         *
+         * <p><b>Boxed, and defaulted below.</b> Only the settings screen sends
+         * this field — onboarding leaves it out, because it is previewing one
+         * tenancy's deed rather than the property's template. As a primitive
+         * that was harmless under Jackson 2, which read a missing boolean as
+         * false. Boot 4 moved the web layer to Jackson 3, which enables
+         * FAIL_ON_NULL_FOR_PRIMITIVES and rejects the WHOLE body with "Cannot
+         * map `null` into type `boolean`" — so every onboarding preview came
+         * back 400 and that step showed an empty deed and no clauses.
          */
-        boolean templateOnly) {
+        Boolean templateOnly) {
+
+    /**
+     * Absent means a tenancy preview, which is what the onboarding screen asks
+     * for. Normalised here so every reader can treat it as a plain boolean.
+     */
+    public AgreementPreviewQuery {
+        templateOnly = templateOnly != null && templateOnly;
+    }
 
     /**
      * The tenant's particulars as typed into the onboarding form.

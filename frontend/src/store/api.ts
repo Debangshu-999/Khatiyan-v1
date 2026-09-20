@@ -5,6 +5,26 @@ import { checkResponseShape } from "@/store/response-guards";
 import { sessionExpired } from "@/store/slices/auth-slice";
 import type { RootState } from "@/store/store";
 
+/**
+ * Failures that are an ANSWER, not a fault.
+ *
+ * <p>An owner asking for their own tenancy is told 403 because they are not a
+ * tenant, and that is the correct reply — the tab asks on every load and gets
+ * it every time. Logging it trained us to scroll past this warning, which is
+ * the opposite of what it is for: a log nobody reads cannot tell you when
+ * something real breaks.
+ *
+ * <p>Deliberately per endpoint and per status. A blanket "ignore 403" would
+ * hide every genuine permission bug in the app.
+ */
+const EXPECTED_FAILURES: Record<string, number[]> = {
+  getMyActiveTenancy: [403, 404],
+};
+
+function isExpectedFailure(endpoint: string, status: unknown) {
+  return typeof status === "number" && (EXPECTED_FAILURES[endpoint] ?? []).includes(status);
+}
+
 export const api = createApi({
   reducerPath: "api",
   baseQuery: async (args, apiContext, extraOptions) => {
@@ -47,6 +67,20 @@ export const api = createApi({
     }
 
     const result = await baseQuery(args, apiContext, extraOptions);
+
+    // Dev-only: a failed read otherwise leaves no trace at all. Screens that
+    // render nothing when a query fails look exactly like screens whose data is
+    // legitimately empty, and telling those apart used to need a proxy.
+    if (__DEV__ && result.error && !isExpectedFailure(apiContext.endpoint, result.error.status)) {
+      const detail =
+        typeof result.error.data === "string"
+          ? result.error.data
+          : JSON.stringify(result.error.data ?? null);
+      // The endpoint and the server's own words, but never the request body —
+      // these payloads carry tenant names, phone numbers and addresses, and a
+      // terminal is not the place for them.
+      console.warn(`[api] ${apiContext.endpoint} failed ${String(result.error.status)} ${detail?.slice(0, 300)}`);
+    }
 
     // A token we were holding has been refused — expired, or invalidated by a
     // PIN change on another device. Caught here because every request passes
@@ -99,9 +133,21 @@ export const api = createApi({
     // the property's enquiry list on a screen the enquirer cannot even see.
     "EnquiryConsent",
     "Session",
+    // The tenant's own identity checks. Separate from "Tenancy" so completing
+    // a check refreshes the step bar without refetching the whole agreement
+    // the tenant is part way through reading.
+    "Verification",
+    // The owner's prepaid balance. Its own tag rather than riding on "Payment":
+    // that one belongs to the parked rent-collection module, and a top-up has
+    // nothing to do with a tenant paying rent.
+    "ServiceBalance",
     "Chat",
     // Separate from "Chat" so opening a conversation can clear the tab badge
     // without invalidating the thread list it is already showing.
     "ChatUnread",
+    // Property food catalogue, profiles, menus, subscriptions and forecasts.
+    // Separate from Property so editing a menu does not refetch rooms and
+    // listing details across the workspace.
+    "Food",
   ],
 });

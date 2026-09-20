@@ -47,7 +47,7 @@ import { Section } from "@/components/section";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { SkeletonCard, SkeletonList, SkeletonTiles } from "@/components/skeleton";
-import { AgreementAcceptanceView } from "@/features/compliance/agreement-acceptance-view";
+import { TenantOnboardingSteps } from "@/features/compliance/tenant-onboarding-steps";
 import { useTenantCardUpdates } from "@/features/tenancy/use-tenant-card-updates";
 import type { BillingCycle } from "@/store/services/billing-api";
 import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
@@ -59,6 +59,7 @@ import {
   useListMyRoomChangeRequestsQuery,
   useListMyTenanciesQuery,
   tenancyStatusLabel,
+  type TenancyStatus,
   type TenantActiveTenancy,
   type TenancyExitRequest,
   type TenancyRoomChangeRequest,
@@ -359,14 +360,11 @@ export default function TenancyScreen() {
   // its terms yet — the acceptance screen replaces the whole tab until they do.
   if (activeTenancy && activeTenancy.tenancy.status === "PENDING_ACCEPTANCE") {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-        <ScreenHeader
-          title="Tenancy"
-          italicTail="agreement."
-          subtitle={`Review and accept the terms to begin your stay at ${activeTenancy.property.name}.`}
-        />
-        <AgreementAcceptanceView propertyName={activeTenancy.property.name} />
-      </ScreenScrollView>
+      /* Three steps rather than one page: reading the contract, proving who
+         you are, and signing are different kinds of work, and the last waits on
+         the second. The flow owns the whole screen, including its own scroller,
+         so its step bar can stay pinned while the agreement scrolls under it. */
+      <TenantOnboardingSteps propertyName={activeTenancy.property.name} />
     );
   }
 
@@ -799,7 +797,7 @@ function TenancyStatusPill({ status }: { status: string }) {
     >
       <View style={{ backgroundColor: dot, borderRadius: 999, height: 7, width: 7 }} />
       <Text numberOfLines={1} style={{ color: text, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {humanizeToken(status)}
+        {tenancyStatusLabel(status as TenancyStatus)}
       </Text>
     </View>
   );

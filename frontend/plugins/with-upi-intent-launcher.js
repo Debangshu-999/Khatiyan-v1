@@ -88,15 +88,37 @@ function withUpiQueries(config) {
     }
 
     queries.intent = queries.intent ?? [];
-    const hasUpiQuery = queries.intent.some((entry) =>
-      entry?.data?.some((data) => data?.$?.["android:scheme"] === "upi"),
-    );
-    if (!hasUpiQuery) {
+
+    function declareScheme(scheme, extras = {}) {
+      const exists = queries.intent.some((entry) =>
+        entry?.data?.some((data) => data?.$?.["android:scheme"] === scheme),
+      );
+      if (exists) {
+        return;
+      }
       queries.intent.push({
         action: [{ $: { "android:name": "android.intent.action.VIEW" } }],
-        data: [{ $: { "android:scheme": "upi" } }],
+        ...extras,
+        data: [{ $: { "android:scheme": scheme } }],
       });
     }
+
+    declareScheme("upi");
+
+    // Plain http, alongside the https Expo declares by default.
+    //
+    // Android 11 package visibility means an app can only open an in-app
+    // browser tab for a scheme it has declared it may query. Expo declares
+    // https, so an https page opens in a Custom Tab while an http one silently
+    // resolves to nothing and falls out to the external browser.
+    //
+    // That is exactly what a development server looks like: the checkout page
+    // is served over http from a LAN address, so without this the in-app tab
+    // never appears while developing and appears fine in production, which is
+    // the worst way round to find out.
+    declareScheme("http", {
+      category: [{ $: { "android:name": "android.intent.category.BROWSABLE" } }],
+    });
 
     return androidConfig;
   });

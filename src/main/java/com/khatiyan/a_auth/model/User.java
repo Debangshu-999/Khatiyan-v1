@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
+import com.khatiyan.c_shared.exception.ValidationException;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -79,6 +80,27 @@ public class User extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private Gender gender;
+
+    /**
+     * When a government record established who this person is.
+     *
+     * <p>Non-null means the name, date of birth and permanent address above
+     * were written FROM that record and are now frozen. Leaving them editable
+     * afterwards would make the whole check decorative: somebody could pass a
+     * verification as one person and rename themselves the next day, and every
+     * agreement, notice and deposit dispute after that would cite a name no
+     * document supports.
+     *
+     * <p>There is no unlock. An unlock an owner or a tenant can reach is not a
+     * lock, and correcting a genuinely wrong record is rare enough to be worth
+     * a support ticket and important enough to leave a trail.
+     */
+    @Column(name = "identity_verified_at")
+    private Instant identityVerifiedAt;
+
+    /** Which check established it, so the record can say what it rests on. */
+    @Column(name = "identity_verified_source", length = 40)
+    private String identityVerifiedSource;
 
     @Column(name = "profile_photo_url", length = 500)
     private String profilePhotoUrl;
@@ -155,8 +177,61 @@ public class User extends BaseEntity {
     }
 
     public void updateProfile(String fullName) {
+        requireIdentityUnlocked();
         this.fullName = fullName;
         this.profileCompleted = true;
+    }
+
+    /** Whether a government record has settled who this person is. */
+    public boolean isIdentityLocked() {
+        return identityVerifiedAt != null;
+    }
+
+    /**
+     * Writes the identity a government record established, and closes it.
+     *
+     * <p>The verified values REPLACE whatever was typed, rather than being
+     * compared with it. A free-text address someone entered on a form and a
+     * structured one from UIDAI will never agree character for character, and
+     * the government's is the one worth keeping — so this is the moment the
+     * app stops holding an approximation of who somebody is.
+     *
+     * <p>Idempotent on the same source: a retried verification writes the same
+     * values and changes nothing. A DIFFERENT source is refused, because two
+     * documents disagreeing about a person is not something code should pick a
+     * winner for.
+     */
+    public void applyVerifiedIdentity(
+            String fullName,
+            LocalDate dateOfBirth,
+            String permanentAddress,
+            String permanentAddressPincode,
+            String source,
+            Instant verifiedAt) {
+        if (isIdentityLocked() && !Objects.equals(this.identityVerifiedSource, source)) {
+            throw new ValidationException("This person's identity is already verified against another document");
+        }
+        this.fullName = fullName;
+        this.dateOfBirth = dateOfBirth;
+        // Only overwrite the address when the record actually carried one. A
+        // provider that returns no address must not blank one the tenant gave
+        // us, which would be a worse answer than the approximation.
+        if (!isBlank(permanentAddress)) {
+            this.permanentAddress = permanentAddress.trim();
+        }
+        if (!isBlank(permanentAddressPincode)) {
+            this.permanentAddressPincode = permanentAddressPincode.trim();
+        }
+        this.identityVerifiedSource = source;
+        this.identityVerifiedAt = verifiedAt;
+        this.profileCompleted = true;
+    }
+
+    private void requireIdentityUnlocked() {
+        if (isIdentityLocked()) {
+            throw new ValidationException(
+                    "These details come from your verified ID and cannot be changed here");
+        }
     }
 
     /**
@@ -168,6 +243,13 @@ public class User extends BaseEntity {
      */
     public void updateIdentity(
             String permanentAddress, String permanentAddressPincode, LocalDate dateOfBirth, Gender gender) {
+        if (isIdentityLocked()) {
+            // Gender is not one of the verified fields, so it stays editable
+            // even on a locked profile — it is optional in the app and nothing
+            // is checked against it.
+            this.gender = gender;
+            return;
+        }
         this.permanentAddress = blankToNull(permanentAddress);
         this.permanentAddressPincode = blankToNull(permanentAddressPincode);
         this.dateOfBirth = dateOfBirth;
@@ -188,6 +270,15 @@ public class User extends BaseEntity {
     public boolean fillMissingIdentity(
             String permanentAddress, String permanentAddressPincode, LocalDate dateOfBirth, Gender gender) {
         boolean changed = false;
+        if (isIdentityLocked()) {
+            // Nothing is missing on a verified profile. An owner filling in an
+            // onboarding form must not write over a government record.
+            if (this.gender == null && gender != null) {
+                this.gender = gender;
+                return true;
+            }
+            return false;
+        }
         if (isBlank(this.permanentAddress) && !isBlank(permanentAddress)) {
             this.permanentAddress = permanentAddress.trim();
             changed = true;

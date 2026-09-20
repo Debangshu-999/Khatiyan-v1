@@ -119,6 +119,11 @@ public class AuthService {
         userSessionService.revoke(userId, sessionRowId, callerSessionId, Instant.now());
     }
 
+    /** Ends the caller's own session. See {@link UserSessionService#revokeOwn}. */
+    public void signOut(UUID userId, UUID callerSessionId) {
+        userSessionService.revokeOwn(userId, callerSessionId, Instant.now());
+    }
+
     private TokenResponse tokenFor(User user) {
         return tokenFor(user, null);
     }
@@ -996,6 +1001,32 @@ public class AuthService {
                 userRepository.save(user);
             }
         });
+    }
+
+    /**
+     * Writes what a government record says about somebody, and closes the door.
+     *
+     * <p>Called once, by the verification module, when a check passes. From
+     * then on the name, date of birth and permanent address on this account are
+     * the ones on their ID and nothing in the app can change them — which is
+     * the entire point of having checked.
+     */
+    @Transactional
+    public void applyVerifiedIdentity(
+            UUID userId,
+            String fullName,
+            LocalDate dateOfBirth,
+            String permanentAddress,
+            String permanentAddressPincode,
+            String source,
+            Instant verifiedAt) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId.toString()));
+        user.applyVerifiedIdentity(
+                fullName, dateOfBirth, permanentAddress, permanentAddressPincode, source, verifiedAt);
+        userRepository.save(user);
+        log.info("Identity verified and locked userId={} source={}", userId, source);
     }
 
     /**
