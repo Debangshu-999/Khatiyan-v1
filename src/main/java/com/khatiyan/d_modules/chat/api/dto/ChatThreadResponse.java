@@ -42,5 +42,11 @@ public record ChatThreadResponse(
      * it means the property has seen it. Read by management, it is the tenant's
      * own position, never a colleague's, which would tick for the wrong reason.
      */
-    long counterpartLastReadSeq
+    long counterpartLastReadSeq,
+    /**
+     * Management reading a tenant's team thread while that tenant's agreement
+     * is still unsigned. The owner sees a warning beside the name and a note
+     * at the top of the conversation. Always false for the tenant themselves.
+     */
+    boolean pendingAgreement
 ) {}

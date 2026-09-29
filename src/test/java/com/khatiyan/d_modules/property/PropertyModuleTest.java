@@ -139,7 +139,7 @@ class PropertyModuleTest {
                 null,
                 null,
                 true,
-                true);
+                true, 0L);
     }
 
     private static RoomResponse roomResponse(UUID propertyId, UUID roomId) {
@@ -165,6 +165,6 @@ class PropertyModuleTest {
                 null,
                 null,
                 null,
-                null);
+                null, 0L);
     }
 }

@@ -70,7 +70,12 @@ public record TenancyExitRequestResponse(
      */
     Instant expiresAt,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    /**
+     * The row's version (2026-09-29). A screen sends it back as If-Match when
+     * it acts, and a record changed since the screen loaded it is refused.
+     */
+    long version
 ) {
     public static TenancyExitRequestResponse from(TenancyExitRequest request) {
         return from(request, LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")), Map.of());
@@ -136,7 +141,8 @@ public record TenancyExitRequestResponse(
             !supersededByNewer && request.allowsReRaiseAt(Instant.now()),
             request.getExpiresAt(),
             request.getCreatedAt(),
-            request.getUpdatedAt()
+            request.getUpdatedAt(),
+            request.getVersion()
         );
     }
 

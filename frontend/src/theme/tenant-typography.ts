@@ -43,6 +43,17 @@ export const tenantType = {
     letterSpacing: 0,
     lineHeight: 16,
   } satisfies TextStyle,
+  /**
+   * Every description in the app (user, 2026-09-29): modal messages, notice
+   * bars, screen and card descriptions, empty states, field hints. The rule
+   * lines on the tenant's property board set it. Colour it `colors.muted`,
+   * and pick out an amount or a name with a nested bold Text in `colors.ink`.
+   */
+  description: {
+    fontFamily: tenantFonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  } satisfies TextStyle,
   body: {
     fontFamily: tenantFonts.sans,
     fontSize: 14,

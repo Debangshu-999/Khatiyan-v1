@@ -384,7 +384,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
           <Star color={recommended ? colors.accent : colors.kicker} fill={recommended ? colors.accent : "transparent"} size={18} strokeWidth={2.2} />
           <View style={{ flex: 1, gap: 1 }}>
             <Text style={[type.bodyStrong, { color: colors.ink }]}>Owner recommended</Text>
-            <Text style={[type.caption, { color: colors.muted }]}>Recommended places rank first in the tenant list.</Text>
+            <Text style={[type.description, { color: colors.muted }]}>Recommended places rank first in the tenant list.</Text>
           </View>
         </AnimatedPressable>
 

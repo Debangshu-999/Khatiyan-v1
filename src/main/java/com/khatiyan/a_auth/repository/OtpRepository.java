@@ -48,11 +48,16 @@ public interface OtpRepository extends JpaRepository<OtpRequest, UUID> {
      * their budget frees up.
      *
      * <p>The window is rolling: it started when this row was written, not when
-     * the caller was refused, so the wait is what is left of ITS fifteen
-     * minutes.
+     * the caller was refused, so the wait is what is left of ITS window.
      */
     Optional<OtpRequest> findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(String phone, Instant since);
 
     Optional<OtpRequest> findFirstByRequestIpAddressAndCreatedAtAfterOrderByCreatedAtAsc(
             String requestIpAddress, Instant since);
+
+    /**
+     * The last code sent to a number for one purpose — the resend cooldown's
+     * answer when Valkey, which normally holds it, cannot be asked.
+     */
+    Optional<OtpRequest> findFirstByPhoneAndPurposeOrderByCreatedAtDesc(String phone, OtpPurpose purpose);
 }

@@ -91,7 +91,7 @@ export function EmptyState({ action, artwork, artworkNode, compact, description,
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, textAlign: "center" }}>
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
+        <Text style={[type.description, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
           {description}
         </Text>
       </View>

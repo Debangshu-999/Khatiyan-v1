@@ -5,7 +5,7 @@ import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, Trash2, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
+import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, Trash2, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { HeaderNote } from "@/components/header-note";
@@ -30,7 +30,9 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { PhoneField } from "@/features/auth/auth-ui";
 import { formatIndianPhone } from "@/features/owner/phone-display";
+import { StatusIcon } from "@/components/status-icon";
 import { DateOfBirthField } from "@/features/account/date-of-birth-field";
+import { istToday } from "@/features/analytics/period";
 import { emailProblem } from "@/features/forms/email-validation";
 import { GENDER_LABELS, GenderPicker } from "@/features/account/gender-picker";
 import { ClickwrapConsent } from "@/features/compliance/clickwrap-consent";
@@ -64,6 +66,7 @@ import {
 } from "@/store/services/compliance-api";
 import {
   useLazyLookupTenantQuery,
+  useListPropertyUpcomingVacanciesQuery,
   useOnboardDailyStayMutation,
   type TenancyOnboardingResult,
   type TenantLookup,
@@ -125,11 +128,39 @@ const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
  */
 type VerificationMode = "MANUAL" | "KYC";
 
+/** How a room is cooled, in the room picker. */
+function conditioningLabel(room: OwnerRoom): string {
+  return room.conditioning === "AC" ? "AC" : "Non-AC";
+}
+
+/** What an ID check can record. Undeclared is an answer an account may give, not one a check can. */
+const ID_CHECK_GENDERS: Gender[] = ["MALE", "FEMALE", "TRANSGENDER", "OTHER"];
+
+/**
+ * Why a date of birth cannot pass a manual check: missing, or under 18 on
+ * `today` (IST). The server makes the same check and has the last word.
+ */
+const ID_DOB_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function adultDobIssue(dob: string, today: string): string | null {
+  if (!ID_DOB_PATTERN.test(dob.trim())) {
+    return "Enter the date of birth on the ID.";
+  }
+  const [year, month, day] = today.split("-");
+  const latestAdultBirthday = `${String(Number(year) - 18).padStart(4, "0")}-${month}-${day}`;
+  return dob.trim() > latestAdultBirthday ? "The tenant must be 18 or older." : null;
+}
+
 
 type BillingKind = "MONTHLY" | "DAILY";
 
 function dateToStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateFromStr(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function startOfToday() {
@@ -187,10 +218,12 @@ export default function OwnerOnboardTenantScreen() {
     | "tenantAddress"
     | "tenantPincode"
     | "guestPhone"
-    | "guestAge"
+    | "guestDob"
     | "guestGender"
     | "idDocumentType"
     | "idLastFour"
+    | "idGender"
+    | "idDob"
   >();
 
   const router = useRouter();
@@ -278,6 +311,7 @@ export default function OwnerOnboardTenantScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [result, setResult] = useState<TenancyOnboardingResult | null>(null);
+  const [bookedForFuture, setBookedForFuture] = useState(false);
   // Agreement path: SELECTIVE properties opt in per tenancy; ALL_MONTHLY always
   // goes through the agreement step. Custom clauses are editable on that step.
   // The owner's declaration. Khatiyan verifies nothing — this records that they
@@ -289,7 +323,7 @@ export default function OwnerOnboardTenantScreen() {
   // Null until they choose: presenting one as preselected would make the other
   // look like the unusual thing to do, and for most owners today the manual
   // check is still the ordinary one.
-  const [verificationMode, setVerificationMode] = useState<VerificationMode | null>(null);
+  const [chosenVerificationMode, setVerificationMode] = useState<VerificationMode | null>(null);
   // What the owner has ordered for this tenancy, and how many attempts each
   // check gets. The owner never sees an Aadhaar number or an OTP: they choose
   // the checks, the tenant does them from their own phone.
@@ -333,13 +367,42 @@ export default function OwnerOnboardTenantScreen() {
   const [tenantGender, setTenantGender] = useState<Gender | null>(null);
   const [optionalOpen, setOptionalOpen] = useState(false);
 
-  // A daily guest's age, not a date of birth. The register records what was
-  // stated at the desk and is never read again, so a stored DOB would imply the
-  // app tracks a birthday it has no business tracking.
-  const [guestAge, setGuestAge] = useState("");
+  // What the owner confirms at a manual ID check on a MONTHLY stay (owner's
+  // rule, 2026-09-27): gender, and the date of birth the 18+ check is made
+  // against. Each starts as whatever the tenant step holds and stays editable
+  // here. Undefined means "not edited", so a value typed on the tenant step
+  // after a visit here still carries over. A daily guest has no copy: the
+  // guest form already requires gender and date of birth, and the check
+  // edits those in place.
+  const [idGenderEdit, setIdGenderEdit] = useState<Gender | null | undefined>(undefined);
+  const [idDobEdit, setIdDobEdit] = useState<string | undefined>(undefined);
+
+  // A daily guest's date of birth lives in tenantDob too (owner's rule,
+  // 2026-09-27): the guest form asks for it instead of an age, and the manual
+  // check shows it and makes the 18+ check against it.
 
   const isDaily = billingType === "DAILY";
+  // A daily guest has no account, so nobody could ever run a KYC check: the
+  // register takes the owner's own check and nothing else (owner's rule,
+  // 2026-09-27). Derived rather than stored, so no path can leave it on KYC.
+  const verificationMode: VerificationMode | null = isDaily ? "MANUAL" : chosenVerificationMode;
+  // Manual: the deed and the account take what the owner checked.
+  const manualCheck = verificationMode === "MANUAL";
   const [triggerLookup, lookupState] = useLazyLookupTenantQuery();
+  // What an existing Khatiyan account already holds. Those are not the
+  // owner's to change (owner's rule, 2026-09-27): the check shows them
+  // read-only, and only a new account, or a field the account left blank, is
+  // entered here. An Undeclared gender counts as blank, since a check must
+  // record one. The server refuses a declaration that differs from these.
+  // Read from the screen's own copy of the lookup, the one the tenant step
+  // uses, not the query hook's: that one is dropped by a reload.
+  const prefillGender = isDaily ? null : lookup?.prefill?.gender ?? null;
+  const accountGender = prefillGender === "UNDECLARED" ? null : prefillGender;
+  const accountDob = isDaily ? null : lookup?.prefill?.dateOfBirth || null;
+  const idGender = isDaily
+    ? tenantGender
+    : accountGender ?? (idGenderEdit === undefined ? tenantGender : idGenderEdit);
+  const idDob = isDaily ? tenantDob : accountDob ?? (idDobEdit === undefined ? tenantDob : idDobEdit);
 
   // Seeded from the account when the lookup finds one. Fields it already holds
   // are shown read-only; the server writes back only the blanks either way, so
@@ -365,6 +428,22 @@ export default function OwnerOnboardTenantScreen() {
   );
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const rooms = roomsQuery.data ?? [];
+  const upcomingVacanciesQuery = useListPropertyUpcomingVacanciesQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty || step === "type" || step === "tenant" || step === "done",
+  });
+  // The server decides which full-room beds can be booked ahead: an approved
+  // room change, or a stay certain to end soon. The same rule checks the
+  // booking, so a room offered here is never refused on submit. Earliest per room.
+  const upcomingRoomVacancies = useMemo(() => {
+    const dates = new Map<string, string>();
+    for (const vacancy of upcomingVacanciesQuery.data ?? []) {
+      const current = dates.get(vacancy.roomId);
+      if (!current || vacancy.availableFrom < current) {
+        dates.set(vacancy.roomId, vacancy.availableFrom);
+      }
+    }
+    return dates;
+  }, [upcomingVacanciesQuery.data]);
   // Rooms under maintenance cannot take a new tenancy, so keep them out of the
   // selectable list entirely.
   const selectableRooms = useMemo(() => rooms.filter((room) => room.status !== "MAINTENANCE"), [rooms]);
@@ -372,6 +451,10 @@ export default function OwnerOnboardTenantScreen() {
     () => rooms.find((room) => room.id === roomId),
     [roomId, rooms],
   );
+  const selectedRoomAvailableFrom = selectedRoom && selectedRoom.availableVacancies <= 0
+    ? upcomingRoomVacancies.get(selectedRoom.id) ?? null
+    : null;
+  const minimumStartDate = selectedRoomAvailableFrom ? dateFromStr(selectedRoomAvailableFrom) : startOfToday();
   const [onboardDailyStay, onboardState] = useOnboardDailyStayMutation();
   const [onboardWithAgreement, onboardWithAgreementState] = useOnboardTenantWithAgreementMutation();
 
@@ -440,9 +523,9 @@ export default function OwnerOnboardTenantScreen() {
       // Trimmed to null so a half-typed field previews as its placeholder
       // rather than as a stray fragment on a legal document.
       tenant: {
-        dateOfBirth: tenantDob.trim() || null,
+        dateOfBirth: (manualCheck ? idDob : tenantDob).trim() || null,
         fullName: tenantName.trim() || null,
-        gender: tenantGender,
+        gender: manualCheck ? idGender : tenantGender,
         permanentAddress: tenantAddress.trim() || null,
         permanentAddressPincode: tenantPincode.trim() || null,
         phone: phone.trim() || null,
@@ -530,6 +613,12 @@ export default function OwnerOnboardTenantScreen() {
   function selectRoom(room: OwnerRoom) {
     setRoomId(room.id);
     setRent(String(Math.round(room.baseRentPaise / 100)));
+    const availableFrom = room.availableVacancies <= 0 ? upcomingRoomVacancies.get(room.id) : null;
+    if (availableFrom && dateToStr(startDate) < availableFrom) {
+      const earliest = dateFromStr(availableFrom);
+      setStartDate(earliest);
+      setPlannedEndDate((current) => dateToStr(current) <= availableFrom ? addDays(earliest, 1) : current);
+    }
     if (selectedProperty) {
       setDeposit(String(Math.round(selectedProperty.standardDepositPaise / 100)));
     }
@@ -575,7 +664,7 @@ export default function OwnerOnboardTenantScreen() {
    * is asked for plainly and accepted blank.
    */
   function goToRoomAndDatesForGuest() {
-    const age = Number(guestAge.trim());
+    const dobIssue = adultDobIssue(tenantDob, istToday());
     // Null blank message: a walk-in may have no email, but a typo is still a typo.
     const emailIssue = emailProblem(tenantEmail, null);
     const cleared = form.validate({
@@ -585,10 +674,7 @@ export default function OwnerOnboardTenantScreen() {
       ...(/^(\+91)?\d{10}$/.test(phone.trim()) ? {} : { guestPhone: "Enter a 10-digit phone number." }),
       ...(emailIssue ? { tenantEmail: emailIssue } : {}),
       ...(tenantAddress.trim() ? {} : { tenantAddress: "Enter the guest's address." }),
-      // Number("") is 0, not NaN, so the blank case has to be tested first.
-      ...(guestAge.trim() && Number.isInteger(age) && age >= 18 && age <= 120
-        ? {}
-        : { guestAge: "Enter an age between 18 and 120." }),
+      ...(dobIssue ? { guestDob: dobIssue.replace("The tenant", "The guest") } : {}),
       ...(tenantGender ? {} : { guestGender: "Select the guest's gender." }),
     });
     if (!cleared) {
@@ -617,8 +703,9 @@ export default function OwnerOnboardTenantScreen() {
       setTenantPincode("");
       setTenantDob("");
       setTenantGender(null);
-      setGuestAge("");
       setOptionalOpen(false);
+      setIdGenderEdit(undefined);
+      setIdDobEdit(undefined);
       form.clearAll();
     }
     setBillingType(kind);
@@ -639,8 +726,12 @@ export default function OwnerOnboardTenantScreen() {
       setMessage("This room is under maintenance and cannot take a tenancy.");
       return;
     }
-    if (selectedRoom.availableVacancies <= 0) {
+    if (selectedRoom.availableVacancies <= 0 && (isDaily || !selectedRoomAvailableFrom)) {
       setMessage("This room has no available vacancy.");
+      return;
+    }
+    if (selectedRoomAvailableFrom && dateToStr(startDate) < selectedRoomAvailableFrom) {
+      setMessage(`This room becomes available on ${formatDateLong(minimumStartDate)}. Choose that date or later.`);
       return;
     }
     if (dateToStr(startDate) < dateToStr(startOfToday())) {
@@ -682,9 +773,14 @@ export default function OwnerOnboardTenantScreen() {
       }
       return false;
     }
+    // The 18+ check is made against the date of birth checked here, on every
+    // stay. A guest's is the guest form's own, correctable here.
+    const dobIssue = adultDobIssue(idDob, istToday());
     const cleared = form.validate({
       ...(idDocumentType ? {} : { idDocumentType: "Select which ID you checked." }),
       ...(/^[0-9]{4}$/.test(idLastFour) ? {} : { idLastFour: "Enter the last four digits." }),
+      ...(idGender && idGender !== "UNDECLARED" ? {} : { idGender: "Select the gender as you checked it." }),
+      ...(dobIssue ? { idDob: dobIssue } : {}),
     });
     if (!cleared) {
       return true;
@@ -705,14 +801,14 @@ export default function OwnerOnboardTenantScreen() {
    * because the tenant has not done anything yet, and the server now refuses a
    * request that carries both or neither.
    */
-  const idCheckPayload =
-    verificationMode === "KYC"
-      ? null
-      : {
-          confirmed: idCheckConfirmed,
-          documentType: idDocumentType,
-          lastFour: idLastFour,
-        };
+  const manualIdCheck = {
+    confirmed: idCheckConfirmed,
+    dateOfBirth: idDob.trim() || null,
+    documentType: idDocumentType,
+    gender: idGender,
+    lastFour: idLastFour,
+  };
+  const idCheckPayload = verificationMode === "KYC" ? null : manualIdCheck;
 
   /** What the owner ordered, priced and charged per attempt the tenant uses. */
   const verificationPayload =
@@ -735,20 +831,17 @@ export default function OwnerOnboardTenantScreen() {
     try {
       const res = await onboardDailyStay({
         guestAddress: tenantAddress.trim(),
-        guestAge: Number(guestAge.trim()),
+        guestDateOfBirth: tenantDob.trim(),
         // Sent as null rather than "" when skipped, so the server stores an
         // absent email instead of an empty one.
         guestEmail: tenantEmail.trim() ? tenantEmail.trim() : null,
-        guestGender: tenantGender!,
+        // The gender the owner checked is the register's record of the guest.
+        guestGender: idGender!,
         guestName: tenantName.trim(),
         guestPhone: phone.trim(),
         // A guest stay has no account, so nobody could ever run a check on
         // themselves. The daily path is the manual route and only that.
-        idCheck: idCheckPayload ?? {
-          confirmed: idCheckConfirmed,
-          documentType: idDocumentType,
-          lastFour: idLastFour,
-        },
+        idCheck: manualIdCheck,
         plannedEndDate: dateToStr(plannedEndDate),
         propertyId: selectedProperty.id,
         roomId,
@@ -773,8 +866,8 @@ export default function OwnerOnboardTenantScreen() {
       const res = await onboardWithAgreement({
         template,
         tenant: {
-          dateOfBirth: tenantDob.trim() ? tenantDob.trim() : null,
-          gender: tenantGender,
+          dateOfBirth: (manualCheck ? idDob : tenantDob).trim() || null,
+          gender: manualCheck ? idGender : tenantGender,
           permanentAddress: tenantAddress.trim(),
           permanentAddressPincode: tenantPincode.trim(),
         },
@@ -793,6 +886,7 @@ export default function OwnerOnboardTenantScreen() {
         tenantName: tenantName.trim() ? tenantName.trim() : null,
         tenantPhone: phone.trim(),
       }).unwrap();
+      setBookedForFuture(Boolean(selectedRoomAvailableFrom));
       setResult({ tenancy: res.tenancy, tenantAccountCreated: res.tenantAccountCreated });
       setStep("done");
     } catch (e) {
@@ -853,7 +947,7 @@ export default function OwnerOnboardTenantScreen() {
             style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
           >
             {onDone ? "Tenant " : "Onboard "}
-            <Text style={{ color: colors.primary }}>{onDone ? "onboarded" : "tenant"}</Text>
+            <Text style={{ color: colors.primary }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : "tenant"}</Text>
           </Text>
 
           <View style={{ alignItems: "flex-end", width: 40 }}>
@@ -889,7 +983,7 @@ export default function OwnerOnboardTenantScreen() {
           ) : null}
           {selectedProperty ? (
             <>
-              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Choose the kind of stay to start. This decides what is asked for next.
               </Text>
               <SelectRow
@@ -923,8 +1017,8 @@ export default function OwnerOnboardTenantScreen() {
           <GuestStayCard
             address={tenantAddress}
             addressError={form.errors.tenantAddress}
-            age={guestAge}
-            ageError={form.errors.guestAge}
+            dob={tenantDob}
+            dobError={form.errors.guestDob}
             email={tenantEmail}
             emailError={form.errors.tenantEmail}
             gender={tenantGender}
@@ -935,9 +1029,9 @@ export default function OwnerOnboardTenantScreen() {
               setTenantAddress(value);
               form.clearField("tenantAddress");
             }}
-            onAge={(value) => {
-              setGuestAge(value.replace(/[^0-9]/g, ""));
-              form.clearField("guestAge");
+            onDob={(value) => {
+              setTenantDob(value);
+              form.clearField("guestDob");
             }}
             onChangeName={(value) => {
               setTenantName(value);
@@ -1035,10 +1129,13 @@ export default function OwnerOnboardTenantScreen() {
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
               </Text>
-              {roomsQuery.isLoading ? (
+              {roomsQuery.isLoading || upcomingVacanciesQuery.isLoading ? (
                 <OwnerOnboardingRoomsSkeleton />
               ) : (
                 <RoomPicker
+                  availableFrom={(room) => !isDaily && room.availableVacancies <= 0
+                    ? upcomingRoomVacancies.get(room.id) ?? null
+                    : null}
                   onClear={clearRoom}
                   onSelect={selectRoom}
                   priceOf={(room) => {
@@ -1058,7 +1155,8 @@ export default function OwnerOnboardTenantScreen() {
                       room.conditioning === "AC"
                         ? selectedProperty.dailyGuestAcRatePaise
                         : selectedProperty.dailyGuestNonAcRatePaise;
-                    return room.availableVacancies <= 0 || (isDaily && perNight == null);
+                    return (room.availableVacancies <= 0 && (isDaily || !upcomingRoomVacancies.has(room.id)))
+                      || (isDaily && perNight == null);
                   }}
                 />
               )}
@@ -1120,13 +1218,17 @@ export default function OwnerOnboardTenantScreen() {
                   value={startDate}
                   mode="date"
                   display={Platform.OS === "ios" ? "inline" : "default"}
-                  minimumDate={startOfToday()}
+                  minimumDate={minimumStartDate}
                   onChange={(event: DateTimePickerEvent, selected?: Date) => {
                     if (Platform.OS !== "ios") {
                       setShowPicker(false);
                     }
                     if (event.type === "set" && selected) {
-                      setStartDate(selected);
+                      const next = dateToStr(selected) < dateToStr(minimumStartDate) ? minimumStartDate : selected;
+                      setStartDate(next);
+                      if (dateToStr(plannedEndDate) <= dateToStr(next)) {
+                        setPlannedEndDate(addDays(next, 1));
+                      }
                     }
                   }}
                 />
@@ -1177,7 +1279,7 @@ export default function OwnerOnboardTenantScreen() {
                     <PrimaryButton label="Done" muted onPress={() => setShowEndPicker(false)} />
                   ) : null}
 
-                  <Text style={[type.caption, { color: colors.muted }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     {nights > 0
                       ? `${nights} night${nights === 1 ? "" : "s"}${dailyRatePaise != null ? ` · ${rupees(dailyRatePaise * nights)} total` : ""}`
                       : "Choose a checkout date after the start date."}
@@ -1197,7 +1299,7 @@ export default function OwnerOnboardTenantScreen() {
               way back — so there is only ever one thing being answered. */}
           {verificationMode === null ? (
             <>
-              <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Establish who this person is before the tenancy is created. Whichever route you take is
                 recorded on the tenancy.
               </Text>
@@ -1219,7 +1321,7 @@ export default function OwnerOnboardTenantScreen() {
           ) : (
             <>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <HeaderButton icon={ArrowLeft} onPress={() => setVerificationMode(null)} subtle />
+                {isDaily ? null : <HeaderButton icon={ArrowLeft} onPress={() => setVerificationMode(null)} subtle />}
                 <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
                   {verificationMode === "MANUAL" ? "Manual verification" : "KYC verification"}
                 </Text>
@@ -1242,7 +1344,10 @@ export default function OwnerOnboardTenantScreen() {
             />
 
             <Field error={form.errors.idLastFour} label="Last four digits">
+              {/* Locked until a document is picked: the digits are OF that
+                  document, so there is nothing to type them from before it. */}
               <Input
+                editable={Boolean(idDocumentType)}
                 invalid={Boolean(form.errors.idLastFour)}
                 keyboardType="number-pad"
                 maxLength={4}
@@ -1250,22 +1355,66 @@ export default function OwnerOnboardTenantScreen() {
                   setIdLastFour(value.replace(/[^0-9]/g, ""));
                   form.clearField("idLastFour");
                 }}
-                placeholder="4417"
+                placeholder="As per verified document"
                 value={idLastFour}
               />
             </Field>
 
-                  <ClickwrapConsent
-                    checked={idCheckConfirmed}
-                    onToggle={() => setIdCheckConfirmed((value) => !value)}
-                    statement={idStatement}
-                  />
+            <View style={{ gap: 6 }}>
+              <GenderPicker
+                disabled={Boolean(accountGender)}
+                label={accountGender ? "Gender (from their Khatiyan account)" : "Gender (as per verified document)"}
+                onChange={(value) => {
+                  // A guest's gender IS the register's, so it is edited in place.
+                  if (isDaily) {
+                    setTenantGender(value);
+                    form.clearField("guestGender");
+                  } else {
+                    setIdGenderEdit(value);
+                  }
+                  form.clearField("idGender");
+                }}
+                options={ID_CHECK_GENDERS}
+                value={idGender}
+              />
+              {form.errors.idGender ? (
+                <Text style={[type.caption, { color: colors.danger }]}>{form.errors.idGender}</Text>
+              ) : null}
+            </View>
+
+              <View style={{ gap: 6 }}>
+                <DateOfBirthField
+                  disabled={Boolean(accountDob)}
+                  // Where the value came from: an existing account's own, read-only,
+                  // or what the owner reads off the document.
+                  label={accountDob ? "Date of birth (from their Khatiyan account)" : "Date of birth (as per verified document)"}
+                  onChange={(value) => {
+                    // A guest's date of birth IS the register's, so it is edited in place.
+                    if (isDaily) {
+                      setTenantDob(value);
+                      form.clearField("guestDob");
+                    } else {
+                      setIdDobEdit(value);
+                    }
+                    form.clearField("idDob");
+                  }}
+                  value={idDob}
+                />
+                {/* The 18+ verdict, as soon as a date is in. It replaces the
+                    under-18 error rather than repeating it, so only a missing
+                    date is left for the error line to say. */}
+                {ID_DOB_PATTERN.test(idDob.trim()) ? (
+                  <AdultVerdict adult={adultDobIssue(idDob, istToday()) === null} />
+                ) : form.errors.idDob ? (
+                  <Text style={[type.caption, { color: colors.danger }]}>{form.errors.idDob}</Text>
+                ) : null}
+              </View>
                 </View>
               ) : null}
 
               {verificationMode === "KYC" ? (
                 <View style={{ gap: spacing.md }}>
-                  <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     Choose what this tenant must complete. They do each check from their own phone.
                   </Text>
 
@@ -1276,6 +1425,16 @@ export default function OwnerOnboardTenantScreen() {
             </>
           )}
         </Card>
+      ) : null}
+
+      {/* Under the card, not in it: the details are what the owner saw, and
+          this is the statement they make about them. */}
+      {step === "verify" && verificationMode === "MANUAL" ? (
+        <ClickwrapConsent
+          checked={idCheckConfirmed}
+          onToggle={() => setIdCheckConfirmed((value) => !value)}
+          statement={idStatement}
+        />
       ) : null}
 
       {/* Outside the card on purpose: this is what the list above produced, not
@@ -1318,8 +1477,8 @@ export default function OwnerOnboardTenantScreen() {
               { label: "Phone", value: phone.trim(), mono: true },
               ...(isDaily
                 ? [
-                    { label: "Age", value: guestAge.trim() || "-" },
-                    { label: "Gender", value: tenantGender ? GENDER_LABELS[tenantGender] : "-" },
+                    { label: "Date of birth", value: tenantDob ? formatDateLong(dateFromStr(tenantDob)) : "-" },
+                    { label: "Gender", value: idGender ? GENDER_LABELS[idGender] : "-" },
                     { label: "Email", value: tenantEmail.trim() || "Not given" },
                   ]
                 : []),
@@ -1410,6 +1569,13 @@ export default function OwnerOnboardTenantScreen() {
                       label: "Document",
                       value: `${ID_DOCUMENT_OPTIONS.find((option) => option.value === idDocumentType)?.label ?? "ID"} ending ${idLastFour || "----"}`,
                     },
+                    // A guest's gender and age are already under Guest above.
+                    ...(isDaily
+                      ? []
+                      : [
+                          { label: "Gender", value: idGender ? GENDER_LABELS[idGender] : "-" },
+                          { label: "Date of birth", value: idDob ? formatDateLong(dateFromStr(idDob)) : "-" },
+                        ]),
                   ]
             }
             title="Verification"
@@ -1453,7 +1619,7 @@ export default function OwnerOnboardTenantScreen() {
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.2 }}>
               Tenancy agreement
             </Text>
-            <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               These are the exact terms this tenant will accept. The term and the clauses below apply to this
               tenancy only — they do not change the property's standard agreement.
             </Text>
@@ -1547,12 +1713,12 @@ export default function OwnerOnboardTenantScreen() {
                     value={termMonths != null ? String(termMonths) : ""}
                   />
                 </Field>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   Min 1, max 12 months. A fixed term ends the tenancy on its last day.
                 </Text>
               </>
             ) : (
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Runs until either side serves notice. Leaving without serving it is what the early-exit clause
                 charges for.
               </Text>
@@ -1572,7 +1738,7 @@ export default function OwnerOnboardTenantScreen() {
         <>
           <View style={{ gap: 4 }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.35 }}>
-              Tenancy created
+              {bookedForFuture ? "Future tenancy booked" : "Tenancy created"}
             </Text>
             <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 20 }]}>
               {result.tenancy.guestStay
@@ -1585,18 +1751,22 @@ export default function OwnerOnboardTenantScreen() {
             <NoticeBar
               icon={Check}
               message={
-                result.tenantAccountCreated
+                bookedForFuture
+                  ? "The monthly tenancy is booked for its future start date. The agreement is sent now."
+                  : result.tenantAccountCreated
                   ? "The tenant account and tenancy were created successfully."
                   : "The tenancy was created successfully."
               }
-              title="Onboarding complete"
+              title={bookedForFuture ? "Booking created" : "Onboarding complete"}
               tone="success"
             />
 
             {result.tenancy.status === "PENDING_ACCEPTANCE" ? (
               <NoticeBar
                 icon={Clock3}
-                message="The bed is reserved. The tenancy and billing start once the tenant accepts the agreement in their app. Pending tenancies auto-cancel after 3 days."
+                message={bookedForFuture
+                  ? "The agreement is available to sign now and expires after 3 days if not accepted. The stay and billing start on the selected date, once the bed is free. If the stay in it hasn't been ended by then, it starts the day you end it."
+                  : "The bed is reserved. The tenancy and billing start once the tenant accepts the agreement in their app. Pending tenancies auto-cancel after 3 days."}
                 title="Awaiting acceptance"
                 tone="warning"
               />
@@ -1776,7 +1946,7 @@ export default function OwnerOnboardTenantScreen() {
             }}
           >
             <Info color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 2 }} />
-            <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 17 }]}>
+            <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
               Sent to the tenant&apos;s account for acceptance. The tenancy and its billing start
               only once they accept.
             </Text>
@@ -1806,8 +1976,8 @@ export default function OwnerOnboardTenantScreen() {
 function GuestStayCard({
   address,
   addressError,
-  age,
-  ageError,
+  dob,
+  dobError,
   email,
   emailError,
   gender,
@@ -1815,8 +1985,8 @@ function GuestStayCard({
   name,
   nameError,
   onAddress,
-  onAge,
   onChangeName,
+  onDob,
   onEmail,
   onGender,
   onPhone,
@@ -1825,8 +1995,9 @@ function GuestStayCard({
 }: {
   address: string;
   addressError?: string;
-  age: string;
-  ageError?: string;
+  /** `YYYY-MM-DD` as the guest's ID shows it. */
+  dob: string;
+  dobError?: string;
   email: string;
   emailError?: string;
   gender: Gender | null;
@@ -1834,8 +2005,8 @@ function GuestStayCard({
   name: string;
   nameError?: string;
   onAddress: (value: string) => void;
-  onAge: (value: string) => void;
   onChangeName: (value: string) => void;
+  onDob: (value: string) => void;
   onEmail: (value: string) => void;
   onGender: (value: Gender | null) => void;
   onPhone: (value: string) => void;
@@ -1848,12 +2019,13 @@ function GuestStayCard({
     <Card>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
         {/* Outlined, never filled — the app's icon rule. */}
+        {/* A grey disc behind the person, not a ring (owner's call, 2026-09-27),
+            the same grey ground the app's other person icons sit on. */}
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.ink,
+            backgroundColor: colors.neutralSoft,
             borderRadius: 999,
-            borderWidth: 1.5,
             height: 46,
             justifyContent: "center",
             width: 46,
@@ -1866,7 +2038,7 @@ function GuestStayCard({
           <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
             {name.trim() || "Guest details"}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Recorded for this stay only
           </Text>
         </View>
@@ -1917,16 +2089,13 @@ function GuestStayCard({
         />
       </Field>
 
-      <Field error={ageError} label="Age">
-        <Input
-          invalid={Boolean(ageError)}
-          keyboardType="number-pad"
-          maxLength={3}
-          onChangeText={onAge}
-          placeholder="Enter age"
-          value={age}
-        />
-      </Field>
+      {/* A date of birth, not an age (owner's rule, 2026-09-27): it is what the
+          ID shows, and the manual check makes its 18+ check against it.
+          DateOfBirthField draws its own label, so only the error is added. */}
+      <View style={{ gap: 6 }}>
+        <DateOfBirthField onChange={onDob} value={dob} />
+        {dobError ? <Text style={[type.caption, { color: colors.danger }]}>{dobError}</Text> : null}
+      </View>
 
       {/* No Field wrapper: GenderPicker draws its own label, and nesting it in
           one printed "Gender" twice. Only the error message is added here. */}
@@ -2021,12 +2190,13 @@ function LookupResultCard({
         {/* Outlined, never filled — the app's icon rule. The glyph says which
             KIND of person this is; the pill beside it says whether they can be
             onboarded, which is a different question. */}
+        {/* A grey disc behind the person, not a ring (owner's call, 2026-09-27),
+            the same grey ground the app's other person icons sit on. */}
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.ink,
+            backgroundColor: colors.neutralSoft,
             borderRadius: 999,
-            borderWidth: 1.5,
             height: 46,
             justifyContent: "center",
             width: 46,
@@ -2161,7 +2331,11 @@ function LookupResultCard({
           {optionalOpen ? (
             <>
               <DateOfBirthField disabled={held(prefill?.dateOfBirth)} onChange={onDob} value={dob} />
-              <GenderPicker onChange={prefill?.gender ? () => {} : onGender} value={gender} />
+              <GenderPicker
+                disabled={Boolean(prefill?.gender && prefill.gender !== "UNDECLARED")}
+                onChange={onGender}
+                value={gender}
+              />
             </>
           ) : null}
         </>
@@ -2235,6 +2409,7 @@ function PropertySummary({ property }: { property: OwnerProperty }) {
  * decision needs.
  */
 function RoomPicker({
+  availableFrom,
   onClear,
   onSelect,
   priceOf,
@@ -2242,6 +2417,7 @@ function RoomPicker({
   selectedRoomId,
   unavailable,
 }: {
+  availableFrom: (room: OwnerRoom) => string | null;
   /** Reopens the picker on the floor the current room is on. */
   onClear: () => void;
   onSelect: (room: OwnerRoom) => void;
@@ -2291,8 +2467,13 @@ function RoomPicker({
             Room {selected.roomNumber}
           </Text>
           <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
-            {formatFloor(selected.floor)} · {priceOf(selected)}
+            {formatFloor(selected.floor)} · {conditioningLabel(selected)} · {priceOf(selected)}
           </Text>
+          {availableFrom(selected) ? (
+            <Text style={[type.caption, { color: colors.primary }]}>
+              Available from {formatDateLong(dateFromStr(availableFrom(selected)!))}
+            </Text>
+          ) : null}
         </View>
         <AnimatedPressable
           accessibilityRole="button"
@@ -2312,7 +2493,8 @@ function RoomPicker({
     <View style={{ gap: spacing.sm }}>
       {floors.map(([floor, floorRooms]) => {
         const open = openFloor === floor;
-        const free = floorRooms.filter((room) => !unavailable(room)).length;
+        const freeNow = floorRooms.filter((room) => !unavailable(room) && room.availableVacancies > 0).length;
+        const upcoming = floorRooms.filter((room) => !unavailable(room) && availableFrom(room)).length;
 
         return (
           <View key={floor} style={{ gap: spacing.sm }}>
@@ -2335,8 +2517,10 @@ function RoomPicker({
               <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 15 }}>
                 {floor === "Unassigned" ? floor : formatFloor(floor)}
               </Text>
-              <Text style={[type.caption, { color: free > 0 ? colors.muted : colors.kicker }]}>
-                {free > 0 ? `${free} free` : "Full"}
+              <Text style={[type.description, { color: freeNow + upcoming > 0 ? colors.muted : colors.kicker }]}>
+                {freeNow > 0 && upcoming > 0
+                  ? `${freeNow} now · ${upcoming} upcoming`
+                  : freeNow > 0 ? `${freeNow} free` : upcoming > 0 ? `${upcoming} upcoming` : "Full"}
               </Text>
               {open ? (
                 <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
@@ -2352,9 +2536,13 @@ function RoomPicker({
                       disabled={unavailable(room)}
                       onPress={() => onSelect(room)}
                       selected={false}
-                      subtitle={`${priceOf(room)} · ${
-                        room.availableVacancies > 0 ? `${room.availableVacancies} vacancy` : "Full"
-                      }`}
+                      // AC or not and the rent on the first line, what is free on
+                      // the second: the two things an owner picks a room by.
+                      subtitle={`${conditioningLabel(room)} · ${priceOf(room)}\n${room.availableVacancies > 0
+                        ? `${room.availableVacancies} ${room.availableVacancies === 1 ? "vacancy" : "vacancies"}`
+                        : availableFrom(room)
+                          ? `Available from ${formatDateLong(dateFromStr(availableFrom(room)!))}`
+                          : "Full"}`}
                       title={`Room ${room.roomNumber}`}
                     />
                   </View>
@@ -2498,6 +2686,27 @@ function LockedValue({ value }: { value: string }) {
   );
 }
 
+/**
+ * Under the checked date of birth: the 18+ verdict it gives. The status mark
+ * (a filled disc, white glyph) is the app's shape for "something was decided".
+ */
+function AdultVerdict({ adult }: { adult: boolean }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+      {adult ? (
+        <StatusIcon size={16} tone="success" />
+      ) : (
+        // Literal white, as StatusIcon does: onPrimary is near-black in the dark theme.
+        <CircleX color="#FFFFFF" fill={colors.danger} size={16} strokeWidth={2} />
+      )}
+      <Text style={[type.caption, { color: adult ? colors.ink : colors.danger }]}>
+        {adult ? "Verified adult (18+)" : "Verified underage"}
+      </Text>
+    </View>
+  );
+}
+
 function Field({
   children,
   error,
@@ -2515,7 +2724,10 @@ function Field({
           eyebrow, which is upper-case and belongs to section headings — so
           every input on this screen shouted its name while the same field on
           the property form did not. */}
-      <Text style={[type.label, { color: error ? colors.danger : colors.inkSoft }]}>
+      {/* `muted`, the colour FormInput, GenderPicker and DateOfBirthField use
+          at rest. This was `inkSoft`, so "Last four digits" read darker than
+          the Gender and Date of birth labels under it. */}
+      <Text style={[type.label, { color: error ? colors.danger : colors.muted }]}>
         {label}
       </Text>
       {children}
@@ -2659,7 +2871,7 @@ function SelectRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5 }}>
           {title}
         </Text>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {subtitle}
         </Text>
       </View>

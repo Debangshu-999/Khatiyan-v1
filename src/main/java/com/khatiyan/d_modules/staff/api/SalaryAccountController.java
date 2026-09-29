@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.staff.api.dto.CreateSalaryAdjustmentRequest;
 import com.khatiyan.d_modules.staff.api.dto.RecordSalaryPaymentRequest;
@@ -97,6 +98,7 @@ public class SalaryAccountController {
     }
 
     @PostMapping("/salary-accounts/{accountReferenceCode}/months/{payrollMonth}/adjustments")
+    @RequiresVersion
     public SalaryAccountDetailResponse addAdjustment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -107,6 +109,7 @@ public class SalaryAccountController {
     }
 
     @PatchMapping("/salary-accounts/{accountReferenceCode}/months/{payrollMonth}/adjustments/{adjustmentId}")
+    @RequiresVersion
     public SalaryAccountDetailResponse updateAdjustment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -119,6 +122,7 @@ public class SalaryAccountController {
     }
 
     @DeleteMapping("/salary-accounts/{accountReferenceCode}/months/{payrollMonth}/adjustments/{adjustmentId}")
+    @RequiresVersion
     public SalaryAccountDetailResponse removeAdjustment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -130,6 +134,7 @@ public class SalaryAccountController {
     }
 
     @PostMapping("/salary-accounts/{accountReferenceCode}/months/{payrollMonth}/payments")
+    @RequiresVersion
     public SalaryAccountDetailResponse recordManualPayment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

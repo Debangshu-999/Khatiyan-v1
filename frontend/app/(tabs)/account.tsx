@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { ActivityIndicator, Image, Text, View, type ViewStyle } from "react-native";
 import { PropertyIcon } from "@/components/property-icon";
 import { AppTextInput } from "@/components/app-text-input";
@@ -144,6 +144,9 @@ export default function AccountScreen() {
   const [emailDraft, setEmailDraft] = useState("");
   const [profileEdit, setProfileEdit] = useState<ProfileEditField | null>(null);
   const [completionInfoOpen, setCompletionInfoOpen] = useState(false);
+  useEffect(() => {
+    if (profileCompletion.complete) setCompletionInfoOpen(false);
+  }, [profileCompletion.complete]);
   const profileImageUri = pickedImageUri ?? profileQuery.data?.profilePhotoUrl ?? null;
 
   async function saveRecoveryEmail() {
@@ -385,10 +388,10 @@ export default function AccountScreen() {
             />
           </PersonalInfoCard>
           <PersonalInfoCard
-            accessibilityLabel="View profile completion"
+            accessibilityLabel={profileCompletion.complete ? undefined : "View profile completion"}
             compact
             icon={CircleAlert}
-            onPress={() => setCompletionInfoOpen(true)}
+            onPress={!identityLoading && !profileCompletion.complete ? () => setCompletionInfoOpen(true) : undefined}
             style={{ flex: 1 }}
           >
             <CompletionField compact complete={profileCompletion.complete} loading={identityLoading} />
@@ -669,7 +672,7 @@ export default function AccountScreen() {
             label="Register new property"
             onPress={() => router.push("/owner-register-property")}
           />
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {atPropertyCap
               ? `You are using all ${MAX_OWNER_PROPERTIES} of your property slots. Deactivate one from its property screen to register another.`
               : "Add a new PG, hostel or apartment and create its discovery profile."}
@@ -775,7 +778,7 @@ export default function AccountScreen() {
       {/* The detail behind "Incomplete". It lives here rather than in the field
           because there is room for a sentence, and because what is missing is
           only worth reading once — the field's job is to say that something is. */}
-      {completionInfoOpen ? (
+      {completionInfoOpen && !profileCompletion.complete ? (
         <ConfirmDialog
           acknowledgeOnly
           bullets={profileCompletion.missing}
@@ -959,8 +962,7 @@ function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode
  *
  * <p>The white surface is deliberate: account health is communicated by the
  * value, never by washing the entire card green or red. The icon disc remains
- * neutral and every glyph uses the normal ink colour, including account status
- * and profile completion.
+ * neutral while status values carry their state colours.
  */
 function PersonalInfoCard({
   accessibilityLabel,
@@ -1351,7 +1353,7 @@ function CompletionField({ compact, complete, loading }: { compact?: boolean; co
           minimumFontScale={0.78}
           numberOfLines={1}
           style={{
-            color: complete ? colors.ink : colors.danger,
+            color: complete ? colors.jade : colors.danger,
             fontFamily: fonts.sansBold,
             fontSize: compact ? 13 : 15,
             minHeight: 24,

@@ -27,13 +27,19 @@ public record DepositAccountResponse(
     Instant settledAt,
     Instant createdAt,
     Instant updatedAt,
-    List<DepositMovementResponse> movements
+    List<DepositMovementResponse> movements,
+    /**
+     * The row's version (2026-09-29). A screen sends it back as If-Match when
+     * it acts, and a record changed since the screen loaded it is refused.
+     */
+    long version
 ) {
     public static DepositAccountResponse from(
             DepositAccount account,
             String tenantName,
             String tenancyReferenceCode,
             long currentBalancePaise,
+            Instant lastLedgerActivityAt,
             List<DepositMovementResponse> movements) {
         return new DepositAccountResponse(
             account.getId(),
@@ -47,8 +53,19 @@ public record DepositAccountResponse(
             account.getPayableAtExit(),
             account.getSettledAt(),
             account.getCreatedAt(),
-            account.getUpdatedAt(),
-            movements
+            latest(account.getUpdatedAt(), lastLedgerActivityAt),
+            movements,
+            account.getVersion()
         );
+    }
+
+    private static Instant latest(Instant accountUpdatedAt, Instant lastLedgerActivityAt) {
+        if (accountUpdatedAt == null) {
+            return lastLedgerActivityAt;
+        }
+        if (lastLedgerActivityAt == null) {
+            return accountUpdatedAt;
+        }
+        return accountUpdatedAt.isAfter(lastLedgerActivityAt) ? accountUpdatedAt : lastLedgerActivityAt;
     }
 }

@@ -8,18 +8,19 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-// The app's one bottom sheet: grabber handle, serif title with a close button,
-// safe-area padding and keyboard avoidance. Every modal sheet should render
-// through this so they all open, pad and scroll identically.
+// The standard bottom sheet: grabber handle, title, close button, safe-area
+// padding and keyboard avoidance. Custom layouts use BottomSheetModal with the
+// same motion.
 export function SheetShell({
-  animated = false,
+  animated = true,
   children,
   dismissOnDrag = false,
   onClose,
   title,
 }: {
   /**
-   * The hand-run entrance and the fading backdrop, without the drag.
+   * The hand-run entrance and the fading backdrop, without the drag. This is
+   * the default motion for every sheet using this shared shell.
    *
    * <p>
    * Split out of {@link dismissOnDrag}, which used to be the only way to get
@@ -28,18 +29,17 @@ export function SheetShell({
    * that came bundled with the fix fights a keyboard and an inner scroll, which
    * is why a sheet holding a form could not have either.
    *
-   * <p>Implied by {@code dismissOnDrag}. Set this on its own for a sheet that
-   * is filled in rather than read.
+   * <p>Implied by {@code dismissOnDrag}. Set this to false only for a sheet that
+   * deliberately needs the platform transition instead.
    */
   animated?: boolean;
   children: ReactNode;
   /**
-   * Opt in to a hand-run entrance and a grabber you can actually drag the sheet
-   * down by.
+   * Opt in to a grabber you can actually drag the sheet down by.
    *
    * <p>Off by default because dragging fights the keyboard and the scroll inside
    * a form. Sheets that are read, not filled in, want this; a sheet that only
-   * wants the entrance takes {@link animated}.
+   * wants the entrance uses the default animation.
    */
   dismissOnDrag?: boolean;
   onClose: () => void;
@@ -129,6 +129,7 @@ export function SheetShell({
   // rather than slide. Both consumers of this value, a transform and an
   // opacity, are native-driver safe.
   const offset = useRef(new Animated.Value(runsOwnAnimation ? travel : 0)).current;
+  const closing = useRef(false);
 
   useEffect(() => {
     if (!runsOwnAnimation) {
@@ -144,10 +145,14 @@ export function SheetShell({
   }, [nativeDriven, runsOwnAnimation, offset]);
 
   const dismiss = useCallback(() => {
+    if (closing.current) {
+      return;
+    }
     if (!runsOwnAnimation) {
       onClose();
       return;
     }
+    closing.current = true;
 
     // Unmounting on the way out rather than at the start of it: calling onClose
     // first would tear the sheet off the screen and leave nothing to animate.
@@ -159,6 +164,8 @@ export function SheetShell({
     }).start(({ finished }) => {
       if (finished) {
         onClose();
+      } else {
+        closing.current = false;
       }
     });
   }, [nativeDriven, runsOwnAnimation, offset, onClose, travel]);

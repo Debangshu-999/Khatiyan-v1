@@ -127,7 +127,7 @@ export function NotificationOptInPrompt() {
               >
                 Enable alerts
               </Text>
-              <Text style={[type.body, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Get bill, concern, notice and tenancy updates on this device.
               </Text>
             </View>

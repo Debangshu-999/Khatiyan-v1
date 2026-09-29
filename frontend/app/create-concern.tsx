@@ -19,6 +19,9 @@ import { useToast } from "@/components/toast";
 import type { ConcernCategory } from "@/store/services/concern-api";
 import { uploadAssets } from "@/features/uploads/upload-asset";
 import { useCreateConcernMutation } from "@/store/services/concern-api";
+import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
+import { EmptyState } from "@/components/empty-state";
+import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -64,6 +67,7 @@ export default function CreateConcernScreen() {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const [createConcern, createState] = useCreateConcernMutation();
+  const activeTenancy = useGetMyActiveTenancyQuery().data;
   const [category, setCategory] = useState<ConcernCategory>("MAINTENANCE");
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -205,6 +209,19 @@ export default function CreateConcernScreen() {
     }
   };
 
+  if (activeTenancy && tenancyNotStarted(activeTenancy.tenancy.startDate)) {
+    return (
+      <ScreenScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
+        <ScreenHeader italicTail="concern." title="Raise" />
+        <EmptyState
+          icon={MessageSquareWarning}
+          title="Your tenancy has not started"
+          description={REQUESTS_NOT_STARTED.concern}
+        />
+      </ScreenScrollView>
+    );
+  }
+
   return (
     <ScreenScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
       <ScreenHeader
@@ -321,7 +338,7 @@ function PhotoAttachmentSection({
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.body, { color: colors.muted, flex: 1, lineHeight: 20 }]}>
+        <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
           Optional · add up to four photos to help the property team understand the issue.
         </Text>
         <View
@@ -534,7 +551,7 @@ function CategoryPickerSheet({
 
   return (
     <SheetShell animated onClose={onClose} title="Choose a category">
-      <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Select the closest match. You can explain the full issue in the details section.
       </Text>
       <View

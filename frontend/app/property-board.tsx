@@ -68,7 +68,7 @@ export default function PropertyBoardScreen() {
               <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
                 Could not load the property board
               </Text>
-              <Text style={[type.body, { color: colors.muted, textAlign: "center" }]}>
+              <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
                 Check your connection and try again.
               </Text>
               <AnimatedPressable

@@ -117,10 +117,11 @@ export default function OwnerScreen() {
                   </Text>
                 </View>
                 <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-                  <View style={{ alignItems: "center", paddingTop: 2, width: 24 }}>
-                    <MapPin color={colors.muted} size={18} strokeWidth={1.9} />
+                  {/* Sized to the description line it sits beside (2026-09-29). */}
+                  <View style={{ alignItems: "center", width: 24 }}>
+                    <MapPin color={colors.muted} size={15} strokeWidth={1.9} />
                   </View>
-                  <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
+                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
                     {[selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode]
                       .filter(Boolean)
                       .join(", ")}
@@ -331,7 +332,7 @@ function ServiceCard({
                 </View>
               ) : null}
             </View>
-            <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {description}
             </Text>
           </View>

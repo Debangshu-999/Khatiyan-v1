@@ -6,15 +6,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, AlertTriangle, Ban, Banknote, BedDouble, BedSingle, Bell, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Clock, Clock3, Compass, DoorClosed, DoorOpen, FileText, Home, KeyRound, LayoutGrid, LocateFixed, LogOut, type LucideProps, MapPin, Megaphone, Navigation, PiggyBank, Pin, Receipt, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet, Waves, Wrench, X } from "lucide-react-native";
+import { Activity, AlertCircle, ChartPie, AlertTriangle, Ban, Banknote, BedDouble, Bell, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Compass, FileText, Home, KeyRound, LayoutGrid, LocateFixed, Lock, LogOut, type LucideProps, MapPin, Megaphone, MessageSquareWarning, Navigation, Pin, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, UserMinus, UserPlus, UserRound, Users, Waves, Wrench, X } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Svg, { Path, Rect } from "react-native-svg";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { PropertyIcon } from "@/components/property-icon";
 import { ScreenHeader } from "@/components/screen-header";
 import { useToast } from "@/components/toast";
 import { takeWelcome } from "@/features/auth/pending-welcome";
-import { CollectedIcon, CollectionIcon, ExpenseIcon, MoneyIcon, NoticeIcon, PaymentClaimsIcon, PropertyArtwork } from "@/components/artwork-icon";
+import { ExpenseIcon, MoneyIcon, NoticeIcon, PaymentClaimsIcon, PropertyArtwork } from "@/components/artwork-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
@@ -23,18 +24,15 @@ import { FilterPillRow } from "@/components/filter-bubbles";
 import { GradientCtaCard } from "@/components/gradient-cta-card";
 import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
-import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SheetShell } from "@/components/sheet-shell";
 import { Section } from "@/components/section";
-import { SnapshotTile } from "@/components/snapshot-tile";
-import { TrendBarChart } from "@/components/trend-bar-chart";
 import { SkeletonCard, SkeletonPills, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
 import {
   OwnerDashboardDataSkeleton,
   OwnerDigestCardSkeleton,
   OwnerLiveDigestSkeleton,
+  OwnerPinnedServicesSkeleton,
   OwnerPropertySelectorSkeleton,
 } from "@/components/skeletons/owner";
 import { api } from "@/store/api";
@@ -62,17 +60,17 @@ import {
   type RecentActivityType,
   type RecentActivityItem,
 } from "@/store/services/dashboard-api";
-import { ActionButton } from "@/features/owner/owner-ui";
-import { DualBarChart } from "@/components/dual-bar-chart";
-import { PnlTrendChart, monthShort } from "@/features/owner/pnl-trend-chart";
-import { useGetBudgetOverviewQuery, useGetBudgetTrendQuery, type ExpenseBudgetOverview } from "@/store/services/expense-api";
-import { useGetPnlStatementQuery, useGetPnlTrendQuery, type PnlStatement } from "@/store/services/pnl-api";
+import { useGetBudgetOverviewQuery } from "@/store/services/expense-api";
+import { useGetPnlStatementQuery, type PnlStatement } from "@/store/services/pnl-api";
 import { findOwnerModule } from "@/features/owner/owner-modules";
 import { useScopedUnreadCount } from "@/features/notifications/alert-filters";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
+import { useScreenAccessGuard } from "@/features/owner/use-screen-access-guard";
+import { DIVISIONS } from "@/features/analytics/divisions";
+import type { AnalyticsDivision } from "@/features/analytics/types";
 import { useRouteGate } from "@/features/owner/route-gates";
 import { workingDaysInCurrentMonth } from "@/features/owner/working-days";
-import { type OwnerProperty } from "@/store/services/property-api";
+import { type MealType, type OwnerProperty } from "@/store/services/property-api";
 import { useListManagerEmploymentQuery, useListStaffCategoriesQuery, useListStaffMembersQuery } from "@/store/services/staff-api";
 import { useGetMyActiveTenancyQuery, type TenantActiveTenancy } from "@/store/services/tenancy-api";
 import { accountLabel, useAvailableAccounts } from "@/features/account/accounts";
@@ -82,8 +80,16 @@ import { clearSession } from "@/store/slices/auth-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
 import type { PaymentIntentDigest } from "@/store/services/payment-intent-api";
 import { useGetServiceBalanceQuery } from "@/store/services/service-balance-api";
-import { useGetMyFoodAvailabilityQuery } from "@/store/services/food-api";
-import { foodIcon } from "@/features/food/food-ui";
+import {
+  useGetMyFoodAvailabilityQuery,
+  useGetMyFoodSubscriptionQuery,
+  useGetMyMealScheduleQuery,
+  type DayOfWeek,
+  type FoodPlan,
+} from "@/store/services/food-api";
+import { MealGlyph, MEAL_LABEL, foodIcon, formatMealTime, todayInIst, weekdayOf } from "@/features/food/food-ui";
+import { DelayedChip } from "@/features/food/meal-schedule-ui";
+import { TenancyStartsSoonBubble } from "@/features/tenancy/starts-soon-bubble";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
@@ -463,7 +469,7 @@ function locationTitle(location: DeviceLocationState) {
   if (location.status === "error") {
     return "Location unavailable";
   }
-  const label = location.city ?? location.locality ?? location.district ?? location.state;
+  const label = location.city ?? location.locality;
   if (label) {
     return label;
   }
@@ -1151,7 +1157,7 @@ function ActivityNoPropertyState() {
       >
         Choose a property first
       </Text>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 19, textAlign: "center" }]}>
+      <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
         Activity is tracked per property. Pick the active property on Home and its last 7 days of events will appear
         here.
       </Text>
@@ -1167,7 +1173,7 @@ function ActivityEmptyHint() {
   return (
     <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
       <Waves color={colors.kicker} size={22} strokeWidth={2} />
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 19, textAlign: "center" }]}>
+      <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
         Property events for last 7 days will appear here
       </Text>
     </View>
@@ -1183,8 +1189,14 @@ function TenantHome({
 }) {
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const activeTenancy = activeTenancyQuery.data;
-  const boardQuery = useListMyPropertyBoardItemsQuery();
-  const noticesQuery = useListMyVisibleNoticesQuery();
+  // Until the agreement is signed the stay has not begun: food, the property
+  // board and notices are the property's own business with its tenants, and
+  // stay closed (owner's decision, 2026-09-27). Not even fetched.
+  const awaitingSignature = activeTenancy?.tenancy.status === "PENDING_ACCEPTANCE";
+  const boardQuery = useListMyPropertyBoardItemsQuery(undefined, { skip: awaitingSignature });
+  const noticesQuery = useListMyVisibleNoticesQuery(undefined, { skip: awaitingSignature });
+  // Availability only (is there food here at all), so the locked card shows
+  // where the real one would. Nothing about the tenant's meals is read.
   const foodQuery = useGetMyFoodAvailabilityQuery(undefined, { skip: !activeTenancy });
   const boardItems = selectPropertyBoardPreviewItems(boardQuery.data ?? []);
   const noticeCount = noticesQuery.data?.length ?? 0;
@@ -1210,14 +1222,24 @@ function TenantHome({
     <>
       <TenantCurrentPropertyCard activeTenancy={activeTenancy} />
 
+      {/* Before the start date only. Nothing renders once the stay has begun. */}
+      <TenancyStartsSoonBubble startDate={activeTenancy.tenancy.startDate} />
+
       {foodQuery.data?.foodAvailableInProperty ? (
-        <ActionCard
-          description={foodQuery.data.moduleEnabled ? "View available meal profiles, weekly menus and your subscription." : "Food is managed directly by your property right now."}
-          icon={foodIcon("silverware-fork-knife")}
-          meta={foodQuery.data.moduleEnabled ? undefined : "Managed manually"}
-          onPress={() => onNavigate("/tenancy-food")}
-          title="Food preference"
-        />
+        awaitingSignature ? (
+          // Locked, a tap goes to where the agreement is signed.
+          <ActionCard
+            description="Sign agreement to unlock"
+            icon={foodIcon("silverware-fork-knife")}
+            onPress={() => onNavigate("/tenancy")}
+            title="Food preference"
+          />
+        ) : (
+          <FoodPreferenceHomeCard
+            moduleEnabled={foodQuery.data.moduleEnabled}
+            onPress={() => onNavigate("/tenancy-food")}
+          />
+        )
       ) : null}
 
       {boardQuery.isFetching && !boardQuery.data ? (
@@ -1225,13 +1247,21 @@ function TenantHome({
       ) : (
         <PropertyBoardHomeCard
           items={boardItems}
-          onOpenBoard={() => onNavigate("/property-board")}
+          lockedText={awaitingSignature ? "Sign agreement to unlock" : undefined}
+          onOpenBoard={() => onNavigate(awaitingSignature ? "/tenancy" : "/property-board")}
           onOpenItem={(item) => onOpenBoardItem(item.id)}
         />
       )}
 
       <Section title="Notice board">
-        {noticesQuery.isFetching ? (
+        {awaitingSignature ? (
+          <NoticePreviewCard
+            lockedText="Sign agreement to unlock"
+            noticeCount={0}
+            notices={[]}
+            onPress={() => onNavigate("/tenancy")}
+          />
+        ) : noticesQuery.isFetching ? (
           <SkeletonCard />
         ) : notices.length > 0 ? (
           <NoticePreviewCard
@@ -1246,6 +1276,110 @@ function TenantHome({
 
     </>
   );
+}
+
+const FOOD_PREFERENCE_ARTWORK = require("../../assets/workspace/food-preference-module-card.png");
+
+/**
+ * The tenant's food card on Home: the next meal, their plan, and an arrow
+ * like the Property Board's. Which meal is next comes from the server's meal
+ * schedule, the same one the owner's forecast and the food screen read.
+ */
+function FoodPreferenceHomeCard({
+  moduleEnabled,
+  onPress,
+}: {
+  moduleEnabled: boolean;
+  onPress: () => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  // The server's meal day (2026-09-28): the next meal, its time and any delay.
+  // Nothing is next once the day's last meal is over, until midnight.
+  const upcoming = useGetMyMealScheduleQuery().data?.nextMeal ?? null;
+  const subscriptionQuery = useGetMyFoodSubscriptionQuery(undefined, { skip: !moduleEnabled });
+  const planLine = foodPlanLine(subscriptionQuery.data ?? null);
+
+  return (
+    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: 20,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.md,
+          padding: spacing.lg,
+        }}
+      >
+        {/* The owner's Food preference module mark, so the module reads the
+            same on both sides. */}
+        <View style={{ alignItems: "center", borderRadius: 999, height: 72, justifyContent: "center", overflow: "hidden", width: 72 }}>
+          <Image
+            accessibilityIgnoresInvertColors
+            accessible={false}
+            resizeMode="contain"
+            source={FOOD_PREFERENCE_ARTWORK}
+            style={{ height: 70, width: 70 }}
+          />
+        </View>
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 25 }]}>Food preference</Text>
+          {upcoming ? (
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+              <MealGlyph color={colors.primary} meal={upcoming.mealType} size={16} />
+              <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+                {upcoming.status === "SERVING"
+                  ? `Now: ${MEAL_LABEL[upcoming.mealType]}`
+                  : `Up next: ${MEAL_LABEL[upcoming.mealType]} at ${formatMealTime(upcoming.startTime)}`}
+              </Text>
+            </View>
+          ) : null}
+          {upcoming && upcoming.delayMinutes > 0 ? (
+            <View style={{ alignSelf: "flex-start" }}>
+              <DelayedChip minutes={upcoming.delayMinutes} />
+            </View>
+          ) : null}
+          <Text style={[type.description, { color: colors.muted }]}>
+            {!moduleEnabled
+              ? "Food is managed directly by your property right now."
+              : planLine}
+          </Text>
+        </View>
+        <ChevronRight color={colors.primary} size={18} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * One line for the tenant's plan (2026-09-29): what they eat today, and what
+ * changes after midnight.
+ */
+function foodPlanLine(plan: FoodPlan | null): string {
+  const today = plan?.today ?? null;
+  const next = plan?.fromTomorrow ?? null;
+  if (!today && !next) {
+    return "No meal plan chosen yet.";
+  }
+  if (!today) {
+    return "Your plan starts tomorrow.";
+  }
+  const todayDay = today.days.find((day) => day.day === todayWeekdayInIst());
+  const name = today.hybrid ? `Hybrid, ${todayDay?.profileName ?? ""} today` : today.profileName ?? "";
+  if (plan?.endsTonight) {
+    return `Your plan: ${name}. Ends tonight.`;
+  }
+  if (next) {
+    return `Your plan: ${name}. ${next.hybrid ? "Hybrid plan" : next.profileName} from tomorrow.`;
+  }
+  return `Your plan: ${name}`;
+}
+
+function todayWeekdayInIst(): DayOfWeek {
+  return weekdayOf(todayInIst());
 }
 
 function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantActiveTenancy }) {
@@ -1480,9 +1614,9 @@ function OwnerHome({
           gap: spacing.md,
           marginHorizontal: -spacing.lg,
           overflow: selectorPanelOpen ? "hidden" : "visible",
-          // A small closed-state join lets the blue baseline meet the tab's
-          // shoulder at the same depth instead of stopping just above it.
-          paddingBottom: selectorPanelOpen ? spacing.md : 3,
+          // The closed tab bar draws its entire blue-to-page boundary itself.
+          // Extra header padding would leave a separate blue baseline beneath it.
+          paddingBottom: selectorPanelOpen ? spacing.md : 0,
           paddingHorizontal: spacing.lg,
         }}
       >
@@ -1541,7 +1675,7 @@ function OwnerHome({
 
         {selectedProperty && !selectorOpen && dashboard ? (
           tab === "dashboard" ? (
-            <DashboardTab dashboard={dashboard} onNavigate={navigate} />
+            <DashboardTab dashboard={dashboard} />
           ) : (
             <WorkspaceTab dashboard={dashboard} onNavigate={navigate} pinnedKeys={pinnedKeys} workspaceRole={workspaceRole} />
           )
@@ -1552,115 +1686,82 @@ function OwnerHome({
   );
 }
 
-type SnapshotKey = "collection" | "property" | "tenancy" | "expense" | "pnl";
-
 /** A line graph for the Dashboard tab: a trend rather than the bar chart it was. */
 function DashboardGlyph({ color, size }: LucideProps) {
   return <MaterialCommunityIcons color={color} name="chart-line" size={Number(size ?? 24)} />;
 }
 
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
-  const { colors, fonts, isDark } = useTheme();
-  const [tabBarWidth, setTabBarWidth] = useState(0);
+  const { colors, fonts } = useTheme();
+  const [tabBarSize, setTabBarSize] = useState({ height: 0, width: 0 });
   const options: { icon: ComponentType<LucideProps>; label: string; value: OwnerTab }[] = [
     { icon: LayoutGrid, label: "Workspace", value: "workspace" },
     { icon: DashboardGlyph, label: "Dashboard", value: "dashboard" },
   ];
-  const tabWidth = tabBarWidth / options.length;
+  const iconSize = 20;
+  const iconGap = 4;
+  const tabWidth = tabBarSize.width / options.length;
   const activeLeft = tab === "workspace" ? 0 : tabWidth;
-  const headerColor = colors.primary;
-  const shoulderSize = 32;
-  const joinDepth = 3;
+  const curveSize = 28;
+  // Bleed past both viewport edges so SVG clipping cannot leave a blue hairline.
+  const edgeBleed = 3;
+  const canvasWidth = tabBarSize.width + spacing.lg * 2 + edgeBleed * 2;
+  const shapeHeight = tabBarSize.height;
+  const activeStart = spacing.lg + edgeBleed + activeLeft;
+  const activeEnd = activeStart + tabWidth;
+  const leftShoulder = activeStart - curveSize;
+  const rightShoulder = activeEnd + curveSize;
+  const curveControl = curveSize * 0.55228475;
+  // Draw the entire header-to-page boundary on one full-width SVG surface.
+  // The blue field and page-coloured tab share this one contour rather than
+  // relying on an inset white overlay to line up with two separate Views.
+  const contourPath = [
+    `M 0 ${shapeHeight}`,
+    `L ${leftShoulder} ${shapeHeight}`,
+    `C ${leftShoulder + curveControl} ${shapeHeight} ${activeStart} ${shapeHeight - curveSize + curveControl} ${activeStart} ${shapeHeight - curveSize}`,
+    `L ${activeStart} ${curveSize}`,
+    `C ${activeStart} ${curveSize - curveControl} ${activeStart + curveSize - curveControl} 0 ${activeStart + curveSize} 0`,
+    `H ${activeEnd - curveSize}`,
+    `C ${activeEnd - curveSize + curveControl} 0 ${activeEnd} ${curveSize - curveControl} ${activeEnd} ${curveSize}`,
+    `L ${activeEnd} ${shapeHeight - curveSize}`,
+    `C ${activeEnd} ${shapeHeight - curveSize + curveControl} ${rightShoulder - curveControl} ${shapeHeight} ${rightShoulder} ${shapeHeight}`,
+    `L ${canvasWidth} ${shapeHeight}`,
+  ].join(" ");
+  // Close the fill at the page edge without drawing a visible vertical rule there.
+  const pageShape = `${contourPath} L ${canvasWidth} ${shapeHeight} L 0 ${shapeHeight} Z`;
 
   return (
     <View
       onLayout={(event) => {
-        const nextWidth = event.nativeEvent.layout.width;
-        setTabBarWidth((currentWidth) => (
-          Math.abs(currentWidth - nextWidth) < 0.5 ? currentWidth : nextWidth
+        const { height, width } = event.nativeEvent.layout;
+        setTabBarSize((current) => (
+          Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
+            ? current
+            : { height, width }
         ));
       }}
       style={{ alignItems: "stretch", flexDirection: "row", overflow: "visible" }}
     >
-      {tabBarWidth > 0 ? (
-        <View
+      {tabBarSize.width > 0 && tabBarSize.height > 0 ? (
+        <Svg
+          accessible={false}
+          height={shapeHeight}
           pointerEvents="none"
-          style={{
-            bottom: 0,
-            left: activeLeft,
-            position: "absolute",
-            top: 0,
-            width: tabWidth,
-            zIndex: 0,
-          }}
+          style={{ left: -spacing.lg - edgeBleed, position: "absolute", top: 0, zIndex: 0 }}
+          width={canvasWidth}
         >
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderTopLeftRadius: 30,
-              borderTopRightRadius: 30,
-              bottom: -(joinDepth + 1),
-              boxShadow: isDark
-                ? "0px -2px 10px rgba(0, 0, 0, 0.22)"
-                : "0px -2px 10px rgba(15, 23, 42, 0.10)",
-              left: 0,
-              position: "absolute",
-              right: 0,
-              top: 0,
-            }}
+          <Rect fill={colors.primary} height={shapeHeight} width={canvasWidth} x={0} y={0} />
+          <Path d={pageShape} fill={colors.background} />
+          <Path
+            d={contourPath}
+            fill="none"
+            stroke={colors.primaryDeep}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeOpacity={0.65}
+            strokeWidth={1.5}
           />
-
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              bottom: -joinDepth,
-              height: shoulderSize,
-              // The tab row starts one screen gutter in from the viewport.
-              // Begin the first shoulder at that viewport edge so its arc is
-              // not clipped partway through and sits level with the right one.
-              left: -spacing.lg,
-              overflow: "hidden",
-              position: "absolute",
-              width: shoulderSize + 1,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: headerColor,
-                borderRadius: shoulderSize,
-                bottom: 0,
-                height: shoulderSize * 2,
-                left: -shoulderSize,
-                position: "absolute",
-                width: shoulderSize * 2,
-              }}
-            />
-          </View>
-
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              bottom: -joinDepth,
-              height: shoulderSize,
-              overflow: "hidden",
-              position: "absolute",
-              right: -shoulderSize,
-              width: shoulderSize + 1,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: headerColor,
-                borderRadius: shoulderSize,
-                bottom: 0,
-                height: shoulderSize * 2,
-                position: "absolute",
-                right: -shoulderSize,
-                width: shoulderSize * 2,
-              }}
-            />
-          </View>
-        </View>
+        </Svg>
       ) : null}
 
       {options.map((option) => {
@@ -1684,24 +1785,31 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
                 alignItems: "center",
                 backgroundColor: "transparent",
                 flex: 1,
-                flexDirection: "row",
-                gap: spacing.sm,
                 justifyContent: "center",
                 minHeight: 56,
                 paddingHorizontal: spacing.md,
                 zIndex: 2,
               }}
             >
-              <Icon color={active ? colors.primary : colors.onPrimary} size={20} strokeWidth={2.1} />
-              <Text
+              <View
                 style={{
-                  color: active ? colors.ink : colors.onPrimary,
-                  fontFamily: active ? fonts.sansBold : fonts.sans,
-                  fontSize: 15,
+                  alignItems: "center",
+                  flexDirection: "row",
+                  gap: iconGap,
+                  transform: [{ translateX: option.value === "workspace" && !active ? -(iconSize + iconGap) / 2 : 0 }],
                 }}
               >
-                {option.label}
-              </Text>
+                <Icon color={active ? colors.primary : colors.onPrimary} size={iconSize} strokeWidth={2.1} />
+                <Text
+                  style={{
+                    color: active ? colors.ink : colors.onPrimary,
+                    fontFamily: active ? fonts.sansBold : fonts.sans,
+                    fontSize: 15,
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </View>
             </AnimatedPressable>
           </View>
         );
@@ -1711,45 +1819,12 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
 }
 
 
-const SNAPSHOT_META: Record<SnapshotKey, { title: string }> = {
-  collection: { title: "Collection snapshot" },
-  property: { title: "Property snapshot" },
-  tenancy: { title: "Tenancy snapshot" },
-  expense: { title: "Expense snapshot" },
-  pnl: { title: "P&L snapshot" },
-};
-
-function DashboardTab({
-  dashboard,
-  onNavigate,
-}: {
-  dashboard: OwnerDashboard;
-  onNavigate: (href: OwnerRoute) => void;
-}) {
+function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
   const { colors, type } = useTheme();
-  const { height: viewportHeight } = useWindowDimensions();
-  const { budget, money, occupancy, tenancy } = dashboard;
-  const [openSnapshot, setOpenSnapshot] = useState<SnapshotKey | null>(null);
-  const [snapshotGridTop, setSnapshotGridTop] = useState<number | null>(null);
-  const snapshotGridRef = useRef<View>(null);
-  const toggle = (key: SnapshotKey) => setOpenSnapshot((current) => (current === key ? null : key));
-
-  const measureSnapshotGrid = useCallback(() => {
-    requestAnimationFrame(() => {
-      snapshotGridRef.current?.measureInWindow((_x, y) => {
-        setSnapshotGridTop((current) => (current !== null && Math.abs(current - y) < 0.5 ? current : y));
-      });
-    });
-  }, []);
-
-  // The floating Home tab bar owns the final 96px of the viewport. Sharing
-  // everything above it between two rows makes the initial five snapshots fill
-  // the dashboard while naturally leaving row two's sixth position empty.
-  // Any later third row keeps this height and extends the scroll content.
-  const snapshotCardHeight =
-    snapshotGridTop === null
-      ? 104
-      : Math.max(148, Math.floor((viewportHeight - snapshotGridTop - 96 - spacing.sm) / 2));
+  const router = useGuardedRouter();
+  const { concerns, money, occupancy } = dashboard;
+  const [lastOpened, setLastOpened] = useState<AnalyticsDivision | null>(null);
+  const { dialog: accessDialog, guardAny } = useScreenAccessGuard(dashboard.property.propertyId);
 
   const pnlPropertyId = dashboard.property.propertyId;
   const pnlStatement = useGetPnlStatementQuery(
@@ -1757,95 +1832,105 @@ function DashboardTab({
     { skip: !pnlPropertyId },
   ).data;
 
+  // Each row opens its division's analytics screen. The figure on it is a
+  // teaser from data this tab already loads, so the rows cost no request. A
+  // manager with none of a division's permissions is told why instead of
+  // landing on an empty screen.
+  const openDivision = (division: AnalyticsDivision) => {
+    setLastOpened(division);
+    guardAny(DIVISIONS[division].resources, `${DIVISIONS[division].tileLabel} analytics`, () =>
+      router.push({ params: { division }, pathname: "/owner-analytics/[division]" }),
+    );
+  };
+  const openConcerns = concerns.open + concerns.underReview + concerns.inProgress;
+  const netLoss = Boolean(pnlStatement && pnlStatement.netPaise < 0);
+
   return (
     <>
-      <Section title="Snapshots">
-        <Text style={[type.caption, { color: colors.muted, marginTop: -spacing.xs }]}>
-          Tap a snapshot to see its details
+      <Section title="Analytics">
+        <Text style={[type.description, { color: colors.muted, marginTop: -spacing.xs }]}>
+          Tap a section to see its analytics
         </Text>
-        <View
-          onLayout={measureSnapshotGrid}
-          ref={snapshotGridRef}
-          style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}
-        >
-          {/* Collected OVER billed, like the Property box's occupied/total. On its
-              own the collected figure reads as ₹0 for most of the month — true,
-              but it hides whether that is nothing owed or nothing paid yet. */}
-          <DashboardSnapshotBox
-            active={openSnapshot === "collection"}
+        <View style={{ gap: spacing.sm }}>
+          {/* Collected OVER billed. On its own the collected figure reads as ₹0
+              for most of the month — true, but it hides whether that is nothing
+              owed or nothing paid yet. */}
+          <AnalyticsRowCard
+            active={lastOpened === "billing"}
+            caption="Collected of billed this month"
             icon={MoneyIcon}
-            label="Collection"
-            onPress={() => toggle("collection")}
-            tileHeight={snapshotCardHeight}
-            tone="primary"
-            value={`${compactMoneyPaise(money.collectedThisMonthPaise)}/${compactMoneyPaise(money.billedThisMonthPaise).replace("₹", "")}`}
+            label="Billing"
+            onPress={() => openDivision("billing")}
+            value={`${compactMoneyPaise(money.collectedThisMonthPaise)} / ${compactMoneyPaise(money.billedThisMonthPaise)}`}
           />
-          <DashboardSnapshotBox active={openSnapshot === "property"} icon={PropertyArtwork} label="Property" onPress={() => toggle("property")} tileHeight={snapshotCardHeight} tone="primary" value={`${occupancy.occupiedBeds}/${occupancy.totalBeds}`} />
-          <DashboardSnapshotBox active={openSnapshot === "tenancy"} icon={Users} label="Tenancy" onPress={() => toggle("tenancy")} tileHeight={snapshotCardHeight} tone="primary" value={String(tenancy.activeTenants)} />
-          {/* Spent OVER budget, the same shape as Collection. Spend alone says
-              nothing: ₹40,000 is a good month or a disaster depending entirely
-              on the number it is being measured against. */}
-          <DashboardSnapshotBox
-            active={openSnapshot === "expense"}
-            icon={ExpenseIcon}
-            label="Expense"
-            onPress={() => toggle("expense")}
-            tileHeight={snapshotCardHeight}
-            tone={budget.level === "EXCEEDED" ? "danger" : "primary"}
-            value={
-              budget.effectiveBudgetPaise > 0
-                ? `${compactMoneyPaise(budget.spentPaise)}/${compactMoneyPaise(budget.effectiveBudgetPaise).replace("₹", "")}`
-                : compactMoneyPaise(budget.spentPaise)
-            }
+          <AnalyticsRowCard
+            active={lastOpened === "finance"}
+            caption={netLoss ? "Net loss this month" : "Net profit this month"}
+            icon={ChartPie}
+            label="Finance"
+            onPress={() => openDivision("finance")}
+            tone={netLoss ? "danger" : "primary"}
+            value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"}
           />
-          <DashboardSnapshotBox active={openSnapshot === "pnl"} icon={Receipt} label="P&L" onPress={() => toggle("pnl")} tileHeight={snapshotCardHeight} tone={pnlStatement && pnlStatement.netPaise < 0 ? "danger" : "primary"} value={pnlStatement ? signedCompactPaise(pnlStatement.netPaise) : "-"} />
+          <AnalyticsRowCard
+            active={lastOpened === "tenants"}
+            caption="Beds occupied right now"
+            icon={Users}
+            label="Tenancy"
+            onPress={() => openDivision("tenants")}
+            value={`${occupancy.occupiedBeds} / ${occupancy.totalBeds}`}
+          />
+          <AnalyticsRowCard
+            active={lastOpened === "concerns"}
+            caption="Open concerns right now"
+            icon={MessageSquareWarning}
+            label="Concerns"
+            onPress={() => openDivision("concerns")}
+            value={String(openConcerns)}
+          />
         </View>
       </Section>
-
-      {/* A sheet, not an expanding section. Opened in place the detail landed
-          below the fold on most phones, so tapping a box looked like it had done
-          nothing; a sheet rising over the page is both the answer to "did that
-          work?" and the transition, and it costs no scroll plumbing. */}
-      {openSnapshot ? (
-        <SheetShell dismissOnDrag onClose={() => setOpenSnapshot(null)} title={SNAPSHOT_META[openSnapshot].title}>
-          <SnapshotDetail dashboard={dashboard} key={openSnapshot} onNavigate={onNavigate} snapshot={openSnapshot} />
-        </SheetShell>
-      ) : null}
+      {accessDialog}
     </>
   );
 }
 
-function DashboardSnapshotBox({
+/**
+ * One analytics division on the Dashboard tab: a full-width row with its icon,
+ * name, what its figure means, and the figure itself.
+ *
+ * <p>Long and pressable, so it keeps the rounder corner. The thick foot is there
+ * at rest and turns green on the section opened last — never a wash of colour
+ * behind the card, because tinting the paper under a money figure is the one
+ * thing that makes it harder to read.
+ */
+function AnalyticsRowCard({
   active,
+  caption,
   icon: Icon,
   label,
   onPress,
-  tileHeight,
-  tone = "default",
+  tone = "primary",
   value,
 }: {
   active?: boolean;
+  caption: string;
   icon: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
-  tileHeight: number;
-  tone?: "default" | "danger" | "primary";
+  tone?: "danger" | "primary";
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const accent = tone === "danger" ? colors.danger : colors.primary;
   return (
     <AnimatedPressable
+      accessibilityHint={`Opens ${label} analytics`}
+      accessibilityLabel={`${label}, ${value}, ${caption}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={{
         alignItems: "center",
-        // Selection is the foot of the card turning green, never a wash of
-        // colour behind it: these boxes carry a money figure, and tinting the
-        // paper under a number is the one thing that makes it harder to read.
-        // The bar is there at rest too, so selecting changes its colour rather
-        // than adding a stripe and shifting every tile by 3px.
         backgroundColor: colors.surface,
         borderBottomColor: active ? colors.jade : colors.borderStrong,
         borderBottomWidth: 4,
@@ -1853,376 +1938,39 @@ function DashboardSnapshotBox({
         borderCurve: "continuous",
         borderRadius: 16,
         borderWidth: 1,
-        flexBasis: "30%",
-        flexGrow: 1,
-        gap: spacing.xs,
-        height: tileHeight,
-        justifyContent: "center",
-        maxWidth: "32%",
-        padding: spacing.sm,
+        flexDirection: "row",
+        gap: spacing.md,
+        minHeight: 84,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
       }}
     >
-      <Icon color={accent} size={24} strokeWidth={2.2} />
-      {/* Shrinks rather than truncates: these are money figures, and a ratio
-          like ₹12K/₹51K is far wider than the 3/11 these boxes were sized for.
-          Half a rupee value is worse than a slightly smaller one.
-
-          Measured, not adjustsFontSizeToFit — that prop does nothing on web, so
-          the intent above was only ever honoured on a phone. These boxes are a
-          third of a row wide, which is why they showed it first. */}
+      <Icon color={tone === "danger" ? colors.danger : colors.primary} size={34} strokeWidth={2} />
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+          {label}
+        </Text>
+        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+          {caption}
+        </Text>
+      </View>
+      {/* Measured, not adjustsFontSizeToFit: that prop does nothing on web. A
+          money ratio like ₹1.2L / ₹1.5L is far wider than 5 / 28. */}
       <Text
         numberOfLines={1}
         style={{
           color: tone === "danger" ? colors.danger : colors.ink,
           fontFamily: fonts.display,
-          fontSize: metricFontSize(value, 20),
+          fontSize: metricFontSize(value, 22),
           fontVariant: ["tabular-nums"],
           letterSpacing: -0.3,
         }}
       >
         {value}
       </Text>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11, textAlign: "center" }]} numberOfLines={1}>
-        {label}
-      </Text>
+      <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
   );
-}
-
-// The detail for the selected dashboard snapshot, shown inline under the boxes
-// (toggled by its box). Full summary cards, metric tiles and trend graphs.
-function SnapshotDetail({
-  dashboard,
-  onNavigate,
-  snapshot,
-}: {
-  dashboard: OwnerDashboard;
-  onNavigate: (href: OwnerRoute) => void;
-  snapshot: SnapshotKey;
-}) {
-  const { colors, type } = useTheme();
-  const { money, monthlyTrends, occupancy, tenancy } = dashboard;
-  // Collection chart compares money collected per month against a dynamic
-  // rupee ceiling (see TrendBarChart "money" mode), not a 0..100% rate.
-  const collectionMoneyTrend = monthlyTrends.map((point) => ({ label: point.label, value: Math.round(point.collectedPaise / 100) }));
-  const occupancyTrend = monthlyTrends.map((point) => ({ label: point.label, value: point.occupancyRate }));
-  const tenancyFlowTrend = monthlyTrends.map((point) => ({
-    label: point.label,
-    primary: point.startedCount,
-    secondary: point.endedCount,
-  }));
-  // No heading of its own: the sheet it opens in is already titled, and that
-  // sheet's entrance is the animation this used to do with FadeInUp.
-  return (
-    <View style={{ gap: spacing.sm }}>
-      {snapshot === "collection" ? (
-        <>
-          <BillingSnapshotCard money={money} />
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={Receipt} label="Billed" value={formatMoneyPaise(money.billedThisMonthPaise)} tone="primary" delta={{ current: money.billedThisMonthPaise, previous: money.billedPrevMonthPaise }} />
-            <SnapshotTile icon={CollectedIcon} label="Collected" value={formatMoneyPaise(money.collectedThisMonthPaise)} delta={money.collectedThisMonthPaise > 0 ? { current: money.collectedThisMonthPaise, previous: money.collectedPrevMonthPaise } : undefined} />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={Clock} label="Pending" value={formatMoneyPaise(money.pendingPaise)} />
-            <SnapshotTile icon={AlertTriangle} label="Overdue" value={formatMoneyPaise(money.overduePaise)} tone={money.overdueCount > 0 ? "danger" : "default"} />
-          </View>
-          <TrendBarChart data={collectionMoneyTrend} mode="money" title="Collected" />
-          <GradientCtaCard icon={Banknote} kicker="Billing" title="Open billing collection" description="Cycle list, mark paid, discounts, receipts and the monthly report." onPress={() => onNavigate("/owner-billing")} />
-        </>
-      ) : null}
-
-      {snapshot === "property" ? (
-        <>
-          <PropertySnapshotCard occupancy={occupancy} />
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={DoorOpen} label="Rooms" value={String(occupancy.roomCount)} tone="primary" />
-            <SnapshotTile icon={DoorClosed} label="Unavailable" count={occupancy.unavailableRooms} total={occupancy.roomCount} tone={occupancy.unavailableRooms > 0 ? "danger" : "default"} />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={BedDouble} label="Occupied" count={occupancy.occupiedBeds} total={occupancy.totalBeds} />
-            <SnapshotTile icon={BedSingle} label="Vacant beds" count={occupancy.vacantBeds} total={occupancy.totalBeds} tone={occupancy.vacantBeds > 0 ? "primary" : "default"} />
-          </View>
-          <TrendBarChart data={occupancyTrend} title="Occupancy rate" />
-          <GradientCtaCard icon={DoorOpen} kicker="Rooms" title="Room management" description="Floors, rooms, beds, rent and occupancy. Create single or in bulk." onPress={() => onNavigate("/owner-rooms")} />
-        </>
-      ) : null}
-
-      {snapshot === "tenancy" ? (
-        <>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={Users} label="Active tenants" value={String(tenancy.activeTenants)} tone="primary" delta={{ current: tenancy.activeTenants, previous: tenancy.activeTenantsPrevMonth }} />
-            <SnapshotTile icon={Bell} label="On notice" value={String(tenancy.onNotice)} tone={tenancy.onNotice > 0 ? "danger" : "default"} />
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <SnapshotTile icon={UserPlus} label="Started" value={String(tenancy.startedThisMonth)} tone={tenancy.startedThisMonth > 0 ? "primary" : "default"} delta={{ current: tenancy.startedThisMonth, previous: tenancy.startedPrevMonth }} />
-            <SnapshotTile icon={UserMinus} label="Ended" value={String(tenancy.endedThisMonth)} delta={{ current: tenancy.endedThisMonth, previous: tenancy.endedPrevMonth }} />
-          </View>
-          {/* Arrivals against departures, which is the only reading that says
-              whether the property is filling or emptying. The two tiles above
-              give this month; six months say whether it is a trend. */}
-          <DualBarChart
-            data={tenancyFlowTrend}
-            primaryColor={colors.jade}
-            primaryLabel="Started"
-            secondaryColor={colors.danger}
-            secondaryLabel="Ended"
-            title="Started & ended"
-          />
-          <GradientCtaCard icon={Users} kicker="Tenancy" title="Open tenancy workspace" description="Active stays, onboarding, exit and room-change requests." onPress={() => onNavigate("/owner-tenancy")} />
-        </>
-      ) : null}
-
-      {snapshot === "expense" ? (
-        <ExpenseSnapshotDetail budget={dashboard.budget} onNavigate={onNavigate} propertyId={dashboard.property.propertyId} />
-      ) : null}
-
-      {snapshot === "pnl" ? (
-        <PnlSnapshotDetail onNavigate={onNavigate} propertyId={dashboard.property.propertyId} />
-      ) : null}
-    </View>
-  );
-}
-
-/**
- * A snapshot whose figures never arrived.
- *
- * <p>Worth its own state because the alternative is a skeleton that never
- * resolves: a request that failed leaves `data` undefined forever, and a
- * loading shimmer with no end looks identical to a slow network right up until
- * the reader gives up on the app rather than on the request.
- */
-function SnapshotLoadError({ onRetry }: { onRetry: () => void }) {
-  return (
-    <EmptyState
-      action={<ActionButton compact label="Try again" onPress={onRetry} variant="secondary" />}
-      compact
-      description="These figures could not be fetched. Check your connection and try again."
-      icon={AlertCircle}
-      title="Could not load"
-    />
-  );
-}
-
-/**
- * The expense snapshot: where the month's spend stands against its budget, then
- * six months of spend against what was saved, then what the budget had to be
- * raised by to get there.
- *
- * <p>Both charts only load when this snapshot is opened, because the component
- * only mounts then.
- */
-function ExpenseSnapshotDetail({
-  budget,
-  onNavigate,
-  propertyId,
-}: {
-  budget: OwnerDashboard["budget"];
-  onNavigate: (href: OwnerRoute) => void;
-  propertyId: string;
-}) {
-  const { colors } = useTheme();
-  const month = istMonthStart();
-  const overviewQuery = useGetBudgetOverviewQuery({ month, propertyId }, { skip: !propertyId });
-  const trend = useGetBudgetTrendQuery({ month, months: 6, propertyId }, { skip: !propertyId }).data;
-
-  const overview = overviewQuery.data;
-  if (!overview) {
-    return overviewQuery.isError ? (
-      <SnapshotLoadError onRetry={() => void overviewQuery.refetch()} />
-    ) : (
-      <SkeletonCard />
-    );
-  }
-
-  const points = trend?.points ?? [];
-  const overspent = budget.level === "EXCEEDED";
-
-  return (
-    <>
-      <BudgetSnapshotCard level={budget.level} overview={overview} />
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <SnapshotTile
-          icon={Wallet}
-          label="Budget"
-          tone="primary"
-          value={overview.effectiveBudgetPaise != null ? formatMoneyPaise(overview.effectiveBudgetPaise) : "Not set"}
-        />
-        <SnapshotTile icon={Receipt} label="Spent" tone={overspent ? "danger" : "default"} value={formatMoneyPaise(overview.spentPaise)} />
-      </View>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <SnapshotTile
-          icon={TrendingUp}
-          label="Raised"
-          tone={overview.raisedThisMonthPaise > 0 ? "primary" : "default"}
-          value={formatMoneyPaise(overview.raisedThisMonthPaise)}
-        />
-        {/* Savings is clamped at zero on the overview, so an overspent month
-            shows what it went over by instead of a savings figure of ₹0 that
-            reads as "broke even". */}
-        <SnapshotTile
-          icon={PiggyBank}
-          label={overspent ? "Over by" : "Savings"}
-          tone={overspent ? "danger" : "default"}
-          value={formatMoneyPaise(overspent ? budget.overPaise : overview.savingsPaise)}
-        />
-      </View>
-      {points.length > 0 ? (
-        <>
-          <DualBarChart
-            data={points.map((point) => ({
-              label: monthShort(point.month),
-              // The line each month is being judged against, so it is drawn
-              // ACROSS the bars rather than as a third bar beside them.
-              line: point.effectiveBudgetPaise,
-              primary: point.spentPaise,
-              secondary: point.savingsPaise,
-            }))}
-            lineColor={colors.primary}
-            lineLabel="Budget"
-            mode="money"
-            primaryColor={colors.danger}
-            primaryLabel="Spent"
-            secondaryColor={colors.jade}
-            secondaryLabel="Savings"
-            title="Spent & savings"
-          />
-          <TrendBarChart
-            data={points.map((point) => ({ label: monthShort(point.month), value: Math.round(point.raisedPaise / 100) }))}
-            mode="money"
-            title="Budget raised"
-          />
-        </>
-      ) : null}
-      <GradientCtaCard
-        description="Spending by category, budget and raises, recurring costs and reversals."
-        icon={Wallet}
-        kicker="Expenses"
-        onPress={() => onNavigate("/owner-expenses")}
-        title="Open expenses"
-      />
-    </>
-  );
-}
-
-/**
- * How much of the month's budget has gone, as a headline percentage and a
- * verdict — the expense answer to the collection card.
- */
-function BudgetSnapshotCard({ level, overview }: { level: BudgetAttentionLevel; overview: ExpenseBudgetOverview }) {
-  const { colors, fonts, type } = useTheme();
-  const effective = overview.effectiveBudgetPaise ?? 0;
-  // With no budget there is nothing to be a percentage OF, so the card shows
-  // the spend itself rather than a 0% that means nothing.
-  const unset = effective <= 0;
-  const rate = unset ? 0 : Math.round((overview.spentPaise / effective) * 100);
-  const tone = unset
-    ? colors.primary
-    : level === "EXCEEDED"
-      ? colors.danger
-      : level === "APPROACHING"
-        ? colors.warningText
-        : colors.successText;
-  const verdict = unset
-    ? "No budget"
-    : level === "EXCEEDED"
-      ? "Over budget"
-      : level === "APPROACHING"
-        ? "Close to limit"
-        : "On track";
-
-  return (
-    <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>
-            {unset ? "Spent this month" : "Budget used"}
-          </Text>
-          <Text style={{ color: tone, fontFamily: fonts.display, fontSize: 34, letterSpacing: -0.5, lineHeight: 38 }}>
-            {unset ? formatMoneyPaise(overview.spentPaise) : `${rate}%`}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-            {unset
-              ? "No budget set for this month"
-              : `${formatMoneyPaise(overview.spentPaise)} of ${formatMoneyPaise(effective)} spent`}
-          </Text>
-        </View>
-        <View
-          style={{
-            alignSelf: "flex-start",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={[type.eyebrow, { color: tone }]}>{verdict}</Text>
-        </View>
-      </View>
-
-      {/* The percentage as a length. Overspend fills the track rather than
-          running past it: the bar is how much of the budget is gone, and once
-          it is all gone there is no more bar to draw — the figure above and the
-          red verdict beside it carry the by-how-much. */}
-      {unset ? null : (
-        <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 8, marginTop: spacing.sm, overflow: "hidden", width: "100%" }}>
-          <View style={{ backgroundColor: tone, borderRadius: 999, height: "100%", width: `${Math.min(100, Math.max(rate, 0))}%` }} />
-        </View>
-      )}
-    </Card>
-  );
-}
-
-function PnlSnapshotDetail({ onNavigate, propertyId }: { onNavigate: (href: OwnerRoute) => void; propertyId: string }) {
-  const { colors, type } = useTheme();
-  // The same cache entry the P&L box reads, so this costs no extra request —
-  // but subscribing here rather than taking the figure as a prop means the
-  // sheet can see that the fetch FAILED, which a bare `statement` cannot.
-  const statementQuery = useGetPnlStatementQuery({ month: istMonthStart(), propertyId }, { skip: !propertyId });
-  // Trend only loads when this snapshot is opened (the component mounts then).
-  const trend = useGetPnlTrendQuery({ month: istMonthStart(), months: 6, propertyId }, { skip: !propertyId }).data;
-
-  const statement = statementQuery.data;
-  if (!statement) {
-    return statementQuery.isError ? (
-      <SnapshotLoadError onRetry={() => void statementQuery.refetch()} />
-    ) : (
-      <SkeletonCard />
-    );
-  }
-
-  const profit = statement.netPaise >= 0;
-  return (
-    <>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <SnapshotTile icon={TrendingUp} label="Income" tone="primary" value={formatMoneyPaise(statement.totalIncomePaise)} />
-        <SnapshotTile icon={Wallet} label="Expense" value={formatMoneyPaise(statement.expensePaise)} />
-      </View>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <SnapshotTile icon={Receipt} label={profit ? "Net profit" : "Net loss"} tone={profit ? "primary" : "danger"} value={signedMoneyPaise(statement.netPaise)} />
-        <SnapshotTile icon={CollectedIcon} label="Collected" value={formatMoneyPaise(statement.billCollectedPaise + statement.manualIncomePaise)} />
-      </View>
-      <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
-        <View style={{ backgroundColor: statement.billUncollectedPaise > 0 ? colors.warningText : colors.jade, borderRadius: 999, height: 8, width: 8 }} />
-        <Text style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
-          {statement.billUncollectedPaise > 0
-            ? `Collection pending · ${formatMoneyPaise(statement.billUncollectedPaise)} yet to be collected`
-            : "All bills collected"}
-        </Text>
-      </View>
-      {trend && trend.points.length > 0 ? <PnlTrendChart points={trend.points} /> : null}
-      <GradientCtaCard
-        description="Income, expenses, net, the 6-month trend and a downloadable report."
-        icon={Receipt}
-        kicker="Finance"
-        onPress={() => onNavigate("/owner-pnl")}
-        title="Open profit & loss"
-      />
-    </>
-  );
-}
-
-function signedMoneyPaise(paise: number) {
-  return `${paise < 0 ? "−" : ""}${formatMoneyPaise(Math.abs(paise))}`;
 }
 
 function signedCompactPaise(paise: number) {
@@ -2232,18 +1980,30 @@ function signedCompactPaise(paise: number) {
 /** The panel's own inset and frame. */
 const PINNED_BOX_PADDING = spacing.sm;
 const PINNED_BOX_BORDER = 1;
+const PINNED_PAGE_SIZE = 6;
 
-function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; propertyId: string | null }) {
+function FrequentlyVisited({
+  pinnedKeys,
+  propertyId,
+  workspaceRole,
+}: {
+  pinnedKeys: string[];
+  propertyId: string | null;
+  workspaceRole: "Owner" | "Manager";
+}) {
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();
-  const { canView, owner: isOwner } = usePropertyPermissions(propertyId);
+  const { canView } = usePropertyPermissions(propertyId);
   // A pin survives a permission change AND a module being removed, so both are
   // filtered here — otherwise a stale pin stays on Home as a shortcut into a
   // 403, or into a route that no longer exists.
   const modules = pinnedKeys
     .map((key) => findOwnerModule(key))
     .filter((module): module is NonNullable<typeof module> => Boolean(module))
-    .filter((module) => !module.ownerOnly || isOwner)
+    // The account role is already known here. Waiting for the property
+    // permissions query to return its owner flag makes owner-only pins appear
+    // a frame late and expands the card over the workspace button.
+    .filter((module) => !module.ownerOnly || workspaceRole === "Owner")
     .filter((module) => !module.resources?.length || module.resources.some((resource) => canView(resource)));
 
 
@@ -2262,7 +2022,12 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
   // The panel is sized from its own width rather than a fixed number, because
   // a tile is square and as wide as a third of the row — so its height is a
   // function of the screen.
-  const [boxWidth, setBoxWidth] = useState(0);
+  // Home's scroll content has an 18px gutter on each side. Start with that
+  // width instead of zero: waiting for onLayout renders no tiles for a frame,
+  // so the blue workspace CTA below flashes through before the grid expands.
+  const { width: windowWidth } = useWindowDimensions();
+  const [boxWidth, setBoxWidth] = useState(() => Math.max(0, windowWidth - spacing.lg * 2));
+  const [hasMeasured, setHasMeasured] = useState(false);
   // onLayout reports the BORDER box, so the frame comes off as well as the
   // padding. Missing the two border pixels made each tile a third of a pixel
   // too wide, which is enough to overflow the row and wrap it after two.
@@ -2271,13 +2036,37 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
   // fractional width that adds back up to exactly the row is one rounding
   // error away from wrapping again.
   const tileWidth = innerWidth > 0 ? Math.floor((innerWidth - spacing.sm * 2) / 3) : 0;
+  const tileHeight = Math.max(tileWidth, 104);
+  const pageHeight = Math.min(2, Math.ceil(modules.length / 3)) * tileHeight
+    + (modules.length > 3 ? spacing.sm : 0);
+  const pages = Array.from({ length: Math.ceil(modules.length / PINNED_PAGE_SIZE) }, (_, index) =>
+    modules.slice(index * PINNED_PAGE_SIZE, (index + 1) * PINNED_PAGE_SIZE),
+  );
+  const [activePage, setActivePage] = useState(0);
+  const pagerRef = useRef<ScrollView>(null);
+  const moduleKeys = modules.map((module) => module.key).join("|");
+
+  // An unpinned or newly restricted service can remove the page currently in
+  // view. Return to the first page instead of leaving an empty carousel frame.
+  useEffect(() => {
+    setActivePage(0);
+    pagerRef.current?.scrollTo({ x: 0, animated: false });
+  }, [moduleKeys]);
 
   return (
     /* A dropdown rather than a standing box. Closed it is one row, so an owner
        with nothing pinned is not handed two rows of empty dashed space above
        the things they came to Home for. */
     <View
-      onLayout={(event) => setBoxWidth(event.nativeEvent.layout.width)}
+      onLayout={(event) => {
+        const measuredWidth = event.nativeEvent.layout.width;
+        if (measuredWidth > 0 && measuredWidth !== boxWidth) {
+          setBoxWidth(measuredWidth);
+        }
+        if (measuredWidth > 0 && !hasMeasured) {
+          setHasMeasured(true);
+        }
+      }}
       style={{
         backgroundColor: colors.surface,
         borderColor: colors.borderStrong,
@@ -2331,7 +2120,7 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
             paddingVertical: spacing.md,
           }}
         >
-          <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 17 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Pinned management services appear here. Pin them from the{" "}
             <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold }}>MANAGE</Text> tab to keep
             them one tap away.
@@ -2342,75 +2131,123 @@ function FrequentlyVisited({ pinnedKeys, propertyId }: { pinnedKeys: string[]; p
           style={{
             borderTopColor: colors.border,
             borderTopWidth: 1,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: spacing.sm,
             padding: PINNED_BOX_PADDING,
           }}
         >
-          {modules.map((module) => (
-              <View
-                key={module.key}
-                style={tileWidth > 0 ? { width: tileWidth } : { flexBasis: "30%", flexGrow: 1 }}
-              >
-                <AnimatedPressable
-                  accessibilityRole="button"
-                  onPress={() => router.push(module.route as never)}
+          {!hasMeasured ? (
+            <OwnerPinnedServicesSkeleton tileHeight={tileHeight} tileWidth={tileWidth} />
+          ) : innerWidth > 0 ? (
+            <ScrollView
+              ref={pagerRef}
+              horizontal
+              pagingEnabled
+              scrollEnabled={pages.length > 1}
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) => {
+                setActivePage(Math.min(pages.length - 1, Math.round(event.nativeEvent.contentOffset.x / innerWidth)));
+              }}
+              style={{ width: innerWidth }}
+            >
+              {pages.map((page, pageIndex) => (
+                <View
+                  key={pageIndex}
                   style={{
-                    alignItems: "center",
-                    aspectRatio: 1,
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    borderRadius: 0,
-                    borderWidth: 1,
-                    gap: spacing.xs,
-                    justifyContent: "center",
-                    minHeight: 104,
-                    padding: spacing.sm,
-                    width: "100%",
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: spacing.sm,
+                    height: pageHeight,
+                    width: innerWidth,
                   }}
+                >
+                  {page.map((module) => (
+                    <View key={module.key} style={{ width: tileWidth }}>
+                      <AnimatedPressable
+                        accessibilityRole="button"
+                        onPress={() => router.push(module.route as never)}
+                        style={{
+                          alignItems: "center",
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          borderRadius: 0,
+                          borderWidth: 1,
+                          gap: spacing.xs,
+                          height: tileHeight,
+                          justifyContent: "center",
+                          padding: spacing.sm,
+                          width: "100%",
+                        }}
+                      >
+                        <View
+                          style={{
+                            alignItems: "center",
+                            backgroundColor: "transparent",
+                            borderRadius: 999,
+                            height: module.artworkVariant === "large" ? 68 : 64,
+                            justifyContent: "center",
+                            overflow: "hidden",
+                            width: module.artworkVariant === "wide" ? 90 : module.artworkVariant === "large" ? 68 : 64,
+                          }}
+                        >
+                          {module.artwork ? (
+                            <Image
+                              accessibilityIgnoresInvertColors
+                              accessible={false}
+                              resizeMode="contain"
+                              source={module.artwork}
+                              style={{
+                                height: module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                                width: module.artworkVariant === "wide" ? 88 : module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
+                              }}
+                            />
+                          ) : (
+                            <module.icon color={colors.ink} size={32} strokeWidth={1.8} />
+                          )}
+                        </View>
+                        <Text
+                          style={{
+                            color: colors.ink,
+                            fontFamily: fonts.sansBold,
+                            fontSize: 12,
+                            lineHeight: 15,
+                            textAlign: "center",
+                          }}
+                          numberOfLines={2}
+                        >
+                          {module.title}
+                        </Text>
+                      </AnimatedPressable>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+          {pages.length > 1 ? (
+            <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "center", paddingTop: spacing.sm }}>
+              {pages.map((_, index) => (
+                <Pressable
+                  key={index}
+                  accessibilityLabel={"Pinned services page " + (index + 1) + " of " + pages.length}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: activePage === index }}
+                  onPress={() => {
+                    pagerRef.current?.scrollTo({ x: index * innerWidth, animated: true });
+                    setActivePage(index);
+                  }}
+                  style={{ padding: 5 }}
                 >
                   <View
                     style={{
-                      alignItems: "center",
-                      backgroundColor: "transparent",
+                      backgroundColor: activePage === index ? colors.primary : colors.borderStrong,
                       borderRadius: 999,
-                      height: module.artworkVariant === "large" ? 68 : 64,
-                      justifyContent: "center",
-                      overflow: "hidden",
-                      width: module.artworkVariant === "wide" ? 90 : module.artworkVariant === "large" ? 68 : 64,
+                      height: activePage === index ? 8 : 6,
+                      width: activePage === index ? 8 : 6,
                     }}
-                  >
-                    {module.artwork ? (
-                      <Image
-                        accessibilityIgnoresInvertColors
-                        accessible={false}
-                        resizeMode="contain"
-                        source={module.artwork}
-                        style={{
-                          height: module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
-                          width: module.artworkVariant === "wide" ? 88 : module.artworkVariant === "large" ? 66 : module.artworkVariant === "compact" ? 54 : 60,
-                        }}
-                      />
-                    ) : (
-                      <module.icon color={colors.ink} size={32} strokeWidth={1.8} />
-                    )}
-                  </View>
-                  <Text
-                    style={{
-                      color: colors.ink,
-                      fontFamily: fonts.sansBold,
-                      fontSize: 12,
-                      lineHeight: 15,
-                      textAlign: "center",
-                    }}
-                    numberOfLines={2}
-                  >
-                    {module.title}
-                  </Text>
-                </AnimatedPressable>
-              </View>
-          ))}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </View>
       )}
     </View>
@@ -2436,7 +2273,7 @@ function WorkspaceTab({
       {/* No "Workspace" heading. The tab directly above already says it, and
           the pinned services dropdown carries its own header. */}
       <View style={{ gap: spacing.md }}>
-        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} />
+        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} workspaceRole={workspaceRole} />
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
@@ -2550,7 +2387,7 @@ function WorkspaceTabLoading({
   return (
     <>
       <View style={{ gap: spacing.md }}>
-        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={propertyId} />
+        <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={propertyId} workspaceRole={workspaceRole} />
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
@@ -2630,7 +2467,7 @@ function HomeToolBox({
             top: spacing.sm,
           }}
         >
-          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11, }}>
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11 }}>
             {badge}
           </Text>
         </View>
@@ -2720,7 +2557,7 @@ function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; prope
               <NoticeIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
                 Upcoming notices
               </Text>
             </View>
@@ -2777,7 +2614,7 @@ function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; proper
               <ExpenseIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
                 Expense tracker
               </Text>
             </View>
@@ -3121,148 +2958,6 @@ function DigestTile({
         </View>
       </View>
     </AnimatedPressable>
-  );
-}
-
-/**
- * A rate, its status and how far along it is — one card, used twice.
- *
- * <p>
- * Occupancy and collection were two copies of the same layout with the same
- * thresholds expressed differently, which is how their type sizes and chip
- * treatments drifted apart. They share this now, so a change to one is a change
- * to both.
- *
- * <p>
- * The status is a {@link BillingStatusBadge}, not a caps label on grey. Every
- * other state in the app — a bill's, a claim's, a notice's — is a soft tint
- * with a glyph and a sentence-case word, and these two were the last places
- * saying it another way.
- */
-function RateCard({
-  caption,
-  icon,
-  progress,
-  status,
-  title,
-  tone,
-  value,
-}: {
-  caption: string;
-  icon: ComponentType<LucideProps>;
-  /** 0-100. Drives the bar only — the headline value may be money instead. */
-  progress: number;
-  status: { label: string; level: "good" | "watch" | "poor" };
-  title: string;
-  tone: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const Icon = icon;
-  const badge =
-    status.level === "good"
-      ? { background: colors.successSoft, color: colors.successText, icon: CheckCircle2 }
-      : status.level === "watch"
-        ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3 }
-        : { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle };
-
-  return (
-    <Card>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        {/* The metric card's rail, so this reads as the same family as the
-            tiles beneath it rather than as a banner above them. */}
-        <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
-          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
-        </View>
-
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
-            {title}
-          </Text>
-          {/* 28, not 34. It is the card's headline and outranks the 23pt tiles
-              below, but at 34 it was nearly half again their size and turned a
-              summary into a scoreboard. */}
-          <Text
-            numberOfLines={1}
-            style={{
-              color: tone,
-              fontFamily: fonts.display,
-              fontSize: metricFontSize(value, 28),
-              lineHeight: metricFontSize(value, 28) + 5,
-            }}
-          >
-            {value}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
-            {caption}
-          </Text>
-        </View>
-
-        <BillingStatusBadge
-          background={badge.background}
-          color={badge.color}
-          icon={badge.icon}
-          label={status.label}
-        />
-      </View>
-
-      <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 8, overflow: "hidden" }}>
-        <View style={{ backgroundColor: tone, borderRadius: 999, height: 8, width: `${Math.min(100, Math.max(0, progress))}%` }} />
-      </View>
-    </Card>
-  );
-}
-
-function PropertySnapshotCard({ occupancy }: { occupancy: OwnerDashboard["occupancy"] }) {
-  const { colors } = useTheme();
-  const rate = occupancy.totalBeds > 0 ? Math.round((occupancy.occupiedBeds / occupancy.totalBeds) * 100) : 0;
-  const level = rate >= 90 ? "good" : rate >= 60 ? "watch" : "poor";
-  const tone = level === "good" ? colors.successText : level === "watch" ? colors.primary : colors.danger;
-
-  return (
-    <RateCard
-      caption={`${occupancy.occupiedBeds} of ${occupancy.totalBeds} beds occupied`}
-      icon={PropertyArtwork}
-      progress={rate}
-      status={{
-        label: rate >= 90 ? "Near full" : rate >= 60 ? "Healthy" : occupancy.totalBeds === 0 ? "No beds" : "Low",
-        level,
-      }}
-      title="Occupancy rate"
-      tone={tone}
-      value={`${rate}%`}
-    />
-  );
-}
-
-function BillingSnapshotCard({ money }: { money: OwnerDashboard["money"] }) {
-  const { colors } = useTheme();
-  const collectable = money.billedThisMonthPaise;
-  const collected = money.collectedThisMonthPaise;
-  // Before anything is collected this month the rate is a meaningless 0% — show
-  // the amount still collectable instead of "₹0 of ₹0 collected".
-  const awaiting = collected === 0 && collectable > 0;
-  const rate = collectable > 0 ? Math.round((collected / collectable) * 100) : 0;
-  const level = awaiting ? "watch" : collectable === 0 ? "poor" : rate >= 90 ? "good" : rate >= 60 ? "watch" : "poor";
-  const tone = level === "good" ? colors.successText : level === "watch" ? colors.primary : colors.danger;
-
-  return (
-    <RateCard
-      caption={
-        awaiting
-          ? "Yet to be collected"
-          : `${formatMoneyPaise(collected)} of ${formatMoneyPaise(collectable)} collected`
-      }
-      icon={CollectionIcon}
-      progress={rate}
-      status={{
-        label: collectable === 0 ? "Nothing billed" : awaiting ? "Awaiting" : rate >= 90 ? "On track" : rate >= 60 ? "Collecting" : "Behind",
-        level,
-      }}
-      title={awaiting ? "Collectable this month" : "Collection rate"}
-      tone={tone}
-      value={awaiting ? formatMoneyPaise(collectable) : `${rate}%`}
-    />
   );
 }
 
@@ -3623,7 +3318,7 @@ function CurrentLocationCard({
   const locationText = isLoading
     ? "Fetching location..."
     : location.displayAddress ?? location.error ?? "Location unavailable";
-  const detailParts = [location.locality, location.city ?? location.district, location.country]
+  const detailParts = [location.locality, location.city]
     .filter((part): part is string => Boolean(part && part.trim()))
     .filter((part, index, parts) => parts.indexOf(part) === index);
 
@@ -3652,7 +3347,7 @@ function CurrentLocationCard({
             {locationText}
           </Text>
           {detailParts.length > 0 && locationText !== detailParts.join(", ") ? (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
+            <Text numberOfLines={1} style={[type.description, { color: colors.muted }]}>
               {detailParts.join(", ")}
             </Text>
           ) : null}
@@ -3748,20 +3443,24 @@ function AddressInfoLine({ address }: { address: string }) {
 }
 
 function NoticePreviewCard({
+  lockedText,
   noticeCount,
   notices,
   onPress,
 }: {
+  /** Set while notices are closed to this person: replaces the description. */
+  lockedText?: string;
   noticeCount: number;
   notices: NoticeSummary[];
   onPress?: () => void;
 }) {
   const { colors, type } = useTheme();
   const hasNotices = notices.length > 0;
-  const Wrapper = hasNotices && onPress ? AnimatedPressable : View;
+  const pressable = (hasNotices || Boolean(lockedText)) && Boolean(onPress);
+  const Wrapper = pressable ? AnimatedPressable : View;
 
   return (
-    <Wrapper accessibilityRole={hasNotices ? "button" : undefined} onPress={hasNotices ? onPress : undefined}>
+    <Wrapper accessibilityRole={pressable ? "button" : undefined} onPress={pressable ? onPress : undefined}>
       <Card tone={hasNotices ? "default" : "sunken"}>
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
           <View
@@ -3785,11 +3484,18 @@ function NoticePreviewCard({
             <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
               Notice board
             </Text>
-            <Text style={[type.body, { color: colors.muted }]}>
-              {hasNotices
-                ? "A quick preview of property announcements visible right now."
-                : "Published notices for your property will appear here when they are visible to tenants."}
-            </Text>
+            {lockedText ? (
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                <Lock color={colors.muted} size={15} strokeWidth={2.2} />
+                <Text style={[type.body, { color: colors.muted }]}>{lockedText}</Text>
+              </View>
+            ) : (
+              <Text style={[type.body, { color: colors.muted }]}>
+                {hasNotices
+                  ? "A quick preview of property announcements visible right now."
+                  : "Published notices for your property will appear here when they are visible to tenants."}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -3815,7 +3521,7 @@ function NoticePreviewCard({
                   <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
                     {notice.title}
                   </Text>
-                  <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
+                  <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
                     {notice.body}
                   </Text>
                 </View>
@@ -3875,7 +3581,7 @@ function SummaryRow({
           <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
             {title}
           </Text>
-          <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
+          <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
             {body}
           </Text>
         </View>

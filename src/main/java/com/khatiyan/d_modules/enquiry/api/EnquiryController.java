@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryChannelConsentResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
@@ -123,6 +124,7 @@ public class EnquiryController {
     }
 
     @PatchMapping("/enquiries/{enquiryId}/respond")
+    @RequiresVersion
     public EnquiryDetailResponse respond(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID enquiryId,

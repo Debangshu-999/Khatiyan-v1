@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.compliance.ComplianceModule;
 import com.khatiyan.d_modules.compliance.api.dto.PropertyAgreementSettingsResponse;
@@ -40,6 +41,7 @@ public class AgreementController {
     }
 
     @PutMapping
+    @RequiresVersion
     public PropertyAgreementSettingsResponse update(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

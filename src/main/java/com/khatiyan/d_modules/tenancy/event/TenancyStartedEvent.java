@@ -6,9 +6,9 @@ import java.util.UUID;
 /**
  * Published when a tenancy is CREATED, which is not the same as started.
  *
- * <p>The bed is taken here either way — that is why this fires even for a
- * tenancy waiting on a signature, and why it must keep doing so. A reserved bed
- * that nobody has occupied is still unavailable to the next person.
+ * <p>An ordinary pending tenancy takes a currently free bed here. A future
+ * room-change booking instead claims its outgoing move without taking physical
+ * occupancy; the property listener uses {@code futureBooking} to distinguish it.
  *
  * <p>{@code pendingAcceptance} is the difference between the two moments a
  * tenancy can begin at. A monthly tenancy is created and then WAITS: nothing
@@ -17,8 +17,7 @@ import java.util.UUID;
  * has started" while their agreement sits unsigned is simply untrue, so
  * listeners that talk to people branch on this.
  *
- * @param pendingAcceptance true when the tenancy is only reserved, awaiting the
- *                          tenant's signature
+ * @param pendingAcceptance true when the tenancy awaits the tenant's signature
  */
 public record TenancyStartedEvent(
     UUID tenancyId,
@@ -27,6 +26,8 @@ public record TenancyStartedEvent(
     UUID propertyId,
     UUID roomId,
     LocalDate startDate,
-    boolean pendingAcceptance
+    boolean pendingAcceptance,
+    /** A future booking exists, but physical occupancy must wait for the transfer. */
+    boolean futureBooking
 ) {}
 

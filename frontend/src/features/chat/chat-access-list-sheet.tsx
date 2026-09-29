@@ -97,6 +97,7 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
           levels: { ...permissions.levels, CHATS: wanted ? "MANAGE" : "NONE" },
           managerUserId,
           propertyId,
+          version: permissions.version,
         }).unwrap();
       }
       onClose();
@@ -114,7 +115,7 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
         {/* One line, said once. Which managers can read tenant messages is the
             question, and the sentence a reader needs is what it does NOT
             touch — their own conversations are not the owner's to hand out. */}
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Managers you add can read and reply in Tenants. Their own chats and enquiries are not affected.
         </Text>
 

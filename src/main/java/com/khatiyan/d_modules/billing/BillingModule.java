@@ -17,6 +17,7 @@ import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.CancelOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
+import com.khatiyan.d_modules.billing.api.dto.CashPaymentCodeResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
@@ -25,6 +26,7 @@ import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleLineItemService;
 import com.khatiyan.d_modules.billing.api.dto.PaymentIntentDigestResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
+import com.khatiyan.d_modules.billing.service.CashPaymentConfirmationService;
 import com.khatiyan.d_modules.billing.service.PaymentIntentService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
 import com.khatiyan.d_modules.billing.service.ExitSettlementService;
@@ -46,18 +48,21 @@ public class BillingModule {
     private final DepositManagerService depositManagerService;
     private final ExitSettlementService exitSettlementService;
     private final PaymentIntentService paymentIntentService;
+    private final CashPaymentConfirmationService cashPaymentConfirmationService;
 
     public BillingModule(
             BillingCycleService billingCycleService,
             BillingCycleLineItemService billingCycleLineItemService,
             DepositManagerService depositManagerService,
             ExitSettlementService exitSettlementService,
-            PaymentIntentService paymentIntentService) {
+            PaymentIntentService paymentIntentService,
+            CashPaymentConfirmationService cashPaymentConfirmationService) {
         this.billingCycleService = billingCycleService;
         this.billingCycleLineItemService = billingCycleLineItemService;
         this.depositManagerService = depositManagerService;
         this.exitSettlementService = exitSettlementService;
         this.paymentIntentService = paymentIntentService;
+        this.cashPaymentConfirmationService = cashPaymentConfirmationService;
     }
 
     public BillingCycleResponse createFirstCycle(UUID actorUserId, UUID tenancyId) {
@@ -116,12 +121,19 @@ public class BillingModule {
 
     /**
      * Owner/manager records an offline payment and marks the cycle paid.
+     *
+     * <p>Cash needs the tenant's code. Every other method records as before.
      */
     public ManualPaymentResponse recordManualPayment(
             UUID actorUserId,
             UUID billingCycleId,
             RecordManualPaymentRequest request) {
-        return billingCycleService.recordManualPayment(actorUserId, billingCycleId, request);
+        return cashPaymentConfirmationService.record(actorUserId, billingCycleId, request);
+    }
+
+    /** Sends the bill's tenant a code confirming a cash payment at its current total. */
+    public CashPaymentCodeResponse sendCashPaymentCode(UUID actorUserId, UUID billingCycleId, String requestIpAddress) {
+        return cashPaymentConfirmationService.sendCode(actorUserId, billingCycleId, requestIpAddress);
     }
 
     public byte[] renderReceiptPdf(UUID actorUserId, UUID billingCycleId) {
@@ -231,6 +243,11 @@ public class BillingModule {
             UUID tenancyId,
             CreateOneOffBillRequest request) {
         return billingCycleService.createOneOffBill(actorUserId, tenancyId, request);
+    }
+
+    /** Waives the late fee on an overdue bill. Overdue only; see the service. */
+    public BillingCycleResponse removeLateFee(UUID actorUserId, UUID billingCycleId) {
+        return billingCycleService.removeLateFee(actorUserId, billingCycleId);
     }
 
     public BillingCycleResponse cancelOneOffBill(

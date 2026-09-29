@@ -22,5 +22,7 @@ public record TenancyCancelledEvent(
     UUID roomId,
     TenancyCancellationRoute route,
     UUID actorUserId,
-    String reason
+    String reason,
+    boolean occupiedBedHeld,
+    boolean futureBedHeld
 ) {}

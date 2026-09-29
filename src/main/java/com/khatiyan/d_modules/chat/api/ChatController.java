@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RetryOnConflict;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.chat.api.dto.ChatContactResponse;
 import com.khatiyan.d_modules.chat.api.dto.ChatMessagePageResponse;
@@ -187,7 +188,8 @@ public class ChatController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID threadId,
             @Valid @RequestBody MarkChatReadRequest request) {
-        chatService.markRead(user.userId(), threadId, request.lastReadSeq());
+        // Safe to repeat: two of your devices reading at once both succeed (2026-09-28).
+        RetryOnConflict.once(() -> chatService.markRead(user.userId(), threadId, request.lastReadSeq()));
         return ResponseEntity.noContent().build();
     }
 

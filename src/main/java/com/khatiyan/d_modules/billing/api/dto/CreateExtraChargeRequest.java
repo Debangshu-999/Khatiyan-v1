@@ -5,7 +5,9 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request to add an owner/manager extra charge to a billing cycle.
+ * Request to add an owner/manager extra charge to a billing cycle. It is always
+ * added to the bill (2026-09-28): the "adjust from deposit" option was removed,
+ * because taking money from a deposit is the deposit manager's job.
  */
 public record CreateExtraChargeRequest(
 
@@ -17,8 +19,6 @@ public record CreateExtraChargeRequest(
     String description,
 
     @Positive
-    long amountPaise,
-
-    boolean adjustFromDeposit
+    long amountPaise
 ) {
 }

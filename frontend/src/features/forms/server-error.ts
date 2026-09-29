@@ -60,6 +60,18 @@ export function errorBody(error: unknown): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Seconds until a rate-limited request would be accepted, or 0 when this is
+ * not a rate-limit refusal.
+ *
+ * <p>From the server's own clock rather than a guess here, so a countdown ends
+ * when the next attempt would actually succeed.
+ */
+export function retryAfterSeconds(error: unknown): number {
+  const seconds = errorBody(error)?.retryAfterSeconds;
+  return typeof seconds === "number" && seconds > 0 ? seconds : 0;
+}
+
 export function errorMessage(error: unknown) {
   if (typeof error === "object" && error && "data" in error) {
     const data = (error as { data?: { message?: string } }).data;

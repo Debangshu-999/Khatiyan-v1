@@ -8,10 +8,9 @@ import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -49,12 +48,11 @@ public record CreateDailyStayRequest(
     @Size(max = 500) String guestAddress,
 
     /**
-     * Age as stated at check-in, not a date of birth. See {@link GuestDetails} —
-     * a register records what it was told and never recomputes it.
+     * As the guest's ID shows it (owner's rule, 2026-09-27). The register's age
+     * is worked out from it at check-in. See {@link GuestDetails}.
      */
-    @NotNull(message = "Enter the guest's age")
-    @Min(value = 18, message = "The guest must be 18 or older")
-    @Max(value = 120, message = "Enter a valid age") Integer guestAge,
+    @NotNull(message = "Enter the guest's date of birth")
+    @Past(message = "Enter the guest's date of birth") LocalDate guestDateOfBirth,
 
     @NotNull(message = "Select the guest's gender") Gender guestGender,
 
@@ -70,6 +68,6 @@ public record CreateDailyStayRequest(
     @Valid IdCheckDeclarationInput idCheck
 ) {
     public GuestDetails toGuestDetails() {
-        return new GuestDetails(guestName, guestPhone, guestEmail, guestAddress, guestAge, guestGender);
+        return new GuestDetails(guestName, guestPhone, guestEmail, guestAddress, null, guestGender, guestDateOfBirth);
     }
 }

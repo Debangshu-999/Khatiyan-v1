@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type IncomeEntryType = "MANUAL" | "REVERSAL";
@@ -14,6 +14,11 @@ export type IncomeEntry = {
   reversesIncomeId: string | null;
   reversed: boolean;
   createdAt: string;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type PnlLine = {
@@ -95,8 +100,8 @@ export const pnlApi = api.injectEndpoints({
       query: ({ propertyId, payload }) => ({ body: payload, method: "POST", url: `${base(propertyId)}/incomes` }),
       invalidatesTags: ["Pnl"],
     }),
-    reverseIncome: builder.mutation<IncomeEntry, { propertyId: string; incomeId: string; reason: string }>({
-      query: ({ propertyId, incomeId, reason }) => ({ body: { reason }, method: "POST", url: `${base(propertyId)}/incomes/${incomeId}/reverse` }),
+    reverseIncome: builder.mutation<IncomeEntry, { propertyId: string; incomeId: string; reason: string; version: number }>({
+      query: ({ propertyId, incomeId, reason, version }) => ({ body: { reason }, headers: ifMatch(version), method: "POST", url: `${base(propertyId)}/incomes/${incomeId}/reverse` }),
       invalidatesTags: ["Pnl"],
     }),
   }),

@@ -211,12 +211,14 @@ export default function NotificationsScreen() {
       <ScreenHeader
         title="Notifications"
         trailing={<NudgesPill isManagement={isManagement} />}
+        // No line for anyone else: a pending tenant's notifications show here
+        // too now, so "will appear once your tenancy is active" was untrue.
         subtitle={
           isManagement && selectedProperty
             ? `Notifications for ${selectedProperty.name}.`
             : user?.activeTenant
               ? "Your tenancy notifications in one queue — filter by topic below."
-              : "Notifications will appear here once your tenancy or property workspace is active."
+              : undefined
         }
       />
 

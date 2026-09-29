@@ -54,7 +54,12 @@ public record BillingCycleResponse(
     Instant updatedAt,
     List<BillingCycleLineItemResponse> lineItems,
     // Management's reason, present only on a cancelled one-off bill.
-    String cancellationReason
+    String cancellationReason,
+    /**
+     * The row's version (2026-09-29). A screen sends it back as If-Match when
+     * it acts, and a record changed since the screen loaded it is refused.
+     */
+    long version
 ) {
     public static BillingCycleResponse from(
             BillingCycle cycle,
@@ -108,7 +113,8 @@ public record BillingCycleResponse(
             cycle.getCreatedAt(),
             cycle.getUpdatedAt(),
             lineItems,
-            cycle.getCancellationReason()
+            cycle.getCancellationReason(),
+            cycle.getVersion()
         );
     }
 }

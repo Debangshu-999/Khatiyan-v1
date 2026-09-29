@@ -42,7 +42,9 @@ public record ConcernResponse(
     Instant reopenedAt,
     Instant createdAt,
     Instant updatedAt,
-    List<ConcernPhotoResponse> photos
+    List<ConcernPhotoResponse> photos,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
 ) {
     public static ConcernResponse from(
             Concern concern,
@@ -85,7 +87,6 @@ public record ConcernResponse(
             concern.getReopenedAt(),
             concern.getCreatedAt(),
             concern.getUpdatedAt(),
-            photos
-        );
+            photos, concern.getVersion());
     }
 }

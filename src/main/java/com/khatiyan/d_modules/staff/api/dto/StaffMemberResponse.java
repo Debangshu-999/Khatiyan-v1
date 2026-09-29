@@ -20,7 +20,10 @@ public record StaffMemberResponse(
         LocalDate employmentStartDate,
         LocalDate employmentEndDate,
         String employmentNotes,
-        boolean active) {
+        boolean active,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
+) {
 
     public static StaffMemberResponse from(StaffMember member, String categoryName, Integer age) {
         return new StaffMemberResponse(
@@ -37,6 +40,6 @@ public record StaffMemberResponse(
                 member.getEmploymentStartDate(),
                 member.getEmploymentEndDate(),
                 member.getEmploymentNotes(),
-                member.isActive());
+                member.isActive(), member.getVersion());
     }
 }

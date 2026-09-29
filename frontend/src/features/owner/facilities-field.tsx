@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
-import { Modal, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AirVent,
@@ -274,8 +275,8 @@ function FacilitiesPickerModal({
   }
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.background,
@@ -304,7 +305,7 @@ function FacilitiesPickerModal({
                 Select facilities
               </Text>
             </View>
-            <AnimatedPressable accessibilityLabel="Close" accessibilityRole="button" onPress={onClose}>
+            <AnimatedPressable accessibilityLabel="Close" accessibilityRole="button" onPress={() => dismiss()}>
               <X color={colors.muted} size={24} strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
@@ -420,11 +421,11 @@ function FacilitiesPickerModal({
               paddingTop: spacing.md,
             }}
           >
-            <ActionButton label="Done" onPress={onClose} />
+            <ActionButton label="Done" onPress={() => dismiss()} />
           </View>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

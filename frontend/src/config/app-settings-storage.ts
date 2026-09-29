@@ -16,9 +16,26 @@ type StoredAppSettings = {
   activeAccount?: AccountType | null;
   // Set after the first-run onboarding screen has been viewed.
   hasSeenGetStarted?: boolean;
+  // The analytics period each user last picked. Presets only, never a custom range.
+  analyticsPresetByUserId?: Record<string, string>;
 };
 
-export async function loadAppSettings(): Promise<StoredAppSettings> {
+/**
+ * Every setting lives in ONE stored blob, and every save used to read it,
+ * change a field and write it all back with nothing ordering the saves. Two
+ * in flight at once meant the later wrote back a copy read before the earlier
+ * landed, silently undoing it: a pin saved beside an analytics-period or
+ * account save vanished from storage while the screen still showed it, and
+ * signing out (which drops the in-memory copy) made it look as if sign-out had
+ * cleared the pins (seen 2026-09-26).
+ *
+ * <p>So every change goes through {@link updateSettings}, one at a time, each
+ * reading the blob the previous one wrote. Reads wait for queued writes, so a
+ * load right after a save sees it.
+ */
+let pendingWrites: Promise<unknown> = Promise.resolve();
+
+async function readSettings(): Promise<StoredAppSettings> {
   const serializedSettings =
     Platform.OS === "web"
       ? window.localStorage.getItem(APP_SETTINGS_KEY)
@@ -30,19 +47,16 @@ export async function loadAppSettings(): Promise<StoredAppSettings> {
 
   try {
     return JSON.parse(serializedSettings) as StoredAppSettings;
-  } catch {
-    await clearAppSettings();
+  } catch (error) {
+    // Unreadable, but NOT deleted here: this used to wipe every setting (pins,
+    // theme, account) on one bad read. The next save replaces it anyway.
+    console.warn("App settings could not be read; starting from defaults", error);
     return {};
   }
 }
 
-export async function saveThemeMode(themeMode: ThemeMode) {
-  const currentSettings = await loadAppSettings();
-  const nextSettings: StoredAppSettings = {
-    ...currentSettings,
-    themeMode,
-  };
-  const serializedSettings = JSON.stringify(nextSettings);
+async function writeSettings(settings: StoredAppSettings) {
+  const serializedSettings = JSON.stringify(settings);
 
   if (Platform.OS === "web") {
     window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
@@ -50,6 +64,26 @@ export async function saveThemeMode(themeMode: ThemeMode) {
   }
 
   await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
+}
+
+/** Applies one change to the stored settings, after every change queued before it. */
+function updateSettings(change: (current: StoredAppSettings) => StoredAppSettings): Promise<void> {
+  const run = pendingWrites.then(async () => {
+    const current = await readSettings();
+    await writeSettings(change(current));
+  });
+  // A failed write must not jam the queue for every later one.
+  pendingWrites = run.catch(() => undefined);
+  return run;
+}
+
+export async function loadAppSettings(): Promise<StoredAppSettings> {
+  await pendingWrites;
+  return readSettings();
+}
+
+export async function saveThemeMode(themeMode: ThemeMode) {
+  return updateSettings((current) => ({ ...current, themeMode }));
 }
 
 export async function loadThemeModeForUser(userId: string): Promise<ThemeMode | undefined> {
@@ -65,33 +99,27 @@ export function themeModeForUser(settings: StoredAppSettings, userId: string | u
 }
 
 export async function saveThemeModeForUser(userId: string, themeMode: ThemeMode) {
+  return updateSettings((current) => ({
+    ...current,
+    themeModesByUserId: { ...(current.themeModesByUserId ?? {}), [userId]: themeMode },
+  }));
+}
+
+export async function loadAnalyticsPresetForUser(userId: string): Promise<string | undefined> {
   const currentSettings = await loadAppSettings();
-  const serializedSettings = JSON.stringify({
-    ...currentSettings,
-    themeModesByUserId: {
-      ...(currentSettings.themeModesByUserId ?? {}),
-      [userId]: themeMode,
-    },
-  });
+  return currentSettings.analyticsPresetByUserId?.[userId];
+}
 
-  if (Platform.OS === "web") {
-    window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
-    return;
-  }
-
-  await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
+/** A custom range is never saved: next launch falls back to the default preset. */
+export async function saveAnalyticsPresetForUser(userId: string, preset: string) {
+  return updateSettings((current) => ({
+    ...current,
+    analyticsPresetByUserId: { ...(current.analyticsPresetByUserId ?? {}), [userId]: preset },
+  }));
 }
 
 export async function savePinnedOwnerModules(pinnedOwnerModules: string[]) {
-  const currentSettings = await loadAppSettings();
-  const serializedSettings = JSON.stringify({ ...currentSettings, pinnedOwnerModules });
-
-  if (Platform.OS === "web") {
-    window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
-    return;
-  }
-
-  await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
+  return updateSettings((current) => ({ ...current, pinnedOwnerModules }));
 }
 
 export function pinnedOwnerModulesForUser(
@@ -119,52 +147,16 @@ export async function savePinnedOwnerModulesForUser(
   userId: string,
   pinnedOwnerModules: string[],
 ) {
-  const currentSettings = await loadAppSettings();
-  const serializedSettings = JSON.stringify({
-    ...currentSettings,
-    pinnedOwnerModulesByUserId: {
-      ...(currentSettings.pinnedOwnerModulesByUserId ?? {}),
-      [userId]: pinnedOwnerModules,
-    },
-  });
-
-  if (Platform.OS === "web") {
-    window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
-    return;
-  }
-
-  await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
+  return updateSettings((current) => ({
+    ...current,
+    pinnedOwnerModulesByUserId: { ...(current.pinnedOwnerModulesByUserId ?? {}), [userId]: pinnedOwnerModules },
+  }));
 }
 
 export async function saveActiveAccount(activeAccount: AccountType | null) {
-  const currentSettings = await loadAppSettings();
-  const serializedSettings = JSON.stringify({ ...currentSettings, activeAccount });
-
-  if (Platform.OS === "web") {
-    window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
-    return;
-  }
-
-  await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
+  return updateSettings((current) => ({ ...current, activeAccount }));
 }
 
 export async function saveHasSeenGetStarted() {
-  const currentSettings = await loadAppSettings();
-  const serializedSettings = JSON.stringify({ ...currentSettings, hasSeenGetStarted: true });
-
-  if (Platform.OS === "web") {
-    window.localStorage.setItem(APP_SETTINGS_KEY, serializedSettings);
-    return;
-  }
-
-  await SecureStore.setItemAsync(APP_SETTINGS_KEY, serializedSettings);
-}
-
-async function clearAppSettings() {
-  if (Platform.OS === "web") {
-    window.localStorage.removeItem(APP_SETTINGS_KEY);
-    return;
-  }
-
-  await SecureStore.deleteItemAsync(APP_SETTINGS_KEY);
+  return updateSettings((current) => ({ ...current, hasSeenGetStarted: true }));
 }

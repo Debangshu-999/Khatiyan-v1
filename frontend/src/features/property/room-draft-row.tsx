@@ -181,7 +181,7 @@ export function RoomDraftRow({
         // Muted, not red. Nothing is wrong yet — the row has simply not been
         // told which type it is, and an error colour on a form you have not
         // filled in reads as a mistake you have already made.
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Choose a room type and its amenities appear here, ready to adjust.
         </Text>
       )}
@@ -220,7 +220,7 @@ export function RoomDraftRow({
           {/* Collapsed, the row still has to say what it is — otherwise a list
               of ten is ten identical headings and the only way to check one is
               to open it. */}
-          <Text numberOfLines={1} style={[type.caption, { color: faulted ? colors.danger : colors.muted }]}>
+          <Text numberOfLines={1} style={[type.description, { color: faulted ? colors.danger : colors.muted }]}>
             {faulted
               ? "Something is missing"
               : mold

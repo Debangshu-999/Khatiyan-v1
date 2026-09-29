@@ -43,7 +43,9 @@ public record RoomResponse(
     UUID maintenanceMarkedByUserId,
     String maintenanceMarkedByName,
     Instant maintenanceMarkedAt,
-    Instant updatedAt
+    Instant updatedAt,
+    /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+    long version
 ) {
 
     public static RoomResponse from(Room room) {
@@ -77,7 +79,6 @@ public record RoomResponse(
             room.getMaintenanceMarkedBy(),
             maintenanceMarkedByName,
             room.getMaintenanceMarkedAt(),
-            room.getUpdatedAt()
-        );
+            room.getUpdatedAt(), room.getVersion());
     }
 }

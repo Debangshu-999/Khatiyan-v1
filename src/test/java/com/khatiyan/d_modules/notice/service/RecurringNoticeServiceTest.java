@@ -24,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.khatiyan.support.TestTransactions;
 import com.khatiyan.d_modules.notice.api.dto.CreateNoticeRequest;
 import com.khatiyan.d_modules.notice.api.dto.CreateRecurringNoticeRequest;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -91,7 +92,8 @@ class RecurringNoticeServiceTest {
                 templateAttachmentRepository,
                 noticeAttachmentRepository,
                 "Asia/Kolkata",
-                NOON_IST);
+                NOON_IST,
+                TestTransactions.recordByRecord());
     }
 
     private CreateRecurringNoticeRequest request(

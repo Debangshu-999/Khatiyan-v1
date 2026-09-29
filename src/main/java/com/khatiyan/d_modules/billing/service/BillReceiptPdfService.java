@@ -84,7 +84,9 @@ public class BillReceiptPdfService {
         String ownerEmail
     ) {}
 
-    private String buildXhtml(BillingCycleResponse cycle, ReceiptLetterhead letterhead) {
+    // Package-private for the receipt test, which reads the markup rather than
+    // parsing PDF bytes back out.
+    String buildXhtml(BillingCycleResponse cycle, ReceiptLetterhead letterhead) {
         // Paid On only when the bill actually IS paid. A cycle reverted from
         // PAID keeps its old paidAt, and "Unpaid" beside a paid date on a
         // document about money is a contradiction a tenant screenshots.
@@ -99,10 +101,23 @@ public class BillReceiptPdfService {
                 .toList();
         long itemised = extras.stream().mapToLong(BillingCycleLineItemResponse::amountPaise).sum();
         long unitemised = cycle.extraChargePaise() - itemised;
-        long subtotal = cycle.baseAmountPaise() + cycle.extraChargePaise() + cycle.lateFeeAmountPaise();
+
+        // The first bill's starting deposit. The cycle has no field for it —
+        // it exists only as a DEPOSIT line, folded into the total by the
+        // recalculation — so reading extras alone printed a subtotal of
+        // ₹11,600 above a total of ₹21,600. Same rule as the on-screen copy.
+        List<BillingCycleLineItemResponse> deposits = cycle.lineItems().stream()
+                .filter(item -> item.type() == BillingCycleLineItemType.DEPOSIT)
+                .filter(item -> item.settlementAction() != BillingLineSettlementAction.WAIVED)
+                .toList();
+        long depositTotal = deposits.stream().mapToLong(BillingCycleLineItemResponse::amountPaise).sum();
+        long subtotal = cycle.baseAmountPaise() + depositTotal + cycle.extraChargePaise() + cycle.lateFeeAmountPaise();
 
         StringBuilder charges = new StringBuilder();
         charges.append(row("Base Rent", money(cycle.baseAmountPaise()), false));
+        for (BillingCycleLineItemResponse deposit : deposits) {
+            charges.append(row(deposit.label(), money(deposit.amountPaise()), false));
+        }
         for (BillingCycleLineItemResponse extra : extras) {
             charges.append(row(extra.label(), money(extra.amountPaise()), false));
         }

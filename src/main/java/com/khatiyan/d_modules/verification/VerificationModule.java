@@ -63,6 +63,18 @@ public class VerificationModule {
         return verificationService.isSatisfied(tenancyId);
     }
 
+    /** The owner gives a pending stay's tenant more tries. */
+    public List<VerificationGrant> addAttempts(
+            UUID tenancyId,
+            UUID ownerUserId,
+            UUID propertyId,
+            UUID tenantUserId,
+            Map<ServiceCode, Integer> attemptsByService,
+            UUID actorUserId) {
+        return verificationService.addAttempts(
+                tenancyId, ownerUserId, propertyId, tenantUserId, attemptsByService, actorUserId);
+    }
+
     /** The tenant asks for a code. */
     public VerificationAttempt startOtp(UUID grantId, UUID tenantUserId, String aadhaarNumber) {
         return verificationService.startOtp(grantId, tenantUserId, aadhaarNumber);
@@ -71,6 +83,16 @@ public class VerificationModule {
     /** The tenant submits it. */
     public VerificationResult submitOtp(UUID attemptId, UUID tenantUserId, String otp) {
         return verificationService.submitOtp(attemptId, tenantUserId, otp);
+    }
+
+    /** The tenant opens an Aadhaar App session. Charges the owner when it opens. */
+    public VerificationAttempt startAadhaarSession(UUID grantId, UUID tenantUserId) {
+        return verificationService.startAadhaarSession(grantId, tenantUserId);
+    }
+
+    /** Where an attempt stands, checked again. */
+    public VerificationService.AttemptStatus refreshAttempt(UUID attemptId, UUID tenantUserId) {
+        return verificationService.refreshAttempt(attemptId, tenantUserId);
     }
 
     /**

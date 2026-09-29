@@ -296,7 +296,7 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
 
         {hasBudget ? <ProgressBar color={over ? colors.danger : colors.jade} ratio={ratio} /> : null}
 
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {hasBudget ? `${formatMoneyPaise(budget.spentPaise)} spent of ${formatMoneyPaise(effective)}` : "Set a monthly budget to track spending and savings."}
         </Text>
 
@@ -330,7 +330,7 @@ function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: bool
         {loading ? (
           <ActivityIndicator color={colors.primary} />
         ) : totals.length === 0 ? (
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             No spending recorded for this month yet.
           </Text>
         ) : (
@@ -417,7 +417,7 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
         </View>
 
         {!hasBudget ? (
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Set a monthly budget to chart savings across months.
           </Text>
         ) : (
@@ -439,7 +439,7 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
           </View>
         )}
 
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Savings = budget − spend (incl. projected salary). A point below the line means that month went over budget.
         </Text>
       </View>
@@ -475,7 +475,7 @@ function StatusValueTile({ color, hint, label, value }: { color: string; hint?: 
         {value}
       </Text>
       {hint ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {hint}
         </Text>
       ) : null}
@@ -561,7 +561,7 @@ function BudgetSpendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
           </View>
         </View>
         {!hasBudget ? (
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Set a monthly budget to compare spend against it.
           </Text>
         ) : (
@@ -689,7 +689,7 @@ function ExpenseRow({
         ) : null}
       </View>
       {expense.description ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {expense.description}
         </Text>
       ) : null}
@@ -708,7 +708,7 @@ function ExpenseRow({
                 Reversed {formatDate(reversal.incurredDate)}
               </Text>
               {reversal.description ? (
-                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+                <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
                   {reversal.description}
                 </Text>
               ) : null}
@@ -823,7 +823,7 @@ function AddExpenseSheet({ categories, month, onClose, propertyId }: { categorie
   );
 }
 
-function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defaultMonthlyBudgetPaise: number | null }; month: string; onClose: () => void; propertyId: string }) {
+function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defaultMonthlyBudgetPaise: number | null; version: number }; month: string; onClose: () => void; propertyId: string }) {
   const toast = useToast();
   const [amount, setAmount] = useState(budget.defaultMonthlyBudgetPaise != null ? String(Math.round(budget.defaultMonthlyBudgetPaise / 100)) : "");
   const form = useFormErrors<"amount">();
@@ -840,7 +840,7 @@ function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defa
       return;
     }
     try {
-      await setDefaultBudget({ amountPaise, month, propertyId }).unwrap();
+      await setDefaultBudget({ amountPaise, month, propertyId, version: budget.version }).unwrap();
       onClose();
       toast.success("Monthly budget updated.");
     } catch (caught) {
@@ -901,7 +901,7 @@ function ReverseSheet({ expense, onClose, propertyId }: { expense: Expense; onCl
       return;
     }
     try {
-      await reverseExpense({ expenseId: expense.id, propertyId, reason: reason.trim() }).unwrap();
+      await reverseExpense({ expenseId: expense.id, propertyId, reason: reason.trim(), version: expense.version }).unwrap();
       onClose();
       toast.success("Expense reversed.");
     } catch (caught) {
@@ -937,7 +937,7 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
     setPendingDelete(null);
     if (!target) return;
     try {
-      await deactivate({ propertyId, recurringExpenseId: target.id }).unwrap();
+      await deactivate({ propertyId, recurringExpenseId: target.id, version: target.version }).unwrap();
       toast.success("Recurring expense removed.");
     } catch (caught) {
       opErrors.failFromServer(errorMessage(caught) || "Could not remove the recurring expense.");
@@ -1050,7 +1050,7 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
     }
     const payload = { amountPaise, categoryId, dayOfMonth: day, description: description.trim() || undefined, paidTo: paidTo.trim() };
     try {
-      if (editing) await update({ payload, propertyId, recurringExpenseId: editing.id }).unwrap();
+      if (editing) await update({ payload, propertyId, recurringExpenseId: editing.id, version: editing.version }).unwrap();
       else await create({ payload, propertyId }).unwrap();
       onClose();
       toast.success(editing ? "Recurring expense updated." : "Recurring expense added.");

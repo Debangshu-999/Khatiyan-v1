@@ -29,6 +29,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.khatiyan.c_shared.exception.StaleVersionException;
+import com.khatiyan.c_shared.concurrency.ExpectedVersion;
+import com.khatiyan.c_shared.concurrency.ExpectedVersionHolder;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -54,6 +57,7 @@ import com.khatiyan.d_modules.tenancy.model.TenancyExitRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
@@ -261,6 +265,22 @@ class RequestPolicyServiceTest {
     }
 
     @Test
+    void bookedOutgoingBedPreventsApprovalReversion() {
+        TenancyRoomChangeRequest roomChange = pendingRoomChange(activeTenancy());
+        roomChange.approve(ACTOR_ID, "Approved");
+        when(roomChangeRequestRepository.findByIdForUpdate(roomChange.getId()))
+                .thenReturn(Optional.of(roomChange));
+        when(tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(roomChange.getId()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> roomChangeRequestService.revertApproval(ACTOR_ID, roomChange.getId()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("future tenant booked");
+        assertThat(roomChange.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.APPROVED);
+        verify(propertyModule, never()).releaseRoomSlotReservation(any(), any());
+    }
+
+    @Test
     @DisplayName("the scheduler cancels an approved move when the tenancy has ended, and tells everyone")
     void schedulerRechecksActiveTenancyBeforeExecutingRoomChange() {
         Tenancy tenancy = activeTenancy();
@@ -327,7 +347,7 @@ class RequestPolicyServiceTest {
         when(tenancyRepository.findById(tenancy.getId())).thenReturn(Optional.of(tenancy));
         when(propertyModule.getActiveRoom(PROPERTY_ID, TARGET_ROOM_ID)).thenReturn(vacantTargetRoom());
         when(tenancyService.transferRoom(
-                OWNER_ID, tenancy.getId(), TARGET_ROOM_ID, roomChange.getEffectiveTransferDate()))
+                OWNER_ID, tenancy.getId(), TARGET_ROOM_ID, roomChange.getEffectiveTransferDate(), false))
                 .thenReturn(moved);
 
         var response = roomChangeRequestService.executeDueApprovedRequest(roomChange.getId());
@@ -359,6 +379,21 @@ class RequestPolicyServiceTest {
     }
 
     @Test
+    void bookedOutgoingBedIsNotSilentlyCancelledWhenTransferRunFails() {
+        TenancyRoomChangeRequest roomChange = approvedDueRoomChange(activeTenancy());
+        when(roomChangeRequestRepository.findByIdForUpdate(roomChange.getId()))
+                .thenReturn(Optional.of(roomChange));
+        when(tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(roomChange.getId()))
+                .thenReturn(true);
+
+        roomChangeRequestService.closeAfterExecutionFailure(
+                roomChange.getId(), new IllegalStateException("temporary failure"));
+
+        assertThat(roomChange.getStatus()).isEqualTo(TenancyRoomChangeRequestStatus.APPROVED);
+        verify(propertyModule, never()).releaseRoomSlotReservation(any(), any());
+    }
+
+    @Test
     @DisplayName("a move refused on transfer day is cancelled with the refusal as its reason")
     void refusedRunCancelsWithTheRefusal() {
         Tenancy tenancy = activeTenancy();
@@ -382,7 +417,7 @@ class RequestPolicyServiceTest {
         TenancyExitRequest exit = pendingExit(tenancy);
         exit.approveNormal(ACTOR_ID, null, null, null, null);
         ReflectionTestUtils.setField(exit, "status", TenancyExitRequestStatus.WITHDRAWAL_REQUESTED);
-        when(tenancyRepository.findById(tenancy.getId())).thenReturn(Optional.of(tenancy));
+        when(tenancyRepository.findByIdForUpdate(tenancy.getId())).thenReturn(Optional.of(tenancy));
         when(exitRequestRepository.findByTenancyId(tenancy.getId())).thenReturn(List.of(exit));
 
         assertThatThrownBy(() -> exitRequestService.endTenancyNow(
@@ -391,6 +426,85 @@ class RequestPolicyServiceTest {
                 .hasMessageContaining("withdraw");
 
         verifyNoInteractions(billingModule, tenancyService);
+    }
+
+    @Test
+    @DisplayName("a fixed-term stay past its end, pending exit, can be ended: its date is its planned end")
+    void aFixedTermPastItsEndCanBeEnded() {
+        LocalDate today = LocalDate.now(REQUEST_ZONE);
+        Tenancy tenancy = Tenancy.start("TEN-2026-000165", TENANT_ID, PROPERTY_ID, CURRENT_ROOM_ID, ACTOR_ID,
+                12_000_00L, 10_000_00L, today.minusDays(6).minusMonths(1));
+        tenancy.stampAgreementTerms(1, null);
+        tenancy.markPendingExit();
+        when(tenancyRepository.findByIdForUpdate(tenancy.getId())).thenReturn(Optional.of(tenancy));
+        when(exitRequestRepository.findByTenancyId(tenancy.getId())).thenReturn(List.of());
+
+        exitRequestService.endTenancyNow(ACTOR_ID, tenancy.getId(), new EndTenancyRequest(null, null, null, null, null));
+
+        // It used to be refused with "must exit through the exit request workflow".
+        verify(tenancyService).end(ACTOR_ID, tenancy.getId(), today.minusDays(6), "MANUAL_END");
+    }
+
+    /**
+     * Two people ending one stay (2026-09-28): the second request, arriving
+     * once the first has ended it, is refused before anything is charged.
+     * The row lock is what makes "arriving once the first has ended it" true
+     * for two requests sent at the same moment.
+     */
+    @Test
+    @DisplayName("a stay already ended by someone else is refused, with nothing applied")
+    void aSecondEndOfTheSameStayIsRefusedBeforeAnythingIsApplied() {
+        Tenancy tenancy = activeTenancy();
+        ReflectionTestUtils.setField(tenancy, "status", TenancyStatus.EXITED);
+        when(tenancyRepository.findByIdForUpdate(tenancy.getId())).thenReturn(Optional.of(tenancy));
+
+        assertThatThrownBy(() -> exitRequestService.endTenancyNow(
+                ACTOR_ID, tenancy.getId(), new EndTenancyRequest(null, null, null, null, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("already ended");
+
+        verify(tenancyRepository, never()).findById(tenancy.getId());
+        verifyNoInteractions(billingModule, tenancyService);
+    }
+
+    /**
+     * A screen that loaded the stay at an older version (2026-09-28): someone
+     * changed it since, so the exit it decided is refused before any charge,
+     * deduction or ending.
+     */
+    @Test
+    @DisplayName("ending a stay from a screen that went out of date is refused, with nothing applied")
+    void aStaleEndTenancyIsRefusedBeforeAnythingIsApplied() {
+        Tenancy tenancy = activeTenancy();
+        ReflectionTestUtils.setField(tenancy, "version", 3L);
+        when(tenancyRepository.findByIdForUpdate(tenancy.getId())).thenReturn(Optional.of(tenancy));
+
+        ExpectedVersionHolder.set(ExpectedVersion.of(2));
+        try {
+            assertThatThrownBy(() -> exitRequestService.endTenancyNow(
+                    ACTOR_ID, tenancy.getId(), new EndTenancyRequest(null, null, null, null, null)))
+                    .isInstanceOf(StaleVersionException.class);
+        } finally {
+            ExpectedVersionHolder.clear();
+        }
+
+        verifyNoInteractions(billingModule, tenancyService);
+    }
+
+    @Test
+    @DisplayName("a fixed term cannot be ended before its end date")
+    void aFixedTermCannotBeEndedEarlyFromTheEndScreen() {
+        LocalDate today = LocalDate.now(REQUEST_ZONE);
+        Tenancy tenancy = Tenancy.start("TEN-2026-000166", TENANT_ID, PROPERTY_ID, CURRENT_ROOM_ID, ACTOR_ID,
+                12_000_00L, 10_000_00L, today.plusDays(3).minusMonths(1));
+        tenancy.stampAgreementTerms(1, null);
+        when(tenancyRepository.findByIdForUpdate(tenancy.getId())).thenReturn(Optional.of(tenancy));
+        when(exitRequestRepository.findByTenancyId(tenancy.getId())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> exitRequestService.endTenancyNow(
+                ACTOR_ID, tenancy.getId(), new EndTenancyRequest(null, null, null, null, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("before its end date");
     }
 
     @Test
@@ -618,6 +732,33 @@ class RequestPolicyServiceTest {
         verify(exitRequestRepository, never()).save(any(TenancyExitRequest.class));
     }
 
+    @Test
+    @DisplayName("a fixed term offers only leaving early: up to the day before it ends, never notice")
+    void aFixedTermWindowIsEarlyExitOnly() {
+        Tenancy tenancy = fixedTermTenancy();
+        withCheckoutWindowInputs(tenancy, billingCycle(2), NoticePeriod.ONE_MONTH);
+
+        ExitCheckoutWindowResponse window = exitRequestService.getExitCheckoutWindow(TENANT_ID);
+
+        LocalDate today = LocalDate.now(REQUEST_ZONE);
+        assertThat(window.earliestPossibleDate()).isEqualTo(today.plusDays(10));
+        assertThat(window.latestCheckoutDate()).isEqualTo(tenancy.getAgreementEndDate().minusDays(1));
+    }
+
+    @Test
+    @DisplayName("a fixed term inside its last ten days has no request to make: it ends on its date")
+    void aFixedTermNearItsEndCannotRequestAnExit() {
+        LocalDate today = LocalDate.now(REQUEST_ZONE);
+        Tenancy tenancy = Tenancy.start("TEN-2026-000002", TENANT_ID, PROPERTY_ID, CURRENT_ROOM_ID, ACTOR_ID,
+                12_000_00L, 10_000_00L, today.plusDays(5).minusMonths(1));
+        tenancy.stampAgreementTerms(1, null);
+        withCheckoutWindowInputs(tenancy, billingCycle(2), NoticePeriod.ONE_MONTH);
+
+        assertThatThrownBy(() -> exitRequestService.getExitCheckoutWindow(TENANT_ID))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("You move out then");
+    }
+
     private void withCheckoutWindowInputs(Tenancy tenancy, BillingCycleResponse cycle, NoticePeriod noticePeriod) {
         when(tenancyRepository.findByUserIdAndActiveTrue(TENANT_ID)).thenReturn(Optional.of(tenancy));
         when(billingModule.getCurrentMyRentCycle(eq(TENANT_ID), any(LocalDate.class))).thenReturn(cycle);
@@ -634,7 +775,7 @@ class RequestPolicyServiceTest {
                 null, null, null, false, Set.of(), false, null, Set.of(), Set.of(), Set.of(),
                 null, null, null,
                 BillingCollectionTiming.CYCLE_START, 3, 10_000_00L, noticePeriod, 0,
-                null, null, false, true);
+                null, null, false, true, 0L);
     }
 
     private static RoomResponse vacantTargetRoom() {
@@ -643,7 +784,7 @@ class RequestPolicyServiceTest {
                 1, 0, 0, 1,
                 RoomType.SINGLE, RoomConditioning.NON_AC, 14_000_00L,
                 null, Set.of(), Set.of(), RoomStatus.VACANT, true,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, 0L);
     }
 
     private static Tenancy activeTenancy() {
@@ -700,7 +841,7 @@ class RequestPolicyServiceTest {
                 null,
                 null,
                 null,
-                List.of(), null);
+                List.of(), null, 0L);
     }
 
     private static TenancyExitRequest pendingExit(Tenancy tenancy) {

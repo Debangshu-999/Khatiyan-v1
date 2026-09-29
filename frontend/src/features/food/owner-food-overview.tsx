@@ -3,62 +3,28 @@ import { Switch, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import type { MealType } from "@/store/services/property-api";
 import {
   type CookingForecast,
   type FoodModuleOverview,
+  type MealSlot,
 } from "@/store/services/food-api";
+import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import {
   FoodStat,
-  MEAL_ICON,
+  FoodStatusChip,
+  MealGlyph,
   type MaterialIconName,
   MEAL_LABEL,
   MEAL_ORDER,
   MealChip,
+  foodIcon,
   formatBulkQuantity,
-  isoDate,
-  todayInIst,
+  formatMealWindow,
 } from "@/features/food/food-ui";
-
-/**
- * Roughly when each meal is served.
- *
- * <p>Only used to decide which meal the overview should preview, so it is the
- * kitchen's rhythm rather than a setting. Nothing is scheduled off these hours
- * and no bill depends on them, which is why they are a constant here instead of
- * four more fields on the property.
- */
-const MEAL_HOUR: Record<MealType, number> = {
-  BREAKFAST: 8,
-  DINNER: 21,
-  EVENING_SNACKS: 17,
-  LUNCH: 13,
-};
-
-/**
- * The next meal this property will serve, and the day it falls on.
- *
- * <p>Rolls over to tomorrow once the day's last meal has passed, rather than
- * showing a dinner that was eaten three hours ago. An owner opening this at
- * eleven at night is asking what the kitchen does in the morning.
- */
-export function nextMeal(available: MealType[]): { date: Date; mealType: MealType } | null {
-  const served = MEAL_ORDER.filter((meal) => available.includes(meal));
-  if (served.length === 0) {
-    return null;
-  }
-  const now = todayInIst();
-  const upcoming = served.find((meal) => MEAL_HOUR[meal] > now.getHours());
-  if (upcoming) {
-    return { date: now, mealType: upcoming };
-  }
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  return { date: tomorrow, mealType: served[0] };
-}
 
 /**
  * The switch that decides whether Khatiyan manages this property's food.
@@ -81,34 +47,84 @@ export function ManageFoodCard({
   onToggle: (next: boolean) => void;
   readOnly: boolean;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   return (
-    <Card>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]}>Manage food with Khatiyan</Text>
-          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        overflow: "hidden",
+      }}
+    >
+      <View style={{ gap: spacing.md, padding: spacing.lg }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: radii.pill, height: 42, justifyContent: "center", width: 42 }}>
+            <MaterialCommunityIcons color={colors.ink} name="chef-hat" size={24} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15.5, lineHeight: 20 }}>
+              Manage meals with Khatiyan
+            </Text>
+          </View>
+          <FoodStatusChip
+            icon={enabled ? "check-circle" : "minus-circle-outline"}
+            label={enabled ? "On" : "Off"}
+            tone={enabled ? "success" : "neutral"}
+          />
+        </View>
+
+        <View style={{ backgroundColor: colors.neutralSoft, borderCurve: "continuous", borderRadius: radii.card, padding: spacing.md }}>
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
             {enabled
-              ? "Food items, profiles, weekly menus and cooking quantities are managed here."
-              : "You are running food manually. Turn this on to manage items, menus and subscriptions."}
+              ? "Plan menus, manage subscriptions and prepare cooking quantities in one place."
+              : "Turn on food tools to plan menus, manage subscriptions and prepare cooking quantities."}
           </Text>
         </View>
-        <Switch
-          disabled={busy || readOnly}
-          onValueChange={onToggle}
-          thumbColor={colors.surface}
-          trackColor={{ false: colors.neutralSoft, true: colors.primary }}
-          value={enabled}
-        />
-      </View>
-      {meals && meals.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-          {MEAL_ORDER.filter((meal) => meals.includes(meal)).map((meal) => (
-            <MealChip key={meal} meal={meal} />
-          ))}
+
+        {meals && meals.length > 0 ? (
+          <View style={{ backgroundColor: colors.neutralSoft, borderCurve: "continuous", borderRadius: radii.card, gap: spacing.sm, padding: spacing.md }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+              Meals offered by this property
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+              {MEAL_ORDER.filter((meal) => meals.includes(meal)).map((meal) => (
+                <MealChip key={meal} meal={meal} style={{ backgroundColor: colors.surface, borderWidth: 0 }} />
+              ))}
+            </View>
+          </View>
+        ) : null}
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: enabled ? colors.primarySoft : colors.surfaceRaised,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            flexDirection: "row",
+            gap: spacing.sm,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+          }}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>Food management</Text>
+            <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
+              {enabled ? "Khatiyan is managing this property's food" : "Currently managed outside Khatiyan"}
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Manage meals with Khatiyan"
+            disabled={busy || readOnly}
+            onValueChange={onToggle}
+            thumbColor={colors.surface}
+            trackColor={{ false: colors.neutralSoft, true: colors.primary }}
+            value={enabled}
+          />
         </View>
-      ) : null}
-    </Card>
+      </View>
+    </View>
   );
 }
 
@@ -126,7 +142,7 @@ export function MealsServedCard({ meals }: { meals: MealType[] }) {
     <Card>
       <View style={{ gap: spacing.xxs }}>
         <Text style={[type.bodyStrong, { color: colors.ink }]}>Meals this property serves</Text>
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           Set in Property settings, not here.
         </Text>
       </View>
@@ -137,7 +153,7 @@ export function MealsServedCard({ meals }: { meals: MealType[] }) {
           ))}
         </View>
       ) : (
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5 }}>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           No meals are listed for this property yet.
         </Text>
       )}
@@ -155,26 +171,41 @@ export function SetupSequence({
   onAddItem,
   onCreateProfile,
   onEditMenu,
+  onSetTimings,
   overview,
+  timingsSet,
 }: {
   onAddItem: () => void;
   onCreateProfile: () => void;
   onEditMenu: () => void;
+  /** Left out for a read-only manager, who can see the step but not do it. */
+  onSetTimings?: () => void;
   overview: FoodModuleOverview;
+  /** Every served meal has a saved time, not the default. */
+  timingsSet: boolean;
 }) {
   const { colors, fonts } = useTheme();
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ gap: spacing.xxs }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>Set up food service</Text>
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           Each step needs the one before it.
         </Text>
       </View>
+      {/* Required, and first (user, 2026-09-28): the next meal, the kitchen's
+          forecast and meal delays all run on these times. */}
+      <SetupStep
+        description="When each meal is served. Up next, the forecast and delays follow these times."
+        done={timingsSet}
+        icon="clock-outline"
+        onPress={onSetTimings ?? (() => {})}
+        title="Set meal timings"
+      />
       <SetupStep
         description="Name what your kitchen cooks and the unit you measure it in."
         done={overview.activeItems > 0}
-        icon="bowl-mix-outline"
+        icon="pot-steam-outline"
         onPress={onAddItem}
         title="Add food items"
       />
@@ -242,9 +273,8 @@ function SetupStep({
         padding: spacing.sm + 2,
       }}
     >
-      {/* The house treatment for an icon: outlined container, ink glyph, no
-          fill. A done step swaps to the one sanctioned exception — a filled
-          disc with a white glyph, which is how status is marked app-wide. */}
+      {/* A grey disc with an ink glyph. A done step swaps to a green disc
+          with a white tick, which is how status is marked app-wide. */}
       {done ? (
         <View
           style={{
@@ -259,12 +289,12 @@ function SetupStep({
           <MaterialCommunityIcons color={colors.onPrimary} name="check" size={18} />
         </View>
       ) : (
+        // A grey disc, no ring (user, 2026-09-28).
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.borderStrong,
+            backgroundColor: colors.neutralSoft,
             borderRadius: radii.pill,
-            borderWidth: 1,
             height: 32,
             justifyContent: "center",
             width: 32,
@@ -275,7 +305,7 @@ function SetupStep({
       )}
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>{title}</Text>
-        <Text numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
+        <Text numberOfLines={2} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           {description}
         </Text>
       </View>
@@ -291,33 +321,61 @@ function SetupStep({
  * split matters at the serving counter, not here, and putting both on a summary
  * card made it the longest thing on the screen.
  */
+/**
+ * The next meal and what to cook for it. Which meal is next, its time and any
+ * delay all come from the server's meal schedule (2026-09-28), which stops
+ * offering one once the day's last meal is over.
+ */
 export function CookingPreview({
   forecast,
   loading,
-  mealType,
+  onDelay,
   onOpenForecast,
-  when,
+  slot,
 }: {
   forecast: CookingForecast | undefined;
   loading: boolean;
-  mealType: MealType;
+  /** Left out when the meal can no longer be delayed, or for a read-only manager. */
+  onDelay?: () => void;
   onOpenForecast: () => void;
-  when: Date;
+  slot: MealSlot;
 }) {
   const { colors, fonts, type } = useTheme();
-  const today = isoDate(todayInIst()) === isoDate(when);
   const items = forecast?.consolidatedItems ?? [];
+  const mealType = slot.mealType;
 
   return (
     <Card>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, minWidth: 0 }}>
-          <MaterialCommunityIcons color={colors.ink} name={MEAL_ICON[mealType]} size={17} />
-          <Text style={[type.bodyStrong, { color: colors.ink }]}>{MEAL_LABEL[mealType]}</Text>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minWidth: 0 }}>
+          <MealGlyph color={colors.ink} meal={mealType} size={22} />
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>{MEAL_LABEL[mealType]}</Text>
         </View>
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
-          {today ? "Today" : "Tomorrow"}
-        </Text>
+        {slot.status === "SERVING" ? (
+          <FoodStatusChip icon="silverware-fork-knife" label="Serving now" tone="success" />
+        ) : (
+          <FoodStatusChip icon="clock-outline" label="Up next" tone="warning" />
+        )}
+      </View>
+      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+        {/* The meal's time on a grey pill (user, 2026-09-28). */}
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.neutralSoft,
+            borderRadius: radii.pill,
+            flexDirection: "row",
+            gap: spacing.xxs + 1,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 4,
+          }}
+        >
+          <MaterialCommunityIcons color={colors.inkSoft} name="clock-outline" size={14} />
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
+            {formatMealWindow(slot.startTime, slot.endTime)}
+          </Text>
+        </View>
+        {slot.delayMinutes > 0 ? <DelayedChip minutes={slot.delayMinutes} /> : null}
       </View>
 
       {loading ? (
@@ -325,7 +383,7 @@ export function CookingPreview({
           Working out quantities…
         </Text>
       ) : items.length === 0 ? (
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           Nothing to cook for this meal. Either no profile has a menu for it, or nobody has subscribed.
         </Text>
       ) : (
@@ -357,10 +415,13 @@ export function CookingPreview({
         </View>
       )}
 
-      <View style={{ borderTopColor: colors.border, borderTopWidth: 1, paddingTop: spacing.sm }}>
-        <Text onPress={onOpenForecast} style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
-          View full forecast
-        </Text>
+      {/* Two equal buttons across the card (user, 2026-09-28). Delay drops out
+          once the meal can no longer be delayed, and the forecast takes the row. */}
+      <View style={{ borderTopColor: colors.border, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, paddingTop: spacing.sm }}>
+        <ActionButton icon={foodIcon("chart-box-outline")} label="View forecast" onPress={onOpenForecast} variant="primary" />
+        {onDelay ? (
+          <ActionButton icon={foodIcon("clock-plus-outline")} label="Delay" onPress={onDelay} variant="secondary" />
+        ) : null}
       </View>
     </Card>
   );

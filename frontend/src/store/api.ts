@@ -25,6 +25,82 @@ function isExpectedFailure(endpoint: string, status: unknown) {
   return typeof status === "number" && (EXPECTED_FAILURES[endpoint] ?? []).includes(status);
 }
 
+/**
+ * Every cache tag, named once so a conflict can throw all of them away
+ * (2026-09-28, see STALE below).
+ */
+const API_TAGS = [
+  "Profile",
+  "Property",
+  "Tenancy",
+  "BillingCycle",
+  "Concern",
+  "Notice",
+  "Notification",
+  "Discovery",
+  "Payment",
+  "Deposit",
+  "Staff",
+  "Expense",
+  "Pnl",
+  "Payout",
+  "Compliance",
+  "Nudge",
+  // Separate from "Nudge" so reading the tenant's list can refresh the badge
+  // without invalidating the list it just fetched.
+  "NudgeUnread",
+  "PaymentIntent",
+  // Separate from "PaymentIntent" so an owner saving their UPI address does
+  // not invalidate the claims queue, and vice versa.
+  "PaymentDetails",
+  "Enquiry",
+  // Separate from "Enquiry" so the consent modal saving does not invalidate
+  // the property's enquiry list on a screen the enquirer cannot even see.
+  "EnquiryConsent",
+  "Session",
+  // The tenant's own identity checks. Separate from "Tenancy" so completing
+  // a check refreshes the step bar without refetching the whole agreement
+  // the tenant is part way through reading.
+  "Verification",
+  // The owner's prepaid balance. Its own tag rather than riding on "Payment":
+  // that one belongs to the parked rent-collection module, and a top-up has
+  // nothing to do with a tenant paying rent.
+  "ServiceBalance",
+  "Chat",
+  // Separate from "Chat" so opening a conversation can clear the tab badge
+  // without invalidating the thread list it is already showing.
+  "ChatUnread",
+  // Property food catalogue, profiles, menus, subscriptions and forecasts.
+  // Separate from Property so editing a menu does not refetch rooms and
+  // listing details across the workspace.
+  "Food",
+  // One day's cooking forecast. Separate from "Food" because the forecast is
+  // DERIVED — from menus, profiles and subscriptions — so re-deriving it on
+  // every unrelated food edit would refetch a heavy read while an owner is
+  // typing a quantity. Only the two things that change a single date's
+  // cooking, marking an item unavailable and putting it back, invalidate it.
+  "FoodForecast",
+  // Owner analytics. Nothing invalidates it in v1: pull to refresh refetches.
+  "Analytics",
+] as const;
+
+/**
+ * The If-Match header for an action on an existing record (2026-09-29): the
+ * version the screen loaded. The server refuses a changed record with 409 STALE
+ * and a missing version with 428.
+ */
+export function ifMatch(version: number): Record<string, string> {
+  return { "If-Match": String(version) };
+}
+
+/**
+ * The server's answer when someone else changed a record since this screen
+ * loaded it, or saved it at the same moment (2026-09-28).
+ */
+function isStaleConflict(data: unknown): boolean {
+  return typeof data === "object" && data !== null && (data as { code?: unknown }).code === "STALE";
+}
+
 export const api = createApi({
   reducerPath: "api",
   baseQuery: async (args, apiContext, extraOptions) => {
@@ -95,6 +171,13 @@ export const api = createApi({
       apiContext.dispatch(sessionExpired());
     }
 
+    // Someone else changed this since the screen loaded it (2026-09-28). Every
+    // cached read is thrown away, so each screen on show refetches the latest,
+    // and the caller shows the server's message in its usual refusal dialog.
+    if (result.error?.status === 409 && isStaleConflict(result.error.data)) {
+      apiContext.dispatch(api.util.invalidateTags([...API_TAGS]));
+    }
+
     // Verify what actually arrived against the shape the client claims. Dev-only
     // and warn-only — see response-guards for why.
     if (result.data !== undefined) {
@@ -104,50 +187,5 @@ export const api = createApi({
     return result;
   },
   endpoints: () => ({}),
-  tagTypes: [
-    "Profile",
-    "Property",
-    "Tenancy",
-    "BillingCycle",
-    "Concern",
-    "Notice",
-    "Notification",
-    "Discovery",
-    "Payment",
-    "Deposit",
-    "Staff",
-    "Expense",
-    "Pnl",
-    "Payout",
-    "Compliance",
-    "Nudge",
-    // Separate from "Nudge" so reading the tenant's list can refresh the badge
-    // without invalidating the list it just fetched.
-    "NudgeUnread",
-    "PaymentIntent",
-    // Separate from "PaymentIntent" so an owner saving their UPI address does
-    // not invalidate the claims queue, and vice versa.
-    "PaymentDetails",
-    "Enquiry",
-    // Separate from "Enquiry" so the consent modal saving does not invalidate
-    // the property's enquiry list on a screen the enquirer cannot even see.
-    "EnquiryConsent",
-    "Session",
-    // The tenant's own identity checks. Separate from "Tenancy" so completing
-    // a check refreshes the step bar without refetching the whole agreement
-    // the tenant is part way through reading.
-    "Verification",
-    // The owner's prepaid balance. Its own tag rather than riding on "Payment":
-    // that one belongs to the parked rent-collection module, and a top-up has
-    // nothing to do with a tenant paying rent.
-    "ServiceBalance",
-    "Chat",
-    // Separate from "Chat" so opening a conversation can clear the tab badge
-    // without invalidating the thread list it is already showing.
-    "ChatUnread",
-    // Property food catalogue, profiles, menus, subscriptions and forecasts.
-    // Separate from Property so editing a menu does not refetch rooms and
-    // listing details across the workspace.
-    "Food",
-  ],
+  tagTypes: API_TAGS,
 });

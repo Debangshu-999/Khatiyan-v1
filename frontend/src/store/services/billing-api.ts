@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 // UPCOMING is generated ahead of the due date and is NOT payable or billed yet;
@@ -56,6 +56,8 @@ export type BillingCycleLineItem = {
   settlementAmountPaise: number;
   settlementAction: BillingLineSettlementAction;
   systemGenerated: boolean;
+  /** Raised with a one-off bill: the bill itself, never an action on it (2026-09-28). */
+  issuedWithBill: boolean;
   createdByUserId: string | null;
   /** Who added it. Null on system lines, and null when a read path cannot resolve it. */
   createdByName: string | null;
@@ -103,6 +105,11 @@ export type BillingCycle = {
   lineItems: BillingCycleLineItem[];
   /** Management's reason, present only on a cancelled one-off bill. */
   cancellationReason: string | null;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 // A bill's display title: rent cycles are numbered; one-off bills (e.g. an
@@ -153,22 +160,41 @@ export type CreateExtraChargePayload = {
   label: string;
   description?: string | null;
   amountPaise: number;
-  adjustFromDeposit: boolean;
 };
 
+/**
+ * A percentage of the bill's current total, or an amount off: exactly one
+ * (2026-09-28). The server works out the money from a percentage.
+ */
 export type CreateDiscountPayload = {
   label: string;
   description?: string | null;
-  discountPercent: number;
-};
+} & ({ discountPercent: number; discountAmountPaise?: never } | { discountAmountPaise: number; discountPercent?: never });
 
-export type ManualPaymentMethod = "CASH" | "UPI" | "CARD" | "CHEQUE" | "OTHER";
+export type ManualPaymentMethod = "CASH" | "UPI" | "CARD" | "CHEQUE" | "OTHER" | "BANK_TRANSFER";
 
 export type RecordManualPaymentPayload = {
   method: ManualPaymentMethod;
   referenceText?: string | null;
   proofImageUrls?: string[] | null;
   note?: string | null;
+  /**
+   * The tenant's cash-payment code. Required for CASH — the server refuses cash
+   * without one — and ignored for every other method.
+   */
+  otp?: string | null;
+};
+
+/**
+ * A cash-payment code has gone to the tenant's phone.
+ *
+ * <p>`sentTo` is the number masked to its last four digits, so the owner can
+ * point the tenant at the right text without the whole number being on screen.
+ */
+export type CashPaymentCode = {
+  sentTo: string;
+  amountPaise: number;
+  expiresAt: string;
 };
 
 export type CreateOneOffBillPayload = {
@@ -189,6 +215,8 @@ export type ManualPayment = {
   note: string | null;
   collectedByUserId: string;
   collectedAt: string;
+  /** When the tenant confirmed it with their code. Null unless confirmed cash. */
+  tenantConfirmedAt: string | null;
 };
 
 export type DepositMovement = {
@@ -222,6 +250,11 @@ export type DepositAccount = {
   createdAt: string;
   updatedAt: string;
   movements: DepositMovement[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type DepositHistoryParams = {
@@ -250,6 +283,16 @@ export type UpcomingBillingCycle = {
   nextCycleStartDate: string;
   tenancyEndDate: string | null;
 };
+
+/**
+ * The one page size every reader of the upcoming list uses.
+ *
+ * <p>RTK Query keys its cache by the arguments, so a different size is a
+ * different entry that can hold a different answer. Anything that only needs
+ * the total — the pill, the pending note — still asks for this size, so it
+ * shares the upcoming screen's first page instead of keeping its own copy.
+ */
+export const UPCOMING_CYCLES_PAGE_SIZE = 8;
 
 export type BillingMonthSummary = {
   month: string;
@@ -280,7 +323,12 @@ export const billingApi = api.injectEndpoints({
 
     getMyTenancyDeposit: builder.query<DepositAccount, string>({
       query: (tenancyId) => `/api/v1/billing/me/tenancies/${tenancyId}/deposit`,
-      providesTags: ["BillingCycle"],
+      // A first-cycle payment can create this account, while later owner
+      // corrections invalidate the tenancy-specific Deposit tag.
+      providesTags: (_result, _error, tenancyId) => [
+        "BillingCycle",
+        { type: "Deposit", id: tenancyId },
+      ],
     }),
 
     getPropertyBillingSummary: builder.query<BillingDashboardSummary, string>({
@@ -307,6 +355,15 @@ export const billingApi = api.injectEndpoints({
       providesTags: ["BillingCycle"],
     }),
 
+    /**
+     * Cycles still to be generated for a month.
+     *
+     * <p>Read in three places — the pill on billing, the pending note under
+     * the list, and the upcoming screen itself — which must all ask with
+     * {@link UPCOMING_CYCLES_PAGE_SIZE} so they land on ONE cache entry. They
+     * used three page sizes, so three entries, and the pill could keep an old
+     * "none left" while the screen it opens showed eight.
+     */
     listUpcomingPropertyCycles: builder.query<Page<UpcomingBillingCycle>, { propertyId: string; month?: string; page?: number; size?: number }>({
       query: ({ month, page = 0, propertyId, size = 10 }) => ({
         params: {
@@ -327,11 +384,16 @@ export const billingApi = api.injectEndpoints({
       }),
     }),
 
-    addTenancyExtraCharges: builder.mutation<BillingCycle, { charges: CreateExtraChargePayload[]; tenancyId: string }>({
-      query: ({ charges, tenancyId }) => ({
+    /**
+     * Charges on exactly this bill (2026-09-29). The tenancy-scoped endpoint it
+     * replaced always picked the latest rent cycle, whichever card was pressed.
+     */
+    addCycleExtraCharges: builder.mutation<BillingCycle, { billingCycleId: string; charges: CreateExtraChargePayload[]; version: number }>({
+      query: ({ billingCycleId, charges, version }) => ({
         body: charges,
+        headers: ifMatch(version),
         method: "POST",
-        url: `/api/v1/billing/tenancies/${tenancyId}/extra-charges`,
+        url: `/api/v1/billing/cycles/${billingCycleId}/extra-charges`,
       }),
       invalidatesTags: ["BillingCycle", "Notification"],
     }),
@@ -343,30 +405,47 @@ export const billingApi = api.injectEndpoints({
      * of what was done to it, and a reverted discount that vanishes leaves the
      * reader wondering why the total moved.
      */
-    clearBillingLineItem: builder.mutation<BillingCycle, { billingCycleId: string; lineItemId: string }>({
-      query: ({ billingCycleId, lineItemId }) => ({
+    clearBillingLineItem: builder.mutation<BillingCycle, { billingCycleId: string; lineItemId: string; version: number }>({
+      query: ({ billingCycleId, lineItemId, version }) => ({
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/billing/cycles/${billingCycleId}/line-items/${lineItemId}/clear`,
       }),
       invalidatesTags: ["BillingCycle", "Deposit", "Notification"],
     }),
 
-    addTenancyDiscount: builder.mutation<BillingCycle, { discount: CreateDiscountPayload; tenancyId: string }>({
-      query: ({ discount, tenancyId }) => ({
+    /** A discount on exactly this bill (2026-09-29), as above. */
+    addCycleDiscount: builder.mutation<BillingCycle, { billingCycleId: string; discount: CreateDiscountPayload; version: number }>({
+      query: ({ billingCycleId, discount, version }) => ({
         body: discount,
+        headers: ifMatch(version),
         method: "POST",
-        url: `/api/v1/billing/tenancies/${tenancyId}/discounts`,
+        url: `/api/v1/billing/cycles/${billingCycleId}/discounts`,
       }),
       invalidatesTags: ["BillingCycle", "Notification"],
     }),
 
-    recordManualPayment: builder.mutation<ManualPayment, { billingCycleId: string; payload: RecordManualPaymentPayload }>({
-      query: ({ billingCycleId, payload }) => ({
+    recordManualPayment: builder.mutation<ManualPayment, { billingCycleId: string; payload: RecordManualPaymentPayload; version: number }>({
+      query: ({ billingCycleId, payload, version }) => ({
         body: payload,
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/cycles/${billingCycleId}/manual-payment`,
       }),
       invalidatesTags: ["BillingCycle", "Notification", "Payment"],
+    }),
+
+    /**
+     * Sends the bill's tenant a code confirming a cash payment at its current
+     * total. No body: the number comes from the bill on the server, never from
+     * here. Invalidates nothing — nothing is recorded until the code is entered.
+     */
+    sendCashPaymentCode: builder.mutation<CashPaymentCode, { billingCycleId: string; version: number }>({
+      query: ({ billingCycleId, version }) => ({
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/billing/cycles/${billingCycleId}/manual-payment/cash-code`,
+      }),
     }),
 
     createOneOffBill: builder.mutation<BillingCycle, { tenancyId: string; payload: CreateOneOffBillPayload }>({
@@ -382,13 +461,28 @@ export const billingApi = api.injectEndpoints({
      * Cancels a one-off bill raised by mistake. The server allows it only while
      * the bill is unpaid or overdue, and tells the tenant with the reason.
      */
-    cancelOneOffBill: builder.mutation<BillingCycle, { billingCycleId: string; reason: string }>({
-      query: ({ billingCycleId, reason }) => ({
+    cancelOneOffBill: builder.mutation<BillingCycle, { billingCycleId: string; reason: string; version: number }>({
+      query: ({ billingCycleId, reason, version }) => ({
         body: { reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/cycles/${billingCycleId}/cancel`,
       }),
       invalidatesTags: ["BillingCycle", "Notification"],
+    }),
+
+    /**
+     * Waives the late fee on a bill. The server allows it only while the bill
+     * is overdue: not while a payment claim awaits confirmation, not in any other
+     * state. The fee stays removed; the nightly run does not put it back.
+     */
+    removeLateFee: builder.mutation<BillingCycle, { billingCycleId: string; version: number }>({
+      query: ({ billingCycleId, version }) => ({
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/billing/cycles/${billingCycleId}/late-fee/remove`,
+      }),
+      invalidatesTags: ["BillingCycle"],
     }),
 
     listManualPayments: builder.query<ManualPayment[], string>({
@@ -421,27 +515,30 @@ export const billingApi = api.injectEndpoints({
       providesTags: [{ type: "Deposit", id: "LIST" }],
     }),
 
-    addDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number }>({
-      query: ({ amountPaise, reason, tenancyId }) => ({
+    addDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number; version: number }>({
+      query: ({ amountPaise, reason, tenancyId, version }) => ({
         body: { amountPaise, reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/tenancies/${tenancyId}/deposit/corrections/add`,
       }),
       invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
     }),
 
-    deductDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number }>({
-      query: ({ amountPaise, reason, tenancyId }) => ({
+    deductDepositCorrection: builder.mutation<DepositAccount, { tenancyId: string; reason: string; amountPaise: number; version: number }>({
+      query: ({ amountPaise, reason, tenancyId, version }) => ({
         body: { amountPaise, reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/tenancies/${tenancyId}/deposit/corrections/deduct`,
       }),
       invalidatesTags: (_result, _error, { tenancyId }) => [{ type: "Deposit", id: tenancyId }, { type: "Deposit", id: "LIST" }],
     }),
 
-    settleManagedDeposit: builder.mutation<DepositAccount, { tenancyId: string; reason: string }>({
-      query: ({ reason, tenancyId }) => ({
+    settleManagedDeposit: builder.mutation<DepositAccount, { tenancyId: string; reason: string; version: number }>({
+      query: ({ reason, tenancyId, version }) => ({
         body: { reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/tenancies/${tenancyId}/deposit/settle`,
       }),
@@ -456,9 +553,10 @@ export const billingApi = api.injectEndpoints({
 
     // Closes a deposit the exit marked not refundable. Pays out nothing, so no
     // DepositPayoutEvent and no expense row — only the account's own views move.
-    closeDepositUnpaid: builder.mutation<DepositAccount, { tenancyId: string; reason: string }>({
-      query: ({ reason, tenancyId }) => ({
+    closeDepositUnpaid: builder.mutation<DepositAccount, { tenancyId: string; reason: string; version: number }>({
+      query: ({ reason, tenancyId, version }) => ({
         body: { reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/tenancies/${tenancyId}/deposit/close-unpaid`,
       }),
@@ -479,8 +577,8 @@ export const billingApi = api.injectEndpoints({
 export const {
   useClearBillingLineItemMutation,
   useAddDepositCorrectionMutation,
-  useAddTenancyDiscountMutation,
-  useAddTenancyExtraChargesMutation,
+  useAddCycleDiscountMutation,
+  useAddCycleExtraChargesMutation,
   useDeductDepositCorrectionMutation,
   useExportPropertyBillingCyclesQuery,
   useGetManagedTenancyDepositQuery,
@@ -494,9 +592,11 @@ export const {
   useListPropertyDepositsQuery,
   useListUpcomingPropertyCyclesQuery,
   useCancelOneOffBillMutation,
+  useRemoveLateFeeMutation,
   useCreateOneOffBillMutation,
   useListManualPaymentsQuery,
   useRecordManualPaymentMutation,
+  useSendCashPaymentCodeMutation,
   useCloseDepositUnpaidMutation,
   useSettleManagedDepositMutation,
 } = billingApi;

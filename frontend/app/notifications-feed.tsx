@@ -189,7 +189,7 @@ export default function NotificationsFeedScreen() {
             >
               Older notifications
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
             </Text>
           </View>

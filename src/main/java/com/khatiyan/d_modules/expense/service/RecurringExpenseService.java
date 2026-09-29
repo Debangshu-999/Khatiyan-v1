@@ -12,6 +12,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.expense.api.dto.CreateRecurringExpenseRequest;
@@ -37,12 +39,17 @@ public class RecurringExpenseService {
     private final FinanceAccessPolicy financeAccessPolicy;
     private final StaffModule staffModule;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public RecurringExpenseService(
             RecurringExpenseRepository recurringRepository,
             ExpenseCategoryRepository categoryRepository,
             ExpenseRepository expenseRepository,
             FinanceAccessPolicy financeAccessPolicy,
-            StaffModule staffModule) {
+            StaffModule staffModule,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.recurringRepository = recurringRepository;
         this.categoryRepository = categoryRepository;
         this.expenseRepository = expenseRepository;
@@ -64,7 +71,7 @@ public class RecurringExpenseService {
         if (projectedSalary > 0) {
             items.add(new RecurringExpenseResponse(
                     propertyId, null, "Salary", "Staff payroll", projectedSalary,
-                    "Projected from current staff salaries", 1, true, null, true));
+                    "Projected from current staff salaries", 1, true, null, true, 0L));
         }
         recurringRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId).stream()
                 .map(recurring -> RecurringExpenseResponse.from(
@@ -88,6 +95,7 @@ public class RecurringExpenseService {
             UUID actorUserId, UUID propertyId, UUID id, UpdateRecurringExpenseRequest request) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         RecurringExpense recurring = recurring(propertyId, id);
+        VersionGuard.claim(recurring);
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         recurring.update(category.getId(), request.paidTo(), request.amountPaise(),
                 request.description(), request.dayOfMonth());
@@ -97,7 +105,9 @@ public class RecurringExpenseService {
     @Transactional
     public void deactivate(UUID actorUserId, UUID propertyId, UUID id) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
-        recurring(propertyId, id).deactivate();
+        RecurringExpense recurring = recurring(propertyId, id);
+        VersionGuard.claim(recurring);
+        recurring.deactivate();
     }
 
     /**
@@ -105,17 +115,19 @@ public class RecurringExpenseService {
      * {@code today}'s month. Idempotent via {@code lastGeneratedMonth}, so the
      * daily scheduler can run (and re-run / catch up) safely. Returns the count.
      */
-    @Transactional
     public int generateDueRecurringExpenses(LocalDate today) {
         YearMonth month = YearMonth.from(today);
-        int generated = 0;
-        for (RecurringExpense recurring : recurringRepository.findByActiveTrue()) {
-            if (!recurring.shouldGenerateFor(today)) {
-                continue;
+        List<UUID> active = recurringRepository.findByActiveTrue().stream().map(RecurringExpense::getId).toList();
+        // One template per transaction, re-read inside it (2026-09-28): an owner
+        // editing one at this moment costs only that expense until the next run.
+        return recordByRecord.run("expense-recurring-generate", active, id -> id, id -> {
+            RecurringExpense recurring = recurringRepository.findById(id).orElse(null);
+            if (recurring == null || !recurring.isActive() || !recurring.shouldGenerateFor(today)) {
+                return false;
             }
             ExpenseCategory category = categoryRepository.findById(recurring.getCategoryId()).orElse(null);
             if (category == null || !category.isActive()) {
-                continue; // leave un-marked so it generates once the category is restored
+                return false; // leave un-marked so it generates once the category is restored
             }
             expenseRepository.save(Expense.fromRecurring(
                     recurring.getPropertyId(),
@@ -127,9 +139,8 @@ public class RecurringExpenseService {
                     recurring.getId(),
                     recurring.getCreatedByUserId()));
             recurring.markGeneratedFor(today);
-            generated++;
-        }
-        return generated;
+            return true;
+        });
     }
 
     private RecurringExpense recurring(UUID propertyId, UUID id) {

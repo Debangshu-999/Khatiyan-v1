@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import org.springframework.web.bind.annotation.RequestParam;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.BillingModule;
@@ -75,6 +76,7 @@ public class DepositManagerController {
     }
 
     @PostMapping("/tenancies/{tenancyId}/deposit/corrections/add")
+    @RequiresVersion
     public DepositAccountResponse addDepositCorrection(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
@@ -83,6 +85,7 @@ public class DepositManagerController {
     }
 
     @PostMapping("/tenancies/{tenancyId}/deposit/corrections/deduct")
+    @RequiresVersion
     public DepositAccountResponse deductDepositCorrection(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
@@ -91,6 +94,7 @@ public class DepositManagerController {
     }
 
     @PostMapping("/tenancies/{tenancyId}/deposit/settle")
+    @RequiresVersion
     public DepositAccountResponse settleDeposit(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
@@ -99,6 +103,7 @@ public class DepositManagerController {
     }
 
     @PostMapping("/tenancies/{tenancyId}/deposit/close-unpaid")
+    @RequiresVersion
     public DepositAccountResponse closeDepositUnpaid(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,

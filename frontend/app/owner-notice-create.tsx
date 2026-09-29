@@ -838,7 +838,7 @@ function DayOfMonthPicker({
 
       {/* Reads the selection back in words, so the answer does not have to be
           reconstructed by scanning the grid for filled circles. */}
-      <Text style={[type.caption, { color: value.length > 0 ? colors.ink : colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: value.length > 0 ? colors.ink : colors.muted }]}>
         {value.length > 0
           ? `Repeats on ${[...value].sort((left, right) => left - right).join(", ")} of every month.`
           : "Tap the days it should repeat on."}
@@ -875,7 +875,7 @@ function ProjectedDatesSheet({ days, onClose }: { days: number[]; onClose: () =>
   return (
     <SheetShell onClose={onClose} title="Projected dates">
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {shiftedCount === 0
             ? "Every month is long enough for these days, so they never move."
             : `${shiftedCount} of the next 12 months are too short, so those dates move back to the month's end.`}

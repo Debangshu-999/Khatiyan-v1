@@ -1,6 +1,7 @@
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AlertModal } from "@/components/alert-modal";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { AppTextInput } from "@/components/app-text-input";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -130,9 +131,10 @@ export default function OwnerRoomChangeRequestsScreen() {
       return;
     }
     const requestId = revertTarget.id;
+    const version = revertTarget.version;
     setRevertTarget(null);
     try {
-      await revertRoomChangeApproval(requestId).unwrap();
+      await revertRoomChangeApproval({ requestId, version }).unwrap();
     } catch (caught) {
       setRevertError(errorMessage(caught) || "Could not return this room change for a new decision.");
     }
@@ -173,7 +175,7 @@ export default function OwnerRoomChangeRequestsScreen() {
                 <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
                   <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
                   <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Room change request history</Text>
-                  <Text style={[type.body, { color: colors.muted }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     Requests that have expired and can no longer be acted on.
                   </Text>
                 </View>
@@ -330,10 +332,11 @@ function PastRoomChangeRequestsModal({
   const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Full width, matching the exit history. These cards carry a timeline
-          button and a rail behind it; an inset sheet squeezed both. */}
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        {/* Full width, matching the exit history. These cards carry a timeline
+            button and a rail behind it; an inset sheet squeezed both. */}
         <View
           style={{
             backgroundColor: colors.surface,
@@ -349,7 +352,7 @@ function PastRoomChangeRequestsModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</Text>
             </View>
-            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={() => dismiss()} />
           </View>
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
@@ -383,7 +386,8 @@ function PastRoomChangeRequestsModal({
           )}
         </View>
       </View>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
@@ -601,9 +605,9 @@ function RoomChangeReviewModal({
   async function submit() {
     try {
       if (mode === "approve") {
-        await approveRoomChange({ adminNotes: notes.trim() || null, requestId: request.id }).unwrap();
+        await approveRoomChange({ adminNotes: notes.trim() || null, requestId: request.id, version: request.version }).unwrap();
       } else {
-        await rejectRoomChange({ adminNotes: notes.trim() || null, requestId: request.id }).unwrap();
+        await rejectRoomChange({ adminNotes: notes.trim() || null, requestId: request.id, version: request.version }).unwrap();
       }
       onClose();
     } catch (caught) {
@@ -613,9 +617,10 @@ function RoomChangeReviewModal({
 
   return (
     <>
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -637,7 +642,7 @@ function RoomChangeReviewModal({
                   {title}
                 </Text>
               </View>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
 
             <ScrollView
@@ -676,7 +681,8 @@ function RoomChangeReviewModal({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
     {confirm ? (
       <ConfirmDialog
         confirmLabel={confirm.confirmLabel}
@@ -741,13 +747,10 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
   const { colors, fonts, type } = useTheme();
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <Pressable
-        onPress={onClose}
-        style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-      >
-        <Pressable
-          onPress={() => {}}
-          style={{
+      {/* Closes by its own close button or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderRadius: 18,
@@ -756,8 +759,7 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
             maxWidth: 360,
             padding: spacing.lg,
             width: "100%",
-          }}
-        >
+          }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
               {title}
@@ -767,8 +769,8 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
           <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
             {value}
           </Text>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

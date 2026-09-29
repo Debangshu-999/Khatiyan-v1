@@ -57,7 +57,6 @@ public record RecurringNoticeResponse(
             recurringNotice.getStatus(),
             recurringNotice.getCreatedAt(),
             recurringNotice.getUpdatedAt(),
-            attachments == null ? List.of() : attachments
-        );
+            attachments == null ? List.of() : attachments);
     }
 }

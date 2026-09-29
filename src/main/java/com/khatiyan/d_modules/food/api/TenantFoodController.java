@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.food.api;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,15 +12,19 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.food.api.dto.FoodProfileMenuResponse;
 import com.khatiyan.d_modules.food.api.dto.FoodProfileResponse;
-import com.khatiyan.d_modules.food.api.dto.FoodSubscriptionResponse;
+import com.khatiyan.d_modules.food.api.dto.FoodPlanResponse;
 import com.khatiyan.d_modules.food.api.dto.SubscribeFoodProfileRequest;
 import com.khatiyan.d_modules.food.api.dto.TenantFoodAvailabilityResponse;
+import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse;
+import com.khatiyan.d_modules.food.service.FoodForecastService;
 import com.khatiyan.d_modules.food.service.FoodSubscriptionService;
+import com.khatiyan.d_modules.property.model.MealType;
 
 import jakarta.validation.Valid;
 
@@ -28,9 +33,28 @@ import jakarta.validation.Valid;
 public class TenantFoodController {
 
     private final FoodSubscriptionService subscriptionService;
+    private final FoodForecastService forecastService;
 
-    public TenantFoodController(FoodSubscriptionService subscriptionService) {
+    public TenantFoodController(FoodSubscriptionService subscriptionService, FoodForecastService forecastService) {
         this.subscriptionService = subscriptionService;
+        this.forecastService = forecastService;
+    }
+
+    /**
+     * Dishes taken off one meal on one date at the tenant's own property, for
+     * the "today" section of their food screen. The property comes from their
+     * active stay, never from the caller. Empty when food is not managed here.
+     */
+    @GetMapping("/skips")
+    public List<CookingForecastResponse.SkippedItem> skippedItems(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam LocalDate date,
+            @RequestParam MealType mealType) {
+        TenantFoodAvailabilityResponse availability = subscriptionService.availability(user.userId());
+        if (!availability.moduleEnabled()) {
+            return List.of();
+        }
+        return forecastService.skippedItems(availability.propertyId(), date, mealType);
     }
 
     @GetMapping
@@ -53,7 +77,7 @@ public class TenantFoodController {
     }
 
     @GetMapping("/subscription")
-    public ResponseEntity<FoodSubscriptionResponse> current(
+    public ResponseEntity<FoodPlanResponse> current(
             @AuthenticationPrincipal UserPrincipal user) {
         return subscriptionService.current(user.userId())
                 .map(ResponseEntity::ok)
@@ -61,16 +85,16 @@ public class TenantFoodController {
     }
 
     @PutMapping("/subscription")
-    public FoodSubscriptionResponse subscribe(
+    public FoodPlanResponse subscribe(
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody SubscribeFoodProfileRequest request) {
         return subscriptionService.subscribe(user.userId(), request);
     }
 
+    /** Returns the plan, so the screen can say it ends tonight (2026-09-29). */
     @DeleteMapping("/subscription")
-    public ResponseEntity<Void> unsubscribe(
+    public FoodPlanResponse unsubscribe(
             @AuthenticationPrincipal UserPrincipal user) {
-        subscriptionService.unsubscribe(user.userId());
-        return ResponseEntity.noContent().build();
+        return subscriptionService.unsubscribe(user.userId());
     }
 }

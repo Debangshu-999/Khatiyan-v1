@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { statusTonePalette, type StatusTone } from "@/components/status-icon";
@@ -124,14 +124,20 @@ export function ActionButton({
    * "danger" is the outlined red used inline, where a destructive control sits
    * among others and must not shout. "dangerFilled" is for a confirmation
    * dialog, where it is the answer to a question already asked and the weight
-   * is the point.
+   * is the point. "dangerQuiet" has red content on a white surface with a
+   * neutral border for quieter inline destructive actions.
    */
-  variant?: "primary" | "secondary" | "danger" | "outline" | "dangerFilled";
+  variant?: "primary" | "secondary" | "danger" | "dangerQuiet" | "outline" | "dangerFilled" | "success" | "successQuiet";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
   const dangerFilled = variant === "dangerFilled";
+  // Green, for an action that starts something good (choosing a meal plan).
+  const success = variant === "success";
+  // Green text on white, the quiet counterpart of dangerQuiet.
+  const successQuiet = variant === "successQuiet";
   const danger = variant === "danger";
+  const dangerQuiet = variant === "dangerQuiet";
   const neutral = variant === "secondary";
   // Outlined: no fill at all and a full-strength ink border, matching the
   // outlined-container/ink-glyph treatment used for icons. "secondary" sits on
@@ -140,10 +146,12 @@ export function ActionButton({
   const outline = variant === "outline";
   const foreground = disabled
     ? colors.muted
-    : dangerFilled
+    : dangerFilled || success
       ? "#FFFFFF"
-      : danger
+      : danger || dangerQuiet
         ? colors.danger
+        : successQuiet
+          ? colors.successText
         : neutral || outline
           ? colors.ink
           : primary
@@ -156,11 +164,13 @@ export function ActionButton({
     ? colors.neutralSoft
     : dangerFilled
       ? colors.danger
+      : success
+        ? colors.jade
       : primary
         ? colors.primary
         : outline
         ? "transparent"
-        : danger || neutral
+        : danger || dangerQuiet || neutral || successQuiet
           ? colors.surface
           : colors.primarySoft;
   return (
@@ -170,7 +180,7 @@ export function ActionButton({
       onPress={() => {
         // A little physical confirmation when committing an action; quiet
         // secondary buttons stay silent.
-        if (primary || danger || dangerFilled) {
+        if (primary || danger || dangerQuiet || dangerFilled || success) {
           tapHaptic();
         }
         onPress();
@@ -190,7 +200,7 @@ export function ActionButton({
             ? colors.danger
             : outline
               ? colors.ink
-              : neutral
+              : neutral || dangerQuiet || successQuiet
                 ? colors.borderStrong
                 : "transparent",
         borderCurve: "continuous",
@@ -258,8 +268,10 @@ export function FormInput({
   icon: Icon,
   keyboardType,
   label,
+  labelAccessory,
   maxLength,
   multiline,
+  noPaste,
   onChangeText,
   placeholder,
   prefix,
@@ -269,6 +281,12 @@ export function FormInput({
   disabled,
 }: {
   autoCapitalize?: "characters" | "none" | "sentences" | "words";
+  /**
+   * Hides the long-press copy and paste menu, for a confirmation field that
+   * only means something when typed (2026-09-29). A keyboard's own clipboard
+   * suggestion can still paste, so this discourages rather than prevents.
+   */
+  noPaste?: boolean;
   /**
    * Greys the field and refuses input, for an answer that is not yet
    * answerable — a room number before the room type that numbers it.
@@ -289,6 +307,8 @@ export function FormInput({
   icon?: ComponentType<LucideProps>;
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
   label: string;
+  /** Beside the label, e.g. a "Verified" pill on a locked field. */
+  labelAccessory?: ReactNode;
   maxLength?: number;
   multiline?: boolean;
   onChangeText: (value: string) => void;
@@ -339,6 +359,7 @@ export function FormInput({
         {label}
         <RequiredMark required={required} />
       </Text>
+      {labelAccessory}
     </View>
   );
 
@@ -371,6 +392,7 @@ export function FormInput({
             {prefix}
           </Text>
           <AppTextInput
+            contextMenuHidden={noPaste}
             editable={!disabled}
             autoCapitalize={autoCapitalize}
             keyboardType={keyboardType}
@@ -402,6 +424,7 @@ export function FormInput({
     <View style={{ gap: 6 }}>
       {labelRow}
       <AppTextInput
+        contextMenuHidden={noPaste}
         editable={!disabled}
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
@@ -489,7 +512,8 @@ export function NoticeBar({
 }: {
   /** A context-specific mark, such as a clock for a pending state. */
   icon?: LucideIcon;
-  message: string;
+  /** Text, or text with a nested pressable link. */
+  message: ReactNode;
   messageStyle?: TextStyle;
   title: string;
   /** "info" is the blue one: an explanation rather than a precaution. */
@@ -540,6 +564,7 @@ export function NoticeBar({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
           {title}
         </Text>
+        {/* Keeps its own type, not the app's description style (user, 2026-09-29). */}
         <Text selectable style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 18 }, messageStyle]}>
           {message}
         </Text>
@@ -576,7 +601,12 @@ export function ConfirmDialog({
   // A qualifier that is not itself a consequence — typically what is NOT
   // included, which belongs after the list rather than inside it.
   footnote?: string;
-  message: string;
+  /**
+   * Plain text, or text with parts picked out: nest a `<Text>` for an amount
+   * or a name (2026-09-29). It is rendered inside one Text, so it wraps as a
+   * single paragraph.
+   */
+  message: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
   title: string;
@@ -600,7 +630,7 @@ export function ConfirmDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {message}
           </Text>
 
@@ -608,10 +638,10 @@ export function ConfirmDialog({
             <View style={{ gap: spacing.xs }}>
               {bullets.map((bullet) => (
                 <View key={bullet} style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <Text style={[type.body, { color: colors.kicker }]}>
+                  <Text style={[type.description, { color: colors.kicker }]}>
                     •
                   </Text>
-                  <Text style={[type.body, { color: colors.ink, flex: 1 }]}>
+                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
                     {bullet}
                   </Text>
                 </View>
@@ -620,7 +650,7 @@ export function ConfirmDialog({
           ) : null}
 
           {footnote ? (
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {footnote}
             </Text>
           ) : null}

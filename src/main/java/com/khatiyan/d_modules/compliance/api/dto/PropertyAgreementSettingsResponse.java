@@ -25,7 +25,9 @@ public record PropertyAgreementSettingsResponse(
         UUID propertyId,
         AgreementTemplate template,
         AgreementDeedResponse preview,
-        List<MainClauseType> availableMainClauses) {
+        List<MainClauseType> availableMainClauses,
+        /** The settings' version (2026-09-29), 0 before the first save. */
+        long version) {
 
     public static PropertyAgreementSettingsResponse of(
             PropertyAgreementSettings settings, AgreementDeedResponse preview) {
@@ -33,6 +35,7 @@ public record PropertyAgreementSettingsResponse(
                 settings.getPropertyId(),
                 settings.getTemplate(),
                 preview,
-                settings.getTemplate().availableMainClauses());
+                settings.getTemplate().availableMainClauses(),
+                settings.getVersion());
     }
 }

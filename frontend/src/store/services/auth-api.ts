@@ -38,6 +38,10 @@ export type UserIdentity = {
   dateOfBirth: string | null;
   gender: Gender | null;
   agreementReady: boolean;
+  /** Name and date of birth come from a verified ID and are locked. Never the address. */
+  identityVerified: boolean;
+  /** Gender came from the verified ID too (the Aadhaar App check) and is locked. */
+  genderVerified: boolean;
 };
 
 export type UpdateIdentityBody = {

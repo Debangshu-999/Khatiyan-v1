@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
@@ -14,7 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import type { LucideProps } from "lucide-react-native";
+import { AlertTriangle, type LucideProps } from "lucide-react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { CLIPBOARD_ANNOUNCES_ITSELF } from "@/lib/clipboard";
@@ -34,7 +34,9 @@ import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { Lightbox } from "@/components/image-carousel";
+import { ChatMessagesSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { dayDivider } from "@/features/chat/chat-time";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
 import { MessageBubble, type MessageAnchor } from "@/features/chat/message-bubble";
@@ -69,7 +71,12 @@ export default function ChatThreadScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
   const insets = useSafeAreaInsets();
+  const keyboardInset = useKeyboardInset();
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [restingHeight, setRestingHeight] = useState(0);
   const params = useLocalSearchParams<{
+    /** A suggested first message, in the box and unsent (e.g. asking for more verification attempts). */
+    draft?: string;
     photo?: string;
     subtitle?: string;
     team?: string;
@@ -100,7 +107,7 @@ export default function ChatThreadScreen() {
   // Measured rather than assumed: the composer grows with a multi-line draft,
   // and the popover has to stay pinned just above whatever height it is now.
   const [composerHeight, setComposerHeight] = useState(0);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(typeof params.draft === "string" ? params.draft : "");
   const [selected, setSelected] = useState<ChatMessage | null>(null);
   const [anchor, setAnchor] = useState<MessageAnchor | null>(null);
   /** The picture set being viewed, and which of them is on screen. */
@@ -110,12 +117,42 @@ export default function ChatThreadScreen() {
   const [pendingDelete, setPendingDelete] = useState<ChatMessage | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  // Android may resize the native window for the keyboard or leave it at full
+  // height under edge-to-edge. Apply only the part the resize did not cover,
+  // plus one small clearance, to the WHOLE chat body. The message list and
+  // composer then move together, without a second measured correction.
+  const nativeResize = Math.max(0, restingHeight - viewportHeight);
+  const keyboardVisible =
+    Platform.OS === "android" && (keyboardInset > 0 || nativeResize > spacing.xxxl);
+  const keyboardClearance = keyboardVisible
+    ? Math.max(0, keyboardInset - nativeResize) + spacing.md
+    : 0;
 
   const scrollToEnd = useCallback(() => {
     // A frame late: the new bubble has to be laid out before there is anything
     // to scroll to.
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }, []);
+
+  useEffect(() => {
+    if (loading || messages.length === 0) return;
+
+    // The first scroll can run before the fetched bubbles and the screen's
+    // navigation transition have both finished laying out. Settle it again
+    // after a frame and after the transition so the newest message is visible.
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 180);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [loading, messages.length, threadId]);
+
+  useEffect(() => {
+    if (!keyboardVisible || loading || messages.length === 0) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [keyboardClearance, keyboardVisible, loading, messages.length]);
 
   async function send() {
     const body = draft.trim();
@@ -288,7 +325,15 @@ export default function ChatThreadScreen() {
   })();
 
   return (
-    <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.chatSurface, flex: 1 }}>
+    <SafeAreaView
+      edges={["top"]}
+      onLayout={(event) => {
+        const height = event.nativeEvent.layout.height;
+        setViewportHeight(height);
+        if (keyboardInset === 0) setRestingHeight((current) => Math.max(current, height));
+      }}
+      style={{ backgroundColor: colors.chatSurface, flex: 1 }}
+    >
       {/* Lifted, not ruled. The thread is white now, and a hairline across the
           top of a white screen is the heaviest mark on it — a shadow says the
           same thing (this floats above the conversation) without drawing a
@@ -357,12 +402,26 @@ export default function ChatThreadScreen() {
         </View>
 
         <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-          <Text
-            numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}
-          >
-            {title}
-          </Text>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 6, minWidth: 0 }}>
+            <Text
+              numberOfLines={1}
+              style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}
+            >
+              {title}
+            </Text>
+            {thread?.pendingAgreement ? (
+              <AlertTriangle
+                accessibilityLabel="Agreement not signed yet"
+                color="#FFFFFF"
+                fill={colors.warning}
+                size={19}
+                strokeWidth={2.2}
+                // The display face sits low in its line box, so a centred
+                // icon read as floating above the name.
+                style={{ marginTop: 6 }}
+              />
+            ) : null}
+          </View>
           {params.subtitle ? (
             // Caps and tracked out, the app's eyebrow voice. At caption size it
             // competed with the name for the same reading; as a kicker it reads
@@ -375,28 +434,59 @@ export default function ChatThreadScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        // Match the app's input modals: iOS uses padding, while Android uses
+        // the measured keyboard inset instead of a sticky height mode.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, marginBottom: keyboardClearance }}
       >
         <ScrollView
           contentContainerStyle={{ paddingVertical: spacing.sm }}
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() => {
+            if (!loading && messages.length > 0) {
+              requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+            }
+          }}
+          onLayout={() => {
+            if (keyboardVisible && !loading && messages.length > 0) {
+              requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+            }
+          }}
           ref={scrollRef}
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
         >
-          {loading ? (
-            <View style={{ paddingVertical: spacing.xl }}>
-              <ActivityIndicator color={colors.muted} />
+          {loading ? <ChatMessagesSkeleton /> : null}
+
+          {/* Management only: the server sets this for a team thread whose
+              tenant has not signed their agreement yet. */}
+          {!loading && thread?.pendingAgreement ? (
+            <View style={{ alignItems: "center", paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}>
+              <View
+                style={{
+                  alignItems: "center",
+                  backgroundColor: colors.warningSoft,
+                  borderColor: colors.warning,
+                  borderCurve: "continuous",
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  flexDirection: "row",
+                  gap: 6,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: 6,
+                }}
+              >
+                <AlertTriangle color="#FFFFFF" fill={colors.warning} size={16} strokeWidth={2.2} />
+                <Text style={[type.caption, { color: colors.warningText, fontFamily: fonts.sansBold }]}>
+                  This tenant has a pending agreement signature
+                </Text>
+              </View>
             </View>
           ) : null}
 
           {!loading && messages.length === 0 ? (
             <Text
-              style={[
-                type.caption,
-                { color: colors.muted, paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, textAlign: "center" },
+              style={[type.description, { color: colors.muted, paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, textAlign: "center" },
               ]}
             >
               No messages yet. Say hello.
@@ -480,7 +570,7 @@ export default function ChatThreadScreen() {
               paddingTop: spacing.md,
             }}
           >
-            <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+            <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
               This conversation is closed. You can still read it.
             </Text>
           </View>
@@ -526,6 +616,8 @@ export default function ChatThreadScreen() {
             // Clears the gesture bar. SafeAreaView only pads the top here,
             // because padding the bottom there would lift the whole message
             // list off the keyboard as well.
+            // The keyboard-inset hook has already subtracted the gesture bar.
+            // Keep its normal clearance here so the pill stays fully above it.
             paddingBottom: spacing.sm + insets.bottom,
             paddingHorizontal: spacing.md,
             paddingTop: spacing.sm,
@@ -627,7 +719,7 @@ export default function ChatThreadScreen() {
             borderCurve: "continuous",
             borderRadius: 14,
             borderWidth: 1,
-            bottom: composerHeight + spacing.xs,
+            bottom: composerHeight + keyboardClearance + spacing.xs,
             elevation: 6,
             right: spacing.md,
             overflow: "hidden",

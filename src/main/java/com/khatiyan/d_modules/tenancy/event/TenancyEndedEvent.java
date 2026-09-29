@@ -16,5 +16,16 @@ public record TenancyEndedEvent(
     UUID actorUserId,
     UUID propertyId,
     UUID roomId,
-    LocalDate endDate
-) {}
+    LocalDate endDate,
+    /**
+     * A future booking claims the bed this stay frees. The property module
+     * frees it and reserves it again in one step, so nobody else can take it
+     * before the booking starts.
+     */
+    boolean holdBedForFutureBooking
+) {
+    public TenancyEndedEvent(UUID tenancyId, UUID userId, UUID actorUserId, UUID propertyId, UUID roomId,
+            LocalDate endDate) {
+        this(tenancyId, userId, actorUserId, propertyId, roomId, endDate, false);
+    }
+}

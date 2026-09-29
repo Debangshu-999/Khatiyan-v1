@@ -70,7 +70,7 @@ export function ChoiceSection({
           >
             {title}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 17 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {description}
           </Text>
         </View>

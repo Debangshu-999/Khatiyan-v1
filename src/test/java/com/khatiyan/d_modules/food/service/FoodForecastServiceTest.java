@@ -23,6 +23,7 @@ import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse;
 import com.khatiyan.d_modules.food.model.FoodItem;
 import com.khatiyan.d_modules.food.model.FoodMenuEntry;
 import com.khatiyan.d_modules.food.model.FoodProfile;
+import com.khatiyan.d_modules.food.model.FoodProfileCategory;
 import com.khatiyan.d_modules.food.model.FoodQuantityUnit;
 import com.khatiyan.d_modules.food.model.FoodSubscription;
 import com.khatiyan.d_modules.food.repository.FoodItemRepository;
@@ -50,6 +51,7 @@ class FoodForecastServiceTest {
     @Mock private FoodMenuEntryRepository menuEntryRepository;
     @Mock private FoodSubscriptionRepository subscriptionRepository;
     @Mock private FoodDailySkipRepository dailySkipRepository;
+    @Mock private MealScheduleService mealScheduleService;
     private FoodForecastService service;
 
     @BeforeEach
@@ -62,13 +64,56 @@ class FoodForecastServiceTest {
                 itemRepository,
                 menuEntryRepository,
                 subscriptionRepository,
-                dailySkipRepository);
+                dailySkipRepository,
+                mealScheduleService);
+    }
+
+    /** A meal that has started keeps its dishes (2026-09-29). */
+    @Test
+    void aStartedMealRefusesADishChangeBeforeTouchingIt() {
+        java.time.LocalDate date = java.time.LocalDate.of(2026, 9, 28);
+        org.mockito.Mockito.doThrow(new com.khatiyan.c_shared.exception.ValidationException("Lunch is being served"))
+                .when(mealScheduleService).requireNotStarted(any(), any(), any());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.markUnavailable(
+                        UUID.randomUUID(), UUID.randomUUID(), date, MealType.LUNCH, UUID.randomUUID()))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.markAvailable(
+                        UUID.randomUUID(), UUID.randomUUID(), date, MealType.LUNCH, UUID.randomUUID()))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
+        org.mockito.Mockito.verifyNoInteractions(dailySkipRepository);
+    }
+
+    /** Only on the day itself (user, 2026-09-29), checked before anything is written. */
+    @Test
+    void aLaterDayRefusesTakingADishOff() {
+        org.mockito.Mockito.doThrow(new com.khatiyan.c_shared.exception.ValidationException("Only on the day"))
+                .when(mealScheduleService).requireToday(any());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.markUnavailable(
+                        UUID.randomUUID(), UUID.randomUUID(), java.time.LocalDate.of(2026, 9, 30),
+                        MealType.LUNCH, UUID.randomUUID()))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
+        org.mockito.Mockito.verifyNoInteractions(dailySkipRepository);
+    }
+
+    /** Closed 10 minutes before the meal, checked before anything is written. */
+    @Test
+    void aClosedDishWindowRefusesTakingADishOff() {
+        org.mockito.Mockito.doThrow(new com.khatiyan.c_shared.exception.ValidationException("Window has passed"))
+                .when(mealScheduleService).requireDishWindowOpen(any(), any(), any());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.markUnavailable(
+                        UUID.randomUUID(), UUID.randomUUID(), java.time.LocalDate.of(2026, 9, 28),
+                        MealType.LUNCH, UUID.randomUUID()))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
+        org.mockito.Mockito.verifyNoInteractions(dailySkipRepository);
     }
 
     @Test
     void forecastsProfilesSeparatelyThenConsolidatesSharedItems() {
-        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0);
-        FoodProfile nonVeg = FoodProfile.create(PROPERTY, ACTOR, "Non-veg", null, 1);
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodProfile nonVeg = FoodProfile.create(PROPERTY, ACTOR, "Non-veg", null, 1, FoodProfileCategory.NON_VEG);
         FoodItem roti = FoodItem.create(
                 PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
         FoodItem paneer = FoodItem.create(
@@ -94,7 +139,7 @@ class FoodForecastServiceTest {
         when(profileRepository.findByPropertyIdAndActiveTrueOrderByDisplayOrderAscNameAsc(PROPERTY))
                 .thenReturn(List.of(veg, nonVeg));
         when(tenancyModule.findActiveByPropertyId(PROPERTY)).thenReturn(tenancies);
-        when(subscriptionRepository.findByPropertyIdAndActiveTrue(PROPERTY)).thenReturn(subscriptions);
+        when(subscriptionRepository.findCovering(org.mockito.ArgumentMatchers.eq(PROPERTY), any())).thenReturn(subscriptions);
         when(menuEntryRepository
                 .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
                         PROPERTY, DayOfWeek.MONDAY, MealType.LUNCH))
@@ -140,8 +185,8 @@ class FoodForecastServiceTest {
      */
     @Test
     void profilesWithNothingOnTheMenuAreNotCountedAsBeingFed() {
-        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0);
-        FoodProfile gym = FoodProfile.create(PROPERTY, ACTOR, "Gym", null, 1);
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodProfile gym = FoodProfile.create(PROPERTY, ACTOR, "Gym", null, 1, FoodProfileCategory.VEG);
         FoodItem roti = FoodItem.create(
                 PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
 
@@ -158,7 +203,7 @@ class FoodForecastServiceTest {
         when(profileRepository.findByPropertyIdAndActiveTrueOrderByDisplayOrderAscNameAsc(PROPERTY))
                 .thenReturn(List.of(veg, gym));
         when(tenancyModule.findActiveByPropertyId(PROPERTY)).thenReturn(tenancies);
-        when(subscriptionRepository.findByPropertyIdAndActiveTrue(PROPERTY)).thenReturn(subscriptions);
+        when(subscriptionRepository.findCovering(org.mockito.ArgumentMatchers.eq(PROPERTY), any())).thenReturn(subscriptions);
         when(menuEntryRepository
                 .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
                         PROPERTY, DayOfWeek.MONDAY, MealType.LUNCH))
@@ -196,7 +241,8 @@ class FoodForecastServiceTest {
             FoodProfile profile) {
         UUID tenancyId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
-        subscriptions.add(FoodSubscription.start(PROPERTY, tenancyId, tenantId, profile.getId()));
+        subscriptions.add(FoodSubscription.start(PROPERTY, tenancyId, tenantId,
+                FoodSubscription.everyDay(profile.getId()), java.time.LocalDate.of(2026, 1, 1)));
         tenancies.add(FoodTestFixtures.tenancy(tenancyId, tenantId, PROPERTY));
     }
 }

@@ -15,7 +15,7 @@ import { useTheme } from "@/theme/use-theme";
  *     one word — a tenant's name, say — without leaving the note's styling.
  */
 export function HeaderNote({ children, delay = 120 }: { children: ReactNode; delay?: number }) {
-  const { colors, tenantFacing, type } = useTheme();
+  const { colors, type } = useTheme();
   const progress = useRef(new Animated.Value(0)).current;
 
   // Replay the entrance every time the screen gains focus — tab screens stay
@@ -53,14 +53,12 @@ export function HeaderNote({ children, delay = 120 }: { children: ReactNode; del
           might need elsewhere: a reference code, an amount, a clause. */}
       <Animated.Text
         style={[
-          type.body,
+          // One description style app-wide (2026-09-29). The owner's italic
+          // is gone: it was the one description set apart.
+          type.description,
           {
             color: colors.muted,
             flex: 1,
-            fontSize: tenantFacing ? 12 : 14,
-            fontStyle: tenantFacing ? "normal" : "italic",
-            letterSpacing: tenantFacing ? 0 : 0.2,
-            lineHeight: tenantFacing ? 16 : 21,
             opacity: progress,
             transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
           },

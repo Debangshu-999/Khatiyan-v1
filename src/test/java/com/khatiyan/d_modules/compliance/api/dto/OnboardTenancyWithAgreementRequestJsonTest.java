@@ -34,7 +34,7 @@ class OnboardTenancyWithAgreementRequestJsonTest {
                   "rentAmountPaise": 800000,
                   "depositAmountPaise": 1600000,
                   "startDate": "2026-10-01",
-                  "idCheck": { "confirmed": true, "documentType": "PASSPORT", "lastFour": "4417" },
+                  "idCheck": { "confirmed": true, "documentType": "PASSPORT", "lastFour": "4417", "gender": "FEMALE", "dateOfBirth": "1995-06-15" },
                   "idCheckStatementText": "I have checked their ID",
                   "verification": null,
                   "tenant": {
@@ -47,6 +47,8 @@ class OnboardTenancyWithAgreementRequestJsonTest {
                 """, OnboardTenancyWithAgreementRequest.class);
 
         assertThat(request.idCheck().confirmed()).isTrue();
+        assertThat(request.idCheck().gender()).isEqualTo(com.khatiyan.a_auth.model.Gender.FEMALE);
+        assertThat(request.idCheck().dateOfBirth()).isEqualTo(java.time.LocalDate.of(1995, 6, 15));
         assertThat(request.verification()).isNull();
         assertThat(request.isIdentityRouteChosen()).isTrue();
     }
@@ -118,7 +120,7 @@ class OnboardTenancyWithAgreementRequestJsonTest {
                   "propertyId": "11111111-1111-1111-1111-111111111111",
                   "roomId": "22222222-2222-2222-2222-222222222222",
                   "startDate": "2026-10-01",
-                  "idCheck": { "confirmed": true, "documentType": "PASSPORT", "lastFour": "4417" },
+                  "idCheck": { "confirmed": true, "documentType": "PASSPORT", "lastFour": "4417", "gender": "FEMALE", "dateOfBirth": "1995-06-15" },
                   "idCheckStatementText": "I have checked their ID",
                   "verification": [{ "serviceCode": "AADHAAR_OKYC", "attempts": 2 }],
                   "tenant": {
@@ -165,6 +167,6 @@ class OnboardTenancyWithAgreementRequestJsonTest {
     void everyServiceCodeTheAppOffersIsOneTheServerKnows() {
         // The app's catalogue is TypeScript, so this asserts the one direction
         // that can be checked from here: the enum is what the app must match.
-        assertThat(ServiceCode.values()).containsExactly(ServiceCode.AADHAAR_OKYC);
+        assertThat(ServiceCode.values()).containsExactly(ServiceCode.AADHAAR_OKYC, ServiceCode.AADHAAR);
     }
 }

@@ -19,7 +19,9 @@ public record ManualPaymentResponse(
     List<String> proofImageUrls,
     String note,
     UUID collectedByUserId,
-    Instant collectedAt
+    Instant collectedAt,
+    /** When the tenant confirmed it with their code. Null unless cash was confirmed. */
+    Instant tenantConfirmedAt
 ) {
 
     public static ManualPaymentResponse from(BillingManualPayment payment) {
@@ -35,7 +37,8 @@ public record ManualPaymentResponse(
             payment.getProofImageUrls(),
             payment.getNote(),
             payment.getCollectedByUserId(),
-            payment.getCollectedAt()
+            payment.getCollectedAt(),
+            payment.getTenantConfirmedAt()
         );
     }
 }

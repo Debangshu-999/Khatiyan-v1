@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.khatiyan.a_auth.AuthModule;
@@ -28,13 +29,20 @@ import com.khatiyan.d_modules.verification.model.VerificationAttempt;
 import com.khatiyan.d_modules.verification.model.VerificationAttemptStatus;
 import com.khatiyan.d_modules.verification.model.VerificationGrant;
 import com.khatiyan.d_modules.verification.model.VerificationGrantStatus;
+import com.khatiyan.d_modules.verification.provider.AadhaarAppProvider;
+import com.khatiyan.d_modules.verification.provider.AadhaarCredentialParser;
 import com.khatiyan.d_modules.verification.provider.AadhaarOkycProvider;
+import com.khatiyan.d_modules.verification.provider.CredentialOutcome;
+import com.khatiyan.d_modules.verification.provider.SessionHandle;
+import com.khatiyan.d_modules.verification.provider.StartSessionCommand;
 import com.khatiyan.d_modules.verification.provider.OkycOutcome;
 import com.khatiyan.d_modules.verification.provider.OtpChallenge;
 import com.khatiyan.d_modules.verification.provider.StartOtpCommand;
 import com.khatiyan.d_modules.verification.provider.SubmitOtpCommand;
 import com.khatiyan.d_modules.verification.repository.VerificationAttemptRepository;
 import com.khatiyan.d_modules.verification.repository.VerificationGrantRepository;
+
+import tools.jackson.databind.JsonNode;
 
 /**
  * Ordering checks, running them, and paying for them.
@@ -66,10 +74,12 @@ public class VerificationService {
     private final VerificationGrantRepository grantRepository;
     private final VerificationAttemptRepository attemptRepository;
     private final AadhaarOkycProvider provider;
+    private final AadhaarAppProvider appProvider;
     private final VerificationProperties properties;
     private final ServiceBalanceModule serviceBalance;
     private final AuthModule authModule;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
     /**
      * Explicit transaction boundaries, because this class deliberately has gaps
      * between them.
@@ -85,18 +95,22 @@ public class VerificationService {
             VerificationGrantRepository grantRepository,
             VerificationAttemptRepository attemptRepository,
             AadhaarOkycProvider provider,
+            AadhaarAppProvider appProvider,
             VerificationProperties properties,
             ServiceBalanceModule serviceBalance,
             AuthModule authModule,
             Clock clock,
+            ApplicationEventPublisher eventPublisher,
             PlatformTransactionManager transactionManager) {
         this.grantRepository = grantRepository;
         this.attemptRepository = attemptRepository;
         this.provider = provider;
+        this.appProvider = appProvider;
         this.properties = properties;
         this.serviceBalance = serviceBalance;
         this.authModule = authModule;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -123,6 +137,12 @@ public class VerificationService {
             return List.of();
         }
         requireEnabled();
+        if (attemptsByService.containsKey(ServiceCode.AADHAAR_OKYC)) {
+            // Superseded by the Aadhaar App (2026-09-27). Checks already
+            // ordered still run: only new orders are turned away.
+            throw new BusinessException(
+                    "VERIFICATION_SERVICE_RETIRED", "The OTP identity check has been replaced by the Aadhaar App check.");
+        }
 
         long newOrderPaise = attemptsByService.entrySet().stream()
                 .mapToLong(entry -> serviceBalance.priceOf(entry.getKey()) * entry.getValue())
@@ -151,15 +171,86 @@ public class VerificationService {
     }
 
     /**
+     * The owner gives a pending stay's tenant more tries (owner's decision,
+     * 2026-09-27): the tenant who runs out is told to contact the owner, and the
+     * owner adds them from the stay's card. No request flow.
+     *
+     * <p>Only for a check given to this tenant at onboarding, not yet passed,
+     * with no attempts left: a top-up for someone who ran out, never a new order
+     * and never extra tries on top of unused ones. Same balance limits as
+     * ordering. The exhausted check opens again.
+     */
+    @Transactional
+    public List<VerificationGrant> addAttempts(
+            UUID tenancyId,
+            UUID ownerUserId,
+            UUID propertyId,
+            UUID tenantUserId,
+            Map<ServiceCode, Integer> attemptsByService,
+            UUID actorUserId) {
+        if (attemptsByService == null || attemptsByService.isEmpty()) {
+            throw new BusinessException("VERIFICATION_NOTHING_CHOSEN", "Choose a check and how many attempts to add.");
+        }
+        requireEnabled();
+        if (attemptsByService.containsKey(ServiceCode.AADHAAR_OKYC)) {
+            throw new BusinessException(
+                    "VERIFICATION_SERVICE_RETIRED", "The OTP identity check has been replaced by the Aadhaar App check.");
+        }
+
+        List<VerificationGrant> existing = grantRepository.findByTenancyIdOrderByCreatedAtAsc(tenancyId);
+        Map<ServiceCode, VerificationGrant> toTopUp = new java.util.LinkedHashMap<>();
+        for (ServiceCode service : attemptsByService.keySet()) {
+            VerificationGrant grant = existing.stream()
+                    .filter(candidate -> candidate.getServiceCode() == service)
+                    .filter(candidate -> candidate.getStatus() != VerificationGrantStatus.CANCELLED)
+                    .reduce((first, second) -> second)
+                    .orElseThrow(() -> new BusinessException(
+                            "VERIFICATION_NOT_ORDERED", "That check was not given to this tenant."));
+            if (grant.getStatus() == VerificationGrantStatus.VERIFIED) {
+                throw new BusinessException("VERIFICATION_ALREADY_DONE", "This tenant has already passed that check.");
+            }
+            if (grant.attemptsRemaining() > 0) {
+                throw new BusinessException(
+                        "VERIFICATION_ATTEMPTS_LEFT", "This tenant still has attempts left for that check.");
+            }
+            toTopUp.put(service, grant);
+        }
+
+        long addedPaise = attemptsByService.entrySet().stream()
+                .mapToLong(entry -> serviceBalance.priceOf(entry.getKey()) * entry.getValue())
+                .sum();
+        serviceBalance.ensureCanOrder(ownerUserId, committedPaiseFor(ownerUserId), addedPaise);
+
+        List<VerificationGrant> touched = new java.util.ArrayList<>();
+        toTopUp.forEach((service, grant) -> {
+            grant.addAttempts(attemptsByService.get(service));
+            touched.add(grantRepository.save(grant));
+        });
+
+        log.info("Verification attempts added tenancyId={} actorUserId={} checks={} addedPaise={}",
+                tenancyId, actorUserId, attemptsByService.keySet(), addedPaise);
+        // The tenant is told, so they can try again without reopening the screen.
+        Map<String, Integer> added = new java.util.LinkedHashMap<>();
+        attemptsByService.forEach((service, attempts) -> added.put(service.name(), attempts));
+        eventPublisher.publishEvent(
+                new com.khatiyan.d_modules.verification.event.VerificationAttemptsAddedEvent(
+                        tenancyId, tenantUserId, propertyId, added));
+        return touched;
+    }
+
+    /**
      * What this owner has ordered and not yet spent, at today's prices.
      *
      * <p>Ordered attempts become dues only when a tenant runs them, so nothing
      * else in the system can see this queue building up behind the ceiling.
      */
     public long committedPaiseFor(UUID ownerUserId) {
-        long unusedAttempts =
-                grantRepository.sumUnusedAttempts(ownerUserId, VerificationGrantStatus.PENDING);
-        return unusedAttempts * serviceBalance.priceOf(ServiceCode.AADHAAR_OKYC);
+        // Each grant at its own service's price: there are two Aadhaar services
+        // now, and pricing every open grant as the OTP one would be wrong for
+        // the other the day their prices differ.
+        return grantRepository.findByOwnerUserIdAndStatus(ownerUserId, VerificationGrantStatus.PENDING).stream()
+                .mapToLong(grant -> (long) grant.attemptsRemaining() * serviceBalance.priceOf(grant.getServiceCode()))
+                .sum();
     }
 
     // ---- the tenant performs ------------------------------------------------
@@ -232,15 +323,7 @@ public class VerificationService {
     private VerificationAttempt openAttempt(UUID grantId, UUID tenantUserId) {
         VerificationGrant grant = ownGrant(grantId, tenantUserId);
 
-        if (!grant.isOpen()) {
-            throw new BusinessException("VERIFICATION_CLOSED", "This check is already finished.");
-        }
-        if (grant.attemptsRemaining() <= 0) {
-            throw new BusinessException(
-                    "VERIFICATION_NO_ATTEMPTS", "No attempts left. Ask the property owner for more.");
-        }
-        requireWithinDailyCap(grant);
-        requireCooldownElapsed(grant);
+        requireCanStart(grant);
 
         grant.useAttempt();
         grantRepository.save(grant);
@@ -250,6 +333,19 @@ public class VerificationService {
                 "khatiyan-" + UUID.randomUUID(),
                 serviceBalance.priceOf(grant.getServiceCode()),
                 Instant.now(clock)));
+    }
+
+    /** Everything that can stop a tenant starting an attempt, OTP or Aadhaar App. */
+    private void requireCanStart(VerificationGrant grant) {
+        if (!grant.isOpen()) {
+            throw new BusinessException("VERIFICATION_CLOSED", "This check is already finished.");
+        }
+        if (grant.attemptsRemaining() <= 0) {
+            throw new BusinessException(
+                    "VERIFICATION_NO_ATTEMPTS", "No attempts left. Ask the property owner for more.");
+        }
+        requireWithinDailyCap(grant);
+        requireCooldownElapsed(grant);
     }
 
     /**
@@ -406,8 +502,9 @@ public class VerificationService {
                 outcome.dateOfBirth(),
                 outcome.maskedLastFour(),
                 nameScore,
-                outcome.address(),
-                outcome.addressPincode(),
+                // Not kept: the address is not part of verification (2026-09-27).
+                null,
+                null,
                 phoneMatched,
                 true,
                 now);
@@ -416,17 +513,359 @@ public class VerificationService {
         attemptRepository.save(attempt);
 
         // The record replaces what was typed, and the fields close behind it.
+        // The OTP record carries no gender, so none is locked.
         authModule.applyVerifiedIdentity(
                 tenantUserId,
                 outcome.name(),
                 outcome.dateOfBirth(),
-                outcome.address(),
-                outcome.addressPincode(),
+                null,
                 grant.getServiceCode().name(),
                 now);
 
         log.info("Verification passed grantId={} tenantUserId={}", grant.getId(), tenantUserId);
         return VerificationResult.verified(grant);
+    }
+
+    // ---- the tenant performs: Aadhaar App (offline verification) ------------
+    //
+    // Spec: docs/superpowers/specs/2026-09-27-aadhaar-app-ovse-design.md.
+    // The app has already checked the Aadhaar App is installed on this phone
+    // and that the tenant says they have signed up in it, before this is
+    // called: opening a session is what charges the owner.
+
+    /**
+     * Opens an Aadhaar App session, or hands back the one still open.
+     *
+     * <p>A tenant who comes back to the screen gets the same session again
+     * rather than a new, separately charged one. Three phases, like the OTP
+     * start: decide and spend the attempt, call the provider holding no
+     * database connection, then record the session and charge for it.
+     */
+    public VerificationAttempt startAadhaarSession(UUID grantId, UUID tenantUserId) {
+        requireEnabled();
+
+        VerificationAttempt open = inTransaction(() -> reusableSession(grantId, tenantUserId));
+        if (open != null) {
+            return open;
+        }
+
+        String token = newCallbackToken();
+        SessionStart start = inTransaction(() -> openSessionAttempt(grantId, tenantUserId, sha256(token)));
+        VerificationAttempt attempt = start.attempt();
+
+        SessionHandle handle;
+        try {
+            handle = appProvider.startSession(new StartSessionCommand(
+                    attempt.getProviderReference(),
+                    start.tenantName(),
+                    properties.getPurpose(),
+                    properties.getPublicBaseUrl() + "/api/v1/verification/callbacks/" + token,
+                    properties.getReturnUrl() + "?attempt=" + attempt.getId(),
+                    properties.isFaceAuthentication()));
+        } catch (BusinessException e) {
+            // Refused before a session existed: nothing charged, try given back.
+            inTransaction(() -> failAttempt(attempt.getId(), e.getMessage()));
+            log.warn("Aadhaar App session refused attemptId={} provider={} code={} reason={}",
+                    attempt.getId(), appProvider.name(), e.getCode(), e.getMessage());
+            throw e;
+        } catch (RuntimeException e) {
+            inTransaction(() -> failAttempt(attempt.getId(), "The verification service did not answer"));
+            log.warn("Aadhaar App session failed attemptId={} provider={} error={}",
+                    attempt.getId(), appProvider.name(), e.getClass().getSimpleName());
+            throw e;
+        }
+
+        return inTransaction(() -> recordSession(attempt.getId(), handle));
+    }
+
+    /** What phase one hands to phase two. */
+    private record SessionStart(VerificationAttempt attempt, String tenantName) {}
+
+    /** The grant's session still open, if any. An expired one is closed on the way. */
+    private VerificationAttempt reusableSession(UUID grantId, UUID tenantUserId) {
+        VerificationGrant grant = ownGrant(grantId, tenantUserId);
+        Instant now = Instant.now(clock);
+        for (VerificationAttempt attempt : attemptRepository.findByGrantIdOrderByStartedAtDesc(grant.getId())) {
+            if (attempt.getStatus() != VerificationAttemptStatus.AWAITING_CONSENT) {
+                continue;
+            }
+            if (attempt.sessionHasExpired(now) || !appProvider.isSessionLive(attempt.getProviderSessionId())) {
+                // Expired, or forgotten by the provider (the DEV stand-in
+                // forgets on every restart). Handing it back would send the
+                // tenant to a dead page, so it closes like an expiry.
+                expireSession(attempt, grant, now);
+                continue;
+            }
+            if (attempt.getIntentUrl() != null) {
+                return attempt;
+            }
+        }
+        return null;
+    }
+
+    private SessionStart openSessionAttempt(UUID grantId, UUID tenantUserId, String callbackTokenHash) {
+        VerificationGrant grant = ownGrant(grantId, tenantUserId);
+        if (grant.getServiceCode() != ServiceCode.AADHAAR) {
+            throw new BusinessException("VERIFICATION_WRONG_METHOD", "This check is done a different way.");
+        }
+        requireCanStart(grant);
+
+        UserIdentityResponse tenant = authModule.findIdentity(tenantUserId)
+                .orElseThrow(() -> new NotFoundException("User", tenantUserId.toString()));
+
+        grant.useAttempt();
+        grantRepository.save(grant);
+        VerificationAttempt attempt = attemptRepository.save(VerificationAttempt.startSession(
+                grant.getId(),
+                "khatiyan-" + UUID.randomUUID(),
+                serviceBalance.priceOf(grant.getServiceCode()),
+                Instant.now(clock),
+                callbackTokenHash));
+        return new SessionStart(attempt, tenant.fullName());
+    }
+
+    /** The session is open, so the owner is charged for it (owner's rule, 2026-09-27). */
+    private VerificationAttempt recordSession(UUID attemptId, SessionHandle handle) {
+        VerificationAttempt attempt = attemptRepository.findById(attemptId)
+                .orElseThrow(() -> new NotFoundException("Verification attempt", attemptId.toString()));
+        VerificationGrant grant = grantRepository.findById(attempt.getGrantId())
+                .orElseThrow(() -> new NotFoundException("Verification", attempt.getGrantId().toString()));
+
+        attempt.sessionOpened(handle.providerSessionId(), handle.intentUrl(), handle.expiresAt());
+        attemptRepository.save(attempt);
+        chargeFor(grant, attempt, Instant.now(clock));
+
+        log.info("Aadhaar App session opened attemptId={} grantId={} provider={}",
+                attempt.getId(), grant.getId(), appProvider.name());
+        return attempt;
+    }
+
+    /**
+     * A result posted to our callback.
+     *
+     * <p>The token in the URL is what makes it this attempt's: only its hash is
+     * stored, and nothing else about the request is trusted. Idempotent, since
+     * delivery is at least once: a second post for a closed attempt is ignored.
+     *
+     * @return false when the token matches no attempt
+     */
+    public boolean handleCallback(String token, JsonNode body) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        String hash = sha256(token);
+        return Boolean.TRUE.equals(inTransaction(() -> {
+            VerificationAttempt attempt = attemptRepository.findByCallbackTokenHash(hash).orElse(null);
+            if (attempt == null) {
+                log.warn("Aadhaar App callback for an unknown token");
+                return false;
+            }
+            // Field names and status words only, never a value: what the
+            // provider really sends is still being learned (spec §9).
+            log.info("Aadhaar App callback attemptId={} status={} shape={}",
+                    attempt.getId(), attempt.getStatus(), AadhaarCredentialParser.shapeOf(body));
+            if (!attempt.isOpen()) {
+                return true;
+            }
+            appProvider.readCallback(body).ifPresent(outcome -> applyCredential(attempt, outcome));
+            return true;
+        }));
+    }
+
+    /**
+     * Where an attempt stands, for the app to poll when the tenant comes back.
+     *
+     * <p>Never trusts the return to the app on its own: the answer comes from
+     * our own record, and from the provider when the callback has not arrived.
+     */
+    public AttemptStatus refreshAttempt(UUID attemptId, UUID tenantUserId) {
+        VerificationAttempt attempt = inTransaction(() -> {
+            VerificationAttempt found = attemptRepository.findById(attemptId)
+                    .orElseThrow(() -> new NotFoundException("Verification attempt", attemptId.toString()));
+            VerificationGrant grant = ownGrant(found.getGrantId(), tenantUserId);
+            Instant now = Instant.now(clock);
+            if (found.sessionHasExpired(now)) {
+                expireSession(found, grant, now);
+            }
+            return found;
+        });
+
+        if (attempt.getStatus() == VerificationAttemptStatus.AWAITING_CONSENT && attempt.getProviderSessionId() != null) {
+            // Outside any transaction: a call to somebody else's server.
+            appProvider.fetchSession(attempt.getProviderSessionId(), attempt.getProviderReference())
+                    .ifPresent(outcome -> inTransaction(() -> {
+                        VerificationAttempt fresh = attemptRepository.findById(attemptId).orElseThrow();
+                        if (fresh.isOpen()) {
+                            applyCredential(fresh, outcome);
+                        }
+                        return null;
+                    }));
+        }
+
+        return inTransaction(() -> {
+            VerificationAttempt current = attemptRepository.findById(attemptId).orElseThrow();
+            return new AttemptStatus(current, ownGrant(current.getGrantId(), tenantUserId));
+        });
+    }
+
+    /** An attempt and its check, as the tenant's screen shows them. */
+    public record AttemptStatus(VerificationAttempt attempt, VerificationGrant grant) {}
+
+    /**
+     * Closes Aadhaar App sessions that ran out unanswered.
+     *
+     * @return how many were closed
+     */
+    public int expireStaleSessions() {
+        Instant now = Instant.now(clock);
+        return inTransaction(() -> {
+            int closed = 0;
+            for (VerificationAttempt attempt : attemptRepository.findByStatusAndSessionExpiresAtBefore(
+                    VerificationAttemptStatus.AWAITING_CONSENT, now)) {
+                grantRepository.findById(attempt.getGrantId()).ifPresent(grant -> expireSession(attempt, grant, now));
+                closed++;
+            }
+            return closed;
+        });
+    }
+
+    /**
+     * An unanswered session closes. The owner stays charged (it was opened),
+     * but the tenant gets the try back (owner's rule, 2026-09-27), so a detour
+     * through the Aadhaar App's own signup does not lock them out.
+     */
+    private void expireSession(VerificationAttempt attempt, VerificationGrant grant, Instant now) {
+        attempt.markExpired(now);
+        attemptRepository.save(attempt);
+        grant.restoreAttempt();
+        grantRepository.save(grant);
+        log.info("Aadhaar App session expired attemptId={} grantId={}", attempt.getId(), grant.getId());
+    }
+
+    /**
+     * Applies what the Aadhaar App shared.
+     *
+     * <p>Every rule of the OTP check, plus the Aadhaar App's own: the name is
+     * matched strictly, 18 or over is required, the face check must not have
+     * failed, and the gender and date of birth must be there, since both are
+     * adopted and locked. A refusal still spends the attempt: the provider did
+     * the work.
+     */
+    private void applyCredential(VerificationAttempt attempt, CredentialOutcome outcome) {
+        VerificationGrant grant = grantRepository.findById(attempt.getGrantId())
+                .orElseThrow(() -> new NotFoundException("Verification", attempt.getGrantId().toString()));
+        Instant now = Instant.now(clock);
+
+        if (outcome.referenceId() != null && !outcome.referenceId().equals(attempt.getProviderReference())) {
+            // The token matched but the result names another attempt. Not
+            // applied either way: the sweep closes this one if nothing else comes.
+            log.warn("Aadhaar App result names another attempt attemptId={}", attempt.getId());
+            return;
+        }
+
+        if (grant.getStatus() == VerificationGrantStatus.CANCELLED) {
+            // The stay was cancelled while the tenant was in the Aadhaar App.
+            // Nothing is adopted onto an account for a stay that is gone.
+            attempt.markFailed("This check was cancelled with the stay", now);
+            attemptRepository.save(attempt);
+            return;
+        }
+
+        attempt.recordFaceMatch(outcome.faceMatched());
+        String refusal = refusalFor(outcome, grant.getTenantUserId(), now);
+        if (refusal != null) {
+            attempt.markFailed(refusal, now);
+            attemptRepository.save(attempt);
+            log.info("Aadhaar App check did not pass attemptId={} reason={}", attempt.getId(), refusal);
+            return;
+        }
+
+        UserIdentityResponse tenant = authModule.findIdentity(grant.getTenantUserId())
+                .orElseThrow(() -> new NotFoundException("User", grant.getTenantUserId().toString()));
+        grant.markVerified(
+                outcome.name(),
+                outcome.dateOfBirth(),
+                outcome.maskedLastFour(),
+                NameMatcher.score(tenant.fullName(), outcome.name()),
+                // Not kept: the address is not part of verification (2026-09-27).
+                null,
+                null,
+                maskedPhoneMatches(tenant.phone(), outcome.maskedMobile()),
+                true,
+                now);
+        grant.recordCredentialExtras(outcome.gender(), outcome.faceMatched());
+        grantRepository.save(grant);
+        attempt.markSucceeded(now);
+        attemptRepository.save(attempt);
+
+        authModule.applyVerifiedIdentity(
+                grant.getTenantUserId(),
+                outcome.name(),
+                outcome.dateOfBirth(),
+                outcome.gender(),
+                grant.getServiceCode().name(),
+                now);
+        log.info("Aadhaar App check passed grantId={} tenantUserId={}", grant.getId(), grant.getTenantUserId());
+    }
+
+    /** Why a shared credential cannot verify this tenant, in words they can read. Null when it can. */
+    private String refusalFor(CredentialOutcome outcome, UUID tenantUserId, Instant now) {
+        if (!outcome.succeeded()) {
+            return outcome.failureReason() != null ? outcome.failureReason() : "The Aadhaar App did not share your details";
+        }
+        if (Boolean.FALSE.equals(outcome.faceMatched())) {
+            return "The face check in the Aadhaar App did not pass";
+        }
+        UserIdentityResponse tenant = authModule.findIdentity(tenantUserId)
+                .orElseThrow(() -> new NotFoundException("User", tenantUserId.toString()));
+        if (!NameMatcher.matches(tenant.fullName(), outcome.name())) {
+            return "The name on your Aadhaar does not match the name on this tenancy. "
+                    + "Ask the property owner to correct it before trying again.";
+        }
+        if (outcome.dateOfBirth() == null) {
+            return "The Aadhaar App did not share your date of birth. Share it and try again.";
+        }
+        if (!isAdultOn(outcome.dateOfBirth(), LocalDate.now(clock.withZone(IST)))
+                || Boolean.FALSE.equals(outcome.ageAbove18())) {
+            return "A tenancy cannot be held by someone under 18.";
+        }
+        if (outcome.gender() == null) {
+            return "The Aadhaar App did not share your gender. Share it and try again.";
+        }
+        return null;
+    }
+
+    /**
+     * Whether the Aadhaar-linked mobile ends in the digits of the registered
+     * phone. The credential shows only the last few ("XXXXX-X9999"). Reported,
+     * never enforced; null when nothing can be compared.
+     */
+    static Boolean maskedPhoneMatches(String registeredPhone, String maskedMobile) {
+        if (registeredPhone == null || maskedMobile == null) {
+            return null;
+        }
+        String visible = maskedMobile.replaceAll("[^0-9]", "");
+        String registered = registeredPhone.replaceAll("[^0-9]", "");
+        if (visible.isEmpty() || registered.isEmpty()) {
+            return null;
+        }
+        return registered.endsWith(visible);
+    }
+
+    private static String newCallbackToken() {
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    static String sha256(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     /**
@@ -474,10 +913,18 @@ public class VerificationService {
                         || grant.getStatus() == VerificationGrantStatus.CANCELLED);
     }
 
-    /** The tenancy went away, so nothing more will be run or charged. */
+    /**
+     * The tenancy went away, so nothing more will be run or charged.
+     *
+     * <p>Exhausted checks close too, not only pending ones: either would sit on
+     * the tenant's screen for a stay that no longer exists. Passed checks are
+     * kept ({@link VerificationGrant#cancel} leaves them).
+     */
     @Transactional
     public void cancelForTenancy(UUID tenancyId) {
-        grantRepository.findByTenancyIdAndStatus(tenancyId, VerificationGrantStatus.PENDING)
+        grantRepository.findByTenancyIdOrderByCreatedAtAsc(tenancyId).stream()
+                .filter(grant -> grant.getStatus() == VerificationGrantStatus.PENDING
+                        || grant.getStatus() == VerificationGrantStatus.EXHAUSTED)
                 .forEach(grant -> {
                     grant.cancel();
                     grantRepository.save(grant);
@@ -548,6 +995,10 @@ public class VerificationService {
      * balance.
      */
     private void requireWithinDailyCap(VerificationGrant grant) {
+        if (properties.getMaxAttemptsPerDay() <= 0) {
+            // Switched off for testing. Startup warns about it.
+            return;
+        }
         Instant dayStart = LocalDate.now(clock.withZone(IST)).atStartOfDay(IST).toInstant();
         long today = attemptRepository.countByGrantIdAndChargedAtNotNullAndStartedAtAfter(
                 grant.getId(), dayStart);
@@ -560,7 +1011,7 @@ public class VerificationService {
     private void requireCooldownElapsed(VerificationGrant grant) {
         attemptRepository.findByGrantIdOrderByStartedAtDesc(grant.getId()).stream()
                 .findFirst()
-                .filter(last -> last.getStatus() == VerificationAttemptStatus.AWAITING_OTP)
+                .filter(VerificationAttempt::isOpen)
                 .ifPresent(last -> {
                     Instant ready = last.getStartedAt().plus(
                             properties.getResendCooldownSeconds(), ChronoUnit.SECONDS);

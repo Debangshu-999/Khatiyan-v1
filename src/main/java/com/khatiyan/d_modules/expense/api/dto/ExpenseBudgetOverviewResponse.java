@@ -17,5 +17,7 @@ public record ExpenseBudgetOverviewResponse(
         long spentPaise,
         Long remainingPaise,
         long savingsPaise,
-        List<BudgetRaiseItem> raises) {
+        List<BudgetRaiseItem> raises,
+        /** The budget settings' version (2026-09-29), sent back as If-Match on a new default. */
+        long version) {
 }

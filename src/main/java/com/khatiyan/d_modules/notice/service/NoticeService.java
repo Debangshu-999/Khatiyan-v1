@@ -10,6 +10,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.notice.api.dto.CreateNoticeRequest;
@@ -18,6 +19,7 @@ import com.khatiyan.d_modules.notice.api.dto.NoticeResponse;
 import com.khatiyan.d_modules.notice.api.dto.UpdateNoticeRequest;
 import com.khatiyan.d_modules.notice.event.NoticePublishedEvent;
 import com.khatiyan.d_modules.notice.model.Notice;
+import com.khatiyan.d_modules.notice.model.NoticeStatus;
 import com.khatiyan.d_modules.notice.repository.NoticeRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
@@ -46,13 +48,18 @@ public class NoticeService {
     private final TenancyModule tenancyModule;
     private final ApplicationEventPublisher eventPublisher;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public NoticeService(
             NoticeRepository noticeRepository,
             PropertyModule propertyModule,
             NoticeAccessPolicy noticeAccessPolicy,
             NoticeAttachmentService noticeAttachmentService,
             TenancyModule tenancyModule,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.noticeRepository = noticeRepository;
         this.propertyModule = propertyModule;
         this.noticeAccessPolicy = noticeAccessPolicy;
@@ -336,18 +343,28 @@ public class NoticeService {
     /**
      * Archives expired published notices; intended to be called by a scheduled job.
      */
-    @Transactional
     public int archiveExpiredNotices() {
         Instant now = Instant.now();
-        List<Notice> expiredNotices = noticeRepository.findExpiredPublishedNotices(now);
+        List<UUID> expired = noticeRepository.findExpiredPublishedNotices(now).stream()
+                .map(Notice::getId)
+                .toList();
 
-        expiredNotices.forEach(notice -> notice.archive(now));
+        // One notice per transaction, re-read inside it (2026-09-28): an owner
+        // may be editing one right now, and that should cost only that notice.
+        int archived = recordByRecord.run("notice-archive-expired", expired, id -> id, id -> {
+            Notice notice = noticeRepository.findById(id).orElse(null);
+            if (notice == null || notice.getStatus() == NoticeStatus.ARCHIVED) {
+                return false;
+            }
+            notice.archive(now);
+            return true;
+        });
 
-        if (!expiredNotices.isEmpty()) {
-            log.info("Expired notices archived count={}", expiredNotices.size());
+        if (archived > 0) {
+            log.info("Expired notices archived count={}", archived);
         }
 
-        return expiredNotices.size();
+        return archived;
     }
 
     /**

@@ -16,8 +16,47 @@ import type { ComponentType, ReactNode, Ref } from "react";
 
 /** Only the parts of the SDK this app touches. */
 export type MapplsCameraRef = {
+  /**
+   * Frames a set of points, working out the centre and zoom itself.
+   *
+   * <p>`paddingConfig` is a number for all sides, or [top, right, bottom,
+   * left] — which is what keeps pins out from under the floating cards.
+   */
+  fitBounds: (
+    ne: number[],
+    sw: number[],
+    paddingConfig?: number | number[],
+    animationDuration?: number,
+  ) => void;
+  /**
+   * The same, for places we only have Mappls codes for.
+   *
+   * <p>The one method on this ref that could not be replaced by arithmetic of
+   * our own: a standard key returns no coordinates, so the SDK is the only
+   * thing that knows where these places are, and only it can frame them.
+   */
+  fitBoundsWithMapplsPin: (
+    mapplsPinBounds: string[],
+    paddingConfig?: number | number[],
+    animationDuration?: number,
+  ) => void;
   flyTo: (coordinates: number[], animationDuration?: number) => void;
   flyWithMapplsPin: (mapplsPin: string, animationDuration?: number) => void;
+  /**
+   * Centre and zoom in ONE move.
+   *
+   * <p>`flyTo` and `zoomTo` each send their own camera update, and the SDK
+   * queues them — so asking for both is two animations back to back rather
+   * than one journey.
+   */
+  setCamera: (config: {
+    animationDuration?: number;
+    animationMode?: "easeTo" | "flyTo" | "linearTo" | "moveTo";
+    centerCoordinate?: number[];
+    centerMapplsPin?: string;
+    zoomLevel?: number;
+  }) => void;
+  zoomTo: (zoomLevel: number, animationDuration?: number) => void;
 };
 
 type MapplsLog = { level: string; message: string; tag?: string };

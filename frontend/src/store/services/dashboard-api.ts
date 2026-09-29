@@ -58,6 +58,23 @@ export type TodayDigest = {
   tenanciesEndingToday: number;
 };
 
+/**
+ * A booked stay that can't start because its bed is not free yet. Listed on
+ * the action center until it starts.
+ */
+export type BlockedBooking = {
+  bookingTenancyId: string;
+  tenantName: string | null;
+  roomId: string;
+  roomNumber: string | null;
+  startDate: string;
+  /** PENDING_EXIT: the stay in the bed is past its checkout. STAY_NOT_ENDED: due and not ended. ROOM_CHANGE_NOT_DONE: the move freeing it hasn't run. */
+  reason: "PENDING_EXIT" | "STAY_NOT_ENDED" | "ROOM_CHANGE_NOT_DONE";
+  /** The stay holding the bed: the one to end, or whose room change hasn't run. */
+  blockingTenancyId: string | null;
+  blockingTenantName: string | null;
+};
+
 export type AttentionSummary = {
   paymentsOverdue: number;
   concernsUnattended24h: number;
@@ -144,6 +161,8 @@ export type OwnerDashboard = {
   money: MoneySnapshot;
   today: TodayDigest;
   attention: AttentionSummary;
+  /** Absent on a response from before bookings could be blocked. */
+  blockedBookings?: BlockedBooking[];
   budget: BudgetAttention;
   concerns: ConcernQueueSummary;
   /**

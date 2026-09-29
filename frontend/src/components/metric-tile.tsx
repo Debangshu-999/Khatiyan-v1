@@ -24,19 +24,28 @@ type MetricTileProps = {
    */
   iconPlacement?: "top" | "side";
   tone?: "default" | "primary" | "danger";
+  /** Optional quiet surface tint; the metric's meaning still lives in `tone`. */
+  surfaceTone?: "default" | "primary" | "danger" | "success" | "warning";
   // Money values shown three-across can be long; dense uses a smaller base size
   // so the amount fits on one line without shrinking as aggressively.
   dense?: boolean;
 };
 
-export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "top", iconTone = "primary", label, tone = "default", value }: MetricTileProps) {
+export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "top", iconTone = "primary", label, surfaceTone = "default", tone = "default", value }: MetricTileProps) {
   const { colors, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
-  // Every tile is a white card; the tone lives in the number alone. A filled
-  // green tile beside a white one read as two different KINDS of statistic
-  // rather than the same statistic with a good value, and a row of them turned
-  // the summary into the loudest thing on a screen that is mostly a list.
-  const backgroundColor = colors.surface;
+  // Most tiles stay white. Screens that need more separation from a white page
+  // may opt into one of the theme's deliberately quiet semantic surfaces.
+  const backgroundColor =
+    surfaceTone === "danger"
+      ? colors.dangerSoft
+      : surfaceTone === "success"
+        ? colors.successSoft
+        : surfaceTone === "warning"
+          ? colors.warningSoft
+          : surfaceTone === "primary"
+            ? colors.primarySoft
+            : colors.surface;
   const borderColor = colors.borderStrong;
   // The side rail is the billing tile's layout, so it takes its type scale
   // too: a 23pt number beside a 38pt glyph. At 28 the number was the loudest
@@ -97,7 +106,7 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "t
                 beside the label it names, and a coloured mark there competed
                 with the number for the eye — the tone still carries in the
                 value, which is where the reading actually happens. */}
-            <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+            <Icon color={iconColor} size={38} strokeWidth={1.75} />
           </View>
         ) : null}
 

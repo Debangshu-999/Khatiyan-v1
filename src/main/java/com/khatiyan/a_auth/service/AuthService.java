@@ -319,6 +319,38 @@ public class AuthService {
     }
 
     /**
+     * Sends a cash-payment confirmation code to the payer's phone.
+     *
+     * <p>Takes a PHONE, not a user, because a daily guest stay has no account
+     * and still pays in cash. The guarantee the agreement flow gets from using
+     * the account's number is kept by the caller instead: billing resolves the
+     * number server-side from the bill and never accepts one from the request.
+     *
+     * <p>Under the same limits as every other code — per number, per device and
+     * the resend cooldown. The device here is the collector's, so the per-device
+     * allowance is shared across every tenant they collect from in the same
+     * five minutes.
+     *
+     * @param detail what the code confirms — the amount and the bill — so the
+     *     tenant never agrees to a number they did not see
+     * @return the destination, masked to its last four digits
+     */
+    @Transactional
+    public String startCashPaymentConfirmation(String phone, String requestIpAddress, String detail) {
+        otpService.issue(phone, null, requestIpAddress, OtpPurpose.CASH_PAYMENT, OtpDeliveryChannel.SMS, detail);
+        return maskPhone(phone);
+    }
+
+    /**
+     * Checks a cash-payment code and spends it. A code that survived its own use
+     * could confirm a second payment the tenant never made.
+     */
+    @Transactional
+    public void completeCashPaymentConfirmation(String phone, String otp) {
+        otpService.verifyAndConsumeOTP(phone, OtpPurpose.CASH_PAYMENT, otp);
+    }
+
+    /**
      * The last four digits, and nothing else.
      *
      * <p>Enough for the person to recognise the number as theirs. The whole
@@ -1007,24 +1039,23 @@ public class AuthService {
      * Writes what a government record says about somebody, and closes the door.
      *
      * <p>Called once, by the verification module, when a check passes. From
-     * then on the name, date of birth and permanent address on this account are
-     * the ones on their ID and nothing in the app can change them — which is
-     * the entire point of having checked.
+     * then on the name and date of birth (and gender, from the Aadhaar App) on
+     * this account are the ones on their ID and nothing in the app can change
+     * them, which is the entire point of having checked. Not the address
+     * (owner's decision, 2026-09-27).
      */
     @Transactional
     public void applyVerifiedIdentity(
             UUID userId,
             String fullName,
             LocalDate dateOfBirth,
-            String permanentAddress,
-            String permanentAddressPincode,
+            Gender gender,
             String source,
             Instant verifiedAt) {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User", userId.toString()));
-        user.applyVerifiedIdentity(
-                fullName, dateOfBirth, permanentAddress, permanentAddressPincode, source, verifiedAt);
+        user.applyVerifiedIdentity(fullName, dateOfBirth, gender, source, verifiedAt);
         userRepository.save(user);
         log.info("Identity verified and locked userId={} source={}", userId, source);
     }

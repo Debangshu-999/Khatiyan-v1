@@ -13,14 +13,21 @@ import com.khatiyan.d_modules.verification.model.VerificationGrant;
  * Aadhaar number here because there is none anywhere: the masked fragment is
  * all that was ever kept.
  *
+ * @param tenancyId        the stay that ordered it. A tenant can have checks
+ *                         from more than one stay, and a screen shows only
+ *                         its own.
  * @param nameMatched      null while nothing has been tried
  * @param phoneMatched     whether the Aadhaar-linked mobile is the phone they
  *                         signed in with. Null means we could not tell, which
  *                         is not the same as no, and false is a fact rather
  *                         than a failure.
+ * @param verifiedGender   from the Aadhaar App only. Null for the OTP check,
+ *                         whose record carries no gender.
+ * @param faceMatched      the Aadhaar App's face check. Null when none ran.
  */
 public record VerificationGrantResponse(
         UUID id,
+        UUID tenancyId,
         String serviceCode,
         String status,
         int attemptsGranted,
@@ -31,11 +38,14 @@ public record VerificationGrantResponse(
         String maskedIdLastFour,
         Boolean nameMatched,
         Boolean phoneMatched,
-        Boolean adultAtVerification) {
+        Boolean adultAtVerification,
+        String verifiedGender,
+        Boolean faceMatched) {
 
     public static VerificationGrantResponse from(VerificationGrant grant) {
         return new VerificationGrantResponse(
                 grant.getId(),
+                grant.getTenancyId(),
                 grant.getServiceCode().name(),
                 grant.getStatus().name(),
                 grant.getAttemptsGranted(),
@@ -46,6 +56,8 @@ public record VerificationGrantResponse(
                 grant.getMaskedIdLastFour(),
                 grant.getNameMatched(),
                 grant.getPhoneMatched(),
-                grant.getAdultAtVerification());
+                grant.getAdultAtVerification(),
+                grant.getVerifiedGender() == null ? null : grant.getVerifiedGender().name(),
+                grant.getFaceMatched());
     }
 }

@@ -43,10 +43,24 @@ export function useScreenAccessGuard(propertyId: string | null | undefined) {
     [canView, failFromServer, isReady],
   );
 
+  /** Opens if the actor can view ANY of the resources: a division screen shows what they can see and hides the rest. */
+  const guardAny = useCallback(
+    (resources: ManagerResource[], label: string, open: () => void) => {
+      if (!isReady || resources.some((resource) => canView(resource))) {
+        open();
+        return;
+      }
+
+      failFromServer(`${label} is not available to you. Ask the property owner for access.`);
+    },
+    [canView, failFromServer, isReady],
+  );
+
   return {
     dialog: refusal.serverError ? (
       <AlertModal message={refusal.serverError} onClose={refusal.dismissServerError} />
     ) : null,
     guard,
+    guardAny,
   };
 }

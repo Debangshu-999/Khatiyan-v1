@@ -182,7 +182,7 @@ function ChannelPreferenceRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {describeChannelName(option.channel)}
         </Text>
-        <Text numberOfLines={2} style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {description}
         </Text>
       </View>

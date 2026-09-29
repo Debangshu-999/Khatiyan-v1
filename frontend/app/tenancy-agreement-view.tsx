@@ -45,7 +45,7 @@ export default function TenancyAgreementViewScreen() {
         <>
           {agreement.acceptedAt ? (
             <Card tone="sunken">
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Accepted on{" "}
                 <Text style={{ color: colors.ink, fontWeight: "800" }}>{formatDate(agreement.acceptedAt)}</Text>. This is
                 the frozen copy of what you agreed to.

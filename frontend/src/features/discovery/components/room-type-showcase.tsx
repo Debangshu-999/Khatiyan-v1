@@ -44,7 +44,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
         <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 16 }}>
           Room types not listed yet
         </Text>
-        <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+        <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
           Ask the property about available rooms using the enquiry above.
         </Text>
       </View>
@@ -272,7 +272,7 @@ function MissingVariant({ conditioning, occupancy }: { conditioning: "AC" | "NON
         <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15 }}>
           No {label} option
         </Text>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           This property does not offer {humanizeToken(occupancy).toLowerCase()} rooms with{" "}
           {conditioning === "AC" ? "air conditioning" : "no air conditioning"}.
         </Text>

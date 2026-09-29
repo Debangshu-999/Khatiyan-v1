@@ -74,6 +74,17 @@ public class BillingAccessPolicy {
         propertyModule.ensureOwner(actorUserId, propertyId);
     }
 
+    /**
+     * Reading which ways a property takes money (2026-09-28), for whoever
+     * records a payment: Mark paid (BILLING_CYCLES) and the end-tenancy
+     * collection picker (TENANCIES). Only the method list, never the payout
+     * details, which stay owner only.
+     */
+    public void ensureCanViewPaymentMethods(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanViewAny(
+                actorUserId, propertyId, ManagerResource.BILLING_CYCLES, ManagerResource.TENANCIES);
+    }
+
     // --- Deposits ---
 
     public void ensureCanViewDeposits(UUID actorUserId, UUID propertyId) {

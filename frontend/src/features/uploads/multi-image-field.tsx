@@ -27,6 +27,7 @@ import { useTheme } from "@/theme/use-theme";
 export function MultiImageField({
   disabled,
   label,
+  libraryLabel = "Choose image",
   max,
   onChange,
   target,
@@ -34,6 +35,8 @@ export function MultiImageField({
 }: {
   disabled?: boolean;
   label: string;
+  /** Name shown on the photo-library action. */
+  libraryLabel?: string;
   /** How many photos this field accepts. */
   max: number;
   onChange: (urls: string[]) => void;
@@ -146,7 +149,7 @@ export function MultiImageField({
         <ActionButton
           disabled={busy || full}
           icon={ImagePlus}
-          label="Choose image"
+          label={libraryLabel}
           onPress={() => void pickFromLibrary()}
           variant="secondary"
         />

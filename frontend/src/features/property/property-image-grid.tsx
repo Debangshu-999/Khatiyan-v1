@@ -143,7 +143,7 @@ export function PropertyImageGrid({
           </View>
         </View>
       ) : (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {tiles.length} of {max} · the cover is the photo people see first in search.
         </Text>
       )}

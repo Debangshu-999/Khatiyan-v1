@@ -8,5 +8,7 @@ public enum ManualPaymentMethod {
     UPI,
     CARD,
     CHEQUE,
-    OTHER
+    OTHER,
+    /** A transfer into the property's bank account (2026-09-28). Persisted by name, never delete. */
+    BANK_TRANSFER
 }

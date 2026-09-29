@@ -22,9 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Executes approved room changes on their transfer date.
  *
- * <p>Each move is run once. One that cannot complete is cancelled, its bed
- * released and everyone told. It is never reopened for another decision and
- * never tried again the next night.
+ * <p>An unbooked move that cannot complete is cancelled and its target bed
+ * released. A move already backing an incoming monthly booking remains
+ * approved for retry so the promised outgoing vacancy is not silently lost.
  */
 @Slf4j
 @Component
@@ -79,7 +79,7 @@ public class TenancyRoomChangeSchedulerService {
                 }
             } catch (RuntimeException exception) {
                 failedCount = failedCount + 1;
-                log.warn("Tenancy room change could not run and is being cancelled requestId={}",
+                log.warn("Tenancy room change could not run; resolving failure requestId={}",
                         requestId, exception);
                 try {
                     roomChangeRequestService.closeAfterExecutionFailure(requestId, exception);

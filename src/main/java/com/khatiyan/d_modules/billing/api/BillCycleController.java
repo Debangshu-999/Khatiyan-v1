@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.c_shared.http.ClientIpResolver;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.AdjustBillingLineItemRequest;
@@ -30,11 +32,13 @@ import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.CancelOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
+import com.khatiyan.d_modules.billing.api.dto.CashPaymentCodeResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordPaymentSuccessRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 /**
@@ -49,9 +53,11 @@ import jakarta.validation.Valid;
 public class BillCycleController {
 
     private final BillingModule billingModule;
+    private final ClientIpResolver clientIpResolver;
 
-    public BillCycleController(BillingModule billingModule) {
+    public BillCycleController(BillingModule billingModule, ClientIpResolver clientIpResolver) {
         this.billingModule = billingModule;
+        this.clientIpResolver = clientIpResolver;
     }
 
     // Tenant self-view endpoints
@@ -191,11 +197,24 @@ public class BillCycleController {
      * is unpaid or overdue; the reason is kept on the bill and sent to the tenant.
      */
     @PostMapping("/cycles/{billingCycleId}/cancel")
+    @RequiresVersion
     public BillingCycleResponse cancelOneOffBill(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId,
             @Valid @RequestBody CancelOneOffBillRequest request) {
         return billingModule.cancelOneOffBill(user.userId(), billingCycleId, request);
+    }
+
+    /**
+     * Waives the late fee on a bill. Only while it is overdue: not while a
+     * payment claim awaits confirmation, and not in any other state.
+     */
+    @PostMapping("/cycles/{billingCycleId}/late-fee/remove")
+    @RequiresVersion
+    public BillingCycleResponse removeLateFee(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId) {
+        return billingModule.removeLateFee(user.userId(), billingCycleId);
     }
 
     @PostMapping("/tenancies/{tenancyId}/discounts")
@@ -207,6 +226,7 @@ public class BillCycleController {
     }
 
     @PostMapping("/cycles/{billingCycleId}/extra-charges")
+    @RequiresVersion
     public BillingCycleResponse addExtraCharges(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId,
@@ -215,6 +235,7 @@ public class BillCycleController {
     }
 
     @PostMapping("/cycles/{billingCycleId}/discounts")
+    @RequiresVersion
     public BillingCycleResponse addDiscount(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId,
@@ -232,6 +253,7 @@ public class BillCycleController {
     }
 
     @PatchMapping("/cycles/{billingCycleId}/line-items/{lineItemId}/clear")
+    @RequiresVersion
     public BillingCycleResponse clearLineItem(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId,
@@ -311,12 +333,30 @@ public class BillCycleController {
     // Owner/manager manual (offline) payment collection
 
     @PostMapping("/cycles/{billingCycleId}/manual-payment")
+    @RequiresVersion
     public ResponseEntity<ManualPaymentResponse> recordManualPayment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId,
             @Valid @RequestBody RecordManualPaymentRequest request) {
         ManualPaymentResponse response = billingModule.recordManualPayment(user.userId(), billingCycleId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /**
+     * Sends the bill's tenant a code confirming a cash payment.
+     *
+     * <p>No body: the number comes from the bill, never from the request, and
+     * the amount is the bill's own total. The code is then entered with the
+     * payment above.
+     */
+    @PostMapping("/cycles/{billingCycleId}/manual-payment/cash-code")
+    @RequiresVersion
+    public CashPaymentCodeResponse sendCashPaymentCode(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId,
+            HttpServletRequest servletRequest) {
+        return billingModule.sendCashPaymentCode(
+                user.userId(), billingCycleId, clientIpResolver.resolve(servletRequest));
     }
 
     /**

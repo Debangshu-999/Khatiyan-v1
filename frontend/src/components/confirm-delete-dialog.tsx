@@ -39,9 +39,8 @@ export function ConfirmDeleteDialog({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
-      <Pressable
-        accessibilityLabel="Dismiss"
-        onPress={onCancel}
+      {/* Cancel or the device back button closes it, not a tap on the scrim (user, 2026-09-29). */}
+      <View
         style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
@@ -50,9 +49,7 @@ export function ConfirmDeleteDialog({
           padding: spacing.lg,
         }}
       >
-        {/* Swallows the tap so a press inside the card does not dismiss it. */}
-        <Pressable
-          onPress={() => {}}
+        <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
@@ -67,7 +64,7 @@ export function ConfirmDeleteDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted, marginTop: spacing.sm }]}>
+          <Text style={[type.description, { color: colors.muted, marginTop: spacing.sm }]}>
             {message}
           </Text>
 
@@ -96,8 +93,8 @@ export function ConfirmDeleteDialog({
               </Text>
             </AnimatedPressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

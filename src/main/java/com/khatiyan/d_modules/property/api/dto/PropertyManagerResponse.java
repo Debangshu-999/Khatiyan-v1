@@ -21,7 +21,9 @@ public record PropertyManagerResponse(
     boolean phoneVerified,
     boolean profileCompleted,
     boolean accountActive,
-    Instant createdAt
+    Instant createdAt,
+    /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+    long version
 ) {
     public static PropertyManagerResponse from(PropertyManager manager, UserSummaryResponse managerUser) {
         return new PropertyManagerResponse(
@@ -36,7 +38,6 @@ public record PropertyManagerResponse(
             managerUser.phoneVerified(),
             managerUser.profileCompleted(),
             managerUser.active(),
-            manager.getCreatedAt()
-        );
+            manager.getCreatedAt(), manager.getVersion());
     }
 }

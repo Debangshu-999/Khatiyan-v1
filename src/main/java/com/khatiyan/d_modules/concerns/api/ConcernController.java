@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.concerns.ConcernModule;
@@ -72,6 +73,7 @@ public class ConcernController {
     }
 
     @PostMapping("/concerns/{concernId}/reopen")
+    @RequiresVersion
     public ConcernResponse reopenConcern(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID concernId,
@@ -115,6 +117,7 @@ public class ConcernController {
     }
 
     @PatchMapping("/concerns/{concernId}/assign")
+    @RequiresVersion
     public ConcernResponse assignConcern(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID concernId,
@@ -123,6 +126,7 @@ public class ConcernController {
     }
 
     @PatchMapping("/concerns/{concernId}/status")
+    @RequiresVersion
     public ConcernResponse updateConcernStatus(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID concernId,
@@ -131,6 +135,7 @@ public class ConcernController {
     }
 
     @PatchMapping("/concerns/{concernId}/resolve")
+    @RequiresVersion
     public ConcernResponse resolveConcern(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID concernId,

@@ -158,7 +158,7 @@ function RequestHistoryRouteCard({ count, onPress }: { count: number; onPress: (
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>Request history</Text>
           <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>View past requests</Text>
-          <Text style={[type.body, { color: colors.muted }]}>Expired exit and room-change requests.</Text>
+          <Text style={[type.description, { color: colors.muted }]}>Expired exit and room-change requests.</Text>
         </View>
         <Image
           accessibilityIgnoresInvertColors
@@ -229,13 +229,13 @@ export function ExitCard({ chain, request }: { chain?: ExitRequestChain; request
         </View>
 
         {request.status === "EXPIRED" ? (
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Nobody reviewed this in time. Raise it again and your notice still counts from the day
             you first asked.
           </Text>
         ) : null}
         {request.status === "WITHDRAWAL_REQUESTED" ? (
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Waiting on management to agree. Until they do, your exit still stands.
           </Text>
         ) : null}
@@ -275,6 +275,7 @@ export function ExitCard({ chain, request }: { chain?: ExitRequestChain; request
           approvedCheckoutDate={request.approvedCheckoutDate}
           onClose={() => setShowWithdraw(false)}
           requestId={request.id}
+          requestVersion={request.version}
         />
       ) : null}
       {showActions ? (
@@ -476,10 +477,13 @@ function WithdrawExitSheet({
   approvedCheckoutDate,
   onClose,
   requestId,
+  requestVersion,
 }: {
   approvedCheckoutDate: string | null;
   onClose: () => void;
   requestId: string;
+  /** The exit request's version as shown (2026-09-29). */
+  requestVersion: number;
 }) {
   const { colors, type } = useTheme();
   const toast = useToast();
@@ -490,7 +494,7 @@ function WithdrawExitSheet({
 
   async function submit() {
     try {
-      await withdraw({ reason: reason.trim() || null, requestId }).unwrap();
+      await withdraw({ reason: reason.trim() || null, requestId, version: requestVersion }).unwrap();
       toast.success("Sent. Management will decide whether you can stay on.");
       onClose();
     } catch (caught) {
@@ -501,7 +505,7 @@ function WithdrawExitSheet({
   return (
     <SheetShell onClose={onClose} title="Cancel your exit">
       <View style={{ gap: spacing.md }}>
-        <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           You asked to leave on{" "}
           <Text style={{ color: colors.ink, fontWeight: "800" }}>
             {approvedCheckoutDate ? formatDate(approvedCheckoutDate) : "your approved date"}

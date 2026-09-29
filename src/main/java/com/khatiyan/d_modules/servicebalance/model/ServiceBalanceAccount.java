@@ -9,7 +9,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -69,16 +68,9 @@ public class ServiceBalanceAccount extends BaseEntity {
     @Column(name = "locked_reason", length = 200)
     private String lockedReason;
 
-    /**
-     * Optimistic lock.
-     *
-     * <p>Two verification requests racing for the last Rs 30 must not both
-     * succeed. Without this the second read sees a stale balance and both
-     * writes land.
-     */
-    @Version
-    @Column(nullable = false)
-    private long version;
+    // Optimistic lock: the version on BaseEntity (2026-09-28). Two
+    // verification requests racing for the last Rs 30 must not both succeed.
+    // Without it the second read sees a stale balance and both writes land.
 
     private ServiceBalanceAccount(UUID ownerUserId) {
         this.id = UUID.randomUUID();

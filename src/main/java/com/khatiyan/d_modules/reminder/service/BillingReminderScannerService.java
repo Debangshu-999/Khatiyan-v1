@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
 import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
@@ -79,7 +80,7 @@ public class BillingReminderScannerService {
                     cycle.propertyId(),
                     cycle.tenancyId(),
                     today,
-                    dueReminderTitle(daysUntilDue),
+                    dueReminderTitle(cycle, daysUntilDue),
                     dueReminderBody(cycle, daysUntilDue),
                     NotificationCategory.PAYMENT,
                     NotificationPriority.HIGH,
@@ -120,9 +121,9 @@ public class BillingReminderScannerService {
                     cycle.propertyId(),
                     cycle.tenancyId(),
                     today,
-                    "Rent bill overdue",
-                    "Your rent bill of %s is overdue. Please complete the payment.".formatted(
-                            formatPaise(cycle.totalAmountPaise())),
+                    isOneOff(cycle) ? "Bill overdue" : "Rent bill overdue",
+                    "Your %s of %s is overdue. Please complete the payment.".formatted(
+                            billName(cycle), formatPaise(cycle.totalAmountPaise())),
                     NotificationCategory.PAYMENT,
                     NotificationPriority.URGENT,
                     NotificationDeliveryMode.IN_APP_AND_PUSH,
@@ -140,26 +141,41 @@ public class BillingReminderScannerService {
         return "Rs. %.2f".formatted(amountPaise / 100.0);
     }
 
-    private String dueReminderTitle(long daysUntilDue) {
+    /**
+     * A one-off bill (an extra charge, an exit penalty) is not rent, so its
+     * reminders say "bill" (2026-09-29). They called every bill rent before.
+     */
+    private boolean isOneOff(BillingCycleResponse cycle) {
+        return cycle.category() == BillingCycleCategory.ONE_OFF;
+    }
+
+    private String billName(BillingCycleResponse cycle) {
+        return isOneOff(cycle) ? "one-off bill" : "rent bill";
+    }
+
+    private String dueReminderTitle(BillingCycleResponse cycle, long daysUntilDue) {
+        String subject = isOneOff(cycle) ? "Bill" : "Rent";
         if (daysUntilDue == 0) {
-            return "Rent due today";
+            return subject + " due today";
         }
         if (daysUntilDue == 1) {
-            return "Rent due tomorrow";
+            return subject + " due tomorrow";
         }
-        return "Rent due soon";
+        return subject + " due soon";
     }
 
     private String dueReminderBody(BillingCycleResponse cycle, long daysUntilDue) {
         if (daysUntilDue == 0) {
-            return "Your rent bill of %s is due today.".formatted(formatPaise(cycle.totalAmountPaise()));
+            return "Your %s of %s is due today.".formatted(billName(cycle), formatPaise(cycle.totalAmountPaise()));
         }
         if (daysUntilDue == 1) {
-            return "Your rent bill of %s is due tomorrow, %s.".formatted(
+            return "Your %s of %s is due tomorrow, %s.".formatted(
+                    billName(cycle),
                     formatPaise(cycle.totalAmountPaise()),
                     cycle.rentDueDate());
         }
-        return "Your rent bill of %s is due in %d days, on %s.".formatted(
+        return "Your %s of %s is due in %d days, on %s.".formatted(
+                billName(cycle),
                 formatPaise(cycle.totalAmountPaise()),
                 daysUntilDue,
                 cycle.rentDueDate());

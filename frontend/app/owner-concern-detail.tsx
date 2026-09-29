@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRoundPlus, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { Card } from "@/components/card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { EmptyState } from "@/components/empty-state";
@@ -123,7 +124,7 @@ export default function OwnerConcernDetailScreen() {
   async function changeStatus(status: ConcernStatus) {
     if (!concern) return;
     try {
-      await updateStatus({ concernId: concern.id, status, statusNote: statusNote.trim() || null }).unwrap();
+      await updateStatus({ concernId: concern.id, status, statusNote: statusNote.trim() || null, version: concern.version }).unwrap();
       // Transitions that move the concern out of this view return to the queue,
       // which refetches and shows it in its new tab — avoids in-place churn.
       if (status === "UNDER_REVIEW" || status === "OPEN") {
@@ -139,7 +140,7 @@ export default function OwnerConcernDetailScreen() {
   async function saveStatusNote() {
     if (!concern) return;
     try {
-      await updateStatus({ concernId: concern.id, status: concern.status, statusNote: statusNote.trim() || null }).unwrap();
+      await updateStatus({ concernId: concern.id, status: concern.status, statusNote: statusNote.trim() || null, version: concern.version }).unwrap();
       setMessage("Status note saved.");
     } catch {
       setMessage("Could not save status note.");
@@ -153,7 +154,7 @@ export default function OwnerConcernDetailScreen() {
       return;
     }
     try {
-      await resolveConcern({ concernId: concern.id, resolutionNote: resolutionNote.trim() }).unwrap();
+      await resolveConcern({ concernId: concern.id, resolutionNote: resolutionNote.trim(), version: concern.version }).unwrap();
       setResolutionNote("");
       setMessage("Concern resolved.");
       router.back();
@@ -165,7 +166,7 @@ export default function OwnerConcernDetailScreen() {
   async function submitAssignment(managerUserId: string) {
     if (!concern) return;
     try {
-      await assignConcern({ assignedToUserId: managerUserId, concernId: concern.id }).unwrap();
+      await assignConcern({ assignedToUserId: managerUserId, concernId: concern.id, version: concern.version }).unwrap();
       setAssignOpen(false);
       setMessage("Concern assigned.");
       router.back();
@@ -195,7 +196,7 @@ export default function OwnerConcernDetailScreen() {
             <View style={{ gap: spacing.sm }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Description</Text>
               <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]}>{concern.title}</Text>
-              <Text style={[type.body, { color: colors.muted }]}>{concern.description}</Text>
+              <Text style={[type.description, { color: colors.muted }]}>{concern.description}</Text>
             </View>
           </Card>
 
@@ -282,15 +283,15 @@ function AssignConcernModal({
 }) {
   const { colors, type } = useTheme();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, maxHeight: "78%", padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: spacing.xxs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>
               <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</Text>
             </View>
-            <IconButton accessibilityLabel="Close assignment" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close assignment" icon={X} onPress={() => dismiss()} />
           </View>
 
           {loading ? <OwnerStaffListSkeleton rows={2} /> : null}
@@ -303,7 +304,7 @@ function AssignConcernModal({
                 <AnimatedPressable
                   accessibilityRole="button"
                   key={manager.managerUserId}
-                  onPress={() => onAssign(manager.managerUserId)}
+                  onPress={() => dismiss(() => onAssign(manager.managerUserId))}
                   style={{
                     backgroundColor: colors.surfaceSunken,
                     borderColor: colors.border,
@@ -320,8 +321,8 @@ function AssignConcernModal({
             </ScrollView>
           ) : null}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

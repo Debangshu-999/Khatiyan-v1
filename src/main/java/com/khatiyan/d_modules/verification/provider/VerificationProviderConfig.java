@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
+import com.khatiyan.d_modules.verification.provider.decentro.DecentroAadhaarAppProvider;
 import com.khatiyan.d_modules.verification.provider.decentro.DecentroAadhaarOkycProvider;
 import com.khatiyan.d_modules.verification.provider.decentro.DecentroProperties;
 import com.khatiyan.d_modules.verification.service.VerificationProperties;
@@ -53,6 +54,10 @@ public class VerificationProviderConfig {
                 provider.name(),
                 !properties.getShareCode().isBlank(),
                 properties.getOtpValidityMinutes());
+        if (properties.getMaxAttemptsPerDay() <= 0) {
+            log.warn("Verification daily attempt cap is OFF (max-attempts-per-day={}). Testing only: "
+                    + "never run production like this.", properties.getMaxAttemptsPerDay());
+        }
         if ("DECENTRO".equals(provider.name())) {
             log.info(
                     "Decentro config baseUrl={} clientIdPresent={} clientSecretPresent={}",
@@ -60,6 +65,32 @@ public class VerificationProviderConfig {
                     !decentro.getClientId().isBlank(),
                     !decentro.getClientSecret().isBlank());
         }
+        return provider;
+    }
+
+    /**
+     * The Aadhaar App (offline verification) adapter, named by the same setting
+     * as the OTP one. DEV is the stand-in served by this backend.
+     */
+    @Bean
+    public AadhaarAppProvider aadhaarAppProvider(
+            VerificationProperties properties,
+            DecentroProperties decentro,
+            RestClient.Builder restClientBuilder,
+            Clock clock) {
+        String name = properties.getProvider() == null ? "" : properties.getProvider().trim().toUpperCase();
+        AadhaarAppProvider provider = switch (name) {
+            case "DEV", "" -> new DevAadhaarAppProvider(clock, properties);
+            case "DECENTRO" -> new DecentroAadhaarAppProvider(restClientBuilder, decentro, properties, clock);
+            default -> throw new IllegalStateException(
+                    "Unknown verification provider '" + properties.getProvider()
+                            + "'. Set app.verification.provider to one this build has an adapter for.");
+        };
+        log.info(
+                "Aadhaar App verification provider={} publicBaseUrl={} faceAuthentication={}",
+                provider.name(),
+                properties.getPublicBaseUrl(),
+                properties.isFaceAuthentication());
         return provider;
     }
 

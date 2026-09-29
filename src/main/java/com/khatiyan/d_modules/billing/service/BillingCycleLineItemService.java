@@ -11,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.AdjustBillingLineItemRequest;
@@ -102,7 +103,15 @@ public class BillingCycleLineItemService {
             UUID tenancyId,
             List<CreateExtraChargeRequest> requests) {
         BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+        VersionGuard.claim(cycle);
+        return addExtraChargesTo(actorUserId, cycle, requests);
+    }
 
+    /** The charges, on exactly this bill. */
+    private BillingCycleResponse addExtraChargesTo(
+            UUID actorUserId,
+            BillingCycle cycle,
+            List<CreateExtraChargeRequest> requests) {
         if (requests == null || requests.isEmpty()) {
             throw new ValidationException("At least one extra charge is required");
         }
@@ -129,7 +138,7 @@ public class BillingCycleLineItemService {
 
         log.info(
                 "Billing extra charges added tenancyId={} billingCycleId={} actorUserId={} count={}",
-                tenancyId,
+                cycle.getTenancyId(),
                 cycle.getId(),
                 actorUserId,
                 requests.size());
@@ -146,9 +155,15 @@ public class BillingCycleLineItemService {
             UUID tenancyId,
             CreateDiscountRequest request) {
         BillingCycle cycle = getLatestManagedCycle(actorUserId, tenancyId);
+        VersionGuard.claim(cycle);
+        return addDiscountTo(actorUserId, cycle, request);
+    }
+
+    /** The discount, on exactly this bill. */
+    private BillingCycleResponse addDiscountTo(UUID actorUserId, BillingCycle cycle, CreateDiscountRequest request) {
         ensureCycleStillEditable(cycle);
 
-        long discountAmountPaise = computeDiscountAmount(cycle.getTotalAmountPaise(), request.discountPercent());
+        long discountAmountPaise = discountAmount(cycle.getTotalAmountPaise(), request);
         BillingCycleLineItem lineItem = BillingCycleLineItem.discount(
                 cycle,
                 request.label().trim(),
@@ -163,7 +178,7 @@ public class BillingCycleLineItemService {
 
         log.info(
                 "Billing discount added tenancyId={} billingCycleId={} lineItemId={} actorUserId={} percent={} amount={}",
-                tenancyId,
+                cycle.getTenancyId(),
                 cycle.getId(),
                 lineItem.getId(),
                 actorUserId,
@@ -174,7 +189,10 @@ public class BillingCycleLineItemService {
     }
 
     /**
-     * Compatibility path for older cycle-scoped callers.
+     * Charges on the bill the owner is looking at (2026-09-29). This used to
+     * hand off to the tenancy path, which picks the latest RENT cycle, so a
+     * charge added from a one-off bill's card, or from an earlier cycle, landed
+     * on a different bill.
      */
     @Transactional
     public BillingCycleResponse addExtraCharge(
@@ -182,19 +200,19 @@ public class BillingCycleLineItemService {
             UUID billingCycleId,
             List<CreateExtraChargeRequest> requests) {
         BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
-        return addExtraChargeForTenancy(actorUserId, cycle.getTenancyId(), requests);
+        VersionGuard.claim(cycle);
+        return addExtraChargesTo(actorUserId, cycle, requests);
     }
 
-    /**
-     * Compatibility path for older cycle-scoped callers.
-     */
+    /** A discount on the bill the owner is looking at (2026-09-29), as above. */
     @Transactional
     public BillingCycleResponse addDiscount(
             UUID actorUserId,
             UUID billingCycleId,
             CreateDiscountRequest request) {
         BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
-        return addDiscountForTenancy(actorUserId, cycle.getTenancyId(), request);
+        VersionGuard.claim(cycle);
+        return addDiscountTo(actorUserId, cycle, request);
     }
 
     /**
@@ -232,9 +250,15 @@ public class BillingCycleLineItemService {
     @Transactional
     public BillingCycleResponse clearLineItem(UUID actorUserId, UUID billingCycleId, UUID lineItemId) {
         BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        VersionGuard.claim(cycle);
         BillingCycleLineItem lineItem = getLineItem(cycle.getId(), lineItemId);
 
         ensureLineEditableForCurrentDate(cycle, lineItem);
+        // Zeroing the line a one-off bill was raised with would leave a ₹0 bill.
+        // Cancelling is how that bill is undone.
+        if (lineItem.isIssuedWithBill()) {
+            throw new ValidationException("This is the bill itself. Cancel the bill instead.");
+        }
         depositManagerService.clearBillingLineMovement(actorUserId, cycle.getTenancyId(), lineItem.getId());
         lineItem.clear(actorUserId);
 
@@ -414,24 +438,12 @@ public class BillingCycleLineItemService {
         return BillingCycleLineItemResponse.from(lineItem);
     }
 
-    /**
-     * Converts one extra-charge request into the correct billing line type.
-     */
+    /** One extra-charge request as a line on the bill. */
     private BillingCycleLineItem createExtraChargeLineItem(
             BillingCycle cycle,
             UUID actorUserId,
             CreateExtraChargeRequest request,
             int displayOrder) {
-        if (request.adjustFromDeposit()) {
-            return BillingCycleLineItem.extraChargeAdjustedFromDeposit(
-                    cycle,
-                    request.label().trim(),
-                    cleanDescription(request.description()),
-                    request.amountPaise(),
-                    actorUserId,
-                    displayOrder);
-        }
-
         return BillingCycleLineItem.extraChargeAddedToBill(
                 cycle,
                 request.label().trim(),
@@ -440,6 +452,37 @@ public class BillingCycleLineItemService {
                 actorUserId,
                 displayOrder);
     }
+
+    /**
+     * The money a discount takes off: the amount given, or the percentage of the
+     * bill's current total. Exactly one of the two (2026-09-28), and never the
+     * whole bill: the bill stays at ₹1 or more after it (user, 2026-09-28).
+     */
+    private long discountAmount(long cycleTotalPaise, CreateDiscountRequest request) {
+        boolean byPercent = request.discountPercent() != null;
+        boolean byAmount = request.discountAmountPaise() != null;
+        if (!byPercent && !byAmount) {
+            throw new ValidationException("Enter a discount percentage or amount.");
+        }
+        if (byPercent && byAmount) {
+            throw new ValidationException("Give the discount as a percentage or an amount, not both.");
+        }
+        long amountPaise = byPercent
+                ? computeDiscountAmount(cycleTotalPaise, request.discountPercent())
+                : request.discountAmountPaise();
+        if (amountPaise <= 0) {
+            throw new ValidationException("Discount amount must be greater than zero");
+        }
+        // Checked on the money, not the percentage: 99.99% of a small bill
+        // rounds to all of it.
+        if (cycleTotalPaise - amountPaise < MIN_BILL_AFTER_DISCOUNT_PAISE) {
+            throw new ValidationException("Bill amount must be at least ₹1.");
+        }
+        return amountPaise;
+    }
+
+    /** A bill never drops below ₹1 after a discount (user, 2026-09-28). */
+    private static final long MIN_BILL_AFTER_DISCOUNT_PAISE = 100;
 
     /**
      * Converts a discount percentage into a money amount against the cycle's
@@ -461,7 +504,7 @@ public class BillingCycleLineItemService {
             throw new ValidationException("Discount amount must be greater than zero");
         }
 
-        return Math.min(amountPaise, cycleTotalPaise);
+        return amountPaise;
     }
 
     /**

@@ -10,7 +10,9 @@ import java.util.UUID;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.d_modules.tenancy.api.dto.BlockedBookingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -67,6 +69,16 @@ public class TenancyModule {
         return tenancyService.findActiveByPropertyId(propertyId).stream()
             .map(tenancy -> TenancyResponse.from(tenancy))
             .toList();
+    }
+
+    /** What the owner confirmed at a manual ID check: gender and date of birth, either may be null. */
+    public IdCheckedParticulars findIdCheckedParticulars(UUID tenancyId) {
+        return tenancyService.findIdCheckedParticulars(tenancyId);
+    }
+
+    /** Booked stays that cannot start because their bed is not free yet, for the action center. */
+    public List<BlockedBookingResponse> findBlockedBookings(UUID propertyId) {
+        return tenancyService.findBlockedBookings(propertyId);
     }
 
     public List<TenancyResponse> findInactiveByPropertyId(UUID propertyId) {

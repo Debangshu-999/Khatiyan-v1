@@ -29,7 +29,6 @@ import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest.CustomCharg
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest.DamageCharge;
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest.ExitCharge;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
-import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
@@ -58,8 +57,6 @@ class ExitSettlementServiceTest {
     @Mock
     private BillingCycleService billingCycleService;
     @Mock
-    private BillingCycleLineItemService billingCycleLineItemService;
-    @Mock
     private DepositAccountRepository depositAccountRepository;
 
     @InjectMocks
@@ -84,8 +81,8 @@ class ExitSettlementServiceTest {
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), LocalDate.of(2026, 6, 4),
                 BillingCollectionTiming.CYCLE_START, 3,
                 3_000_00, 0, 0, 0L, 0, 3_000_00,
-                BillingCycleStatus.UNPAID, null, null, null, List.of(), null);
-        when(billingCycleService.createOneOffBill(eq(ACTOR), eq(TENANCY), any())).thenReturn(bill);
+                BillingCycleStatus.UNPAID, null, null, null, List.of(), null, 0L);
+        when(billingCycleService.createOneOffBill(eq(ACTOR), eq(TENANCY), any(), any())).thenReturn(bill);
     }
 
     @SuppressWarnings("unchecked")
@@ -143,7 +140,7 @@ class ExitSettlementServiceTest {
                 true, null));
 
         ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture());
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
         assertThat(billed.getValue().reason()).isEqualTo("One month's rent");
         assertThat(billed.getValue().amountPaise()).isEqualTo(3_000_00L);
 
@@ -167,7 +164,7 @@ class ExitSettlementServiceTest {
         assertThat(capturedDeductions())
                 .extracting(ExitDeduction::reason)
                 .containsExactly("One month's rent");
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any());
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any(), any());
     }
 
     /**
@@ -193,8 +190,59 @@ class ExitSettlementServiceTest {
                 .containsExactly(org.assertj.core.api.Assertions.tuple("Early exit charge", 10_000_00L));
 
         ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture());
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
         assertThat(billed.getValue().amountPaise()).isEqualTo(3_000_00L);
+    }
+
+    /**
+     * A Rs 12,000 damage charge against the Rs 7,000 the deposit still holds: the
+     * deposit takes Rs 7,000 and the Rs 5,000 balance joins the move-out bill,
+     * the same split the early-exit charge gets.
+     */
+    @Test
+    void splitsDamageChargesAcrossDepositAndBillWhenTheyOutgrowTheDeposit() {
+        withDepositAccount();
+        stubBill();
+
+        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
+                null,
+                new DamageCharge(null, List.of(new CustomCharge("Test charge", 12_000_00L)),
+                        ExitChargeInstrument.DEPOSIT, ManualPaymentMethod.UPI, 7_000_00L),
+                true, null));
+
+        assertThat(capturedDeductions())
+                .extracting(ExitDeduction::reason, ExitDeduction::amountPaise)
+                .containsExactly(org.assertj.core.api.Assertions.tuple("Test charge", 7_000_00L));
+
+        ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
+        assertThat(billed.getValue().reason()).isEqualTo("Test charge (balance)");
+        assertThat(billed.getValue().amountPaise()).isEqualTo(5_000_00L);
+    }
+
+    /** The deposit's share is used up line by line, in the order they arrive. */
+    @Test
+    void aDamageSplitFillsTheDepositLineByLine() {
+        withDepositAccount();
+        stubBill();
+        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
+
+        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
+                null,
+                new DamageCharge(List.of("Broken chair"), List.of(new CustomCharge("Repainting", 12_000_00L)),
+                        ExitChargeInstrument.DEPOSIT, null, 7_000_00L),
+                true, null));
+
+        assertThat(capturedDeductions())
+                .extracting(ExitDeduction::reason, ExitDeduction::amountPaise)
+                .containsExactly(
+                        org.assertj.core.api.Assertions.tuple("Damage charges", 2_000_00L),
+                        org.assertj.core.api.Assertions.tuple("Repainting", 5_000_00L));
+
+        ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
+        assertThat(billed.getValue().reason()).isEqualTo("Repainting (balance)");
+        assertThat(billed.getValue().amountPaise()).isEqualTo(7_000_00L);
     }
 
     /** The method is the actor's; a wrong one files a wrong payment record. */
@@ -291,15 +339,16 @@ class ExitSettlementServiceTest {
                 new DamageCharge(List.of("Broken chair"), null, ExitChargeInstrument.ONE_OFF_BILL, null),
                 true, null));
 
-        // One bill created, the rest folded in as extra lines on it.
-        verify(billingCycleService, org.mockito.Mockito.times(1))
-                .createOneOffBill(eq(ACTOR), eq(TENANCY), any());
-
+        // One bill, raised with every charge as its own line (2026-09-28). None
+        // is added afterwards, so none shows in the bill's Action history.
+        ArgumentCaptor<CreateOneOffBillRequest> first = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<CreateExtraChargeRequest>> extras = ArgumentCaptor.forClass(List.class);
-        verify(billingCycleLineItemService).addExtraCharge(eq(ACTOR), any(), extras.capture());
-        assertThat(extras.getValue())
-                .extracting(CreateExtraChargeRequest::label, CreateExtraChargeRequest::amountPaise)
+        ArgumentCaptor<List<CreateOneOffBillRequest>> more = ArgumentCaptor.forClass(List.class);
+        verify(billingCycleService, org.mockito.Mockito.times(1))
+                .createOneOffBill(eq(ACTOR), eq(TENANCY), first.capture(), more.capture());
+        assertThat(first.getValue().reason()).isEqualTo("Early exit charge");
+        assertThat(more.getValue())
+                .extracting(CreateOneOffBillRequest::reason, CreateOneOffBillRequest::amountPaise)
                 .containsExactly(org.assertj.core.api.Assertions.tuple("Damage charges", 2_000_00L));
 
         // Paid once, for the whole bill.
@@ -334,7 +383,7 @@ class ExitSettlementServiceTest {
                         ExitChargeInstrument.ONE_OFF_BILL, null),
                 null, null));
 
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any());
+        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any(), any());
         verify(depositManagerService, never()).applyExitDeductions(any(), any(), any(), any(Boolean.class));
     }
 

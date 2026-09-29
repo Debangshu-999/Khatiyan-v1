@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
 import com.khatiyan.d_modules.compliance.model.PropertyAgreementSettings;
 import com.khatiyan.d_modules.compliance.repository.PropertyAgreementSettingsRepository;
@@ -49,6 +50,8 @@ public class AgreementService {
         if (settings == null) {
             settings = PropertyAgreementSettings.create(propertyId, template);
         } else {
+            // The settings as the screen saw them (2026-09-29).
+            VersionGuard.claim(settings);
             settings.update(template);
         }
         return propertySettingsRepository.save(settings);

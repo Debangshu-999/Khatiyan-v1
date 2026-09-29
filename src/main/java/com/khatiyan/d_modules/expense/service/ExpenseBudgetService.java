@@ -11,6 +11,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.d_modules.expense.api.dto.BudgetAlertCandidate;
 import com.khatiyan.d_modules.expense.api.dto.BudgetAlertThreshold;
 import com.khatiyan.d_modules.expense.api.dto.BudgetRaiseItem;
@@ -100,6 +101,8 @@ public class ExpenseBudgetService {
                 .orElse(null);
         settingsRepository.findByPropertyId(propertyId)
                 .map(existing -> {
+                    // The budget as the screen saw it (2026-09-29).
+                    VersionGuard.claim(existing);
                     existing.updateDefault(request.amountPaise(), actorUserId);
                     return existing;
                 })
@@ -201,8 +204,10 @@ public class ExpenseBudgetService {
                 .findByPropertyIdAndBudgetMonthOrderByCreatedAtDesc(propertyId, month).stream()
                 .map(raise -> new BudgetRaiseItem(raise.getId(), raise.getAmountPaise(), raise.getReason(), raise.getCreatedAt()))
                 .toList();
+        // The settings row's version (2026-09-29), 0 before a default is set.
+        long version = settingsRepository.findByPropertyId(propertyId).map(ExpenseBudgetSettings::getVersion).orElse(0L);
         return new ExpenseBudgetOverviewResponse(
-                month, defaultBudget, raised, effective, spent, remaining, savings, raises);
+                month, defaultBudget, raised, effective, spent, remaining, savings, raises, version);
     }
 
     private static final ZoneId INDIA = ZoneId.of("Asia/Kolkata");

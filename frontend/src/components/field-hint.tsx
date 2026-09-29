@@ -17,7 +17,7 @@ export function FieldHint({ text }: { text: string }) {
   return (
     <Text
       style={[
-        type.caption,
+        type.description,
         {
           color: colors.muted,
           marginTop: -spacing.xs,

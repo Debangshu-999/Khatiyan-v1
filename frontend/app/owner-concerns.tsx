@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Modal, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, ScrollView, Text, View } from "react-native";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Activity, AlertCircle, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
@@ -484,7 +485,7 @@ function ConcernRouteCard({
         />
       </View>
 
-      <Text style={[type.body, { color: colors.muted }]}>{description}</Text>
+      <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
 
       <ActionButton icon={buttonIcon} label={buttonLabel} onPress={onPress} variant="secondary" />
     </Card>
@@ -509,7 +510,7 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
           </Text>
         </View>
         <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</Text>
-        <Text style={[type.body, { color: colors.muted }]} numberOfLines={2}>{concern.description}</Text>
+        <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>{concern.description}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           <Text style={[type.caption, { color: colors.kicker }]}>{humanizeToken(concern.category)}</Text>
           <Text style={[type.caption, { color: colors.kicker }]}>Room {concern.roomNumber}</Text>
@@ -544,8 +545,8 @@ function HistoryModal({
   const pageData = query.data;
   const sorted = useMemo(() => sortLatest(pageData?.items ?? []), [pageData]);
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -566,13 +567,13 @@ function HistoryModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</Text>
             </View>
-            <IconButton accessibilityLabel="Close property history" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close property history" icon={X} onPress={() => dismiss()} />
           </View>
           {query.isFetching && !pageData ? (
             <OwnerConcernQueueSkeleton />
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
-              {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => onOpen(concern)} />) : null}
+              {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => dismiss(() => onOpen(concern))} />) : null}
               {sorted.length === 0 ? <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
             </ScrollView>
           )}
@@ -588,8 +589,8 @@ function HistoryModal({
             />
           ) : null}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

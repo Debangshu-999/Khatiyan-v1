@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import { Ban, FileText, Image as ImageIcon } from "lucide-react-native";
+import { AlertTriangle, Ban, FileText, Image as ImageIcon } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { GhostText } from "@/components/skeletons/boundary";
@@ -111,6 +111,7 @@ export function ThreadRow({
         }}
       >
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: 6, minWidth: 0 }}>
         <GhostText
           ghostWidth={ghostWidthFor(thread.title, 32, 62)}
           numberOfLines={1}
@@ -121,11 +122,23 @@ export function ThreadRow({
           style={{
             color: started ? colors.ink : colors.inkSoft,
             fontFamily: thread.unread ? fonts.sansBold : fonts.sansSemiBold,
+            flexShrink: 1,
             fontSize: 15,
           }}
         >
           {thread.title}
         </GhostText>
+        {/* The tenant has not signed yet: worth knowing before replying. */}
+        {thread.pendingAgreement ? (
+          <AlertTriangle
+            accessibilityLabel="Agreement not signed yet"
+            color="#FFFFFF"
+            fill={colors.warning}
+            size={17}
+            strokeWidth={2.2}
+          />
+        ) : null}
+        </View>
 
         <Preview thread={thread} />
 

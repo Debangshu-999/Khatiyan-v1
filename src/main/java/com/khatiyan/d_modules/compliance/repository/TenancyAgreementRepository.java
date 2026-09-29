@@ -14,5 +14,7 @@ public interface TenancyAgreementRepository extends JpaRepository<TenancyAgreeme
 
     Optional<TenancyAgreement> findByTenancyId(UUID tenancyId);
 
+    List<TenancyAgreement> findByPropertyIdAndStatus(UUID propertyId, AgreementStatus status);
+
     List<TenancyAgreement> findByStatusAndCreatedAtBefore(AgreementStatus status, Instant cutoff);
 }

@@ -1,6 +1,7 @@
 import { Children, Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,6 +29,7 @@ import {
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
+import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { ALL_DAYS_MASK, WEEKDAYS, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { MANAGEABLE_MODULES, fullAccessLevels } from "@/features/owner/manager-access-model";
@@ -111,6 +113,8 @@ type ManagerDirectoryEntry = {
 };
 type EndTarget = {
   kind: "STAFF" | "MANAGER";
+  /** The person's record version as shown (2026-09-29). */
+  version: number;
   referenceCode: string;
   name: string;
   salaryStructure: SalaryStructure;
@@ -452,7 +456,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
     setPendingDeleteCategory(null);
     if (!category) return;
     try {
-      await deactivateCategory({ categoryId: category.id, propertyId: property.id }).unwrap();
+      await deactivateCategory({ categoryId: category.id, propertyId: property.id, version: category.version }).unwrap();
       if (selectedCategory === category.name) {
         setSelectedCategory(null);
       }
@@ -468,6 +472,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
         propertyId: property.id,
         managerUserId: pendingShift.entry.assignment.managerUserId,
         targetPropertyId: pendingShift.target.id,
+        version: pendingShift.entry.assignment.version,
       }).unwrap();
       setPendingShift(null);
       toast.show("Manager transferred successfully.");
@@ -541,7 +546,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
               ? () => {
                   const target = memberEditor;
                   setMemberEditor(null);
-                  setEndTarget({ kind: "STAFF", name: target.fullName, referenceCode: target.referenceCode, salaryStructure: target.salaryStructure });
+                  setEndTarget({ kind: "STAFF", name: target.fullName, referenceCode: target.referenceCode, salaryStructure: target.salaryStructure, version: target.version });
                 }
               : undefined
           }
@@ -580,7 +585,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
               return;
             }
             setManagerDetail(null);
-            setEndTarget({ kind: "MANAGER", name: entry.assignment.managerFullName, referenceCode: entry.employment.referenceCode, salaryStructure: entry.employment.salaryStructure });
+            setEndTarget({ kind: "MANAGER", name: entry.assignment.managerFullName, referenceCode: entry.employment.referenceCode, salaryStructure: entry.employment.salaryStructure, version: entry.employment.version });
           }}
           onShift={(target) => {
             const entry = managerDetail;
@@ -670,7 +675,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
     setPendingDeleteAdjustment(null);
     if (!target || !selected) return;
     try {
-      setSelected(await removeAdjustment({ accountReferenceCode: selected.account.referenceCode, adjustmentId: target.adjustmentId, payrollMonth: target.payrollMonth, propertyId: property.id }).unwrap());
+      setSelected(await removeAdjustment({ accountReferenceCode: selected.account.referenceCode, adjustmentId: target.adjustmentId, payrollMonth: target.payrollMonth, propertyId: property.id, version: monthVersion(selected.months, target.payrollMonth) }).unwrap());
     } catch (error) {
       opErrors.failFromServer(errorMessage(error, "Could not remove the adjustment."));
     }
@@ -782,7 +787,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
               >
                 {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
               </Text>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Opened months plus projected pay
               </Text>
             </View>
@@ -1079,7 +1084,7 @@ function TeamHistoryCard({ property }: { property: OwnerProperty }) {
               <Text style={[type.body, { color: colors.muted }]}>Team history</Text>
             </View>
             <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>View past employees</Text>
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               Everyone who has left this property, with their service span, settlement and payslips.
             </Text>
           </View>
@@ -1140,7 +1145,7 @@ function SalaryHistoryCard({ property }: { property: OwnerProperty }) {
             <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
               View payments
             </Text>
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               Every salary payment recorded at this property, newest first.
             </Text>
           </View>
@@ -1284,7 +1289,7 @@ function PayslipList({
               Paid {formatDate(payslip.paidOn)}
               {payslip.referenceText ? `  ·  ${payslip.referenceText}` : ""}
             </Text>
-            {payslip.notes ? <Text style={[type.caption, { color: colors.muted }]}>{payslip.notes}</Text> : null}
+            {payslip.notes ? <Text style={[type.description, { color: colors.muted }]}>{payslip.notes}</Text> : null}
           </View>
         </Card>
       ))}
@@ -1898,12 +1903,12 @@ function PersonCard({
         <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{title}</Text>
         {status ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</Text>
+            <Text style={[type.description, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</Text>
             <Text style={[type.caption, { color: colors.muted }]}>·</Text>
             <PersonStatusChip label={status} />
           </View>
         ) : (
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{detail}</Text>
+          <Text style={[type.description, { color: colors.muted }]} numberOfLines={1}>{detail}</Text>
         )}
       </View>
       <View style={staffRoundButtonStyle(colors)}>
@@ -2092,6 +2097,8 @@ export function ManagerAccessModal({
         levels: fullAccessLevels() as Record<ManagerResource, ManagerAccessLevel>,
         managerUserId: manager.managerUserId,
         propertyId,
+        // The assignment as this modal loaded it (2026-09-29).
+        version: permissionsQuery.data?.version ?? 0,
       }).unwrap();
       setConfirmFullAccess(false);
       onClose();
@@ -2128,7 +2135,7 @@ export function ManagerAccessModal({
         onPress={() => setConfirmFullAccess(true)}
         variant="secondary"
       />
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Continuing without configuring gives them full access to every module you can currently manage. You can change it
         any time from their profile.
       </Text>
@@ -2195,7 +2202,7 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
     }
     const payload = { benefitsSummary: benefits, categoryId, dateOfBirth: birthDate || null, employmentEndDate: member?.employmentEndDate ?? null, employmentNotes: notes, employmentStartDate: startDate, fullName: fullName.trim(), identityVerificationStatus: member?.identityVerificationStatus ?? "NOT_STARTED" as const, salaryRatePaise, salaryStructure, workingDaysMask: salaryStructure === "DAILY" ? workingDaysMask : ALL_DAYS_MASK };
     try {
-      if (member) await updateMember({ payload, propertyId, staffReferenceCode: member.referenceCode }).unwrap();
+      if (member) await updateMember({ payload, propertyId, staffReferenceCode: member.referenceCode, version: member.version }).unwrap();
       else await createMember({ payload, propertyId }).unwrap();
       onClose();
       toast.show(member ? "Staff member updated successfully." : "Staff member added successfully.");
@@ -2275,7 +2282,7 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
         <>
           <WeekdayPicker mask={workingDaysMask} onChange={(next) => { setWorkingDaysMask(next); fieldErrors.clearField("workingDays"); }} />
           <FieldError message={fieldErrors.errors.workingDays} />
-          <Text style={[type.caption, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {workingDaysInCurrentMonth(workingDaysMask)} working days this month{dailyEstPaise ? ` · est. ${formatMoneyFull(dailyEstPaise)}` : ""}
           </Text>
         </>
@@ -2362,6 +2369,7 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
           salaryStructure,
         },
         propertyId,
+        version: manager.version,
       }).unwrap();
       onClose();
       toast.show("Manager employment updated successfully.");
@@ -2497,7 +2505,7 @@ function OpenMonthModal({ account, onClose, onSaved, propertyId }: { account: Sa
       opErrors.failFromServer(errorMessage(error, "Could not open salary month."));
     }
   }
-  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.body, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} />{opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}</Sheet>;
+  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.description, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} />{opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}</Sheet>;
 }
 
 function formatDayMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00`)); }
@@ -2560,8 +2568,8 @@ function AdjustmentModal({ account, editing, onClose, onSaved, propertyId }: { a
     const payload = { adjustmentType: type, amountPaise, reason: reason.trim() };
     try {
       const detail = editing
-        ? await updateAdjustment({ accountReferenceCode: account.account.referenceCode, adjustmentId: editing.adjustment.id, payload, payrollMonth, propertyId }).unwrap()
-        : await addAdjustment({ accountReferenceCode: account.account.referenceCode, payload, payrollMonth, propertyId }).unwrap();
+        ? await updateAdjustment({ accountReferenceCode: account.account.referenceCode, adjustmentId: editing.adjustment.id, payload, payrollMonth, propertyId, version: monthVersion(account.months, payrollMonth) }).unwrap()
+        : await addAdjustment({ accountReferenceCode: account.account.referenceCode, payload, payrollMonth, propertyId, version: monthVersion(account.months, payrollMonth) }).unwrap();
       onSaved(detail);
       onClose();
     } catch (error) {
@@ -2593,13 +2601,36 @@ function SalaryPaymentModal({ account, onClose, onSaved, propertyId }: { account
     }
 
     try {
-      onSaved(await recordPayment({ accountReferenceCode: account.account.referenceCode, payrollMonth: latest.payrollMonth, payload: { amountPaise, notes, paidOn: today(), paymentMethod: method, referenceText }, propertyId }).unwrap());
+      onSaved(await recordPayment({ accountReferenceCode: account.account.referenceCode, payrollMonth: latest.payrollMonth, payload: { amountPaise, notes, paidOn: today(), paymentMethod: method, referenceText }, propertyId, version: latest.version }).unwrap());
       onClose();
     } catch (error) {
       fieldErrors.failFromServer(errorMessage(error, "Could not record salary payment."));
     }
   }
-  return <Sheet onClose={onClose} title="Record manual payment"><FormInput error={fieldErrors.errors.amount} keyboardType="decimal-pad" label="Amount paid" onChangeText={(next) => { setAmount(next); fieldErrors.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{(["CASH", "UPI", "BANK_TRANSFER", "OTHER"] as SalaryPaymentMethod[]).map((item) => <ChoiceButton active={method === item} key={item} label={item.replaceAll("_", " ")} onPress={() => setMethod(item)} />)}</View><FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} /><FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} /><ActionButton disabled={state.isLoading || fieldErrors.blocked} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} />{fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}</Sheet>;
+  return (
+    <Sheet filledClose onClose={onClose} title="Record manual payment">
+      <FormInput error={fieldErrors.errors.amount} keyboardType="decimal-pad" label="Amount paid" onChangeText={(next) => { setAmount(next); fieldErrors.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+      <SingleOptionPicker<SalaryPaymentMethod>
+        centered
+        label="Payment method"
+        onChange={setMethod}
+        optionIcon={(value) => <PaymentMethodIcon method={value} />}
+        options={[
+          { label: "Cash", value: "CASH" },
+          { label: "UPI", value: "UPI" },
+          { label: "Bank transfer", value: "BANK_TRANSFER" },
+          { label: "Other", value: "OTHER" },
+        ]}
+        showIcon={false}
+        title="Payment method"
+        value={method}
+      />
+      <FormInput label="Reference" onChangeText={setReferenceText} placeholder="Optional receipt or transfer reference" value={referenceText} />
+      <FormInput label="Notes" multiline onChangeText={setNotes} placeholder="Optional notes" value={notes} />
+      <ActionButton disabled={state.isLoading || fieldErrors.blocked} label={state.isLoading ? "Recording" : "Record payment"} onPress={() => void submit()} />
+      {fieldErrors.serverError ? <AlertModal message={fieldErrors.serverError} onClose={fieldErrors.dismissServerError} /> : null}
+    </Sheet>
+  );
 }
 
 // Ends a manager or staff employment. For monthly employees this also runs the
@@ -2695,8 +2726,8 @@ function EndEmploymentSheet({
       settlementNotes: scheduling ? undefined : settlementNotes.trim() || undefined,
     };
     try {
-      if (target.kind === "STAFF") await endStaff({ payload, propertyId, staffReferenceCode: target.referenceCode }).unwrap();
-      else await endManager({ managerReferenceCode: target.referenceCode, payload, propertyId }).unwrap();
+      if (target.kind === "STAFF") await endStaff({ payload, propertyId, staffReferenceCode: target.referenceCode, version: target.version }).unwrap();
+      else await endManager({ managerReferenceCode: target.referenceCode, payload, propertyId, version: target.version }).unwrap();
       onClose();
       toast.show(
         scheduling
@@ -2745,7 +2776,7 @@ function EndEmploymentSheet({
                   <AmountMetric label="Settlement" value={formatMoneyPaise(totalSettlementPaise)} />
                 </View>
               ) : (
-                <Text style={[type.caption, { color: colors.muted }]}>No open salary account — record any final payout below.</Text>
+                <Text style={[type.description, { color: colors.muted }]}>No open salary account — record any final payout below.</Text>
               )}
               <FormInput keyboardType="decimal-pad" label="Additional final amount" onChangeText={setAdditional} placeholder="Optional" prefix="₹" value={additional} />
               {totalSettlementPaise > 0 ? (
@@ -2813,7 +2844,7 @@ function ManagerLookupResult({ lookup }: { lookup: ManagerLookup }) {
       <Text style={[type.caption, { color: lookup.eligible ? colors.successText : colors.danger, fontWeight: "800" }]}>
         {lookup.exists ? `Existing user${lookup.fullName ? `   ${lookup.fullName}` : ""}` : "New user"}
       </Text>
-      <Text style={[type.caption, { color: colors.muted }]}>{lookup.message}</Text>
+      <Text style={[type.description, { color: colors.muted }]}>{lookup.message}</Text>
     </View>
   );
 }
@@ -2828,11 +2859,13 @@ function FieldLabel({ children }: { children: string }) {
 // keyboard-avoiding scrollable body honouring the bottom safe area.
 function Sheet({
   children,
+  filledClose = false,
   onClose,
   subtitle,
   title,
 }: {
   children: React.ReactNode;
+  filledClose?: boolean;
   onClose: () => void;
   // Who or what the sheet is about. Kept out of the title so the title stays a
   // fixed, readable label — a name concatenated into a 22px single-line heading
@@ -2844,9 +2877,10 @@ function Sheet({
   const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           {/* The sheet's own panel. NOT a PinnedFooter — it happens to use the
               same bottom-inset expression, but this is the surface the content
               sits on, so it needs a real background. */}
@@ -2868,12 +2902,12 @@ function Sheet({
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={2}>{title}</Text>
                 {subtitle ? (
-                  <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+                  <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
                     {subtitle}
                   </Text>
                 ) : null}
               </View>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" filled={filledClose} icon={X} onPress={() => dismiss()} />
             </View>
             <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {children}
@@ -2881,7 +2915,8 @@ function Sheet({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
@@ -3045,4 +3080,12 @@ function CategoryRow({
       ) : null}
     </View>
   );
+}
+
+/**
+ * A payroll month's version as shown (2026-09-29): adjustments and payments are
+ * refused if someone changed that month since.
+ */
+function monthVersion(months: { payrollMonth: string; version: number }[], payrollMonth: string): number {
+  return months.find((month) => month.payrollMonth === payrollMonth)?.version ?? 0;
 }

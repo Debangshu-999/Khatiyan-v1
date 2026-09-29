@@ -581,14 +581,21 @@ export function AuthScreen() {
     resetTransientState();
   }
 
-  /** Opens the provisioned-account door. Seeds the number already typed. */
+  /**
+   * Opens the provisioned-account door, with an empty phone field.
+   *
+   * <p>It used to be seeded with whatever the login field held (owner's call,
+   * 2026-09-27: it should not be). A number typed to sign in is not a claim
+   * that the account was provisioned, and finding it already filled in on a
+   * different door read as the app deciding for them.
+   */
   function goToActivate() {
     setMode("login");
     setStep("activate");
     resetTransientState();
     // signupPhone is what setupOtp/setupPin read, so activation binds to it too
     // rather than adding a fourth phone field that means the same thing.
-    setSignupPhone(loginPhone);
+    setSignupPhone("");
   }
 
   /** Pencil target for activation. Keeps the number so they can correct it. */
@@ -711,19 +718,16 @@ export function AuthScreen() {
 
       {activateInfoOpen ? (
         <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setActivateInfoOpen(false)} statusBarTranslucent transparent visible>
-          <Pressable
-            onPress={() => setActivateInfoOpen(false)}
-            style={{
+          {/* Closes by its own close button or the device back button, not a tap
+              on the scrim (user, 2026-09-29). */}
+          <View style={{
               alignItems: "center",
               backgroundColor: colors.overlay,
               flex: 1,
               justifyContent: "center",
               padding: spacing.lg,
-            }}
-          >
-            <Pressable
-              onPress={(event) => event.stopPropagation()}
-              style={{
+            }}>
+            <View style={{
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
                 borderRadius: 18,
@@ -731,24 +735,23 @@ export function AuthScreen() {
                 gap: spacing.sm,
                 padding: spacing.lg,
                 width: "100%",
-              }}
-            >
+              }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>Why set a PIN?</Text>
                 <Pressable accessibilityLabel="Close" hitSlop={8} onPress={() => setActivateInfoOpen(false)}>
                   <X color={colors.ink} size={18} strokeWidth={2.2} />
                 </Pressable>
               </View>
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15, lineHeight: 22 }}>
+              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                 If your property owner added you as a tenant or a manager, your account already exists — it just has no
                 PIN yet.
               </Text>
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15, lineHeight: 22 }}>
+              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                 That is why signing up says the account is taken, and signing in says the details are wrong. Confirm the
                 number they registered and we will text you a code to set one.
               </Text>
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </Modal>
       ) : null}
 
@@ -801,7 +804,7 @@ export function AuthScreen() {
               ) : null}
             </View>
             {heroCopy.subtitle ? (
-              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 14, lineHeight: 20 }}>
+              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                 {heroCopy.subtitle}
               </Text>
             ) : null}

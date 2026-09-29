@@ -5,13 +5,13 @@ import {
   Animated,
   Easing,
   Keyboard,
-  Modal,
   ScrollView,
   Switch,
   Text,
   View,
 } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import {
   ArrowUpRight,
   ChevronDown,
@@ -83,6 +83,8 @@ type DiscoverySearchCardProps = {
   onSearchTextChange: (value: string) => void;
   onSuggestionSelect: (suggestion: GeoSuggestion) => void;
   searchText: string;
+  searchStatus: "idle" | "searching" | "searched";
+  searchLocationLabel: string;
   selectedArea: string;
   selectedCity: string;
   suggestions: GeoSuggestion[];
@@ -112,6 +114,8 @@ export function DiscoverySearchCard({
   onSearchTextChange,
   onSuggestionSelect,
   searchText,
+  searchStatus,
+  searchLocationLabel,
   selectedArea,
   selectedCity,
   suggestions,
@@ -137,7 +141,6 @@ export function DiscoverySearchCard({
     !aiLocked && focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
-  const selectedLocationLabel = selectedArea || selectedCity || searchText.trim();
 
   return (
     <Card>
@@ -167,12 +170,7 @@ export function DiscoverySearchCard({
               </Text>
               <Text
                 numberOfLines={2}
-                style={{
-                  color: colors.muted,
-                  fontFamily: fonts.sansMedium,
-                  fontSize: 11,
-                  lineHeight: 15,
-                }}
+                style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
               >
                 Get smarter, more relevant results.
               </Text>
@@ -451,35 +449,33 @@ export function DiscoverySearchCard({
         style={aiBusy ? { opacity: 1 } : undefined}
       />
 
-      <View
-        style={{
-          alignItems: "center",
-          alignSelf: "center",
-          backgroundColor: aiOn ? colors.primarySoft : colors.neutralSoft,
-          borderColor: aiOn ? colors.primarySoft : colors.border,
-          borderRadius: 9,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.xs,
-          maxWidth: "100%",
-          paddingHorizontal: spacing.sm,
-          paddingVertical: 7,
-        }}
-      >
-        {aiOn ? (
-          <Sparkles color={colors.primary} size={16} strokeWidth={2.2} />
-        ) : (
-          <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
-        )}
-        <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+      {searchStatus !== "idle" ? (
+        <View
+          style={{
+            alignItems: "center",
+            alignSelf: "center",
+            backgroundColor: aiOn ? colors.primarySoft : colors.neutralSoft,
+            borderColor: aiOn ? colors.primarySoft : colors.border,
+            borderRadius: 9,
+            borderWidth: 1,
+            flexDirection: "row",
+            gap: spacing.xs,
+            maxWidth: "100%",
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 7,
+          }}
+        >
           {aiOn ? (
-            <Text style={{ color: colors.primary, fontFamily: fonts.sansBold }}>AI searching</Text>
+            <Sparkles color={colors.primary} size={16} strokeWidth={2.2} />
           ) : (
-            <Text>Searching</Text>
+            <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
           )}
-          {" "}around {selectedLocationLabel || "your selected location"}
-        </Text>
-      </View>
+          <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+            {searchStatus === "searching" ? (aiOn ? "AI searching" : "Searching") : "Searched"}
+            {searchLocationLabel ? ` around ${searchLocationLabel}` : ""}
+          </Text>
+        </View>
+      ) : null}
 
       <LocationFilterModal
         emptyLabel="No cities found"
@@ -683,10 +679,10 @@ function LocationFilterModal<T>({
     : items;
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={visible}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible={visible}>
+      {(dismiss) => (
       <View
         style={{
-          backgroundColor: "rgba(15, 23, 42, 0.35)",
           flex: 1,
           justifyContent: "flex-end",
         }}
@@ -711,7 +707,7 @@ function LocationFilterModal<T>({
             >
               {title}
             </Text>
-            <AnimatedPressable accessibilityLabel="Close" onPress={onClose}>
+            <AnimatedPressable accessibilityLabel="Close" onPress={() => dismiss()}>
               <X color={colors.muted} size={22} strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
@@ -757,7 +753,7 @@ function LocationFilterModal<T>({
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <AnimatedPressable
               accessibilityRole="button"
-              onPress={onClear}
+              onPress={() => dismiss(onClear)}
               style={{
                 borderBottomColor: colors.border,
                 borderBottomWidth: 1,
@@ -779,7 +775,7 @@ function LocationFilterModal<T>({
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                   key={key}
-                  onPress={() => onSelect(item)}
+                  onPress={() => dismiss(() => onSelect(item))}
                   style={{
                     backgroundColor: selected ? colors.primarySoft : colors.background,
                     borderBottomColor: colors.border,
@@ -810,6 +806,7 @@ function LocationFilterModal<T>({
           </ScrollView>
         </View>
       </View>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }

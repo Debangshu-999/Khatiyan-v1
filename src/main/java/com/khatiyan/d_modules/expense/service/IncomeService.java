@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -52,6 +53,7 @@ public class IncomeService {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         IncomeEntry original = incomeRepository.findByIdAndPropertyId(incomeId, propertyId)
                 .orElseThrow(() -> new NotFoundException("IncomeEntry", incomeId));
+        VersionGuard.claim(original);
         if (original.getEntryType() == IncomeEntryType.REVERSAL) {
             throw new ValidationException("A reversal cannot be reversed");
         }

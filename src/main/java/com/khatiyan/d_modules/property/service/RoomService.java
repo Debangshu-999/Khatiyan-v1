@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.PageRequest;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.d_modules.property.model.RoomMold;
 import com.khatiyan.d_modules.property.api.dto.UpdateRoomAmenitiesRequest;
 import com.khatiyan.d_modules.property.api.dto.RecutRoomRequest;
@@ -388,6 +389,7 @@ public class RoomService {
     public RoomResponse recutRoom(UUID actorUserId, UUID propertyId, UUID roomId, RecutRoomRequest request) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+        VersionGuard.claim(room);
         // Room.recut already refuses to shrink below the beds in use. This is
         // the wider rule: a recut also rewrites the rent, the conditioning and
         // the amenities, so it changes what an occupant is renting even when
@@ -399,6 +401,9 @@ public class RoomService {
         log.info("Room recut roomId={} propertyId={} moldId={} actorUserId={}",
                 roomId, propertyId, mold.getId(), actorUserId);
 
+        // Flushed so the reply carries the bumped version (2026-09-29): the
+        // edit-room screen chains recut, update and amenities on it.
+        roomRepository.flush();
         return RoomResponse.from(room);
     }
 
@@ -409,8 +414,12 @@ public class RoomService {
 
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
+        VersionGuard.claim(room);
 
         room.updateAmenities(request.amenities(), request.customAmenities());
+        // Flushed so the reply carries the bumped version (2026-09-29): the
+        // edit-room screen chains recut, update and amenities on it.
+        roomRepository.flush();
         return RoomResponse.from(room);
     }
 
@@ -436,6 +445,7 @@ public class RoomService {
 
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        VersionGuard.claim(room);
         // Marking an occupied room out of service would take beds out from
         // under the people in them, and the vacancy figures the whole property
         // is read by would stop adding up.
@@ -489,6 +499,7 @@ public class RoomService {
 
         Property property = getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        VersionGuard.claim(room);
 
         boolean isOwner = actorUserId.equals(property.getOwnerId());
         boolean isMarker = actorUserId.equals(room.getMaintenanceMarkedBy());
@@ -514,6 +525,7 @@ public class RoomService {
     public RoomResponse updateRoom(UUID actorUserId, UUID propertyId, UUID roomId, UpdateRoomRequest request) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        VersionGuard.claim(room);
         requireNobodyInIt(room, "edited");
         ensureRoomNumberIsAvailableForUpdate(propertyId, roomId, request.roomNumber());
 
@@ -532,6 +544,9 @@ public class RoomService {
                 actorUserId,
                 room.getRoomNumber());
 
+        // Flushed so the reply carries the bumped version (2026-09-29): the
+        // edit-room screen chains recut, update and amenities on it.
+        roomRepository.flush();
         return RoomResponse.from(room);
     }
 
@@ -542,6 +557,7 @@ public class RoomService {
     public void deactivateRoom(UUID actorUserId, UUID propertyId, UUID roomId) {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInProperty(propertyId, roomId);
+        VersionGuard.claim(room);
         // Room.deactivate refuses an occupied room already; this says the same
         // thing in the same words as the other three, and counts reserved beds
         // — somebody with an approved room change is moving in.
@@ -567,6 +583,7 @@ public class RoomService {
         getManageableActiveProperty(actorUserId, propertyId);
         Room room = roomRepository.findByIdAndPropertyId(roomId, propertyId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
+        VersionGuard.claim(room);
 
         ensureRoomNumberIsAvailable(propertyId, room.getRoomNumber());
         room.reactivate();

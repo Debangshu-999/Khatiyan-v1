@@ -1,5 +1,5 @@
 import { useRef, useState, type ComponentType } from "react";
-import { Modal, PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
+import { PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Bath,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { PropertyIcon } from "@/components/property-icon";
 import { ChoiceChip, ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import {
@@ -127,15 +128,13 @@ export function PropertyFilterModal({
   }
 
   return (
-    <Modal
-      animationType="slide"
+    <BottomSheetModal
       navigationBarTranslucent
       onRequestClose={onClose}
       statusBarTranslucent
-      transparent
       visible={visible}
     >
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surfaceRaised,
@@ -176,7 +175,7 @@ export function PropertyFilterModal({
               >
                 Property filters
               </Text>
-              <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Refine listed PG and hostel profiles
               </Text>
             </View>
@@ -186,7 +185,7 @@ export function PropertyFilterModal({
               // A smaller disc than before, the same 34pt as the sort sheet's
               // close. The wider hitSlop keeps the tap target as large as it was.
               hitSlop={14}
-              onPress={onClose}
+              onPress={() => dismiss()}
               style={{
                 alignItems: "center",
                 backgroundColor: colors.neutralSoft,
@@ -361,13 +360,13 @@ export function PropertyFilterModal({
             <FilterFooterButton
               icon={Search}
               label="Search"
-              onPress={() => onApply(filters)}
+              onPress={() => dismiss(() => onApply(filters))}
               style={{ flex: 1.1 }}
             />
           </View>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

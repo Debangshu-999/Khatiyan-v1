@@ -16,6 +16,12 @@ public interface VerificationAttemptRepository extends JpaRepository<Verificatio
 
     Optional<VerificationAttempt> findByProviderReference(String providerReference);
 
+    /** The attempt a callback belongs to, by the hash of the token in its URL. */
+    Optional<VerificationAttempt> findByCallbackTokenHash(String callbackTokenHash);
+
+    /** Aadhaar App sessions that closed without an answer, for the sweep. */
+    List<VerificationAttempt> findByStatusAndSessionExpiresAtBefore(VerificationAttemptStatus status, Instant now);
+
     /**
      * How many times this tenant has actually been VERIFIED against today.
      *

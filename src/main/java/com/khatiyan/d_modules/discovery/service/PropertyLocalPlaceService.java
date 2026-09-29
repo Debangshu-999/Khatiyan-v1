@@ -35,8 +35,26 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class PropertyLocalPlaceService {
 
-    /** Mappls Nearby looks no further than 10 km; a tenant map wants less. */
-    private static final int LIVE_REACH_METERS = 5_000;
+    /**
+     * The vendor's own ceiling, so a category search reaches as far as it can.
+     *
+     * <p>It was 5 km, which is a neighbourhood rather than a city: a search for
+     * hospitals from one side of Hyderabad could not see the ones on the other.
+     * Ten kilometres is as far as Mappls Nearby will look for one call, so this
+     * is the most reach there is to take.
+     */
+    private static final int LIVE_REACH_METERS = 10_000;
+
+    /**
+     * How far a NAMED place may be and still count as "around here".
+     *
+     * <p>Fifty kilometres, which is a metropolitan area rather than a
+     * neighbourhood: Hyderabad end to end is well inside it, and a suburb the
+     * tenant might actually visit is too. It is not a radius we ask for —
+     * autosuggest has no such parameter, it is merely biased towards the point
+     * — so it is applied to what comes back.
+     */
+    private static final int NAMED_REACH_METERS = 50_000;
 
     private static final int MAX_LIVE_RESULTS = 20;
 
@@ -100,10 +118,10 @@ public class PropertyLocalPlaceService {
      * from home, and a device-based distance would change every time they
      * walked to the shops.
      *
-     * <p>Live vendor results are not wired yet. The field is present and empty
-     * rather than absent, so the screen can be built against the shape it will
-     * keep — and `liveSearchAvailable` says which of "nothing matched" and "we
-     * could not look" is true.
+     * <p>With a query, live vendor results come back alongside them, and
+     * `liveSearchAvailable` says which of "nothing matched" and "we could not
+     * look" is true — a tenant told the first when the second happened
+     * concludes their area is empty.
      */
     @Transactional(readOnly = true)
     public LocalPlacesMapResponse myLocalPlacesMap(UUID tenantUserId, String query) {
@@ -175,7 +193,10 @@ public class PropertyLocalPlaceService {
                     .orElseGet(LiveLookup::unavailable);
         }
 
-        List<GeoSuggestionResponse> named = geoModule.systemSearchNear(needle, lat, lng);
+        // Every match, not the single placed anchor smart search asks for.
+        // "LTIMindtree" in Hyderabad is several offices, and a map that pins
+        // the nearest one and drops the rest has not answered the question.
+        List<GeoSuggestionResponse> named = geoModule.namedPlacesNear(needle, lat, lng);
         if (named.isEmpty()) {
             // The chain answers with an empty list both when it found nothing
             // and when no vendor could be reached, so this cannot tell them
@@ -184,7 +205,7 @@ public class PropertyLocalPlaceService {
             return new LiveLookup(List.of(), true);
         }
         return new LiveLookup(
-                named.stream()
+                withinCityNearestFirst(named).stream()
                         .limit(MAX_LIVE_RESULTS)
                         .map(place -> new LocalPlacesMapResponse.LivePlace(
                                 place.name(),
@@ -195,6 +216,30 @@ public class PropertyLocalPlaceService {
                                 place.longitude() == null ? null : BigDecimal.valueOf(place.longitude())))
                         .toList(),
                 true);
+    }
+
+    /**
+     * Named results, cut to the city and put in order of distance.
+     *
+     * <p>Autosuggest is BIASED towards the point it is given, not bounded by
+     * it, and it orders by its own idea of relevance. "LTIMindtree" searched
+     * from Gachibowli came back with Powai and Mysore Road — 604 km and 510 km
+     * away — listed ABOVE the office three kilometres up the road. Both halves
+     * of that are fixed here: anything beyond {@link #NAMED_REACH_METERS} is
+     * dropped, and what is left is sorted nearest first.
+     *
+     * <p>A result with no distance is kept and sorted last. It is rare — Mappls
+     * reports one for every autosuggest hit — and dropping a place because we
+     * could not measure it is worse than listing it at the bottom.
+     */
+    static List<GeoSuggestionResponse> withinCityNearestFirst(List<GeoSuggestionResponse> named) {
+        return named.stream()
+                .filter(place -> place.distanceMeters() == null
+                        || place.distanceMeters() <= NAMED_REACH_METERS)
+                .sorted(Comparator.comparing(
+                        GeoSuggestionResponse::distanceMeters,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
     /** Name, address or any of the place's category names. */

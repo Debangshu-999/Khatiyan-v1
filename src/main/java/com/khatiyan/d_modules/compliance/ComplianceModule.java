@@ -116,4 +116,24 @@ public class ComplianceModule {
     public void cancelPendingTenancy(UUID actorUserId, UUID tenancyId, String reason) {
         tenancyAgreementService.cancelPendingAsManager(actorUserId, tenancyId, reason);
     }
+
+    /** When each of a property's unsigned agreements expires. */
+    public java.util.List<com.khatiyan.d_modules.compliance.api.dto.PendingAgreementDeadlineResponse> pendingAgreementDeadlines(
+            UUID actorUserId, UUID propertyId) {
+        return tenancyAgreementService.pendingAgreementDeadlines(actorUserId, propertyId);
+    }
+
+    /** The checks a pending stay's tenant has been asked to complete. */
+    public java.util.List<com.khatiyan.d_modules.verification.model.VerificationGrant> pendingStayChecks(
+            UUID actorUserId, UUID tenancyId) {
+        return tenancyAgreementService.pendingStayChecks(actorUserId, tenancyId);
+    }
+
+    /** The owner gives a pending stay's tenant more verification tries. */
+    public java.util.List<com.khatiyan.d_modules.verification.model.VerificationGrant> provideVerificationAttempts(
+            UUID actorUserId,
+            UUID tenancyId,
+            java.util.List<com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest.VerificationOrderInput> verification) {
+        return tenancyAgreementService.provideVerificationAttempts(actorUserId, tenancyId, verification);
+    }
 }

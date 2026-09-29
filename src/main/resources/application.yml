@@ -77,6 +77,7 @@ spring:
       - classpath:db/migration/servicebalance
       - classpath:db/migration/verification
       - classpath:db/migration/food
+      - classpath:db/migration/analytics
 
   modulith:
     events:
@@ -453,6 +454,17 @@ app:
     # having to name a test tenant "DEV TEST USER". Ignored by every real
     # provider.
     dev-name: ${VERIFICATION_DEV_NAME:DEV TEST USER}
+    # Where the provider posts a check's result, and where the DEV stand-in
+    # for the Aadhaar App is served. Must be reachable from the provider (and,
+    # for DEV, from the tenant's phone).
+    public-base-url: ${VERIFICATION_PUBLIC_BASE_URL:http://localhost:8080}
+    # Where the Aadhaar App sends the tenant back when they are done.
+    return-url: ${VERIFICATION_RETURN_URL:khatiyan://verification/return}
+    # The Aadhaar App's own face check, as proof of presence: the owner is not
+    # there when the tenant verifies.
+    face-authentication: ${VERIFICATION_FACE_AUTHENTICATION:true}
+    # How long a DEV session stays open. A real provider sets its own expiry.
+    session-validity-minutes: ${VERIFICATION_SESSION_VALIDITY_MINUTES:10}
     decentro:
       # Staging by default, which is the safe one. A deployment that forgot to
       # set this talks to a sandbox and fails visibly, rather than quietly
@@ -490,6 +502,8 @@ app:
     # the day one does. Confirm against the provider's own rate before launch.
     prices-paise:
       AADHAAR_OKYC: ${SERVICE_PRICE_AADHAAR_OKYC_PAISE:1500}
+      # The Aadhaar App check (offline verification), which replaced the OTP one.
+      AADHAAR: ${SERVICE_PRICE_AADHAAR_PAISE:1500}
     # Asks the gateway about checkouts that never finished. The webhook is the
     # fast path; this is what makes a lost webhook a delay instead of a loss.
     reconcile-cron: ${SERVICE_BALANCE_RECONCILE_CRON:0 */5 * * * *}

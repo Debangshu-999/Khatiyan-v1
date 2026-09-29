@@ -1,5 +1,9 @@
 package com.khatiyan.d_modules.billing.api.dto;
 
+import java.util.Set;
+
+import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -17,7 +21,21 @@ public record UpdatePropertyPaymentDetailsRequest(
     /** An uploaded image URL, not the image. Upload happens before the save. */
     @Size(max = 500) String upiQrImageUrl,
     @Size(max = 34) String bankAccountNumber,
-    @Size(max = 11) String bankIfsc,
-    @Size(max = 120) String bankAccountHolder
+    /**
+     * Four letters, a zero, six letters or digits. Whether the branch exists is
+     * checked on the screen against the bank directory (the parked payment
+     * module owns that lookup, and billing may not depend on it).
+     */
+    @Size(max = 11)
+    @Pattern(regexp = "^[A-Z]{4}0[A-Z0-9]{6}$", message = "Enter a valid IFSC. It is 11 characters: 4 letters, a 0, then 6 letters or digits.")
+    String bankIfsc,
+    @Size(max = 120) String bankAccountHolder,
+    /**
+     * The ways this property takes money (2026-09-28). Null keeps what is set,
+     * so a client from before this still saves.
+     */
+    Set<ManualPaymentMethod> acceptedMethods,
+    /** Whether cash needs the tenant's code. Null keeps what is set. */
+    Boolean cashOtpRequired
 ) {
 }

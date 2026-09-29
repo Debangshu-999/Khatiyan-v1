@@ -1,6 +1,7 @@
-import { Modal, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FileDown, X } from "lucide-react-native";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import Svg, { Path, Rect } from "react-native-svg";
 
 import { formatDate } from "@/features/owner/bill-views";
@@ -80,7 +81,13 @@ export function BillReceiptDocument({
   const extras = receiptLineItems(cycle).filter((item) => item.type === "EXTRA_CHARGE");
   const itemised = extras.reduce((sum, item) => sum + item.amountPaise, 0);
   const unitemised = cycle.extraChargePaise - itemised;
-  const subtotal = cycle.baseAmountPaise + cycle.extraChargePaise + cycle.lateFeeAmountPaise;
+  // The first bill carries the starting deposit, and the cycle has no field
+  // for it — it exists only as a DEPOSIT line, folded into the total. Reading
+  // extras alone printed a subtotal of ₹11,600 above a total of ₹21,600, a
+  // receipt that does not add up on its face.
+  const deposits = receiptLineItems(cycle).filter((item) => item.type === "DEPOSIT");
+  const depositTotal = deposits.reduce((sum, item) => sum + item.amountPaise, 0);
+  const subtotal = cycle.baseAmountPaise + depositTotal + cycle.extraChargePaise + cycle.lateFeeAmountPaise;
   const billDetails: ReceiptDetail[] = [
     { code: true, label: "Bill Number", value: cycle.referenceCode },
     { label: "Bill Cycle", value: billTitle(cycle) },
@@ -138,6 +145,10 @@ export function BillReceiptDocument({
       <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, overflow: "hidden" }}>
         <DocRow head amount="Amount" label="Charges (Incl. Taxes)" />
         <DocRow amount={formatReceiptMoney(cycle.baseAmountPaise)} label="Base Rent" />
+        {/* Under rent, where the bill itself orders it. */}
+        {deposits.map((item) => (
+          <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} label={item.label} />
+        ))}
         {extras.map((item) => (
           <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} label={item.label} />
         ))}
@@ -153,7 +164,7 @@ export function BillReceiptDocument({
       </View>
 
       {paidOn ? null : (
-        <Text style={[type.caption, { color: colors.muted, fontSize: 10, lineHeight: 15 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Please make the payment by the due date. Thank you for your support.
         </Text>
       )}
@@ -332,8 +343,8 @@ export function BillReceiptSheet({
   const insets = useSafeAreaInsets();
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -367,7 +378,7 @@ export function BillReceiptSheet({
             {/* Filled, like every other close in the app. A bare glyph beside
                 the reference code read as punctuation after it rather than as
                 something to aim at. */}
-            <IconButton accessibilityLabel="Close receipt" filled icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close receipt" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           {/* flexShrink, which React Native does NOT default to 1 the way the
@@ -398,7 +409,7 @@ export function BillReceiptSheet({
             </View>
           ) : null}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }

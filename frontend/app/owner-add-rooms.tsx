@@ -299,7 +299,7 @@ export default function OwnerAddRoomsScreen() {
             <OwnerSettingsFormSkeleton fields={5} />
           ) : live.length === 0 ? (
             <View style={{ gap: spacing.sm }}>
-              <Text style={[type.body, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 This property has no room types yet. A room is cut from a type, so there is nothing to create one
                 from.
               </Text>
@@ -364,7 +364,7 @@ export default function OwnerAddRoomsScreen() {
 
                 <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 6 }}>
                   <Info color={colors.kicker} size={14} strokeWidth={2.2} />
-                  <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
+                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
                     {mold
                       ? `Every room in this series gets ${mold.bedCount} ${
                           mold.bedCount === 1 ? "bed" : "beds"
@@ -442,7 +442,7 @@ export default function OwnerAddRoomsScreen() {
                     onChangeCustom={setCustomAmenities}
                   />
                 ) : (
-                  <Text style={[type.caption, { color: colors.muted }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     Choose a room type and its amenities appear here, ready to adjust.
                   </Text>
                 )}
@@ -562,7 +562,7 @@ function PathCard({
           <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 18 }}>{title}</Text>
           <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
         </View>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>{description}</Text>
+        <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
       </Card>
     </AnimatedPressable>
   );

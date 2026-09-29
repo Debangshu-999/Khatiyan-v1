@@ -24,6 +24,7 @@ import com.khatiyan.d_modules.food.api.dto.SaveFoodMenuEntryRequest;
 import com.khatiyan.d_modules.food.model.FoodItem;
 import com.khatiyan.d_modules.food.model.FoodMenuEntry;
 import com.khatiyan.d_modules.food.model.FoodProfile;
+import com.khatiyan.d_modules.food.model.FoodProfileCategory;
 import com.khatiyan.d_modules.food.model.FoodQuantityUnit;
 import com.khatiyan.d_modules.food.repository.FoodItemRepository;
 import com.khatiyan.d_modules.food.repository.FoodMenuEntryRepository;
@@ -59,7 +60,7 @@ class FoodMenuServiceTest {
 
     @Test
     void menuCannotUseMealSlotMissingFromPropertySettings() {
-        FoodProfile profile = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0);
+        FoodProfile profile = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
         FoodItem item = FoodItem.create(
                 PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
         PropertyResponse property = FoodTestFixtures.property(
@@ -100,7 +101,7 @@ class FoodMenuServiceTest {
      */
     @Test
     void anEntryForAMealThePropertyNoLongerServesIsFlagged() {
-        FoodProfile profile = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0);
+        FoodProfile profile = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
         FoodItem roti = FoodItem.create(
                 PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
         FoodMenuEntry lunch = menuEntry(profile, roti, MealType.LUNCH);

@@ -98,7 +98,14 @@ export function useChatMessages(threadId: string) {
   return {
     append,
     error: page.isError,
-    loading: page.isLoading && messages.length === 0,
+    // A cached first page can be available before the effect above has copied
+    // its messages into local state. Keep the skeleton until that merge lands,
+    // rather than flashing the empty-conversation message for one frame.
+    loading:
+      Boolean(threadId) &&
+      !page.isError &&
+      messages.length === 0 &&
+      (!page.data || page.data.messages.length > 0),
     messages,
     readers,
     seenCountFor,

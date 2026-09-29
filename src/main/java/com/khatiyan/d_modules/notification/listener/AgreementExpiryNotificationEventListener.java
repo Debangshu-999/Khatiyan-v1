@@ -1,11 +1,17 @@
 package com.khatiyan.d_modules.notification.listener;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
@@ -32,18 +38,34 @@ import com.khatiyan.d_modules.tenancy.event.AgreementExpiryApproachingEvent;
 @Component
 public class AgreementExpiryNotificationEventListener {
 
+    private static final Logger log = LoggerFactory.getLogger(AgreementExpiryNotificationEventListener.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
+    private final Clock clock;
 
     public AgreementExpiryNotificationEventListener(
             NotificationModule notificationModule,
-            PropertyModule propertyModule) {
+            PropertyModule propertyModule,
+            Clock clock) {
         this.notificationModule = notificationModule;
         this.propertyModule = propertyModule;
+        this.clock = clock;
     }
 
     @ApplicationModuleListener
     public void onAgreementExpiryApproaching(AgreementExpiryApproachingEvent event) {
+        LocalDate today = LocalDate.now(clock.withZone(IST));
+        if (isStale(event, today)) {
+            // Delivered on a later day than it was written for: a failed event
+            // re-sent after an outage (seen 2026-09-27, when "ends in 2 days"
+            // and "ends in 1 day" landed together). Its count is wrong now, and
+            // a newer run has already sent the right one.
+            log.info("Stale agreement expiry reminder dropped tenancyId={} daysRemaining={} today={}",
+                    event.tenancyId(), event.daysRemaining(), today);
+            return;
+        }
         PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
 
         Map<String, String> data = new LinkedHashMap<>();
@@ -85,6 +107,11 @@ public class AgreementExpiryNotificationEventListener {
                 event.tenancyId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH);
+    }
+
+    /** Whether the count the event carries is no longer true on this day. */
+    static boolean isStale(AgreementExpiryApproachingEvent event, LocalDate today) {
+        return ChronoUnit.DAYS.between(today, event.agreementEndDate()) != event.daysRemaining();
     }
 
     private String tenantTitle(int daysRemaining) {

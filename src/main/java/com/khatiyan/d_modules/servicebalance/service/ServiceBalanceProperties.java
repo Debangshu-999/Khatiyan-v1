@@ -53,7 +53,9 @@ public class ServiceBalanceProperties {
      * <p>Configuration rather than constants: prices change, and a charge made
      * last month must not start looking wrong the day one does.
      */
-    private Map<String, Long> pricesPaise = new HashMap<>(Map.of(ServiceCode.AADHAAR_OKYC.name(), 1_500L));
+    private Map<String, Long> pricesPaise = new HashMap<>(Map.of(
+            ServiceCode.AADHAAR_OKYC.name(), 1_500L,
+            ServiceCode.AADHAAR.name(), 1_500L));
     /**
      * Where this server is reachable from the owner's phone browser.
      *

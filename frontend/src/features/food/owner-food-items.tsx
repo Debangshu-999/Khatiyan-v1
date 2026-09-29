@@ -17,7 +17,7 @@ import { FoodItemsSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, FormInput } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, IconButton } from "@/features/owner/owner-ui";
 import {
   FoodItemThumb,
   FoodStatusChip,
@@ -211,13 +211,9 @@ export function FoodItemsTab({
 
       {items.length > 0 && visible.length === 0 ? (
         <Text
-          style={{
-            color: colors.muted,
-            fontFamily: fonts.sans,
-            fontSize: 13,
+          style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
             paddingVertical: spacing.lg,
-            textAlign: "center",
-          }}
+            textAlign: "center" }}
         >
           {search.trim()
             ? `Nothing matches “${search.trim()}”`
@@ -329,10 +325,9 @@ function ItemStatusFilterDialog({
   const { colors, fonts } = useTheme();
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <AnimatedPressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
+      {/* Closes by its close button, a choice or the device back button,
+          not a tap on the scrim (user, 2026-09-29). */}
+      <View
         style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
@@ -340,12 +335,8 @@ function ItemStatusFilterDialog({
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
         }}
-        tapLockMs={0}
       >
-        {/* Its own pressable so a tap on the card does not reach the scrim
-            behind it and close the picker mid-decision. */}
-        <AnimatedPressable
-          onPress={() => {}}
+        <View
           style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
@@ -353,19 +344,22 @@ function ItemStatusFilterDialog({
             overflow: "hidden",
             width: "100%",
           }}
-          tapLockMs={0}
         >
-          <Text
+          <View
             style={{
-              color: colors.muted,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            Filter by status
-          </Text>
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Filter by status
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {ITEM_STATUS_FILTERS.map((option) => (
               <PickerOptionRow
@@ -380,8 +374,8 @@ function ItemStatusFilterDialog({
               />
             ))}
           </View>
-        </AnimatedPressable>
-      </AnimatedPressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -478,7 +472,7 @@ function FoodItemRow({
       {readOnly ? null : item.active ? (
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <ActionButton compact icon={foodIcon("pencil-outline")} label="Edit" onPress={onEdit} variant="secondary" />
-          <ActionButton compact icon={foodIcon("archive-arrow-down-outline")} label="Retire" onPress={onRetire} variant="danger" />
+          <ActionButton compact icon={foodIcon("archive-arrow-down-outline")} label="Retire" onPress={onRetire} variant="dangerQuiet" />
         </View>
       ) : (
         /* A retired item has two ways out: back into service, or off the list.
@@ -492,7 +486,7 @@ function FoodItemRow({
             onPress={onReactivate}
             variant="secondary"
           />
-          <ActionButton compact icon={foodIcon("trash-can-outline")} label="Remove" onPress={onDelete} variant="danger" />
+          <ActionButton compact icon={foodIcon("trash-can-outline")} label="Remove" onPress={onDelete} variant="dangerQuiet" />
         </View>
       )}
     </View>
@@ -881,7 +875,7 @@ function FoodItemSheet({
             disabled={uploading}
             label="Remove"
             onPress={() => setImage({ publicId: null, url: null })}
-            variant="danger"
+            variant="dangerFilled"
           />
           </View>
         </View>
@@ -897,7 +891,7 @@ function FoodItemSheet({
 
       {pickingSource ? (
         <SheetShell animated onClose={() => setPickingSource(false)} title="Add a photo">
-          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+          <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             A picture helps tenants recognise the dish on their menu.
           </Text>
           <PhotoSourceRow
@@ -974,7 +968,7 @@ function PhotoSourceRow({
       </View>
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>{label}</Text>
-        <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>{description}</Text>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>{description}</Text>
       </View>
       <MaterialCommunityIcons color={colors.kicker} name="chevron-right" size={20} />
     </AnimatedPressable>

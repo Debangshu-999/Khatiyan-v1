@@ -3,7 +3,6 @@ import {
   AppState,
   Image,
   Linking,
-  Modal,
   NativeModules,
   Platform,
   ScrollView,
@@ -12,22 +11,27 @@ import {
   type ImageSourcePropType,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { AtSign, Check, Copy, Phone, ScanLine, X } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { AtSign, Check, ChevronDown, Copy, Phone, ScanLine } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { PickerOptionRow } from "@/components/picker-option-row";
+import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { ActionButton, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { METHOD_ICON, METHOD_LABEL, METHOD_ORDER, type TenderMethod } from "@/features/billing/payment-methods";
+import { RaiseClaimCard } from "@/features/billing/raise-claim-modal";
+import type { ManualPaymentMethod } from "@/store/services/billing-api";
 import {
   useStartPaymentMutation,
   type PayeeDetails,
   type PaymentIntent,
 } from "@/store/services/payment-intent-api";
-import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type PayTab = "upi" | "bank";
-type UpiAppKey = "GOOGLE_PAY" | "PHONEPE" | "PAYTM" | "BHIM" | "AMAZON_PAY";
+type UpiAppKey = "GOOGLE_PAY" | "PHONEPE" | "PAYTM" | "BHIM";
 
 type UpiAppOption = {
   androidPackage: string;
@@ -42,7 +46,7 @@ const UPI_APPS: UpiAppOption[] = [
     androidPackage: "com.google.android.apps.nbu.paisa.user",
     androidScheme: "tez://upi/pay",
     key: "GOOGLE_PAY",
-    label: "Google Pay",
+    label: "Gpay",
     logo: require("../../../assets/upi-apps/google-pay.jpg"),
   },
   {
@@ -65,13 +69,6 @@ const UPI_APPS: UpiAppOption[] = [
     key: "BHIM",
     label: "BHIM UPI",
     logo: require("../../../assets/upi-apps/bhim-upi.jpg"),
-  },
-  {
-    androidPackage: "in.amazon.mShop.android.shopping",
-    androidScheme: "amazonpay://pay",
-    key: "AMAZON_PAY",
-    label: "Amazon Pay",
-    logo: require("../../../assets/upi-apps/amazon-pay.jpg"),
   },
 ];
 
@@ -104,7 +101,10 @@ const RETURN_FALLBACK_MS = 5_000;
 export function PayBillSheet({
   amountPaise,
   billingCycleId,
+  billVersion,
+  cashOtpRequired,
   hasPayLink,
+  methods,
   onClose,
   onStarted,
   payee,
@@ -112,23 +112,35 @@ export function PayBillSheet({
 }: {
   amountPaise: number;
   billingCycleId: string;
+  /** The bill's version as shown (2026-09-29): one whose amount changed is refused. */
+  billVersion: number;
+  /** Cash needs a code sent to the tenant's phone. */
+  cashOtpRequired: boolean;
   hasPayLink: boolean;
+  /**
+   * The ways this tenant can pay. Cash is the initial selection when offered;
+   * UPI starts its claim flow after the tenant returns from the payment app.
+   */
+  methods: ManualPaymentMethod[];
   onClose: () => void;
-  /** Fires once an intent exists, so the caller can show the decision modal. */
+  /** Fires after the tenant returns from the UPI app. */
   onStarted: (intent: PaymentIntent) => void;
-  payee: PayeeDetails;
+  /** Null when neither UPI nor bank transfer is offered. */
+  payee: PayeeDetails | null;
   referenceCode: string;
 }) {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const [startPayment, startState] = useStartPaymentMutation();
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<PayTab>("upi");
+  const tabs = METHOD_ORDER.filter((method) => methods.includes(method));
+  const [tab, setTab] = useState<TenderMethod>(tabs[0] ?? "CASH");
+  const [claimMethod, setClaimMethod] = useState<Exclude<TenderMethod, "CASH"> | null>(null);
   const [selectedUpiApp, setSelectedUpiApp] = useState<UpiAppKey>("GOOGLE_PAY");
 
   async function openUpiApp() {
     try {
-      const started = await startPayment(billingCycleId).unwrap();
+      const started = await startPayment({ billingCycleId, version: billVersion }).unwrap();
       if (!started.upiLink) {
         setError("This property has no UPI address to open. Scan the QR code instead.");
         return;
@@ -175,87 +187,38 @@ export function PayBillSheet({
     toast.success(`${what} copied.`);
   }
 
-  return (
-    <Modal
-      animationType="fade"
-      navigationBarTranslucent
-      onRequestClose={onClose}
-      statusBarTranslucent
-      transparent
-      visible
-    >
-      {/* Centred, not a bottom sheet. This is a dialog you read — a QR to scan
-          and details to copy — rather than a form you fill in, and it carries no
-          text input, so it needs none of the keyboard handling a sheet exists to
-          provide. */}
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          padding: spacing.lg,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "88%",
-            maxWidth: DIALOG_MAX_WIDTH,
-            padding: spacing.lg,
-            width: "100%",
-          }}
-        >
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <View style={{ flex: 1, gap: spacing.xs }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
-                Pay {formatMoneyPaise(amountPaise)}
-              </Text>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                {payee.payeeName ?? "This property"} · <Text style={{ fontFamily: fonts.mono }}>{referenceCode}</Text>
-              </Text>
-            </View>
-            <AnimatedPressable
-              accessibilityLabel="Close"
-              accessibilityRole="button"
-              hitSlop={10}
-              onPress={onClose}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surfaceSunken,
-                borderRadius: 999,
-                height: 28,
-                justifyContent: "center",
-                width: 28,
-              }}
-            >
-              <X color={colors.inkSoft} size={15} strokeWidth={2.4} />
-            </AnimatedPressable>
-          </View>
+  const raiseClaim = tab !== "CASH" && tab !== "UPI" ? (
+    <ActionButton
+      label="Raise claim"
+      onPress={() => setClaimMethod(tab as Exclude<TenderMethod, "CASH">)}
+    />
+  ) : null;
 
-          {/* Only when there is a second thing to choose. A chooser offering one
-              option reads as something that failed to load. */}
-          {payee.hasBankDetails ? (
-            <View style={{ flexDirection: "row", gap: spacing.xs }}>
-              <PayTabBubble active={tab === "upi"} label="UPI" onPress={() => setTab("upi")} />
-              <PayTabBubble active={tab === "bank"} label="Bank" onPress={() => setTab("bank")} />
-            </View>
+  return (
+    <SheetShell onClose={onClose} title={claimMethod ? "Raise a claim" : `Pay ${formatMoneyPaise(amountPaise)}`}>
+      {claimMethod ? (
+        <RaiseClaimCard
+          billingCycleId={billingCycleId}
+          billVersion={billVersion}
+          key={claimMethod}
+          method={claimMethod}
+          onBack={() => setClaimMethod(null)}
+          onSent={onClose}
+          referenceCode={referenceCode}
+        />
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+            {payee?.payeeName ?? "This property"} · <Text style={{ fontFamily: fonts.mono }}>{referenceCode}</Text>
+          </Text>
+
+          {/* Only offer a choice when the property accepts multiple methods. */}
+          {tabs.length > 1 ? (
+            <PaymentMethodDropdown methods={tabs} onChange={setTab} value={tab} />
           ) : null}
 
-          {/* The body scrolls, the title and close do not. A QR plus copy rows
-              can outgrow a short phone, and a dialog whose close has scrolled
-              out of reach is stuck. */}
-          <ScrollView
-            contentContainerStyle={{ gap: spacing.md }}
-            showsVerticalScrollIndicator={false}
-            style={{ flexGrow: 0, flexShrink: 1 }}
-          >
-            {tab === "upi" ? (
+          <View style={{ gap: spacing.md }}>
+            {tab === "UPI" && payee ? (
               <UpiTab
                 busy={startState.isLoading}
                 hasPayLink={hasPayLink}
@@ -265,15 +228,26 @@ export function PayBillSheet({
                 payee={payee}
                 selectedUpiApp={selectedUpiApp}
               />
-            ) : (
+            ) : tab === "BANK_TRANSFER" && payee ? (
               <BankTab onCopy={copy} payee={payee} referenceCode={referenceCode} />
+            ) : tab === "CARD" ? (
+              <DeskTab message="Pay by card at the desk, then raise a claim so the property can confirm it." method="CARD" />
+            ) : tab === "CHEQUE" ? (
+              <DeskTab message="Hand over a cheque at the desk, then raise a claim so the property can confirm it." method="CHEQUE" />
+            ) : (
+              <DeskTab
+                message="Hand over the cash at the desk to pay your bill."
+                method="CASH"
+                note={cashOtpRequired ? "Verify the cash payment with an OTP that will be sent to your device." : undefined}
+              />
             )}
-          </ScrollView>
+            {raiseClaim}
+          </View>
         </View>
-      </View>
+      )}
 
       {error ? <AlertModal message={error} onClose={() => setError(null)} /> : null}
-    </Modal>
+    </SheetShell>
   );
 }
 
@@ -328,13 +302,13 @@ function UpiTab({
           cannot do anything is worse than no button. */}
       {hasPayLink ? (
         <View style={{ gap: spacing.sm }}>
+          <UpiAppSelector onSelect={onSelectUpiApp} selected={selectedUpiApp} />
           <ActionButton
             disabled={busy}
             icon={ScanLine}
             label={busy ? "Opening…" : "Scan and pay"}
             onPress={onScanAndPay}
           />
-          <UpiAppSelector onSelect={onSelectUpiApp} selected={selectedUpiApp} />
         </View>
       ) : null}
 
@@ -515,27 +489,97 @@ function CopyRow({
   );
 }
 
-function PayTabBubble({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+function PaymentMethodDropdown({
+  methods,
+  onChange,
+  value,
+}: {
+  methods: TenderMethod[];
+  onChange: (method: TenderMethod) => void;
+  value: TenderMethod;
+}) {
   const { colors, fonts } = useTheme();
+  const [open, setOpen] = useState(false);
 
   return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
+    <View style={{ gap: spacing.xs }}>
+      <AnimatedPressable
+        accessibilityLabel={`Payment method: ${METHOD_LABEL[value]}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((current) => !current)}
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surfaceRaised,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: radii.sm,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.sm,
+          minHeight: 48,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        <MaterialCommunityIcons color={colors.primary} name={METHOD_ICON[value]} size={20} />
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
+          {METHOD_LABEL[value]}
+        </Text>
+        <ChevronDown color={colors.muted} size={18} style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }} />
+      </AnimatedPressable>
+      {open ? (
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.sm, borderWidth: 1, padding: spacing.xs }}>
+          {methods.map((method) => (
+            <PickerOptionRow
+              icon={<MaterialCommunityIcons color={method === value ? colors.primary : colors.inkSoft} name={METHOD_ICON[method]} size={20} />}
+              key={method}
+              label={METHOD_LABEL[method]}
+              onPress={() => {
+                onChange(method);
+                setOpen(false);
+              }}
+              selected={method === value}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A way to pay that happens at the property's desk: card, cheque or cash. Just
+ * the instruction, and for cash the code step when the property wants one.
+ */
+function DeskTab({ message, method, note }: { message: string; method: "CASH" | "CARD" | "CHEQUE"; note?: string }) {
+  const { colors, fonts, type } = useTheme();
+  const title = method === "CARD" ? "Card at the desk" : method === "CHEQUE" ? "Cheque at the desk" : "Cash at the desk";
+  return (
+    <View
       style={{
-        backgroundColor: active ? colors.primary : "transparent",
-        borderColor: active ? colors.primary : colors.borderStrong,
-        borderRadius: 999,
-        borderWidth: 1,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.xs,
+        backgroundColor: colors.primarySoft,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        gap: spacing.sm,
+        padding: spacing.md,
       }}
     >
-      <Text style={{ color: active ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 13 }}>
-        {label}
-      </Text>
-    </AnimatedPressable>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <Image
+          accessibilityLabel={method === "CARD" ? "Person paying at a card reader" : "Person handing payment to another person"}
+          resizeMode="contain"
+          source={method === "CARD"
+            ? require("../../../assets/workspace/payment-card-swiper.png")
+            : require("../../../assets/workspace/payment-cash-handover.png")}
+          style={{ height: 100, width: 125 }}
+        />
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>{title}</Text>
+          <Text style={[type.caption, { color: colors.inkSoft, fontSize: 13, lineHeight: 19 }]}>{message}</Text>
+        </View>
+      </View>
+      {note ? <Text style={[type.caption, { color: colors.inkSoft, lineHeight: 18 }]}>{note}</Text> : null}
+    </View>
   );
 }
 

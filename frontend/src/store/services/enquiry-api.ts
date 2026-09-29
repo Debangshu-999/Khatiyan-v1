@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 
 export type EnquiryResponseChannel = "CALL_BACK" | "EMAIL" | "CHAT";
 /**
@@ -50,6 +50,11 @@ export type EnquiryDetail = {
   chatThreadId: string | null;
   /** The action log — every response, newest first. Empty while still open. */
   responses: EnquiryResponseView[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /** Everything the confirmation dialog needs, straight from the send call. */
@@ -133,10 +138,11 @@ export const enquiryApi = api.injectEndpoints({
 
     respondToEnquiry: builder.mutation<
       EnquiryDetail,
-      { enquiryId: string; channel: EnquiryResponseChannel; note?: string | null }
+      { enquiryId: string; channel: EnquiryResponseChannel; note?: string | null; version: number }
     >({
-      query: ({ channel, enquiryId, note }) => ({
+      query: ({ channel, enquiryId, note, version }) => ({
         body: { channel, note: note ?? null },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/enquiries/${enquiryId}/respond`,
       }),

@@ -14,9 +14,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.verification.VerificationModule;
+import com.khatiyan.d_modules.verification.api.dto.AadhaarSessionResponse;
 import com.khatiyan.d_modules.verification.api.dto.OtpChallengeResponse;
 import com.khatiyan.d_modules.verification.api.dto.StartOtpRequest;
 import com.khatiyan.d_modules.verification.api.dto.SubmitOtpRequest;
+import com.khatiyan.d_modules.verification.api.dto.VerificationAttemptResponse;
 import com.khatiyan.d_modules.verification.api.dto.VerificationGrantResponse;
 import com.khatiyan.d_modules.verification.api.dto.VerificationResultResponse;
 import com.khatiyan.d_modules.verification.service.VerificationService;
@@ -86,5 +88,27 @@ public class VerificationController {
             @Valid @RequestBody SubmitOtpRequest request) {
         return ResponseEntity.ok(VerificationResultResponse.from(
                 verificationModule.submitOtp(attemptId, user.userId(), request.otp())));
+    }
+
+    /**
+     * Opens an Aadhaar App session, or hands back the one still open.
+     *
+     * <p>The app calls this only after it has found the Aadhaar App on this
+     * phone and the tenant has said they are signed up in it: this is the call
+     * that charges the owner.
+     */
+    @PostMapping("/grants/{grantId}/session")
+    public ResponseEntity<AadhaarSessionResponse> startAadhaarSession(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID grantId) {
+        return ResponseEntity.ok(AadhaarSessionResponse.from(
+                verificationModule.startAadhaarSession(grantId, user.userId())));
+    }
+
+    /** Where an attempt stands. Polled when the tenant comes back from the Aadhaar App. */
+    @GetMapping("/attempts/{attemptId}")
+    public ResponseEntity<VerificationAttemptResponse> attempt(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID attemptId) {
+        return ResponseEntity.ok(VerificationAttemptResponse.from(
+                verificationModule.refreshAttempt(attemptId, user.userId())));
     }
 }

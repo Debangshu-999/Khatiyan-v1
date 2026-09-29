@@ -31,7 +31,7 @@ export function DiscoverySectionHeader({ eyebrow, subtitle, title }: DiscoverySe
         {title}
       </Text>
       {subtitle ? (
-        <Text style={[type.body, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {subtitle}
         </Text>
       ) : null}

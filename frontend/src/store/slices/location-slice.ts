@@ -1,6 +1,8 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import * as Location from "expo-location";
 
+import { resolveCurrentLocationAddress } from "./location-address";
+
 export type DeviceLocationState = {
   latitude: number | null;
   longitude: number | null;
@@ -67,26 +69,16 @@ export const fetchCurrentLocation = createAsyncThunk(
       const primaryAddress = addresses[0];
 
       if (primaryAddress) {
-        nextLocation.city = primaryAddress.city ?? null;
+        const resolved = resolveCurrentLocationAddress(primaryAddress);
+        nextLocation.city = resolved.city;
         nextLocation.country = primaryAddress.country ?? null;
         nextLocation.countryCode = primaryAddress.isoCountryCode ?? null;
-        nextLocation.locality =
-          primaryAddress.street ??
-          primaryAddress.name ??
-          primaryAddress.district ??
-          primaryAddress.subregion ??
-          primaryAddress.city ??
-          null;
+        nextLocation.locality = resolved.locality;
         nextLocation.pincode = primaryAddress.postalCode ?? null;
         nextLocation.state = primaryAddress.region ?? null;
-        nextLocation.district =
-          primaryAddress.district ??
-          primaryAddress.subregion ??
-          primaryAddress.city ??
-          primaryAddress.name ??
-          null;
-        nextLocation.displayAddress = formatDisplayAddress(nextLocation);
-        nextLocation.searchHint = formatSearchHint(nextLocation);
+        nextLocation.district = primaryAddress.district ?? primaryAddress.subregion ?? null;
+        nextLocation.displayAddress = resolved.displayAddress;
+        nextLocation.searchHint = resolved.searchHint;
       }
 
       return nextLocation;
@@ -132,33 +124,3 @@ const locationSlice = createSlice({
 
 export const { clearLocation } = locationSlice.actions;
 export const locationReducer = locationSlice.reducer;
-
-function formatDisplayAddress(location: {
-  city: string | null;
-  country: string | null;
-  district: string | null;
-  locality: string | null;
-  pincode: string | null;
-  state: string | null;
-}) {
-  const primaryParts = [location.locality, location.city ?? location.district]
-    .filter((part): part is string => Boolean(part))
-    .filter((part, index, parts) => parts.indexOf(part) === index);
-  const suffixParts = [location.state, location.pincode, location.country].filter((part): part is string =>
-    Boolean(part),
-  );
-  const addressParts = [...primaryParts, suffixParts.join(" ")].filter(Boolean);
-
-  return addressParts.length > 0 ? addressParts.join(", ") : "Current Location";
-}
-
-function formatSearchHint(location: {
-  city: string | null;
-  district: string | null;
-  locality: string | null;
-}) {
-  return [location.locality, location.city ?? location.district]
-    .filter((part): part is string => Boolean(part))
-    .filter((part, index, parts) => parts.indexOf(part) === index)
-    .join(", ");
-}

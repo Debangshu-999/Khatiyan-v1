@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, ScrollView, Switch, Text, View } from "react-native";
+import { ScrollView, Switch, Text, View } from "react-native";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -105,7 +106,7 @@ export default function OwnerManagerPermissionsScreen() {
     const levels = { ...saved, ...draft } as Record<ManagerResource, ManagerAccessLevel>;
 
     try {
-      await replacePermissions({ levels, managerUserId, propertyId }).unwrap();
+      await replacePermissions({ levels, managerUserId, propertyId, version: permissionsQuery.data?.version ?? 0 }).unwrap();
       toast.success(`Permissions updated for ${managerName}.`);
       // Saving is the end of this screen. It used to stay open on top of the
       // access decision that sent us here, so the only way on was the back
@@ -192,7 +193,7 @@ export default function OwnerManagerPermissionsScreen() {
 
             {PENDING_MODULES.length ? (
               <Card tone="sunken">
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   {PENDING_MODULES.map((module) => module.label).join(", ")} become configurable here as each is rolled
                   out. Until then a manager keeps their current access to them.
                 </Text>
@@ -274,8 +275,8 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
   // bar and the button at its foot becomes untappable. The billing rules sheet
   // omits it and sits correctly.
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -297,7 +298,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
                 How permissions work
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close permission rules" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close permission rules" icon={X} onPress={() => dismiss()} />
           </View>
 
           <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -330,7 +331,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
                     {rule.title}
                   </Text>
                 </View>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   {rule.body}
                 </Text>
               </View>
@@ -340,7 +341,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
           {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
           <AnimatedPressable
             accessibilityRole="button"
-            onPress={onClose}
+            onPress={() => dismiss()}
             style={{
               alignItems: "center",
               backgroundColor: colors.ink,
@@ -353,8 +354,8 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
             <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
           </AnimatedPressable>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 
@@ -394,7 +395,7 @@ function ModuleCard({
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, }}>
                 {module.label}
               </Text>
-              <Text style={[type.caption, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {on ? module.description : "Hidden from their workspace."}
               </Text>
             </View>
@@ -595,7 +596,7 @@ function ScreenHeading({ screen }: { screen: AccessScreen }) {
 
       {open ? (
         <InfoModal onClose={() => setOpen(false)} title={screen.label}>
-          <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {screen.description}
           </Text>
         </InfoModal>
@@ -664,7 +665,7 @@ function LevelOption({
         >
           {label}
         </Text>
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {description}
         </Text>
       </View>

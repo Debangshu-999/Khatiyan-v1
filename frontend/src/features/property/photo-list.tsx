@@ -74,7 +74,7 @@ export function AddPhotoTarget({
 
       <View style={{ alignItems: "center", gap: 1 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>{label}</Text>
-        <Text style={[type.caption, { color: colors.muted }]}>{hint}</Text>
+        <Text style={[type.description, { color: colors.muted }]}>{hint}</Text>
       </View>
     </AnimatedPressable>
   );

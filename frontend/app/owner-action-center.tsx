@@ -3,7 +3,7 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useRouteGate } from "@/features/owner/route-gates";
 import { Animated, Easing, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, Banknote, CalendarClock, CalendarX2, Check, ChevronRight, DoorOpen, FileSignature, Gauge, HandCoins, KeyRound, MessageSquare, Repeat2, ShieldAlert, TrendingUp, Wallet, type LucideProps } from "lucide-react-native";
+import { AlertCircle, Banknote, BedDouble, CalendarClock, CalendarX2, Check, ChevronRight, DoorOpen, FileSignature, Gauge, HandCoins, KeyRound, MessageSquare, Repeat2, ShieldAlert, TrendingUp, Wallet, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -14,7 +14,8 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
-import { type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
+import { formatDate } from "@/features/owner/bill-views";
+import { type BlockedBooking, type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -33,7 +34,9 @@ type ActionRoute =
   | "/owner-tenancy"
   // Opens the tenancy screen with its Upcoming exits sheet already up. The
   // route gate matches on the path alone, so the param does not ungate it.
-  | "/owner-tenancy?open=upcoming-exits";
+  | "/owner-tenancy?open=upcoming-exits"
+  // Straight to ending the stay that holds a booked bed.
+  | `/owner-end-tenancy?tenancyId=${string}`;
 type ActionSource = "billing" | "concern" | "tenancy" | "budget" | "enquiry" | "staff";
 type ActionFilter = ActionSource | "all";
 type ActionTone = "primary" | "warning" | "danger";
@@ -142,6 +145,24 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
   const attention = dashboard.attention;
   const items: ActionItem[] = [];
 
+  // One row per booked stay that can't start, each naming its room: the
+  // tenant is waiting on something only the owner can do.
+  for (const blocked of dashboard.blockedBookings ?? []) {
+    const room = blocked.roomNumber ? `Room ${blocked.roomNumber}` : "A room";
+    const endStay = blocked.reason !== "ROOM_CHANGE_NOT_DONE" && blocked.blockingTenancyId;
+    items.push({
+      badge: formatDate(blocked.startDate),
+      detail: blockedBookingDetail(blocked),
+      emphasize: true,
+      icon: BedDouble,
+      key: `booking-blocked-${blocked.bookingTenancyId}`,
+      label: `Tenancy can't start · ${room}`,
+      route: endStay ? `/owner-end-tenancy?tenancyId=${blocked.blockingTenancyId}` : "/owner-room-change-requests",
+      source: "tenancy",
+      tone: "danger",
+    });
+  }
+
   if (attention.paymentsOverdue > 0) {
     items.push({ badge: String(attention.paymentsOverdue), detail: "Awaiting collection", emphasize: true, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", tone: "danger" });
   }
@@ -222,6 +243,18 @@ function toneColors(colors: ThemeColors, tone: ActionTone) {
   if (tone === "danger") return { accent: colors.danger, soft: colors.dangerSoft };
   if (tone === "warning") return { accent: colors.warningText, soft: colors.warningSoft };
   return { accent: colors.primary, soft: colors.primarySoft };
+}
+
+function blockedBookingDetail(blocked: BlockedBooking): string {
+  const name = blocked.blockingTenantName;
+  switch (blocked.reason) {
+    case "PENDING_EXIT":
+      return `Pending exit${name ? ` for ${name}` : ""}. End it to let the new tenant in.`;
+    case "STAY_NOT_ENDED":
+      return name ? `${name}'s stay hasn't been ended yet` : "The stay in this room hasn't been ended yet";
+    case "ROOM_CHANGE_NOT_DONE":
+      return `${name ? `${name}'s room change` : "The room change freeing this bed"} hasn't gone through. Retrying hourly.`;
+  }
 }
 
 function ActionRow({ item, onPress }: { item: ActionItem; onPress: () => void }) {

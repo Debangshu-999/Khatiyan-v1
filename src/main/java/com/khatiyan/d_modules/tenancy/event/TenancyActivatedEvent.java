@@ -4,15 +4,16 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * Published when a pending tenancy actually starts, on the tenant's signature.
+ * Published when a signed tenancy actually starts. A future booking waits for
+ * its start date and the outgoing room change, so signing can precede this.
  *
  * <p>Separate from {@code TenancyStartedEvent}, which fires at CREATION and
- * takes the bed. For a monthly tenancy those are two different days: one when
- * the owner onboards somebody and reserves a bed for them, and one when that
- * person signs and their tenancy — and their billing — begins.
+ * can take an ordinary free bed. A future booking takes occupancy separately
+ * when its approved room change has executed.
  *
  * <p>Nothing occupancy-related listens here. The bed was already taken at
- * creation, and taking it twice would double-count the room.
+ * creation for ordinary tenancies; the future-booking occupancy event handles
+ * the one delayed case.
  */
 public record TenancyActivatedEvent(
     UUID tenancyId,

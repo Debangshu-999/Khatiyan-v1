@@ -38,10 +38,10 @@ type DualBarChartMode = "count" | "money";
  * Two series a month, drawn as a pair of bars per month on a shared scale, with
  * an optional reference line over the top.
  *
- * <p>Sibling to {@link TrendBarChart}, which draws one series. Split rather than
- * folded into it because the second bar changes the geometry: a pair needs a
- * legend, half the width each, and — since one series can go negative where a
- * single trend never does — a zero line that moves.
+ * <p>Built as its own chart rather than a one-series bar chart with a second bar
+ * bolted on, because the second bar changes the geometry: a pair needs a legend,
+ * half the width each, and — since one series can go negative where a single
+ * trend never does — a zero line that moves.
  *
  * <p>Negative values (a month that overspent its budget) drop below the zero
  * line rather than being clamped to it. A month ₹5,000 over reads as a bar

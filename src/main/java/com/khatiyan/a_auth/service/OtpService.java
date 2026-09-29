@@ -24,11 +24,39 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class OtpService {
-    private static final int MAX_RECENT_REQUESTS = 3;
+    /*
+     * Per number: 3 in 10 minutes AND 5 in an hour, both at once.
+     *
+     * Taken from Prelude's published example policy for SMS verification —
+     * "three verification requests per phone number in 10 minutes and five per
+     * hour, while separately limiting requests per IP" (decided 2026-09-26).
+     * The two windows do different jobs. The short one stops a burst; the long
+     * one stops a patient attacker, because 3 per 10 minutes alone still let
+     * one number be sent 18 codes an hour, every one of them billed to us.
+     *
+     * Per device: 20 in 5 minutes. The published policy names no figure for
+     * it, so this is the owner's own, set the same day.
+     *
+     * The same numbers in Valkey and in the database fallback, so which one
+     * answers makes no difference to the person asking.
+     */
+    private static final int MAX_PHONE_REQUESTS_BURST = 3;
+    private static final Duration PHONE_BURST_WINDOW = Duration.ofMinutes(10);
+    private static final int MAX_PHONE_REQUESTS_HOURLY = 5;
+    private static final Duration PHONE_HOURLY_WINDOW = Duration.ofHours(1);
     private static final int MAX_RECENT_IP_REQUESTS = 20;
+    private static final Duration IP_WINDOW = Duration.ofMinutes(5);
     private static final int MAX_VERIFY_ATTEMPTS = 5;
-    private static final Duration RATE_LIMIT_WINDOW = Duration.ofMinutes(15);
     private static final Duration OTP_TTL = Duration.ofMinutes(10);
+    /**
+     * The least time between two codes to the same number for the same reason.
+     *
+     * <p>Long enough that an impatient second tap is refused, short enough that
+     * a code which genuinely did not arrive can be sent again while the person
+     * is still standing there.
+     */
+    static final Duration RESEND_COOLDOWN = Duration.ofSeconds(30);
+    private static final String RESEND_TOO_SOON = "Please wait before requesting another code";
 
     private final OtpRepository otpRepository;
     private final ValkeyOtpStore valkeyOtpStore;
@@ -54,24 +82,36 @@ public class OtpService {
 
     @Transactional
     public void issue(String phone, String email, String requestIpAddress, OtpPurpose purpose, OtpDeliveryChannel channel) {
+        issue(phone, email, requestIpAddress, purpose, channel, null);
+    }
+
+    /**
+     * As above, with a line for the message saying what the code is for.
+     *
+     * @param detail shown with the code, e.g. the amount and bill a cash-payment
+     *     code confirms; null for codes that explain themselves
+     */
+    @Transactional
+    public void issue(
+            String phone,
+            String email,
+            String requestIpAddress,
+            OtpPurpose purpose,
+            OtpDeliveryChannel channel,
+            String detail) {
         Instant now = Instant.now();
         String otp = "%06d".formatted(secureRandom.nextInt(1_000_000));
         String otpHash = passwordEncoder.encode(otp);
         OtpDeliveryChannel resolvedChannel = resolveChannel(channel);
 
-        checkDatabaseIssueRateLimit(phone, requestIpAddress, now);
-
+        // ONE limiter answers each request: Valkey while it is up, the database
+        // only when it is not. Both used to run on every request, so a code was
+        // refused by whichever tripped first, and the database — counting rows
+        // on every send — was doing work Valkey had already done. Both apply
+        // the same three rules, so which one answered makes no difference to
+        // the person asking.
         try {
-            long requestCount = valkeyOtpStore.incrementRequestCount(phone, RATE_LIMIT_WINDOW);
-            if (requestCount > MAX_RECENT_REQUESTS) {
-                // With the remaining seconds, so the screen can count down and
-                // re-enable itself. "Try again later" leaves somebody tapping a
-                // button to discover whether later has arrived.
-                throw new TooManyRequestsException(
-                        "Too many requests",
-                        valkeyOtpStore.requestWindowRemainingSeconds(phone));
-            }
-
+            enforceValkeyLimits(phone, requestIpAddress, purpose);
             valkeyOtpStore.saveOtp(phone, purpose, otpHash, now, OTP_TTL);
         } catch (DataAccessException e) {
             log.warn(
@@ -80,12 +120,13 @@ public class OtpService {
                     purpose,
                     e.getMessage());
 
-            issueUsingDatabase(phone, email, requestIpAddress, purpose, otpHash, otp, now, resolvedChannel);
+            enforceDatabaseLimits(phone, requestIpAddress, purpose, now);
+            issueUsingDatabase(phone, email, requestIpAddress, purpose, otpHash, otp, now, resolvedChannel, detail);
             return;
         }
 
         saveDatabaseMirror(phone, requestIpAddress, purpose, otpHash, now);
-        otpDeliveryService.deliverOtp(phone, email, otp, purpose, resolvedChannel);
+        otpDeliveryService.deliverOtp(phone, email, otp, purpose, resolvedChannel, detail);
 
         log.info("OTP issued using Valkey phone={} purpose={} channel={}", phone, purpose, resolvedChannel);
     }
@@ -130,9 +171,10 @@ public class OtpService {
             String otpHash,
             String otp,
             Instant now,
-            OtpDeliveryChannel channel) {
+            OtpDeliveryChannel channel,
+            String detail) {
         saveDatabaseOtp(phone, requestIpAddress, purpose, otpHash, now);
-        otpDeliveryService.deliverOtp(phone, email, otp, purpose, channel);
+        otpDeliveryService.deliverOtp(phone, email, otp, purpose, channel, detail);
 
         log.info("OTP issued using database fallback phone={} purpose={} channel={}", phone, purpose, channel);
     }
@@ -213,29 +255,102 @@ public class OtpService {
         }
     }
 
-    private void checkDatabaseIssueRateLimit(String phone, String requestIpAddress, Instant now) {
-        Instant since = now.minus(RATE_LIMIT_WINDOW);
-        long recentPhoneOtpCount = otpRepository.countByPhoneAndCreatedAtAfter(phone, since);
-
-        if (recentPhoneOtpCount >= MAX_RECENT_REQUESTS) {
+    /**
+     * The three rules, asked of Valkey.
+     *
+     * <p>Cooldown first and set-if-absent, so a double tap cannot slip two codes
+     * through, and so a request refused for coming too soon does not also spend
+     * one of the phone's or the device's allowance for the window.
+     *
+     * <p>Every refusal carries the seconds remaining, so the screen can count
+     * down and re-enable itself. "Try again later" leaves somebody tapping a
+     * button to discover whether later has arrived.
+     */
+    private void enforceValkeyLimits(String phone, String requestIpAddress, OtpPurpose purpose) {
+        if (!valkeyOtpStore.startResendCooldown(phone, purpose, RESEND_COOLDOWN)) {
             throw new TooManyRequestsException(
-                    "Too many requests",
-                    secondsUntilWindowFrees(
-                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, since), now));
+                    RESEND_TOO_SOON,
+                    valkeyOtpStore.resendCooldownRemainingSeconds(phone, purpose));
+        }
+
+        // Both windows are counted before either is judged, so a refusal
+        // reports the LONGER wait when both are exceeded. Reporting the burst
+        // window's few minutes first sent the person away only to be refused
+        // again, for the rest of the hour, when they came back.
+        long burstCount = valkeyOtpStore.incrementRequestCount(phone, PHONE_BURST_WINDOW);
+        long hourlyCount = valkeyOtpStore.incrementHourlyRequestCount(phone, PHONE_HOURLY_WINDOW);
+        long phoneWait = Math.max(
+                burstCount > MAX_PHONE_REQUESTS_BURST ? valkeyOtpStore.requestWindowRemainingSeconds(phone) : 0L,
+                hourlyCount > MAX_PHONE_REQUESTS_HOURLY ? valkeyOtpStore.hourlyRequestWindowRemainingSeconds(phone) : 0L);
+        if (burstCount > MAX_PHONE_REQUESTS_BURST || hourlyCount > MAX_PHONE_REQUESTS_HOURLY) {
+            throw new TooManyRequestsException("Too many requests", phoneWait);
+        }
+
+        if (requestIpAddress == null || requestIpAddress.isBlank()) {
+            return;
+        }
+        long ipCount = valkeyOtpStore.incrementIpRequestCount(requestIpAddress, IP_WINDOW);
+        if (ipCount > MAX_RECENT_IP_REQUESTS) {
+            throw new TooManyRequestsException(
+                    "Too many requests from this device",
+                    valkeyOtpStore.ipRequestWindowRemainingSeconds(requestIpAddress));
+        }
+    }
+
+    /**
+     * The same three rules, answered from the rows the database already keeps.
+     *
+     * <p>Only reached when Valkey could not be asked. Those rows are written on
+     * every send, Valkey path included (see {@code saveDatabaseMirror}), so the
+     * counts here are the true ones even for codes Valkey issued before it went
+     * down.
+     */
+    private void enforceDatabaseLimits(String phone, String requestIpAddress, OtpPurpose purpose, Instant now) {
+        otpRepository.findFirstByPhoneAndPurposeOrderByCreatedAtDesc(phone, purpose)
+                .map(latest -> latest.getCreatedAt().plus(RESEND_COOLDOWN))
+                .filter(cooldownEnds -> cooldownEnds.isAfter(now))
+                .ifPresent(cooldownEnds -> {
+                    throw new TooManyRequestsException(
+                            RESEND_TOO_SOON,
+                            Math.max(1L, Duration.between(now, cooldownEnds).toSeconds()));
+                });
+
+        // The same two windows. The longer wait wins when both are full, for
+        // the same reason as on the Valkey side.
+        Instant burstSince = now.minus(PHONE_BURST_WINDOW);
+        Instant hourlySince = now.minus(PHONE_HOURLY_WINDOW);
+        boolean burstFull = otpRepository.countByPhoneAndCreatedAtAfter(phone, burstSince) >= MAX_PHONE_REQUESTS_BURST;
+        boolean hourlyFull = otpRepository.countByPhoneAndCreatedAtAfter(phone, hourlySince) >= MAX_PHONE_REQUESTS_HOURLY;
+        if (burstFull || hourlyFull) {
+            long burstWait = burstFull
+                    ? secondsUntilWindowFrees(
+                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, burstSince),
+                            now,
+                            PHONE_BURST_WINDOW)
+                    : 0L;
+            long hourlyWait = hourlyFull
+                    ? secondsUntilWindowFrees(
+                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, hourlySince),
+                            now,
+                            PHONE_HOURLY_WINDOW)
+                    : 0L;
+            throw new TooManyRequestsException("Too many requests", Math.max(burstWait, hourlyWait));
         }
 
         if (requestIpAddress == null || requestIpAddress.isBlank()) {
             return;
         }
 
-        long recentIpOtpCount = otpRepository.countByRequestIpAddressAndCreatedAtAfter(requestIpAddress, since);
+        Instant ipSince = now.minus(IP_WINDOW);
+        long recentIpOtpCount = otpRepository.countByRequestIpAddressAndCreatedAtAfter(requestIpAddress, ipSince);
         if (recentIpOtpCount >= MAX_RECENT_IP_REQUESTS) {
             throw new TooManyRequestsException(
                     "Too many requests from this device",
                     secondsUntilWindowFrees(
                             otpRepository.findFirstByRequestIpAddressAndCreatedAtAfterOrderByCreatedAtAsc(
-                                    requestIpAddress, since),
-                            now));
+                                    requestIpAddress, ipSince),
+                            now,
+                            IP_WINDOW));
         }
     }
 
@@ -246,11 +361,11 @@ public class OtpService {
      * over-states the wait rather than under-stating it — a screen that
      * re-enables early sends the caller into a second refusal.
      */
-    private static long secondsUntilWindowFrees(Optional<OtpRequest> oldest, Instant now) {
+    private static long secondsUntilWindowFrees(Optional<OtpRequest> oldest, Instant now, Duration window) {
         return oldest
-                .map(request -> Duration.between(now, request.getCreatedAt().plus(RATE_LIMIT_WINDOW)).toSeconds())
+                .map(request -> Duration.between(now, request.getCreatedAt().plus(window)).toSeconds())
                 .filter(seconds -> seconds > 0)
-                .orElse(RATE_LIMIT_WINDOW.toSeconds());
+                .orElse(window.toSeconds());
     }
 
     private void recordDatabaseFailedAttempt(String phone, OtpPurpose purpose) {

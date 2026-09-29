@@ -5,6 +5,7 @@ import java.util.List;
 import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -27,6 +28,25 @@ public record RecordManualPaymentRequest(
      */
     @Size(max = 2, message = "Attach at most two proof photos")
     List<@Size(max = 600) String> proofImageUrls,
-    @Size(max = 500) String note
+    @Size(max = 500) String note,
+
+    /**
+     * The tenant's cash-payment code, read out as they hand the money over.
+     *
+     * <p>Required for CASH recorded against a bill, and ignored for every other
+     * method. Six digits, matching what the OTP system issues — checked here so
+     * a mistyped five-digit entry is a field error, not a spent attempt.
+     */
+    @Pattern(regexp = "\\d{6}", message = "Enter the 6-digit code from the tenant's phone")
+    String otp
 ) {
+
+    /**
+     * Without a code, for payments recorded by the system itself rather than
+     * at a bill — a confirmed UPI claim, or a charge collected at move-out.
+     */
+    public RecordManualPaymentRequest(
+            ManualPaymentMethod method, String referenceText, List<String> proofImageUrls, String note) {
+        this(method, referenceText, proofImageUrls, note, null);
+    }
 }

@@ -74,7 +74,22 @@ export function useUnsavedChanges(dirty: boolean) {
         close();
         return;
       }
-      setPendingExit(() => close);
+      setPendingExit(() => () => {
+        // The close the person just confirmed may itself navigate away: a
+        // hardware Back handler wrapping router.back(). That removal then met
+        // the beforeRemove listener above and asked a SECOND time, so leaving
+        // Add rooms midway showed two dialogs back to back. Let this one
+        // through, then stand the listener back up, so a modal closed this way
+        // still leaves the screen guarded for a later exit.
+        confirming.current = true;
+        try {
+          close();
+        } finally {
+          setTimeout(() => {
+            confirming.current = false;
+          }, 0);
+        }
+      });
     },
     [],
   );

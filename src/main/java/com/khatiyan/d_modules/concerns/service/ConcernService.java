@@ -16,6 +16,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
@@ -39,12 +41,14 @@ import com.khatiyan.d_modules.concerns.event.ConcernResolvedEvent;
 import com.khatiyan.d_modules.concerns.event.ConcernStatusChangedEvent;
 import com.khatiyan.d_modules.concerns.model.Concern;
 import com.khatiyan.d_modules.concerns.model.ConcernEscalationLevel;
+import com.khatiyan.d_modules.concerns.model.ConcernStatus;
 import com.khatiyan.d_modules.concerns.repository.ConcernRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -68,6 +72,9 @@ public class ConcernService {
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private static final int MAX_WEEKLY_CONCERNS_PER_TENANT = 5;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public ConcernService(
             ConcernRepository concernRepository,
             TenancyModule tenancyModule,
@@ -75,7 +82,9 @@ public class ConcernService {
             ConcernAccessPolicy concernAccessPolicy,
             AuthModule authModule,
             ApplicationEventPublisher eventPublisher,
-            ReferenceCodeGenerator referenceCodeGenerator) {
+            ReferenceCodeGenerator referenceCodeGenerator,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.concernRepository = concernRepository;
         this.tenancyModule = tenancyModule;
         this.propertyModule = propertyModule;
@@ -203,6 +212,16 @@ public class ConcernService {
     public ConcernResponse raiseConcern(UUID tenantUserId, CreateConcernRequest request) {
         TenancyResponse activeTenancy = tenancyModule.findActiveByUserId(tenantUserId)
                 .orElseThrow(() -> new ValidationException("Tenant has no active tenancy"));
+        // Past its checkout date the stay is waiting to be ended: nothing new is
+        // started on it. Concerns already raised can still be worked and closed.
+        if (activeTenancy.status() == TenancyStatus.PENDING_EXIT) {
+            throw new ValidationException("Your stay is past its checkout date. Speak to your owner about moving out.");
+        }
+        // Before its start date the stay has not begun, so concerns open with it,
+        // as exit and room change requests do (2026-09-27).
+        if (activeTenancy.startDate() != null && activeTenancy.startDate().isAfter(LocalDate.now(DASHBOARD_ZONE))) {
+            throw new ValidationException("Concerns can be raised once your tenancy has started.");
+        }
         enforceWeeklyRaiseLimit(tenantUserId);
 
         Concern concern = Concern.raise(
@@ -392,6 +411,7 @@ public class ConcernService {
         // The assignee, not the actor: a concern handed to someone who cannot
         // work concerns is an item nobody can clear.
         concernAccessPolicy.ensureAssigneeCanWorkConcerns(request.assignedToUserId(), concern.getPropertyId());
+        VersionGuard.claim(concern);
 
         try {
             concern.assignTo(request.assignedToUserId(), actorUserId, Instant.now());
@@ -424,6 +444,7 @@ public class ConcernService {
     public ConcernResponse updateConcernStatus(UUID actorUserId, UUID concernId, UpdateConcernStatusRequest request) {
         Concern concern = getConcern(concernId);
         concernAccessPolicy.ensureCanManage(actorUserId, concern.getPropertyId());
+        VersionGuard.claim(concern);
 
         try {
             switch (request.status()) {
@@ -470,6 +491,7 @@ public class ConcernService {
     public ConcernResponse resolveConcern(UUID actorUserId, UUID concernId, ResolveConcernRequest request) {
         Concern concern = getConcern(concernId);
         concernAccessPolicy.ensureCanManage(actorUserId, concern.getPropertyId());
+        VersionGuard.claim(concern);
 
         try {
             concern.resolve(actorUserId, request.resolutionNote().trim(), Instant.now());
@@ -501,6 +523,7 @@ public class ConcernService {
     public ConcernResponse reopenConcern(UUID tenantUserId, UUID concernId, ReopenConcernRequest request) {
         Concern concern = getConcern(concernId);
         ensureTenantRaisedConcern(tenantUserId, concern);
+        VersionGuard.claim(concern);
 
         try {
             concern.reopen(request.reopenReason().trim(), Instant.now());
@@ -527,20 +550,30 @@ public class ConcernService {
     /**
      * Closes resolved concerns whose reopen window has expired.
      */
-    @Transactional
     public int closeExpiredResolvedConcerns() {
         Instant now = Instant.now();
-        List<Concern> concerns = concernRepository.findResolvedConcernsPastReopenWindow(now);
+        List<UUID> ids = concernRepository.findResolvedConcernsPastReopenWindow(now).stream()
+                .map(Concern::getId)
+                .toList();
 
-        for (Concern concern : concerns) {
+        // One concern per transaction, re-read inside it (2026-09-28): a tenant
+        // may reopen one at this moment, and then it is no longer ours to close.
+        int closed = recordByRecord.run("concern-close-resolved", ids, id -> id, id -> {
+            Concern concern = concernRepository.findById(id).orElse(null);
+            if (concern == null
+                    || concern.getStatus() != ConcernStatus.RESOLVED
+                    || (concern.getReopenUntil() != null && now.isBefore(concern.getReopenUntil()))) {
+                return false;
+            }
             concern.closeAfterReopenWindow(now);
+            return true;
+        });
+
+        if (closed > 0) {
+            log.info("Expired resolved concerns closed count={}", closed);
         }
 
-        if (!concerns.isEmpty()) {
-            log.info("Expired resolved concerns closed count={}", concerns.size());
-        }
-
-        return concerns.size();
+        return closed;
     }
 
     @Transactional(readOnly = true)
@@ -553,27 +586,35 @@ public class ConcernService {
         return getConcern(concernId).getTenancyId();
     }
 
-    /**
-     * Promotes old open/under-review concerns into visible escalation levels.
-     */
-    @Transactional
     /** Null-safe ordinal, so a concern with no level yet counts as the floor. */
     private static int ordinalOf(ConcernEscalationLevel level) {
         return level == null ? ConcernEscalationLevel.NONE.ordinal() : level.ordinal();
     }
 
+    /**
+     * Promotes old open/under-review concerns into visible escalation levels.
+     *
+     * <p>Its {@code @Transactional} used to sit on {@link #ordinalOf} by
+     * mistake, so this ran with no transaction and a changed level was never
+     * saved. Each concern now gets its own transaction (2026-09-28).
+     */
     public int updateConcernEscalationLevels() {
         Instant now = Instant.now();
         Instant attentionThreshold = now.minus(ConcernEscalationLevel.ATTENTION_THRESHOLD);
-        List<Concern> concerns = concernRepository.findEscalationCandidates(attentionThreshold);
-        int updatedCount = 0;
+        List<UUID> concerns = concernRepository.findEscalationCandidates(attentionThreshold).stream()
+                .map(Concern::getId)
+                .toList();
 
-        for (Concern concern : concerns) {
+        // One concern per transaction, re-read inside it (2026-09-28).
+        int updatedCount = recordByRecord.run("concern-escalate", concerns, id -> id, id -> {
+            Concern concern = concernRepository.findById(id).orElse(null);
+            if (concern == null) {
+                return false;
+            }
             ConcernEscalationLevel before = concern.getEscalationLevel();
             if (!concern.refreshEscalationLevel(now)) {
-                continue;
+                return false;
             }
-            updatedCount = updatedCount + 1;
 
             // Only a RISE is an event. A level falling back to NONE means the
             // concern was picked up or resolved, which the status change
@@ -587,7 +628,8 @@ public class ConcernService {
                         concern.getEscalationLevel(),
                         concern.getTitle()));
             }
-        }
+            return true;
+        });
 
         if (updatedCount > 0) {
             log.info("Concern escalation levels updated checked={} updated={}", concerns.size(), updatedCount);

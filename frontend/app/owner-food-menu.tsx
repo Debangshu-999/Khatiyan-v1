@@ -20,7 +20,7 @@ import {
   DAY_LABEL,
   DayStrip,
   FoodItemThumb,
-  MEAL_ICON,
+  MealGlyph,
   MEAL_LABEL,
   MEAL_ORDER,
   entrySummary,
@@ -119,7 +119,7 @@ export default function OwnerFoodMenuScreen() {
           subtitle={params.profileName ? `${params.profileName} · repeats every week` : "Repeats every week"}
           title="Weekly"
         />
-        <FoodMenuSkeleton />
+        <FoodMenuSkeleton contained />
       </ScreenScrollView>
     );
   }
@@ -133,7 +133,7 @@ export default function OwnerFoodMenuScreen() {
         title="Weekly"
       />
 
-      <DayStrip onSelect={setDay} selected={day} week={week} />
+      <DayStrip onSelect={setDay} selected={day} variant="contained" week={week} />
 
       {stale.length > 0 ? (
         <NoticeBar
@@ -258,7 +258,7 @@ function MealSection({
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <MaterialCommunityIcons color={colors.ink} name={MEAL_ICON[meal]} size={21} />
+        <MealGlyph color={colors.ink} meal={meal} size={21} />
         <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 18 }}>
           {MEAL_LABEL[meal]}
         </Text>
@@ -325,11 +325,13 @@ function IconAction({
   icon,
   label,
   onPress,
+  size = 15,
   tone,
 }: {
   icon: Parameters<typeof foodIcon>[0];
   label: string;
   onPress: () => void;
+  size?: number;
   tone: string;
 }) {
   const { colors } = useTheme();
@@ -348,7 +350,7 @@ function IconAction({
         width: 28,
       }}
     >
-      <MaterialCommunityIcons color={tone} name={icon} size={15} />
+      <MaterialCommunityIcons color={tone} name={icon} size={size} />
     </AnimatedPressable>
   );
 }
@@ -490,7 +492,7 @@ function FoodItemPickerDialog({
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
                 Add to {MEAL_LABEL[meal].toLowerCase()}
               </Text>
-              <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5 }}>
+              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                 {DAY_LABEL[day]} · tap to pick as many as you need
               </Text>
             </View>
@@ -514,13 +516,8 @@ function FoodItemPickerDialog({
 
           {items.length === 0 ? (
             <Text
-              style={{
-                color: colors.muted,
-                fontFamily: fonts.sans,
-                fontSize: 12.5,
-                lineHeight: 18,
-                padding: spacing.lg,
-              }}
+              style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
+                padding: spacing.lg }}
             >
               Nothing left to add to {MEAL_LABEL[meal].toLowerCase()}. Either everything tagged for it is already
               here, or no food item is tagged for this meal yet — tag one on the Food items tab.
@@ -775,7 +772,7 @@ function MenuEntrySheet({
 
       {tuning ? (
         <View style={{ gap: spacing.md }}>
-          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 18 }}>
+          <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             All four are optional. Leave them blank to cook exactly the per-person portion.
           </Text>
           <FormInput

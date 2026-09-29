@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.employment.SalaryStructure;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
@@ -70,6 +72,9 @@ public class SalaryAccountService {
     private final StaffMemberRepository staffMemberRepository;
     private final StaffCategoryRepository staffCategoryRepository;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public SalaryAccountService(
             PropertyModule propertyModule,
             ReferenceCodeGenerator referenceCodeGenerator,
@@ -78,7 +83,9 @@ public class SalaryAccountService {
             SalaryAdjustmentRepository salaryAdjustmentRepository,
             SalaryPaymentRepository salaryPaymentRepository,
             StaffMemberRepository staffMemberRepository,
-            StaffCategoryRepository staffCategoryRepository) {
+            StaffCategoryRepository staffCategoryRepository,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.propertyModule = propertyModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.salaryAccountRepository = salaryAccountRepository;
@@ -342,37 +349,50 @@ public class SalaryAccountService {
      * 1st. Daily-wage employees are paid per working day and are skipped.
      * Idempotent: re-running once the account + month exist is a no-op.
      */
-    @Transactional
     public int openDueSalaryMonths(LocalDate today) {
         LocalDate currentMonth = YearMonth.from(today).atDay(1);
         int opened = 0;
 
-        for (StaffMember member : staffMemberRepository.findByActiveTrue()) {
-            if (!isPayrollEligible(member.getSalaryStructure(), member.getSalaryRatePaise(), member.getEmploymentStartDate())) {
-                continue;
-            }
-            SalaryAccount account = salaryAccountRepository.findByStaffMemberId(member.getId())
-                    .orElseGet(() -> salaryAccountRepository.save(SalaryAccount.forStaffMember(
-                            referenceCodeGenerator.nextCode("SAL"),
-                            member.getPropertyId(),
-                            member.getId(),
-                            member.getEmploymentStartDate())));
-            opened += openMonthIfDue(account, member.getSalaryRatePaise(),
-                    member.getEmploymentStartDate(), member.getEmploymentEndDate(), currentMonth, today);
+        // One person per transaction (2026-09-28): an owner editing someone's
+        // salary at this moment costs only that person's month until the next run.
+        for (UUID memberId : staffMemberRepository.findByActiveTrue().stream().map(StaffMember::getId).toList()) {
+            int[] openedHere = {0};
+            recordByRecord.attempt("salary-open-month", memberId, () -> {
+                StaffMember member = staffMemberRepository.findById(memberId).orElse(null);
+                if (member == null || !member.isActive()
+                        || !isPayrollEligible(member.getSalaryStructure(), member.getSalaryRatePaise(), member.getEmploymentStartDate())) {
+                    return false;
+                }
+                SalaryAccount account = salaryAccountRepository.findByStaffMemberId(member.getId())
+                        .orElseGet(() -> salaryAccountRepository.save(SalaryAccount.forStaffMember(
+                                referenceCodeGenerator.nextCode("SAL"),
+                                member.getPropertyId(),
+                                member.getId(),
+                                member.getEmploymentStartDate())));
+                openedHere[0] = openMonthIfDue(account, member.getSalaryRatePaise(),
+                        member.getEmploymentStartDate(), member.getEmploymentEndDate(), currentMonth, today);
+                return openedHere[0] > 0;
+            });
+            opened += openedHere[0];
         }
 
         for (ManagerPayrollView manager : propertyModule.listActiveManagerPayroll()) {
             if (!isPayrollEligible(manager.salaryStructure(), manager.salaryRatePaise(), manager.employmentStartDate())) {
                 continue;
             }
-            SalaryAccount account = salaryAccountRepository.findByPropertyManagerId(manager.id())
-                    .orElseGet(() -> salaryAccountRepository.save(SalaryAccount.forManager(
-                            referenceCodeGenerator.nextCode("SAL"),
-                            manager.propertyId(),
-                            manager.id(),
-                            manager.employmentStartDate())));
-            opened += openMonthIfDue(account, manager.salaryRatePaise(),
-                    manager.employmentStartDate(), manager.employmentEndDate(), currentMonth, today);
+            int[] openedHere = {0};
+            recordByRecord.attempt("salary-open-month", manager.id(), () -> {
+                SalaryAccount account = salaryAccountRepository.findByPropertyManagerId(manager.id())
+                        .orElseGet(() -> salaryAccountRepository.save(SalaryAccount.forManager(
+                                referenceCodeGenerator.nextCode("SAL"),
+                                manager.propertyId(),
+                                manager.id(),
+                                manager.employmentStartDate())));
+                openedHere[0] = openMonthIfDue(account, manager.salaryRatePaise(),
+                        manager.employmentStartDate(), manager.employmentEndDate(), currentMonth, today);
+                return openedHere[0] > 0;
+            });
+            opened += openedHere[0];
         }
 
         return opened;
@@ -561,6 +581,7 @@ public class SalaryAccountService {
             CreateSalaryAdjustmentRequest request) {
         SalaryAccount account = ownedAccount(actorUserId, propertyId, accountReferenceCode);
         SalaryMonth month = salaryMonth(account, normalizeMonth(payrollMonth));
+        VersionGuard.claim(month);
         ensureUnpaidForAdjustment(month);
         salaryAdjustmentRepository.save(SalaryAdjustment.create(
                 month.getId(), request.adjustmentType(), request.amountPaise(), request.reason().trim(), actorUserId));
@@ -578,6 +599,7 @@ public class SalaryAccountService {
             UpdateSalaryAdjustmentRequest request) {
         SalaryAccount account = ownedAccount(actorUserId, propertyId, accountReferenceCode);
         SalaryMonth month = salaryMonth(account, normalizeMonth(payrollMonth));
+        VersionGuard.claim(month);
         ensureUnpaidForAdjustment(month);
         SalaryAdjustment adjustment = salaryAdjustmentRepository.findById(adjustmentId)
                 .filter(item -> item.getSalaryMonthId().equals(month.getId()))
@@ -596,6 +618,7 @@ public class SalaryAccountService {
             UUID adjustmentId) {
         SalaryAccount account = ownedAccount(actorUserId, propertyId, accountReferenceCode);
         SalaryMonth month = salaryMonth(account, normalizeMonth(payrollMonth));
+        VersionGuard.claim(month);
         ensureUnpaidForAdjustment(month);
         SalaryAdjustment adjustment = salaryAdjustmentRepository.findById(adjustmentId)
                 .filter(item -> item.getSalaryMonthId().equals(month.getId()))
@@ -614,6 +637,7 @@ public class SalaryAccountService {
             RecordSalaryPaymentRequest request) {
         SalaryAccount account = ownedAccount(actorUserId, propertyId, accountReferenceCode);
         SalaryMonth month = salaryMonth(account, normalizeMonth(payrollMonth));
+        VersionGuard.claim(month);
         long alreadyPaid = month.getPaidAmountPaise();
         if (alreadyPaid + request.amountPaise() > month.getNetAmountPaise()) {
             throw new ValidationException("Recorded salary payment cannot exceed the remaining payable amount");

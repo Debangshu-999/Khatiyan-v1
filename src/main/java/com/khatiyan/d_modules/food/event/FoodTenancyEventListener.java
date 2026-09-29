@@ -7,6 +7,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import com.khatiyan.d_modules.food.service.FoodSubscriptionService;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyPendingExitEvent;
 
 @Component
 public class FoodTenancyEventListener {
@@ -25,5 +26,11 @@ public class FoodTenancyEventListener {
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onTenancyCancelled(TenancyCancelledEvent event) {
         subscriptionService.endForTenancy(event.tenancyId(), "Tenancy cancelled");
+    }
+
+    /** Past its checkout date a stay's account halts, meals included. Ends with the flip, in its transaction. */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onTenancyPendingExit(TenancyPendingExitEvent event) {
+        subscriptionService.endForTenancy(event.tenancyId(), "Stay past its checkout date");
     }
 }

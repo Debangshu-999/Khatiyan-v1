@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
-import { useLocalSearchParams } from "expo-router";
-import { AlertCircle, CalendarDays, CircleCheck, Clock3, History, Receipt, ReceiptText, SlidersHorizontal } from "lucide-react-native";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { AlertCircle, CalendarDays, CircleCheck, Clock3, History, Receipt, ReceiptText, SlidersHorizontal, X } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
-import { AlertModal } from "@/components/alert-modal";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
 import { PickerOptionRow } from "@/components/picker-option-row";
@@ -12,7 +11,6 @@ import { SearchField } from "@/components/search-field";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonList, SkeletonTiles } from "@/components/skeleton";
 import { Card } from "@/components/card";
@@ -23,6 +21,7 @@ import { PayBillSheet } from "@/features/billing/pay-bill-sheet";
 import { PaymentDecisionModal } from "@/features/billing/payment-decision-modal";
 import { TenantBillCard } from "@/features/billing/tenant-bill-card";
 import { TenantBillReceiptSheet } from "@/features/billing/tenant-bill-receipt-sheet";
+import { StartsSoonBubble, daysUntil, startsInLabel } from "@/features/tenancy/starts-soon-bubble";
 import { formatMoney } from "@/features/owner/bill-views";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
@@ -113,8 +112,57 @@ export default function TenancyBillsScreen() {
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<BillingCycle | null>(null);
   const [page, setPage] = useState(0);
+  const askedAboutRef = useRef<string | null>(null);
   const paymentStateQuery = useGetMyPaymentStateQuery(payingBill?.id ?? "", { skip: !payingBill });
   const paymentState = paymentStateQuery.data;
+
+  /**
+   * Open an unfinished UPI attempt only here, while My bills is focused.
+   *
+   * <p>The tenant tab used to own this re-entry prompt, which meant returning
+   * from a payment app could put a billing decision over the tenancy home.
+   * Keeping the listener on this route also prevents a mounted My bills screen
+   * in the background from placing a native modal over bill details.
+   */
+  const askAbout = useCallback((intent: PaymentIntent) => {
+    askedAboutRef.current = intent.id;
+    setDeciding(intent);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (deciding || payingBill || viewingIntents || viewingReceipt || statusPickerOpen) {
+        return;
+      }
+
+      const unanswered = (liveIntentsQuery.data ?? []).find(
+        (intent) => intent.status === "CREATED" && intent.method === "UPI",
+      );
+      if (unanswered && askedAboutRef.current !== unanswered.id) {
+        askAbout(unanswered);
+      }
+    }, [
+      askAbout,
+      deciding,
+      liveIntentsQuery.data,
+      payingBill,
+      statusPickerOpen,
+      viewingIntents,
+      viewingReceipt,
+    ]),
+  );
+
+  // Dismissing the question does not make it bounce straight back. Leaving
+  // My bills and opening it again is a new visit, so an unresolved attempt is
+  // offered again then.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        askedAboutRef.current = null;
+      },
+      [],
+    ),
+  );
 
   /**
    * The stay's property, for the receipt's letterhead.
@@ -201,6 +249,36 @@ export default function TenancyBillsScreen() {
 
   const paged = paginateArray(shown, page, BILL_PAGE_SIZE);
 
+  /**
+   * Days until billing begins, while it has not begun yet: no rent cycle has
+   * left UPCOMING. Counted to the first cycle's start (its window opens then),
+   * or to the stay's start when no cycle has been raised yet. Zero once the
+   * first window is open, which hides the note.
+   */
+  const billingStartsIn = useMemo(() => {
+    const rent = cycles.filter((cycle) => cycle.category === "RENT_CYCLE");
+    if (rent.some((cycle) => cycle.status !== "UPCOMING")) {
+      return 0;
+    }
+    const firstStart =
+      rent.map((cycle) => cycle.periodStartDate.slice(0, 10)).sort()[0]
+      ?? (activeTenancy && activeTenancy.tenancy.id === tenancyId ? activeTenancy.tenancy.startDate : null);
+    return firstStart ? Math.max(0, daysUntil(firstStart)) : 0;
+  }, [activeTenancy, cycles, tenancyId]);
+
+  // A red dot on a tab while a bill in it is waiting to be paid. Counted over
+  // what the tab lists (this month), so the dot never points at a bill the tab
+  // does not show. Upcoming bills are not payable yet and confirming ones are
+  // with the owner, so neither counts.
+  const unpaidThisMonth = useMemo(() => {
+    const thisMonth = istMonthKey(new Date());
+    return cycles.filter(
+      (cycle) =>
+        (cycle.status === "UNPAID" || cycle.status === "OVERDUE")
+        && istMonthKey(new Date(cycle.periodStartDate)) === thisMonth,
+    );
+  }, [cycles]);
+
   const dueNowPaise = payable.reduce((total, cycle) => total + cycle.totalAmountPaise, 0);
   const overdueCount = payable.filter((cycle) => cycle.status === "OVERDUE").length;
   const paidPaise = cycles
@@ -211,12 +289,14 @@ export default function TenancyBillsScreen() {
   const nextDue = payable.length > 0 ? payable[payable.length - 1].rentDueDate : null;
 
   function payHandlerFor(cycle: BillingCycle) {
-    if (cycle.status === "CONFIRMATION_PENDING") {
+    // Only a bill whose window is open can be paid. UPCOMING is not open yet,
+    // and a paid, cancelled or confirming one has nothing left to pay.
+    if (cycle.status !== "UNPAID" && cycle.status !== "OVERDUE") {
       return null;
     }
     const openAttempt = liveIntentByCycle.get(cycle.id);
     if (openAttempt) {
-      return openAttempt.status === "CREATED" ? () => setDeciding(openAttempt) : null;
+      return openAttempt.status === "CREATED" ? () => askAbout(openAttempt) : null;
     }
     return () => setPayingBill(cycle);
   }
@@ -236,73 +316,95 @@ export default function TenancyBillsScreen() {
       {/* Which month the four numbers below are counting. They are a summary of
           one month, not of the stay, and without the date on them "Paid so far"
           reads as everything ever paid. */}
-      <View style={{ alignItems: "center" }}>
+      <View style={{ gap: spacing.sm }}>
         <View
           style={{
             alignItems: "center",
-            borderColor: colors.primary,
-            borderRadius: 999,
+            alignSelf: "flex-start",
+            backgroundColor: colors.surfaceSunken,
+            borderCurve: "continuous",
+            borderRadius: 8,
             flexDirection: "row",
             gap: spacing.xs,
-            paddingHorizontal: spacing.md,
+            paddingHorizontal: spacing.sm,
             paddingVertical: 6,
-            // Outlined, not filled. A pale blue ground is `primarySoft`, which
-            // is barred as a fill anywhere in the app — blue is text, icon and
-            // border here.
-            borderWidth: 1,
           }}
         >
-          <CalendarDays color={colors.primary} size={14} strokeWidth={2.4} />
-          <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13 }}>
+          <CalendarDays color={colors.muted} size={14} strokeWidth={2.2} />
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>
             {currentMonthLabel()}
           </Text>
         </View>
-      </View>
 
-      {cyclesQuery.isFetching && cycles.length === 0 ? (
-        <SkeletonTiles count={4} />
-      ) : (
-        <View style={{ gap: spacing.sm }}>
+        {cyclesQuery.isFetching && cycles.length === 0 ? (
+          <SkeletonTiles count={4} />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
               icon={AlertCircle}
               iconPlacement="side"
+              iconTone="danger"
               label="Due now"
               tone={dueNowPaise > 0 ? "danger" : "default"}
               value={formatMoney(dueNowPaise)}
             />
-            <MetricTile icon={Clock3} iconPlacement="side" label="Overdue" value={String(overdueCount)} />
+            <MetricTile
+              icon={Clock3}
+              iconPlacement="side"
+              iconTone="warning"
+              label="Overdue"
+              value={String(overdueCount)}
+            />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={CircleCheck} iconPlacement="side" label="Paid so far" value={formatMoney(paidPaise)} />
+            <MetricTile
+              icon={CircleCheck}
+              iconPlacement="side"
+              iconTone="success"
+              label="Paid so far"
+              value={formatMoney(paidPaise)}
+            />
             <MetricTile
               icon={CalendarDays}
               iconPlacement="side"
+              iconTone="primary"
               label="Next due"
               value={nextDue ? formatDueDate(nextDue) : "—"}
             />
           </View>
-        </View>
-      )}
+          </View>
+        )}
+      </View>
 
       {/* No heading over this. The switcher names what is below it, and a
           "To pay" title above a tab that can be showing paid bills would be
           describing the wrong list half the time. */}
+      {billingStartsIn > 0 ? <StartsSoonBubble title={startsInLabel("Billing", billingStartsIn)} /> : null}
+
       <TabSwitcher<BillTab>
         active={tab}
         onChange={setTab}
         options={[
-          { icon: ReceiptText, label: "Billing cycles", value: "RENT_CYCLE" },
-          { icon: Receipt, label: "Other bills", value: "ONE_OFF" },
+          {
+            dot: unpaidThisMonth.some((cycle) => cycle.category === "RENT_CYCLE"),
+            icon: ReceiptText,
+            label: "Billing cycles",
+            value: "RENT_CYCLE",
+          },
+          {
+            dot: unpaidThisMonth.some((cycle) => cycle.category === "ONE_OFF"),
+            icon: Receipt,
+            label: "Other bills",
+            value: "ONE_OFF",
+          },
         ]}
       />
 
-      {/* The count names the list, as it does on the owner's billing screen.
-          No information icon beside it: the owner's explains cycle generation
-          and early windows, which are decisions a tenant does not make. */}
-      <Section
-        title={`${shown.length} ${tab === "RENT_CYCLE" ? "billing cycle" : "other bill"}${shown.length === 1 ? "" : "s"}`}
-      >
+      {/* No heading over the list (user, 2026-09-27). The count is a small
+          blue line under the search instead, where it reads as the result of
+          the search and filter above it. */}
+      <View style={{ gap: spacing.sm }}>
         <SearchField
           autoCapitalize="characters"
           onChangeText={setSearch}
@@ -316,6 +418,20 @@ export default function TenancyBillsScreen() {
           }
           value={search}
         />
+        <View
+          style={{
+            alignSelf: "flex-start",
+            backgroundColor: colors.primarySoft,
+            borderCurve: "continuous",
+            borderRadius: 8,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 5,
+          }}
+        >
+          <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 12 }}>
+            {`${shown.length} ${tab === "RENT_CYCLE" ? "billing cycle" : "other bill"}${shown.length === 1 ? "" : "s"}`}
+          </Text>
+        </View>
 
         {cyclesQuery.isFetching && cycles.length === 0 ? (
           <SkeletonList rows={2} />
@@ -333,7 +449,9 @@ export default function TenancyBillsScreen() {
           />
         ) : (
           <>
-            {paged.pageItems.map((cycle) => (
+            {/* Billing cycles are never paged: a month holds one live cycle
+                (user, 2026-09-27). Other bills can pile up, so they keep it. */}
+            {(tab === "RENT_CYCLE" ? shown : paged.pageItems).map((cycle) => (
               <TenantBillCard
                 cycle={cycle}
                 key={cycle.id}
@@ -344,12 +462,10 @@ export default function TenancyBillsScreen() {
               />
             ))}
 
-            {/* Shown whenever there is a bill, not only once there are two
-                pages. The owner's billing list does the same: the bar carries
-                the running total as well as the position, so on a single page
-                it is still saying something — and a control that appears only
-                sometimes is one the reader has to rediscover. */}
-            {paged.totalElements > 0 ? (
+            {/* On Other bills, shown whenever there is a bill, not only once
+                there are two pages: the bar carries the running total as well
+                as the position, so on a single page it still says something. */}
+            {tab === "ONE_OFF" && paged.totalElements > 0 ? (
               <PaginationBar
                 hasNext={paged.hasNext}
                 hasPrevious={paged.hasPrevious}
@@ -362,7 +478,7 @@ export default function TenancyBillsScreen() {
             ) : null}
           </>
         )}
-      </Section>
+      </View>
 
       {/* The owner's history-route card, which is a card and not a section:
           artwork beside the words, the eyebrow naming what is behind it, and
@@ -401,7 +517,7 @@ export default function TenancyBillsScreen() {
           onClose={() => setViewingIntents(null)}
           onResolve={(intent) => {
             setViewingIntents(null);
-            setDeciding(intent);
+            askAbout(intent);
           }}
         />
       ) : null}
@@ -414,22 +530,20 @@ export default function TenancyBillsScreen() {
         </SheetShell>
       ) : null}
 
-      {payingBill && paymentState && !paymentState.upiAvailable ? (
-        <AlertModal
-          message="This property has not set up online payment yet. Pay them directly and they will record it."
-          onClose={() => setPayingBill(null)}
-        />
-      ) : null}
-
-      {payingBill && paymentState?.payee ? (
+      {/* Every property takes at least one way of paying (cash by default), so
+          the sheet always has something to show. */}
+      {payingBill && paymentState ? (
         <PayBillSheet
           amountPaise={payingBill.totalAmountPaise}
           billingCycleId={payingBill.id}
+          billVersion={payingBill.version}
+          cashOtpRequired={paymentState.cashOtpRequired}
           hasPayLink={paymentState.payLinkAvailable}
+          methods={paymentState.acceptedMethods}
           onClose={() => setPayingBill(null)}
           onStarted={(intent) => {
             setPayingBill(null);
-            setDeciding(intent);
+            askAbout(intent);
           }}
           payee={paymentState.payee}
           referenceCode={payingBill.referenceCode}
@@ -487,7 +601,7 @@ function BillsRouteCard({
               description was a third block with a gap above it and the card
               stood a good 40pt taller than it needed to — the artwork's own
               height was already paying for those lines. */}
-          <Text style={[type.body, { color: colors.muted }]}>{description}</Text>
+          <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
         </View>
         <Image
           accessibilityIgnoresInvertColors
@@ -529,41 +643,37 @@ function StatusFilterDialog({
           whole dimmed screen as the modal fades — the backdrop appears to
           shrink away from the edges on the way out. InfoModal has this right
           and this follows it. */}
-      <Pressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={{
+      {/* Closes by its own close button, a choice or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
-        }}
-      >
-        {/* Its own pressable, so a tap on the card does not reach the scrim
-            behind it and close the picker mid-decision. */}
-        <Pressable
-          onPress={(event) => event.stopPropagation()}
-          style={{
+        }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: 14,
             overflow: "hidden",
             width: "100%",
-          }}
-        >
-          <Text
+          }}>
+          <View
             style={{
-              color: colors.muted,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            Payment status
-          </Text>
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Payment status
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
 
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {STATUS_OPTIONS.map((option) => (
@@ -578,8 +688,8 @@ function StatusFilterDialog({
               />
             ))}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type SalaryStructure = "DAILY" | "MONTHLY";
@@ -13,6 +13,11 @@ export type StaffCategory = {
   systemKey: string | null;
   system: boolean;
   active: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type StaffMember = {
@@ -31,6 +36,11 @@ export type StaffMember = {
   employmentEndDate: string | null;
   employmentNotes: string;
   active: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 // Redacted staff view a manager is allowed to see (no employment record).
@@ -58,6 +68,11 @@ export type ManagerEmployment = {
   employmentEndDate: string | null;
   employmentNotes: string;
   active: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /**
@@ -111,6 +126,11 @@ export type SalaryMonth = {
   paymentStatus: SalaryPaymentStatus;
   adjustments: SalaryAdjustment[];
   payments: SalaryPayment[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type SalaryAccount = {
@@ -203,12 +223,12 @@ export const staffApi = api.injectEndpoints({
       query: ({ propertyId, name }) => ({ body: { name }, method: "POST", url: `/api/v1/properties/${propertyId}/staff/categories` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    updateStaffCategory: builder.mutation<StaffCategory, { propertyId: string; categoryId: string; name: string }>({
-      query: ({ propertyId, categoryId, name }) => ({ body: { name }, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
+    updateStaffCategory: builder.mutation<StaffCategory, { propertyId: string; categoryId: string; name: string; version: number }>({
+      query: ({ propertyId, categoryId, name, version }) => ({ body: { name }, headers: ifMatch(version), method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    deactivateStaffCategory: builder.mutation<void, { propertyId: string; categoryId: string }>({
-      query: ({ propertyId, categoryId }) => ({ method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
+    deactivateStaffCategory: builder.mutation<void, { propertyId: string; categoryId: string; version: number }>({
+      query: ({ propertyId, categoryId, version }) => ({ headers: ifMatch(version), method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/categories/${categoryId}` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     listStaffMembers: builder.query<StaffMember[], { propertyId: string; includeInactive?: boolean }>({
@@ -219,24 +239,24 @@ export const staffApi = api.injectEndpoints({
       query: ({ propertyId, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/members` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    updateStaffMember: builder.mutation<StaffMember, { propertyId: string; staffReferenceCode: string; payload: UpdateStaffMemberPayload }>({
-      query: ({ propertyId, staffReferenceCode, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}` }),
+    updateStaffMember: builder.mutation<StaffMember, { propertyId: string; staffReferenceCode: string; payload: UpdateStaffMemberPayload; version: number }>({
+      query: ({ propertyId, staffReferenceCode, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
     staffTerminationPreview: builder.query<TerminationPreview, { propertyId: string; staffReferenceCode: string }>({
       query: ({ propertyId, staffReferenceCode }) => `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/termination-preview`,
       providesTags: ["Staff"],
     }),
-    endStaffMember: builder.mutation<void, { propertyId: string; staffReferenceCode: string; payload: EndEmploymentPayload }>({
-      query: ({ propertyId, staffReferenceCode, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/end` }),
+    endStaffMember: builder.mutation<void, { propertyId: string; staffReferenceCode: string; payload: EndEmploymentPayload; version: number }>({
+      query: ({ propertyId, staffReferenceCode, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "POST", url: `/api/v1/properties/${propertyId}/staff/members/${staffReferenceCode}/end` }),
       invalidatesTags: ["Staff", "Notification"],
     }),
     managerTerminationPreview: builder.query<TerminationPreview, { propertyId: string; managerReferenceCode: string }>({
       query: ({ propertyId, managerReferenceCode }) => `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}/termination-preview`,
       providesTags: ["Staff"],
     }),
-    endManagerEmployment: builder.mutation<void, { propertyId: string; managerReferenceCode: string; payload: EndEmploymentPayload }>({
-      query: ({ propertyId, managerReferenceCode, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}/end` }),
+    endManagerEmployment: builder.mutation<void, { propertyId: string; managerReferenceCode: string; payload: EndEmploymentPayload; version: number }>({
+      query: ({ propertyId, managerReferenceCode, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "POST", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}/end` }),
       invalidatesTags: ["Staff", "Property", "Notification"],
     }),
     listEmployeeHistory: builder.query<Page<EmployeeHistoryItem>, { propertyId: string; page?: number; size?: number }>({
@@ -247,9 +267,11 @@ export const staffApi = api.injectEndpoints({
       query: (propertyId) => `/api/v1/properties/${propertyId}/staff/managers`,
       providesTags: ["Staff"],
     }),
-    updateManagerEmployment: builder.mutation<ManagerEmployment, { propertyId: string; managerReferenceCode: string; payload: UpdateManagerEmploymentPayload }>({
-      query: ({ propertyId, managerReferenceCode, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}` }),
-      invalidatesTags: ["Staff", "Expense", "Pnl"],
+    updateManagerEmployment: builder.mutation<ManagerEmployment, { propertyId: string; managerReferenceCode: string; payload: UpdateManagerEmploymentPayload; version: number }>({
+      query: ({ propertyId, managerReferenceCode, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/managers/${managerReferenceCode}` }),
+      // "Property" too (2026-09-29): this bumps the manager's assignment, whose
+      // version the managers list and permission screens hold.
+      invalidatesTags: ["Staff", "Property", "Expense", "Pnl"],
     }),
     listPropertyPayslips: builder.query<SalaryPayslip[], string>({
       query: (propertyId) => `/api/v1/properties/${propertyId}/staff/salary-payments`,
@@ -284,20 +306,20 @@ export const staffApi = api.injectEndpoints({
       query: ({ propertyId, accountReferenceCode }) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    addSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string } }>({
-      query: ({ propertyId, accountReferenceCode, payrollMonth, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments` }),
+    addSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string }; version: number }>({
+      query: ({ propertyId, accountReferenceCode, payrollMonth, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    updateSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string } }>({
-      query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId, payload }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
+    updateSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string; payload: { adjustmentType: SalaryAdjustmentType; amountPaise: number; reason: string }; version: number }>({
+      query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "PATCH", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    removeSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string }>({
-      query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId }) => ({ method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
+    removeSalaryAdjustment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; adjustmentId: string; version: number }>({
+      query: ({ propertyId, accountReferenceCode, payrollMonth, adjustmentId, version }) => ({ headers: ifMatch(version), method: "DELETE", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/adjustments/${adjustmentId}` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
-    recordSalaryPayment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { amountPaise: number; paidOn: string; paymentMethod: SalaryPaymentMethod; referenceText?: string; notes?: string } }>({
-      query: ({ propertyId, accountReferenceCode, payrollMonth, payload }) => ({ body: payload, method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/payments` }),
+    recordSalaryPayment: builder.mutation<SalaryAccountDetail, { propertyId: string; accountReferenceCode: string; payrollMonth: string; payload: { amountPaise: number; paidOn: string; paymentMethod: SalaryPaymentMethod; referenceText?: string; notes?: string }; version: number }>({
+      query: ({ propertyId, accountReferenceCode, payrollMonth, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "POST", url: `/api/v1/properties/${propertyId}/staff/salary-accounts/${accountReferenceCode}/months/${payrollMonth}/payments` }),
       invalidatesTags: ["Staff", "Expense", "Pnl"],
     }),
 

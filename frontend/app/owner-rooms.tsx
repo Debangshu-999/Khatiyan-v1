@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { compareFloors, formatFloor } from "@/features/property/floor";
 import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -169,7 +170,7 @@ export default function OwnerRoomsScreen() {
     }
     void (async () => {
       try {
-        await deactivateRoom({ propertyId: selectedProperty.id, roomId: target.id }).unwrap();
+        await deactivateRoom({ propertyId: selectedProperty.id, roomId: target.id, version: target.version }).unwrap();
         toast.success(`Room ${target.roomNumber} deactivated.`);
       } catch (caught) {
         // The server refuses an occupied room outright. The call used to be
@@ -192,7 +193,7 @@ export default function OwnerRoomsScreen() {
     }
     void (async () => {
       try {
-        await reactivateRoom({ propertyId: selectedProperty.id, roomId: target.id }).unwrap();
+        await reactivateRoom({ propertyId: selectedProperty.id, roomId: target.id, version: target.version }).unwrap();
         toast.success(`Room ${target.roomNumber} reactivated.`);
       } catch {
         reactivateErrors.failFromServer("Could not reactivate the room. The room number may already be in use.");
@@ -483,13 +484,10 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
 
       {open ? (
         <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
-          <Pressable
-            onPress={() => setOpen(false)}
-            style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-          >
-            <Pressable
-              onPress={() => {}}
-              style={{
+          {/* Closes by its own close button or the device back button, not a tap
+              on the scrim (user, 2026-09-29). */}
+          <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+            <View style={{
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
                 borderRadius: 18,
@@ -499,8 +497,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                 maxWidth: 420,
                 padding: spacing.md,
                 width: "100%",
-              }}
-            >
+              }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.xs, paddingHorizontal: spacing.xs }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Choose floor
@@ -537,8 +534,8 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                   );
                 })}
               </ScrollView>
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </Modal>
       ) : null}
     </View>
@@ -774,7 +771,7 @@ function RoomCard({
           // the type is what they agreed to rent — so offering them greyed out
           // would be three controls that can never be pressed. The line says
           // what would make them available again.
-          <Text style={[type.caption, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {occupiedOrHeld} {occupiedOrHeld === 1 ? "bed is" : "beds are"} occupied or reserved. Move or check out
             the tenants to edit, change status or deactivate this room.
           </Text>
@@ -795,13 +792,10 @@ function RoomCard({
 
       {showInfo ? (
         <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setShowInfo(false)} statusBarTranslucent transparent visible>
-          <Pressable
-            onPress={() => setShowInfo(false)}
-            style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-          >
-            <Pressable
-              onPress={() => {}}
-              style={{
+          {/* Closes by its own close button or the device back button, not a tap
+              on the scrim (user, 2026-09-29). */}
+          <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+            <View style={{
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
                 borderCurve: "continuous",
@@ -811,8 +805,7 @@ function RoomCard({
                 maxWidth: 420,
                 padding: spacing.lg,
                 width: "100%",
-              }}
-            >
+              }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Room {room.roomNumber}  -  Maintenance
@@ -837,8 +830,8 @@ function RoomCard({
                   />
                 </View>
               ) : null}
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </Modal>
       ) : null}
     </Card>
@@ -864,9 +857,10 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
   const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -885,13 +879,14 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
               </Text>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
             {children}
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
@@ -915,7 +910,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
       return;
     }
     try {
-      await markStatus({ propertyId, roomId: room.id, status: "VACANT" }).unwrap();
+      await markStatus({ propertyId, roomId: room.id, status: "VACANT", version: room.version }).unwrap();
       onClose();
       toast.success(`Room ${room.roomNumber} taken off maintenance.`);
     } catch (caught) {
@@ -936,6 +931,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
         propertyId,
         reason: reason.trim(),
         roomId: room.id,
+        version: room.version,
         status: "MAINTENANCE",
         until: until ? until.toISOString() : null,
       }).unwrap();
@@ -949,7 +945,7 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
   return (
     <ModalShell onClose={onClose} title={`Room ${room.roomNumber} status`}>
       <RoomScroll>
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Occupied / partially occupied is set automatically from tenancies. You can mark a vacant room under maintenance or bring it back.
         </Text>
 
@@ -967,14 +963,14 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
             <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]}>
               Room is occupied
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {room.occupiedCount} active occupant{room.occupiedCount === 1 ? "" : "s"}. Vacate or move them out before marking this room
               under maintenance.
             </Text>
           </View>
         ) : isMaintenance ? (
           <>
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               This room is under maintenance. Take it off to make it available again. To change the reason or end date, use the info (i)
               button on the room card.
             </Text>
@@ -1035,6 +1031,7 @@ function EditMaintenanceModal({ onClose, propertyId, room }: { onClose: () => vo
         propertyId,
         reason: reason.trim(),
         roomId: room.id,
+        version: room.version,
         until: until ? until.toISOString() : null,
       }).unwrap();
       onClose();

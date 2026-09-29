@@ -42,11 +42,18 @@ public record TenancyRoomChangeRequestResponse(
     boolean reRaiseAllowed,
     /** Whether management may still return an approval to the decision queue. */
     boolean approvalRevertAllowed,
+    /** Its outgoing bed is already promised to a future monthly tenant. */
+    boolean outgoingBedBooked,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    /**
+     * The row's version (2026-09-29). A screen sends it back as If-Match when
+     * it acts, and a record changed since the screen loaded it is refused.
+     */
+    long version
 ) {
     public static TenancyRoomChangeRequestResponse from(TenancyRoomChangeRequest request) {
-        return from(request, Map.of());
+        return from(request, Map.of(), false);
     }
 
     /**
@@ -55,6 +62,13 @@ public record TenancyRoomChangeRequestResponse(
     public static TenancyRoomChangeRequestResponse from(
             TenancyRoomChangeRequest request,
             Map<UUID, String> names) {
+        return from(request, names, false);
+    }
+
+    public static TenancyRoomChangeRequestResponse from(
+            TenancyRoomChangeRequest request,
+            Map<UUID, String> names,
+            boolean outgoingBedBooked) {
         return new TenancyRoomChangeRequestResponse(
             request.getId(),
             request.getReferenceCode(),
@@ -78,9 +92,11 @@ public record TenancyRoomChangeRequestResponse(
             request.getExpiresAt(),
             request.getSupersededRequestId(),
             request.allowsReRaiseAt(Instant.now()),
-            request.allowsApprovalRevertAt(Instant.now()),
+            !outgoingBedBooked && request.allowsApprovalRevertAt(Instant.now()),
+            outgoingBedBooked,
             request.getCreatedAt(),
-            request.getUpdatedAt()
+            request.getUpdatedAt(),
+            request.getVersion()
         );
     }
 

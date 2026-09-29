@@ -12,6 +12,13 @@ package com.khatiyan.d_modules.servicebalance.model;
  */
 public enum ServiceCode {
 
-    /** One Aadhaar identity check on a tenant, through the provider. */
-    AADHAAR_OKYC
+    /**
+     * One Aadhaar identity check by OTP.
+     *
+     * <p>Superseded by {@link #AADHAAR} (2026-09-27) and no longer offered, but
+     * never removed: grants and ledger rows already carry it.
+     */
+    AADHAAR_OKYC,
+    /** One Aadhaar identity check through the Aadhaar App (offline verification). */
+    AADHAAR
 }

@@ -43,7 +43,7 @@ export function NoticeCardBody({
       </Text>
 
       <View style={{ height: BODY_PREVIEW_HEIGHT, overflow: "hidden" }}>
-        <Text style={[type.body, { color: colors.muted }]}>{body}</Text>
+        <Text style={[type.description, { color: colors.muted }]}>{body}</Text>
         <LinearGradient
           colors={["transparent", fadeTo]}
           pointerEvents="none"

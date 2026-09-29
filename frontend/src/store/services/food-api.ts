@@ -68,12 +68,16 @@ export type FoodItem = {
   updatedAt: string;
 };
 
+/** A profile's diet, picked from a fixed list (2026-09-28). */
+export type FoodProfileCategory = "VEG" | "NON_VEG" | "JAIN" | "PESCATARIAN" | "EGGETARIAN" | "OTHER";
+
 export type FoodProfile = {
   id: string;
   propertyId: string;
   name: string;
   description: string | null;
   displayOrder: number;
+  category: FoodProfileCategory;
   createdAt: string;
   updatedAt: string;
 };
@@ -136,17 +140,50 @@ export type FoodSubscriber = {
   profileId: string;
   profileName: string;
   startedAt: string;
+  /** A mixed week (2026-09-29): this row is one of several profiles they eat. */
+  hybrid: boolean;
+  /** The weekdays they eat this profile, Monday first. Empty unless hybrid. */
+  days: DayOfWeek[];
 };
 
-export type FoodSubscription = {
-  id: string;
-  propertyId: string;
-  tenancyId: string;
-  tenantUserId: string;
+/** One day of a plan's week. */
+export type FoodPlanDay = {
+  day: DayOfWeek;
   profileId: string;
-  profileName: string;
+  profileName: string | null;
+  profileCategory: FoodProfileCategory | null;
+};
+
+/**
+ * One version of a tenant's plan (2026-09-29). A normal plan carries its one
+ * profile at the top. A hybrid plan leaves those null, and `days` names each
+ * day's profile, Monday first.
+ */
+export type FoodPlanVersion = {
+  id: string;
+  effectiveFrom: string;
+  /** The first day it no longer applies. Null while it runs on. */
+  effectiveUntil: string | null;
+  hybrid: boolean;
+  profileId: string | null;
+  profileName: string | null;
+  profileCategory: FoodProfileCategory | null;
+  days: FoodPlanDay[];
   startedAt: string;
 };
+
+/**
+ * The tenant's plan as it stands. Every change starts tomorrow, so `today`
+ * and `fromTomorrow` can differ, and a stop shows as `endsTonight`.
+ */
+export type FoodPlan = {
+  today: FoodPlanVersion | null;
+  fromTomorrow: FoodPlanVersion | null;
+  endsTonight: boolean;
+};
+
+/** A normal plan (one profile) or a hybrid week, never both. */
+export type ChooseFoodPlanBody = { profileId: string } | { days: Record<DayOfWeek, string> };
 
 export type TenantFoodAvailability = {
   propertyId: string;
@@ -224,6 +261,41 @@ export type SaveFoodProfileBody = {
   name: string;
   description?: string | null;
   displayOrder?: number | null;
+  category: FoodProfileCategory;
+};
+
+/** Where a meal stands right now. */
+export type MealStatus = "UPCOMING" | "SERVING" | "DONE";
+
+/** Times are "HH:mm:ss", local to the property (IST). */
+export type MealTiming = {
+  mealType: MealType;
+  startTime: string;
+  endTime: string;
+  /** False while the meal is still on the default time. */
+  saved: boolean;
+};
+
+export type MealSlot = {
+  mealType: MealType;
+  startTime: string;
+  endTime: string;
+  /** Minutes later than planned, 0 when on time. */
+  delayMinutes: number;
+  status: MealStatus;
+};
+
+/**
+ * A property's meal day (2026-09-28): the timetable, today's meals, and the one
+ * that is next. `nextMeal` is null once the day's last meal is over, until
+ * midnight. The server decides it, owner and tenant alike.
+ */
+export type MealSchedule = {
+  date: string;
+  timings: MealTiming[];
+  today: MealSlot[];
+  nextMeal: MealSlot | null;
+  delayCutoffMinutes: number;
 };
 
 export type SaveFoodMenuEntryBody = {
@@ -410,14 +482,18 @@ export const foodApi = api.injectEndpoints({
      * Takes one item off ONE date's cooking.
      *
      * <p>The weekly menu is untouched — next week's same weekday still serves
-     * it. Invalidates "Food" so the forecast refetches with the item moved into
-     * `unavailableItems`.
+     * it.
+     *
+     * <p>Invalidates "FoodForecast", NOT "Food". It said "Food" and the
+     * forecast is deliberately not tagged with it, so nothing refetched: the
+     * call succeeded, the toast said so, and the screen went on showing the
+     * dish as if nothing had happened.
      */
     markFoodItemUnavailable: builder.mutation<
       void,
       { propertyId: string; itemId: string; date: string; mealType: MealType }
     >({
-      invalidatesTags: ["Food"],
+      invalidatesTags: ["FoodForecast"],
       query: ({ propertyId, ...body }) => ({
         body,
         method: "POST",
@@ -430,7 +506,7 @@ export const foodApi = api.injectEndpoints({
       void,
       { propertyId: string; itemId: string; date: string; mealType: MealType }
     >({
-      invalidatesTags: ["Food"],
+      invalidatesTags: ["FoodForecast"],
       query: ({ propertyId, ...params }) => ({
         method: "DELETE",
         params,
@@ -443,12 +519,15 @@ export const foodApi = api.injectEndpoints({
      *
      * <p>Not tagged "Food": it is derived from menus and subscriptions, and
      * re-deriving it on every unrelated edit would refetch a heavy read while
-     * an owner is typing a quantity.
+     * an owner is typing a quantity. It has its own tag instead, so the two
+     * actions that DO change one date's cooking can refresh it without
+     * dragging the whole catalogue along.
      */
     getCookingForecast: builder.query<
       CookingForecast,
       { propertyId: string; date: string; mealType: MealType }
     >({
+      providesTags: ["FoodForecast"],
       query: ({ propertyId, date, mealType }) => ({
         params: { date, mealType },
         url: `${base(propertyId)}/forecast`,
@@ -472,25 +551,71 @@ export const foodApi = api.injectEndpoints({
     }),
 
     /** Null when they are on no profile: the endpoint answers 204, not 404. */
-    getMyFoodSubscription: builder.query<FoodSubscription | null, void>({
+    /**
+     * Dishes the property took off one meal on one date. Property-wide: the
+     * screen shows only those on the tenant's own plan.
+     */
+    getMyFoodSkips: builder.query<SkippedItem[], { date: string; mealType: MealType }>({
+      providesTags: ["Food"],
+      query: ({ date, mealType }) => ({ params: { date, mealType }, url: "/api/v1/food/me/skips" }),
+    }),
+
+    getMealSchedule: builder.query<MealSchedule, string>({
+      providesTags: ["Food"],
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/food/meal-schedule` }),
+    }),
+
+    /** Meals left out keep their current time. Times are "HH:mm". */
+    saveMealTimings: builder.mutation<
+      MealSchedule,
+      { propertyId: string; timings: { mealType: MealType; startTime: string; endTime: string }[] }
+    >({
+      invalidatesTags: ["Food"],
+      query: ({ propertyId, timings }) => ({
+        body: { timings },
+        method: "PUT",
+        url: `/api/v1/properties/${propertyId}/food/meal-timings`,
+      }),
+    }),
+
+    /** Pushes one of today's meals later. The end moves by the same amount. */
+    delayMeal: builder.mutation<MealSchedule, { propertyId: string; mealType: MealType; newStartTime: string }>({
+      invalidatesTags: ["Food", "Notification"],
+      query: ({ propertyId, mealType, newStartTime }) => ({
+        body: { mealType, newStartTime },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/food/meal-delays`,
+      }),
+    }),
+
+    /** The tenant's own property's meal day. Null when there is no food there. */
+    getMyMealSchedule: builder.query<MealSchedule | null, void>({
+      providesTags: ["Food"],
+      query: () => ({ url: "/api/v1/food/me/meal-schedule" }),
+    }),
+
+    /** Null when there is no plan today and none coming. */
+    getMyFoodSubscription: builder.query<FoodPlan | null, void>({
       providesTags: ["Food"],
       query: () => ({ url: "/api/v1/food/me/subscription" }),
     }),
 
     /**
-     * Joins a profile, or moves to a different one.
-     *
-     * <p>One subscription at a time: switching ends the previous one rather
-     * than adding a second. Choosing the profile they are already on changes
-     * nothing and is not an error.
+     * Chooses a plan, one profile or a hybrid week (2026-09-29). It always
+     * starts tomorrow. A second choice the same day replaces tomorrow's, and
+     * choosing today's plan again cancels the change.
      */
-    subscribeToFoodProfile: builder.mutation<FoodSubscription, { profileId: string }>({
+    subscribeToFoodProfile: builder.mutation<FoodPlan, ChooseFoodPlanBody>({
       invalidatesTags: ["Food"],
       query: (body) => ({ body, method: "PUT", url: "/api/v1/food/me/subscription" }),
     }),
 
-    /** Always available, even when the owner has switched management off. */
-    unsubscribeFromFood: builder.mutation<void, void>({
+    /**
+     * Stops the plan: it ends tonight, and the owner's counts drop after
+     * midnight. Returns the plan so the screen can say so. Always available,
+     * even when the owner has switched management off.
+     */
+    unsubscribeFromFood: builder.mutation<FoodPlan, void>({
       invalidatesTags: ["Food"],
       query: () => ({ method: "DELETE", url: "/api/v1/food/me/subscription" }),
     }),
@@ -505,16 +630,21 @@ export const {
   useDeleteFoodItemMutation,
   useDeactivateFoodMenuEntryMutation,
   useDeactivateFoodProfileMutation,
+  useDelayMealMutation,
   useGetCookingForecastQuery,
   useGetFoodOverviewQuery,
   useGetFoodProfileMenuQuery,
+  useGetMealScheduleQuery,
+  useGetMyMealScheduleQuery,
   useGetMyFoodAvailabilityQuery,
   useGetMyFoodProfileMenuQuery,
+  useGetMyFoodSkipsQuery,
   useGetMyFoodSubscriptionQuery,
   useListFoodItemsQuery,
   useMarkFoodItemAvailableMutation,
   useMarkFoodItemUnavailableMutation,
   useReactivateFoodItemMutation,
+  useSaveMealTimingsMutation,
   useListFoodProfileSubscriberCountsQuery,
   useListFoodProfilesQuery,
   useListFoodSubscribersQuery,

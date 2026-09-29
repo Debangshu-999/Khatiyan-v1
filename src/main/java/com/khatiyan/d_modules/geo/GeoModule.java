@@ -63,6 +63,19 @@ public class GeoModule {
         return geocodingService.landmarkSearch(query, latitude, longitude);
     }
 
+    /**
+     * EVERY named place matching the phrase near a point, not just the best
+     * one, and biased rather than bounded — so a search from one corner of a
+     * city still finds the offices on the other side of it.
+     *
+     * <p>For a map, which has room to show them all. A search that measures a
+     * distance wants {@link #systemSearchNear} instead: it needs one place,
+     * with a coordinate.
+     */
+    public List<GeoSuggestionResponse> namedPlacesNear(String query, double latitude, double longitude) {
+        return geocodingService.landmarkSearchAll(query, latitude, longitude);
+    }
+
     /** Whether nearest-place distances can be measured per point (Mappls configured). */
     public boolean canMeasureNearby() {
         return geocodingService.canMeasureNearby();

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Archive, CirclePlus, Eye, type LucideProps, X } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -16,6 +18,8 @@ import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import type { ConcernSummary } from "@/store/services/concern-api";
 import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
+import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
+import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -28,6 +32,10 @@ export default function ConcernsScreen() {
   const currentQuery = useListMyCurrentConcernsQuery();
   const historyQuery = useListMyConcernHistoryQuery({ page: 0, size: 200 });
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Before the start date a concern cannot be raised (the server refuses it
+  // too), so the tile answers with an OK modal instead of opening the form.
+  const activeTenancy = useGetMyActiveTenancyQuery().data;
+  const [notStartedOpen, setNotStartedOpen] = useState(false);
   const currentData = currentQuery.data ?? [];
   const currentConcerns = useMemo(
     () => uniqueConcerns(currentData.filter(isActiveConcern)).sort(sortLatest),
@@ -79,7 +87,11 @@ export default function ConcernsScreen() {
               icon={CirclePlus}
               label="Create concern"
               meta="Raise a new issue"
-              onPress={() => router.push("/create-concern")}
+              onPress={() =>
+                activeTenancy && tenancyNotStarted(activeTenancy.tenancy.startDate)
+                  ? setNotStartedOpen(true)
+                  : router.push("/create-concern")
+              }
             />
             <ConcernActionTile
               icon={Archive}
@@ -106,6 +118,10 @@ export default function ConcernsScreen() {
           )}
         </Section>
       </ScreenScrollView>
+
+      {notStartedOpen ? (
+        <AlertModal message={REQUESTS_NOT_STARTED.concern} onClose={() => setNotStartedOpen(false)} tone="info" />
+      ) : null}
 
       {historyOpen ? (
         <ClosedConcernsModal
@@ -193,7 +209,7 @@ function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: (
         <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
           {concern.title}
         </Text>
-        <Text numberOfLines={2} style={[type.body, { color: colors.muted }]}>
+        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {concern.description}
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -235,15 +251,13 @@ function ClosedConcernsModal({
   const insets = useSafeAreaInsets();
 
   return (
-    <Modal
-      animationType="slide"
+    <BottomSheetModal
       navigationBarTranslucent
       onRequestClose={onClose}
       statusBarTranslucent
-      transparent
       visible
     >
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -264,7 +278,7 @@ function ClosedConcernsModal({
                 Closed concerns
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close concern history" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close concern history" icon={X} onPress={() => dismiss()} />
           </View>
 
           {loading ? (
@@ -272,7 +286,7 @@ function ClosedConcernsModal({
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
               {concerns.map((concern) => (
-                <ConcernCard concern={concern} key={concern.id} onPress={() => onOpen(concern)} />
+                <ConcernCard concern={concern} key={concern.id} onPress={() => dismiss(() => onOpen(concern))} />
               ))}
               {concerns.length === 0 ? (
                 <EmptyState
@@ -284,8 +298,8 @@ function ClosedConcernsModal({
             </ScrollView>
           )}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

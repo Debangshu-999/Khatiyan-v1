@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetOverviewResponse;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseBudgetTrendResponse;
@@ -53,6 +54,7 @@ public class ExpenseBudgetController {
 
     /** Set / edit the recurring default monthly budget. */
     @PutMapping
+    @RequiresVersion
     public ExpenseBudgetOverviewResponse setDefault(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

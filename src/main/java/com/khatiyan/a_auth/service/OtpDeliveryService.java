@@ -42,27 +42,40 @@ public class OtpDeliveryService {
      * Sends the generated OTP through the requested channel combination.
      */
     public void deliverOtp(String phone, String email, String otp, OtpPurpose purpose, OtpDeliveryChannel channel) {
+        deliverOtp(phone, email, otp, purpose, channel, null);
+    }
+
+    /**
+     * As above, with a line saying what the code is for. Only the SMS leg
+     * carries it — see {@link OtpDeliveryProvider#sendOtp(String, String, OtpPurpose, String)}.
+     */
+    public void deliverOtp(
+            String phone, String email, String otp, OtpPurpose purpose, OtpDeliveryChannel channel, String detail) {
         OtpDeliveryChannel resolvedChannel = channel == null ? OtpDeliveryChannel.SMS : channel;
 
         switch (resolvedChannel) {
-            case SMS -> deliverSms(phone, otp, purpose);
+            case SMS -> deliverSms(phone, otp, purpose, detail);
             case SMS_AND_WHATSAPP -> {
-                deliverSms(phone, otp, purpose);
+                deliverSms(phone, otp, purpose, detail);
                 // Fire-and-forget on a background thread so a slow secondary
                 // channel never delays the response after SMS is delivered.
                 asyncOtpDelivery.deliverWhatsappBestEffort(phone, otp, purpose);
             }
             case EMAIL -> deliverEmail(email, otp, purpose);
             case SMS_AND_EMAIL -> {
-                deliverSms(phone, otp, purpose);
+                deliverSms(phone, otp, purpose, detail);
                 asyncOtpDelivery.deliverEmailBestEffort(email, otp, purpose);
             }
         }
     }
 
-    private void deliverSms(String phone, String otp, OtpPurpose purpose) {
+    private void deliverSms(String phone, String otp, OtpPurpose purpose, String detail) {
         OtpDeliveryProvider smsProvider = requiredProvider(OtpDeliveryProviderType.SMS);
-        smsProvider.sendOtp(phone, otp, purpose);
+        if (detail == null) {
+            smsProvider.sendOtp(phone, otp, purpose);
+            return;
+        }
+        smsProvider.sendOtp(phone, otp, purpose, detail);
     }
 
     private void deliverEmail(String email, String otp, OtpPurpose purpose) {

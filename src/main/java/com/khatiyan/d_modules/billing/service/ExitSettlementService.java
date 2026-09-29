@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
-import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
@@ -40,7 +39,6 @@ public class ExitSettlementService {
 
     private final DepositManagerService depositManagerService;
     private final BillingCycleService billingCycleService;
-    private final BillingCycleLineItemService billingCycleLineItemService;
     private final DepositAccountRepository depositAccountRepository;
 
     /**
@@ -78,17 +76,13 @@ public class ExitSettlementService {
         // marks the whole cycle paid against its total at that moment, so a line
         // added afterwards would sit on a paid bill and reopen it.
         if (!billedCharges.isEmpty()) {
-            BilledCharge first = billedCharges.get(0);
-            BillingCycleResponse bill = billingCycleService.createOneOffBill(
-                    actorUserId, tenancyId, new CreateOneOffBillRequest(first.reason(), first.amountPaise()));
-
-            List<CreateExtraChargeRequest> extras = billedCharges.stream()
-                    .skip(1)
-                    .map(charge -> new CreateExtraChargeRequest(charge.reason(), null, charge.amountPaise(), false))
+            // All of them raised WITH the bill (2026-09-28): the charges are the
+            // bill, not extras added to it, so none shows in its Action history.
+            List<CreateOneOffBillRequest> lines = billedCharges.stream()
+                    .map(charge -> new CreateOneOffBillRequest(charge.reason(), charge.amountPaise()))
                     .toList();
-            if (!extras.isEmpty()) {
-                billingCycleLineItemService.addExtraCharge(actorUserId, bill.id(), extras);
-            }
+            BillingCycleResponse bill = billingCycleService.createOneOffBill(
+                    actorUserId, tenancyId, lines.get(0), lines.subList(1, lines.size()));
 
             // Recorded paid immediately: the charge was settled at move-out. Leaving
             // it open would end the tenancy owing money, which nothing downstream
@@ -152,21 +146,32 @@ public class ExitSettlementService {
             long scheduleTotalPaise = depositManagerService.resolveDamageTotal(propertyId, damages.itemNames());
             boolean fromDeposit = damages.instrument() == ExitChargeInstrument.DEPOSIT;
 
+            List<ExitDeduction> lines = new ArrayList<>();
             if (scheduleTotalPaise > 0) {
-                if (fromDeposit) {
-                    depositDeductions.add(new ExitDeduction("Damage charges", scheduleTotalPaise));
-                } else {
-                    billedCharges.add(new BilledCharge("Damage charges", scheduleTotalPaise, damages.collectedVia()));
-                }
+                lines.add(new ExitDeduction("Damage charges", scheduleTotalPaise));
             }
             if (damages.customCharges() != null) {
                 for (ApplyExitPolicyRequest.CustomCharge custom : damages.customCharges()) {
-                    if (fromDeposit) {
-                        depositDeductions.add(new ExitDeduction(custom.reason().trim(), custom.amountPaise()));
-                    } else {
-                        billedCharges.add(
-                                new BilledCharge(custom.reason().trim(), custom.amountPaise(), damages.collectedVia()));
-                    }
+                    lines.add(new ExitDeduction(custom.reason().trim(), custom.amountPaise()));
+                }
+            }
+
+            // The deposit's share of the damage. Unlimited unless the actor split
+            // a charge the deposit could not cover, in which case it is used up
+            // line by line in order and each line's overflow is billed.
+            long depositBudget = !fromDeposit
+                    ? 0L
+                    : damages.fromDepositPaise() == null ? Long.MAX_VALUE : damages.fromDepositPaise();
+            for (ExitDeduction line : lines) {
+                long fromDepositPaise = Math.min(line.amountPaise(), depositBudget);
+                depositBudget -= fromDepositPaise;
+                if (fromDepositPaise > 0) {
+                    depositDeductions.add(new ExitDeduction(line.reason(), fromDepositPaise));
+                }
+                long billedPaise = line.amountPaise() - fromDepositPaise;
+                if (billedPaise > 0) {
+                    String reason = fromDepositPaise > 0 ? line.reason() + " (balance)" : line.reason();
+                    billedCharges.add(new BilledCharge(reason, billedPaise, damages.collectedVia()));
                 }
             }
         }

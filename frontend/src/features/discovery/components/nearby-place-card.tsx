@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Info, MapPin, Navigation, Pencil, Phone, Star, Trash2 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { MarqueeText } from "@/components/marquee-text";
 import type { PropertyLocalPlace } from "@/store/services/discovery-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -43,16 +44,23 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
-            {place.name}
-          </Text>
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          {/* A recommended place carries a star before its name rather than a
+              chip in the button row (user, 2026-09-27). A long name scrolls
+              instead of being cut off. */}
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+            {place.ownerRecommended ? (
+              <Star accessibilityLabel="Recommended" color={colors.accent} fill={colors.accent} size={14} strokeWidth={2} />
+            ) : null}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{place.name}</MarqueeText>
+            </View>
+          </View>
           <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {place.subcategoryNames.join(" · ") || "No categories"}
           </Text>
         </View>
-        {/* Distance only. Recommended moved down to the action row, where it
-            reads as a property OF the place rather than a label over its name. */}
+        {/* Distance only. Recommended is the star beside the name. */}
         <View style={{ alignItems: "flex-end", gap: 6 }}>
           {place.distanceKm != null ? (
             <View style={{ alignItems: "center", backgroundColor: colors.jadeSoft, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
@@ -106,27 +114,6 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
         ) : null}
         {onEdit ? <CardButton icon={<Pencil color={colors.primary} size={13} strokeWidth={2.4} />} label="Edit" onPress={onEdit} tint={colors.primary} /> : null}
         {onDelete ? <CardButton icon={<Trash2 color={colors.danger} size={13} strokeWidth={2.4} />} label="Remove" onPress={onDelete} tint={colors.danger} /> : null}
-        {/* Last in the row in BOTH modes, so it trails Directions when viewing
-            and Remove when managing. It is a state of the place, not an action,
-            hence a plain chip rather than a CardButton. */}
-        {place.ownerRecommended ? (
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.accentSoft,
-              borderColor: colors.accent,
-              borderRadius: 10,
-              borderWidth: 1,
-              flexDirection: "row",
-              gap: spacing.xs,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 6,
-            }}
-          >
-            <Star color={colors.accent} fill={colors.accent} size={12} strokeWidth={2} />
-            <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 12 }}>Recommended</Text>
-          </View>
-        ) : null}
       </View>
     </View>
   );

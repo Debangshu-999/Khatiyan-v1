@@ -149,7 +149,7 @@ export function RoomTypeBoard({
   if (tab == null) {
     return (
       <Card>
-        <Text style={[type.body, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           No occupancies were chosen for this property, so there is nothing to configure. Pick them in Rooms &
           inclusions first.
         </Text>

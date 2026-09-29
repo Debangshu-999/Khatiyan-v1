@@ -228,7 +228,7 @@ export function ImageCaptionDialog({
             {/* Captions are optional and this says so, rather than a Skip button
                 beside Add: with a carousel there is nothing to skip PAST — not
                 typing is already skipping. */}
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {many
                 ? "Slide to caption each photo. Captions are optional."
                 : "Optional — it helps prospects tell your photos apart."}

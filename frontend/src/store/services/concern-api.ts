@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type ConcernCategory =
@@ -52,6 +52,11 @@ export type ConcernSummary = {
   createdAt: string;
   updatedAt: string;
   photos: ConcernPhoto[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export const concernApi = api.injectEndpoints({
@@ -102,33 +107,37 @@ export const concernApi = api.injectEndpoints({
       query: () => "/api/v1/concerns/undertaken",
       providesTags: ["Concern"],
     }),
-    updateConcernStatus: builder.mutation<ConcernSummary, { concernId: string; status: ConcernStatus; statusNote?: string | null }>({
-      query: ({ concernId, status, statusNote }) => ({
+    updateConcernStatus: builder.mutation<ConcernSummary, { concernId: string; status: ConcernStatus; statusNote?: string | null; version: number }>({
+      query: ({ concernId, status, statusNote, version }) => ({
         body: { status, statusNote },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/concerns/${concernId}/status`,
       }),
       invalidatesTags: ["Concern", "Notification"],
     }),
-    assignConcern: builder.mutation<ConcernSummary, { concernId: string; assignedToUserId: string }>({
-      query: ({ assignedToUserId, concernId }) => ({
+    assignConcern: builder.mutation<ConcernSummary, { concernId: string; assignedToUserId: string; version: number }>({
+      query: ({ assignedToUserId, concernId, version }) => ({
         body: { assignedToUserId },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/concerns/${concernId}/assign`,
       }),
       invalidatesTags: ["Concern", "Notification"],
     }),
-    resolveConcern: builder.mutation<ConcernSummary, { concernId: string; resolutionNote: string }>({
-      query: ({ concernId, resolutionNote }) => ({
+    resolveConcern: builder.mutation<ConcernSummary, { concernId: string; resolutionNote: string; version: number }>({
+      query: ({ concernId, resolutionNote, version }) => ({
         body: { resolutionNote },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/concerns/${concernId}/resolve`,
       }),
       invalidatesTags: ["Concern", "Notification"],
     }),
-    reopenConcern: builder.mutation<ConcernSummary, { concernId: string; reopenReason: string }>({
-      query: ({ concernId, reopenReason }) => ({
+    reopenConcern: builder.mutation<ConcernSummary, { concernId: string; reopenReason: string; version: number }>({
+      query: ({ concernId, reopenReason, version }) => ({
         url: `/api/v1/concerns/${concernId}/reopen`,
+        headers: ifMatch(version),
         method: "POST",
         body: { reopenReason },
       }),

@@ -111,9 +111,8 @@ function ConfirmDeleteThread({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
-      <Pressable
-        accessibilityLabel="Dismiss"
-        onPress={onCancel}
+      {/* Cancel or the device back button closes it, not a tap on the scrim (user, 2026-09-29). */}
+      <View
         style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
@@ -122,8 +121,7 @@ function ConfirmDeleteThread({
           padding: spacing.lg,
         }}
       >
-        <Pressable
-          onPress={() => {}}
+        <View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
@@ -138,7 +136,7 @@ function ConfirmDeleteThread({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             Delete conversation
           </Text>
-          <Text style={[type.body, { color: colors.muted, marginTop: spacing.sm }]}>
+          <Text style={[type.description, { color: colors.muted, marginTop: spacing.sm }]}>
             This removes it from your chats only. The other side keeps everything, and starting
             again opens an empty conversation.
           </Text>
@@ -168,8 +166,8 @@ function ConfirmDeleteThread({
               </Text>
             </AnimatedPressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

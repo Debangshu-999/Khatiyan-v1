@@ -102,6 +102,14 @@ public class User extends BaseEntity {
     @Column(name = "identity_verified_source", length = 40)
     private String identityVerifiedSource;
 
+    /**
+     * Whether the gender came from a verified credential (2026-09-27). The OTP
+     * check never returned one, so accounts verified by it keep their own
+     * answer, and only a credential that carried a gender locks it.
+     */
+    @Column(name = "identity_gender_verified", nullable = false)
+    private boolean identityGenderVerified;
+
     @Column(name = "profile_photo_url", length = 500)
     private String profilePhotoUrl;
 
@@ -204,27 +212,38 @@ public class User extends BaseEntity {
     public void applyVerifiedIdentity(
             String fullName,
             LocalDate dateOfBirth,
-            String permanentAddress,
-            String permanentAddressPincode,
+            Gender gender,
             String source,
             Instant verifiedAt) {
-        if (isIdentityLocked() && !Objects.equals(this.identityVerifiedSource, source)) {
+        if (isIdentityLocked() && !sameDocument(this.identityVerifiedSource, source)) {
             throw new ValidationException("This person's identity is already verified against another document");
         }
         this.fullName = fullName;
         this.dateOfBirth = dateOfBirth;
-        // Only overwrite the address when the record actually carried one. A
-        // provider that returns no address must not blank one the tenant gave
-        // us, which would be a worse answer than the approximation.
-        if (!isBlank(permanentAddress)) {
-            this.permanentAddress = permanentAddress.trim();
+        // Only a credential that carries a gender locks it. The OTP check never
+        // did, and must not close a field it did not verify.
+        if (gender != null) {
+            this.gender = gender;
+            this.identityGenderVerified = true;
         }
-        if (!isBlank(permanentAddressPincode)) {
-            this.permanentAddressPincode = permanentAddressPincode.trim();
-        }
+        // The address is deliberately NOT taken from the ID (owner's decision,
+        // 2026-09-27): it is of no use to us, and some people would rather not
+        // share it. It stays the person's own, editable, and outside the lock.
         this.identityVerifiedSource = source;
         this.identityVerifiedAt = verifiedAt;
         this.profileCompleted = true;
+    }
+
+    /**
+     * The OTP check and the Aadhaar App read the same Aadhaar, so a tenant
+     * verified one way can be verified again the other.
+     */
+    private static boolean sameDocument(String lockedSource, String source) {
+        return Objects.equals(aadhaarAsOne(lockedSource), aadhaarAsOne(source));
+    }
+
+    private static String aadhaarAsOne(String source) {
+        return "AADHAAR_OKYC".equals(source) ? "AADHAAR" : source;
     }
 
     private void requireIdentityUnlocked() {
@@ -244,9 +263,26 @@ public class User extends BaseEntity {
     public void updateIdentity(
             String permanentAddress, String permanentAddressPincode, LocalDate dateOfBirth, Gender gender) {
         if (isIdentityLocked()) {
-            // Gender is not one of the verified fields, so it stays editable
-            // even on a locked profile — it is optional in the app and nothing
-            // is checked against it.
+            // Refused, not quietly ignored: the settings screen said "Details
+            // saved" while nothing changed (seen 2026-09-27). Unchanged values
+            // pass, since the screen sends every field. The address is not
+            // verified, so it stays editable.
+            if (!Objects.equals(dateOfBirth, this.dateOfBirth)) {
+                throw new ValidationException(
+                        "Your date of birth comes from your verified ID and cannot be changed here");
+            }
+            this.permanentAddress = blankToNull(permanentAddress);
+            this.permanentAddressPincode = blankToNull(permanentAddressPincode);
+            // Gender stays editable on a locked profile only when no credential
+            // verified it (the OTP check never returned one). An Aadhaar App
+            // check locks it with the name and date of birth (2026-09-27).
+            if (identityGenderVerified) {
+                if (gender != this.gender) {
+                    throw new ValidationException(
+                            "Your gender comes from your verified ID and cannot be changed here");
+                }
+                return;
+            }
             this.gender = gender;
             return;
         }
@@ -271,13 +307,22 @@ public class User extends BaseEntity {
             String permanentAddress, String permanentAddressPincode, LocalDate dateOfBirth, Gender gender) {
         boolean changed = false;
         if (isIdentityLocked()) {
-            // Nothing is missing on a verified profile. An owner filling in an
-            // onboarding form must not write over a government record.
+            // A verified profile holds its date of birth from the ID, so an
+            // owner's onboarding form never writes over it. The address is
+            // not verified (2026-09-27), so a missing one can still be filled.
+            if (isBlank(this.permanentAddress) && !isBlank(permanentAddress)) {
+                this.permanentAddress = permanentAddress.trim();
+                changed = true;
+            }
+            if (isBlank(this.permanentAddressPincode) && !isBlank(permanentAddressPincode)) {
+                this.permanentAddressPincode = permanentAddressPincode.trim();
+                changed = true;
+            }
             if (this.gender == null && gender != null) {
                 this.gender = gender;
-                return true;
+                changed = true;
             }
-            return false;
+            return changed;
         }
         if (isBlank(this.permanentAddress) && !isBlank(permanentAddress)) {
             this.permanentAddress = permanentAddress.trim();

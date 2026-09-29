@@ -1,8 +1,9 @@
-import { Modal, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import type { ListingSort } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -122,17 +123,15 @@ export function ListingSortModal({
   }
 
   return (
-    <Modal
-      animationType="slide"
+    <BottomSheetModal
       navigationBarTranslucent
       onRequestClose={onClose}
       statusBarTranslucent
-      transparent
       visible={visible}
     >
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         {/* Tapping the dim closes it, as every sheet here does. */}
-        <AnimatedPressable accessibilityLabel="Close sort" onPress={onClose} style={{ flex: 1 }} />
+        <AnimatedPressable accessibilityLabel="Close sort" onPress={() => dismiss()} style={{ flex: 1 }} />
         <View
           style={{
             backgroundColor: colors.surfaceRaised,
@@ -176,7 +175,7 @@ export function ListingSortModal({
               accessibilityLabel="Close sort"
               accessibilityRole="button"
               hitSlop={8}
-              onPress={onClose}
+              onPress={() => dismiss()}
               style={{
                 alignItems: "center",
                 // Level with the title rather than centred on title and
@@ -195,25 +194,25 @@ export function ListingSortModal({
 
           <View style={{ gap: spacing.md, paddingHorizontal: spacing.md }}>
             {context === "search" ? (
-              <SortGroup options={["RELEVANCE", "DISTANCE"]} onChoose={choose} sort={sort} title="Order" />
+              <SortGroup options={["RELEVANCE", "DISTANCE"]} onChoose={(next) => dismiss(() => choose(next))} sort={sort} title="Order" />
             ) : null}
-            <SortGroup options={["RENT_LOW", "RENT_HIGH"]} onChoose={choose} sort={sort} title="Rent" />
-            <SortGroup options={["DEPOSIT_LOW", "DEPOSIT_HIGH"]} onChoose={choose} sort={sort} title="Deposit" />
+            <SortGroup options={["RENT_LOW", "RENT_HIGH"]} onChoose={(next) => dismiss(() => choose(next))} sort={sort} title="Rent" />
+            <SortGroup options={["DEPOSIT_LOW", "DEPOSIT_HIGH"]} onChoose={(next) => dismiss(() => choose(next))} sort={sort} title="Deposit" />
 
             {/* Last, full width. Dimmed while there is nothing to clear. */}
             <DiscoveryButton
               disabled={sort === "RELEVANCE"}
               label="Clear all filters"
-              onPress={() => {
+              onPress={() => dismiss(() => {
                 onChange("RELEVANCE");
                 onClose();
-              }}
+              })}
               style={{ marginTop: spacing.xs }}
             />
           </View>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

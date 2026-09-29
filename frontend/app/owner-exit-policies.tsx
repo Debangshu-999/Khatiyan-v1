@@ -100,6 +100,8 @@ export default function OwnerExitPoliciesScreen() {
           exitChecklist: checklist,
           permittedDeductions: policiesQuery.data?.permittedDeductions ?? [],
         },
+        // The property as loaded (2026-09-29): the policies live on it.
+        version: policiesQuery.data?.version ?? 0,
       }).unwrap();
       toast.success("Exit policies saved.");
     } catch (caught) {
@@ -192,7 +194,7 @@ function DamageChargesEditor({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         A flat charge per item for considerable damage. At settlement you pick which items apply.
       </Text>
       {charges.map((item, index) => (
@@ -256,7 +258,7 @@ function ChecklistEditor({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Verified before the deposit is settled.
       </Text>
 

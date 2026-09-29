@@ -1,9 +1,10 @@
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
 import { ChevronDown, X, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
+import { IconButton } from "@/features/owner/owner-ui";
 import type { Gender } from "@/store/services/auth-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -34,14 +35,23 @@ export const GENDER_LABELS: Record<Gender, string> = {
  * skip cannot tell the difference between that and not having got there yet.
  */
 export function GenderPicker({
+  disabled,
   icon: Icon,
   label = "Gender",
+  labelAccessory,
   onChange,
+  options = GENDERS,
   value,
 }: {
+  /** Shown but not changeable: a value that belongs to somebody else's account. */
+  disabled?: boolean;
   /** A glyph on the label line, so the field below still spans full width. */
   icon?: ComponentType<LucideProps>;
   label?: string;
+  /** Beside the label, e.g. a "Verified" pill on a locked field. */
+  labelAccessory?: ReactNode;
+  /** Which answers to offer. An ID check leaves out Undeclared: it records what was checked. */
+  options?: Gender[];
   onChange: (value: Gender | null) => void;
   value: Gender | null;
 }) {
@@ -56,6 +66,7 @@ export function GenderPicker({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         {Icon ? <Icon color={colors.muted} size={15} strokeWidth={2.2} /> : null}
         <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+        {labelAccessory}
       </View>
 
       {/* The clear button is a SIBLING of the field, never a child: nested, its
@@ -64,10 +75,12 @@ export function GenderPicker({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <AnimatedPressable
           accessibilityRole="button"
+          disabled={disabled}
           onPress={() => setOpen(true)}
           style={{
             alignItems: "center",
-            backgroundColor: colors.surface,
+            // Sunken when read-only, the same as DateOfBirthField.
+            backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
             borderColor: colors.border,
             borderCurve: "continuous",
             borderRadius: 10,
@@ -92,7 +105,7 @@ export function GenderPicker({
           <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
         </AnimatedPressable>
 
-        {value ? (
+        {value && !disabled ? (
           <AnimatedPressable
             accessibilityLabel="Clear gender"
             accessibilityRole="button"
@@ -121,13 +134,9 @@ export function GenderPicker({
           transparent
           visible
         >
-          {/* Tapping the scrim closes it. A centred dialog with no visible
-              dismiss needs one, and a five-option choice does not deserve a
-              Cancel button taking up a sixth row. */}
-          <AnimatedPressable
-            accessibilityLabel="Close"
-            accessibilityRole="button"
-            onPress={() => setOpen(false)}
+          {/* Closes only by its close button or a choice (user, 2026-09-29):
+              a tap on the scrim does nothing. */}
+          <View
             style={{
               alignItems: "center",
               backgroundColor: colors.overlay,
@@ -136,10 +145,7 @@ export function GenderPicker({
               paddingHorizontal: spacing.xl,
             }}
           >
-            {/* Its own pressable so a tap on the card does not reach the scrim
-                behind it and close the picker mid-decision. */}
-            <AnimatedPressable
-              onPress={() => {}}
+            <View
               style={{
                 backgroundColor: colors.surface,
                 borderCurve: "continuous",
@@ -148,23 +154,27 @@ export function GenderPicker({
                 width: "100%",
               }}
             >
-              <Text
+              <View
                 style={{
-                  color: colors.muted,
-                  fontFamily: fonts.display,
-                  fontSize: 19,
-                  paddingHorizontal: spacing.lg,
-                  paddingVertical: spacing.md,
+                  alignItems: "center",
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  paddingLeft: spacing.lg,
+                  paddingRight: spacing.md,
+                  paddingVertical: spacing.sm,
                 }}
               >
-                Select gender
-              </Text>
+                <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+                  Select gender
+                </Text>
+                <IconButton accessibilityLabel="Close" filled icon={X} onPress={() => setOpen(false)} />
+              </View>
 
               {/* The same row every other picker in the app uses. Its hairline
                   runs above each option INCLUDING the first, which is what
                   separates the list from the heading above it. */}
               <View style={{ paddingHorizontal: spacing.lg }}>
-                {GENDERS.map((option) => (
+                {options.map((option) => (
                   <PickerOptionRow
                     key={option}
                     label={GENDER_LABELS[option]}
@@ -176,8 +186,8 @@ export function GenderPicker({
                   />
                 ))}
               </View>
-            </AnimatedPressable>
-          </AnimatedPressable>
+            </View>
+          </View>
         </Modal>
       ) : null}
     </View>

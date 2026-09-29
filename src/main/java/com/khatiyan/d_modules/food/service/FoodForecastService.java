@@ -27,7 +27,6 @@ import com.khatiyan.d_modules.food.model.FoodDailySkip;
 import com.khatiyan.d_modules.food.model.FoodItem;
 import com.khatiyan.d_modules.food.model.FoodMenuEntry;
 import com.khatiyan.d_modules.food.model.FoodProfile;
-import com.khatiyan.d_modules.food.model.FoodSubscription;
 import com.khatiyan.d_modules.food.repository.FoodDailySkipRepository;
 import com.khatiyan.d_modules.food.repository.FoodItemRepository;
 import com.khatiyan.d_modules.food.repository.FoodMenuEntryRepository;
@@ -49,6 +48,7 @@ public class FoodForecastService {
     private final FoodMenuEntryRepository menuEntryRepository;
     private final FoodSubscriptionRepository subscriptionRepository;
     private final FoodDailySkipRepository dailySkipRepository;
+    private final MealScheduleService mealScheduleService;
 
     public FoodForecastService(
             TenancyModule tenancyModule,
@@ -58,7 +58,8 @@ public class FoodForecastService {
             FoodItemRepository itemRepository,
             FoodMenuEntryRepository menuEntryRepository,
             FoodSubscriptionRepository subscriptionRepository,
-            FoodDailySkipRepository dailySkipRepository) {
+            FoodDailySkipRepository dailySkipRepository,
+            MealScheduleService mealScheduleService) {
         this.tenancyModule = tenancyModule;
         this.moduleSettingService = moduleSettingService;
         this.accessPolicy = accessPolicy;
@@ -67,10 +68,11 @@ public class FoodForecastService {
         this.menuEntryRepository = menuEntryRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.dailySkipRepository = dailySkipRepository;
+        this.mealScheduleService = mealScheduleService;
     }
 
     /**
-     * Takes one item off ONE date's cooking.
+     * Takes one item off TODAY's cooking, for a meal that has not started.
      *
      * <p>The weekly menu is untouched: next week's same weekday still includes
      * it. Calling this twice is the same fact stated twice, so the second call
@@ -85,6 +87,12 @@ public class FoodForecastService {
             UUID itemId) {
         accessPolicy.ensureCanManage(actorUserId, propertyId);
         moduleSettingService.requireUsable(propertyId);
+        // Today only, and not once the meal has started (2026-09-29). The
+        // forecast screen blocks both, but a screen left open would not.
+        mealScheduleService.requireToday(date);
+        mealScheduleService.requireNotStarted(propertyId, date, mealType);
+        // And like a delay, only until 10 minutes before it starts.
+        mealScheduleService.requireDishWindowOpen(propertyId, date, mealType);
         itemRepository.findByIdAndActiveTrue(itemId)
                 .filter(item -> item.getPropertyId().equals(propertyId))
                 .orElseThrow(() -> new NotFoundException("FoodItem", itemId));
@@ -107,6 +115,7 @@ public class FoodForecastService {
             UUID itemId) {
         accessPolicy.ensureCanManage(actorUserId, propertyId);
         moduleSettingService.requireUsable(propertyId);
+        mealScheduleService.requireNotStarted(propertyId, date, mealType);
         dailySkipRepository
                 .findByPropertyIdAndSkipDateAndMealTypeAndItemId(propertyId, date, mealType, itemId)
                 .ifPresent(dailySkipRepository::delete);
@@ -132,14 +141,18 @@ public class FoodForecastService {
                 .stream()
                 .map(TenancyResponse::id)
                 .collect(Collectors.toSet());
+        // The plans that apply on this date, each by that weekday's profile
+        // (2026-09-29): a hybrid week counts where it eats that day, and a
+        // change set for tomorrow already shows in tomorrow's numbers.
         Map<UUID, Integer> subscribersByProfile = subscriptionRepository
-                .findByPropertyIdAndActiveTrue(propertyId)
+                .findCovering(propertyId, date)
                 .stream()
-                .filter(subscription -> activeTenancyIds.contains(subscription.getTenancyId()))
-                .filter(subscription -> profiles.containsKey(subscription.getProfileId()))
+                .filter(plan -> activeTenancyIds.contains(plan.getTenancyId()))
+                .map(plan -> plan.profileOn(date))
+                .filter(profiles::containsKey)
                 .collect(Collectors.groupingBy(
-                        FoodSubscription::getProfileId,
-                        Collectors.summingInt(subscription -> 1)));
+                        Function.identity(),
+                        Collectors.summingInt(profileId -> 1)));
 
         List<FoodMenuEntry> entries = menuEntryRepository
                 .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
@@ -268,5 +281,21 @@ public class FoodForecastService {
                     total,
                     List.copyOf(breakdown));
         }
+    }
+
+    /**
+     * Dishes the owner took off one meal on one date, for a tenant's "today"
+     * view (2026-09-27). Property-wide: the caller shows only the ones on the
+     * tenant's own plan. Read-only, and names only, no quantities.
+     */
+    @Transactional(readOnly = true)
+    public List<CookingForecastResponse.SkippedItem> skippedItems(UUID propertyId, LocalDate date, MealType mealType) {
+        List<FoodDailySkip> skips = dailySkipRepository.findByPropertyIdAndSkipDateAndMealType(propertyId, date, mealType);
+        if (skips.isEmpty()) {
+            return List.of();
+        }
+        return itemRepository.findAllById(skips.stream().map(FoodDailySkip::getItemId).toList()).stream()
+                .map(item -> new CookingForecastResponse.SkippedItem(item.getId(), item.getName(), item.getQuantityUnit()))
+                .toList();
     }
 }

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
@@ -69,8 +70,49 @@ public record TenancyResponse(
     String guestAddress,
     /** Stated at check-in and never recomputed. See {@code GuestDetails}. */
     Integer guestAge,
-    Gender guestGender
+    Gender guestGender,
+    /**
+     * The row's version (2026-09-28). A screen sends it back as {@code If-Match}
+     * when it acts, and a stay changed since the screen loaded it is refused.
+     */
+    long version
 ) {
+    /**
+     * The shape before {@code version}, for callers that build a response by
+     * hand (test fixtures). Real responses come from {@link #from}.
+     */
+    public TenancyResponse(
+            UUID id, String referenceCode, UUID userId, String tenantName, String tenantPhone,
+            boolean tenantPhoneVerified, boolean tenantProfileCompleted, UUID propertyId, UUID roomId,
+            UUID createdByUserId, TenancyBillingType billingType, Long rentAmountPaise, Long depositAmountPaise,
+            Long dailyRatePaise, LocalDate startDate, LocalDate plannedEndDate, LocalDate endDate,
+            TenancyStatus status, Instant createdAt, boolean billingStarted, boolean tosAccepted, boolean fixedTerm,
+            Integer agreementValidityMonths, LocalDate agreementEndDate, String earlyExitRule,
+            Boolean idCheckConfirmed, Instant idCheckedAt, boolean guestStay, String guestEmail,
+            String guestAddress, Integer guestAge, Gender guestGender) {
+        this(id, referenceCode, userId, tenantName, tenantPhone, tenantPhoneVerified, tenantProfileCompleted,
+                propertyId, roomId, createdByUserId, billingType, rentAmountPaise, depositAmountPaise,
+                dailyRatePaise, startDate, plannedEndDate, endDate, status, createdAt, billingStarted, tosAccepted,
+                fixedTerm, agreementValidityMonths, agreementEndDate, earlyExitRule, idCheckConfirmed, idCheckedAt,
+                guestStay, guestEmail, guestAddress, guestAge, guestGender, 0L);
+    }
+
+    /**
+     * The day this stay is due to end: {@link Tenancy#checkoutDate()}, the one
+     * rule every reader uses. Derived, not a component, so the record's
+     * constructor is unchanged.
+     */
+    @JsonProperty("checkoutDate")
+    public LocalDate checkoutDate() {
+        return endDate != null ? endDate : plannedEndDate;
+    }
+
+    /** How many days before its checkout this stay shows as ending soon. */
+    @JsonProperty("endingSoonLeadDays")
+    public int endingSoonLeadDays() {
+        return Tenancy.leadDaysFor(agreementValidityMonths);
+    }
+
     public static TenancyResponse from(Tenancy t) {
         return new TenancyResponse(
             t.getId(),
@@ -107,7 +149,8 @@ public record TenancyResponse(
             t.getGuestEmail(),
             t.getGuestAddress(),
             t.getGuestAge(),
-            t.getGuestGender()
+            t.getGuestGender(),
+            t.getVersion()
         );
     }
 
@@ -144,7 +187,8 @@ public record TenancyResponse(
             t.getGuestEmail(),
             t.getGuestAddress(),
             t.getGuestAge(),
-            t.getGuestGender()
+            t.getGuestGender(),
+            t.getVersion()
         );
     }
 }

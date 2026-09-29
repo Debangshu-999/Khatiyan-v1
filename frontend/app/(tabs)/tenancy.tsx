@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Text, View, type ImageSourcePropType } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
@@ -23,24 +23,12 @@ import { ActionCard } from "@/components/action-card";
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { AlignedFieldRow, CardRule, FieldPair, FlatCard, ReadonlyField } from "@/components/field-card";
 import { DirectionsButton } from "@/features/geo/directions-button";
-import { AlertModal } from "@/components/alert-modal";
-import { SheetShell } from "@/components/sheet-shell";
-import { BillPaymentIntentsSheet } from "@/features/billing/bill-payment-intents-sheet";
-import { PayBillSheet } from "@/features/billing/pay-bill-sheet";
-import { PaymentDecisionModal } from "@/features/billing/payment-decision-modal";
 import { PaymentWindowModal } from "@/features/billing/payment-window-modal";
-import { TenantBillReceiptSheet } from "@/features/billing/tenant-bill-receipt-sheet";
 import { BillStatusPill, BillTotal, formatDate as formatBillDate } from "@/features/owner/bill-views";
 import { ActionButton } from "@/features/owner/owner-ui";
-import {
-  useGetMyPaymentStateQuery,
-  useListMyLivePaymentIntentsQuery,
-  type PaymentIntent,
-} from "@/store/services/payment-intent-api";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { TenantBillCard } from "@/features/billing/tenant-bill-card";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
@@ -48,6 +36,12 @@ import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { SkeletonCard, SkeletonList, SkeletonTiles } from "@/components/skeleton";
 import { TenantOnboardingSteps } from "@/features/compliance/tenant-onboarding-steps";
+import { AlertModal } from "@/components/alert-modal";
+import {
+  REQUESTS_NOT_STARTED,
+  TenancyStartsSoonBubble,
+  tenancyNotStarted,
+} from "@/features/tenancy/starts-soon-bubble";
 import { useTenantCardUpdates } from "@/features/tenancy/use-tenant-card-updates";
 import type { BillingCycle } from "@/store/services/billing-api";
 import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
@@ -70,6 +64,7 @@ import { useTheme } from "@/theme/use-theme";
 import { buildExitRequestChains, buildRoomChangeRequestChains } from "@/features/tenancy/request-chain";
 import {
   exitRequestBlock,
+  pendingExitBlock,
   RequestBlockedModal,
   roomChangeRequestBlock,
   type RequestBlock,
@@ -82,7 +77,6 @@ const DEPOSIT_ARTWORK = require("../../assets/home-tools/deposit-manager.png");
 const BILLS_ARTWORK = require("../../assets/workspace/tenant-bills-header.png");
 const REQUESTS_ARTWORK = require("../../assets/workspace/tenancy-module.png");
 const CONCERNS_ARTWORK = require("../../assets/workspace/concern-module.png");
-const NO_BILL_ILLUSTRATION = require("../../assets/workspace/No-Bill_512x436.png");
 
 export default function TenancyScreen() {
   const router = useGuardedRouter();
@@ -143,122 +137,10 @@ export default function TenancyScreen() {
   const otherBills = useMemo(() => payableBills.filter((cycle) => cycle.category === "ONE_OFF"), [payableBills]);
   const pastBills = useMemo(() => cycles.filter((cycle) => cycle.status === "PAID" || cycle.status === "CANCELLED"), [cycles]);
 
-  /**
-   * The rent cycle the tenant is living in, paid or not.
-   *
-   * <p>
-   * One cycle, not a list. A tenant has exactly one rent question at a time —
-   * "am I straight this month" — and the whole ledger behind a card answers
-   * every other one. An unpaid cycle wins over a paid one because it is the one
-   * that still needs something; with none unpaid, the latest settled cycle is
-   * the answer, and showing it rather than an empty state is the difference
-   * between "you are paid up" and "there is nothing here".
-   *
-   * <p>UPCOMING is excluded. It is not yet payable, and leading with a bill
-   * nobody can act on would bury the one they can.
-   */
-  const currentRentCycle = useMemo(() => {
-    const live = cycles.filter((cycle) => cycle.category === "RENT_CYCLE" && cycle.status !== "UPCOMING");
-    return (
-      live.find(
-        (cycle) =>
-          cycle.status === "UNPAID" || cycle.status === "OVERDUE" || cycle.status === "CONFIRMATION_PENDING",
-      ) ?? live[0] ?? null
-    );
-  }, [cycles]);
-
-  const [viewingBill, setViewingBill] = useState<BillingCycle | null>(null);
-  const [payingBill, setPayingBill] = useState<BillingCycle | null>(null);
-  /** The bill whose attempt history is open. */
-  const [viewingIntents, setViewingIntents] = useState<BillingCycle | null>(null);
-  /** The attempt whose outcome we are asking about, from a fresh or open one. */
-  const [deciding, setDeciding] = useState<PaymentIntent | null>(null);
   const [requestBlock, setRequestBlock] = useState<RequestBlock | null>(null);
+  /** Why a request cannot be raised before the stay starts, while shown. */
+  const [notStartedMessage, setNotStartedMessage] = useState<string | null>(null);
 
-  // One bill at a time: the state is only ever read for the bill being paid, so
-  // there is no reason to ask about the others.
-  const paymentStateQuery = useGetMyPaymentStateQuery(payingBill?.id ?? "", { skip: !payingBill });
-  const paymentState = paymentStateQuery.data;
-
-  /**
-   * Live attempts across the whole stay, in one call.
-   *
-   * <p>Every card needs to know whether ITS bill has an attempt open, and the
-   * per-bill payment-state query only ever runs for the bill being paid — so
-   * without this a card had no way to lock its own button.
-   */
-  const liveIntentsQuery = useListMyLivePaymentIntentsQuery(activeTenancy?.tenancy.id ?? "", {
-    skip: !activeTenancy,
-  });
-  const liveIntentByCycle = useMemo(() => {
-    const byCycle = new Map<string, PaymentIntent>();
-    for (const intent of liveIntentsQuery.data ?? []) {
-      byCycle.set(intent.billingCycleId, intent);
-    }
-    return byCycle;
-  }, [liveIntentsQuery.data]);
-
-  /**
-   * Asks about an unanswered attempt as soon as the screen is open.
-   *
-   * <p>The question used to wait for the tenant to press Pay again — which they
-   * have no reason to do, since the button is locked precisely because the
-   * attempt is unanswered. So the bill sat blocked with the way to unblock it
-   * hidden behind the blocked control.
-   *
-   * <p>Only CREATED. A TENANT_CONFIRMED attempt is with the owner and there is
-   * nothing left for the tenant to answer.
-   */
-  const askedAboutRef = useRef<string | null>(null);
-
-  /**
-   * Opens the question and records that it was asked.
-   *
-   * <p>Every route to the modal goes through here — the effect below, the card's
-   * button, and the pay sheet handing over a just-created attempt. Stamping the
-   * id only in the effect would let a dismissal bounce straight back: the effect
-   * would see an intent it had never marked and re-open it.
-   */
-  const askAbout = useCallback((intent: PaymentIntent) => {
-    askedAboutRef.current = intent.id;
-    setDeciding(intent);
-  }, []);
-
-  useEffect(() => {
-    if (deciding || payingBill) {
-      return;
-    }
-    const unanswered = (liveIntentsQuery.data ?? []).find((intent) => intent.status === "CREATED");
-    // By id, not a plain "asked already" flag: dismissing the question must not
-    // bring it straight back, but a DIFFERENT attempt opened later is a new
-    // question and has to be asked.
-    if (unanswered && askedAboutRef.current !== unanswered.id) {
-      askAbout(unanswered);
-    }
-  }, [askAbout, deciding, liveIntentsQuery.data, payingBill]);
-
-  /**
-   * Whether this bill can be paid right now, and what happens when it is.
-   *
-   * <p>Null hides the Pay button rather than greying it: a bill already claimed
-   * has nothing to press, and one on a property with no UPI set up never had a
-   * button to begin with.
-   */
-  function payHandlerFor(cycle: BillingCycle) {
-    if (cycle.status === "CONFIRMATION_PENDING") {
-      return null;
-    }
-    // Locked while an attempt is open on THIS bill. The lock is per bill, not
-    // per tenant — an open attempt on one bill must not stop a tenant paying a
-    // different one.
-    const openAttempt = liveIntentByCycle.get(cycle.id);
-    if (openAttempt) {
-      // TENANT_CONFIRMED is with the owner — there is nothing to answer, so no
-      // button at all rather than one that reopens a question already answered.
-      return openAttempt.status === "CREATED" ? () => askAbout(openAttempt) : null;
-    }
-    return () => setPayingBill(cycle);
-  }
   const currentTenancyRequests = useMemo(
     () => (activeTenancy ? mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data, activeTenancy.tenancy.id).sort(compareRequests) : []),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
@@ -266,10 +148,19 @@ export default function TenancyScreen() {
   const requestAvailabilityLoading = exitRequestsQuery.isFetching || roomChangeRequestsQuery.isFetching;
 
   function openRoomChangeRequest() {
-    if (!activeTenancy || requestAvailabilityLoading) {
+    if (!activeTenancy) {
       return;
     }
-    const block = roomChangeRequestBlock(
+    // Checked first, so the answer is immediate: nothing about open requests
+    // matters before the stay has begun.
+    if (tenancyNotStarted(activeTenancy.tenancy.startDate)) {
+      setNotStartedMessage(REQUESTS_NOT_STARTED.roomChange);
+      return;
+    }
+    if (requestAvailabilityLoading) {
+      return;
+    }
+    const block = pendingExitBlock(activeTenancy.tenancy) ?? roomChangeRequestBlock(
       exitRequestsQuery.data,
       roomChangeRequestsQuery.data,
       activeTenancy.tenancy.id,
@@ -282,10 +173,17 @@ export default function TenancyScreen() {
   }
 
   function openExitRequest() {
-    if (!activeTenancy || requestAvailabilityLoading) {
+    if (!activeTenancy) {
       return;
     }
-    const block = exitRequestBlock(
+    if (tenancyNotStarted(activeTenancy.tenancy.startDate)) {
+      setNotStartedMessage(REQUESTS_NOT_STARTED.exit);
+      return;
+    }
+    if (requestAvailabilityLoading) {
+      return;
+    }
+    const block = pendingExitBlock(activeTenancy.tenancy) ?? exitRequestBlock(
       exitRequestsQuery.data,
       roomChangeRequestsQuery.data,
       activeTenancy.tenancy.id,
@@ -321,8 +219,6 @@ export default function TenancyScreen() {
     [concernHistoryQuery.data, concernsQuery.data],
   );
   const cardUpdates = useTenantCardUpdates({
-    bills: cycles,
-    billsReady: cyclesQuery.isSuccess && !cyclesQuery.isFetching,
     concerns: trackedConcerns,
     concernsReady:
       concernsQuery.isSuccess &&
@@ -368,6 +264,36 @@ export default function TenancyScreen() {
     );
   }
 
+  // A signed future monthly booking is not a current stay yet. Do not offer
+  // bills, room changes, exit requests, or the occupied-room overview until
+  // the approved outgoing move and chosen start date have both arrived.
+  if (activeTenancy && activeTenancy.tenancy.status === "SCHEDULED") {
+    return (
+      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+        <ScreenHeader
+          title="Your stay"
+          italicTail="booking."
+          subtitle="Your agreement is signed. Your stay begins on its scheduled date."
+        />
+        <Card style={{ gap: spacing.md }}>
+          <Text style={[type.display, { color: colors.ink, fontSize: 22 }]}>Booked for {formatDate(activeTenancy.tenancy.startDate)}</Text>
+          <Text style={[type.body, { color: colors.muted }]}>
+            {activeTenancy.property.name} · Room {activeTenancy.room.roomNumber}
+          </Text>
+          <Text style={[type.description, { color: colors.muted }]}>
+            Your agreement is complete. The room becomes available after the approved room change; your stay and billing begin on your start date, not today.
+          </Text>
+        </Card>
+        <ActionCard
+          meta="Signed agreement"
+          title="View your agreement"
+          description="Keep a copy of the terms for your upcoming stay."
+          onPress={() => router.push("/tenancy-agreement-view")}
+        />
+      </ScreenScrollView>
+    );
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
@@ -383,34 +309,15 @@ export default function TenancyScreen() {
             onViewAgreement={() => router.push("/tenancy-agreement-view")}
           />
 
-          {/* The current cycle and a door to the rest. There were filters here
-              and every payable bill under them, which made the tab a billing
-              screen with a tenancy summary on top — and the bill that matters
-              today sat in a list with bills that do not. */}
+          {/* A door to the bills, no bill card above it (user, 2026-09-27).
+              Paying happens on My Bills, where every bill of the month is. */}
           <Section title="Bills & Deposit">
-            {cyclesQuery.isFetching && cycles.length === 0 ? (
-              <SkeletonCard />
-            ) : currentRentCycle ? (
-              <TenantBillCard
-                cycle={currentRentCycle}
-                onPay={payHandlerFor(currentRentCycle)}
-                onViewBill={() => setViewingBill(currentRentCycle)}
-                onViewIntents={() => setViewingIntents(currentRentCycle)}
-                openAttempt={liveIntentByCycle.get(currentRentCycle.id) ?? null}
-              />
-            ) : (
-              <EmptyState
-                artwork={NO_BILL_ILLUSTRATION}
-                title="No rent cycle yet"
-                description="Your first cycle appears once the stay is billed."
-              />
-            )}
-
             <AllBillsCard
               dueNowPaise={payableBills.reduce((total, cycle) => total + cycle.totalAmountPaise, 0)}
-              hasUpdate={cardUpdates.billUpdate}
+              // Red while anything is waiting on the tenant to pay. Confirming
+              // is with the owner, and upcoming is not payable yet.
+              hasUnpaid={payableBills.some((cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE")}
               onPress={() => {
-                cardUpdates.markBillsSeen();
                 router.push({ pathname: "/tenancy-bills", params: { tenancyId: activeTenancy.tenancy.id } });
               }}
               payableCount={payableBills.length}
@@ -433,11 +340,9 @@ export default function TenancyScreen() {
                 value={formatMoney(depositQuery.data.currentBalancePaise)}
               />
             ) : (
-              <ActionCard
-                meta="Deposit"
-                title="Deposit not opened yet"
-                description="Deposit account opens after the first eligible billing cycle is completed."
-              />
+              // The same card as an open deposit, so the row does not change
+              // shape the day it opens. Nothing to open yet, so no chevron.
+              <EntryCard artwork={DEPOSIT_ARTWORK} label="Deposit account" value="Not opened yet" />
             )}
           </Section>
 
@@ -526,6 +431,10 @@ export default function TenancyScreen() {
         </Section>
       ) : null}
 
+      {notStartedMessage ? (
+        <AlertModal message={notStartedMessage} onClose={() => setNotStartedMessage(null)} tone="info" />
+      ) : null}
+
       {requestBlock ? (
         <RequestBlockedModal
           block={requestBlock}
@@ -545,75 +454,6 @@ export default function TenancyScreen() {
         />
       ) : null}
 
-      {viewingBill ? (
-        <TenantBillReceiptSheet
-          cycle={viewingBill}
-          onClose={() => setViewingBill(null)}
-          property={activeTenancy?.property ?? null}
-        />
-      ) : null}
-
-      {/* The tap always leads somewhere. Between setting the bill and the state
-          arriving there is a real gap, and a Pay button that does nothing for a
-          beat reads as broken — so the sheet opens on a spinner rather than
-          waiting to exist. */}
-      {payingBill && paymentStateQuery.isLoading ? (
-        <SheetShell onClose={() => setPayingBill(null)} title="Pay">
-          <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        </SheetShell>
-      ) : null}
-
-      {/* Nothing set up to pay to. Told plainly instead of leaving the tap dead
-          — the tenant has done nothing wrong and needs to know to pay directly. */}
-      {payingBill && paymentState && !paymentState.upiAvailable ? (
-        <AlertModal
-          message="This property has not set up online payment yet. Pay them directly and they will record it."
-          onClose={() => setPayingBill(null)}
-        />
-      ) : null}
-
-      {payingBill && paymentState?.payee ? (
-        <PayBillSheet
-          amountPaise={payingBill.totalAmountPaise}
-          billingCycleId={payingBill.id}
-          hasPayLink={paymentState.payLinkAvailable}
-          onClose={() => setPayingBill(null)}
-          onStarted={(intent) => {
-            setPayingBill(null);
-            askAbout(intent);
-          }}
-          payee={paymentState.payee}
-          referenceCode={payingBill.referenceCode}
-        />
-      ) : null}
-
-      {viewingIntents ? (
-        <BillPaymentIntentsSheet
-          cycle={viewingIntents}
-          onClose={() => setViewingIntents(null)}
-          onResolve={(intent) => {
-            // Closed first. Two Android modals opening in the same frame race
-            // each other, and the sheet is the one being left behind.
-            setViewingIntents(null);
-            askAbout(intent);
-          }}
-        />
-      ) : null}
-
-      {/* One decision modal, whatever opened it — a payment just started, the
-          re-ask on open, the card's button, or Resolve in the attempts sheet.
-          The old second copy asked again when Pay was pressed, which is a
-          button the tenant has no reason to press while an attempt is open and
-          is now locked anyway. */}
-      {deciding ? (
-        <PaymentDecisionModal
-          intent={deciding}
-          onClose={() => setDeciding(null)}
-          onSettled={() => setDeciding(null)}
-        />
-      ) : null}
     </ScreenScrollView>
   );
 }
@@ -647,8 +487,8 @@ function TenancyOverviewCard({
               the live tenancy state stays visible at the trailing edge. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <PropertyArtwork size={24} />
-            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Current stay</Text>
+            {/* No "Current stay" eyebrow (user, 2026-09-27): the name alone. */}
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text
                 adjustsFontSizeToFit
                 minimumFontScale={0.78}
@@ -658,7 +498,12 @@ function TenancyOverviewCard({
                 {activeTenancy.property.name}
               </Text>
             </View>
-            <TenancyStatusPill status={activeTenancy.tenancy.status} />
+            {/* Hidden before the start date. "Active" there is the record's
+                status, not the tenant's reality, and the bubble below already
+                says when it begins. */}
+            {tenancyNotStarted(activeTenancy.tenancy.startDate) ? null : (
+              <TenancyStatusPill status={activeTenancy.tenancy.status} />
+            )}
           </View>
 
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -727,6 +572,9 @@ function TenancyOverviewCard({
             under "101 · Floor 1" rather than at the card's right margin. */}
         <AlignedFieldRow copyable icon={KeyRound} label="Tenancy ID" mono value={activeTenancy.tenancy.referenceCode} />
       </FlatCard>
+
+      {/* Before the start date only. Nothing renders once the stay has begun. */}
+      <TenancyStartsSoonBubble startDate={activeTenancy.tenancy.startDate} />
 
         {/* Bordered, not filled. A pale blue ground is banned app-wide — blue
             survives here as the glyph and the label. */}
@@ -830,13 +678,13 @@ function TenancyStatusPill({ status }: { status: string }) {
  */
 function AllBillsCard({
   dueNowPaise,
-  hasUpdate,
+  hasUnpaid,
   onPress,
   payableCount,
   totalCount,
 }: {
   dueNowPaise: number;
-  hasUpdate: boolean;
+  hasUnpaid: boolean;
   onPress: () => void;
   payableCount: number;
   totalCount: number;
@@ -879,7 +727,7 @@ function AllBillsCard({
             My Bills
           </Text>
         </View>
-        <SummaryChevron hasUpdate={hasUpdate} />
+        <SummaryChevron hasUpdate={hasUnpaid} />
       </AnimatedPressable>
 
       <View style={{ backgroundColor: colors.border, height: 1 }} />
@@ -1113,28 +961,24 @@ function EntryCard({
   artwork?: ImageSourcePropType;
   icon?: typeof CalendarDays;
   label: string;
-  onPress: () => void;
+  /** Absent when there is nothing behind the card yet: no chevron, muted value. */
+  onPress?: () => void;
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel={`${label}, ${value}`}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.md,
-      }}
-    >
+  const cardStyle = {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderCurve: "continuous",
+    borderRadius: radii.card,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+  } as const;
+  const content = (
+    <>
       {artwork ? (
         <Image
           accessibilityIgnoresInvertColors
@@ -1148,11 +992,27 @@ function EntryCard({
       ) : null}
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>
+        <Text
+          numberOfLines={1}
+          style={{ color: onPress ? colors.ink : colors.muted, fontFamily: fonts.sansBold, fontSize: 17 }}
+        >
           {value}
         </Text>
       </View>
-      <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
+      {onPress ? <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} /> : null}
+    </>
+  );
+
+  if (!onPress) {
+    return (
+      <View accessibilityLabel={`${label}, ${value}`} style={cardStyle}>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <AnimatedPressable accessibilityLabel={`${label}, ${value}`} accessibilityRole="button" onPress={onPress} style={cardStyle}>
+      {content}
     </AnimatedPressable>
   );
 }
@@ -1289,6 +1149,9 @@ function tenancyStatusTone(status: string) {
   }
   if (status === "ON_NOTICE" || status === "ON_PREMATURE_NOTICE") {
     return "warning";
+  }
+  if (status === "PENDING_EXIT") {
+    return "danger";
   }
   if (status === "ENDED" || status === "CANCELLED") {
     return "neutral";

@@ -94,6 +94,15 @@ export default function TenancyNearbyMapScreen() {
   const stackRef = useRef<ScrollView>(null);
   /** Where each result card sits in the stack, so a tapped pin can scroll to its card. */
   const cardTops = useRef<Record<string, number>>({});
+  /**
+   * How tall the stack is allowed to be: two cards, and the top of a third.
+   *
+   * <p>Measured rather than guessed at a percentage, because a card's height
+   * depends on how far its address wraps. Taken from where the third card
+   * starts, so the peek is always a peek — the cut never lands mid-name on one
+   * phone and below the button on another.
+   */
+  const [stackCap, setStackCap] = useState<number | null>(null);
 
   const anchor = useMemo<[number, number] | null>(() => {
     const lat = property?.latitude;
@@ -101,9 +110,29 @@ export default function TenancyNearbyMapScreen() {
     return lat != null && lng != null ? [lng, lat] : null;
   }, [property?.latitude, property?.longitude]);
 
-  const listed = useMemo(() => data?.listedPlaces ?? [], [data?.listedPlaces]);
+  const allListed = useMemo(() => data?.listedPlaces ?? [], [data?.listedPlaces]);
   const live = useMemo(() => data?.liveResults ?? [], [data?.liveResults]);
   const searching = committed.trim().length > 0;
+
+  /**
+   * The panel's own filter, for the places management picked out.
+   *
+   * <p>Applies to the pins as well as the rows. The panel is the index of
+   * what is on the map, and a filter that emptied the list while eleven pins
+   * stayed behind would leave the two disagreeing about what is being shown.
+   *
+   * <p>Only while nothing is searched: during a search the list is the
+   * results, and this is not about them.
+   */
+  const [recommendedOnly, setRecommendedOnly] = useState(false);
+  const hasRecommended = allListed.some((place) => place.ownerRecommended);
+  const listed = useMemo(
+    () =>
+      !searching && recommendedOnly
+        ? allListed.filter((place) => place.ownerRecommended)
+        : allListed,
+    [allListed, recommendedOnly, searching],
+  );
 
   /**
    * Centres on the property as soon as BOTH the map and the anchor exist.
@@ -125,12 +154,16 @@ export default function TenancyNearbyMapScreen() {
   /**
    * A searched place is what you want to be looking at.
    *
-   * <p>Staying on the property was right for a category — the nearest chemist
-   * is a street away — and plainly wrong for a named landmark, which can be
-   * across the city and left the map sitting on home with its pin somewhere
-   * off-screen. So the camera goes to the first result either way: for a
-   * category that is the nearest one and barely a pan, and for a landmark it
-   * is the thing that was asked for.
+   * <p>Staying on the property left every pin off-screen — which is why a
+   * search appeared to draw nothing at all until a card was tapped and the
+   * camera finally went somewhere. So the camera is moved to the answer: one
+   * result is flown to, several are FRAMED.
+   *
+   * <p>Framing is the SDK's job, not ours. It was arithmetic here for a
+   * while — a zoom worked out from the farthest result's distance — which was
+   * guesswork twice over: it assumed the camera's zoom prop re-applies after
+   * mount, and it had no bearings to work with, only radii. The SDK resolves
+   * the place codes itself and is the only thing that knows where they are.
    *
    * <p>A single result is also selected, because a search with one answer IS
    * that answer — its card should be showing before anyone taps a pin.
@@ -150,15 +183,67 @@ export default function TenancyNearbyMapScreen() {
       return;
     }
     flownTo.current = target;
+
+    // One answer: go and stand on it, at street zoom. Centre and zoom in one
+    // move, so it is a single journey rather than a pan followed by a zoom.
+    if (live.length === 1) {
+      setSelected(`live-${first.eLoc ?? 0}`);
+      cameraRef.current?.setCamera({
+        animationDuration: 700,
+        animationMode: "flyTo",
+        centerCoordinate:
+          first.latitude != null && first.longitude != null
+            ? [first.longitude, first.latitude]
+            : undefined,
+        centerMapplsPin: first.latitude != null ? undefined : first.eLoc ?? undefined,
+        zoomLevel: DEFAULT_ZOOM,
+      });
+      return;
+    }
+
+    // Several: frame them all. The SDK works out the centre and the zoom,
+    // which for eLoc results is the ONLY way — a standard key gives no
+    // coordinates, so nothing on our side knows where they are.
+    //
+    // Padding keeps them out from under the furniture: the search bar and
+    // chips at the top, the stack of cards at the bottom.
+    // A floor under the measured height, because on the FIRST search the cards
+    // have not laid out yet and the measurement is still whatever was on
+    // screen before — usually nothing. Framing results into the space the
+    // cards are about to cover is the same as not padding at all.
+    const padding = [
+      insets.top + CONTROLS_HEIGHT,
+      spacing.lg,
+      Math.max(overlayHeight, RESULT_STACK_CLEARANCE) + spacing.lg,
+      spacing.lg,
+    ];
+    const pins = live.map((place) => place.eLoc).filter((eLoc): eLoc is string => Boolean(eLoc));
+    if (pins.length > 1) {
+      cameraRef.current?.fitBoundsWithMapplsPin(pins, padding, 700);
+      return;
+    }
+
+    const points = live
+      .filter((place) => place.latitude != null && place.longitude != null)
+      .map((place) => [place.longitude as number, place.latitude as number]);
+    if (points.length > 1) {
+      const lngs = points.map((point) => point[0]);
+      const lats = points.map((point) => point[1]);
+      cameraRef.current?.fitBounds(
+        [Math.max(...lngs), Math.max(...lats)],
+        [Math.min(...lngs), Math.min(...lats)],
+        padding,
+        700,
+      );
+      return;
+    }
+
     if (first.latitude != null && first.longitude != null) {
       cameraRef.current?.flyTo([first.longitude, first.latitude], 700);
     } else if (first.eLoc) {
       cameraRef.current?.flyWithMapplsPin(first.eLoc, 700);
     }
-    if (live.length === 1) {
-      setSelected(`live-${first.eLoc ?? 0}`);
-    }
-  }, [committed, live, mapReady]);
+  }, [committed, insets.top, live, mapReady, overlayHeight]);
 
   /** A pin tapped on the map scrolls its own card into view. */
   useEffect(() => {
@@ -178,6 +263,7 @@ export default function TenancyNearbyMapScreen() {
     }
     setSelected(null);
     cardTops.current = {};
+    setStackCap(null);
     setCommitted(trimmed);
     void rememberSearch(trimmed);
   }
@@ -186,9 +272,18 @@ export default function TenancyNearbyMapScreen() {
     setCommitted("");
     setSelected(null);
     cardTops.current = {};
+    setStackCap(null);
     flownTo.current = null;
+    // Back to the property AND back to street zoom: a search may have pulled
+    // the camera out across the city, and flying home at that zoom would land
+    // on the right place showing the wrong amount of it.
     if (anchor) {
-      cameraRef.current?.flyTo(anchor, 700);
+      cameraRef.current?.setCamera({
+        animationDuration: 700,
+        animationMode: "flyTo",
+        centerCoordinate: anchor,
+        zoomLevel: DEFAULT_ZOOM,
+      });
     }
   }
 
@@ -267,7 +362,7 @@ export default function TenancyNearbyMapScreen() {
         <MapView onDidFinishLoadingMap={() => setMapReady(true)} style={{ flex: 1 }}>
           {/* Always mounted, even before the anchor is known — a camera that
               appears later does not take hold. The effects above move it. */}
-          <Camera centerCoordinate={anchor ?? undefined} ref={cameraRef} zoomLevel={14} />
+          <Camera centerCoordinate={anchor ?? undefined} ref={cameraRef} zoomLevel={DEFAULT_ZOOM} />
 
           {anchor ? (
             <PointAnnotation coordinate={anchor} id="home" title={property?.name}>
@@ -357,7 +452,16 @@ export default function TenancyNearbyMapScreen() {
           <View
             onLayout={(event) => setOverlayHeight(event.nativeEvent.layout.height)}
             pointerEvents="box-none"
-            style={{ bottom: 0, left: 0, maxHeight: "52%", position: "absolute", right: 0 }}
+            style={{
+              bottom: 0,
+              left: 0,
+              // The percentage only applies until a third card has laid out —
+              // with one or two results the stack is shorter than either and
+              // simply sizes to its content.
+              maxHeight: stackCap ?? "52%",
+              position: "absolute",
+              right: 0,
+            }}
           >
             <ScrollView
               contentContainerStyle={{
@@ -393,6 +497,9 @@ export default function TenancyNearbyMapScreen() {
                     name={place.name}
                     onLayout={(y) => {
                       cardTops.current[key] = y;
+                      if (index === THIRD_CARD) {
+                        setStackCap(y + CARD_PEEK);
+                      }
                     }}
                     onPress={() => focus(place, key)}
                     selected={selected === key}
@@ -655,17 +762,60 @@ export default function TenancyNearbyMapScreen() {
             refreshable={false}
             safeAreaEdges={["bottom"]}
           >
+            <View style={{ gap: spacing.md }}>
+              {/* The app's own header rather than a bold line of text: kicker
+                  and rule, serif name, a note saying what the list is. Sized
+                  down from a screen heading, because it is heading a panel. */}
+              {/* No kicker. "Around you" is what the whole screen is, and
+                  repeating it over the one panel on it said nothing the map
+                  above had not already said. Without that row the title has
+                  the space to be a size larger. */}
+              <ScreenHeader
+                italicTail="management."
+                subtitle={
+                  allListed.length === 0
+                    ? "Places your property has picked out."
+                    : `${allListed.length} ${allListed.length === 1 ? "place" : "places"}`
+                      + `${property?.name ? ` near ${property.name}` : ""}`
+                }
+                title="Listed by"
+                titleStyle={{ fontSize: 25, lineHeight: 31 }}
+              />
+
+              {/* Only offered when there is something to filter to. A pair that
+                  can only empty the list is not a filter, it is a dead end. */}
+              {hasRecommended ? (
+                <View style={{ flexDirection: "row", gap: spacing.xs }}>
+                  <FilterBubble
+                    label="All"
+                    on={!recommendedOnly}
+                    onPress={() => setRecommendedOnly(false)}
+                  />
+                  <FilterBubble
+                    glyph="star"
+                    label="Recommended"
+                    on={recommendedOnly}
+                    onPress={() => setRecommendedOnly(true)}
+                  />
+                </View>
+              ) : null}
+            </View>
+
             {listed.map((place) => (
               <PlaceCard
                 address={place.addressText}
-                directionsUrl={
-                  place.directionsUrl
-                  ?? googleDirectionsUrl(place.name, place.addressText, place.latitude, place.longitude)
-                }
+                // No route button in the panel. The card's job here is to take
+                // you to the pin, and tapping it opens the callout over the
+                // map — which carries Directions. Two of them, a scroll apart,
+                // was the same button twice.
+                directionsUrl={null}
                 distance={place.distanceKm == null ? null : `${place.distanceKm.toFixed(1)} km`}
+                // "Listed by your property" said nothing here — everything in
+                // this panel is. What was missing is what the distance is
+                // measured FROM, which is the only ambiguous part of the line.
+                distanceFrom={property?.name}
                 flat
                 key={place.id}
-                listed
                 name={place.name}
                 onPress={() => focus(place, `listed-${place.id}`)}
                 recommended={place.ownerRecommended}
@@ -673,8 +823,8 @@ export default function TenancyNearbyMapScreen() {
               />
             ))}
 
-            {listed.length === 0 && !mapQuery.isFetching ? (
-              <Text style={[type.body, { color: colors.muted, textAlign: "center" }]}>
+            {allListed.length === 0 && !mapQuery.isFetching ? (
+              <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
                 Your property has not listed any places yet. Search above to find what is around you.
               </Text>
             ) : null}
@@ -684,7 +834,10 @@ export default function TenancyNearbyMapScreen() {
 
       {searchOpen ? (
         <NearbySearchSheet
-          listedPlaces={listed}
+          // Every listed place, not the panel's filtered view: the filter is
+          // about what the panel shows, and a search should still find a place
+          // management listed but did not single out.
+          listedPlaces={allListed}
           onClose={() => setSearchOpen(false)}
           onSubmit={commitSearch}
           suggestedCategories={suggestedCategories}
@@ -784,6 +937,36 @@ function ResultBanner({
   );
 }
 
+/** Street level: close enough to read the streets the property is on. */
+const DEFAULT_ZOOM = 14;
+
+/**
+ * Room reserved at the top of the map for the search bar and the chips.
+ *
+ * <p>Padding for the camera fit, so a framed result is not tucked behind the
+ * controls floating over it.
+ */
+const CONTROLS_HEIGHT = 100;
+
+/**
+ * The least room to leave for the result cards when framing a search.
+ *
+ * <p>Roughly two cards. A floor, not the figure itself — the stack's real
+ * height is measured and used once it exists.
+ */
+const RESULT_STACK_CLEARANCE = 240;
+
+/** The card whose top decides where the stack is cut: the third one. */
+const THIRD_CARD = 2;
+
+/**
+ * How much of that third card stays visible.
+ *
+ * <p>Enough for its name and the top of its address — the sliver that says
+ * "there is more below" without giving a whole card's worth of map away.
+ */
+const CARD_PEEK = 54;
+
 /**
  * How far the idle panel sits OVER the map's lower edge.
  *
@@ -815,6 +998,63 @@ function markerKey(id: string, selected: boolean): string {
  * map looks like it has two kinds of place on it.
  */
 const SELECTED_PIN_SCALE = 1.28;
+
+/**
+ * One of the panel's two filter bubbles.
+ *
+ * <p>A pair, with All standing for "no filter", rather than a single toggle:
+ * on its own, Recommended off and Recommended on look like the same control in
+ * two states, and neither says what the list is currently showing.
+ */
+function FilterBubble({
+  glyph,
+  label,
+  on,
+  onPress,
+}: {
+  glyph?: MaterialGlyph;
+  label: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: on ? colors.primary : "transparent",
+        borderColor: on ? colors.primary : colors.border,
+        borderRadius: radii.pill,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.xxs,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+      }}
+    >
+      {glyph ? (
+        <MaterialCommunityIcons
+          color={on ? colors.onPrimary : colors.accent}
+          name={glyph}
+          size={14}
+        />
+      ) : null}
+      <Text
+        style={{
+          color: on ? colors.onPrimary : colors.ink,
+          fontFamily: fonts.sansMedium,
+          fontSize: 12.5,
+        }}
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
 
 /**
  * A teardrop pin, drawn as the glyph itself.
@@ -872,6 +1112,7 @@ function PlaceCard({
   address,
   directionsUrl,
   distance,
+  distanceFrom,
   flat,
   listed,
   name,
@@ -883,6 +1124,8 @@ function PlaceCard({
   address: string | null;
   directionsUrl: string | null;
   distance: string | null;
+  /** Names what the distance is measured from, when it is worth saying. */
+  distanceFrom?: string | null;
   flat?: boolean;
   listed?: boolean;
   name: string;
@@ -892,6 +1135,12 @@ function PlaceCard({
   selected: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
+  const meta = [
+    distance == null ? null : distanceFrom ? `${distance} away from ${distanceFrom}` : distance,
+    listed ? "Listed by your property" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <AnimatedPressable
       accessibilityLabel={name}
@@ -933,8 +1182,11 @@ function PlaceCard({
               {address}
             </Text>
           ) : null}
-          <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
-            {[distance, listed ? "Listed by your property" : null].filter(Boolean).join(" · ")}
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}
+          >
+            {meta}
           </Text>
         </View>
       </View>

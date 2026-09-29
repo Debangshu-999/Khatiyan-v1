@@ -13,6 +13,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
@@ -265,6 +266,7 @@ public class DepositManagerService {
             ensureMovementBelongsToAccount(account, movement);
             ensureBalanceCanReplaceMovement(movements, movement, amountPaise);
             movement.updateBillingLineMovement(amountPaise, actorUserId);
+            account.recordLedgerActivity();
 
             log.info(
                     "Deposit billing line movement updated depositAccountId={} tenancyId={} billingCycleId={} lineItemId={} actorUserId={} amount={}",
@@ -289,6 +291,7 @@ public class DepositManagerService {
                 actorUserId);
 
         DepositMovement saved = depositMovementRepository.save(movement);
+        account.recordLedgerActivity();
 
         log.info(
                 "Deposit billing line movement created depositAccountId={} tenancyId={} billingCycleId={} lineItemId={} actorUserId={} amount={}",
@@ -325,6 +328,7 @@ public class DepositManagerService {
         DepositMovement movement = existingMovement.get();
         ensureMovementBelongsToAccount(account, movement);
         movement.clearBillingLineMovement(actorUserId);
+        account.recordLedgerActivity();
 
         log.info(
                 "Deposit billing line movement cleared depositAccountId={} tenancyId={} lineItemId={} actorUserId={}",
@@ -346,6 +350,9 @@ public class DepositManagerService {
         billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
+        // The account as the screen saw it (2026-09-29): its balance decides
+        // what a correction may do.
+        VersionGuard.claim(account);
         ensureActive(account);
         DepositMovement movement = DepositMovement.correctionAddition(
                 account.getId(),
@@ -354,6 +361,7 @@ public class DepositManagerService {
                 actorUserId);
 
         depositMovementRepository.save(movement);
+        account.recordLedgerActivity();
 
         log.info(
                 "Deposit correction added depositAccountId={} tenancyId={} actorUserId={} amount={}",
@@ -377,6 +385,7 @@ public class DepositManagerService {
         billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
+        VersionGuard.claim(account);
         ensureActive(account);
         List<DepositMovement> movements = depositMovementRepository.findByDepositAccountId(account.getId());
         ensureBalanceCanApplyMovement(movements, DepositMovementType.DEDUCTION, request.amountPaise());
@@ -388,6 +397,7 @@ public class DepositManagerService {
                 actorUserId);
 
         depositMovementRepository.save(movement);
+        account.recordLedgerActivity();
 
         log.info(
                 "Deposit correction deducted depositAccountId={} tenancyId={} actorUserId={} amount={}",
@@ -430,6 +440,7 @@ public class DepositManagerService {
                 actorUserId);
 
         depositMovementRepository.save(movement);
+        account.recordLedgerActivity();
 
         log.info(
                 "Deposit deducted for exit approval depositAccountId={} tenancyId={} actorUserId={} amount={}",
@@ -456,6 +467,7 @@ public class DepositManagerService {
         ensureTenancyEnded(tenancy);
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
+        VersionGuard.claim(account);
         ensureDecidedAtExit(account, true,
                 "This deposit was marked not refundable at exit — close the account instead");
 
@@ -508,6 +520,7 @@ public class DepositManagerService {
         ensureTenancyEnded(tenancy);
 
         DepositAccount account = getAccountByTenancyId(tenancyId);
+        VersionGuard.claim(account);
         ensureDecidedAtExit(account, false,
                 "This deposit is refundable — settle it instead of closing it unpaid");
 
@@ -704,7 +717,12 @@ public class DepositManagerService {
                 .orElse(null);
 
         return DepositAccountResponse.from(
-                account, tenantName, tenancyReferenceCode, currentBalancePaise, movementResponses);
+                account,
+                tenantName,
+                tenancyReferenceCode,
+                currentBalancePaise,
+                latestLedgerActivityAt(movements),
+                movementResponses);
     }
 
     private List<DepositAccountResponse> toResponses(List<DepositAccount> accounts) {
@@ -748,9 +766,23 @@ public class DepositManagerService {
                             tenantNames.get(account.getTenantUserId()),
                             tenancyReferenceCodes.get(account.getTenancyId()),
                             currentBalancePaise,
+                            latestLedgerActivityAt(movements),
                             movementResponses);
                 })
                 .toList();
+    }
+
+    /**
+     * Existing accounts may predate aggregate touching, so reads also consider
+     * the newest child-row update. This repairs Last updated immediately rather
+     * than only after the next deposit operation.
+     */
+    private Instant latestLedgerActivityAt(List<DepositMovement> movements) {
+        return movements.stream()
+                .map(DepositMovement::getUpdatedAt)
+                .filter(updatedAt -> updatedAt != null)
+                .max(Instant::compareTo)
+                .orElse(null);
     }
 
     private String displayUserName(UserSummaryResponse user) {

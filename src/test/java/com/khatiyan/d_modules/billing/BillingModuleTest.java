@@ -53,6 +53,9 @@ class BillingModuleTest {
     @Mock
     private PaymentIntentService paymentIntentService;
 
+    @Mock
+    private com.khatiyan.d_modules.billing.service.CashPaymentConfirmationService cashPaymentConfirmationService;
+
     private BillingModule billingModule;
     private BillingCycleResponse billingCycleResponse;
     private BillingCycleLineItemResponse lineItemResponse;
@@ -65,7 +68,8 @@ class BillingModuleTest {
                 billingCycleLineItemService,
                 depositManagerService,
                 exitSettlementService,
-                paymentIntentService);
+                paymentIntentService,
+                cashPaymentConfirmationService);
         billingCycleResponse = billingCycleResponse();
         lineItemResponse = lineItemResponse();
         depositAccountResponse = depositAccountResponse();
@@ -98,8 +102,8 @@ class BillingModuleTest {
         UUID cycleId = UUID.randomUUID();
         UUID lineItemId = UUID.randomUUID();
         List<CreateExtraChargeRequest> extraCharges = List.of(
-                new CreateExtraChargeRequest("Damage", "Window repair", 800_00, false));
-        CreateDiscountRequest discountRequest = new CreateDiscountRequest("Goodwill", "Owner discount", BigDecimal.TEN);
+                new CreateExtraChargeRequest("Damage", "Window repair", 800_00));
+        CreateDiscountRequest discountRequest = new CreateDiscountRequest("Goodwill", "Owner discount", BigDecimal.TEN, null);
         AdjustBillingLineItemRequest adjustRequest = new AdjustBillingLineItemRequest(700_00L);
         when(billingCycleLineItemService.addExtraChargeForTenancy(actorUserId, tenancyId, extraCharges))
                 .thenReturn(billingCycleResponse);
@@ -187,7 +191,7 @@ class BillingModuleTest {
                 null,
                 null,
                 null,
-                List.of(), null);
+                List.of(), null, 0L);
     }
 
     private static BillingCycleLineItemResponse lineItemResponse() {
@@ -214,6 +218,7 @@ class BillingModuleTest {
                 "Asha Rao",
                 null,
                 1,
+                false,
                 null,
                 null);
     }
@@ -232,6 +237,6 @@ class BillingModuleTest {
                 null,
                 null,
                 null,
-                List.of());
+                List.of(), 0L);
     }
 }

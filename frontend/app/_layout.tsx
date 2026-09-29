@@ -9,6 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
 import { ScreenErrorFallback } from "@/components/screen-error-fallback";
+import { useBlurInputOnOutsideTap } from "@/components/blur-input-on-outside-tap";
 import { ToastProvider } from "@/components/toast";
 import { SessionExpiryGuard } from "@/features/auth/session-expiry-guard";
 import { loadAppSettings, pinnedOwnerModulesForUser, themeModeForUser } from "@/config/app-settings-storage";
@@ -31,6 +32,7 @@ function ThemedRootStack() {
   const dispatch = useAppDispatch();
   const { colors, isDark } = useTheme();
   const fontsLoaded = useAppFonts();
+  const blurInputOnOutsideTap = useBlurInputOnOutsideTap();
 
   useEffect(() => {
     let mounted = true;
@@ -89,7 +91,8 @@ function ThemedRootStack() {
   }
 
   return (
-    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+    // Tapping outside a field takes the focus, and the cursor, off it app-wide.
+    <View {...blurInputOnOutsideTap} style={{ backgroundColor: colors.background, flex: 1 }}>
       <StatusBar style={isDark ? "light" : "dark"} />
       {/* Above the navigator so it can announce an expiry from any screen. */}
       <SessionExpiryGuard />
@@ -120,6 +123,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-analytics/[division]" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payment-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payment-claims" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payment-details" options={{ headerShown: false }} />

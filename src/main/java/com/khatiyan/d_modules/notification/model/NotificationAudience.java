@@ -46,7 +46,9 @@ public enum NotificationAudience {
                     ENQUIRY_RECEIVED,
                     // A tenant claiming they paid is a decision the owner has to
                     // make against their bank statement.
-                    PAYMENT_CLAIM_RAISED -> MANAGEMENT;
+                    PAYMENT_CLAIM_RAISED,
+                    // A booked stay waiting on a bed only the owner can free.
+                    FUTURE_BOOKING_BLOCKED -> MANAGEMENT;
             case CONCERN_UNDER_REVIEW, CONCERN_IN_PROGRESS, CONCERN_RELEASED,
                     CONCERN_RESOLVED, TENANCY_EXIT_APPROVED, TENANCY_EXIT_REJECTED,
                     TENANCY_EXIT_EXECUTED, NOTICE_PUBLISHED, BILLING_CYCLE_GENERATED,
@@ -69,7 +71,10 @@ public enum NotificationAudience {
                     // The answer to their own enquiry. The enquirer is usually
                     // not a tenant yet, but TENANT is the non-management
                     // workspace and that is where they are reading.
-                    ENQUIRY_ANSWERED -> TENANT;
+                    ENQUIRY_ANSWERED,
+                    // A meal on the tenant's plan moved. Only tenants on a meal
+                    // plan are told, and they read it in their stay.
+                    FOOD_MEAL_DELAYED -> TENANT;
             // Account-level, like the other auth subtypes: a sign-in belongs to
             // the PERSON, not to a property workspace. Someone with both an
             // owner and a tenant account must see it in whichever they are in.
@@ -94,6 +99,14 @@ public enum NotificationAudience {
                     // what it means for them, management hears why. The listener
                     // names the audience per recipient group.
                     TENANCY_ROOM_CHANGE_EXECUTION_FAILED,
+                    // Account-level: it goes to someone whose stay is still
+                    // pending, who is not a tenant yet and has no tenant
+                    // workspace to read it in (owner's call, 2026-09-27).
+                    VERIFICATION_ATTEMPTS_ADDED,
+                    // Dual-audience: the tenant hears their stay reached its end
+                    // date, management hears it is waiting to be ended. The
+                    // listener names the audience per recipient group.
+                    TENANCY_PENDING_EXIT,
                     // Scheduled exits were removed on 2026-09-12. Nothing sends
                     // this any more, but stored notifications still carry it.
                     TENANCY_EXIT_SCHEDULE_FAILED,

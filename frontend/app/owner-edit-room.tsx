@@ -132,11 +132,14 @@ export default function OwnerEditRoomScreen() {
       // Order matters and is not incidental: a recut re-takes rent and
       // amenities from the new type, so it has to run FIRST or it would
       // overwrite the two edits that follow it.
+      // Each call bumps the room, so the next one goes on the version the
+      // last one returned (2026-09-29). The first goes on the room as opened.
+      let version = room.version;
       if (seeded.moldId !== room.moldId) {
-        await recutRoom({ moldId: mold.id, propertyId, roomId: room.id }).unwrap();
+        version = (await recutRoom({ moldId: mold.id, propertyId, roomId: room.id, version }).unwrap()).version;
       }
 
-      await updateRoom({
+      const updated = await updateRoom({
         payload: {
           baseRentPaise: rentPaise,
           capacity: mold.bedCount,
@@ -147,6 +150,7 @@ export default function OwnerEditRoomScreen() {
         },
         propertyId,
         roomId: room.id,
+        version,
       }).unwrap();
 
       await updateAmenities({
@@ -154,6 +158,7 @@ export default function OwnerEditRoomScreen() {
         customAmenities: seeded.customAmenities,
         propertyId,
         roomId: room.id,
+        version: updated.version,
       }).unwrap();
 
       unsaved.markSaved();
@@ -196,7 +201,7 @@ export default function OwnerEditRoomScreen() {
           {rooms.isLoading || molds.isLoading ? (
             <OwnerSettingsFormSkeleton fields={5} />
           ) : !room || !seeded ? (
-            <Text style={[type.body, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               That room is no longer in this property.
             </Text>
           ) : (

@@ -14,6 +14,7 @@ import { ChevronRight, FileText, Image as ImageIcon, Plus, X } from "lucide-reac
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
@@ -536,8 +537,8 @@ function DocumentPreviewModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -565,7 +566,7 @@ function DocumentPreviewModal({
             >
               {attachment.name}
             </Text>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
 
           <ScrollView contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
@@ -615,8 +616,8 @@ function DocumentPreviewModal({
 
           <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 

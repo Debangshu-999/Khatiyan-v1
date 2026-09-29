@@ -13,6 +13,7 @@ import {
 } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
+import { IconButton } from "@/features/owner/owner-ui";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -309,40 +310,38 @@ function FilterPickerDialog({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <Pressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={{
+      {/* Closes by its own close button, a choice or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
-        }}
-      >
-        <Pressable
-          onPress={(event) => event.stopPropagation()}
-          style={{
+        }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: radii.card,
             maxHeight: "75%",
             overflow: "hidden",
             width: "100%",
-          }}
-        >
-          <Text
+          }}>
+          <View
             style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            {title}
-          </Text>
+            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              {title}
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
           <ScrollView
             contentContainerStyle={{ paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}
             showsVerticalScrollIndicator={false}
@@ -357,8 +356,8 @@ function FilterPickerDialog({
               />
             ))}
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -398,37 +397,34 @@ function DateFilterDialog({
       transparent
       visible
     >
-      <Pressable
-        accessibilityLabel="Close date filter"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={{
+      {/* Closes by its own close button or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
-        }}
-      >
-        <Pressable
-          onPress={(event) => event.stopPropagation()}
-          style={{
+        }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: radii.card,
             maxHeight: "82%",
             overflow: "hidden",
             width: "100%",
-          }}
-        >
+          }}>
           <View style={{ gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
             <View
               style={{
                 alignItems: "center",
                 flexDirection: "row",
+                gap: spacing.xs,
                 minHeight: 36,
               }}
             >
+              {/* Balances the close button on the right, so the title stays centred. */}
+              <View style={{ width: 36 }} />
               {step === "YEAR" ? (
                 <Pressable
                   accessibilityLabel="Back to month"
@@ -476,6 +472,8 @@ function DateFilterDialog({
                   <ChevronRight color={colors.ink} size={21} strokeWidth={2.3} />
                 </Pressable>
               ) : <View style={{ width: 32 }} />}
+              {/* The only way out besides the device back button (user, 2026-09-29). */}
+              <IconButton accessibilityLabel="Close date filter" filled icon={X} onPress={onClose} />
             </View>
 
             {month !== "ALL" || year !== "ALL" ? (
@@ -516,8 +514,8 @@ function DateFilterDialog({
               />
             ))}
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

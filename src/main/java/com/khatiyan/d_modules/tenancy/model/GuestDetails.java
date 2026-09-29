@@ -1,5 +1,9 @@
 package com.khatiyan.d_modules.tenancy.model;
 
+import java.time.LocalDate;
+import java.time.Period;
+import java.time.ZoneId;
+
 import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.c_shared.exception.ValidationException;
 
@@ -11,10 +15,14 @@ import com.khatiyan.c_shared.exception.ValidationException;
  * keep them up to date for — they record what was stated at check-in and are
  * never written again.
  *
- * <p>That is why {@code age} is a number rather than a date of birth. A stored
- * DOB would quietly claim the app tracks a birthday and can recompute the age
- * later, and for a two-night stay neither is true. The owner writes down what
- * the guest said, the same as the register at a hotel desk.
+ * <p><b>A date of birth, and the age worked out from it</b> (owner's rule,
+ * 2026-09-27). This used to be an age as stated, on the view that a register
+ * need not keep a birthday. It now takes the date of birth, because that is
+ * what the owner reads off the ID they check, and the manual verification
+ * makes its 18+ check against it exactly as on a monthly stay. {@code age} is
+ * still carried, derived at check-in (IST), because the register and its
+ * database constraint read it. Built without a date of birth (older callers),
+ * the stated age stands on its own.
  *
  * <p>Email is the only optional field. A walk-in often has no reason to give
  * one, and unlike the rest it is not part of identifying them — everything else
@@ -26,7 +34,8 @@ public record GuestDetails(
         String email,
         String address,
         Integer age,
-        Gender gender) {
+        Gender gender,
+        LocalDate dateOfBirth) {
 
     private static final int MIN_AGE = 18;
     private static final int MAX_AGE = 120;
@@ -46,14 +55,24 @@ public record GuestDetails(
         if (address == null) {
             throw new ValidationException("Guest address is required");
         }
+        if (dateOfBirth != null) {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            if (!dateOfBirth.isBefore(today)) {
+                throw new ValidationException("Enter the guest's date of birth");
+            }
+            age = Period.between(dateOfBirth, today).getYears();
+        }
         if (age == null) {
-            throw new ValidationException("Guest age is required");
+            throw new ValidationException("Guest date of birth is required");
         }
         // The floor is a contract age rather than an arbitrary one: the stay is
         // billed to whoever it is registered under, and a minor cannot be held
         // to that. A family checking in registers under an adult.
-        if (age < MIN_AGE || age > MAX_AGE) {
-            throw new ValidationException("Guest age must be between " + MIN_AGE + " and " + MAX_AGE);
+        if (age < MIN_AGE) {
+            throw new ValidationException("The guest must be " + MIN_AGE + " or older");
+        }
+        if (age > MAX_AGE) {
+            throw new ValidationException("Enter the guest's date of birth as the ID shows it");
         }
         if (gender == null) {
             throw new ValidationException("Guest gender is required");
@@ -78,7 +97,12 @@ public record GuestDetails(
      * over the result.
      */
     public GuestDetails withPhone(String normalizedPhone) {
-        return new GuestDetails(name, normalizedPhone, email, address, age, gender);
+        return new GuestDetails(name, normalizedPhone, email, address, age, gender, dateOfBirth);
+    }
+
+    /** An entry with a stated age and no date of birth: how guests were registered before 2026-09-27. */
+    public GuestDetails(String name, String phone, String email, String address, Integer age, Gender gender) {
+        this(name, phone, email, address, age, gender, null);
     }
 
     private static String trimmedOrNull(String value) {

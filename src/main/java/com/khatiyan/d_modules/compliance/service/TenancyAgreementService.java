@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,7 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.khatiyan.c_shared.concurrency.ExpectedVersionHolder;
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.a_auth.AuthModule;
+import com.khatiyan.a_auth.api.dto.UserIdentityResponse;
 import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.d_modules.compliance.api.dto.AcceptAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementSigningChallengeResponse;
@@ -47,10 +51,13 @@ import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.model.ManagerResource;
 import com.khatiyan.d_modules.property.model.DeductionCategory;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.verification.VerificationModule;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
@@ -83,6 +90,7 @@ public class TenancyAgreementService {
      * cycle.
      */
     private final VerificationModule verificationModule;
+    private final AgreementAcceptanceWindow acceptanceWindow;
     /**
      * Dedicated mapper for {@link #contentHash}, pinned to NON_NULL inclusion.
      *
@@ -115,6 +123,7 @@ public class TenancyAgreementService {
             AttestationService attestationService,
             AuthModule authModule,
             VerificationModule verificationModule,
+            AgreementAcceptanceWindow acceptanceWindow,
             ObjectMapper objectMapper) {
         this.agreementRepository = agreementRepository;
         this.agreementService = agreementService;
@@ -126,6 +135,7 @@ public class TenancyAgreementService {
         this.attestationService = attestationService;
         this.authModule = authModule;
         this.verificationModule = verificationModule;
+        this.acceptanceWindow = acceptanceWindow;
         this.hashMapper = objectMapper.copy().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
@@ -413,15 +423,24 @@ public class TenancyAgreementService {
                 true);
     }
 
-    private PartyDetails tenantOf(UUID tenantUserId, LocalDate on) {
+    /**
+     * The tenant's block on the deed, from their account.
+     *
+     * <p>What the owner confirmed at the ID check wins over the account's own
+     * gender and date of birth. An owner never edits a tenant's profile, so the
+     * two can differ, and the deed names the values that were verified.
+     */
+    private PartyDetails tenantOf(UUID tenantUserId, LocalDate on, IdCheckedParticulars checked) {
         if (tenantUserId == null) {
             return PartyDetails.unknown();
         }
         return authModule.findIdentity(tenantUserId)
                 .map(tenant -> new PartyDetails(
                         tenant.fullName(),
-                        tenant.ageOn(on),
-                        label(tenant.gender()),
+                        checked.dateOfBirth() != null
+                                ? Period.between(checked.dateOfBirth(), on).getYears()
+                                : tenant.ageOn(on),
+                        label(checked.gender() != null ? checked.gender() : tenant.gender()),
                         tenant.phone(),
                         tenant.email(),
                         tenant.permanentAddress(),
@@ -455,6 +474,40 @@ public class TenancyAgreementService {
                 property.pincode(),
                 roomNumber,
                 sharingLabel);
+    }
+
+    /**
+     * An existing account's own gender and date of birth are not the owner's to
+     * change (owner's rule, 2026-09-27). The app shows them read-only at the
+     * check, and this makes the rule hold for any client. Only a blank, or an
+     * Undeclared gender, is the owner's to record.
+     */
+    static void ensureCheckKeepsAccount(UserIdentityResponse account, IdCheckDeclarationInput check) {
+        if (account.gender() != null && account.gender() != Gender.UNDECLARED && account.gender() != check.gender()) {
+            throw new ValidationException(
+                    "This tenant's account already records their gender. Only the tenant can change it in their profile.");
+        }
+        if (account.dateOfBirth() != null && check.dateOfBirth() != null
+                && !account.dateOfBirth().equals(check.dateOfBirth())) {
+            throw new ValidationException(
+                    "This tenant's account already records their date of birth. Only the tenant can change it in their profile.");
+        }
+    }
+
+    /**
+     * The particulars of the owner's declaration, sealed into its hashed body:
+     * the tenancy row is editable and the attestation is not.
+     */
+    private static Map<String, String> idCheckDetails(OnboardTenancyWithAgreementRequest request) {
+        Map<String, String> details = new LinkedHashMap<>();
+        details.put("idDocumentType", request.idCheck().documentType().name());
+        details.put("idLastFour", request.idCheck().lastFour());
+        details.put("gender", request.idCheck().gender().name());
+        if (request.idCheck().dateOfBirth() != null) {
+            details.put("dateOfBirth", request.idCheck().dateOfBirth().toString());
+        }
+        details.put("tenantPhone", request.tenantPhone());
+        return details;
     }
 
     private static String label(Gender gender) {
@@ -526,10 +579,7 @@ public class TenancyAgreementService {
                 // The particulars go in the hashed body, not just on the tenancy
                 // row: the tenancy is editable and this is not, so a later change
                 // to one leaves the other standing as it was.
-                .details(Map.of(
-                        "idDocumentType", request.idCheck().documentType().name(),
-                        "idLastFour", request.idCheck().lastFour(),
-                        "tenantPhone", request.tenantPhone()))
+                .details(idCheckDetails(request))
                 .build());
         }
 
@@ -575,12 +625,21 @@ public class TenancyAgreementService {
         // half-empty. Blank fields only — a tenant who already had an address
         // keeps theirs.
         OnboardTenancyWithAgreementRequest.TenantDetailsInput details = request.tenant();
+        if (request.idCheck() != null) {
+            authModule.findIdentity(tenancy.userId())
+                    .ifPresent(account -> ensureCheckKeepsAccount(account, request.idCheck()));
+        }
+        // What the owner checked, when they checked: those are the values this
+        // tenancy verified. Blanks only, as for every other field.
+        IdCheckedParticulars checked = request.idCheck() != null
+                ? new IdCheckedParticulars(request.idCheck().gender(), request.idCheck().dateOfBirth())
+                : IdCheckedParticulars.NONE;
         authModule.fillMissingTenantIdentity(
                 tenancy.userId(),
                 details.permanentAddress(),
                 details.permanentAddressPincode(),
-                details.dateOfBirth(),
-                details.gender());
+                checked.dateOfBirth() != null ? checked.dateOfBirth() : details.dateOfBirth(),
+                checked.gender() != null ? checked.gender() : details.gender());
 
         DeedFacts facts = facts(
                 property,
@@ -596,7 +655,7 @@ public class TenancyAgreementService {
         List<AgreementClause> clauses = assembler.assemble(template, facts);
         AgreementPreamble preamble = preambleTemplate.render(
                 landlordOf(property, request.startDate()),
-                tenantOf(tenancy.userId(), request.startDate()),
+                tenantOf(tenancy.userId(), request.startDate(), checked),
                 premisesOf(property, request.roomId()),
                 facts,
                 null);
@@ -650,6 +709,8 @@ public class TenancyAgreementService {
         complianceAccessPolicy.ensureCanAmendTenancyAgreement(actorUserId, tenancy.propertyId());
 
         TenancyAgreement agreement = getAgreementByTenancyId(tenancyId);
+        // The agreement as the screen saw it (2026-09-29).
+        VersionGuard.claim(agreement);
         ensurePending(agreement);
 
         AgreementTemplate applied = template != null ? template : AgreementTemplate.starter();
@@ -674,7 +735,8 @@ public class TenancyAgreementService {
                 applied,
                 preambleTemplate.render(
                         landlordOf(property, tenancy.startDate()),
-                        tenantOf(tenancy.userId(), tenancy.startDate()),
+                        tenantOf(tenancy.userId(), tenancy.startDate(),
+                                tenancyModule.findIdCheckedParticulars(tenancy.id())),
                         premisesOf(property, tenancy.roomId()),
                         facts,
                         null),
@@ -705,6 +767,10 @@ public class TenancyAgreementService {
     public AgreementSigningChallengeResponse startSigning(UUID tenantUserId, String requestIpAddress) {
         TenancyResponse tenancy = getMyTenancy(tenantUserId);
         TenancyAgreement agreement = getAgreementByTenancyId(tenancy.id());
+        // Checked, not bumped (2026-09-29): an agreement the owner changed since
+        // the tenant opened it sends no code, and signing on the same screen
+        // still matches.
+        VersionGuard.verify(agreement);
         ensurePending(agreement);
 
         // The whole reason an owner ordered checks. A tenant who could sign
@@ -758,6 +824,8 @@ public class TenancyAgreementService {
 
         TenancyResponse tenancy = getMyTenancy(tenantUserId);
         TenancyAgreement agreement = getAgreementByTenancyId(tenancy.id());
+        // Signing the agreement the tenant read, not one amended since (2026-09-29).
+        VersionGuard.claim(agreement);
         ensurePending(agreement);
 
         LegalStatement statement = LegalStatement.TENANCY_AGREEMENT_ACCEPTANCE;
@@ -832,6 +900,7 @@ public class TenancyAgreementService {
     public void decline(UUID tenantUserId) {
         TenancyResponse tenancy = getMyTenancy(tenantUserId);
         TenancyAgreement agreement = getAgreementByTenancyId(tenancy.id());
+        VersionGuard.claim(agreement);
         ensurePending(agreement);
 
         agreement.cancel();
@@ -855,6 +924,9 @@ public class TenancyAgreementService {
      */
     @Transactional
     public void cancelPendingAsManager(UUID actorUserId, UUID tenancyId, String reason) {
+        // The stay as the owner's screen showed it (2026-09-29): a tenant who
+        // accepted or declined since has changed it, and the removal is refused.
+        VersionGuard.check(getTenancy(tenancyId).version(), ExpectedVersionHolder.take());
         TenancyAgreement agreement = getAgreementByTenancyId(tenancyId);
         ensurePending(agreement);
 
@@ -866,6 +938,62 @@ public class TenancyAgreementService {
                 agreement.getId(),
                 tenancyId,
                 actorUserId);
+    }
+
+    /**
+     * The checks a pending stay's tenant has been asked to complete, for the
+     * owner's "Provide attempts" sheet.
+     */
+    @Transactional(readOnly = true)
+    public List<com.khatiyan.d_modules.verification.model.VerificationGrant> pendingStayChecks(
+            UUID actorUserId, UUID tenancyId) {
+        TenancyResponse tenancy = tenancyModule.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId.toString()));
+        propertyModule.ensureCanManage(actorUserId, tenancy.propertyId(), ManagerResource.TENANCY_CREATE);
+        return verificationModule.grantsForTenancy(tenancyId);
+    }
+
+    /**
+     * The owner gives a pending stay's tenant more verification tries (owner's
+     * decision, 2026-09-27). Only while the agreement is unsigned, and under the
+     * permission that orders checks at onboarding: it is the same spending.
+     */
+    @Transactional
+    public List<com.khatiyan.d_modules.verification.model.VerificationGrant> provideVerificationAttempts(
+            UUID actorUserId,
+            UUID tenancyId,
+            List<OnboardTenancyWithAgreementRequest.VerificationOrderInput> verification) {
+        TenancyAgreement agreement = getAgreementByTenancyId(tenancyId);
+        ensurePending(agreement);
+        TenancyResponse tenancy = tenancyModule.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId.toString()));
+        propertyModule.ensureCanManage(actorUserId, tenancy.propertyId(), ManagerResource.TENANCY_CREATE);
+        if (tenancy.userId() == null) {
+            throw new ValidationException("A daily stay has no account to verify.");
+        }
+        PropertyResponse property = propertyModule.getActiveProperty(tenancy.propertyId());
+
+        return verificationModule.addAttempts(
+                tenancyId,
+                property.ownerId(),
+                tenancy.propertyId(),
+                tenancy.userId(),
+                verification.stream().collect(java.util.stream.Collectors.toMap(
+                        OnboardTenancyWithAgreementRequest.VerificationOrderInput::serviceCode,
+                        OnboardTenancyWithAgreementRequest.VerificationOrderInput::attempts,
+                        Integer::sum)),
+                actorUserId);
+    }
+
+    /** When each of a property's unsigned agreements expires, for the owner's pending cards. */
+    @Transactional(readOnly = true)
+    public List<com.khatiyan.d_modules.compliance.api.dto.PendingAgreementDeadlineResponse> pendingAgreementDeadlines(
+            UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanView(actorUserId, propertyId, ManagerResource.TENANCIES);
+        return agreementRepository.findByPropertyIdAndStatus(propertyId, AgreementStatus.PENDING_ACCEPTANCE).stream()
+                .map(agreement -> new com.khatiyan.d_modules.compliance.api.dto.PendingAgreementDeadlineResponse(
+                        agreement.getTenancyId(), acceptanceWindow.expiresAt(agreement.getCreatedAt())))
+                .toList();
     }
 
     /** Tenancy ids of agreements still pending past the acceptance window. */

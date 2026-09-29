@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.food.model.FoodProfile;
+import com.khatiyan.d_modules.food.model.FoodProfileCategory;
 
 public record FoodProfileResponse(
         UUID id,
@@ -11,6 +12,7 @@ public record FoodProfileResponse(
         String name,
         String description,
         int displayOrder,
+        FoodProfileCategory category,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -21,6 +23,7 @@ public record FoodProfileResponse(
                 profile.getName(),
                 profile.getDescription(),
                 profile.getDisplayOrder(),
+                profile.getCategory(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt());
     }

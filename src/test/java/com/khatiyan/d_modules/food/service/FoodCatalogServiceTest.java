@@ -49,7 +49,8 @@ class FoodCatalogServiceTest {
                 itemRepository,
                 profileRepository,
                 menuEntryRepository,
-                subscriptionRepository);
+                subscriptionRepository,
+                java.time.Clock.systemUTC());
     }
 
     @Test

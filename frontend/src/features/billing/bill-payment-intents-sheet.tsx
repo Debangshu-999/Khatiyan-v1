@@ -57,7 +57,7 @@ export function BillPaymentIntentsSheet({
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : attempts.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18, paddingVertical: spacing.md }]}>
+        <Text style={[type.description, { color: colors.muted, paddingVertical: spacing.md }]}>
           No payments have been started for this bill yet. Anything you pay through the app is recorded here.
         </Text>
       ) : (

@@ -19,5 +19,7 @@ public record TenancyRoomTransferredEvent(
     UUID oldRoomId,
     UUID newRoomId,
     LocalDate transferDate,
-    long newRentAmountPaise
+    long newRentAmountPaise,
+    /** The old bed is already claimed by a future booking and must stay held. */
+    boolean holdOldRoomForFutureBooking
 ) {}

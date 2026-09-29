@@ -4,6 +4,8 @@ import { AlertTriangle, Siren, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import type { NotificationItem } from "@/store/services/notification-api";
+import type { MealType } from "@/store/services/property-api";
+import { MEAL_LABEL, formatMealWindow } from "@/features/food/food-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -75,7 +77,7 @@ export function NotificationRow({ notification, onPress, unread }: Props) {
           </View>
         ) : null}
       </View>
-      <Text style={[type.body, { color: colors.muted, fontSize: 14 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         {notification.body}
       </Text>
       {details.length > 0 ? (
@@ -137,14 +139,21 @@ function notificationDetails(notification: NotificationItem) {
     case "TENANT_ONBOARDED":
     case "TENANCY_STARTED":
     case "TENANCY_ENDED":
+    case "TENANCY_PENDING_EXIT":
       add(details, "Property", data.propertyName);
       add(details, "Room", data.roomNumber);
       add(details, "Tenancy ID", shortId(data.tenancyId));
       add(
         details,
-        notification.subtype === "TENANCY_ENDED" ? "End date" : "Start date",
-        formatDate(data.startDate ?? data.endDate),
+        notification.subtype === "TENANCY_ENDED" ? "End date" : notification.subtype === "TENANCY_PENDING_EXIT" ? "Checkout date" : "Start date",
+        formatDate(data.startDate ?? data.endDate ?? data.checkoutDate),
       );
+      break;
+    case "FUTURE_BOOKING_BLOCKED":
+      add(details, "Property", data.propertyName);
+      add(details, "Room", data.roomNumber);
+      add(details, "Booked from", formatDate(data.startDate));
+      add(details, "Tenancy ID", shortId(data.tenancyId));
       break;
     // No room number and no dates: the tenancy never started, so the only
     // facts are which offer it was and who ended it. "Cancelled by" is the one
@@ -190,6 +199,11 @@ function notificationDetails(notification: NotificationItem) {
       // still leave on if the withdrawal is refused.
       add(details, "Checkout date", formatDate(data.approvedCheckoutDate));
       add(details, "Request", data.referenceCode);
+      break;
+    case "VERIFICATION_ATTEMPTS_ADDED":
+      add(details, "Property", data.propertyName);
+      add(details, "Check", data.checks);
+      add(details, "Attempts added", data.attemptsAdded);
       break;
     case "TENANCY_AGREEMENT_EXPIRY_APPROACHING":
       add(details, "Property", data.propertyName);
@@ -254,6 +268,12 @@ function notificationDetails(notification: NotificationItem) {
     case "NOTICE_PUBLISHED":
       add(details, "Property", data.propertyName);
       add(details, "Notice", data.noticeTitle);
+      break;
+    case "FOOD_MEAL_DELAYED":
+      add(details, "Property", data.propertyName);
+      add(details, "Meal", data.mealType ? MEAL_LABEL[data.mealType as MealType] : undefined);
+      add(details, "New time", data.startTime && data.endTime ? formatMealWindow(data.startTime, data.endTime) : undefined);
+      add(details, "Delayed by", data.delayMinutes ? `${data.delayMinutes} min` : undefined);
       break;
     case "MANAGER_ASSIGNED":
     case "MANAGER_REMOVED":

@@ -9,9 +9,10 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterProperty;
+import com.khatiyan.d_modules.dashboard.api.dto.BlockedBookingItem;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterResponse;
 import com.khatiyan.d_modules.dashboard.api.dto.AttentionSummary;
 import com.khatiyan.d_modules.dashboard.api.dto.BudgetAttention;
@@ -118,7 +120,11 @@ public class OwnerDashboardService {
 
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         List<RoomResponse> rooms = propertyModule.listRooms(actorUserId, propertyId);
-        List<TenancyResponse> activeTenancies = tenancyModule.findActiveByPropertyId(propertyId);
+        // A future booking is live (it holds its claim) but nobody is in the bed
+        // yet: it is not a current stay for any figure here.
+        List<TenancyResponse> activeTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
+                .filter(tenancy -> tenancy.status() != TenancyStatus.SCHEDULED)
+                .toList();
         List<TenancyResponse> inactiveTenancies = tenancyModule.findInactiveByPropertyId(propertyId);
         List<TenancyExitRequestResponse> exitRequests =
                 tenancyModule.listPropertyExitRequests(actorUserId, propertyId);
@@ -147,6 +153,7 @@ public class OwnerDashboardService {
                 enquiryModule.countNewForProperty(propertyId),
                 staffModule.countSalaryPaymentDue(propertyId, today));
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
+        List<BlockedBookingItem> blockedBookings = buildBlockedBookings(propertyId, rooms);
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
         List<MonthlyTrendPoint> monthlyTrends =
                 buildMonthlyTrends(allTenancies, inactiveTenancies, cycles, occupancy.totalBeds(), today);
@@ -168,12 +175,29 @@ public class OwnerDashboardService {
                 money,
                 todayDigest,
                 attention,
+                blockedBookings,
                 budget,
                 concernQueue,
                 paymentIntents,
                 recentActivity,
                 monthlyTrends,
                 Instant.now());
+    }
+
+    private List<BlockedBookingItem> buildBlockedBookings(UUID propertyId, List<RoomResponse> rooms) {
+        Map<UUID, String> roomNumbers = rooms.stream()
+                .collect(Collectors.toMap(RoomResponse::id, RoomResponse::roomNumber, (first, second) -> first));
+        return tenancyModule.findBlockedBookings(propertyId).stream()
+                .map(blocked -> new BlockedBookingItem(
+                        blocked.bookingTenancyId(),
+                        blocked.tenantName(),
+                        blocked.roomId(),
+                        roomNumbers.get(blocked.roomId()),
+                        blocked.startDate(),
+                        blocked.reason().name(),
+                        blocked.blockingTenancyId(),
+                        blocked.blockingTenantName()))
+                .toList();
     }
 
     /**
@@ -217,17 +241,13 @@ public class OwnerDashboardService {
                         || tenancy.status() == TenancyStatus.ON_PREMATURE_NOTICE)
                 .count();
 
-        long startedThisMonth = Stream.concat(activeTenancies.stream(), inactiveTenancies.stream())
-                .filter(tenancy -> isWithinMonth(tenancy.startDate(), monthStart, nextMonthStart))
-                .count();
+        long startedThisMonth = startedDuring(allTenancies, monthStart, nextMonthStart);
 
         long endedThisMonth = inactiveTenancies.stream()
                 .filter(tenancy -> isWithinMonth(tenancy.endDate(), monthStart, nextMonthStart))
                 .count();
 
-        long startedPrevMonth = allTenancies.stream()
-                .filter(tenancy -> isWithinMonth(tenancy.startDate(), prevMonthStart, monthStart))
-                .count();
+        long startedPrevMonth = startedDuring(allTenancies, prevMonthStart, monthStart);
 
         long endedPrevMonth = inactiveTenancies.stream()
                 .filter(tenancy -> isWithinMonth(tenancy.endDate(), prevMonthStart, monthStart))
@@ -249,9 +269,12 @@ public class OwnerDashboardService {
     }
 
     /**
-     * Upcoming exits within the horizon: approved monthly exit requests plus
-     * active daily tenancies whose end date is due soon (daily stays end on their
-     * end date without an exit request). De-duplicated by tenancy id.
+     * Upcoming exits: approved exit requests plus every current stay whose
+     * checkout date is ahead within its window, by THE checkout date (a notice's
+     * end, else the planned end a daily stay or a fixed term carries). A fixed
+     * term's window scales with its length (7, 15 or 30 days). Counting only
+     * daily stays' planned ends left every fixed term invisible here.
+     * De-duplicated by tenancy id.
      */
     private long countUpcomingExits(
             List<TenancyResponse> activeTenancies,
@@ -271,11 +294,9 @@ public class OwnerDashboardService {
             }
         }
         for (TenancyResponse tenancy : activeTenancies) {
-            if (tenancy.billingType() != TenancyBillingType.DAILY) {
-                continue;
-            }
-            LocalDate end = tenancy.plannedEndDate();
-            if (end != null && end.isAfter(today) && !end.isAfter(horizon) && !counted.contains(tenancy.id())) {
+            LocalDate end = tenancy.checkoutDate();
+            LocalDate window = tenancy.fixedTerm() ? today.plusDays(tenancy.endingSoonLeadDays()) : horizon;
+            if (end != null && end.isAfter(today) && !end.isAfter(window) && !counted.contains(tenancy.id())) {
                 count = count + 1;
             }
         }
@@ -283,10 +304,9 @@ public class OwnerDashboardService {
     }
 
     /**
-     * Exits that are past due but not yet executed: approved monthly exit requests
-     * whose checkout date has already passed (the exit scheduler has not run / there
-     * is none) plus active daily tenancies whose end date has passed (daily stays end
-     * on their end date without an exit request). De-duplicated by tenancy id.
+     * Stays past their checkout date that nobody has ended: approved exit
+     * requests whose checkout has passed, plus every current stay (pending exit
+     * included) whose checkout date is behind it. De-duplicated by tenancy id.
      */
     private long countPastDueExits(
             List<TenancyResponse> activeTenancies,
@@ -305,10 +325,7 @@ public class OwnerDashboardService {
             }
         }
         for (TenancyResponse tenancy : activeTenancies) {
-            if (tenancy.billingType() != TenancyBillingType.DAILY) {
-                continue;
-            }
-            LocalDate end = tenancy.plannedEndDate();
+            LocalDate end = tenancy.checkoutDate();
             if (end != null && end.isBefore(today) && !counted.contains(tenancy.id())) {
                 count = count + 1;
             }
@@ -321,16 +338,43 @@ public class OwnerDashboardService {
      * {@code [monthStart, nextMonthStart)} — i.e. started before the month ends
      * and not yet ended when the month begins.
      */
-    private long activeTenantsDuring(
+    /**
+     * Stays living in the property at some point in the month. Only stays that
+     * began: a cancelled offer has no end date, so it used to count as active
+     * in every month from its start on, inflating each "vs last month".
+     */
+    static long activeTenantsDuring(
             List<TenancyResponse> tenancies, LocalDate monthStart, LocalDate nextMonthStart) {
         return tenancies.stream()
+                .filter(OwnerDashboardService::began)
                 .filter(tenancy -> tenancy.startDate() != null
                         && tenancy.startDate().isBefore(nextMonthStart)
                         && (tenancy.endDate() == null || !tenancy.endDate().isBefore(monthStart)))
                 .count();
     }
 
-    private boolean isWithinMonth(LocalDate date, LocalDate monthStart, LocalDate nextMonthStart) {
+    /** Stays that began in the month: the "Started" figure and its trend. */
+    static long startedDuring(List<TenancyResponse> tenancies, LocalDate monthStart, LocalDate nextMonthStart) {
+        return tenancies.stream()
+                .filter(OwnerDashboardService::began)
+                .filter(tenancy -> isWithinMonth(tenancy.startDate(), monthStart, nextMonthStart))
+                .count();
+    }
+
+    /**
+     * A stay that actually began. Not an offer the tenant never signed, not one
+     * cancelled before it started, not a booking still waiting for its bed. Those
+     * carry a start date too, and counting them showed "Started 4" for a month
+     * where one person moved in (found 2026-09-27).
+     */
+    private static boolean began(TenancyResponse tenancy) {
+        TenancyStatus status = tenancy.status();
+        return status != TenancyStatus.CANCELLED
+                && status != TenancyStatus.PENDING_ACCEPTANCE
+                && status != TenancyStatus.SCHEDULED;
+    }
+
+    private static boolean isWithinMonth(LocalDate date, LocalDate monthStart, LocalDate nextMonthStart) {
         return date != null && !date.isBefore(monthStart) && date.isBefore(nextMonthStart);
     }
 
@@ -434,9 +478,7 @@ public class OwnerDashboardService {
             long activeInMonth = activeTenantsDuring(allTenancies, windowStart, windowEnd);
             long billed = billedInMonth(cycles, windowStart, windowEnd);
             long collected = collectedInMonth(cycles, windowStart, windowEnd);
-            long started = allTenancies.stream()
-                    .filter(tenancy -> isWithinMonth(tenancy.startDate(), windowStart, windowEnd))
-                    .count();
+            long started = startedDuring(allTenancies, windowStart, windowEnd);
             long ended = inactiveTenancies.stream()
                     .filter(tenancy -> isWithinMonth(tenancy.endDate(), windowStart, windowEnd))
                     .count();

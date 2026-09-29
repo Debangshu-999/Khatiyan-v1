@@ -18,7 +18,7 @@ import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
 import { Fact, FactRow, LaneBadge, PriorityFact, noticeLane, priorityLabel } from "@/features/notice/notice-ui";
-import { ActionButton, FormInput } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import {
   canEditNotice,
@@ -350,7 +350,7 @@ export default function OwnerNoticeDetailScreen() {
                 value={body}
               />
             ) : (
-              <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {body}
               </Text>
             )}
@@ -474,44 +474,37 @@ function PriorityPickerModal({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Tapping the scrim closes it. A centred dialog with no visible dismiss
-          needs one, and a four-option choice does not deserve a Cancel button
-          taking up a fifth row. */}
-      <AnimatedPressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={{
+      {/* Closes by its own close button, a choice or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
-        }}
-      >
-        {/* Its own pressable so a tap on the card does not reach the scrim
-            behind it and close the picker mid-decision. */}
-        <AnimatedPressable
-          onPress={() => {}}
-          style={{
+        }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: 14,
             overflow: "hidden",
             width: "100%",
-          }}
-        >
-          <Text
+          }}>
+          <View
             style={{
-              color: colors.muted,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            Select priority
-          </Text>
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Select priority
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
 
           {/* The same row every other picker in the app uses. Its hairline runs
               above each option INCLUDING the first, which is what separates the
@@ -526,8 +519,8 @@ function PriorityPickerModal({
               />
             ))}
           </View>
-        </AnimatedPressable>
-      </AnimatedPressable>
+        </View>
+      </View>
     </Modal>
   );
 }

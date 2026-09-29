@@ -18,6 +18,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.employment.IdentityVerificationStatus;
 import com.khatiyan.c_shared.employment.ManagerEmploymentDetails;
@@ -71,13 +73,18 @@ public class StaffService {
     private final StaffMemberRepository staffMemberRepository;
     private final ApplicationEventPublisher eventPublisher;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public StaffService(
             PropertyModule propertyModule,
             SalaryAccountService salaryAccountService,
             ReferenceCodeGenerator referenceCodeGenerator,
             StaffCategoryRepository staffCategoryRepository,
             StaffMemberRepository staffMemberRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.propertyModule = propertyModule;
         this.salaryAccountService = salaryAccountService;
         this.referenceCodeGenerator = referenceCodeGenerator;
@@ -189,6 +196,7 @@ public class StaffService {
             UpdateStaffCategoryRequest request) {
         ensureOwner(actorUserId, propertyId);
         StaffCategory category = category(categoryId, propertyId);
+        VersionGuard.claim(category);
         String name = requiredText(request.name(), "Category name");
         String normalizedName = name.toLowerCase(java.util.Locale.ROOT);
         if (!normalizedName.equals(category.getNormalizedName())) {
@@ -208,6 +216,7 @@ public class StaffService {
     public void deactivateCategory(UUID actorUserId, UUID propertyId, UUID categoryId) {
         ensureOwner(actorUserId, propertyId);
         StaffCategory category = category(categoryId, propertyId);
+        VersionGuard.claim(category);
         if (category.isSystem()) {
             throw new ValidationException("Built-in categories cannot be deleted");
         }
@@ -268,6 +277,7 @@ public class StaffService {
             UpdateStaffMemberRequest request) {
         ensureOwner(actorUserId, propertyId);
         StaffMember member = member(staffReferenceCode, propertyId);
+        VersionGuard.claim(member);
         StaffCategory category = activeCategory(request.categoryId(), propertyId);
         validateEmploymentDates(request.employmentStartDate(), request.employmentEndDate());
 
@@ -329,6 +339,7 @@ public class StaffService {
     public void endStaffMember(UUID actorUserId, UUID propertyId, String staffReferenceCode, EndEmploymentRequest request) {
         ensureOwner(actorUserId, propertyId);
         StaffMember member = member(staffReferenceCode, propertyId);
+        VersionGuard.claim(member);
         String reason = requiredText(request.reason(), "Exit reason");
 
         // Scheduling only writes the date down. Settling now would close a
@@ -476,10 +487,16 @@ public class StaffService {
      *
      * @return how many employments were ended
      */
-    @Transactional
     public int endDueScheduledEmployments(LocalDate today) {
-        List<StaffMember> due = staffMemberRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today);
-        for (StaffMember member : due) {
+        List<UUID> due = staffMemberRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today)
+                .stream().map(StaffMember::getId).toList();
+        // One person per transaction, re-read inside it (2026-09-28).
+        int ended = recordByRecord.run("staff-end-scheduled", due, id -> id, id -> {
+            StaffMember member = staffMemberRepository.findById(id).orElse(null);
+            if (member == null || !member.isActive() || member.getEmploymentEndDate() == null
+                    || member.getEmploymentEndDate().isAfter(today)) {
+                return false;
+            }
             member.endScheduled();
             log.info("Scheduled staff end actioned propertyId={} staffMemberId={} endDate={}",
                     member.getPropertyId(), member.getId(), member.getEmploymentEndDate());
@@ -490,8 +507,9 @@ public class StaffService {
                     member.getFullName(),
                     categoryName(member.getCategoryId()),
                     null));
-        }
-        return due.size() + propertyModule.endDueScheduledManagerAssignments(today);
+            return true;
+        });
+        return ended + propertyModule.endDueScheduledManagerAssignments(today);
     }
 
     @Transactional(readOnly = true)

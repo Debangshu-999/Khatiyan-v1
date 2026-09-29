@@ -14,7 +14,6 @@ import { MarqueeText } from "@/components/marquee-text";
 import type { BillingCycle, BillingCycleLineItem } from "@/store/services/billing-api";
 import { billTitle, lineItemKindLabel, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { PayBillSheet } from "@/features/billing/pay-bill-sheet";
-import { PaymentDecisionModal } from "@/features/billing/payment-decision-modal";
 import { ActionButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useGetMyPaymentStateQuery, type PaymentIntent } from "@/store/services/payment-intent-api";
 import { spacing } from "@/theme/spacing";
@@ -30,14 +29,6 @@ export default function TenancyBillingCycleScreen() {
   const cycle = cyclesQuery.data?.find((item) => item.id === cycleId) ?? cyclesQuery.data?.[0];
 
   const [paySheetOpen, setPaySheetOpen] = useState(false);
-  /**
-   * The attempt whose outcome we are asking about.
-   *
-   * <p>Seeded from the server's live intent as well as from a just-opened one,
-   * so a tenant who closed the question last time is asked again rather than
-   * silently left with a blocked button.
-   */
-  const [deciding, setDeciding] = useState<PaymentIntent | null>(null);
 
   const paymentStateQuery = useGetMyPaymentStateQuery(cycle?.id ?? "", { skip: !cycle?.id });
   const paymentState = paymentStateQuery.data;
@@ -63,11 +54,11 @@ export default function TenancyBillingCycleScreen() {
         <>
           <BillingSummary cycle={cycle} />
 
-          {payable && paymentState?.upiAvailable ? (
+          {payable && paymentState ? (
             <PayBillAction
               amountPaise={cycle.totalAmountPaise}
               liveIntent={liveIntent}
-              onFinishAttempt={() => setDeciding(liveIntent)}
+              onFinishAttempt={() => router.push({ pathname: "/tenancy-bills", params: { tenancyId } })}
               onPay={() => setPaySheetOpen(true)}
             />
           ) : null}
@@ -89,28 +80,23 @@ export default function TenancyBillingCycleScreen() {
       ) : (
         <EmptyState icon={ReceiptText} title="Bill not found" description="Refresh billing and try again." />
       )}
-      {paySheetOpen && cycle && paymentState?.payee ? (
+      {paySheetOpen && cycle && paymentState ? (
         <PayBillSheet
           amountPaise={cycle.totalAmountPaise}
           billingCycleId={cycle.id}
+          billVersion={cycle.version}
+          cashOtpRequired={paymentState.cashOtpRequired}
           hasPayLink={paymentState.payLinkAvailable}
+          methods={paymentState.acceptedMethods}
           onClose={() => setPaySheetOpen(false)}
-          onStarted={(intent) => {
+          onStarted={() => {
             setPaySheetOpen(false);
-            setDeciding(intent);
           }}
           payee={paymentState.payee}
           referenceCode={cycle.referenceCode}
         />
       ) : null}
 
-      {deciding ? (
-        <PaymentDecisionModal
-          intent={deciding}
-          onClose={() => setDeciding(null)}
-          onSettled={() => setDeciding(null)}
-        />
-      ) : null}
     </ScreenScrollView>
   );
 }
@@ -141,7 +127,7 @@ function PayBillAction({
   return (
     <View style={{ gap: spacing.xs }}>
       <ActionButton disabled label={`Pay ${formatMoneyPaise(amountPaise)}`} onPress={onPay} />
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         You started a payment. Tell us how it went before trying again.
       </Text>
       <ActionButton label="Finish that payment" onPress={onFinishAttempt} variant="outline" />
@@ -161,7 +147,7 @@ function AwaitingConfirmationCard() {
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
             Waiting for the property to confirm
           </Text>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             They are checking their bank statement. No late fee is added while this is open.
           </Text>
         </View>

@@ -78,7 +78,7 @@ export function SignedInDevices() {
 
       {!sessionsQuery.isLoading && sessions.length === 0 ? (
         <Card>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             No other devices are signed in.
           </Text>
         </Card>
@@ -132,7 +132,7 @@ function DeviceRow({
           <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
             {session.deviceLabel ?? "Unknown device"}
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {session.current ? "Active now" : `Signed in ${formatRelative(session.createdAt)}`}
           </Text>
         </View>
@@ -195,7 +195,7 @@ export function SessionCountdown() {
   const remaining = expiresAt - now;
 
   return (
-    <Text style={[type.caption, { color: remaining <= 0 ? colors.danger : colors.muted }]}>
+    <Text style={[type.description, { color: remaining <= 0 ? colors.danger : colors.muted }]}>
       {remaining <= 0 ? "Session has ended. Sign in again." : `Session ends in ${formatDuration(remaining)}`}
     </Text>
   );

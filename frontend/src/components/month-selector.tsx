@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -20,20 +21,34 @@ const MONTH_NAMES = [
  * a modal. The grid covers the rare one, going back half a year, which stepping
  * makes tedious. Both write the same `YYYY-MM` value.
  *
- * <p>Future months are refused in both paths: billing has nothing to show for a
- * month that has not started, and an empty screen reads as a fault.
+ * <p>Future months are refused in both paths by default: billing has nothing to
+ * show for a month that has not started, and an empty screen reads as a fault.
+ * A screen that DOES have something there raises {@link maxMonth}.
  */
 export function MonthSelector({
+  maxMonth,
   onChange,
   value,
 }: {
+  /**
+   * The furthest month that may be selected, `YYYY-MM`. Defaults to the
+   * current one.
+   *
+   * <p>Billing raises this to next month once the first bill for it exists.
+   * Cycles are generated on each tenancy's own anniversary day, so a cycle
+   * starting on the 3rd is created on the 3rd — and if next month cannot be
+   * opened until next month begins, the owner loses most of the window in
+   * which that bill can still be changed.
+   */
+  maxMonth?: string;
   onChange: (month: string) => void;
   value: string;
 }) {
   const { colors, fonts } = useTheme();
   const [gridOpen, setGridOpen] = useState(false);
 
-  const atCurrent = value >= currentMonth();
+  const limit = maxMonth && maxMonth > currentMonth() ? maxMonth : currentMonth();
+  const atCurrent = value >= limit;
 
   return (
     <>
@@ -50,7 +65,7 @@ export function MonthSelector({
           paddingVertical: spacing.xs,
         }}
       >
-        <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={() => onChange(shiftMonth(value, -1))} />
+        <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={() => onChange(shiftMonth(value, -1, limit))} />
 
         <Pressable
           accessibilityRole="button"
@@ -66,12 +81,13 @@ export function MonthSelector({
           disabled={atCurrent}
           icon={ChevronRight}
           label="Next month"
-          onPress={() => onChange(shiftMonth(value, 1))}
+          onPress={() => onChange(shiftMonth(value, 1, limit))}
         />
       </View>
 
       {gridOpen ? (
         <MonthGridModal
+          maxMonth={limit}
           onClose={() => setGridOpen(false)}
           onPick={(month) => {
             onChange(month);
@@ -85,10 +101,12 @@ export function MonthSelector({
 }
 
 function MonthGridModal({
+  maxMonth,
   onClose,
   onPick,
   value,
 }: {
+  maxMonth: string;
   onClose: () => void;
   onPick: (month: string) => void;
   value: string;
@@ -96,13 +114,15 @@ function MonthGridModal({
   const { colors, fonts, type } = useTheme();
   const [year, setYear] = useState(Number(value.slice(0, 4)));
 
-  const now = currentMonth();
-  const thisYear = Number(now.slice(0, 4));
-  const thisMonthIndex = Number(now.slice(5, 7)) - 1;
+  // The furthest month, which is usually this one but may be the next — and
+  // in December "next month" is in the following YEAR, so the year stepper
+  // has to read the same limit rather than assume the current year.
+  const thisYear = Number(maxMonth.slice(0, 4));
+  const thisMonthIndex = Number(maxMonth.slice(5, 7)) - 1;
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -136,7 +156,7 @@ function MonthGridModal({
               />
             </View>
 
-            <Pressable accessibilityLabel="Close" accessibilityRole="button" hitSlop={10} onPress={onClose}>
+            <Pressable accessibilityLabel="Close" accessibilityRole="button" hitSlop={10} onPress={() => dismiss()}>
               <X color={colors.ink} size={20} strokeWidth={2.2} />
             </Pressable>
           </View>
@@ -154,7 +174,7 @@ function MonthGridModal({
                   accessibilityState={{ disabled: future, selected }}
                   disabled={future}
                   key={name}
-                  onPress={() => onPick(month)}
+                  onPress={() => dismiss(() => onPick(month))}
                   style={{
                     alignItems: "center",
                     backgroundColor: selected ? colors.ink : "transparent",
@@ -184,8 +204,8 @@ function MonthGridModal({
 
           <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 
@@ -245,10 +265,21 @@ export function currentMonth() {
   return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
 }
 
-export function shiftMonth(value: string, delta: number) {
+export function shiftMonth(value: string, delta: number, maxMonth = currentMonth()) {
   const [year, month] = value.split("-").map(Number);
   const date = new Date(year, month - 1 + delta, 1);
   const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  // Never step past the current month.
-  return next > currentMonth() ? currentMonth() : next;
+  // Never step past the furthest month the caller allows.
+  return next > maxMonth ? maxMonth : next;
+}
+
+const MONTH_FULL_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "October" — the month written out, for a sentence rather than a chip. */
+export function monthName(value: string) {
+  const index = Number(value.split("-")[1]) - 1;
+  return MONTH_FULL_NAMES[index] ?? value;
 }

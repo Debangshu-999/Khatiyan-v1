@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { AppState, Linking, Platform, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -8,12 +9,11 @@ import {
   CircleAlert,
   Info,
   Lock,
-  Plus,
+  type LucideProps,
 } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
@@ -254,7 +254,7 @@ export default function OwnerServiceBalanceScreen() {
             accessibilityRole="button"
             hitSlop={10}
             onPress={() => setHowOpen(true)}
-            style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
+            style={{ alignItems: "center", height: 26, justifyContent: "center", marginTop: spacing.lg, width: 26 }}
             tapLockMs={0}
           >
             <Info color={colors.kicker} size={17} strokeWidth={2.4} />
@@ -262,126 +262,112 @@ export default function OwnerServiceBalanceScreen() {
         }
       />
 
-      {/* The balance stays the single strongest figure. Supporting information
-          is kept below the action so it never competes with what can be spent. */}
-      <Card style={{ gap: spacing.md }}>
-        <View style={{ gap: 3 }}>
-          <Text style={[type.eyebrow, { color: colors.muted }]}>AVAILABLE BALANCE</Text>
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.display,
-              fontSize: 42,
-              letterSpacing: -0.9,
-              lineHeight: 48,
-            }}
-          >
-            {formatMoneyPaise(balance?.availablePaise ?? 0).replace(/^₹/, "₹ ")}
-          </Text>
-        </View>
-
-        {(balance?.reservedPaise ?? 0) > 0 ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Lock color={colors.muted} size={15} strokeWidth={2} />
-            <Text style={[type.body, { color: colors.muted, flex: 1, fontSize: 13 }]}>
-              {formatMoneyPaise(balance?.reservedPaise ?? 0)} is held for checks already requested
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Pending charges sit with the balance, not in a notice somewhere
-            else: the two numbers only make sense read together, and an owner
-            whose next top-up comes back smaller deserves to know why first. */}
-        {outstandingPaise > 0 ? (
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <CircleAlert color={colors.warning} size={15} strokeWidth={2} />
-            <Text style={[type.body, { color: colors.muted, flex: 1, fontSize: 13 }]}>
-              {formatMoneyPaise(outstandingPaise)} in pending charges, taken from your next top-up
-            </Text>
-          </View>
-        ) : null}
-
-        {balance?.servicesSuspended ? (
-          <NoticeBar
-            message={`Add at least ${formatMoneyPaise(minimumTopUpPaise)} to clear what is pending and start again.`}
-            title="Paid services are paused"
-            tone="warning"
-          />
-        ) : null}
-
-        <ActionButton
-          disabled={!balance?.topUpEnabled}
-          icon={Plus}
-          label="Add money"
-          onPress={() => {
-            setAmountError(null);
-            setSheetOpen(true);
+      <View style={{ gap: spacing.sm }}>
+        <LinearGradient
+          colors={["#F3F8FF", "#E7F1FF"]}
+          end={{ x: 1, y: 1 }}
+          start={{ x: 0, y: 0 }}
+          style={{
+            borderColor: "#D9E7FB",
+            borderCurve: "continuous",
+            borderRadius: 18,
+            borderWidth: 1,
+            minHeight: 170,
+            overflow: "hidden",
+            position: "relative",
           }}
-        />
-
-        {!balance?.topUpEnabled ? (
-          <Text style={[type.caption, { color: colors.muted, marginTop: -spacing.xs }]}>
-            Adding money is not switched on yet. Your balance and history still show here.
-          </Text>
-        ) : null}
-
-        <Divider />
+        >
+          <View pointerEvents="none" style={{ backgroundColor: "#E1EEFF", borderRadius: 110, bottom: -105, height: 180, left: -65, position: "absolute", width: 180 }} />
+          <View pointerEvents="none" style={{ backgroundColor: "#DDEBFF", borderRadius: 105, bottom: -40, height: 185, position: "absolute", right: 16, width: 185 }} />
+          <View pointerEvents="none" style={{ backgroundColor: "#E4F0FF", borderRadius: 100, height: 190, position: "absolute", right: -90, top: -75, width: 190 }} />
+          <BalanceArtwork />
+          <View style={{ gap: 8, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg, zIndex: 1 }}>
+            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1 }}>
+              AVAILABLE BALANCE
+            </Text>
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.55}
+              numberOfLines={1}
+              style={{
+                color: colors.ink,
+                fontFamily: fonts.display,
+                fontSize: 48,
+                letterSpacing: -1.6,
+                lineHeight: 54,
+                maxWidth: 215,
+              }}
+            >
+              {formatMoneyPaise(balance?.availablePaise ?? 0)}
+            </Text>
+            <View style={{ flexDirection: "row", height: 48, width: 158 }}>
+              <ActionButton
+                disabled={!balance?.topUpEnabled}
+                label="Add money"
+                onPress={() => {
+                  setAmountError(null);
+                  setSheetOpen(true);
+                }}
+              />
+            </View>
+          </View>
+        </LinearGradient>
 
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceSunken,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              flex: 1,
-              flexDirection: "row",
-              gap: spacing.sm,
-              minHeight: 72,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <CalendarDays color={colors.primary} size={21} strokeWidth={2.1} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5 }}>
-                Last updated
-              </Text>
-              <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10.5 }]}>
-                {updatedOn}
-              </Text>
-            </View>
-          </View>
-
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceSunken,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              flex: 1,
-              flexDirection: "row",
-              gap: spacing.sm,
-              minHeight: 72,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <ChartNoAxesColumnIncreasing color={colors.primary} size={21} strokeWidth={2.1} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5 }}>
-                Recent top-ups
-              </Text>
-              <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10.5 }]}>
-                {topUpEntries.length} · {formatMoneyPaise(recentTopUpTotalPaise)}
-              </Text>
-            </View>
-          </View>
+          <SummaryTile
+            color="#9A670F"
+            icon={CalendarDays}
+            label="Last updated"
+            tint="#FFF9EF"
+            value={updatedOn}
+          />
+          <SummaryTile
+            color={colors.primary}
+            icon={ChartNoAxesColumnIncreasing}
+            label="Recent top-ups"
+            tint="#EFF6FF"
+            value={`${topUpEntries.length} · ${formatMoneyPaise(recentTopUpTotalPaise)}`}
+          />
         </View>
-      </Card>
+      </View>
+
+      {(balance?.reservedPaise ?? 0) > 0 ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <Lock color={colors.muted} size={15} strokeWidth={2} />
+          <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
+            {formatMoneyPaise(balance?.reservedPaise ?? 0)} is held for checks already requested
+          </Text>
+        </View>
+      ) : null}
+
+      {outstandingPaise > 0 ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <CircleAlert color={colors.warning} size={15} strokeWidth={2} />
+          <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
+            {formatMoneyPaise(outstandingPaise)} in pending charges, taken from your next top-up
+          </Text>
+        </View>
+      ) : null}
+
+      {balance?.servicesSuspended ? (
+        <NoticeBar
+          message={`Add at least ${formatMoneyPaise(minimumTopUpPaise)} to clear what is pending and start again.`}
+          title="Paid services are paused"
+          tone="warning"
+        />
+      ) : null}
+
+      {!balance?.topUpEnabled ? (
+        <Text style={[type.description, { color: colors.muted }]}>
+          Adding money is not switched on yet. Your balance and history still show here.
+        </Text>
+      ) : null}
 
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.muted }]}>RECENT ACTIVITY</Text>
+        <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+        <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>
+          Recent Activity
+        </Text>
         <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
       </View>
 
@@ -437,7 +423,7 @@ export default function OwnerServiceBalanceScreen() {
             {outstandingPaise > 0 ? (
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                 <CircleAlert color={colors.warning} size={14} strokeWidth={2.2} />
-                <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]}>
+                <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
                   Minimum {formatMoneyPaise(minimumTopUpPaise)} — {formatMoneyPaise(outstandingPaise)} clears your
                   pending charges and the rest goes to your balance.
                 </Text>
@@ -446,7 +432,7 @@ export default function OwnerServiceBalanceScreen() {
 
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
               <Info color={colors.muted} size={14} strokeWidth={2.2} />
-              <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
                 Your balance updates once the payment is confirmed, which can take a moment.
               </Text>
             </View>
@@ -491,6 +477,97 @@ export default function OwnerServiceBalanceScreen() {
   );
 }
 
+/** Layered card artwork for the balance hero. */
+function BalanceArtwork() {
+  const { fonts } = useTheme();
+
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={{ bottom: 0, height: 170, position: "absolute", right: 0, width: 175 }}>
+      <View style={{ backgroundColor: "#A8C8FB", borderRadius: 17, bottom: 16, height: 105, position: "absolute", right: 5, transform: [{ rotate: "12deg" }], width: 88 }} />
+      <LinearGradient
+        colors={["#7AB5FC", "#2D73DC"]}
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={{ borderRadius: 17, bottom: 23, height: 119, position: "absolute", right: 67, transform: [{ rotate: "-15deg" }], width: 96 }}
+      />
+      <LinearGradient
+        colors={["#FFFFFF", "#F0F6FF"]}
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={{
+          borderColor: "#F7FAFF",
+          borderRadius: 16,
+          borderWidth: 1,
+          bottom: 16,
+          elevation: 5,
+          height: 106,
+          paddingHorizontal: 20,
+          paddingTop: 11,
+          position: "absolute",
+          right: 25,
+          shadowColor: "#6C91C2",
+          shadowOffset: { width: 0, height: 5 },
+          shadowOpacity: 0.2,
+          shadowRadius: 9,
+          transform: [{ rotate: "4deg" }],
+          width: 118,
+        }}
+      >
+        <Text style={{ color: "#91A9D0", fontFamily: fonts.display, fontSize: 37, lineHeight: 44 }}>₹</Text>
+        <View style={{ backgroundColor: "#C9DDF9", borderRadius: 4, height: 6, marginTop: 2, width: 70 }} />
+        <View style={{ backgroundColor: "#DFEAFB", borderRadius: 4, height: 6, marginTop: 8, width: 47 }} />
+      </LinearGradient>
+      <View style={{ backgroundColor: "#FFC351", borderRadius: 5, height: 25, position: "absolute", right: 47, top: 3, transform: [{ rotate: "19deg" }], width: 7 }} />
+      <View style={{ backgroundColor: "#FFC351", borderRadius: 5, height: 24, position: "absolute", right: 21, top: 18, transform: [{ rotate: "41deg" }], width: 7 }} />
+    </View>
+  );
+}
+
+function SummaryTile({
+  color,
+  icon: Icon,
+  label,
+  tint,
+  value,
+}: {
+  color: string;
+  icon: ComponentType<LucideProps>;
+  label: string;
+  tint: string;
+  value: string;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: tint,
+        borderCurve: "continuous",
+        borderRadius: 15,
+        flex: 1,
+        flexDirection: "row",
+        gap: spacing.xs,
+        minHeight: 66,
+        paddingHorizontal: 8,
+        paddingVertical: spacing.xs,
+      }}
+    >
+      <View style={{ alignItems: "center", backgroundColor: color === colors.primary ? "#E1EDFF" : "#FFF2DD", borderRadius: 20, height: 40, justifyContent: "center", width: 40 }}>
+        <Icon color={color} size={22} strokeWidth={2.1} />
+      </View>
+      <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+        <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
+          {label}
+        </Text>
+        <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /**
  * A tab's worth of statement, or the reason it is empty.
  *
@@ -519,14 +596,14 @@ function EntryList({
   }
 
   return (
-    <Card style={{ gap: 0 }}>
+    <View style={{ paddingBottom: spacing.md }}>
       {entries.map((entry, index) => (
         <View key={entry.id}>
           {index > 0 ? <Divider /> : null}
           <EntryRow entry={entry} />
         </View>
       ))}
-    </Card>
+    </View>
   );
 }
 
@@ -557,7 +634,7 @@ function EntryRow({ entry }: { entry: ServiceBalanceEntry }) {
   const incoming = moved > 0;
 
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, paddingVertical: spacing.sm }}>
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, minHeight: 62, paddingVertical: spacing.md }}>
       <View
         style={{
           alignItems: "center",
@@ -567,14 +644,14 @@ function EntryRow({ entry }: { entry: ServiceBalanceEntry }) {
         }}
       >
         {incoming ? (
-          <ArrowDownToLine color={colors.ink} size={20} strokeWidth={2.1} />
+          <ArrowDownToLine color={colors.jade} size={23} strokeWidth={2.2} />
         ) : (
-          <ArrowUpRight color={colors.ink} size={20} strokeWidth={2.1} />
+          <ArrowUpRight color={spent ? colors.ink : colors.muted} size={21} strokeWidth={2.1} />
         )}
       </View>
 
       <View style={{ flex: 1, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
           {entryTitle(entry)}
         </Text>
         <Text style={[type.caption, { color: colors.muted }]}>{formatEntryDate(entry.createdAt)}</Text>
@@ -584,7 +661,7 @@ function EntryRow({ entry }: { entry: ServiceBalanceEntry }) {
         style={{
           color: spent ? colors.ink : incoming ? colors.jade : colors.muted,
           fontFamily: fonts.sansBold,
-          fontSize: 14,
+          fontSize: 15,
         }}
       >
         {moved > 0 ? "+" : "−"}

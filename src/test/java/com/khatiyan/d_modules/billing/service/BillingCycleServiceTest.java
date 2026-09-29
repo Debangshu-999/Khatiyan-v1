@@ -1,10 +1,15 @@
 package com.khatiyan.d_modules.billing.service;
 
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -98,6 +103,13 @@ class BillingCycleServiceTest {
     private BillingCycleService billingCycleService;
     private List<BillingCycleLineItem> savedLineItems;
 
+    /** A fresh transaction status per record, for the jobs' RecordByRecord. */
+    private static PlatformTransactionManager perRecordTransactions() {
+        PlatformTransactionManager manager = org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        lenient().when(manager.getTransaction(any())).thenAnswer(invocation -> new SimpleTransactionStatus());
+        return manager;
+    }
+
     @BeforeEach
     void setUp() {
         billingCycleService = new BillingCycleService(
@@ -113,6 +125,7 @@ class BillingCycleServiceTest {
                 depositManagerService,
                 eventPublisher,
                 referenceCodeGenerator,
+                new RecordByRecord(perRecordTransactions()),
                 // Matches the app.billing.upcoming-cycle-lead-days default: the
                 // next cycle appears 10 days before its window opens.
                 10);
@@ -196,6 +209,8 @@ class BillingCycleServiceTest {
 
         when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 2))))
                 .thenReturn(List.of(overdue));
+        // The job re-reads each bill inside its own transaction (2026-09-28).
+        lenient().when(billingCycleRepository.findById(overdue.getId())).thenReturn(Optional.of(overdue));
         when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
                 .thenReturn(List.of());
         when(lineItemRepository.findMaxDisplayOrder(overdue.getId())).thenReturn(1);
@@ -239,6 +254,8 @@ class BillingCycleServiceTest {
 
         when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 4))))
                 .thenReturn(List.of(overdue));
+        // The job re-reads each bill inside its own transaction (2026-09-28).
+        lenient().when(billingCycleRepository.findById(overdue.getId())).thenReturn(Optional.of(overdue));
         when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
                 .thenReturn(List.of());
         when(lineItemRepository.findMaxDisplayOrder(overdue.getId())).thenReturn(1);
@@ -254,7 +271,64 @@ class BillingCycleServiceTest {
 
         assertThat(updatedCount).isEqualTo(1);
         assertThat(overdue.getLateFeeAmountPaise()).isEqualTo(300_00);
-        verifyNoInteractions(tenancyModule);
+        // Tenancy is asked one thing only, whether the stay is pending exit. Never for a next cycle.
+        verify(tenancyModule).findByIds(any());
+        verifyNoMoreInteractions(tenancyModule);
+    }
+
+    @Test
+    void aStayPendingExitAccruesNoLateFee() {
+        BillingCycle overdue = monthlyLiveCycleDue(LocalDate.of(2026, 6, 1), 100_00L);
+        when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 4))))
+                .thenReturn(List.of(overdue));
+        // The job re-reads each bill inside its own transaction (2026-09-28).
+        lenient().when(billingCycleRepository.findById(overdue.getId())).thenReturn(Optional.of(overdue));
+        when(tenancyModule.findByIds(any())).thenReturn(java.util.Map.of(TENANCY_ID, withStatus(monthlyTenancy(), TenancyStatus.PENDING_EXIT)));
+
+        int updatedCount = billingCycleService.recalculateLateFees(LocalDate.of(2026, 6, 4));
+
+        // Past its checkout date the account halts: the amount owed freezes where it is.
+        assertThat(updatedCount).isZero();
+        assertThat(overdue.getLateFeeAmountPaise()).isZero();
+    }
+
+    @Test
+    void noBillStartsOnOrAfterTheFirstDayAStayIsNotHere() {
+        TenancyResponse base = monthlyTenancyStartingOn(LocalDate.of(2026, 8, 20));
+        // A notice's end date is its last billed day, so the day after is the first not covered.
+        TenancyResponse notice = withEndDates(base, null, LocalDate.of(2026, 9, 19));
+        assertThat(BillingCycleService.firstUncoveredDay(notice)).isEqualTo(LocalDate.of(2026, 9, 20));
+        // A fixed term's planned end is the day it leaves: stay 165's 20 Sep bill is exactly what this refuses.
+        TenancyResponse fixed = withEndDates(base, LocalDate.of(2026, 9, 20), null);
+        assertThat(BillingCycleService.firstUncoveredDay(fixed)).isEqualTo(LocalDate.of(2026, 9, 20));
+        // Leaving early: the early end date wins over the original term, or it would bill to the term's end.
+        TenancyResponse early = withEndDates(base, LocalDate.of(2027, 8, 20), LocalDate.of(2026, 10, 19));
+        assertThat(BillingCycleService.firstUncoveredDay(early)).isEqualTo(LocalDate.of(2026, 10, 20));
+        assertThat(BillingCycleService.firstUncoveredDay(base)).isNull();
+    }
+
+    private static TenancyResponse withStatus(TenancyResponse base, TenancyStatus status) {
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), base.startDate(), base.plannedEndDate(), base.endDate(), status,
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementValidityMonths(), base.agreementEndDate(), base.earlyExitRule(),
+                base.idCheckConfirmed(), base.idCheckedAt(), base.guestStay(), base.guestEmail(),
+                base.guestAddress(), base.guestAge(), base.guestGender());
+    }
+
+    private static TenancyResponse withEndDates(TenancyResponse base, LocalDate plannedEndDate, LocalDate endDate) {
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), base.startDate(), plannedEndDate, endDate, base.status(),
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementValidityMonths(), base.agreementEndDate(), base.earlyExitRule(),
+                base.idCheckConfirmed(), base.idCheckedAt(), base.guestStay(), base.guestEmail(),
+                base.guestAddress(), base.guestAge(), base.guestGender());
     }
 
     @Test
@@ -267,6 +341,8 @@ class BillingCycleServiceTest {
 
         when(billingCycleRepository.findCyclesEligibleForLateFee(any(), eq(LocalDate.of(2026, 6, 6))))
                 .thenReturn(List.of(overdue));
+        // The job re-reads each bill inside its own transaction (2026-09-28).
+        lenient().when(billingCycleRepository.findById(overdue.getId())).thenReturn(Optional.of(overdue));
         when(lineItemRepository.findByBillingCycleIdAndType(overdue.getId(), BillingCycleLineItemType.LATE_FEE))
                 .thenReturn(List.of(adjusted));
 
@@ -389,6 +465,165 @@ class BillingCycleServiceTest {
                 .as("the tenant still owes a rent cycle this month, one-off bill or not")
                 .hasSize(1);
         assertThat(result.items().get(0).tenancyId()).isEqualTo(TENANCY_ID);
+    }
+
+    // ---- next month, opened early -------------------------------------------
+    //
+    // Cycles are generated ten days ahead of their start, so next month's
+    // first bill exists before next month does, and billing lets the owner
+    // open it then. This list used to answer every non-current month with
+    // nothing — "future months aren't selectable" — so the pill said "All
+    // cycles generated" over a month with one bill out of twenty.
+
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
+    /** A rent cycle starting on {@code start}, as the generator would make it. */
+    private static BillingCycle rentCycleStarting(LocalDate start, int cycleNumber) {
+        return BillingCycle.create(
+                TENANCY_ID,
+                "BIL-2026-00000" + cycleNumber,
+                TENANT_ID,
+                "Test Tenant",
+                PROPERTY_ID,
+                ROOM_ID,
+                TenancyBillingType.MONTHLY,
+                cycleNumber,
+                start,
+                start.plusMonths(1).minusDays(1),
+                start.plusDays(3),
+                BillingCollectionTiming.CYCLE_START,
+                3);
+    }
+
+    /** Anchored on the 3rd, so a date in the answer can only have come from the anchor. */
+    private static TenancyResponse tenancyAnchoredOnTheThird() {
+        return monthlyTenancyStartingOn(LocalDate.of(2026, 6, 3));
+    }
+
+    private static TenancyResponse onNoticeLeaving(TenancyResponse base, LocalDate checkout) {
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), base.startDate(), checkout, base.endDate(), TenancyStatus.ON_NOTICE,
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementValidityMonths(), base.agreementEndDate(), base.earlyExitRule(),
+                base.idCheckConfirmed(), base.idCheckedAt(), base.guestStay(), base.guestEmail(),
+                base.guestAddress(), base.guestAge(), base.guestGender());
+    }
+
+    private static String monthKey(java.time.YearMonth month) {
+        return month.toString();
+    }
+
+    @Test
+    void nextMonthListsATenancyWhoseCycleForItIsNotMadeYet() {
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
+        java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
+        when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(nextMonth), 0, 20);
+
+        assertThat(result.items())
+                .as("this month is billed, next month is not — so next month still owes one")
+                .hasSize(1);
+        assertThat(result.items().get(0).nextCycleStartDate())
+                .as("the cycle IN next month, on the tenancy's own anchor day")
+                .isEqualTo(nextMonth.atDay(3));
+    }
+
+    @Test
+    void nextMonthOmitsATenancyAlreadyBilledForIt() {
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
+        java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID)).thenReturn(List.of(
+                rentCycleStarting(thisMonth.atDay(3), 4),
+                rentCycleStarting(nextMonth.atDay(3), 5)));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(nextMonth), 0, 20);
+
+        assertThat(result.items())
+                .as("generated ahead of time already, so nothing is pending for it")
+                .isEmpty();
+    }
+
+    /**
+     * A tenancy that has fallen behind still owes next month's cycle — and the
+     * date shown under next month is next month's, not the late one from this
+     * month that it has not caught up on yet.
+     */
+    @Test
+    void nextMonthShowsNextMonthsDateEvenForATenancyThatIsBehind() {
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
+        java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(rentCycleStarting(thisMonth.minusMonths(1).atDay(3), 3)));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
+        when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(nextMonth), 0, 20);
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).nextCycleStartDate()).isEqualTo(nextMonth.atDay(3));
+    }
+
+    /**
+     * The generator skips a cycle that would open after a tenant on notice has
+     * left. Listing it here promised a bill nobody was going to send.
+     */
+    @Test
+    void aTenantLeavingBeforeNextMonthsCycleIsNotListed() {
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
+        java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(
+                onNoticeLeaving(tenancyAnchoredOnTheThird(), nextMonth.atDay(1))));
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(nextMonth), 0, 20);
+
+        assertThat(result.items()).isEmpty();
+    }
+
+    /** Leaving AFTER the cycle opens still owes it: the gate is on the start, not the end. */
+    @Test
+    void aTenantLeavingAfterNextMonthsCycleOpensIsStillListed() {
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
+        java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
+
+        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(
+                onNoticeLeaving(tenancyAnchoredOnTheThird(), nextMonth.atDay(20))));
+        when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(nextMonth), 0, 20);
+
+        assertThat(result.items()).hasSize(1);
+    }
+
+    @Test
+    void aClosedMonthHasNothingUpcoming() {
+        java.time.YearMonth lastMonth = java.time.YearMonth.now(IST).minusMonths(1);
+
+        var result = billingCycleService.listUpcomingPropertyCycles(
+                ACTOR_ID, PROPERTY_ID, monthKey(lastMonth), 0, 20);
+
+        assertThat(result.items()).isEmpty();
+        verifyNoInteractions(billingCycleRepository);
     }
 
     private static BillingCycle monthlyCycleDue(LocalDate dueDate) {
@@ -631,6 +866,6 @@ class BillingCycleServiceTest {
                 null,
                 null,
                 null,
-                null);
+                null, 0L);
     }
 }

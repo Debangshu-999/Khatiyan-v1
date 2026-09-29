@@ -14,6 +14,28 @@ import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 
 class BillingCycleLineItemTest {
 
+    /**
+     * The line a one-off bill is raised with is the bill itself (2026-09-28):
+     * charged like an extra charge, but never listed as an owner's action on it.
+     * A charge added to the bill later still is one.
+     */
+    @Test
+    void aOneOffBillsOwnLineIsIssuedWithTheBillAndALaterChargeIsNot() {
+        BillingCycle cycle = monthlyCycle();
+        UUID actorUserId = UUID.randomUUID();
+
+        BillingCycleLineItem own = BillingCycleLineItem.oneOffBillLine(cycle, "Test Bill", 20_00, actorUserId, 1);
+        BillingCycleLineItem later = BillingCycleLineItem.extraChargeAddedToBill(
+                cycle, "Cleaning charge", null, 150_00, actorUserId, 2);
+
+        assertThat(own.isIssuedWithBill()).isTrue();
+        assertThat(own.isSystemGenerated()).isFalse();
+        assertThat(own.getType()).isEqualTo(BillingCycleLineItemType.EXTRA_CHARGE);
+        assertThat(own.contributesToExtraAmount()).isTrue();
+        assertThat(own.getCreatedByUserId()).isEqualTo(actorUserId);
+        assertThat(later.isIssuedWithBill()).isFalse();
+    }
+
     @Test
     void pendingExtraChargeAddedToBillDoesNotHaveCycleUntilNextCycleGeneration() {
         BillingCycle cycle = monthlyCycle();

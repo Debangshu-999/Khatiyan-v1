@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RetryOnConflict;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.notification.api.dto.NotificationDeviceTokenResponse;
 import com.khatiyan.d_modules.notification.api.dto.NotificationResponse;
@@ -88,14 +89,15 @@ public class NotificationController {
     public NotificationResponse markRead(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID recipientId) {
-        return notificationService.markRead(user.userId(), recipientId);
+        // Repeat-safe writes on your own notifications retry once on a clash (2026-09-28).
+        return RetryOnConflict.once(() -> notificationService.markRead(user.userId(), recipientId));
     }
 
     @PatchMapping("/me/read-all")
     public ResponseEntity<Void> markAllRead(
             @AuthenticationPrincipal UserPrincipal user,
             @RequestParam(required = false) String account) {
-        notificationService.markAllRead(user.userId(), account);
+        RetryOnConflict.once(() -> notificationService.markAllRead(user.userId(), account));
         return ResponseEntity.noContent().build();
     }
 
@@ -103,7 +105,7 @@ public class NotificationController {
     public ResponseEntity<Void> archive(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID recipientId) {
-        notificationService.archive(user.userId(), recipientId);
+        RetryOnConflict.once(() -> notificationService.archive(user.userId(), recipientId));
         return ResponseEntity.noContent().build();
     }
 
@@ -113,7 +115,7 @@ public class NotificationController {
     public NotificationDeviceTokenResponse registerDevice(
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody RegisterNotificationDeviceRequest request) {
-        return notificationService.registerDevice(user.userId(), request);
+        return RetryOnConflict.once(() -> notificationService.registerDevice(user.userId(), request));
     }
 
     @GetMapping("/devices")

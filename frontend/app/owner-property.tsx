@@ -348,7 +348,7 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
           <Text style={[type.bodyStrong, { color: colors.ink }]}>
             {profile?.headline?.trim() || "No headline yet"}
           </Text>
-          <Text numberOfLines={3} style={[type.caption, { color: colors.muted }]}>
+          <Text numberOfLines={3} style={[type.description, { color: colors.muted }]}>
             {profile?.description?.trim() || "Add a short description so prospects know what makes this property worth a look."}
           </Text>
         </View>

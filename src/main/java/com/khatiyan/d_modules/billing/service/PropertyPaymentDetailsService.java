@@ -5,6 +5,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.d_modules.billing.api.dto.PaymentMethodsResponse;
 import com.khatiyan.d_modules.billing.api.dto.PropertyPaymentDetailsResponse;
 import com.khatiyan.d_modules.billing.api.dto.UpdatePropertyPaymentDetailsRequest;
 import com.khatiyan.d_modules.billing.model.PropertyPaymentDetails;
@@ -57,6 +59,9 @@ public class PropertyPaymentDetailsService {
 
         PropertyPaymentDetails details = repository.findById(propertyId)
                 .orElseGet(() -> PropertyPaymentDetails.empty(propertyId));
+        // The setup as the owner's screen saw it (2026-09-29). A first save has
+        // no row yet: version 0 on both sides.
+        VersionGuard.claim(details);
         details.update(
                 request.upiVpa(),
                 request.payeeName(),
@@ -66,6 +71,12 @@ public class PropertyPaymentDetailsService {
                 request.bankIfsc(),
                 request.bankAccountHolder(),
                 actorUserId);
+        // Checked after the details, against them: a ticked UPI or bank transfer
+        // must have something to pay to. Null keeps what was set, which also
+        // re-checks it, so clearing the UPI details while UPI is ticked is refused.
+        details.setAcceptance(
+                request.acceptedMethods() != null ? request.acceptedMethods() : java.util.Set.copyOf(details.acceptedMethods()),
+                request.cashOtpRequired() != null ? request.cashOtpRequired() : details.isCashOtpRequired());
         PropertyPaymentDetails saved = repository.save(details);
 
         // The address itself is not logged. It is the owner's payout destination
@@ -75,6 +86,14 @@ public class PropertyPaymentDetailsService {
                 propertyId, actorUserId, saved.canAcceptUpi(), saved.getBankAccountNumber() != null);
 
         return PropertyPaymentDetailsResponse.from(saved);
+    }
+
+    /** The ways this property takes money, for whoever records a payment. */
+    @Transactional(readOnly = true)
+    public PaymentMethodsResponse methods(UUID actorUserId, UUID propertyId) {
+        billingAccessPolicy.ensureCanViewPaymentMethods(actorUserId, propertyId);
+        return PaymentMethodsResponse.from(
+                repository.findById(propertyId).orElseGet(() -> PropertyPaymentDetails.empty(propertyId)));
     }
 
     /** Whether a tenant on this property can be offered a pay link. */

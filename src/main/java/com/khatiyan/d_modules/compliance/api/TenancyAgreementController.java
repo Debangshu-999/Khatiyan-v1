@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.d_modules.compliance.api.dto.LegalStatementResponse;
 import com.khatiyan.d_modules.compliance.api.dto.MiscClauseOption;
 import com.khatiyan.d_modules.compliance.model.LegalStatement;
@@ -129,6 +130,7 @@ public class TenancyAgreementController {
     }
 
     @PutMapping("/tenancies/{tenancyId}/agreement/template")
+    @RequiresVersion
     public TenancyAgreementResponse updateTemplate(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
@@ -144,6 +146,7 @@ public class TenancyAgreementController {
      * ends through the end-tenancy settlement instead.
      */
     @PostMapping("/tenancies/{tenancyId}/agreement/cancel")
+    @RequiresVersion
     public void cancelPendingTenancy(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID tenancyId,
@@ -154,6 +157,37 @@ public class TenancyAgreementController {
                 request == null || request.reason() == null || request.reason().isBlank()
                         ? "Withdrawn by the owner"
                         : request.reason().trim());
+    }
+
+    /** When each of a property's unsigned agreements expires, for the owner's pending cards. */
+    @GetMapping("/properties/{propertyId}/pending-agreements")
+    public java.util.List<com.khatiyan.d_modules.compliance.api.dto.PendingAgreementDeadlineResponse> pendingAgreementDeadlines(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
+        return complianceModule.pendingAgreementDeadlines(user.userId(), propertyId);
+    }
+
+    /** The checks a pending stay's tenant has been asked to complete, for "Provide attempts". */
+    @GetMapping("/tenancies/{tenancyId}/verification")
+    public java.util.List<com.khatiyan.d_modules.verification.api.dto.VerificationGrantResponse> pendingStayChecks(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID tenancyId) {
+        return complianceModule.pendingStayChecks(user.userId(), tenancyId).stream()
+                .map(com.khatiyan.d_modules.verification.api.dto.VerificationGrantResponse::from)
+                .toList();
+    }
+
+    /**
+     * Gives a pending stay's tenant more verification tries, or orders a check
+     * that was not ordered at onboarding. Charged like any order: the attempts
+     * the tenant uses.
+     */
+    @PostMapping("/tenancies/{tenancyId}/verification-attempts")
+    public java.util.List<com.khatiyan.d_modules.verification.api.dto.VerificationGrantResponse> provideVerificationAttempts(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID tenancyId,
+            @jakarta.validation.Valid @RequestBody com.khatiyan.d_modules.compliance.api.dto.ProvideVerificationAttemptsRequest request) {
+        return complianceModule.provideVerificationAttempts(user.userId(), tenancyId, request.verification()).stream()
+                .map(com.khatiyan.d_modules.verification.api.dto.VerificationGrantResponse::from)
+                .toList();
     }
 
     @GetMapping("/me/agreement")
@@ -169,6 +203,7 @@ public class TenancyAgreementController {
      * build happened to contain.
      */
     @PostMapping("/me/agreement/signing-code")
+    @RequiresVersion
     public AgreementSigningChallengeResponse startAgreementSigning(
             @AuthenticationPrincipal UserPrincipal user,
             HttpServletRequest servletRequest) {
@@ -184,6 +219,7 @@ public class TenancyAgreementController {
      * having.
      */
     @PostMapping("/me/agreement/accept")
+    @RequiresVersion
     public TenancyAgreementResponse acceptMyAgreement(
             @AuthenticationPrincipal UserPrincipal user,
             @Valid @RequestBody AcceptAgreementRequest request,
@@ -196,6 +232,7 @@ public class TenancyAgreementController {
     }
 
     @PostMapping("/me/agreement/decline")
+    @RequiresVersion
     public void declineMyAgreement(@AuthenticationPrincipal UserPrincipal user) {
         complianceModule.declineMyAgreement(user.userId());
     }

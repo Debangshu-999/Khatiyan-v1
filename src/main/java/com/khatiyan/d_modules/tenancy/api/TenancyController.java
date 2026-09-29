@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
@@ -39,6 +40,7 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.UpcomingVacancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantActiveTenancyResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TransferTenancyRoomRequest;
@@ -220,6 +222,7 @@ public class TenancyController {
      * transaction. This is the only way a tenancy ends.
      */
     @PostMapping("/{id}/end")
+    @RequiresVersion
     public ResponseEntity<Void> endTenancy(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID id,
@@ -285,6 +288,19 @@ public class TenancyController {
         return tenancyRoomChangeRequestService.listForProperty(user.userId(), propertyId);
     }
 
+    /**
+     * Beds in full rooms a new monthly stay can be booked into ahead: approved
+     * room changes, and stays certain to end soon. The onboarding room picker.
+     */
+    @GetMapping("/properties/{propertyId}/upcoming-vacancies")
+    public List<UpcomingVacancyResponse> listUpcomingVacancies(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return tenancyService.listUpcomingVacancies(user.userId(), propertyId).stream()
+                .map(UpcomingVacancyResponse::from)
+                .toList();
+    }
+
     @GetMapping("/{id}/room-change-requests")
     public List<TenancyRoomChangeRequestResponse> listTenancyRoomChangeRequests(
             @AuthenticationPrincipal UserPrincipal user,
@@ -293,6 +309,7 @@ public class TenancyController {
     }
 
     @PostMapping("/room-change-requests/{requestId}/approve")
+    @RequiresVersion
     public TenancyRoomChangeRequestResponse approveRoomChangeRequest(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,
@@ -301,6 +318,7 @@ public class TenancyController {
     }
 
     @PostMapping("/room-change-requests/{requestId}/reject")
+    @RequiresVersion
     public TenancyRoomChangeRequestResponse rejectRoomChangeRequest(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,
@@ -309,6 +327,7 @@ public class TenancyController {
     }
 
     @PostMapping("/room-change-requests/{requestId}/revert-approval")
+    @RequiresVersion
     public TenancyRoomChangeRequestResponse revertRoomChangeApproval(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId) {
@@ -323,6 +342,7 @@ public class TenancyController {
     }
 
     @PostMapping("/exit-requests/{requestId}/approve")
+    @RequiresVersion
     public TenancyExitRequestResponse approveExitRequest(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,
@@ -331,6 +351,7 @@ public class TenancyController {
     }
 
     @PostMapping("/exit-requests/{requestId}/reject")
+    @RequiresVersion
     public TenancyExitRequestResponse rejectExitRequest(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,
@@ -343,6 +364,7 @@ public class TenancyController {
      * window. A pending request itself cannot be cancelled.
      */
     @PostMapping("/me/exit-requests/{requestId}/withdraw")
+    @RequiresVersion
     public TenancyExitRequestResponse withdrawApprovedExitRequest(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,
@@ -352,6 +374,7 @@ public class TenancyController {
 
     /** Owner/manager decides on a pending withdrawal. */
     @PostMapping("/exit-requests/{requestId}/withdrawal-decision")
+    @RequiresVersion
     public TenancyExitRequestResponse decideExitWithdrawal(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID requestId,

@@ -64,7 +64,7 @@ export function ExpenseCategoryPicker({
       return;
     }
     try {
-      await deactivateCategory({ categoryId: target.id, propertyId }).unwrap();
+      await deactivateCategory({ categoryId: target.id, propertyId, version: target.version }).unwrap();
       // Clear the field if the deleted one was chosen, or the form would submit
       // an id the server has just retired.
       if (target.id === value) {

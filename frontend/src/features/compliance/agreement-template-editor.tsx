@@ -366,7 +366,7 @@ function MiscRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 13.5 }}>
           {option.heading}
         </Text>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>{option.body}</Text>
+        <Text style={[type.description, { color: colors.muted }]}>{option.body}</Text>
       </View>
     </AnimatedPressable>
   );
@@ -395,7 +395,7 @@ function SectionHeading({
       >
         {title}
       </Text>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>{description}</Text>
+      <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
     </View>
   );
 }
@@ -492,7 +492,7 @@ export function CustomClauseSheet({
           <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 12.5 }}>
             Adds to the main clause list.
           </Text>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             The clause takes this number as its position and pushes the rest down. Past the end, it goes last.
           </Text>
         </View>

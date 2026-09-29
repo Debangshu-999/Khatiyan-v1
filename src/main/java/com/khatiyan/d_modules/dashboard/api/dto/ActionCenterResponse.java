@@ -15,6 +15,11 @@ public record ActionCenterResponse(
     MoneySnapshot money,
     TodayDigest today,
     AttentionSummary attention,
+    /**
+     * Booked stays that can't start because their bed is not free yet. A list,
+     * not a count on {@code attention}: each item names its room.
+     */
+    List<BlockedBookingItem> blockedBookings,
     BudgetAttention budget,
     ConcernQueueSummary concerns,
 

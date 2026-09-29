@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.khatiyan.support.TestTransactions;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.concerns.api.dto.AssignConcernRequest;
@@ -85,7 +86,8 @@ class ConcernServiceTest {
                 concernAccessPolicy,
                 authModule,
                 eventPublisher,
-                referenceCodeGenerator);
+                referenceCodeGenerator,
+                TestTransactions.recordByRecord());
     }
 
     @Test
@@ -134,6 +136,56 @@ class ConcernServiceTest {
                         List.of())))
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("You can raise up to 5 concerns in a 7 day period.");
+    }
+
+    @Test
+    void aStayPastItsCheckoutDateCannotRaiseAConcern() {
+        when(tenancyModule.findActiveByUserId(TENANT_ID)).thenReturn(Optional.of(pendingExit(activeTenancy())));
+
+        assertThatThrownBy(() -> concernService.raiseConcern(
+                TENANT_ID,
+                new CreateConcernRequest(ConcernCategory.WIFI, "WiFi down", "Router is not working", List.of())))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("past its checkout date");
+    }
+
+    @Test
+    void aStayThatHasNotStartedCannotRaiseAConcern() {
+        when(tenancyModule.findActiveByUserId(TENANT_ID))
+                .thenReturn(Optional.of(startingOn(activeTenancy(), LocalDate.now().plusDays(5))));
+
+        assertThatThrownBy(() -> concernService.raiseConcern(
+                TENANT_ID,
+                new CreateConcernRequest(ConcernCategory.WIFI, "WiFi down", "Router is not working", List.of())))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Concerns can be raised once your tenancy has started.");
+    }
+
+    /** The same stay, starting on another date. */
+    private static TenancyResponse startingOn(TenancyResponse base, LocalDate startDate) {
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), startDate, base.plannedEndDate(), base.endDate(), base.status(),
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementValidityMonths(), base.agreementEndDate(), base.earlyExitRule(),
+                base.idCheckConfirmed(), base.idCheckedAt(), base.guestStay(), base.guestEmail(),
+                base.guestAddress(), base.guestAge(), base.guestGender());
+    }
+
+    /** The same stay, past its checkout date and waiting to be ended. */
+    private static TenancyResponse pendingExit(TenancyResponse base) {
+        return new TenancyResponse(
+                base.id(), base.referenceCode(), base.userId(), base.tenantName(), base.tenantPhone(),
+                base.tenantPhoneVerified(), base.tenantProfileCompleted(), base.propertyId(), base.roomId(),
+                base.createdByUserId(), base.billingType(), base.rentAmountPaise(), base.depositAmountPaise(),
+                base.dailyRatePaise(), base.startDate(), base.plannedEndDate(), base.endDate(),
+                com.khatiyan.d_modules.tenancy.model.TenancyStatus.PENDING_EXIT,
+                base.createdAt(), base.billingStarted(), base.tosAccepted(), base.fixedTerm(),
+                base.agreementValidityMonths(), base.agreementEndDate(), base.earlyExitRule(),
+                base.idCheckConfirmed(), base.idCheckedAt(), base.guestStay(), base.guestEmail(),
+                base.guestAddress(), base.guestAge(), base.guestGender());
     }
 
     @Test
@@ -227,6 +279,6 @@ class ConcernServiceTest {
                 null,
                 null,
                 null,
-                null);
+                null, 0L);
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.event.PaymentClaimRaisedEvent;
@@ -125,6 +126,10 @@ public class PaymentIntentService {
     public PaymentIntentWithLink startPayment(UUID tenantUserId, UUID billingCycleId) {
         BillingCycle cycle = billingCycleRepository.findByIdForTenant(billingCycleId, tenantUserId)
                 .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
+        // Checked, not bumped (2026-09-29): a bill whose amount changed since
+        // the tenant opened it is not paid at the old figure. Opening a payment
+        // does not change the bill itself.
+        VersionGuard.verify(cycle);
 
         if (cycle.isPaid()) {
             throw new ValidationException("This bill is already paid.");
@@ -138,9 +143,9 @@ public class PaymentIntentService {
 
         PropertyPaymentDetails details = paymentDetailsRepository.findById(cycle.getPropertyId())
                 .orElse(null);
-        if (details == null || !details.canAcceptUpi()) {
+        if (details == null || !details.offersUpi()) {
             throw new ValidationException(
-                    "This property has not set up online payment yet. Please pay them directly.");
+                    "This property does not take UPI. Please pay them another way.");
         }
 
         PaymentIntent intent = paymentIntentRepository.save(PaymentIntent.open(
@@ -170,10 +175,96 @@ public class PaymentIntentService {
         return new PaymentIntentWithLink(intent, link, PayeeDetailsResponse.from(details));
     }
 
+    /**
+     * A claim raised straight from a payment method's tab (2026-09-28): the
+     * tenant says they paid by UPI, bank transfer, card or cheque. It goes to
+     * the owner at once, exactly as a confirmed UPI attempt does. Proof is
+     * optional. The property must take that method.
+     */
+    @Transactional
+    public PaymentIntent raiseClaim(
+            UUID tenantUserId,
+            UUID billingCycleId,
+            ManualPaymentMethod method,
+            String referenceText,
+            String note,
+            List<String> proofUrls) {
+        BillingCycle cycle = billingCycleRepository.findByIdForTenant(billingCycleId, tenantUserId)
+                .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
+        // A claim for the bill as the tenant saw it (2026-09-29).
+        VersionGuard.claim(cycle);
+        if (cycle.isPaid()) {
+            throw new ValidationException("This bill is already paid.");
+        }
+        if (cycle.isCancelled()) {
+            throw new ValidationException("This bill was cancelled.");
+        }
+        if (liveIntentFor(billingCycleId).isPresent()) {
+            throw new ValidationException("There is already a payment in progress for this bill.");
+        }
+        PropertyPaymentDetails details = paymentDetailsRepository.findById(cycle.getPropertyId())
+                .orElseGet(() -> PropertyPaymentDetails.empty(cycle.getPropertyId()));
+        if (!offeredMethods(details).contains(method) || method == ManualPaymentMethod.CASH) {
+            throw new ValidationException("This property does not take that way of paying.");
+        }
+
+        PaymentIntent intent = paymentIntentRepository.save(PaymentIntent.claim(
+                cycle.getId(),
+                cycle.getPropertyId(),
+                cycle.getTenancyId(),
+                tenantUserId,
+                cycle.getTotalAmountPaise(),
+                cycle.getReferenceCode(),
+                method,
+                referenceText,
+                note,
+                proofUrls));
+        claimSent(intent, cycle);
+
+        log.info(
+                "Payment claim raised intentId={} billingCycleId={} method={} hasReference={} proofCount={}",
+                intent.getId(), cycle.getId(), method, referenceText != null && !referenceText.isBlank(),
+                proofUrls == null ? 0 : proofUrls.size());
+        return intent;
+    }
+
+    /**
+     * The ways a tenant can actually pay: ticked, and for UPI and bank transfer
+     * with complete details to pay to.
+     */
+    private static List<ManualPaymentMethod> offeredMethods(PropertyPaymentDetails details) {
+        return details.acceptedMethods().stream()
+                .filter(method -> switch (method) {
+                    case UPI -> details.offersUpi();
+                    case BANK_TRANSFER -> details.offersBankTransfer();
+                    default -> true;
+                })
+                .toList();
+    }
+
+    /** The bill waits for the owner, and the owner is told. Shared by every kind of claim. */
+    private void claimSent(PaymentIntent intent, BillingCycle cycle) {
+        // Not paid, and not counted anywhere. It only leaves the late-fee sweeps
+        // behind, which is the freeze the owner's verification time needs.
+        cycle.markConfirmationPending();
+
+        eventPublisher.publishEvent(new PaymentClaimRaisedEvent(
+                intent.getId(),
+                cycle.getId(),
+                intent.getPropertyId(),
+                intent.getTenantUserId(),
+                cycle.getTenantNameSnapshot(),
+                intent.getReferenceCode(),
+                intent.getAmountPaise(),
+                intent.getTenantReferenceText(),
+                intent.getProofImageUrls() != null && !intent.getProofImageUrls().isEmpty()));
+    }
+
     /** The tenant says it did not go through. Frees the bill immediately. */
     @Transactional
     public PaymentIntent cancelByTenant(UUID tenantUserId, UUID intentId) {
         PaymentIntent intent = ownedByTenant(tenantUserId, intentId);
+        VersionGuard.claim(intent);
         intent.cancelByTenant();
 
         log.info("Payment intent cancelled by tenant intentId={} tenantUserId={}", intentId, tenantUserId);
@@ -194,24 +285,12 @@ public class PaymentIntentService {
             String note,
             List<String> proofUrls) {
         PaymentIntent intent = ownedByTenant(tenantUserId, intentId);
+        VersionGuard.claim(intent);
         intent.confirmByTenant(referenceText, note, proofUrls);
 
         BillingCycle cycle = billingCycleRepository.findById(intent.getBillingCycleId())
                 .orElseThrow(() -> new NotFoundException("BillingCycle", intent.getBillingCycleId()));
-        // Not paid, and not counted anywhere. It only leaves the late-fee sweeps
-        // behind, which is the freeze the owner's verification time needs.
-        cycle.markConfirmationPending();
-
-        eventPublisher.publishEvent(new PaymentClaimRaisedEvent(
-                intent.getId(),
-                cycle.getId(),
-                intent.getPropertyId(),
-                intent.getTenantUserId(),
-                cycle.getTenantNameSnapshot(),
-                intent.getReferenceCode(),
-                intent.getAmountPaise(),
-                intent.getTenantReferenceText(),
-                intent.getProofImageUrls() != null && !intent.getProofImageUrls().isEmpty()));
+        claimSent(intent, cycle);
 
         log.info(
                 "Payment intent confirmed by tenant intentId={} billingCycleId={} hasReference={} proofCount={}",
@@ -242,6 +321,8 @@ public class PaymentIntentService {
     @Transactional
     public PaymentIntent verifyByOwner(UUID actorUserId, UUID intentId) {
         PaymentIntent intent = awaitingReview(actorUserId, intentId);
+        // The claim as the owner saw it (2026-09-29).
+        VersionGuard.claim(intent);
         BillingCycle cycle = cycleFor(intent);
 
         // Back to a payable state first. recordManualPayment refuses anything
@@ -253,14 +334,20 @@ public class PaymentIntentService {
 
         intent.verifyByOwner(actorUserId);
 
+        // Dated when the tenant claimed it, not now: that is when the money
+        // moved, and the claim froze the late fee from that moment too.
         billingCycleService.recordManualPayment(
                 actorUserId,
                 cycle.getId(),
+                // Recorded under the way the tenant said they paid, which was
+                // always UPI until claims could be raised for any method.
                 new RecordManualPaymentRequest(
-                        ManualPaymentMethod.UPI,
+                        intent.getMethod(),
                         intent.getTenantReferenceText(),
                         intent.getProofImageUrls(),
-                        paymentNoteFor(intent)));
+                        paymentNoteFor(intent)),
+                null,
+                intent.getTenantDecidedAt());
 
         log.info(
                 "Payment intent verified by owner intentId={} billingCycleId={} ownerUserId={}",
@@ -280,6 +367,7 @@ public class PaymentIntentService {
     @Transactional
     public PaymentIntent rejectByOwner(UUID actorUserId, UUID intentId) {
         PaymentIntent intent = awaitingReview(actorUserId, intentId);
+        VersionGuard.claim(intent);
         BillingCycle cycle = cycleFor(intent);
 
         intent.rejectByOwner(actorUserId);
@@ -339,6 +427,21 @@ public class PaymentIntentService {
                 .findByPropertyIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         propertyId, OWNER_VISIBLE, monthStart(window), monthStart(window.plusMonths(1)));
         return withTenantNames(intents);
+    }
+
+    /**
+     * Every claim on one bill that its owner may see, newest first (2026-09-28):
+     * the bill card's claims button. Same owner-only gate and the same
+     * {@link #OWNER_VISIBLE} statuses as the month list, just scoped to a bill.
+     */
+    @Transactional(readOnly = true)
+    public List<PaymentIntentResponse> listClaimsForCycle(UUID actorUserId, UUID billingCycleId) {
+        BillingCycle cycle = billingCycleRepository.findById(billingCycleId)
+                .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
+        billingAccessPolicy.ensureOwnsPaymentVerification(actorUserId, cycle.getPropertyId());
+
+        return withTenantNames(paymentIntentRepository
+                .findByBillingCycleIdAndStatusInOrderByCreatedAtDesc(billingCycleId, OWNER_VISIBLE));
     }
 
     /**
@@ -412,15 +515,17 @@ public class PaymentIntentService {
                 .orElseThrow(() -> new NotFoundException("BillingCycle", billingCycleId));
 
         PropertyPaymentDetails details = paymentDetailsRepository.findById(cycle.getPropertyId())
-                .orElse(null);
+                .orElseGet(() -> PropertyPaymentDetails.empty(cycle.getPropertyId()));
 
         return new TenantPaymentStateResponse(
-                details != null && details.canAcceptUpi(),
-                details != null && details.canBuildPayLink(),
-                details != null && details.canAcceptUpi() ? PayeeDetailsResponse.from(details) : null,
+                details.offersUpi(),
+                details.offersUpi() && details.canBuildPayLink(),
+                PayeeDetailsResponse.from(details),
                 liveIntentFor(billingCycleId)
                         .map(intent -> PaymentIntentResponse.from(intent, null))
-                        .orElse(null));
+                        .orElse(null),
+                offeredMethods(details),
+                details.isCashOtpRequired());
     }
 
     /**

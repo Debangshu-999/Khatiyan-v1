@@ -74,7 +74,11 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
                 throw e;
             }
 
-            log.warn("Rate limiter unavailable; allowing request path={}", request.getRequestURI(), e);
+            // Reached only when BOTH stores failed: RateLimitService already
+            // falls back from Valkey to the database on its own. With the
+            // database down too, the app cannot serve the request anyway.
+            log.warn("Rate limiter unavailable in Valkey and the database; allowing request path={}",
+                    request.getRequestURI(), e);
         }
 
         filterChain.doFilter(request, response);

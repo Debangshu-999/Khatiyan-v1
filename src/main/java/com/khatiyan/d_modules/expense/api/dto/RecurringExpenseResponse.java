@@ -20,7 +20,10 @@ public record RecurringExpenseResponse(
         int dayOfMonth,
         boolean active,
         LocalDate lastGeneratedMonth,
-        boolean system) {
+        boolean system,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
+) {
 
     public static RecurringExpenseResponse from(RecurringExpense recurring, String categoryName) {
         return new RecurringExpenseResponse(
@@ -33,6 +36,6 @@ public record RecurringExpenseResponse(
                 recurring.getDayOfMonth(),
                 recurring.isActive(),
                 recurring.getLastGeneratedMonth(),
-                false);
+                false, recurring.getVersion());
     }
 }

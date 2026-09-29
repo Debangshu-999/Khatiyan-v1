@@ -15,6 +15,11 @@ public enum VerificationAttemptStatus {
      * final.
      */
     AWAITING_OTP,
+    /**
+     * An Aadhaar App session is open: the tenant has been sent to consent, and
+     * the provider's callback has not arrived yet.
+     */
+    AWAITING_CONSENT,
 
     /** The provider returned the tenant's details. */
     SUCCEEDED,

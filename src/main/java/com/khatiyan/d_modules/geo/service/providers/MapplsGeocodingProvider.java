@@ -1,8 +1,10 @@
 package com.khatiyan.d_modules.geo.service.providers;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -53,6 +55,26 @@ import lombok.extern.slf4j.Slf4j;
 public class MapplsGeocodingProvider implements GeocodingProvider {
 
     private static final Pattern PINCODE = Pattern.compile("\\b[1-9][0-9]{5}\\b");
+
+    /** What one Nearby page holds. A shorter page is the last one. */
+    private static final int NEARBY_PAGE_SIZE = 10;
+
+    /**
+     * Two pages, so a category search can return twenty places instead of ten.
+     *
+     * <p>Further than the map's own cap on what it will draw, so raising this
+     * alone would only spend calls on results nothing shows.
+     */
+    private static final int MAX_NEARBY_PAGES = 2;
+
+    /**
+     * The furthest Nearby will look, whatever radius is asked for.
+     *
+     * <p>The vendor's own ceiling, not ours. A city is wider than this — a
+     * genuinely city-wide sweep would mean several calls around several
+     * centres — so this is the most one call can cover.
+     */
+    private static final int MAX_NEARBY_RADIUS_METERS = 10_000;
 
     private final RestClient restClient;
     private final String autosuggestUrl;
@@ -118,8 +140,13 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
      * back unsorted — "Apollo Hospitals, 6 m" from the middle of Kolkata — while
      * the codes sort properly from every point tried.
      *
+     * <p>Paged, because one page is ten places and a city-wide search wants
+     * more than the ten nearest. A second page is only fetched when the first
+     * came back full, so an ordinary neighbourhood search still costs one call.
+     *
      * @param categoryCodes Mappls codes, several joined with ";" for OR
-     * @param radiusMeters  at most 10 000; the vendor does not look further
+     * @param radiusMeters  at most {@link #MAX_NEARBY_RADIUS_METERS}; the
+     *                      vendor does not look further, whatever is asked
      */
     @Override
     public Optional<List<NearbyPlaceResponse>> nearby(
@@ -128,30 +155,50 @@ public class MapplsGeocodingProvider implements GeocodingProvider {
             return Optional.empty();
         }
         try {
-            String url = UriComponentsBuilder.fromUriString(nearbyUrl)
-                    .queryParam("keywords", categoryCodes)
-                    .queryParam("refLocation", latitude + "," + longitude)
-                    .queryParam("radius", Math.min(radiusMeters, 10_000))
-                    .queryParam("sortBy", "dist:asc")
-                    .queryParam("region", "IND")
-                    .queryParam("access_token", restKey)
-                    .build()
-                    .toUriString();
-            JsonNode body = restClient.get().uri(url).retrieve().body(JsonNode.class);
             List<NearbyPlaceResponse> places = new ArrayList<>();
-            if (body == null) {
-                return Optional.empty();
-            }
-            for (JsonNode node : body.path("suggestedLocations")) {
-                String name = text(node, "placeName");
-                if (name == null || !node.path("distance").isNumber()) {
-                    continue;
+            Set<String> seen = new HashSet<>();
+            for (int page = 1; page <= MAX_NEARBY_PAGES; page++) {
+                String url = UriComponentsBuilder.fromUriString(nearbyUrl)
+                        .queryParam("keywords", categoryCodes)
+                        .queryParam("refLocation", latitude + "," + longitude)
+                        .queryParam("radius", Math.min(radiusMeters, MAX_NEARBY_RADIUS_METERS))
+                        .queryParam("sortBy", "dist:asc")
+                        .queryParam("page", page)
+                        .queryParam("region", "IND")
+                        .queryParam("access_token", restKey)
+                        .build()
+                        .toUriString();
+                JsonNode body = restClient.get().uri(url).retrieve().body(JsonNode.class);
+                if (body == null) {
+                    // 204 on the FIRST page is the vendor declining to answer —
+                    // an unknown category code looks exactly like this. On a
+                    // later page it just means the results ran out.
+                    return page == 1 ? Optional.empty() : Optional.of(places);
                 }
-                places.add(new NearbyPlaceResponse(
-                        name,
-                        text(node, "placeAddress"),
-                        node.path("distance").asInt(),
-                        text(node, "eLoc")));
+                int onThisPage = 0;
+                for (JsonNode node : body.path("suggestedLocations")) {
+                    onThisPage++;
+                    String name = text(node, "placeName");
+                    if (name == null || !node.path("distance").isNumber()) {
+                        continue;
+                    }
+                    String eLoc = text(node, "eLoc");
+                    // A vendor that ignored `page` would hand back page one
+                    // again, and the same place twice is two pins on one spot.
+                    if (eLoc != null && !seen.add(eLoc)) {
+                        continue;
+                    }
+                    places.add(new NearbyPlaceResponse(
+                            name,
+                            text(node, "placeAddress"),
+                            node.path("distance").asInt(),
+                            eLoc));
+                }
+                // A short page is the last page. Asking for another spends a
+                // call to be told the same thing.
+                if (onThisPage < NEARBY_PAGE_SIZE) {
+                    break;
+                }
             }
             return Optional.of(places);
         } catch (RuntimeException exception) {

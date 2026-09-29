@@ -10,7 +10,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { SheetShell } from "@/components/sheet-shell";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, FormInput, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { AmenityPicker } from "@/features/property/amenity-picker";
 import { AddPhotoTarget, PhotoRow, UploadProgress } from "@/features/property/photo-list";
 import type { RoomTypeEntry } from "@/features/property/room-type-board";
@@ -188,6 +188,14 @@ export function RoomTypeSheet({
   return (
     <SheetShell onClose={onClose} title={title}>
       <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }} keyboardShouldPersistTaps="handled">
+        {entry && entry.roomCount > 0 ? (
+          <NoticeBar
+            message="Changing it here sets the default for new rooms — it does not reprice the existing ones."
+            title={`${entry.roomCount} ${entry.roomCount === 1 ? "room was" : "rooms were"} created from this type`}
+            tone="warning"
+          />
+        ) : null}
+
         {/* Beds and rent together: the two facts that make a type what it is,
             set apart from the optional amenities and photos below. */}
         <ChoiceCard style={{ gap: spacing.md }}>
@@ -247,7 +255,7 @@ export function RoomTypeSheet({
             {/* Last in the sheet, and the only part that argues for itself. The
                 rest of the form is facts the owner already knows; this one asks
                 for work they can skip, so it has to say what the work buys. */}
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               Rooms with photos have higher chances of conversion into a real tenancy. Users prefer to see the
               rooms beforehand. Consider adding room photos.
             </Text>
@@ -286,12 +294,6 @@ export function RoomTypeSheet({
           onPress={submit}
         />
 
-        {entry && entry.roomCount > 0 ? (
-          <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
-            {entry.roomCount} {entry.roomCount === 1 ? "room was" : "rooms were"} cut from this type. Changing it
-            here sets the default for new rooms — it does not reprice the existing ones.
-          </Text>
-        ) : null}
       </ScrollView>
 
       {uploadError ? <AlertModal message={uploadError} onClose={() => setUploadError(null)} /> : null}
@@ -317,8 +319,7 @@ function LockedRow({ note, value }: { note: string; value: string }) {
     >
       <BedDouble color={colors.muted} size={16} strokeWidth={2.2} />
       <Text style={[type.bodyStrong, { color: colors.ink, flex: 1, fontSize: 14 }]}>{value}</Text>
-      <Text style={[type.caption, { color: colors.muted }]}>{note}</Text>
+      <Text style={[type.description, { color: colors.muted }]}>{note}</Text>
     </View>
   );
 }
-

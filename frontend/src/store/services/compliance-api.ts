@@ -1,5 +1,6 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { TenancySummary } from "@/store/services/tenancy-api";
+import type { VerificationGrant } from "@/store/services/verification-api";
 
 export type AgreementStatus = "DRAFT" | "PENDING_ACCEPTANCE" | "ACCEPTED" | "CANCELLED";
 
@@ -155,6 +156,11 @@ export type PropertyAgreementSettings = {
   preview: AgreementDeed;
   /** Main clauses the owner has dropped, and can put back. */
   availableMainClauses: MainClauseType[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type TenancyAgreement = {
@@ -167,6 +173,11 @@ export type TenancyAgreement = {
   contentHash: string | null;
   acceptedByUserId: string | null;
   acceptedAt: string | null;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /** Re-exported from the auth API, which owns the shape. */
@@ -214,6 +225,10 @@ export type OnboardWithAgreementPayload = {
     confirmed: boolean;
     documentType: string | null;
     lastFour: string;
+    /** As the owner checked it. Required on every manual check, never UNDECLARED. */
+    gender: Gender | null;
+    /** `YYYY-MM-DD` as the ID shows it. Required on a monthly stay (the 18+ check), null on a daily one. */
+    dateOfBirth: string | null;
   } | null;
   /**
    * The declaration wording as displayed; the server refuses a mismatch.
@@ -361,10 +376,11 @@ export const complianceApi = api.injectEndpoints({
 
     updatePropertyAgreementSettings: builder.mutation<
       PropertyAgreementSettings,
-      { propertyId: string; template: AgreementTemplate }
+      { propertyId: string; template: AgreementTemplate; version: number }
     >({
-      query: ({ propertyId, template }) => ({
+      query: ({ propertyId, template, version }) => ({
         body: { template },
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/compliance/properties/${propertyId}/agreement-settings`,
       }),
@@ -422,10 +438,11 @@ export const complianceApi = api.injectEndpoints({
      */
     updateTenancyAgreementTemplate: builder.mutation<
       TenancyAgreement,
-      { tenancyId: string; template: AgreementTemplate }
+      { tenancyId: string; template: AgreementTemplate; version: number }
     >({
-      query: ({ template, tenancyId }) => ({
+      query: ({ template, tenancyId, version }) => ({
         body: { template },
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/compliance/tenancies/${tenancyId}/agreement/template`,
       }),
@@ -468,17 +485,17 @@ export const complianceApi = api.injectEndpoints({
      * server refuses a mismatch, so a signature cannot attach to a deed that
      * changed while it was being read.
      */
-    startAgreementSigning: builder.mutation<AgreementSigningChallenge, void>({
-      query: () => ({ method: "POST", url: "/api/v1/compliance/me/agreement/signing-code" }),
+    startAgreementSigning: builder.mutation<AgreementSigningChallenge, { version: number }>({
+      query: ({ version }) => ({ headers: ifMatch(version), method: "POST", url: "/api/v1/compliance/me/agreement/signing-code" }),
     }),
 
-    acceptMyAgreement: builder.mutation<TenancyAgreement, AcceptAgreementBody>({
-      query: (body) => ({ body, method: "POST", url: "/api/v1/compliance/me/agreement/accept" }),
+    acceptMyAgreement: builder.mutation<TenancyAgreement, AcceptAgreementBody & { version: number }>({
+      query: ({ version, ...body }) => ({ body, headers: ifMatch(version), method: "POST", url: "/api/v1/compliance/me/agreement/accept" }),
       invalidatesTags: ["Compliance", "Tenancy", "BillingCycle", "Deposit", "Profile"],
     }),
 
-    declineMyAgreement: builder.mutation<void, void>({
-      query: () => ({ method: "POST", url: "/api/v1/compliance/me/agreement/decline" }),
+    declineMyAgreement: builder.mutation<void, { version: number }>({
+      query: ({ version }) => ({ headers: ifMatch(version), method: "POST", url: "/api/v1/compliance/me/agreement/decline" }),
       invalidatesTags: ["Compliance", "Tenancy", "Profile"],
     }),
 
@@ -489,13 +506,45 @@ export const complianceApi = api.injectEndpoints({
      * a bed, and cancelling frees it. The owner dashboard is tagged "Tenancy",
      * so the action centre's unsigned-agreement count refreshes with the list.
      */
-    cancelPendingTenancy: builder.mutation<void, { reason?: string; tenancyId: string }>({
-      query: ({ reason, tenancyId }) => ({
+    cancelPendingTenancy: builder.mutation<void, { reason?: string; tenancyId: string; version: number }>({
+      query: ({ reason, tenancyId, version }) => ({
         body: { reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/compliance/tenancies/${tenancyId}/agreement/cancel`,
       }),
       invalidatesTags: ["Compliance", "Tenancy", "Property"],
+    }),
+
+    /**
+     * When each of a property's unsigned agreements expires: the nightly run
+     * that removes it, not merely the end of the acceptance window.
+     */
+    getPendingAgreementDeadlines: builder.query<{ tenancyId: string; expiresAt: string }[], string>({
+      query: (propertyId) => ({ url: `/api/v1/compliance/properties/${propertyId}/pending-agreements` }),
+      providesTags: ["Compliance", "Tenancy"],
+    }),
+
+    /** The checks a pending stay's tenant was asked to complete, for "Provide attempts". */
+    getPendingStayChecks: builder.query<VerificationGrant[], string>({
+      query: (tenancyId) => ({ url: `/api/v1/compliance/tenancies/${tenancyId}/verification` }),
+      providesTags: ["Verification"],
+    }),
+
+    /**
+     * Gives a pending stay's tenant more verification attempts, or orders a
+     * check that was not ordered at onboarding. The tenant is notified.
+     */
+    provideVerificationAttempts: builder.mutation<
+      VerificationGrant[],
+      { tenancyId: string; verification: { serviceCode: string; attempts: number }[] }
+    >({
+      query: ({ tenancyId, verification }) => ({
+        body: { verification },
+        method: "POST",
+        url: `/api/v1/compliance/tenancies/${tenancyId}/verification-attempts`,
+      }),
+      invalidatesTags: ["Verification", "Compliance"],
     }),
   }),
   // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
@@ -514,11 +563,14 @@ export const {
   useDeclineMyAgreementMutation,
   useGetMyAgreementQuery,
   useGetOnboardingReadinessQuery,
+  useGetPendingAgreementDeadlinesQuery,
+  useGetPendingStayChecksQuery,
   useGetPropertyAgreementSettingsQuery,
   useGetTenancyAgreementQuery,
   useListMiscClausesQuery,
   useOnboardTenantWithAgreementMutation,
   usePreviewTenancyAgreementQuery,
+  useProvideVerificationAttemptsMutation,
   useUpdatePropertyAgreementSettingsMutation,
   useUpdateTenancyAgreementTemplateMutation,
 } = complianceApi;

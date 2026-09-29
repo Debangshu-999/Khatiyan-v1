@@ -61,5 +61,7 @@ public record EnquiryDetailResponse(
      * repeatable: an owner may call, then call again, then write. Empty while the
      * enquiry is still open.
      */
-    List<EnquiryResponseView> responses
+    List<EnquiryResponseView> responses,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
 ) {}

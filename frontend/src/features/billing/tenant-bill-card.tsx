@@ -1,10 +1,10 @@
 import { useState, type ComponentType } from "react";
 import { Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   AlertTriangle,
   Banknote,
   CalendarDays,
-  Check,
   CheckCircle2,
   Clock3,
   History,
@@ -48,21 +48,23 @@ export function TenantBillCard({
   const [windowInfoOpen, setWindowInfoOpen] = useState(false);
   const awaitingConfirmation = cycle.status === "CONFIRMATION_PENDING";
   const unanswered = openAttempt?.status === "CREATED";
-  const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const paid = cycle.status === "PAID";
   const payLabel = payButtonLabel(cycle, openAttempt);
   const discount = tenantDiscountBreakdown(cycle);
-
   return (
-    <View
+    <LinearGradient
+      colors={["#F7FAFF", "#EAF3FF"]}
+      end={{ x: 1, y: 1 }}
+      start={{ x: 0, y: 0 }}
       style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
+        borderColor: "#D9E7FB",
         borderCurve: "continuous",
-        borderRadius: radii.card,
+        borderRadius: 18,
         borderWidth: 1,
         gap: spacing.sm,
+        overflow: "hidden",
         padding: spacing.md,
+        position: "relative",
         shadowColor: colors.shadow,
         shadowOffset: { height: 4, width: 0 },
         shadowOpacity: 0.12,
@@ -70,8 +72,17 @@ export function TenantBillCard({
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}>
-          <ReceiptText color={payable ? colors.primary : colors.muted} size={29} strokeWidth={1.9} />
+        <View
+          style={{
+            alignItems: "center",
+            borderCurve: "continuous",
+            borderRadius: 12,
+            height: 42,
+            justifyContent: "center",
+            width: 42,
+          }}
+        >
+          <ReceiptText color={colors.muted} size={29} strokeWidth={1.9} />
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
@@ -89,9 +100,18 @@ export function TenantBillCard({
         <TenantBillStatusBadge cycle={cycle} />
       </View>
 
-      <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-      <View style={{ alignItems: "stretch", flexDirection: "row" }}>
+      <View
+        style={{
+          alignItems: "stretch",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderCurve: "continuous",
+          borderRadius: 12,
+          borderWidth: 1,
+          flexDirection: "row",
+          padding: spacing.sm,
+        }}
+      >
         <View style={{ flex: 2.2, gap: 4, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>Total payable</Text>
           <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -203,7 +223,7 @@ export function TenantBillCard({
       ) : null}
 
       {unanswered ? (
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           You started a payment for this bill. Tell us how it went before paying again.
         </Text>
       ) : null}
@@ -217,8 +237,8 @@ export function TenantBillCard({
             variant="secondary"
           />
           <TenantBillAction
-            disabled={!onPay}
-            icon={paid ? Check : payLabel === "Pay now" ? Banknote : undefined}
+            disabled={!onPay || cycle.status === "UPCOMING"}
+            icon={payLabel === "Pay now" ? Banknote : undefined}
             label={payLabel}
             onPress={() => onPay?.()}
             variant={paid ? "paid" : "primary"}
@@ -235,7 +255,7 @@ export function TenantBillCard({
       {windowInfoOpen ? (
         <PaymentWindowModal cycle={cycle} onClose={() => setWindowInfoOpen(false)} />
       ) : null}
-    </View>
+    </LinearGradient>
   );
 }
 

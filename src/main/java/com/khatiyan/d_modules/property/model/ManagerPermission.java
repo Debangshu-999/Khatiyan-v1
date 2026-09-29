@@ -9,6 +9,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -51,6 +52,14 @@ public class ManagerPermission {
 
     @Column(name = "granted_at", nullable = false)
     private Instant grantedAt;
+
+    /**
+     * Every save lands only on the version it read (2026-09-28). Its own field,
+     * since permissions do not extend BaseEntity.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     private ManagerPermission(
             UUID propertyId,

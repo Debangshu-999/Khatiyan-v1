@@ -26,4 +26,15 @@ public class DevLogSmsOtpDeliveryProvider implements OtpDeliveryProvider {
     public void sendOtp(String phone, String otp, OtpPurpose purpose) {
         log.info("DEV SMS OTP delivery phone={} purpose={} otp={}", phone, purpose, otp);
     }
+
+    @Override
+    public void sendOtp(String phone, String otp, OtpPurpose purpose, String detail) {
+        if (detail == null || detail.isBlank()) {
+            sendOtp(phone, otp, purpose);
+            return;
+        }
+        // The detail printed too, so what a tenant would read on their phone can
+        // be checked in development before a real provider exists.
+        log.info("DEV SMS OTP delivery phone={} purpose={} otp={} message=\"{}\"", phone, purpose, otp, detail);
+    }
 }

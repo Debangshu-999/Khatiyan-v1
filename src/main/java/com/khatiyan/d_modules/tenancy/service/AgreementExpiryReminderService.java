@@ -1,19 +1,18 @@
 package com.khatiyan.d_modules.tenancy.service;
 
 import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.d_modules.tenancy.event.AgreementExpiryApproachingEvent;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
-
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,77 +28,84 @@ import lombok.extern.slf4j.Slf4j;
  * damage assessment, the move-out checklist, the deposit decision. What these do
  * is make sure nobody is surprised on the day — the tenant can plan, and the
  * owner can refill the bed.
+ *
+ * <p><b>Only inside the stay's ending-soon window</b> ({@link Tenancy#endingSoonLeadDays()}:
+ * 7, 15 or 30 days by term length), so a one-month stay is not warned a month
+ * out, on its first day. <b>Condition-based, with catch-up:</b> each run sends
+ * the milestone due NOW if {@code tenancy.agreement_expiry_reminder_log} does not
+ * have it. They used to fire only on the exact day at 00:05, so a night the
+ * server was down lost that milestone for good. Now a missed night is caught by
+ * the next run, once, and never as a burst of the ones in between.
  */
 @Slf4j
 @Service
 public class AgreementExpiryReminderService {
 
-    private static final ZoneId REMINDER_ZONE = ZoneId.of("Asia/Kolkata");
-
-    /**
-     * How far ahead to warn, in days.
-     *
-     * <p>Front-loaded then tightening: a month gives time to find somewhere else,
-     * the last few are the ones people actually act on. Zero is the final day
-     * itself. Each is looked up as an exact date rather than a range, so a
-     * tenancy gets each reminder once and no duplicates.
-     */
-    private static final List<Integer> REMINDER_DAYS_BEFORE = List.of(30, 14, 7, 3, 1, 0);
+    /** Front-loaded then tightening: a month to find somewhere else, the last few are the ones people act on. */
+    private static final List<Integer> MILESTONES = List.of(0, 1, 3, 7, 14, 30);
+    private static final int LONGEST_LEAD_DAYS = 30;
 
     private final TenancyRepository tenancyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final NamedParameterJdbcTemplate jdbc;
 
     public AgreementExpiryReminderService(
             TenancyRepository tenancyRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            NamedParameterJdbcTemplate jdbc) {
         this.tenancyRepository = tenancyRepository;
         this.eventPublisher = eventPublisher;
+        this.jdbc = jdbc;
+    }
+
+    /** Returns how many reminders were sent. Triggered by {@link AgreementExpiryReminderScheduler}. */
+    @Transactional
+    public int sendDue(LocalDate today) {
+        int sent = 0;
+        for (Tenancy tenancy : tenancyRepository.findActiveFixedTermsEndingBetween(today, today.plusDays(LONGEST_LEAD_DAYS))) {
+            int daysRemaining = (int) ChronoUnit.DAYS.between(today, tenancy.getAgreementEndDate());
+            Integer milestone = dueMilestone(daysRemaining, tenancy.endingSoonLeadDays());
+            if (milestone == null || !record(tenancy, milestone, today)) {
+                continue;
+            }
+            eventPublisher.publishEvent(new AgreementExpiryApproachingEvent(
+                    tenancy.getId(),
+                    tenancy.getUserId(),
+                    tenancy.getPropertyId(),
+                    tenancy.getAgreementEndDate(),
+                    daysRemaining));
+            sent = sent + 1;
+        }
+        log.info("Agreement expiry reminder sweep completed today={} reminders={}", today, sent);
+        return sent;
     }
 
     /**
-     * Fires whichever agreement-expiry reminders are due today.
-     *
-     * <p>Runs before the exit and billing jobs so a tenant reading their morning
-     * notifications sees the warning alongside, not a day out of step.
+     * The milestone due with this many days left: the smallest one not below
+     * them, inside the stay's window. Null outside it. Five days left in a
+     * 7-day window is the 7-day reminder; two days left is the 3-day one.
      */
-    @Scheduled(
-            cron = "${app.tenancy.agreement-expiry-reminder-cron:0 5 0 * * *}",
-            zone = "${app.tenancy.agreement-expiry-reminder-zone:Asia/Kolkata}")
-    @SchedulerLock(
-            name = "tenancy-agreementExpiryReminders",
-            lockAtMostFor = "PT10M",
-            lockAtLeastFor = "PT15S")
-    @Transactional(readOnly = true)
-    public void sendDueAgreementExpiryReminders() {
-        LocalDate today = LocalDate.now(REMINDER_ZONE);
-        int sentCount = 0;
-
-        for (int daysRemaining : REMINDER_DAYS_BEFORE) {
-            // Look up the exact end date this milestone points at, rather than
-            // scanning every agreement and computing the gap. A tenancy can only
-            // match one milestone per run, so no reminder can double-fire.
-            LocalDate agreementEndDate = today.plusDays(daysRemaining);
-            List<Tenancy> due = tenancyRepository.findActiveWithAgreementEndingOn(agreementEndDate);
-
-            for (Tenancy tenancy : due) {
-                eventPublisher.publishEvent(new AgreementExpiryApproachingEvent(
-                        tenancy.getId(),
-                        tenancy.getUserId(),
-                        tenancy.getPropertyId(),
-                        agreementEndDate,
-                        daysRemaining));
-                sentCount = sentCount + 1;
-            }
-
-            if (!due.isEmpty()) {
-                log.info(
-                        "Agreement expiry reminders queued daysRemaining={} agreementEndDate={} count={}",
-                        daysRemaining,
-                        agreementEndDate,
-                        due.size());
+    static Integer dueMilestone(int daysRemaining, int leadDays) {
+        if (daysRemaining < 0 || daysRemaining > leadDays) {
+            return null;
+        }
+        for (int milestone : MILESTONES) {
+            if (milestone >= daysRemaining && milestone <= leadDays) {
+                return milestone;
             }
         }
+        return null;
+    }
 
-        log.info("Agreement expiry reminder sweep completed today={} reminders={}", today, sentCount);
+    /** True when this milestone had not been sent: the insert is the claim. */
+    private boolean record(Tenancy tenancy, int milestone, LocalDate today) {
+        return jdbc.update("""
+                INSERT INTO tenancy.agreement_expiry_reminder_log (tenancy_id, days_before, sent_on)
+                VALUES (:tenancyId, :daysBefore, :today)
+                ON CONFLICT (tenancy_id, days_before) DO NOTHING
+                """, new MapSqlParameterSource()
+                .addValue("tenancyId", tenancy.getId())
+                .addValue("daysBefore", milestone)
+                .addValue("today", today)) > 0;
     }
 }

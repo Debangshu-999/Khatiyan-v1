@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { MoneyIcon } from "@/components/artwork-icon";
+import { MoneyIcon, PaymentClaimsIcon } from "@/components/artwork-icon";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
-import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, SlidersHorizontal, TimerReset, Undo2, Users, Wallet, WalletCards, X, XCircle } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Banknote, CalendarCheck2, CalendarClock, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, FileDown, FileText, Clock3, History, IndianRupee, Info, type LucideProps, MoreHorizontal, Percent, Plus, ReceiptText, RefreshCw, Repeat, Search, SlidersHorizontal, TimerReset, Undo2, Users, Wallet, WalletCards, X, XCircle } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -15,19 +15,25 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { PickerOptionRow } from "@/components/picker-option-row";
 
 import { StatusPill as Pill } from "@/components/status-pill";
-import { MonthSelector } from "@/components/month-selector";
+import { MonthSelector, currentMonth, monthName, shiftMonth } from "@/components/month-selector";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
-import { errorMessage } from "@/features/forms/server-error";
+import { errorMessage, retryAfterSeconds } from "@/features/forms/server-error";
 import { NoticeBar, RequiredMark } from "@/features/owner/owner-ui";
 import { SheetShell } from "@/components/sheet-shell";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
+import { OtpCodeEntry, RESEND_COOLDOWN_SECONDS } from "@/components/otp-code-sheet";
+import { blockCashCodes, useCashCodeWait, waitClock } from "@/features/billing/cash-code-block";
 import { BillStatusPill, BillTotal } from "@/features/owner/bill-views";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { FieldError } from "@/components/field-error";
 import { SingleOptionPicker } from "@/components/option-picker";
+import { PaymentWindowLine } from "@/features/billing/payment-window-modal";
+import { BillClaimsSheet } from "@/features/billing/bill-claims-sheet";
+import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
 import { TabSwitcher, type TabOption } from "@/components/tab-switcher";
 import { useToast } from "@/components/toast";
 import { MultiImageField } from "@/features/uploads/multi-image-field";
@@ -43,15 +49,19 @@ import {
   type BillingMonthSummary,
   type ManualPaymentMethod,
   billTitle,
-  useAddTenancyDiscountMutation,
-  useAddTenancyExtraChargesMutation,
+  useAddCycleDiscountMutation,
+  useAddCycleExtraChargesMutation,
   useCancelOneOffBillMutation,
+  useRemoveLateFeeMutation,
   useGetPropertyMonthSummaryQuery,
   useLazyExportPropertyBillingCyclesQuery,
   useListPropertyBillingCyclesQuery,
   useListUpcomingPropertyCyclesQuery,
+  UPCOMING_CYCLES_PAGE_SIZE,
   useRecordManualPaymentMutation,
+  useSendCashPaymentCodeMutation,
 } from "@/store/services/billing-api";
+import { useGetPaymentMethodsQuery } from "@/store/services/payment-intent-api";
 import { downloadBillReceipt } from "@/features/billing/download-bill-receipt";
 // One receipt, printed for both sides. The document and its sheet used to live
 // in this file, which is how the tenant ended up reading a different-looking
@@ -59,7 +69,7 @@ import { downloadBillReceipt } from "@/features/billing/download-bill-receipt";
 import { BillReceiptSheet } from "@/features/billing/bill-receipt-sheet";
 import { PaymentDetailsSheet } from "@/features/billing/payment-details-sheet";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
-import { radii, spacing } from "@/theme/spacing";
+import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
 import {
@@ -223,6 +233,12 @@ const manualPaymentMethods: ManualPaymentOption[] = [
     value: "UPI",
   },
   {
+    label: "Bank transfer",
+    referenceLabel: "UTR / transaction reference",
+    referencePlaceholder: "From the bank statement line",
+    value: "BANK_TRANSFER",
+  },
+  {
     label: "Card",
     referenceLabel: "Approval code or RRN from the slip",
     referencePlaceholder: "6-digit approval code",
@@ -322,6 +338,27 @@ export default function OwnerBillingScreen() {
     { month: summaryMonth, propertyId: selectedProperty?.id ?? "", query: cycleSearchQuery },
     { skip: !selectedProperty },
   );
+  /**
+   * Whether next month can be opened yet.
+   *
+   * <p>Rent cycles are generated on each tenancy's own anniversary day, so a
+   * cycle whose period starts on the 3rd is created on the 3rd. With the
+   * picker stopping at the current month, the owner could not reach that bill
+   * until the month it belongs to had already begun — losing most of the
+   * window in which it can still be corrected.
+   *
+   * <p>`hasData` is the right signal because the summary only PROJECTS
+   * uncreated cycles for the current month. Asked about a future month it
+   * counts real rows alone, so this is true exactly when the first bill for
+   * next month exists.
+   */
+  const nextMonth = shiftMonth(currentMonth(), 1, "9999-12");
+  const nextMonthQuery = useGetPropertyMonthSummaryQuery(
+    { month: nextMonth, propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty },
+  );
+  const nextMonthOpen = nextMonthQuery.data?.hasData === true;
+
   const [exportMonthlyReport, exportState] = useLazyExportPropertyBillingCyclesQuery();
 
   const visibleCycles = cyclesQuery.data ?? [];
@@ -351,10 +388,29 @@ export default function OwnerBillingScreen() {
   // Suppressed while searching: the list is filtered then, so the projection
   // (which is property-wide) has nothing to subtract against.
   const createdRentCycleCount = allRentCycles.filter((cycle) => cycle.status !== "CANCELLED").length;
+  /**
+   * How many of a FUTURE month's cycles are still to be generated.
+   *
+   * <p>The summary projects uncreated cycles for the current month only, so
+   * for next month it counts real rows alone and the gap above always came out
+   * as zero — a month with one bill out of twenty looked complete. The
+   * upcoming list is computed per tenancy for any month, so it is the number
+   * to use. Same arguments as the pill and the upcoming screen, so all three read
+   * one cache entry and cannot disagree.
+   */
+  const viewingFutureMonth = summaryMonth > currentMonth();
+  const futureUpcomingQuery = useListUpcomingPropertyCyclesQuery(
+    { month: summaryMonth, page: 0, propertyId: selectedProperty?.id ?? "", size: UPCOMING_CYCLES_PAGE_SIZE },
+    { skip: !selectedProperty || !viewingFutureMonth },
+  );
   const notGeneratedCount =
-    monthSummary && summaryMonth === currentMonth() && !cycleSearchQuery && billingStatusFilter === "ALL"
-      ? Math.max(0, monthSummary.activeCycleCount - createdRentCycleCount)
-      : 0;
+    cycleSearchQuery || billingStatusFilter !== "ALL"
+      ? 0
+      : viewingFutureMonth
+        ? futureUpcomingQuery.data?.totalElements ?? 0
+        : monthSummary && summaryMonth === currentMonth()
+          ? Math.max(0, monthSummary.activeCycleCount - createdRentCycleCount)
+          : 0;
 
   function openAction(cycle: BillingCycle, mode: ActionMode) {
     setSelectedCycle(cycle);
@@ -441,7 +497,22 @@ export default function OwnerBillingScreen() {
 
       {selectedProperty ? (
         <>
-          <MonthSelector onChange={handleSummaryMonthChange} value={summaryMonth} />
+          <MonthSelector
+            maxMonth={nextMonthOpen ? nextMonth : undefined}
+            onChange={handleSummaryMonthChange}
+            value={summaryMonth}
+          />
+
+          {/* Only while looking at a month that is not the new one. Once the
+              owner is there the notice has served its purpose, and a banner
+              announcing the page you are on is noise. */}
+          {nextMonthOpen && summaryMonth !== nextMonth ? (
+            <NoticeBar
+              message={`Bills for ${monthName(nextMonth)} have started generating. Switch the month above to review or change them before they fall due.`}
+              title={`${monthName(nextMonth)} bills are now available`}
+              tone="warning"
+            />
+          ) : null}
 
           {summaryLoading ? (
             <OwnerBillingOverviewSkeleton />
@@ -529,7 +600,10 @@ export default function OwnerBillingScreen() {
       {selectedCycle && actionMode ? (
         <BillingActionModal
           canManage={canManageBilling}
-          cycle={selectedCycle}
+          // The live copy from the list, not the snapshot taken when the modal
+          // opened (2026-09-29): its version must be the bill's latest, or the
+          // modal's second action would look stale against its own first.
+          cycle={visibleCycles.find((item) => item.id === selectedCycle.id) ?? selectedCycle}
           mode={actionMode}
           onClose={closeAction}
           onSelectMode={setActionMode}
@@ -744,7 +818,7 @@ function PaymentHistorySection({
 function PendingGenerationNote({ count }: { count: number }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+    <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
       {count} more cycle{count === 1 ? "" : "s"} will appear here shortly before {count === 1 ? "its" : "their"} due
       date{count === 1 ? "" : "s"} this month.
     </Text>
@@ -857,10 +931,9 @@ function BillingStatusFilterDialog({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <Pressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
+      {/* Closes by its close button, a choice or the device back button,
+          not a tap on the scrim (user, 2026-09-29). */}
+      <View
         style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
@@ -869,8 +942,7 @@ function BillingStatusFilterDialog({
           paddingHorizontal: spacing.xl,
         }}
       >
-        <Pressable
-          onPress={(event) => event.stopPropagation()}
+        <View
           style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
@@ -879,17 +951,21 @@ function BillingStatusFilterDialog({
             width: "100%",
           }}
         >
-          <Text
+          <View
             style={{
-              color: colors.muted,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            Bill status
-          </Text>
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Bill status
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
 
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {BILLING_STATUS_FILTER_OPTIONS.map((option) => (
@@ -904,8 +980,8 @@ function BillingStatusFilterDialog({
               />
             ))}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -1180,7 +1256,13 @@ function HistorySummaryMetric({
 
 function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onPress: () => void; propertyId: string }) {
   const { colors, fonts } = useTheme();
-  const { data } = useListUpcomingPropertyCyclesQuery({ month, page: 0, propertyId, size: 1 }, { skip: !propertyId });
+  // The upcoming screen's own first page, not a one-row copy of it: a separate
+  // entry kept an old "none left" here while the screen it opens showed eight.
+  // Refetched on mount because cycles appear on a schedule nothing here hears.
+  const { data } = useListUpcomingPropertyCyclesQuery(
+    { month, page: 0, propertyId, size: UPCOMING_CYCLES_PAGE_SIZE },
+    { refetchOnMountOrArgChange: true, skip: !propertyId },
+  );
   const hasUpcoming = (data?.totalElements ?? 0) > 0;
   const nudge = useRef(new Animated.Value(0)).current;
 
@@ -1255,14 +1337,14 @@ function MonthlyReportModal({
   const { colors, fonts, type } = useTheme();
   const monthOptions = useMemo(() => reportMonthOptions(), []);
 
-  async function handleDownload() {
+  async function handleDownload(dismiss: () => void) {
     await onDownload();
-    onClose();
+    dismiss();
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -1282,7 +1364,7 @@ function MonthlyReportModal({
                 {mode === "month-picker" ? "Choose month" : "Report actions"}
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close monthly report" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close monthly report" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           {mode === "actions" ? (
@@ -1308,7 +1390,7 @@ function MonthlyReportModal({
                 </View>
                 <ActionButton icon={CalendarDays} label="Change" onPress={() => onSelectMode("month-picker")} variant="secondary" />
               </View>
-              <ActionButton disabled={busy} icon={Download} label={busy ? "Preparing" : "Download CSV"} onPress={handleDownload} />
+              <ActionButton disabled={busy} icon={Download} label={busy ? "Preparing" : "Download CSV"} onPress={() => void handleDownload(dismiss)} />
             </View>
           ) : (
             <View style={{ gap: spacing.sm }}>
@@ -1326,8 +1408,8 @@ function MonthlyReportModal({
             </View>
           )}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 
@@ -1382,10 +1464,14 @@ function BillingCycleCard({
   const { colors, fonts, type } = useTheme();
   const [windowInfoOpen, setWindowInfoOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  // Owner actions only. System lines are the bill itself — rent, deposit — and
-  // listing them as "history" would bury the two or three things a person
-  // actually did among rows nobody performed.
-  const ownerActions = (cycle.lineItems ?? []).filter((item) => !item.systemGenerated);
+  const [claimsOpen, setClaimsOpen] = useState(false);
+  // Claims are answered against the owner's own bank statement, so only the
+  // owner gets the claims icon. The server refuses anyone else.
+  const ownsProperty = useOwnsProperty(cycle.propertyId);
+  // Owner actions only: a discount or charge added to the bill. System lines
+  // (rent, deposit) and the lines a one-off bill was raised with are the bill
+  // itself, so a bill nobody changed shows no history button at all.
+  const ownerActions = (cycle.lineItems ?? []).filter(isOwnerAction);
   // Two different questions, and they do NOT have the same answer. A cycle is
   // payable once its window opens (UNPAID/OVERDUE); a rent cycle is editable
   // only BEFORE that, while it is still UPCOMING — see the backend's
@@ -1424,6 +1510,20 @@ function BillingCycleCard({
           >
             <Info color={colors.kicker} size={16} strokeWidth={2.4} />
           </AnimatedPressable>
+          {/* On every bill, rent cycle or one-off (2026-09-28): this bill's
+              payment claims, under the info icon. */}
+          {ownsProperty ? (
+            <AnimatedPressable
+              accessibilityLabel={`Payment claims for ${cycle.referenceCode}`}
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={() => setClaimsOpen(true)}
+              style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+              tapLockMs={0}
+            >
+              <PaymentClaimsIcon size={18} />
+            </AnimatedPressable>
+          ) : null}
           {/* Only once something has been done to the bill. On an untouched one
               it would open an empty sheet, which reads as broken. */}
           {ownerActions.length > 0 ? (
@@ -1441,43 +1541,35 @@ function BillingCycleCard({
         </View>
 
         <View style={{ flex: 1, gap: spacing.xs }}>
-          {/* The pill shares a row with the short reference code only; the
-              tenant name gets the full card width beneath, wrapping cleanly at
-              word boundaries (surname to the next line) — never clipped. */}
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
-              {cycle.referenceCode}
-            </Text>
-            <BillStatusPill cycle={cycle} />
-                      </View>
-          {/* Due date rides with the tenant name, not with the total. Once a
-              bill carries a discount the total line grows a struck-through
-              price and a percentage chip, and sharing a row with the date
-              pushed the date off the card entirely. */}
-          {/* Top-aligned: the date block is two lines tall, and aligning to its
-              END dragged the tenant name down to meet its baseline. */}
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text
-          numberOfLines={2}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
-            >
-              {tenantName}
-            </Text>
-            <View style={{ alignItems: "flex-end", gap: 3 }}>
+            <View style={{ flex: 1, gap: spacing.md }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Due date
+                {cycle.referenceCode}
               </Text>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                <CalendarDays color={cycle.status === "OVERDUE" ? colors.danger : colors.muted} size={14} strokeWidth={2.3} />
-                <Text
-                  style={{
-                    color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft,
-                    fontFamily: fonts.sansBold,
-                    fontSize: 14,
-                  }}
-                >
-                  {formatDate(cycle.rentDueDate)}
-                </Text>
+              <Text numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
+                {tenantName}
+              </Text>
+            </View>
+            {/* One right-hand column keeps the date centred under its status
+                chip, even when the status label or formatted date is wider. */}
+            <View style={{ alignItems: "center", flexShrink: 0 }}>
+              <View style={{ alignSelf: "center" }}>
+                <BillStatusPill cycle={cycle} />
+              </View>
+              <View style={{ alignItems: "center", gap: 3, marginTop: spacing.md }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>Due date</Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                  <CalendarDays color={cycle.status === "OVERDUE" ? colors.danger : colors.muted} size={14} strokeWidth={2.3} />
+                  <Text
+                    style={{
+                      color: cycle.status === "OVERDUE" ? colors.danger : colors.inkSoft,
+                      fontFamily: fonts.sansBold,
+                      fontSize: 14,
+                    }}
+                  >
+                    {formatDate(cycle.rentDueDate)}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -1518,13 +1610,17 @@ function BillingCycleCard({
       ) : null}
 
       {readOnly ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Open the billing screen to manage receipts and cycle actions.
         </Text>
       ) : null}
 
       {historyOpen ? (
         <BillHistorySheet cycle={cycle} onClose={() => setHistoryOpen(false)} readOnly={readOnly || !canManage} />
+      ) : null}
+
+      {claimsOpen ? (
+        <BillClaimsSheet cycle={cycle} onClose={() => setClaimsOpen(false)} readOnly={Boolean(readOnly)} />
       ) : null}
 
       {windowInfoOpen ? (
@@ -1552,8 +1648,8 @@ function SummaryCyclesModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -1575,7 +1671,7 @@ function SummaryCyclesModal({
                 {title}
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close cycle list" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close cycle list" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           {cycles.length === 0 ? (
@@ -1597,8 +1693,8 @@ function SummaryCyclesModal({
             </ScrollView>
           )}
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }
 
@@ -1679,10 +1775,18 @@ function BillingActionModal({
   const [proofImageUrls, setProofImageUrls] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
+  // The same discount as money (2026-09-28). Typing either fills the other in,
+  // and only the one the owner typed is sent: the server works out the rest.
+  const [discountAmount, setDiscountAmount] = useState("");
+  const [discountSource, setDiscountSource] = useState<"amount" | "percent" | null>(null);
+  const discountPaise = discountPaiseFor(discountSource, discountPercent, discountAmount, cycle.totalAmountPaise);
+  // Shown as it is typed, under the field typed in, and Save stays blocked
+  // until it clears (user, 2026-09-28): the bill never drops below ₹1.
+  const discountLeavesTooLittle =
+    discountPaise !== null && discountPaise > 0 && cycle.totalAmountPaise - discountPaise < MIN_BILL_AFTER_DISCOUNT_PAISE;
   const [chargeLabel, setChargeLabel] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeDescription, setChargeDescription] = useState("");
-  const [chargeAdjustFromDeposit, setChargeAdjustFromDeposit] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   // Per field, under the field. The old single line at the foot of the sheet
   // said "Enter a charge label" below a form of four inputs and left the reader
@@ -1729,17 +1833,60 @@ function BillingActionModal({
   // amount), while `error` above stays the inline channel for bad input.
   const opErrors = useFormErrors<never>();
   const [recordManualPayment, manualPaymentState] = useRecordManualPaymentMutation();
-  const [addDiscount, discountState] = useAddTenancyDiscountMutation();
-  const [addExtraCharges, extraChargeState] = useAddTenancyExtraChargesMutation();
+  const [sendCashCode, sendCashCodeState] = useSendCashPaymentCodeMutation();
+  /**
+   * The cash code being entered, while that step is showing.
+   *
+   * <p>`cooldown` is where the resend countdown starts. `attempt` remounts the
+   * entry when a resend is refused, so its countdown restarts from the
+   * server's own wait instead of the thirty seconds it assumed.
+   */
+  const [cashCode, setCashCode] = useState<{ attempt: number; cooldown: number; sentTo: string } | null>(null);
+  /**
+   * Seconds until the server will send this tenant another code. Survives the
+   * sheet closing and the method changing — see cash-code-block.
+   */
+  const cashWait = useCashCodeWait(cycle.tenancyId);
+  // The ways this property takes money, and whether cash needs the tenant's
+  // code (2026-09-28). Mark paid lists only those, and asks for the code only
+  // when the property has switched it on.
+  const methodsQuery = useGetPaymentMethodsQuery(cycle.propertyId);
+  const takenMethods = methodsQuery.data?.acceptedMethods ?? ["CASH"];
+  const cashNeedsCode = methodsQuery.data?.cashOtpRequired ?? false;
+  const offeredMethods = manualPaymentMethods.filter((item) => takenMethods.includes(item.value));
+  const cashBlocked = method === "CASH" && cashNeedsCode && cashWait > 0;
+  const [addDiscount, discountState] = useAddCycleDiscountMutation();
+  const [addExtraCharges, extraChargeState] = useAddCycleExtraChargesMutation();
   const [cancelOneOffBill, cancelState] = useCancelOneOffBillMutation();
+  const [removeLateFee, removeLateFeeState] = useRemoveLateFeeMutation();
+  const [confirmRemoveLateFee, setConfirmRemoveLateFee] = useState(false);
   const busy =
-    manualPaymentState.isLoading || discountState.isLoading || extraChargeState.isLoading || cancelState.isLoading;
+    manualPaymentState.isLoading
+    || discountState.isLoading
+    || extraChargeState.isLoading
+    || cancelState.isLoading
+    || removeLateFeeState.isLoading
+    // Sending the tenant their code, so a second tap on Save cannot send two.
+    || sendCashCodeState.isLoading;
   const payable = cycle.status === "UNPAID" || cycle.status === "OVERDUE";
   const editable = isCycleEditable(cycle);
   // One-off bills only, and only while still owed. A bill the tenant has
   // reported paying is decided first, and a rent cycle is corrected with a
   // discount, never cancelled.
   const cancellable = canManage && cycle.category === "ONE_OFF" && payable;
+  // Overdue only (owner's rule, 2026-09-27): not while a payment claim awaits
+  // confirmation, and not in any other state. The server holds the same line.
+  const lateFeeRemovable = canManage && cycle.status === "OVERDUE" && cycle.lateFeeAmountPaise > 0;
+
+  async function removeTheLateFee() {
+    try {
+      await removeLateFee({ billingCycleId: cycle.id, version: cycle.version }).unwrap();
+      onClose();
+      toast.success(`Late fee removed from ${cycle.referenceCode}.`);
+    } catch (caught) {
+      opErrors.failFromServer(errorMessage(caught) || "Could not remove the late fee. Please try again.");
+    }
+  }
 
   const chosenMethod = manualPaymentMethods.find((item) => item.value === method) ?? null;
 
@@ -1774,13 +1921,26 @@ function BillingActionModal({
     }
 
     if (mode === "discount") {
+      // The bill stays at ₹1 or more (user, 2026-09-28). Checked on the money,
+      // as the server does, because a percentage just under 100 can round to
+      // all of it.
+      const maxDiscountPaise = cycle.totalAmountPaise - MIN_BILL_AFTER_DISCOUNT_PAISE;
+      if (discountSource === "amount") {
+        if (discountPaise === null || discountPaise <= 0) {
+          return { amount: "Enter a valid amount." };
+        }
+        return discountPaise <= maxDiscountPaise ? {} : { amount: "Bill amount must be at least ₹1." };
+      }
       const percent = Number(discountPercent);
       if (!discountPercent.trim()) {
-        return { percent: "Enter a discount percentage." };
+        return { percent: "Enter a percentage or an amount." };
       }
-      return Number.isFinite(percent) && percent > 0 && percent <= 100
+      if (!Number.isFinite(percent) || percent <= 0) {
+        return { percent: "Enter a valid percentage." };
+      }
+      return percent < 100 && discountPaise !== null && discountPaise <= maxDiscountPaise
         ? {}
-        : { percent: "Enter a percentage between 0 and 100." };
+        : { percent: "Bill amount must be at least ₹1." };
     }
 
     if (mode === "extra-charge") {
@@ -1822,6 +1982,16 @@ function BillingActionModal({
     }
 
     if (mode === "manual-payment") {
+      // Cash skips the confirm dialog and goes straight to the tenant's code.
+      // The code IS the confirmation — and a better one, because it is the
+      // tenant saying yes rather than the collector asking themselves.
+      if (method === "CASH" && cashNeedsCode) {
+        if (cashBlocked) {
+          return;
+        }
+        void startCashConfirmation();
+        return;
+      }
       setConfirm({
         message: `Mark ${cycle.referenceCode} as paid for ${formatMoney(cycle.totalAmountPaise)} via ${chosenMethod?.label ?? ""}?`,
         title: "Mark this bill paid?",
@@ -1830,9 +2000,8 @@ function BillingActionModal({
     }
 
     if (mode === "discount") {
-      const percent = Number(discountPercent);
       setConfirm({
-        message: `Apply a ${percent}% discount to ${cycle.referenceCode}?`,
+        message: `Take ${formatMoney(discountPaise ?? 0)} (${discountPercent}%) off ${cycle.referenceCode}?`,
         title: "Apply discount?",
       });
       return;
@@ -1849,11 +2018,91 @@ function BillingActionModal({
     if (mode === "extra-charge") {
       const amountPaise = Math.round(Number(chargeAmount) * 100);
       setConfirm({
-        message: chargeAdjustFromDeposit
-          ? `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and adjust it from the deposit?`
-          : `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and bill it to the tenant?`,
+        message: `Add a ${formatMoney(amountPaise)} charge "${chargeLabel.trim()}" to ${cycle.referenceCode} and bill it to the tenant?`,
         title: "Add extra charge?",
       });
+    }
+  }
+
+  /**
+   * A refusal to send, recorded where it will be seen again.
+   *
+   * <p>Returns false when this was not a rate limit, so the caller can show
+   * the server's own message instead.
+   */
+  function recordCashCodeRefusal(caught: unknown) {
+    const wait = retryAfterSeconds(caught);
+    if (!wait) {
+      return false;
+    }
+    blockCashCodes(cycle.tenancyId, wait, /device/i.test(errorMessage(caught) ?? ""));
+    return true;
+  }
+
+  /** Sends the tenant their code and moves to the step where it is entered. */
+  async function startCashConfirmation() {
+    try {
+      const sent = await sendCashCode({ billingCycleId: cycle.id, version: cycle.version }).unwrap();
+      setCashCode({ attempt: 0, cooldown: RESEND_COOLDOWN_SECONDS, sentTo: sent.sentTo });
+    } catch (caught) {
+      // Rate limited: stay on the form, where Save now counts down to when a
+      // code can be sent. The timer is the message, so no alert over it.
+      if (recordCashCodeRefusal(caught)) {
+        return;
+      }
+      opErrors.failFromServer(
+        errorMessage(caught) || "Could not send the code to the tenant. Please try again.",
+      );
+    }
+  }
+
+  /**
+   * Another code, from the code step.
+   *
+   * <p>A refused resend leaves the step open: the code already on the tenant's
+   * phone still works. Only its Resend button waits, counting down from the
+   * server's figure.
+   */
+  async function resendCashCode() {
+    try {
+      await sendCashCode({ billingCycleId: cycle.id, version: cycle.version }).unwrap();
+    } catch (caught) {
+      if (recordCashCodeRefusal(caught)) {
+        const wait = retryAfterSeconds(caught);
+        setCashCode((step) => (step ? { ...step, attempt: step.attempt + 1, cooldown: wait } : step));
+        return;
+      }
+      opErrors.failFromServer(errorMessage(caught) || "Could not send a new code. Please try again.");
+    }
+  }
+
+  /**
+   * Records the cash with the tenant's code.
+   *
+   * <p>A refusal — a wrong code, or a bill that changed after the code went
+   * out — leaves the sheet open, because the answer to both is on it: retype,
+   * or Resend.
+   */
+  async function confirmCash(otp: string) {
+    try {
+      await recordManualPayment({
+        billingCycleId: cycle.id,
+        payload: {
+          method: "CASH",
+          note: note.trim() || null,
+          otp,
+          proofImageUrls: [],
+          referenceText: null,
+        },
+        version: cycle.version,
+      }).unwrap();
+      setCashCode(null);
+      onClose();
+      toast.success(`${cycle.referenceCode} marked paid, confirmed by the tenant.`);
+    } catch (caught) {
+      opErrors.failFromServer(
+        errorMessage(caught) || "Could not record the payment. Please try again.",
+      );
     }
   }
 
@@ -1865,7 +2114,7 @@ function BillingActionModal({
         mode === "manual-payment"
           ? `${cycle.referenceCode} marked paid.`
           : mode === "discount"
-            ? `${discountPercent}% discount applied to ${cycle.referenceCode}.`
+            ? `${formatMoney(discountPaise ?? 0)} discount applied to ${cycle.referenceCode}.`
             : mode === "cancel"
               ? `${cycle.referenceCode} cancelled.`
               : `Charge added to ${cycle.referenceCode}.`;
@@ -1878,31 +2127,33 @@ function BillingActionModal({
             proofImageUrls,
             referenceText: referenceText.trim() || null,
           },
+          version: cycle.version,
         }).unwrap();
       } else if (mode === "discount") {
-        const percent = Number(discountPercent);
+        // Only what the owner typed. The other field was filled in for them.
+        // On exactly this bill (2026-09-29), not the tenancy's latest rent cycle.
         await addDiscount({
-          discount: {
-            description: note.trim() || null,
-            discountPercent: percent,
-            label: "Owner discount",
-          },
-          tenancyId: cycle.tenancyId,
+          billingCycleId: cycle.id,
+          discount:
+            discountSource === "amount"
+              ? { description: note.trim() || null, discountAmountPaise: discountPaise ?? 0, label: "Owner discount" }
+              : { description: note.trim() || null, discountPercent: Number(discountPercent), label: "Owner discount" },
+          version: cycle.version,
         }).unwrap();
       } else if (mode === "cancel") {
-        await cancelOneOffBill({ billingCycleId: cycle.id, reason: cancelReason.trim() }).unwrap();
+        await cancelOneOffBill({ billingCycleId: cycle.id, reason: cancelReason.trim(), version: cycle.version }).unwrap();
       } else if (mode === "extra-charge") {
         const amountPaise = Math.round(Number(chargeAmount) * 100);
         await addExtraCharges({
+          billingCycleId: cycle.id,
           charges: [
             {
-              adjustFromDeposit: chargeAdjustFromDeposit,
               amountPaise,
               description: chargeDescription.trim() || null,
               label: chargeLabel.trim(),
             },
           ],
-          tenancyId: cycle.tenancyId,
+          version: cycle.version,
         }).unwrap();
       }
       onClose();
@@ -1926,14 +2177,15 @@ function BillingActionModal({
         resolves to on dismissal is not zero. The same flag is already omitted
         from AddClauseSheet and the manager-permissions sheet for the sibling
         symptom — a foot button that could not be tapped. */}
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView
         // Android drives itself from the measured inset below; handing it
         // "padding" too would apply the lift twice — and leave it applied.
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
         {/* Full width and anchored to the bottom edge, like every other sheet in
             the app. An inset card floating above the edge is the dialog
             language, and this is a sheet — it scrolls, it holds a form, and it
@@ -1961,9 +2213,16 @@ function BillingActionModal({
             <View style={{ alignItems: "center", flexDirection: "row", flex: 1, gap: spacing.sm }}>
               {mode !== "menu" ? (
                 <IconButton
-                  accessibilityLabel="Back to actions"
+                  accessibilityLabel={cashCode ? "Back to payment" : "Back to actions"}
+                  filled
                   icon={ArrowLeft}
                   onPress={() => {
+                    // One step at a time: from the code back to the payment
+                    // form, and only from there back to the actions.
+                    if (cashCode) {
+                      setCashCode(null);
+                      return;
+                    }
                     form.clearAll();
                     onSelectMode("menu");
                   }}
@@ -1974,14 +2233,30 @@ function BillingActionModal({
                   {cycle.referenceCode}
                 </Text>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
-                  {title}
+                  {cashCode ? "Tenant's code" : title}
                 </Text>
               </View>
             </View>
-            <IconButton accessibilityLabel="Close billing action" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close billing action" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           <ScrollView contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
+          {/* The next step of the same sheet, not a second sheet over it. A
+              stacked sheet dimmed this one behind it and put two close buttons
+              on screen for what is one act: taking the cash. */}
+          {cashCode ? (
+            <OtpCodeEntry
+              busy={manualPaymentState.isLoading}
+              key={cashCode.attempt}
+              busyLabel="Recording…"
+              confirmLabel="Mark paid"
+              cooldownSeconds={cashCode.cooldown}
+              message={`Ask the tenant for the six-digit code sent to the number ending ${cashCode.sentTo}. It confirms they paid ${formatMoney(cycle.totalAmountPaise)} in cash for this bill.`}
+              onResend={() => void resendCashCode()}
+              onSubmit={(otp) => void confirmCash(otp)}
+              resending={sendCashCodeState.isLoading}
+            />
+          ) : null}
           {mode === "menu" ? (
             <View style={{ gap: spacing.sm }}>
               <ActionButton disabled={!editable || !canManage} icon={Percent} label="Add discount" onPress={() => onSelectMode("discount")} variant="secondary" />
@@ -2014,13 +2289,22 @@ function BillingActionModal({
                   variant="secondary"
                 />
               ) : null}
+              {lateFeeRemovable ? (
+                <ActionButton
+                  disabled={busy}
+                  icon={TimerReset}
+                  label="Remove late fee"
+                  onPress={() => setConfirmRemoveLateFee(true)}
+                  variant="secondary"
+                />
+              ) : null}
               {/* Last, and red: the one action here that removes a charge
                   rather than changing it. */}
               {cancellable ? (
                 <ActionButton icon={XCircle} label="Cancel bill" onPress={() => onSelectMode("cancel")} variant="danger" />
               ) : null}
               {canManage && cycle.category === "ONE_OFF" && cycle.status === "CONFIRMATION_PENDING" ? (
-                <Text style={[type.caption, { color: colors.muted }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   The tenant has reported paying this bill. Confirm or reject their payment before cancelling it.
                 </Text>
               ) : null}
@@ -2036,9 +2320,9 @@ function BillingActionModal({
             </View>
           ) : null}
 
-          {mode === "manual-payment" ? (
+          {mode === "manual-payment" && !cashCode ? (
             <>
-              <Text style={[type.caption, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Records the full bill amount {formatMoney(cycle.totalAmountPaise)} as received. Rent is collected
                 outside the app, so this is what marks it settled.
               </Text>
@@ -2061,12 +2345,25 @@ function BillingActionModal({
                     setProofImageUrls([]);
                   }
                 }}
-                options={manualPaymentMethods.map((item) => ({ label: item.label, value: item.value }))}
+                optionIcon={(value) => <PaymentMethodIcon method={value} />}
+                options={offeredMethods.map((item) => ({ label: item.label, value: item.value }))}
                 required
                 showIcon={false}
                 title="Payment method"
                 value={method}
               />
+
+              {/* Why Save is counting down rather than sending. Only for cash —
+                  every other method records without a code, so a block on
+                  codes has nothing to say to them. */}
+              {cashBlocked ? (
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                  <TimerReset color={colors.warningText} size={15} strokeWidth={2.2} />
+                  <Text style={[type.caption, { color: colors.warningText, flex: 1 }]}>
+                    Too many codes sent. Try again in {waitClock(cashWait)}.
+                  </Text>
+                </View>
+              ) : null}
 
               {/* Two: the proof, revealed by the choice above and skipped
                   entirely for cash.
@@ -2150,26 +2447,50 @@ function BillingActionModal({
 
           {mode === "discount" ? (
             <>
+              {/* One or the other (user, 2026-09-28): typing in one fills and
+                  locks the other, and clearing it opens both again. */}
               <FormInput
-                error={form.errors.percent}
+                disabled={discountSource === "amount"}
+                error={form.errors.percent ?? (discountSource === "percent" && discountLeavesTooLittle ? "Bill amount must be at least ₹1." : undefined)}
                 keyboardType="decimal-pad"
                 label="Discount percentage"
                 onChangeText={(next) => {
                   setDiscountPercent(next);
+                  setDiscountSource(next.trim() ? "percent" : null);
+                  setDiscountAmount(amountFromPercent(next, cycle.totalAmountPaise));
                   form.clearField("percent");
+                  form.clearField("amount");
                 }}
                 placeholder="Example: 10"
-                required
+                required={discountSource !== "amount"}
                 value={discountPercent}
               />
-              <DiscountPreview percent={discountPercent} totalPaise={cycle.totalAmountPaise} />
+              <OrDivider />
+              <FormInput
+                disabled={discountSource === "percent"}
+                error={form.errors.amount ?? (discountSource === "amount" && discountLeavesTooLittle ? "Bill amount must be at least ₹1." : undefined)}
+                keyboardType="decimal-pad"
+                label="Discount amount"
+                onChangeText={(next) => {
+                  setDiscountAmount(next);
+                  setDiscountSource(next.trim() ? "amount" : null);
+                  setDiscountPercent(percentFromAmount(next, cycle.totalAmountPaise));
+                  form.clearField("percent");
+                  form.clearField("amount");
+                }}
+                placeholder="0"
+                prefix="₹"
+                required={discountSource !== "percent"}
+                value={discountAmount}
+              />
+              <DiscountPreview discountPaise={discountPaise} totalPaise={cycle.totalAmountPaise} />
               <FormInput label="Reason" onChangeText={setNote} placeholder="Optional reason" value={note} />
             </>
           ) : null}
 
           {mode === "cancel" ? (
             <>
-              <Text style={[type.caption, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {cycle.referenceCode} stays on record as Cancelled and stops counting towards what the tenant owes.
                 The tenant is sent a notification with your reason.
               </Text>
@@ -2214,26 +2535,31 @@ function BillingActionModal({
                 required
                 value={chargeAmount}
               />
+              {/* Always added to the bill (user, 2026-09-28). Taking money from
+                  the deposit is the deposit manager's job, not a charge that
+                  never reaches the bill. */}
               <FormInput label="Description" onChangeText={setChargeDescription} placeholder="Optional description" value={chargeDescription} />
-              <View style={{ gap: spacing.xs }}>
-                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-                  Settlement
-                </Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-                  <ChoiceButton active={!chargeAdjustFromDeposit} label="Add to bill" onPress={() => setChargeAdjustFromDeposit(false)} />
-                  <ChoiceButton active={chargeAdjustFromDeposit} label="Adjust from deposit" onPress={() => setChargeAdjustFromDeposit(true)} />
-                </View>
-              </View>
             </>
           ) : null}
 
           </ScrollView>
 
-          {mode !== "menu" ? (
+          {mode !== "menu" && !cashCode ? (
             <ActionButton
-              disabled={busy || form.blocked}
+              disabled={busy || form.blocked || cashBlocked || (mode === "discount" && discountLeavesTooLittle)}
               icon={mode === "cancel" ? XCircle : IndianRupee}
-              label={busy ? "Saving" : mode === "cancel" ? "Cancel bill" : "Save"}
+              label={
+                // Blocked, not relabelled: the countdown already sits under the
+                // payment method, and a timer on the button said the same thing
+                // twice in two places.
+                sendCashCodeState.isLoading
+                  ? "Sending code"
+                  : busy
+                    ? "Saving"
+                    : mode === "cancel"
+                      ? "Cancel bill"
+                      : "Save"
+              }
               onPress={handleSave}
               variant={mode === "cancel" ? "danger" : "primary"}
             />
@@ -2241,7 +2567,8 @@ function BillingActionModal({
         </View>
       </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
     {confirm ? (
       <ConfirmDialog
         confirmLabel="Yes, confirm"
@@ -2252,6 +2579,18 @@ function BillingActionModal({
           void submit();
         }}
         title={confirm.title}
+      />
+    ) : null}
+    {confirmRemoveLateFee ? (
+      <ConfirmDialog
+        confirmLabel="Remove late fee"
+        message={`Remove the ${formatMoney(cycle.lateFeeAmountPaise)} late fee from ${cycle.referenceCode}? It will not be charged again on this bill.`}
+        onCancel={() => setConfirmRemoveLateFee(false)}
+        onConfirm={() => {
+          setConfirmRemoveLateFee(false);
+          void removeTheLateFee();
+        }}
+        title="Remove late fee?"
       />
     ) : null}
     {/* Sits outside the sheet's own Modal so the refusal is still readable
@@ -2296,7 +2635,7 @@ function ConfirmDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {message}
           </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -2341,25 +2680,76 @@ function ConfirmDialog({
   );
 }
 
-function DiscountPreview({ percent, totalPaise }: { percent: string; totalPaise: number }) {
-  const { colors, type } = useTheme();
-  const parsed = Number(percent);
+/** A bill never drops below ₹1 after a discount (user, 2026-09-28). The server holds the same floor. */
+const MIN_BILL_AFTER_DISCOUNT_PAISE = 100;
 
-  if (!percent.trim() || !Number.isFinite(parsed) || parsed <= 0) {
+/** A rule either side of "or", between two fields where one is enough. */
+function OrDivider() {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+      <Text style={[type.caption, { color: colors.kicker }]}>or</Text>
+      <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+    </View>
+  );
+}
+
+/** The bill after the discount, once the discount is a real figure. */
+function DiscountPreview({ discountPaise, totalPaise }: { discountPaise: number | null; totalPaise: number }) {
+  const { colors, type } = useTheme();
+  if (discountPaise === null || discountPaise <= 0 || totalPaise - discountPaise < MIN_BILL_AFTER_DISCOUNT_PAISE) {
     return null;
   }
-
-  const valid = parsed <= 100;
-  const discountPaise = Math.min(Math.round((totalPaise * parsed) / 100), totalPaise);
-  const netPaise = totalPaise - discountPaise;
-
   return (
-    <Text style={[type.caption, { color: valid ? colors.primary : colors.danger }]}>
-      {valid
-        ? `Amounts to ${formatMoney(discountPaise)} off · new total ${formatMoney(netPaise)}`
-        : "Enter a percentage between 0 and 100."}
+    <Text style={[type.caption, { color: colors.primary }]}>
+      New total {formatMoney(totalPaise - discountPaise)}
     </Text>
   );
+}
+
+/** Up to two decimals, no trailing zeros: 12.5, not 12.50. */
+function trimDecimal(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
+/** The amount a percentage comes to, rounded as the server rounds it. */
+function amountFromPercent(percent: string, totalPaise: number): string {
+  const parsed = Number(percent);
+  if (!percent.trim() || !Number.isFinite(parsed) || parsed <= 0 || totalPaise <= 0) {
+    return "";
+  }
+  return trimDecimal(Math.min(Math.round((totalPaise * parsed) / 100), totalPaise) / 100);
+}
+
+/** The share of the total an amount is, for the percentage field. */
+function percentFromAmount(amount: string, totalPaise: number): string {
+  const paise = Math.round(Number(amount) * 100);
+  if (!amount.trim() || !Number.isFinite(paise) || paise <= 0 || totalPaise <= 0) {
+    return "";
+  }
+  return trimDecimal((paise * 100) / totalPaise);
+}
+
+/**
+ * The money a discount takes off, from whichever field the owner typed in.
+ * Null until that field holds a number.
+ */
+function discountPaiseFor(
+  source: "amount" | "percent" | null,
+  percent: string,
+  amount: string,
+  totalPaise: number,
+): number | null {
+  if (source === "amount") {
+    const paise = Math.round(Number(amount) * 100);
+    return Number.isFinite(paise) ? paise : null;
+  }
+  if (source === "percent") {
+    const parsed = Number(percent);
+    return Number.isFinite(parsed) ? Math.min(Math.round((totalPaise * parsed) / 100), totalPaise) : null;
+  }
+  return null;
 }
 
 function SegmentedControl({
@@ -2609,7 +2999,7 @@ function SummaryTile({
         </Text>
         <Text
           numberOfLines={2}
-          style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
+          style={[type.description, { color: colors.muted }]}>
           {hint}
         </Text>
       </View>
@@ -2871,7 +3261,7 @@ function BillHistorySheet({
   // as history — it says the total moved and then moved back — but it is not a
   // thing anyone can act on, so it should never sit above one that is.
   const actions = (cycle.lineItems ?? [])
-    .filter((item) => !item.systemGenerated)
+    .filter(isOwnerAction)
     .slice()
     .sort((left, right) => {
       const byState = Number(isReverted(left)) - Number(isReverted(right));
@@ -2883,7 +3273,7 @@ function BillHistorySheet({
   async function revert(item: BillingCycleLineItem) {
     setRevertingId(item.id);
     try {
-      await clearLineItem({ billingCycleId: cycle.id, lineItemId: item.id }).unwrap();
+      await clearLineItem({ billingCycleId: cycle.id, lineItemId: item.id, version: cycle.version }).unwrap();
       toast.success(`${ACTION_LABEL[item.type] ?? "Action"} reverted.`);
     } catch (caught) {
       revertErrors.failFromServer(
@@ -2897,7 +3287,7 @@ function BillHistorySheet({
   return (
     <>
       <SheetShell onClose={onClose} title="Action history">
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Everything added to {cycle.referenceCode} by hand. Reverting sets the line to zero and
           recalculates the bill.
         </Text>
@@ -3005,7 +3395,7 @@ function BillHistorySheet({
         {/* Says why the buttons are missing rather than leaving a list of rows
             that look like they should be actionable. */}
         {!editable ? (
-          <Text style={[type.caption, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             This bill is no longer editable, so its actions cannot be reverted.
           </Text>
         ) : null}
@@ -3049,21 +3439,21 @@ function CycleWindowModal({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <AnimatedPressable
-        accessibilityLabel="Close"
-        onPress={onClose}
-        style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-        tapLockMs={0}
-      >
+      {/* Closes by its × or the device back button, not a tap on the scrim
+          (user, 2026-09-29). */}
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
+            alignSelf: "center",
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderCurve: "continuous",
             borderRadius: 20,
             borderWidth: 1,
             gap: spacing.md,
+            maxWidth: DIALOG_MAX_WIDTH,
             padding: spacing.lg,
+            width: "100%",
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -3075,14 +3465,26 @@ function CycleWindowModal({
                 Payment window
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close payment window" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close payment window" filled icon={X} onPress={onClose} />
           </View>
 
-          <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
-            <ReceiptLine label="Billing period" value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`} />
-            <ReceiptLine label="Pay between" strong value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.rentDueDate)}`} />
-            <ReceiptLine
-              label="Grace"
+          {/* The tenant's rows, icon, label and value (user, 2026-09-29). The
+              words below stay the owner's own. */}
+          <View style={{ borderTopColor: colors.border, borderTopWidth: 1 }}>
+            <PaymentWindowLine
+              icon={CalendarRange}
+              label="Cycle period"
+              value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`}
+            />
+            <PaymentWindowLine
+              icon={CalendarCheck2}
+              label="Billing window"
+              value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.rentDueDate)}`}
+            />
+            <PaymentWindowLine
+              icon={Clock3}
+              label="Grace days"
+              last
               value={cycle.rentGraceDays === 0 ? "None" : `${cycle.rentGraceDays} day${cycle.rentGraceDays === 1 ? "" : "s"}`}
             />
           </View>
@@ -3114,13 +3516,13 @@ function CycleWindowModal({
               behaviour and was telling owners the fee came from somewhere it
               no longer comes from. */}
           {cycle.lateFeeAmountPaise > 0 ? (
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on
               this bill as a line item and is recalculated each night it stays overdue.
             </Text>
           ) : null}
         </View>
-      </AnimatedPressable>
+      </View>
     </Modal>
   );
 }
@@ -3147,6 +3549,21 @@ function markPaidLabel(cycle: BillingCycle): string {
 // which is the only reason a new tenant's bill could not be discounted at all.
 //
 // Later cycles keep the lock: once live, a new charge belongs on a one-off bill.
+/** Whether the signed-in account owns this property (not manages it). */
+function useOwnsProperty(propertyId: string): boolean {
+  const accountId = useAppSelector((state) => state.auth.user?.id);
+  const property = useListMyPropertiesQuery().data?.find((item) => item.id === propertyId);
+  return Boolean(accountId && property && property.ownerId === accountId);
+}
+
+/**
+ * Something a person did to a bill after it was issued: a discount, or a charge
+ * added to it. Never the bill's own lines, which reverting would zero out.
+ */
+function isOwnerAction(item: BillingCycleLineItem): boolean {
+  return !item.systemGenerated && !item.issuedWithBill;
+}
+
 function isCycleEditable(cycle: BillingCycle): boolean {
   if (cycle.status === "PAID" || cycle.status === "CANCELLED") {
     return false;
@@ -3197,26 +3614,6 @@ async function downloadTextFile(fileName: string, content: string, mimeType: str
 }
 
 
-
-function ReceiptLine({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-      <Text style={[type.caption, { color: strong ? colors.ink : colors.muted, flex: 1, fontWeight: strong ? "800" : "400" }]}>
-        {label}
-      </Text>
-      <Text style={[type.caption, { color: strong ? colors.primary : colors.ink, fontWeight: strong ? "900" : "700", textAlign: "right" }]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function currentMonth() {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  return `${now.getFullYear()}-${month}`;
-}
 
 function reportMonthOptions() {
   const options: { label: string; value: string }[] = [];

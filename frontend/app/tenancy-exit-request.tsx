@@ -19,6 +19,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import {
   exitRequestBlock,
 } from "@/features/tenancy/request-blocked-modal";
+import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import {
   useCreateExitRequestMutation,
   useGetExitCheckoutWindowQuery,
@@ -57,6 +58,8 @@ export default function TenancyExitRequestScreen() {
           title="No current stay"
           description="Exit requests can be raised only from an active tenancy."
         />
+      ) : tenancyNotStarted(tenancy.startDate) ? (
+        <EmptyState icon={CalendarClock} title="Your tenancy has not started" description={REQUESTS_NOT_STARTED.exit} />
       ) : (
         <ExitRequestGate
           initialReason={firstParam(params.reason)}
@@ -174,7 +177,11 @@ function ServeNoticeForm({
       <EmptyState
         icon={CalendarClock}
         title="Cannot work out your notice"
-        description="We could not load your notice period right now. Please try again shortly."
+        description={
+          windowQuery.error
+            ? errorMessage(windowQuery.error)
+            : "We could not load your notice period right now. Please try again shortly."
+        }
       />
     );
   }
@@ -248,7 +255,7 @@ function NoticeWindowForm({
 
         {checkoutWindow.reRaise ? (
           <Card tone="sunken">
-            <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               Your earlier request lapsed without a decision, so your notice still counts from{" "}
               <Text style={{ color: colors.ink, fontWeight: "800" }}>
                 {formatDate(checkoutWindow.noticeAnchorDate)}
@@ -260,7 +267,7 @@ function NoticeWindowForm({
 
         {!checkoutWindow.prematureExitAllowed && checkoutWindow.restrictionMessage ? (
           <Card tone="sunken">
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {checkoutWindow.restrictionMessage} The earliest selectable date already serves your full notice.
             </Text>
           </Card>
@@ -292,7 +299,7 @@ function NoticeWindowForm({
                 onServeFullNotice={() => setChosenDate(noticeDate)}
               />
             ) : (
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {checkoutWindow.fixed
                   ? "Your notice runs to the end of a billing cycle, so this is the date it lands on."
                   : `Any day up to ${formatDate(checkoutWindow.latestCheckoutDate)} still serves your full notice. You have already paid for this month, so leaving earlier does not reduce the rent.`}

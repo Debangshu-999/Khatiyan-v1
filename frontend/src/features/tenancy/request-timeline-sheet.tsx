@@ -254,9 +254,7 @@ function StepBody({
       ) : null}
       {step.detail ? (
         <Text
-          style={[
-            type.caption,
-            { color: colors.muted, lineHeight: 18, textAlign: centered ? "center" : "left" },
+          style={[type.description, { color: colors.muted, textAlign: centered ? "center" : "left" },
           ]}
         >
           {step.detail}

@@ -19,6 +19,9 @@ public interface VerificationGrantRepository extends JpaRepository<VerificationG
 
     List<VerificationGrant> findByTenancyIdAndStatus(UUID tenancyId, VerificationGrantStatus status);
 
+    /** An owner's open grants, to price what they have ordered and not yet used. */
+    List<VerificationGrant> findByOwnerUserIdAndStatus(UUID ownerUserId, VerificationGrantStatus status);
+
     /**
      * Everything still asked of this tenant.
      *

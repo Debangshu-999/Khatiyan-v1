@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Image, Modal, ScrollView, Text, View } from "react-native";
+import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { Card } from "@/components/card";
 import { Lightbox } from "@/components/image-carousel";
 import { SkeletonCard, SkeletonForm } from "@/components/skeleton";
@@ -11,13 +12,31 @@ import { IconButton } from "@/features/owner/owner-ui";
 import {
   useListManualPaymentsQuery,
   type BillingCycle,
+  type ManualPayment,
   type ManualPaymentMethod,
 } from "@/store/services/billing-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /** How the money arrived, in the words the picker offered when it was recorded. */
+/**
+ * Cash the tenant confirmed with their code.
+ *
+ * <p>Read from the payment, never assumed from the method. Cash recorded before
+ * codes existed, and cash taken at move-out — which has no step for a code —
+ * were never verified, and calling them "via OTP" would claim a confirmation
+ * the tenant never gave.
+ */
+function confirmedByCode(payment: ManualPayment) {
+  return payment.method === "CASH" && Boolean(payment.tenantConfirmedAt);
+}
+
+function paymentModeLabel(payment: ManualPayment) {
+  return confirmedByCode(payment) ? "Cash via OTP" : METHOD_LABELS[payment.method];
+}
+
 const METHOD_LABELS: Record<ManualPaymentMethod, string> = {
+  BANK_TRANSFER: "Bank transfer",
   CARD: "Card",
   CASH: "Cash",
   CHEQUE: "Cheque",
@@ -34,6 +53,7 @@ const METHOD_LABELS: Record<ManualPaymentMethod, string> = {
  * same words back.
  */
 const REFERENCE_LABELS: Record<ManualPaymentMethod, string> = {
+  BANK_TRANSFER: "UTR / transaction reference",
   CARD: "Approval code",
   CASH: "Reference",
   CHEQUE: "Cheque number",
@@ -96,8 +116,8 @@ export function PaymentDetailsSheet({
 
   return (
     <>
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -125,7 +145,7 @@ export function PaymentDetailsSheet({
                 {cycle.referenceCode}
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close payment details" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close payment details" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           <ScrollView
@@ -144,7 +164,7 @@ export function PaymentDetailsSheet({
                   <DetailRow label="Tenant" value={cycle.tenantNameSnapshot} />
                   <DetailRow label="Tenancy ID" mono value={cycle.tenancyReferenceCode ?? "Not recorded"} />
                   <DetailRow label="Paid on" value={paidOn ? formatPaidOn(paidOn) : "Not recorded"} />
-                  <DetailRow label="Payment mode" value={payment ? METHOD_LABELS[payment.method] : "Not recorded"} />
+                  <DetailRow label="Payment mode" value={payment ? paymentModeLabel(payment) : "Not recorded"} />
                 </Card>
 
                 {/* Its own card, because it is evidence rather than a fifth
@@ -175,9 +195,11 @@ export function PaymentDetailsSheet({
                     // and no slip to photograph, which is why the recording form
                     // does not ask for either.
                     <Text style={[type.caption, { color: colors.muted, fontStyle: "italic", lineHeight: 18 }]}>
-                      {payment?.method === "CASH"
-                        ? "Cash was handed over in person, so there is nothing to attach."
-                        : "No reference or photo was recorded with this payment."}
+                      {payment && confirmedByCode(payment)
+                        ? "Cash was handed over in person and verified through OTP."
+                        : payment?.method === "CASH"
+                          ? "Cash was handed over in person."
+                          : "No reference or photo was recorded with this payment."}
                     </Text>
                   )}
                 </Card>
@@ -185,8 +207,8 @@ export function PaymentDetailsSheet({
             )}
           </ScrollView>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
 
     {/* A SIBLING of the sheet, not a child of it. Nested Modals are unreliable
         on Android, which is why the billing sheet's own confirmation dialog

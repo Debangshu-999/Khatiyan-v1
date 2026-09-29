@@ -187,7 +187,7 @@ export default function OwnerTenantBillsScreen() {
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <Sparkles color={colors.primary} size={19} strokeWidth={2} />
-          <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 19 }]}>
+          <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
             {canManageBilling
               ? `Raises a one-off bill for ${selected.tenantName?.trim() || "this tenant"}, separate from rent cycles.`
               : "You have view-only access to billing, so you cannot raise a bill."}
@@ -246,15 +246,9 @@ function TenantBillsHeader({
         <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
           <View style={{ backgroundColor: colors.accent, borderRadius: 999, width: 3 }} />
           <Text
-            style={[
-              type.body,
-              {
+            style={[type.description, {
                 color: colors.muted,
-                flex: 1,
-                fontSize: 14,
-                fontStyle: "italic",
-                lineHeight: 20,
-              },
+                flex: 1 },
             ]}
           >
             {description}

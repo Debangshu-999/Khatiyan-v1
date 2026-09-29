@@ -17,7 +17,9 @@ public record PropertyExitPolicyResponse(
         /** Null when the owner has not written one. */
         String prematureExitPolicy,
         /** What the deposit may be used for, always in enum order. */
-        List<DeductionCategory> permittedDeductions) {
+        List<DeductionCategory> permittedDeductions,
+        /** The property's version (2026-09-29): the policies live on it. */
+        long version) {
 
     public record DamageChargeView(String name, long chargePaise) {
     }
@@ -40,6 +42,6 @@ public record PropertyExitPolicyResponse(
                 charges,
                 List.copyOf(property.getExitChecklist()),
                 property.getPrematureExitPolicy(),
-                deductions);
+                deductions, property.getVersion());
     }
 }

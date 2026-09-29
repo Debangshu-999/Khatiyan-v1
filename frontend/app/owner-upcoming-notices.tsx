@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Clock, Edit3, Info, Megaphone, Repeat2, X } from "lucide-react-native";
+import { ArrowRight, Clock, Edit3, Info, Megaphone, Repeat2, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -22,6 +23,7 @@ import {
   ActionButton,
   FormInput,
   IconButton,
+  NoticeBar,
   ViewOnlyChip,
   humanizeToken,
 } from "@/features/owner/owner-ui";
@@ -191,15 +193,15 @@ function UpcomingInfoModal({ onClose }: { onClose: () => void }) {
 
   return (
     <InfoModal onClose={onClose} title="Upcoming notices">
-      <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Every notice publishing in the next three hours — one-off notices you scheduled ahead, and today&apos;s run of
         each recurring notice.
       </Text>
-      <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Edit one to change its wording before tenants see it, or delay it to push the go-live time back. A recurring
         notice gets a fresh copy each day, so edits and delays here apply to today only.
       </Text>
-      <Text style={[type.body, { color: colors.muted, lineHeight: 22 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Deleting a notice stays in the Notices screen.
       </Text>
     </InfoModal>
@@ -326,12 +328,14 @@ function DelaySheet({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Same shell as AddClauseSheet: the sheet needs maxHeight plus a
-          shrinkable ScrollView or its content runs off the bottom of the
-          screen, and Expo 56 Android needs the KAV to lift it. */}
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
+      <>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        {/* Same shell as AddClauseSheet: the sheet needs maxHeight plus a
+            shrinkable ScrollView or its content runs off the bottom of the
+            screen, and Expo 56 Android needs the KAV to lift it. */}
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -360,7 +364,7 @@ function DelaySheet({
               >
                 Delay notice
               </Text>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
 
             <ScrollView
@@ -394,16 +398,24 @@ function DelaySheet({
               </Pressable>
             </View>
 
-            <Text style={[type.caption, { color: colors.kicker }]}>
-              {newEnd
-                ? `Was ${formatTimeOfDay(notice.visibleFrom)} to ${formatTimeOfDay(notice.visibleUntil ?? "")} · becomes ${formatTimeOfDay(picked.toISOString())} to ${formatTimeOfDay(newEnd.toISOString())}`
-                : `Was ${formatTimeOfDay(notice.visibleFrom)} · becomes ${formatTimeOfDay(picked.toISOString())}`}
-            </Text>
+            {/* Old time, arrow, new time: the same look as the meal delay
+                (user, 2026-09-28). */}
+            <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+              <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13.5, textDecorationLine: "line-through" }}>
+                {newEnd
+                  ? `${formatTimeOfDay(notice.visibleFrom)} – ${formatTimeOfDay(notice.visibleUntil ?? "")}`
+                  : formatTimeOfDay(notice.visibleFrom)}
+              </Text>
+              <ArrowRight color={colors.kicker} size={16} strokeWidth={2.2} />
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+                {newEnd
+                  ? `${formatTimeOfDay(picked.toISOString())} – ${formatTimeOfDay(newEnd.toISOString())}`
+                  : formatTimeOfDay(picked.toISOString())}
+              </Text>
+            </View>
 
             {notice.recurringNoticeId ? (
-              <Text style={[type.caption, { color: colors.kicker }]}>
-                Today only. Tomorrow keeps the recurring schedule.
-              </Text>
+              <NoticeBar message="Tomorrow keeps the recurring schedule." title="Today only" tone="info" />
             ) : null}
 
             <FieldError message={form.errors.time} />
@@ -423,7 +435,9 @@ function DelaySheet({
 
       {pickerOpen ? <DateTimePicker mode="time" onChange={onPick} value={picked} /> : null}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
-    </Modal>
+      </>
+      )}
+    </BottomSheetModal>
   );
 }
 

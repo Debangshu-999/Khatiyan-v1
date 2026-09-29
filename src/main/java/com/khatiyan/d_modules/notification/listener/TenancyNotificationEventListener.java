@@ -19,9 +19,11 @@ import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import com.khatiyan.d_modules.tenancy.event.FutureBookingBlockedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancellationRoute;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyEndedEvent;
+import com.khatiyan.d_modules.tenancy.event.TenancyPendingExitEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyRoomTransferredEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyActivatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
@@ -171,6 +173,85 @@ public class TenancyNotificationEventListener {
                 NotificationPriority.NORMAL,
                 NotificationSubtype.TENANCY_ENDED,
                 event.tenancyId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
+    }
+
+    /**
+     * Once, when a stay passes its checkout date unended. The owner and
+     * managers are the ones who end it, so theirs says what to do. The tenant
+     * learns their account has halted and why. A guest stay has nobody to tell
+     * on the tenant side (guarded as in the ended handler).
+     */
+    @ApplicationModuleListener
+    public void onTenancyPendingExit(TenancyPendingExitEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        Map<String, String> data = baseTenancyData(event.tenancyId(), event.userId(), property);
+        data.put("roomId", event.roomId().toString());
+        data.put("checkoutDate", event.checkoutDate().toString());
+
+        if (event.userId() != null) {
+            notificationModule.notifyUser(
+                    event.userId(),
+                    "Your stay has reached its end date",
+                    "Your stay at " + property.name() + " was due to end on " + event.checkoutDate()
+                            + ". Your owner will end it with you at move-out.",
+                    NotificationCategory.TENANCY,
+                    NotificationPriority.HIGH,
+                    NotificationSubtype.TENANCY_PENDING_EXIT,
+                    event.tenancyId(),
+                    data,
+                    NotificationDeliveryMode.IN_APP_AND_PUSH,
+                    NotificationAudience.TENANT);
+        }
+
+        notificationModule.notifyUsers(
+                adminRecipients(property),
+                "A stay is waiting to be ended",
+                "A stay at " + property.name() + " passed its checkout date on " + event.checkoutDate()
+                        + ". End it from the end-tenancy screen. Billing has stopped, the bed stays held.",
+                NotificationCategory.TENANCY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.TENANCY_PENDING_EXIT,
+                event.tenancyId(),
+                data,
+                NotificationDeliveryMode.IN_APP_AND_PUSH,
+                NotificationAudience.MANAGEMENT);
+    }
+
+    @ApplicationModuleListener
+    public void onFutureBookingBlocked(FutureBookingBlockedEvent event) {
+        PropertyResponse property = propertyModule.getActiveProperty(event.propertyId());
+        String roomNumber = propertyModule.getActiveRoom(event.propertyId(), event.roomId()).roomNumber();
+        Map<String, String> data = baseTenancyData(event.bookingTenancyId(), null, property);
+        data.put("roomId", event.roomId().toString());
+        data.put("roomNumber", roomNumber);
+        data.put("startDate", event.startDate().toString());
+        data.put("reason", event.reason().name());
+        if (event.blockingTenancyId() != null) {
+            data.put("blockingTenancyId", event.blockingTenancyId().toString());
+        }
+
+        String room = "Room " + roomNumber + " at " + property.name();
+        String body = switch (event.reason()) {
+            case PENDING_EXIT -> room + " has a stay past its checkout date. End it so the tenant booked from "
+                    + event.startDate() + " can move in.";
+            case STAY_NOT_ENDED -> "The stay in " + room + " has not been ended yet. End it so the tenant booked from "
+                    + event.startDate() + " can move in.";
+            case ROOM_CHANGE_NOT_DONE -> "The room change that frees a bed in " + room
+                    + " has not gone through. It is retried every hour. A tenant is booked into that bed from "
+                    + event.startDate() + ".";
+        };
+
+        notificationModule.notifyUsers(
+                adminRecipients(property),
+                "A booked stay can't start",
+                body,
+                NotificationCategory.TENANCY,
+                NotificationPriority.HIGH,
+                NotificationSubtype.FUTURE_BOOKING_BLOCKED,
+                event.bookingTenancyId(),
                 data,
                 NotificationDeliveryMode.IN_APP_AND_PUSH,
                 NotificationAudience.MANAGEMENT);

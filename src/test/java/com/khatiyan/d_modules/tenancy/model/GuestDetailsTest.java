@@ -3,6 +3,9 @@ package com.khatiyan.d_modules.tenancy.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+
 import org.junit.jupiter.api.Test;
 
 import com.khatiyan.a_auth.model.Gender;
@@ -64,11 +67,32 @@ class GuestDetailsTest {
     void refusesAnAgeThatCannotBeBilledTo() {
         assertThatThrownBy(() -> guest("Ravi Menon", null, 17))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("between 18 and 120");
+                .hasMessageContaining("18 or older");
 
         assertThatThrownBy(() -> guest("Ravi Menon", null, 121))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("between 18 and 120");
+                .hasMessageContaining("as the ID shows it");
+    }
+
+    /** Since 2026-09-27 the form takes a date of birth, and the register's age is worked out from it. */
+    @Test
+    void worksTheAgeOutFromTheDateOfBirth() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        GuestDetails guest = new GuestDetails("Ravi Menon", "+919007433360", null,
+                "12 Nandidurga Road", null, Gender.MALE, today.minusYears(29).minusDays(3));
+
+        assertThat(guest.age()).isEqualTo(29);
+        assertThat(guest.dateOfBirth()).isEqualTo(today.minusYears(29).minusDays(3));
+    }
+
+    @Test
+    void aDateOfBirthUnder18IsRefused() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        // Eighteen tomorrow is not eighteen.
+        assertThatThrownBy(() -> new GuestDetails("Ravi Menon", "+919007433360", null,
+                "12 Nandidurga Road", null, Gender.MALE, today.minusYears(18).plusDays(1)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("18 or older");
     }
 
     private static GuestDetails guest(String name, String email, Integer age) {

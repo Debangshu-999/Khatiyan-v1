@@ -147,7 +147,7 @@ export function ProfileEditModal({
             />
 
             {isEmail ? (
-              <Text style={[type.caption, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Changing this sends a fresh verification link.
               </Text>
             ) : null}

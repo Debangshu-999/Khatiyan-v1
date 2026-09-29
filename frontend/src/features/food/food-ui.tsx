@@ -1,7 +1,8 @@
 import type { ComponentType } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image, ScrollView, Text, View, type ViewStyle } from "react-native";
-import type { LucideProps } from "lucide-react-native";
+import { Coffee, Soup, type LucideProps } from "lucide-react-native";
+import Svg, { Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { MarqueeText } from "@/components/marquee-text";
@@ -12,6 +13,7 @@ import {
   FOOD_UNIT_LABEL,
   type DayOfWeek,
   type FoodMenuEntry,
+  type FoodProfileCategory,
   type FoodQuantityUnit,
 } from "@/store/services/food-api";
 
@@ -64,12 +66,34 @@ export const MEAL_LABEL: Record<MealType, string> = {
   LUNCH: "Lunch",
 };
 
-export const MEAL_ICON: Record<MealType, MaterialIconName> = {
-  BREAKFAST: "weather-sunny",
-  DINNER: "weather-night",
-  EVENING_SNACKS: "coffee-outline",
-  LUNCH: "silverware-fork-knife",
-};
+/**
+ * The one meal icon set, owner and tenant alike (user, 2026-09-28): the
+ * tenant screen's half-sun breakfast and soup-bowl lunch, a coffee cup for
+ * snacks, and a moon for dinner.
+ */
+export function MealGlyph({ color, meal, size = 17 }: { color: string; meal: MealType; size?: number }) {
+  if (meal === "BREAKFAST") {
+    // A half sun on the horizon, with short rays.
+    return (
+      <Svg fill="none" height={size} viewBox="0 0 28 28" width={size}>
+        <Path
+          d="M3 21h22M7 21a7 7 0 0 1 14 0M14 3v3M5.2 8.2l2.2 2.2M22.8 8.2l-2.2 2.2M2.5 15.5H5M23 15.5h2.5"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2.1}
+        />
+      </Svg>
+    );
+  }
+  if (meal === "LUNCH") {
+    return <Soup color={color} size={size} strokeWidth={2.1} />;
+  }
+  if (meal === "EVENING_SNACKS") {
+    return <Coffee color={color} size={size} strokeWidth={2.1} />;
+  }
+  return <MaterialCommunityIcons color={color} name="weather-night" size={size} />;
+}
 
 export const DAY_ORDER: DayOfWeek[] = [
   "MONDAY",
@@ -108,20 +132,72 @@ export function todayInIst(): Date {
 }
 
 /** Dietary identity mark used consistently on owner and tenant profile cards. */
-export function FoodProfileMark({ name, size = 44 }: { name: string; size?: number }) {
-  const { colors } = useTheme();
+/** The five diets a food profile can be, in the order the picker lists them. */
+export const FOOD_CATEGORY_OPTIONS: { label: string; value: FoodProfileCategory }[] = [
+  { label: "Veg", value: "VEG" },
+  { label: "Non-veg", value: "NON_VEG" },
+  { label: "Jain", value: "JAIN" },
+  { label: "Pescatarian", value: "PESCATARIAN" },
+  { label: "Eggetarian", value: "EGGETARIAN" },
+  { label: "Other", value: "OTHER" },
+];
+
+export const FOOD_CATEGORY_LABEL: Record<FoodProfileCategory, string> = {
+  EGGETARIAN: "Eggetarian",
+  JAIN: "Jain",
+  NON_VEG: "Non-veg",
+  OTHER: "Other",
+  PESCATARIAN: "Pescatarian",
+  VEG: "Veg",
+};
+
+/**
+ * The category an older profile's name suggests, for profiles saved before
+ * categories existed and not yet edited. The server backfilled the same guess.
+ */
+function categoryFromName(name: string): FoodProfileCategory | null {
   const normalized = name.toLowerCase();
-  const jain = normalized.includes("jain");
-  const nonVegetarian = normalized.includes("non-veg") || normalized.includes("non veg") || normalized.includes("chicken") || normalized.includes("meat");
-  const vegetarian = !nonVegetarian && (normalized.includes("veg") || normalized.includes("vegetarian"));
-  const icon: MaterialIconName = jain ? "om" : nonVegetarian ? "food-drumstick-outline" : vegetarian ? "leaf" : "silverware-fork-knife";
-  const color = jain ? colors.accent : nonVegetarian ? colors.warningText : vegetarian ? colors.jade : colors.primary;
-  const backgroundColor = jain ? colors.warningSoft : nonVegetarian ? colors.warningSoft : vegetarian ? colors.successSoft : colors.primarySoft;
+  if (normalized.includes("jain")) return "JAIN";
+  if (normalized.includes("pesc") || normalized.includes("fish")) return "PESCATARIAN";
+  if (normalized.includes("egg")) return "EGGETARIAN";
+  if (["non-veg", "non veg", "nonveg", "chicken", "meat", "mutton"].some((word) => normalized.includes(word))) {
+    return "NON_VEG";
+  }
+  if (normalized.includes("veg")) return "VEG";
+  return null;
+}
+
+/**
+ * A profile's round mark, drawn from its category (2026-09-28). The name is
+ * read only when an older profile has no category yet.
+ */
+export function FoodProfileMark({
+  category,
+  name,
+  size = 44,
+}: {
+  category?: FoodProfileCategory | null;
+  name: string;
+  size?: number;
+}) {
+  const { colors } = useTheme();
+  const kind = category ?? categoryFromName(name);
+  const look: Record<FoodProfileCategory, { background: string; color: string; icon: MaterialIconName }> = {
+    EGGETARIAN: { background: colors.warningSoft, color: colors.warningText, icon: "egg-outline" },
+    JAIN: { background: colors.warningSoft, color: colors.accent, icon: "om" },
+    NON_VEG: { background: colors.warningSoft, color: colors.warningText, icon: "food-drumstick-outline" },
+    OTHER: { background: colors.surfaceSunken, color: colors.primary, icon: "silverware-fork-knife" },
+    PESCATARIAN: { background: colors.surfaceSunken, color: colors.primary, icon: "fish" },
+    VEG: { background: colors.successSoft, color: colors.jade, icon: "leaf" },
+  };
+  const { background, color, icon } = kind
+    ? look[kind]
+    : { background: colors.surfaceSunken, color: colors.primary, icon: "silverware-fork-knife" as MaterialIconName };
   return (
     <View
       style={{
         alignItems: "center",
-        backgroundColor,
+        backgroundColor: background,
         borderRadius: size / 2,
         height: size,
         justifyContent: "center",
@@ -133,9 +209,37 @@ export function FoodProfileMark({ name, size = 44 }: { name: string; size?: numb
   );
 }
 
+/** "20:45:00" or "20:45" to "8:45 PM". Meal times are the property's own, IST. */
+export function formatMealTime(value: string): string {
+  const [hourToken, minuteToken] = value.split(":");
+  const hour = Number(hourToken);
+  const minute = Number(minuteToken);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+/** "8:00 – 10:00 PM" style window. */
+export function formatMealWindow(start: string, end: string): string {
+  return `${formatMealTime(start)} – ${formatMealTime(end)}`;
+}
+
 export function weekdayOf(date: Date): DayOfWeek {
   // getDay() is Sunday-first; DAY_ORDER is Monday-first, as the menu reads.
   return DAY_ORDER[(date.getDay() + 6) % 7];
+}
+
+/**
+ * Seven days starting at `date`: today first, then the rest in order. The
+ * tenant's menu opens on today, so today leads the strip and is the one
+ * selected, rather than sitting last on a Sunday, off-screen.
+ */
+export function weekStartingOn(date: Date): Date[] {
+  return DAY_ORDER.map((_, index) => {
+    const day = new Date(date);
+    day.setDate(date.getDate() + index);
+    return day;
+  });
 }
 
 /** The Monday-to-Sunday week containing `date`, as seven dates. */
@@ -316,7 +420,7 @@ export function MealChip({ meal, style }: { meal: MealType; style?: ViewStyle })
         style,
       ]}
     >
-      <MaterialCommunityIcons color={colors.ink} name={MEAL_ICON[meal]} size={15} />
+      <MealGlyph color={colors.ink} meal={meal} size={15} />
       <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 12 }}>
         {MEAL_LABEL[meal]}
       </Text>
@@ -335,6 +439,7 @@ export function DayStrip({
   onSelect,
   selected,
   showDates = false,
+  variant = "bleed",
   week,
 }: {
   /**
@@ -350,19 +455,22 @@ export function DayStrip({
   selected: DayOfWeek;
   /** Forecasts are date-specific; repeating weekly menus leave this off. */
   showDates?: boolean;
+  /** Keep the owner day slider inside the screen gutters with equal-width cards. */
+  variant?: "bleed" | "contained";
   week: Date[];
 }) {
   const { colors, fonts } = useTheme();
+  const contained = variant === "contained";
   return (
     /* Scrolls rather than dividing the screen width by seven. At seven equal
        columns a phone gives each day about 44pt, which is under the touch
        target minimum and clips "Wed" against its date. Sliding lets each day
        take the width it needs and keeps the row legible on a small screen. */
     <ScrollView
-      contentContainerStyle={{ gap: spacing.xs, paddingHorizontal: bleed }}
+      contentContainerStyle={contained ? { gap: spacing.sm } : { gap: spacing.xs, paddingHorizontal: bleed }}
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={{ marginHorizontal: -bleed }}
+      style={contained ? { alignSelf: "stretch", flexGrow: 0, flexShrink: 0, height: showDates ? 64 : 54 } : { marginHorizontal: -bleed }}
     >
       {week.map((date) => {
         const day = weekdayOf(date);
@@ -375,14 +483,17 @@ export function DayStrip({
             onPress={() => onSelect(day)}
             style={{
               alignItems: "center",
-              backgroundColor: active ? colors.tabSelected : colors.surface,
-              borderColor: active ? colors.tabSelectedDeep : colors.border,
-              borderRadius: radii.sm,
+              backgroundColor: active ? colors.tabSelected : contained ? colors.surfaceRaised : colors.surface,
+              borderColor: active ? colors.tabSelectedDeep : contained ? colors.borderStrong : colors.border,
+              borderRadius: contained ? radii.lg : radii.sm,
               borderWidth: 1,
+              gap: contained && showDates ? spacing.xxs : 0,
+              height: contained ? (showDates ? 64 : 54) : undefined,
               justifyContent: "center",
-              minHeight: showDates ? 56 : 46,
-              paddingHorizontal: spacing.md,
+              minHeight: contained ? undefined : showDates ? 56 : 46,
+              paddingHorizontal: contained ? spacing.sm : spacing.md,
               paddingVertical: spacing.sm,
+              width: contained ? 112 : undefined,
             }}
           >
             <Text
@@ -390,7 +501,7 @@ export function DayStrip({
               style={{
                 color: active ? colors.onTabSelected : colors.ink,
                 fontFamily: fonts.sansBold,
-                fontSize: 13.5,
+                fontSize: contained ? 14 : 13.5,
               }}
             >
               {DAY_LABEL[day]}
@@ -401,8 +512,8 @@ export function DayStrip({
                 style={{
                   color: active ? colors.onTabSelected : colors.muted,
                   fontFamily: fonts.sans,
-                  fontSize: 10,
-                  marginTop: 1,
+                  fontSize: contained ? 11.5 : 10,
+                  marginTop: contained ? 0 : 1,
                 }}
               >
                 {shortDate(date)}

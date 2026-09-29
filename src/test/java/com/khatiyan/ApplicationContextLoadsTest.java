@@ -55,8 +55,8 @@ class ApplicationContextLoadsTest {
         // schema being present is the readable version of that check.
         Integer schemas = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM information_schema.schemata
-                WHERE schema_name IN ('auth', 'property', 'tenancy', 'billing', 'notice', 'concern')
+                WHERE schema_name IN ('auth', 'property', 'tenancy', 'billing', 'notice', 'concern', 'analytics')
                 """, Integer.class);
-        assertThat(schemas).isEqualTo(6);
+        assertThat(schemas).isEqualTo(7);
     }
 }

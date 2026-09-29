@@ -1,5 +1,8 @@
 package com.khatiyan.d_modules.billing.api.dto;
 
+import java.util.List;
+
+import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 import com.khatiyan.d_modules.billing.model.PropertyPaymentDetails;
 
 /**
@@ -18,12 +21,24 @@ public record PropertyPaymentDetailsResponse(
     String bankIfsc,
     String bankAccountHolder,
     /** True when a tenant can be offered payment by any of the three routes. */
-    boolean acceptsUpi
+    boolean acceptsUpi,
+    /** The ticked ways to be paid, in display order. Cash only until set. */
+    List<ManualPaymentMethod> acceptedMethods,
+    boolean cashOtpRequired,
+    /**
+     * The row's version (2026-09-29), sent back as If-Match on save. 0 before
+     * the first save, when there is no row yet.
+     */
+    long version
 ) {
 
     public static PropertyPaymentDetailsResponse from(PropertyPaymentDetails details) {
         if (details == null) {
-            return new PropertyPaymentDetailsResponse(null, null, null, null, null, null, null, false);
+            // Nothing saved: the defaults every property starts on.
+            PropertyPaymentDetails defaults = PropertyPaymentDetails.empty(null);
+            return new PropertyPaymentDetailsResponse(
+                    null, null, null, null, null, null, null, false,
+                    defaults.acceptedMethods(), defaults.isCashOtpRequired(), 0L);
         }
         return new PropertyPaymentDetailsResponse(
                 details.getUpiVpa(),
@@ -33,6 +48,9 @@ public record PropertyPaymentDetailsResponse(
                 details.getBankAccountNumber(),
                 details.getBankIfsc(),
                 details.getBankAccountHolder(),
-                details.canAcceptUpi());
+                details.canAcceptUpi(),
+                details.acceptedMethods(),
+                details.isCashOtpRequired(),
+                details.getVersion());
     }
 }

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -7,38 +8,36 @@ import { useTheme } from "@/theme/use-theme";
 /**
  * One option inside a picker modal — the app's selection style.
  *
- * <p>A ruled row with a mark on the right, not a filled card. The pale-green
- * fill it replaced coloured the whole row, which made a chosen option the
- * heaviest thing on a sheet of hairlines and turned a list of them into a wall
- * of green. The mark now sits in one place the eye can scan down, and the row
- * stays white whether or not it is chosen.
+ * <p>No radio ring (user, 2026-09-28). The chosen row is filled pale blue and
+ * its label goes bold blue, so the choice reads from across the list rather
+ * than from a small mark at its edge. Pale blue as a fill is otherwise banned
+ * in this app; selected picker rows are the one standing exception.
  *
- * <p>Rows are separated by a hairline rather than spaced apart, so a long list
- * reads as one table rather than a stack of cards — which is what let a picker
- * of ten options run off the screen.
+ * <p>An icon before the label is optional and only where the options have one
+ * worth showing (food profile categories). Most pickers are words only.
  *
- * <p>The mark is the SAME in every picker — a ring with a padded fill inside —
- * whether the list takes one answer or several. `mode` changes only the
- * accessibility role, so a screen reader still announces a multi-select as a
- * checkbox; nothing about it is visual.
+ * <p>`mode` changes only the accessibility role, so a screen reader still
+ * announces a multi-select as a checkbox; nothing about it is visual.
  *
  * <h2>Where this does NOT apply</h2>
  *
  * <p>Pickers whose options can be CREATED and DELETED — the staff and expense
  * category lists — keep their own ink-filled row. Those rows carry a delete
- * control of their own, and a ruled row with two marks on the right reads as two
- * competing controls rather than one choice.
+ * control of their own.
  */
 export function PickerOptionRow({
-  first,
+  first: _first,
+  icon,
   label,
   mode = "single",
   onPress,
   selected,
   subtitle,
 }: {
-  /** Suppresses the top hairline, for a row that follows a heading. */
+  /** Kept for callers from the ruled-row days; rows no longer draw a rule. */
   first?: boolean;
+  /** Drawn before the label. Leave it out for a words-only picker. */
+  icon?: ReactNode;
   label: string;
   mode?: "multi" | "single";
   onPress: () => void;
@@ -55,20 +54,22 @@ export function PickerOptionRow({
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderTopColor: colors.border,
-        borderTopWidth: first ? 0 : 1,
+        backgroundColor: selected ? colors.primarySoft : "transparent",
+        borderCurve: "continuous",
+        borderRadius: 10,
         flexDirection: "row",
-        gap: spacing.md,
-        paddingHorizontal: spacing.xs,
-        paddingVertical: spacing.md,
+        gap: spacing.sm,
+        marginVertical: 1,
+        minHeight: 48,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
       }}
     >
+      {icon}
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        {/* Weight, not colour, marks the chosen row. Recolouring the text made
-            unselected options look disabled. */}
         <Text
           style={{
-            color: colors.ink,
+            color: selected ? colors.primaryDeep : colors.ink,
             fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
             fontSize: 15,
           }}
@@ -76,28 +77,9 @@ export function PickerOptionRow({
           {label}
         </Text>
         {subtitle ? (
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+          <Text numberOfLines={1} style={[type.description, { color: colors.muted }]}>
             {subtitle}
           </Text>
-        ) : null}
-      </View>
-
-      {/* A ring with a padded fill inside it. The gap between the two is the
-          point — a solid disc reads as a dot, and the ring around it is what
-          makes the mark legible at a glance down a list. */}
-      <View
-        style={{
-          alignItems: "center",
-          borderColor: selected ? colors.primary : colors.borderStrong,
-          borderRadius: 999,
-          borderWidth: 2,
-          height: 22,
-          justifyContent: "center",
-          width: 22,
-        }}
-      >
-        {selected ? (
-          <View style={{ backgroundColor: colors.primary, borderRadius: 999, height: 11, width: 11 }} />
         ) : null}
       </View>
     </AnimatedPressable>

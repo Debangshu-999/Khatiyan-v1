@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -247,6 +248,7 @@ public class PropertyService {
             UUID actorUserId, UUID propertyId, UpdatePropertyExitPolicyRequest request) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
                 .orElseThrow(() -> new NotFoundException("Property", propertyId));
+        VersionGuard.claim(property);
 
         List<PropertyDamageCharge> damageCharges = request.damageCharges() == null
                 ? List.of()
@@ -282,6 +284,7 @@ public class PropertyService {
             UUID actorUserId, UUID propertyId, String prematureExitPolicy) {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
                 .orElseThrow(() -> new NotFoundException("Property", propertyId));
+        VersionGuard.claim(property);
 
         property.updatePrematureExitPolicy(prematureExitPolicy);
 
@@ -303,6 +306,7 @@ public class PropertyService {
         // edit the property. The caller has already authorized; this only loads.
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
                 .orElseThrow(() -> new NotFoundException("Property", propertyId));
+        VersionGuard.claim(property);
 
         property.updateDetails(
                 request.name(),

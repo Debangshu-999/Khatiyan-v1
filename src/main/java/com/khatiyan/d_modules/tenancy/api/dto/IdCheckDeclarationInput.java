@@ -1,9 +1,13 @@
 package com.khatiyan.d_modules.tenancy.api.dto;
 
+import java.time.LocalDate;
+
+import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.d_modules.tenancy.model.IdDocumentType;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 
 /**
@@ -21,6 +25,13 @@ import jakarta.validation.constraints.Pattern;
  *                     box must fail rather than merely be absent
  * @param documentType what the tenant chose to produce
  * @param lastFour     the last four digits of that document
+ * @param gender       the tenant's gender as the owner checked it: what the
+ *                     document shows, or what the tenant states where it shows
+ *                     none (a PAN card). Required on every manual check since
+ *                     2026-09-27. Never UNDECLARED.
+ * @param dateOfBirth  as the document shows it. Required on a monthly stay,
+ *                     where it is what the 18+ check is made against. Null on a
+ *                     daily stay, which records a stated age instead.
  */
 public record IdCheckDeclarationInput(
         @AssertTrue(message = "Confirm you have checked the tenant's ID proof and photograph before onboarding")
@@ -31,5 +42,9 @@ public record IdCheckDeclarationInput(
 
         @NotNull(message = "Enter the last four digits of that ID")
         @Pattern(regexp = "^[0-9]{4}$", message = "Enter exactly four digits")
-        String lastFour) {
+        String lastFour,
+        @NotNull(message = "Select the tenant's gender as you checked it")
+        Gender gender,
+        @Past(message = "Enter a date of birth in the past")
+        LocalDate dateOfBirth) {
 }

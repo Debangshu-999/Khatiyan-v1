@@ -56,7 +56,7 @@ export function OnboardingGateBoard({
         The owner's profile is incomplete
       </Text>
 
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 20, textAlign: "center" }]}>
+      <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
         The agreement names the property owner as the Landlord, so it needs the owner's full name, a
         verified email address and permanent address before a tenant can be onboarded.
       </Text>
@@ -102,7 +102,7 @@ export function OnboardingGateBoard({
           <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 14 }}>
             Contact the owner
           </Text>
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Ask {ownerName ? ownerName : "the owner"} to add these in their account settings. Onboarding
             stays blocked until they do.
           </Text>

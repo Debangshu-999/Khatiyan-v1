@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -195,7 +196,8 @@ public class TenancyExitRequestService {
         // that is a fact about the request, not a reason to refuse it. Refusing
         // would leave anyone who has to move at short notice with no route, which
         // is exactly the dead end the old split created for non-agreement stays.
-        boolean premature = window.isPrematureOn(checkoutDate);
+        // A fixed term's request is always premature: it cannot go on notice.
+        boolean premature = tenancy.hasFixedTerm() || window.isPrematureOn(checkoutDate);
         String referenceCode = referenceCodeGenerator.nextCode("TEX");
         TenancyExitRequest request = premature
                 ? TenancyExitRequest.premature(
@@ -292,6 +294,8 @@ public class TenancyExitRequestService {
     public TenancyExitRequestResponse approve(UUID actorUserId, UUID requestId, ApproveTenancyExitRequest payload) {
         TenancyExitRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageExitRequests(actorUserId, request.getPropertyId());
+        // The request as the screen saw it (2026-09-29).
+        VersionGuard.claim(request);
         ensureNoBlockingRoomChangeRequest(request.getTenancyId());
 
         Tenancy tenancy = tenancyRepository.findById(request.getTenancyId())
@@ -345,6 +349,7 @@ public class TenancyExitRequestService {
     public TenancyExitRequestResponse reject(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyExitRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageExitRequests(actorUserId, request.getPropertyId());
+        VersionGuard.claim(request);
 
         request.reject(actorUserId, adminNotes);
         log.info("Tenancy exit request rejected requestId={} actorUserId={}", requestId, actorUserId);
@@ -363,7 +368,10 @@ public class TenancyExitRequestService {
     @Transactional
     public TenancyExitRequestResponse requestWithdrawal(UUID tenantUserId, UUID requestId, String reason) {
         TenancyExitRequest request = getRequest(requestId);
+        // After the ownership check inside requestWithdrawal. Nothing is saved
+        // until the transaction ends, so a stale version still changes nothing.
         request.requestWithdrawal(tenantUserId, reason, LocalDate.now(EXIT_ZONE));
+        VersionGuard.claim(request);
 
         log.info("Tenancy exit withdrawal requested requestId={} tenantUserId={}", requestId, tenantUserId);
         eventPublisher.publishEvent(new TenancyExitWithdrawalRequestedEvent(
@@ -397,6 +405,7 @@ public class TenancyExitRequestService {
             String adminNotes) {
         TenancyExitRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageExitRequests(actorUserId, request.getPropertyId());
+        VersionGuard.claim(request);
 
         if (approved) {
             request.approveWithdrawal(actorUserId, adminNotes);
@@ -487,13 +496,22 @@ public class TenancyExitRequestService {
      */
     @Transactional
     public void endTenancyNow(UUID actorUserId, UUID tenancyId, EndTenancyRequest request) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+        // Locked, so two people ending the same stay at once (one account on
+        // several devices, or an owner and a manager) cannot both apply the
+        // exit: the second waits for the first to commit, then reads the stay
+        // as ended and is refused below before any charge or deduction. The
+        // approved-request path already serialises on its request row.
+        Tenancy tenancy = tenancyRepository.findByIdForUpdate(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
 
         if (tenancy.getStatus() == TenancyStatus.EXITED || tenancy.getStatus() == TenancyStatus.EVICTED) {
             throw new ValidationException("Tenancy has already ended");
         }
+        // After the "already ended" check, which says more than "changed". A
+        // screen that loaded an older version of the stay is refused before
+        // anything is applied (2026-09-28).
+        VersionGuard.claim(tenancy);
 
         // Daily stays have no agreement term and no deposit, so the screen never
         // shows them an early-exit charge. Refuse one rather than apply a charge
@@ -528,12 +546,12 @@ public class TenancyExitRequestService {
             return;
         }
 
-        // Active daily stays keep their checkout in plannedEndDate (endDate is only
-        // stamped once a tenancy actually ends); monthly stays on notice carry it in
-        // endDate. A plain active monthly stay has neither and must use the exit flow.
-        LocalDate endDate = tenancy.getBillingType() == TenancyBillingType.DAILY
-                ? tenancy.getPlannedEndDate()
-                : tenancy.getEndDate();
+        // THE checkout date: a notice's endDate, else the plannedEndDate a daily
+        // stay or a fixed term carries from the start. Choosing by billing type
+        // here left every fixed-term stay impossible to end. Only an indefinite
+        // stay not on notice has none, and must use the exit flow. A stay past
+        // its date (PENDING_EXIT) is exactly the one this is for.
+        LocalDate endDate = tenancy.checkoutDate();
         if (endDate == null) {
             throw new ValidationException("This tenancy must exit through the exit request workflow");
         }
@@ -718,22 +736,24 @@ public class TenancyExitRequestService {
                 ? null
                 : "Premature exit is available from the second billing cycle.";
 
-        // A fixed term has no notice to serve — its last day was agreed when the
-        // tenancy started, so the window is that one date. Running notice
-        // arithmetic here would compute a checkout the agreement already fixed,
-        // and could push it past the day the tenancy ends.
-        //
-        // Only while that date is still at least the lead time away. Inside the
-        // last ten days of the term, or after it, the agreed date can no longer be
-        // given notice for, and the stay falls back to its ordinary notice below,
-        // which rolls forward to a date that can. Refusing outright left a
-        // fixed-term tenant near the end of their term with no exit route at all.
+        // A fixed term cannot go on notice (owner's rule, 2026-09-26): the stay
+        // ends with the agreement, on a date agreed at the start. The only request
+        // a fixed-term tenant can make is to leave EARLY, before that date, priced
+        // by the owner's early-exit rule. So the window runs from the lead-time
+        // floor to the day before the term ends, and every date in it is
+        // premature. It never falls back to ordinary notice: that fallback once let
+        // a stay run past its term as though it were indefinite.
         LocalDate termEnd = tenancy.hasFixedTerm() ? tenancy.getAgreementEndDate() : null;
-        if (termEnd != null && !earliestPossible.isAfter(termEnd)) {
-            LocalDate effectiveFloor = earliestPermittedDate(earliestPossible, termEnd, prematureAllowed);
-            ensureWindowAvailable(effectiveFloor, termEnd);
-            return ExitCheckoutWindowResponse.of(noticePeriod, anchor, termEnd, termEnd,
-                    effectiveFloor, prematureAllowed, MIN_EXIT_LEAD_DAYS, restrictionMessage, reRaise);
+        if (termEnd != null) {
+            LocalDate lastEarlyDate = termEnd.minusDays(1);
+            if (!prematureAllowed) {
+                throw new ValidationException(restrictionMessage + " Your agreement ends on " + termEnd + ".");
+            }
+            if (earliestPossible.isAfter(lastEarlyDate)) {
+                throw new ValidationException("Your agreement ends on " + termEnd + ". You move out then.");
+            }
+            return ExitCheckoutWindowResponse.of(noticePeriod, anchor, earliestPossible, lastEarlyDate,
+                    earliestPossible, true, MIN_EXIT_LEAD_DAYS, null, reRaise);
         }
 
         if (noticePeriod.isWholeMonths()) {

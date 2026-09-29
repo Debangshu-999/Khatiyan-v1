@@ -8,7 +8,8 @@ import { api } from "@/store/api";
  * an owner who could type a tenant's Aadhaar number would make the separation
  * this feature is built on decorative.
  */
-export type VerificationServiceCode = "AADHAAR_OKYC";
+/** AADHAAR_OKYC is the retired OTP check: grants already ordered still carry it. */
+export type VerificationServiceCode = "AADHAAR_OKYC" | "AADHAAR";
 
 export type VerificationGrantStatus = "PENDING" | "VERIFIED" | "EXHAUSTED" | "CANCELLED";
 
@@ -20,6 +21,8 @@ export type VerificationGrantStatus = "PENDING" | "VERIFIED" | "EXHAUSTED" | "CA
  */
 export type VerificationGrant = {
   id: string;
+  /** The stay that ordered it. A tenant can hold checks from more than one stay. */
+  tenancyId: string;
   serviceCode: VerificationServiceCode;
   status: VerificationGrantStatus;
   attemptsGranted: number;
@@ -38,6 +41,33 @@ export type VerificationGrant = {
    */
   phoneMatched: boolean | null;
   adultAtVerification: boolean | null;
+  /** From the Aadhaar App only. Null for the OTP check, whose record carries no gender. */
+  verifiedGender: "MALE" | "FEMALE" | "TRANSGENDER" | "OTHER" | null;
+  /** The Aadhaar App's face check. Null when none ran. */
+  faceMatched: boolean | null;
+};
+
+/** An Aadhaar App session is open. Opening it is what charged the owner. */
+export type AadhaarSession = {
+  attemptId: string;
+  /** The link that hands the tenant to the Aadhaar App. */
+  intentUrl: string;
+  expiresAt: string | null;
+};
+
+export type VerificationAttemptStatus =
+  | "AWAITING_OTP"
+  | "AWAITING_CONSENT"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "EXPIRED";
+
+/** Where one attempt stands, polled when the tenant comes back from the Aadhaar App. */
+export type VerificationAttempt = {
+  attemptId: string;
+  status: VerificationAttemptStatus;
+  failureReason: string | null;
+  grant: VerificationGrant;
 };
 
 /** A code is on its way to the tenant's Aadhaar-linked phone. */
@@ -104,11 +134,39 @@ export const verificationApi = api.injectEndpoints({
         url: `/api/v1/verification/attempts/${attemptId}/otp`,
       }),
     }),
+
+    /**
+     * Opens an Aadhaar App session, or hands back the one still open.
+     *
+     * <p>Charges the owner when a new one opens. Call it only after the app has
+     * found the Aadhaar App on this phone and the tenant has said they are
+     * signed up in it.
+     */
+    startAadhaarSession: builder.mutation<AadhaarSession, { grantId: string }>({
+      invalidatesTags: ["Verification"],
+      query: ({ grantId }) => ({
+        method: "POST",
+        url: `/api/v1/verification/grants/${grantId}/session`,
+      }),
+    }),
+
+    /**
+     * Where an attempt stands. A mutation rather than a query on purpose: each
+     * call asks the server to look again, and a cached answer is exactly what
+     * the tenant coming back from the Aadhaar App must not get.
+     */
+    checkVerificationAttempt: builder.mutation<VerificationAttempt, { attemptId: string }>({
+      invalidatesTags: (result) =>
+        result && result.status !== "AWAITING_CONSENT" ? ["Verification"] : [],
+      query: ({ attemptId }) => ({ url: `/api/v1/verification/attempts/${attemptId}` }),
+    }),
   }),
 });
 
 export const {
   useListMyVerificationsQuery,
+  useStartAadhaarSessionMutation,
+  useCheckVerificationAttemptMutation,
   useStartVerificationOtpMutation,
   useSubmitVerificationOtpMutation,
 } = verificationApi;

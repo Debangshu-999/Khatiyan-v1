@@ -13,9 +13,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.api.dto.ConfirmPaymentIntentRequest;
 import com.khatiyan.d_modules.billing.api.dto.PaymentIntentResponse;
+import com.khatiyan.d_modules.billing.api.dto.PaymentMethodsResponse;
+import com.khatiyan.d_modules.billing.api.dto.RaisePaymentClaimRequest;
 import com.khatiyan.d_modules.billing.api.dto.PropertyPaymentDetailsResponse;
 import com.khatiyan.d_modules.billing.api.dto.StartPaymentResponse;
 import com.khatiyan.d_modules.billing.api.dto.TenantPaymentStateResponse;
@@ -71,6 +74,7 @@ public class PaymentIntentController {
      * constraint, so a double-tap cannot open two.
      */
     @PostMapping("/me/cycles/{billingCycleId}/payment-intents")
+    @RequiresVersion
     public StartPaymentResponse startPayment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID billingCycleId) {
@@ -79,8 +83,30 @@ public class PaymentIntentController {
                 PaymentIntentResponse.from(started.intent(), null), started.upiLink(), started.payee());
     }
 
+    /**
+     * "I paid" by UPI, bank transfer, card or cheque, raised from that method's
+     * tab without a link attempt (2026-09-28). Goes to the owner to check.
+     */
+    @PostMapping("/me/cycles/{billingCycleId}/payment-claims")
+    @RequiresVersion
+    public PaymentIntentResponse raiseClaim(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId,
+            @Valid @RequestBody RaisePaymentClaimRequest request) {
+        return PaymentIntentResponse.from(
+                paymentIntentService.raiseClaim(
+                        user.userId(),
+                        billingCycleId,
+                        request.method(),
+                        request.referenceText(),
+                        request.note(),
+                        request.proofImageUrls()),
+                null);
+    }
+
     /** "It did not go through." Frees the bill for another attempt. */
     @PostMapping("/me/payment-intents/{intentId}/cancel")
+    @RequiresVersion
     public PaymentIntentResponse cancelMyPayment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID intentId) {
@@ -90,6 +116,7 @@ public class PaymentIntentController {
 
     /** "I paid." Evidence optional. Sends the bill to the owner to check. */
     @PostMapping("/me/payment-intents/{intentId}/confirm")
+    @RequiresVersion
     public PaymentIntentResponse confirmMyPayment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID intentId,
@@ -137,8 +164,17 @@ public class PaymentIntentController {
         return paymentIntentService.listForOwnerMonth(user.userId(), propertyId, month);
     }
 
+    /** One bill's claims, for the claims button on its card. Owner only. */
+    @GetMapping("/cycles/{billingCycleId}/payment-claims")
+    public List<PaymentIntentResponse> claimsForBill(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID billingCycleId) {
+        return paymentIntentService.listClaimsForCycle(user.userId(), billingCycleId);
+    }
+
     /** Found it in the statement. Marks the bill paid in the same transaction. */
     @PostMapping("/payment-intents/{intentId}/verify")
+    @RequiresVersion
     public PaymentIntentResponse verify(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID intentId) {
@@ -147,6 +183,7 @@ public class PaymentIntentController {
 
     /** Not in the statement. Puts the bill back and frees the tenant to retry. */
     @PostMapping("/payment-intents/{intentId}/reject")
+    @RequiresVersion
     public PaymentIntentResponse reject(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID intentId) {
@@ -162,8 +199,20 @@ public class PaymentIntentController {
         return paymentDetailsService.get(user.userId(), propertyId);
     }
 
+    /**
+     * The ways the property takes money, for Mark paid and the end-tenancy
+     * picker (2026-09-28). Managers may read it: no payout details.
+     */
+    @GetMapping("/properties/{propertyId}/payment-methods")
+    public PaymentMethodsResponse paymentMethods(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return paymentDetailsService.methods(user.userId(), propertyId);
+    }
+
     /** Replaces the whole set — clearing the UPI address turns payment off. */
     @PutMapping("/properties/{propertyId}/payment-details")
+    @RequiresVersion
     public PropertyPaymentDetailsResponse updatePaymentDetails(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

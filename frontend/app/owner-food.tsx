@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "expo-router";
 import { View } from "react-native";
 
@@ -15,7 +15,14 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, NoticeBar, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { foodIcon, isoDate } from "@/features/food/food-ui";
+import { foodIcon } from "@/features/food/food-ui";
+import {
+  DelayMealSheet,
+  MealTimingsCard,
+  MealTimingsSheet,
+  MealsDoneForToday,
+  canStillDelay,
+} from "@/features/food/meal-schedule-ui";
 import { FoodItemsTab } from "@/features/food/owner-food-items";
 import { FoodProfilesTab } from "@/features/food/owner-food-profiles";
 import {
@@ -23,12 +30,12 @@ import {
   FoodStats,
   ManageFoodCard,
   SetupSequence,
-  nextMeal,
 } from "@/features/food/owner-food-overview";
 import { useAppSelector } from "@/store/hooks";
 import {
   useGetCookingForecastQuery,
   useGetFoodOverviewQuery,
+  useGetMealScheduleQuery,
   useListFoodItemsQuery,
   useListFoodProfileSubscriberCountsQuery,
   useListFoodSubscribersQuery,
@@ -38,6 +45,21 @@ import {
 import { spacing } from "@/theme/spacing";
 
 type Tab = "overview" | "items" | "profiles";
+
+/** Keep one safe-area scroll view mounted while property and food data resolve. */
+function FoodScreenFrame({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <ScreenScrollView
+        contentContainerStyle={{ paddingBottom: footer ? PINNED_FOOTER_CLEARANCE : undefined }}
+        safeAreaEdges={["top", "bottom"]}
+      >
+        {children}
+      </ScreenScrollView>
+      {footer ? <PinnedFooter>{footer}</PinnedFooter> : null}
+    </View>
+  );
+}
 
 /**
  * Everything about a property's food, in one place.
@@ -61,6 +83,7 @@ export default function OwnerFoodScreen() {
   const readOnly = !canManage("FOOD");
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [visitedTabs, setVisitedTabs] = useState({ items: false, profiles: false });
   const [itemCreateRequest, setItemCreateRequest] = useState(0);
   const [profileCreateRequest, setProfileCreateRequest] = useState(0);
   const [confirmOff, setConfirmOff] = useState(false);
@@ -70,19 +93,47 @@ export default function OwnerFoodScreen() {
   const overview = overviewQuery.data;
   const managed = Boolean(overview?.moduleEnabled);
 
-  // Every list is skipped until the module is actually on. Fetching a catalogue
-  // for a property that has opted out is four requests whose answers no part of
-  // this screen is allowed to show.
-  const listArgs = { skip: !propertyId || !managed };
-  const itemsQuery = useListFoodItemsQuery(propertyId, listArgs);
-  const profilesQuery = useListFoodProfileSubscriberCountsQuery(propertyId, listArgs);
-  const subscribersQuery = useListFoodSubscribersQuery(propertyId, listArgs);
+  const itemsMounted = tab === "items" || visitedTabs.items;
+  const profilesMounted = tab === "profiles" || visitedTabs.profiles;
 
-  const upcoming = nextMeal(overview?.availableMeals ?? []);
+  function selectTab(next: Tab) {
+    if (next !== "overview") {
+      setVisitedTabs((current) => (current[next] ? current : { ...current, [next]: true }));
+    }
+    setTab(next);
+  }
+
+  useEffect(() => {
+    setTab("overview");
+    setVisitedTabs({ items: false, profiles: false });
+  }, [propertyId]);
+
+  // Overview owns module startup. The heavier lists are requested only when
+  // their tab is first visited, then both their RTK subscription and rendered
+  // rows remain alive for instant repeat switches.
+  const itemsQuery = useListFoodItemsQuery(propertyId, {
+    skip: !propertyId || !managed || !itemsMounted,
+  });
+  const profilesQuery = useListFoodProfileSubscriberCountsQuery(propertyId, {
+    skip: !propertyId || !managed || !profilesMounted,
+  });
+  const subscribersQuery = useListFoodSubscribersQuery(propertyId, {
+    skip: !propertyId || !managed || !profilesMounted,
+  });
+
+  // The server's meal day (2026-09-28): which meal is next, its time and any
+  // delay. Null next meal once the day's last one is over, until midnight.
+  const scheduleQuery = useGetMealScheduleQuery(propertyId, { skip: !propertyId || !managed });
+  const schedule = scheduleQuery.data;
+  const upcoming = schedule?.nextMeal ?? null;
   const forecastQuery = useGetCookingForecastQuery(
-    upcoming ? { date: isoDate(upcoming.date), mealType: upcoming.mealType, propertyId } : { date: "", mealType: "LUNCH", propertyId: "" },
+    upcoming && schedule
+      ? { date: schedule.date, mealType: upcoming.mealType, propertyId }
+      : { date: "", mealType: "LUNCH", propertyId: "" },
     { skip: !propertyId || !managed || !upcoming || (overview?.activeSubscriptions ?? 0) === 0 },
   );
+  const [timingsOpen, setTimingsOpen] = useState(false);
+  const [delayOpen, setDelayOpen] = useState(false);
 
   const [setEnabled, setEnabledState] = useSetFoodModuleEnabledMutation();
 
@@ -124,23 +175,23 @@ export default function OwnerFoodScreen() {
 
   if (!property) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <FoodScreenFrame>
         {header}
         <EmptyState
           description="Choose the property whose food you want to manage from Home."
           icon={foodIcon("silverware-fork-knife")}
           title="No active property selected"
         />
-      </ScreenScrollView>
+      </FoodScreenFrame>
     );
   }
 
   if (!overview && overviewQuery.isFetching) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <FoodScreenFrame>
         {header}
         <FoodOverviewSkeleton />
-      </ScreenScrollView>
+      </FoodScreenFrame>
     );
   }
 
@@ -149,7 +200,7 @@ export default function OwnerFoodScreen() {
   // would be refused.
   if (overview && !overview.foodAvailableInProperty) {
     return (
-      <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <FoodScreenFrame>
         {header}
         <EmptyState
           description="This property is listed as not providing food, so there is nothing to manage here."
@@ -171,14 +222,17 @@ export default function OwnerFoodScreen() {
             />
           </View>
         ) : null}
-      </ScreenScrollView>
+      </FoodScreenFrame>
     );
   }
 
   // Setup being unfinished changes what the OVERVIEW says, not which tabs
   // exist. Items are added on the Items tab, which is where somebody told to
   // add an item will go looking for the button.
-  const setupIncomplete = managed && (overview?.activeItems ?? 0) === 0;
+  // Meal timings are a required setup step (2026-09-28): until every served
+  // meal has a saved time, the overview stays on the setup steps.
+  const timingsSet = schedule ? schedule.timings.every((timing) => timing.saved) : true;
+  const setupIncomplete = managed && ((overview?.activeItems ?? 0) === 0 || !timingsSet);
   const footerMode = !readOnly && managed
     ? tab === "items"
       ? "items"
@@ -186,13 +240,31 @@ export default function OwnerFoodScreen() {
         ? "profiles"
         : null
     : null;
+  const footer = footerMode ? (
+    <ActionButton
+      icon={foodIcon("plus")}
+      label={
+        footerMode === "items"
+          ? (itemsQuery.data?.filter((item) => item.active).length ?? 0) === 0
+            ? "Add first food item"
+            : "Add food item"
+          : (profilesQuery.data?.length ?? 0) === 0
+            ? "Create first profile"
+            : "Create food profile"
+      }
+      onPress={() => {
+        if (footerMode === "items") {
+          selectTab("items");
+          setItemCreateRequest((value) => value + 1);
+        } else {
+          setProfileCreateRequest((value) => value + 1);
+        }
+      }}
+    />
+  ) : undefined;
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScreenScrollView
-        contentContainerStyle={{ paddingBottom: footerMode ? PINNED_FOOTER_CLEARANCE : undefined }}
-        safeAreaEdges={["top", "bottom"]}
-      >
+    <FoodScreenFrame footer={footer}>
         {header}
 
       {/* The module switch is the one thing that outranks the tabs: with it off
@@ -219,7 +291,7 @@ export default function OwnerFoodScreen() {
             <UnderlineTabs<Tab>
               active={tab}
               bleed={spacing.lg}
-              onChange={setTab}
+              onChange={selectTab}
               options={[
                 { label: "Overview", value: "overview" },
                 { label: "Items", value: "items" },
@@ -242,10 +314,12 @@ export default function OwnerFoodScreen() {
                   what to do first. Each step opens the tab that does it. */}
               {setupIncomplete ? (
                 <SetupSequence
-                  onAddItem={() => setTab("items")}
-                  onCreateProfile={() => setTab("profiles")}
-                  onEditMenu={() => setTab("profiles")}
+                  onAddItem={() => selectTab("items")}
+                  onCreateProfile={() => selectTab("profiles")}
+                  onEditMenu={() => selectTab("profiles")}
+                  onSetTimings={readOnly ? undefined : () => setTimingsOpen(true)}
                   overview={overview}
+                  timingsSet={timingsSet}
                 />
               ) : (
                 <>
@@ -254,38 +328,51 @@ export default function OwnerFoodScreen() {
                     <CookingPreview
                       forecast={forecastQuery.data}
                       loading={forecastQuery.isFetching}
-                      mealType={upcoming.mealType}
+                      onDelay={
+                        !readOnly && schedule && canStillDelay(upcoming, schedule.delayCutoffMinutes)
+                          ? () => setDelayOpen(true)
+                          : undefined
+                      }
                       onOpenForecast={() => router.push("/owner-food-forecast")}
-                      when={upcoming.date}
+                      slot={upcoming}
                     />
+                  ) : schedule && schedule.timings.length > 0 ? (
+                    <MealsDoneForToday />
+                  ) : null}
+                  {schedule && schedule.timings.length > 0 ? (
+                    <MealTimingsCard onEdit={readOnly ? undefined : () => setTimingsOpen(true)} schedule={schedule} />
                   ) : null}
                 </>
               )}
             </View>
           ) : null}
 
-          {tab === "items" ? (
-            <FoodItemsTab
-              availableMeals={overview?.availableMeals ?? []}
-              createRequest={itemCreateRequest}
-              items={itemsQuery.data ?? []}
-              loading={itemsQuery.isLoading}
-              propertyId={propertyId}
-              readOnly={readOnly}
-            />
+          {itemsMounted ? (
+            <View style={{ display: tab === "items" ? "flex" : "none" }}>
+              <FoodItemsTab
+                availableMeals={overview?.availableMeals ?? []}
+                createRequest={itemCreateRequest}
+                items={itemsQuery.data ?? []}
+                loading={itemsQuery.isLoading}
+                propertyId={propertyId}
+                readOnly={readOnly}
+              />
+            </View>
           ) : null}
 
-          {tab === "profiles" ? (
-            <FoodProfilesTab
-              createRequest={profileCreateRequest}
-              loading={profilesQuery.isLoading}
-              onOpenMenu={openMenu}
-              profiles={profilesQuery.data ?? []}
-              propertyId={propertyId}
-              readOnly={readOnly}
-              subscribers={subscribersQuery.data ?? []}
-              subscribersLoading={subscribersQuery.isLoading}
-            />
+          {profilesMounted ? (
+            <View style={{ display: tab === "profiles" ? "flex" : "none" }}>
+              <FoodProfilesTab
+                createRequest={profileCreateRequest}
+                loading={profilesQuery.isLoading}
+                onOpenMenu={openMenu}
+                profiles={profilesQuery.data ?? []}
+                propertyId={propertyId}
+                readOnly={readOnly}
+                subscribers={subscribersQuery.data ?? []}
+                subscribersLoading={subscribersQuery.isLoading}
+              />
+            </View>
           ) : null}
         </>
       )}
@@ -305,35 +392,17 @@ export default function OwnerFoodScreen() {
         />
       ) : null}
 
+      {timingsOpen && schedule ? (
+        <MealTimingsSheet onClose={() => setTimingsOpen(false)} propertyId={propertyId} schedule={schedule} />
+      ) : null}
+
+      {delayOpen && upcoming ? (
+        <DelayMealSheet onClose={() => setDelayOpen(false)} propertyId={propertyId} slot={upcoming} />
+      ) : null}
+
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
-      </ScreenScrollView>
-
-      {footerMode ? (
-        <PinnedFooter>
-          <ActionButton
-            icon={foodIcon("plus")}
-            label={
-              footerMode === "items"
-                ? (itemsQuery.data?.filter((item) => item.active).length ?? 0) === 0
-                  ? "Add first food item"
-                  : "Add food item"
-                : (profilesQuery.data?.length ?? 0) === 0
-                  ? "Create first profile"
-                  : "Create food profile"
-            }
-            onPress={() => {
-              if (footerMode === "items") {
-                setTab("items");
-                setItemCreateRequest((value) => value + 1);
-              } else {
-                setProfileCreateRequest((value) => value + 1);
-              }
-            }}
-          />
-        </PinnedFooter>
-      ) : null}
-    </View>
+    </FoodScreenFrame>
   );
 }

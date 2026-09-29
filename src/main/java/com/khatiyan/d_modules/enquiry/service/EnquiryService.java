@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
@@ -220,6 +221,7 @@ public class EnquiryService {
                 .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
 
         propertyModule.ensureCanManageProperty(actorUserId, enquiry.getPropertyId());
+        VersionGuard.claim(enquiry);
 
         // Refused server-side as well as greyed out in the UI. The card can be
         // stale — it was rendered before the sweep ran — and an expired enquiry
@@ -383,7 +385,7 @@ public class EnquiryService {
                 enquiry.getChatThreadId(),
                 responses.stream()
                         .map(response -> EnquiryResponseView.of(response, nameOf(users, response.getRespondedByUserId())))
-                        .toList());
+                        .toList(), enquiry.getVersion());
     }
 
     private static String targetOf(List<ReachableChannelResponse> reachable, EnquiryResponseChannel channel) {

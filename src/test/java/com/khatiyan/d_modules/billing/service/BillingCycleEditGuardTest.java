@@ -115,6 +115,53 @@ class BillingCycleEditGuardTest {
         verify(lineItemRepository).save(any(BillingCycleLineItem.class));
     }
 
+    /**
+     * A discount is a percentage OR an amount (2026-09-28). An amount is taken
+     * as given, a percentage is worked out against the current total.
+     */
+    @Test
+    void aDiscountIsTakenAsAnAmountOrWorkedOutFromAPercentage() {
+        BillingCycle cycle = rentCycle(1, BillingCycleStatus.UNPAID);
+        cycle.recalculateTotals(12_000_00, 0, 0, 0, 0);
+        givenLatestCycle(cycle);
+        givenLineItemReadsSucceed();
+
+        service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID,
+                new CreateDiscountRequest("Goodwill", null, null, 1_500_00L));
+        // The mocked lines recalculate the bill to nothing, so put the total back
+        // before the percentage is worked out against it.
+        cycle.recalculateTotals(12_000_00, 0, 0, 0, 0);
+        service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID, discountOf("10"));
+
+        org.mockito.ArgumentCaptor<BillingCycleLineItem> saved =
+                org.mockito.ArgumentCaptor.forClass(BillingCycleLineItem.class);
+        verify(lineItemRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(BillingCycleLineItem::getAmountPaise)
+                .containsExactly(1_500_00L, 1_200_00L);
+    }
+
+    @Test
+    void aDiscountNeedsExactlyOneOfPercentageAndAmountAndNoMoreThanTheBill() {
+        BillingCycle cycle = rentCycle(1, BillingCycleStatus.UNPAID);
+        cycle.recalculateTotals(12_000_00, 0, 0, 0, 0);
+        givenLatestCycle(cycle);
+
+        assertThatThrownBy(() -> service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID,
+                new CreateDiscountRequest("Goodwill", null, null, null)))
+                .hasMessageContaining("percentage or amount");
+        assertThatThrownBy(() -> service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID,
+                new CreateDiscountRequest("Goodwill", null, new BigDecimal("10"), 1_200_00L)))
+                .hasMessageContaining("not both");
+        // Never the whole bill, by amount or by a percentage that rounds to it.
+        assertThatThrownBy(() -> service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID,
+                new CreateDiscountRequest("Goodwill", null, null, 11_999_01L)))
+                .hasMessageContaining("at least");
+        assertThatThrownBy(() -> service.addDiscountForTenancy(ACTOR_ID, TENANCY_ID,
+                new CreateDiscountRequest("Goodwill", null, new BigDecimal("99.9999"), null)))
+                .hasMessageContaining("at least");
+    }
+
     @Test
     void firstCycleTakesADiscountWhileOverdue() {
         BillingCycle cycle = rentCycle(1, BillingCycleStatus.OVERDUE);
@@ -330,10 +377,10 @@ class BillingCycleEditGuardTest {
     }
 
     private static CreateExtraChargeRequest extraCharge() {
-        return new CreateExtraChargeRequest("Broken window", "Replaced pane", 1_500_00, false);
+        return new CreateExtraChargeRequest("Broken window", "Replaced pane", 1_500_00);
     }
 
     private static CreateDiscountRequest discountOf(String percent) {
-        return new CreateDiscountRequest("Goodwill", "Late handover", new BigDecimal(percent));
+        return new CreateDiscountRequest("Goodwill", "Late handover", new BigDecimal(percent), null);
     }
 }

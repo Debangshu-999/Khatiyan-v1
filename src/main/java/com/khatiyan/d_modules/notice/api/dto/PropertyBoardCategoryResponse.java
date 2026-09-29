@@ -29,7 +29,6 @@ public record PropertyBoardCategoryResponse(
             category.getDisplayOrder(),
             category.isCurrentlyActive(),
             category.getCreatedAt(),
-            category.getUpdatedAt()
-        );
+            category.getUpdatedAt());
     }
 }

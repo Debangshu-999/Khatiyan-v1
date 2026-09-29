@@ -80,7 +80,7 @@ export function GradientCtaCard({
             <ChevronRight color={colors.onPrimary} size={19} strokeWidth={2.6} />
           </View>
         </View>
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
+        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, opacity: 0.85 }}>
           {description}
         </Text>
       </LinearGradient>

@@ -64,14 +64,9 @@ export default function GetStartedScreen() {
                   Welcome to Khatiyan
                 </Text>
                 <Text
-                  style={{
-                    color: colors.muted,
-                    fontFamily: fonts.sansMedium,
-                    fontSize: 14.5,
-                    lineHeight: 22,
+                  style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
                     maxWidth: 300,
-                    textAlign: "center",
-                  }}
+                    textAlign: "center" }}
                 >
                   Manage your stay, property, payments, notices and support from one calm workspace.
                 </Text>
@@ -102,7 +97,7 @@ export default function GetStartedScreen() {
               </AnimatedPressable>
 
               <AnimatedPressable accessibilityRole="button" onPress={continueToAuth} style={{ alignItems: "center", paddingVertical: spacing.sm }}>
-                <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13.5, }}>
+                <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                   Already have an account? <Text style={{ color: colors.primary, fontWeight: "900" }}>Sign in</Text>
                 </Text>
               </AnimatedPressable>

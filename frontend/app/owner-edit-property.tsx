@@ -408,7 +408,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       type: propertyType,
     };
     try {
-      await updateProperty({ payload, propertyId: property.id }).unwrap();
+      await updateProperty({ payload, propertyId: property.id, version: property.version }).unwrap();
       unsaved.markSaved();
       // Before the close, not after: the screen unmounts on close and the only
       // other outcome — the refusal below — already speaks for itself, so a save

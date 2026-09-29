@@ -1,5 +1,6 @@
-import { Text, View } from "react-native";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, UserRound, UserRoundMinus, XCircle } from "lucide-react-native";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Animated, PanResponder, Text, View } from "react-native";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, UserRound, XCircle } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -99,6 +100,8 @@ export function ActiveTenancyCard({
   onEndTenancy,
   onOpen,
   onRemove,
+  onProvideAttempts,
+  agreementExpiresAt,
   removing = false,
   roomLabel,
   tenancy,
@@ -108,6 +111,13 @@ export function ActiveTenancyCard({
   onEndTenancy: () => void;
   onOpen: () => void;
   onRemove?: () => void;
+  /**
+   * Only for someone who may order checks (TENANCY_CREATE). Absent, the
+   * pending card shows no "Provide attempts".
+   */
+  onProvideAttempts?: () => void;
+  /** When the unsigned agreement expires. Shown on a pending card. */
+  agreementExpiresAt?: string | null;
   removing?: boolean;
   roomLabel: string | null;
   tenancy: TenancySummary;
@@ -119,13 +129,23 @@ export function ActiveTenancyCard({
     : tenancy.rentAmountPaise ?? tenancy.dailyRatePaise ?? 0;
   const rentSuffix = tenancy.billingType === "DAILY" ? "/ day" : "/ month";
   const today = todayLocalISO();
-  const endDate = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
+  // The server's one checkout date. Picking plannedEndDate only for daily
+  // stays left every fixed term with no date here: no End button, no badge.
+  const endDate = tenancy.checkoutDate;
   const canEnd = endDate != null && endDate <= today;
-  const pastDue = endDate != null && endDate < today;
+  // A stay past its date shows as Pending exit through its status. Before the
+  // nightly sweep reaches it, this badge says the same thing.
+  const pastDue = endDate != null && endDate < today && tenancy.status !== "PENDING_EXIT";
   const daysUntilEnd = endDate ? dateOnlyDayNumber(endDate) - dateOnlyDayNumber(today) : null;
   const dueToday = daysUntilEnd === 0;
-  const endingSoon = daysUntilEnd != null && daysUntilEnd > 0 && daysUntilEnd <= 7;
+  const endingSoon = daysUntilEnd != null && daysUntilEnd > 0 && daysUntilEnd <= tenancy.endingSoonLeadDays;
   const awaitingAgreement = tenancy.status === "PENDING_ACCEPTANCE";
+  const statusChips: TenancyCardStatusChip[] = [
+    ...(pastDue ? [{ key: "past-due", kind: "timing" as const, label: "Past due", tone: "danger" as const }] : []),
+    ...(dueToday ? [{ key: "due-today", kind: "timing" as const, label: "Ends today", tone: "warning" as const }] : []),
+    ...(endingSoon ? [{ key: "ending-soon", kind: "timing" as const, label: "Ends soon", tone: "warning" as const }] : []),
+    { key: `tenancy-${tenancy.status}`, kind: "tenancy" as const, status: tenancy.status },
+  ];
 
   return (
     <Card style={{ borderRadius: radii.card }}>
@@ -142,12 +162,7 @@ export function ActiveTenancyCard({
           <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
             {tenancy.referenceCode}
           </Text>
-          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-            <TenancyStatusBadge status={tenancy.status} />
-            {pastDue ? <TenancyTimingBadge label="Past due" tone="danger" /> : null}
-            {dueToday ? <TenancyTimingBadge label="Due today" tone="warning" /> : null}
-            {endingSoon ? <TenancyTimingBadge label="Ends soon" tone="warning" /> : null}
-          </View>
+          <TenancyStatusCarousel chips={statusChips} />
         </View>
 
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -166,7 +181,7 @@ export function ActiveTenancyCard({
           <MetricDivider />
           <TenancyMetric flex={1.3} label="Rent" value={`${formatMoneyPaise(rentAmount)} ${rentSuffix}`} />
           <MetricDivider />
-          <TenancyMetric flex={1} label="Started" value={formatDate(tenancy.startDate)} />
+          <TenancyMetric flex={1} label={tenancy.status === "SCHEDULED" ? "Starts" : "Started"} value={formatDate(tenancy.startDate)} />
           {endDate ? (
             <>
               <MetricDivider />
@@ -176,19 +191,29 @@ export function ActiveTenancyCard({
         </View>
       </View>
 
-      {canEndTenancy && awaitingAgreement && onRemove ? (
+      {awaitingAgreement && ((canEndTenancy && onRemove) || onProvideAttempts || agreementExpiresAt) ? (
         <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
-          <View style={{ flexDirection: "row" }}>
-            <ActionButton
-              disabled={removing}
-              icon={UserRoundMinus}
-              label={removing ? "Removing…" : "Remove tenancy"}
-              onPress={onRemove}
-              variant="danger"
-            />
-          </View>
-          <Text style={[type.caption, { color: colors.warningText }]}>Agreement signature required before billing starts.</Text>
-          <Text style={[type.caption, { color: colors.muted }]}>Frees the bed. Nothing has been billed yet.</Text>
+          {(canEndTenancy && onRemove) || onProvideAttempts ? (
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              {onProvideAttempts ? (
+                <ActionButton label="Verification" onPress={onProvideAttempts} variant="secondary" />
+              ) : null}
+              {canEndTenancy && onRemove ? (
+                <ActionButton
+                  disabled={removing}
+                  label={removing ? "Removing…" : "Remove"}
+                  onPress={onRemove}
+                  variant="danger"
+                />
+              ) : null}
+            </View>
+          ) : null}
+          {agreementExpiresAt ? (
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+              <Clock3 color={colors.warningText} size={13} strokeWidth={2.3} />
+              <Text style={[type.caption, { color: colors.warningText }]}>{expiresInLabel(agreementExpiresAt)}</Text>
+            </View>
+          ) : null}
         </View>
       ) : canEndTenancy ? (
         <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
@@ -202,7 +227,7 @@ export function ActiveTenancyCard({
             />
           </View>
           {!canEnd ? (
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {endDate ? `Can be ended on ${formatDate(endDate)}.` : "Available once an end date is set."}
             </Text>
           ) : null}
@@ -212,12 +237,212 @@ export function ActiveTenancyCard({
   );
 }
 
-function TenancyStatusBadge({ status }: { status: TenancySummary["status"] }) {
+type TenancyCardStatusChip =
+  | {
+      key: string;
+      kind: "tenancy";
+      status: TenancySummary["status"];
+    }
+  | {
+      key: string;
+      kind: "timing";
+      label: string;
+      tone: "danger" | "warning";
+    };
+
+/**
+ * One status at a time, newest first. A horizontal swipe advances through the
+ * chips and wraps in both directions, so the last chip always leads back to
+ * the first rather than ending at a dead edge.
+ */
+function TenancyStatusCarousel({ chips }: { chips: TenancyCardStatusChip[] }) {
+  const { colors } = useTheme();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const translateX = useRef(new Animated.Value(0)).current;
+  const animatingRef = useRef(false);
+  const pendingResetRef = useRef(false);
+  const signature = chips.map((chip) => chip.key).join("|");
+  const slotWidth = 92;
+  const slideDistance = slotWidth;
+
+  useEffect(() => {
+    setActiveIndex(0);
+    translateX.setValue(0);
+  }, [signature, translateX]);
+
+  // Reset before the newly selected chip is painted. Doing this in the timing
+  // callback left one blank frame between the outgoing and incoming chips.
+  useLayoutEffect(() => {
+    if (!pendingResetRef.current) {
+      return;
+    }
+    translateX.setValue(0);
+    pendingResetRef.current = false;
+    animatingRef.current = false;
+  }, [activeIndex, translateX]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          chips.length > 1 && Math.abs(gesture.dx) > 7 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onPanResponderMove: (_, gesture) => {
+          if (!animatingRef.current) {
+            translateX.setValue(Math.max(-72, Math.min(72, gesture.dx)));
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (animatingRef.current) {
+            return;
+          }
+          if (Math.abs(gesture.dx) < 24) {
+            Animated.spring(translateX, { friction: 8, tension: 90, toValue: 0, useNativeDriver: true }).start();
+            return;
+          }
+
+          animatingRef.current = true;
+          const direction = gesture.dx < 0 ? 1 : -1;
+          const exit = direction > 0 ? -slideDistance : slideDistance;
+          Animated.timing(translateX, { duration: 150, toValue: exit, useNativeDriver: true }).start(() => {
+            pendingResetRef.current = true;
+            setActiveIndex((current) => (current + direction + chips.length) % chips.length);
+          });
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateX, { friction: 8, tension: 90, toValue: 0, useNativeDriver: true }).start();
+        },
+      }),
+    [chips.length, slideDistance, translateX],
+  );
+
+  const activeChip = chips[activeIndex] ?? chips[0];
+  const nextChip = chips[(activeIndex + 1) % chips.length];
+  const previousChip = chips[(activeIndex - 1 + chips.length) % chips.length];
+  if (!activeChip) {
+    return null;
+  }
+  // Preserve the original chip position and natural width when there is
+  // nothing to carousel through.
+  if (chips.length === 1) {
+    return <TenancyStatusChip chip={activeChip} />;
+  }
+
+  return (
+    <View
+      accessibilityLabel={`Status ${activeIndex + 1} of ${chips.length}`}
+      style={{ alignItems: "center", gap: 5, width: slotWidth }}
+      {...panResponder.panHandlers}
+    >
+      <View style={{ height: 28, overflow: "hidden", position: "relative", width: slotWidth }}>
+        <Animated.View
+          style={{
+            alignItems: "center",
+            left: 0,
+            opacity: translateX.interpolate({
+              inputRange: [-slideDistance, 0, slideDistance],
+              outputRange: [0, 1, 0],
+            }),
+            position: "absolute",
+            right: 0,
+            transform: [{ translateX }],
+          }}
+        >
+          <TenancyStatusChip chip={activeChip} fill />
+        </Animated.View>
+
+        {chips.length > 1 ? (
+          <>
+            <Animated.View
+              style={{
+                alignItems: "center",
+                left: 0,
+                opacity: translateX.interpolate({
+                  extrapolate: "clamp",
+                  inputRange: [-slideDistance, -slideDistance / 2, 0],
+                  outputRange: [1, 0.5, 0],
+                }),
+                position: "absolute",
+                right: 0,
+                transform: [{ translateX: Animated.add(translateX, slideDistance) }],
+              }}
+            >
+              <TenancyStatusChip chip={nextChip} fill />
+            </Animated.View>
+            <Animated.View
+              style={{
+                alignItems: "center",
+                left: 0,
+                opacity: translateX.interpolate({
+                  extrapolate: "clamp",
+                  inputRange: [0, slideDistance / 2, slideDistance],
+                  outputRange: [0, 0.5, 1],
+                }),
+                position: "absolute",
+                right: 0,
+                transform: [{ translateX: Animated.add(translateX, -slideDistance) }],
+              }}
+            >
+              <TenancyStatusChip chip={previousChip} fill />
+            </Animated.View>
+          </>
+        ) : null}
+      </View>
+
+      {chips.length > 1 ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+          {chips.map((chip, index) => (
+            <View
+              key={chip.key}
+              style={{
+                backgroundColor: index === activeIndex ? colors.inkSoft : colors.borderStrong,
+                borderRadius: 999,
+                height: 6,
+                width: 6,
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TenancyStatusChip({ chip, fill = false }: { chip: TenancyCardStatusChip; fill?: boolean }) {
+  return chip.kind === "tenancy" ? (
+    <TenancyStatusBadge fill={fill} status={chip.status} />
+  ) : (
+    <TenancyTimingBadge fill={fill} label={chip.label} tone={chip.tone} />
+  );
+}
+
+/**
+ * "Expires in 3d", counted to the nightly run that removes an unsigned
+ * agreement. Days, then hours, then minutes as it gets close.
+ */
+function expiresInLabel(expiresAt: string) {
+  const remainingMs = new Date(expiresAt).getTime() - Date.now();
+  if (Number.isNaN(remainingMs) || remainingMs <= 60_000) {
+    return "Expires soon";
+  }
+  const minutes = Math.floor(remainingMs / 60_000);
+  if (minutes < 60) {
+    return `Expires in ${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `Expires in ${hours}h`;
+  }
+  return `Expires in ${Math.floor(hours / 24)}d`;
+}
+
+function TenancyStatusBadge({ fill = false, status }: { fill?: boolean; status: TenancySummary["status"] }) {
   const { colors, fonts } = useTheme();
   const display =
     status === "ACTIVE"
       ? { background: colors.primarySoft, color: colors.primaryDeep, icon: CheckCircle2 }
-      : status === "ON_NOTICE" || status === "ON_PREMATURE_NOTICE" || status === "PENDING_ACCEPTANCE"
+      : status === "PENDING_EXIT"
+        ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle }
+      : status === "ON_NOTICE" || status === "ON_PREMATURE_NOTICE" || status === "PENDING_ACCEPTANCE" || status === "SCHEDULED"
         ? { background: colors.warningSoft, color: colors.warningText, icon: Clock3 }
         : status === "EVICTED"
           ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle }
@@ -232,8 +457,10 @@ function TenancyStatusBadge({ status }: { status: TenancySummary["status"] }) {
         borderRadius: 999,
         flexDirection: "row",
         gap: 4,
+        justifyContent: fill ? "center" : undefined,
         paddingHorizontal: spacing.sm,
         paddingVertical: 5,
+        width: fill ? "100%" : undefined,
       }}
     >
       <Icon color={display.color} size={13} strokeWidth={2.3} />
@@ -244,7 +471,7 @@ function TenancyStatusBadge({ status }: { status: TenancySummary["status"] }) {
   );
 }
 
-function TenancyTimingBadge({ label, tone }: { label: string; tone: "danger" | "warning" }) {
+function TenancyTimingBadge({ fill = false, label, tone }: { fill?: boolean; label: string; tone: "danger" | "warning" }) {
   const { colors, fonts } = useTheme();
   const backgroundColor = tone === "danger" ? colors.dangerSoft : colors.warningSoft;
   const color = tone === "danger" ? colors.danger : colors.warningText;
@@ -257,8 +484,10 @@ function TenancyTimingBadge({ label, tone }: { label: string; tone: "danger" | "
         borderRadius: 999,
         flexDirection: "row",
         gap: 4,
+        justifyContent: fill ? "center" : undefined,
         paddingHorizontal: spacing.sm,
         paddingVertical: 5,
+        width: fill ? "100%" : undefined,
       }}
     >
       <Clock3 color={color} size={13} strokeWidth={2.3} />

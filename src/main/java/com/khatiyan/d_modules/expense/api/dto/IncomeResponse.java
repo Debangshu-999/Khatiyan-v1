@@ -17,7 +17,10 @@ public record IncomeResponse(
         String description,
         UUID reversesIncomeId,
         boolean reversed,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
+) {
 
     public static IncomeResponse from(IncomeEntry income, boolean reversed) {
         return new IncomeResponse(
@@ -30,6 +33,6 @@ public record IncomeResponse(
                 income.getDescription(),
                 income.getReversesIncomeId(),
                 reversed,
-                income.getCreatedAt());
+                income.getCreatedAt(), income.getVersion());
     }
 }

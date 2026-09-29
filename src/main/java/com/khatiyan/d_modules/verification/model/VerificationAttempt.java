@@ -12,7 +12,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -86,9 +85,26 @@ public class VerificationAttempt extends BaseEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
-    @Version
-    @Column(nullable = false)
-    private long version;
+    /** The provider's id for an Aadhaar App session. */
+    @Column(name = "provider_session_id", length = 120)
+    private String providerSessionId;
+
+    @Column(name = "session_expires_at")
+    private Instant sessionExpiresAt;
+
+    /** SHA-256 of the one-time token in the callback URL. Never the token itself. */
+    @Column(name = "callback_token_hash", length = 64, updatable = false)
+    private String callbackTokenHash;
+
+    /** The Aadhaar App intent link, so a tenant who comes back can reopen it. */
+    @Column(name = "intent_url")
+    private String intentUrl;
+
+    /** Whether the Aadhaar App's face check passed. Null when it was not run. */
+    @Column(name = "face_matched")
+    private Boolean faceMatched;
+
+    // Optimistic lock: the version on BaseEntity (2026-09-28).
 
     private VerificationAttempt(UUID grantId, String providerReference, long pricePaise, Instant startedAt) {
         this.id = UUID.randomUUID();
@@ -97,6 +113,40 @@ public class VerificationAttempt extends BaseEntity {
         this.pricePaise = pricePaise;
         this.startedAt = startedAt;
         this.status = VerificationAttemptStatus.AWAITING_OTP;
+    }
+
+    /**
+     * Opens an attempt that waits for an Aadhaar App callback rather than an OTP.
+     *
+     * <p>{@code callbackTokenHash} is the hash of the token the callback URL
+     * carries: the only thing that makes a posted result this attempt's.
+     */
+    public static VerificationAttempt startSession(
+            UUID grantId, String providerReference, long pricePaise, Instant startedAt, String callbackTokenHash) {
+        if (callbackTokenHash == null || callbackTokenHash.isBlank()) {
+            throw new ValidationException("A session attempt needs a callback token");
+        }
+        VerificationAttempt attempt = start(grantId, providerReference, pricePaise, startedAt);
+        attempt.status = VerificationAttemptStatus.AWAITING_CONSENT;
+        attempt.callbackTokenHash = callbackTokenHash;
+        return attempt;
+    }
+
+    /** The provider opened the session: where to send the tenant, and until when. */
+    public void sessionOpened(String providerSessionId, String intentUrl, Instant sessionExpiresAt) {
+        this.providerSessionId = providerSessionId;
+        this.intentUrl = intentUrl;
+        this.sessionExpiresAt = sessionExpiresAt;
+    }
+
+    public boolean sessionHasExpired(Instant now) {
+        return status == VerificationAttemptStatus.AWAITING_CONSENT
+                && sessionExpiresAt != null
+                && now.isAfter(sessionExpiresAt);
+    }
+
+    public void recordFaceMatch(Boolean faceMatched) {
+        this.faceMatched = faceMatched;
     }
 
     public static VerificationAttempt start(UUID grantId, String providerReference, long pricePaise, Instant startedAt) {
@@ -117,7 +167,8 @@ public class VerificationAttempt extends BaseEntity {
     }
 
     public boolean isOpen() {
-        return status == VerificationAttemptStatus.AWAITING_OTP;
+        return status == VerificationAttemptStatus.AWAITING_OTP
+                || status == VerificationAttemptStatus.AWAITING_CONSENT;
     }
 
     public boolean otpHasExpired(Instant now) {
@@ -143,13 +194,15 @@ public class VerificationAttempt extends BaseEntity {
         this.completedAt = at;
     }
 
-    /** The code was never submitted and the window closed. */
+    /** The code was never submitted, or the session never answered, and the window closed. */
     public void markExpired(Instant at) {
         if (!isOpen()) {
             return;
         }
+        this.failureReason = status == VerificationAttemptStatus.AWAITING_CONSENT
+                ? "The Aadhaar App session closed before it was completed"
+                : "The code expired before it was entered";
         this.status = VerificationAttemptStatus.EXPIRED;
-        this.failureReason = "The code expired before it was entered";
         this.completedAt = at;
     }
 

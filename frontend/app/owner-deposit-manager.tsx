@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, BackHandler, Image, Modal, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, Image, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
@@ -17,20 +17,16 @@ import {
 } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
-import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { DepositAccountDetail, DepositAccountHeader, DepositAccountTenantCard } from "@/features/billing/deposit-account-ui";
 import {
-  ActionButton,
   ConfirmDialog,
-  FormInput,
   NoticeBar,
   formatMoneyPaise,
   humanizeToken,
-  rupeesToPaise,
   shortId,
   ViewOnlyChip,
 } from "@/features/owner/owner-ui";
@@ -49,16 +45,16 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
+import { DepositCorrectionModal as CorrectionModal, type CorrectionMode } from "@/features/billing/deposit-correction-modal";
 
-type CorrectionMode = "add" | "deduct";
-
-const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE"];
+// Pending exit still holds its deposit: it settles when the stay is ended.
+const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE", "PENDING_EXIT"];
 const DEPOSIT_HEADER_ILLUSTRATION = require("../assets/workspace/deposit-header.png");
 
 export default function OwnerDepositManagerScreen() {
   const router = useGuardedRouter();
   const { tenancyId: tenancyIdParam } = useLocalSearchParams<{ tenancyId?: string }>();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   // Settlement executes a decision made at end-tenancy — a refusal here is the
   // server declining, with nothing on screen to correct.
@@ -155,10 +151,12 @@ export default function OwnerDepositManagerScreen() {
   }
 
   async function submitCorrection(amountPaise: number, reason: string) {
-    if (!selectedTenancyId) {
+    if (!selectedTenancyId || !deposit) {
       return;
     }
-    const payload = { amountPaise, reason, tenancyId: selectedTenancyId };
+    // The account's version as shown (2026-09-29): its balance decides what a
+    // correction may do, so one made against an old balance is refused.
+    const payload = { amountPaise, reason, tenancyId: selectedTenancyId, version: deposit.version };
     if (correctionMode === "add") {
       await addCorrection(payload).unwrap();
     } else {
@@ -173,15 +171,15 @@ export default function OwnerDepositManagerScreen() {
   const payable = deposit?.payableAtExit ?? null;
 
   async function submitSettlement() {
-    if (!selectedTenancyId || payable == null) {
+    if (!selectedTenancyId || payable == null || !deposit) {
       return;
     }
     try {
       if (payable) {
-        await settleDeposit({ reason: "Deposit settled at exit", tenancyId: selectedTenancyId }).unwrap();
+        await settleDeposit({ reason: "Deposit settled at exit", tenancyId: selectedTenancyId, version: deposit.version }).unwrap();
         toast.success("Deposit settled.");
       } else {
-        await closeUnpaid({ reason: "Deposit forfeited at exit", tenancyId: selectedTenancyId }).unwrap();
+        await closeUnpaid({ reason: "Deposit forfeited at exit", tenancyId: selectedTenancyId, version: deposit.version }).unwrap();
         toast.success("Deposit account closed.");
       }
       setSettleModalOpen(false);
@@ -305,27 +303,34 @@ export default function OwnerDepositManagerScreen() {
 
       {settleModalOpen && deposit && selectedTenancy && payable != null ? (
         <ConfirmDialog
-          bullets={
-            payable
-              ? [
-                  `${formatMoneyPaise(deposit.currentBalancePaise)} is refunded to ${
-                    selectedTenancy.tenantName?.trim() || "the tenant"
-                  }.`,
-                  "The deposit account closes and the ledger is final.",
-                ]
-              : [
-                  "Nothing is paid out — this deposit was marked not refundable at exit.",
-                  `The ${formatMoneyPaise(deposit.currentBalancePaise)} balance stays on the ledger as a record.`,
-                  "The deposit account closes and the ledger is final.",
-                ]
-          }
           confirmLabel={payable ? "Continue" : "Close account"}
           destructive={!payable}
-          footnote="Decided when the tenancy ended. Amounts cannot be changed here."
+          // One paragraph, not points (user, 2026-09-29). Khatiyan records the
+          // refund, it does not send it.
+          // The amount and the tenant's name are picked out (user, 2026-09-29).
           message={
-            payable
-              ? "This pays out the remaining balance and closes the account."
-              : "This closes the account without paying anything out."
+            payable ? (
+              <>
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold }}>
+                  {formatMoneyPaise(deposit.currentBalancePaise)}
+                </Text>
+                {" must be refunded to "}
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold }}>
+                  {selectedTenancy.tenantName?.trim() || "the tenant"}
+                </Text>
+                . Transferring the funds to the tenant is solely your responsibility. Khatiyan will then close this
+                deposit account and the ledger is final.
+              </>
+            ) : (
+              <>
+                Nothing is paid out, as this deposit was marked not refundable at exit. The{" "}
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold }}>
+                  {formatMoneyPaise(deposit.currentBalancePaise)}
+                </Text>{" "}
+                balance stays on the ledger as a record. Khatiyan will then close this deposit account and the ledger
+                is final.
+              </>
+            )
           }
           onCancel={() => setSettleModalOpen(false)}
           onConfirm={submitSettlement}
@@ -430,7 +435,7 @@ function TenancyPicker({
           >
             {title}
           </Text>
-          <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {subtitle}
           </Text>
         </View>
@@ -577,114 +582,12 @@ function HistoryEntryCard({ onPress }: { onPress: () => void }) {
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.3, lineHeight: 23 }}>
           Deposit manager history
         </Text>
-        <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Search past and present deposit accounts, filter by status and open any ledger.
         </Text>
       </View>
       <ChevronRight color={colors.muted} size={20} strokeWidth={2} />
     </AnimatedPressable>
-  );
-}
-
-function CorrectionModal({
-  balancePaise,
-  mode,
-  onCancel,
-  onSubmit,
-}: {
-  balancePaise: number;
-  mode: CorrectionMode;
-  onCancel: () => void;
-  onSubmit: (amountPaise: number, reason: string) => Promise<void>;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const [amount, setAmount] = useState("");
-  const [reason, setReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const form = useFormErrors<"amount" | "reason">();
-  const isAdd = mode === "add";
-
-  async function handleSubmit() {
-    const amountPaise = rupeesToPaise(amount);
-    const cleared = form.validate({
-      ...(amountPaise == null || amountPaise <= 0
-        ? { amount: "Enter an amount greater than zero." }
-        : !isAdd && amountPaise > balancePaise
-          ? { amount: "Deduction cannot exceed the current balance." }
-          : {}),
-      ...(reason.trim() ? {} : { reason: "Add a short reason for this change." }),
-    });
-    if (!cleared || amountPaise == null) {
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await onSubmit(amountPaise, reason.trim());
-    } catch (caught) {
-      form.failFromServer(errorMessage(caught) || "Could not save this deposit change. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
-      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radii.card,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxWidth: 440,
-            padding: spacing.lg,
-            width: "100%",
-          }}
-        >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
-            {isAdd ? "Add to deposit" : "Deduct from deposit"}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>
-            Current balance {formatMoneyPaise(balancePaise)}
-          </Text>
-
-          <FormInput
-            error={form.errors.amount}
-            keyboardType="decimal-pad"
-            label="Amount"
-            onChangeText={(next) => {
-              setAmount(next);
-              form.clearField("amount");
-            }}
-            placeholder="0"
-            prefix="₹"
-            required
-            value={amount}
-          />
-          <FormInput
-            error={form.errors.reason}
-            label="Reason"
-            maxLength={300}
-            multiline
-            onChangeText={(next) => {
-              setReason(next);
-              form.clearField("reason");
-            }}
-            placeholder={isAdd ? "Top-up reason" : "Deduction reason"}
-            required
-            value={reason}
-          />
-
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton disabled={submitting} label="Cancel" onPress={onCancel} variant="secondary" />
-            <ActionButton disabled={submitting || form.blocked} label={isAdd ? "Add" : "Deduct"} onPress={() => void handleSubmit()} variant={isAdd ? "primary" : "danger"} />
-          </View>
-          {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
-        </View>
-      </View>
-    </Modal>
   );
 }
 

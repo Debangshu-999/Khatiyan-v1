@@ -80,7 +80,7 @@ function NoticeCard({ notice }: { notice: NoticeSummary }) {
           <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
             {notice.title}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             {notice.body}
           </Text>
         </View>

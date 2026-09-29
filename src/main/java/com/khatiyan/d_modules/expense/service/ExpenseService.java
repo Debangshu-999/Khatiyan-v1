@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -75,6 +76,8 @@ public class ExpenseService {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         Expense original = expenseRepository.findByIdAndPropertyId(expenseId, propertyId)
                 .orElseThrow(() -> new NotFoundException("Expense", expenseId));
+        // Two people reversing the same entry at once reverse it once (2026-09-29).
+        VersionGuard.claim(original);
         if (original.getEntryType() == ExpenseEntryType.REVERSAL) {
             throw new ValidationException("A reversal cannot be reversed");
         }
@@ -158,7 +161,7 @@ public class ExpenseService {
     // Projected salary is a forward estimate from current staff, so it only counts
     // for the current and future months. Back-projecting it onto past months would
     // make every month's total look identical (it doesn't vary by month).
-    private long projectedSalaryPaise(UUID propertyId, LocalDate monthStart) {
+    public long projectedSalaryPaise(UUID propertyId, LocalDate monthStart) {
         if (YearMonth.from(monthStart).isBefore(YearMonth.now(ZoneId.of("Asia/Kolkata")))) {
             return 0L;
         }

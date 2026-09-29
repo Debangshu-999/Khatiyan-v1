@@ -7,6 +7,8 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.notice.api.dto.CreateRecurringNoticeRequest;
@@ -52,6 +55,9 @@ public class RecurringNoticeService {
     private final ZoneId generationZone;
     private final Clock clock;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public RecurringNoticeService(
             RecurringNoticeRepository recurringNoticeRepository,
             NoticeRepository noticeRepository,
@@ -60,7 +66,9 @@ public class RecurringNoticeService {
             RecurringNoticeAttachmentRepository templateAttachmentRepository,
             NoticeAttachmentRepository noticeAttachmentRepository,
             @Value("${app.notice.recurring-generation-zone:Asia/Kolkata}") String generationZone,
-            Clock clock) {
+            Clock clock,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.recurringNoticeRepository = recurringNoticeRepository;
         this.noticeRepository = noticeRepository;
         this.propertyModule = propertyModule;
@@ -208,34 +216,42 @@ public class RecurringNoticeService {
 
     // System generation action
 
-    @Transactional
     public int generateDueRecurringNotices() {
         LocalDate today = LocalDate.now(clock);
 
         int generatedCount = 0;
         int batchSize = 100;
+        // One template per transaction (2026-09-28). A template that fails, or
+        // that an owner edited at the same moment, stays due, so the query would
+        // hand it back forever. Each is tried once per run and the next
+        // five-minute run picks it up again.
+        Set<UUID> attempted = new HashSet<>();
 
         while (true) {
-            List<RecurringNotice> recurringNotices = recurringNoticeRepository.findDueForProcessing(
+            List<UUID> page = recurringNoticeRepository.findDueForProcessing(
                     today,
-                    PageRequest.of(0, batchSize));
+                    PageRequest.of(0, batchSize)).stream()
+                    .map(RecurringNotice::getId)
+                    .filter(attempted::add)
+                    .toList();
 
-            if (recurringNotices.isEmpty()) {
+            if (page.isEmpty()) {
                 break;
             }
 
-            for (RecurringNotice recurringNotice : recurringNotices) {
+            generatedCount += recordByRecord.run("notice-recurring-generate", page, id -> id, id -> {
+                RecurringNotice recurringNotice = recurringNoticeRepository.findById(id).orElse(null);
+                if (recurringNotice == null || today.equals(recurringNotice.getLastProcessedForDate())) {
+                    return false;
+                }
                 boolean due = recurringNotice.shouldGenerateFor(today);
 
                 // Today gets its own row, always built fresh from the template.
                 // Yesterday's row keeps whatever the owner did to it and ages out
                 // via the archive job; nothing carries forward.
                 generateOccurrenceIfDue(recurringNotice, today);
-
-                if (due) {
-                    generatedCount++;
-                }
-            }
+                return due;
+            });
         }
 
         if (generatedCount > 0) {

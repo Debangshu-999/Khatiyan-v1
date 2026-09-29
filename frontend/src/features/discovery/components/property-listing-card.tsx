@@ -358,7 +358,7 @@ function MatchSummary({ match }: { match: FilterMatch }) {
           ))}
         </View>
       ) : (
-        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           Outside your preferences, shown nearby.
         </Text>
       )}

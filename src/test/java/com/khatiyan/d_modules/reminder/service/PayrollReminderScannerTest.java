@@ -320,6 +320,6 @@ class PayrollReminderScannerTest {
                 null,
                 null,
                 true,
-                true);
+                true, 0L);
     }
 }

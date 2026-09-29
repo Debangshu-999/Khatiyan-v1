@@ -18,6 +18,12 @@ public record ManagerPermissionsResponse(
     UUID managerUserId,
     // True for the property owner, whose access is total and not grantable.
     boolean owner,
-    Map<ManagerResource, ManagerAccessLevel> levels
+    Map<ManagerResource, ManagerAccessLevel> levels,
+    /**
+     * The manager's assignment version (2026-09-29), 0 for the owner. The
+     * permission screen sends it back as If-Match, so grants someone changed
+     * since the screen opened are refused, not overwritten.
+     */
+    long version
 ) {
 }

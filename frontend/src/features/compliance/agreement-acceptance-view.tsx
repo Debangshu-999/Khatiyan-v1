@@ -88,7 +88,10 @@ export function AgreementAcceptanceView({
    */
   async function requestCode() {
     try {
-      setChallenge(await startSigning().unwrap());
+      if (!agreement) {
+        return;
+      }
+      setChallenge(await startSigning({ version: agreement.version }).unwrap());
       setLockedFor(0);
     } catch (error) {
       // A refusal for asking too often is not an error to dismiss — it is a
@@ -115,12 +118,14 @@ export function AgreementAcceptanceView({
    * in the box.
    */
   async function handleAccept(otp: string) {
-    if (!challenge) {
+    if (!challenge || !agreement) {
       return;
     }
 
     try {
       await acceptAgreement({
+        // The agreement as the tenant read it (2026-09-29).
+        version: agreement.version,
         contentHash: challenge.contentHash,
         device: deviceFingerprint(),
         otp,
@@ -137,7 +142,10 @@ export function AgreementAcceptanceView({
   async function handleDecline() {
     setConfirmDecline(false);
     try {
-      await declineAgreement().unwrap();
+      if (!agreement) {
+        return;
+      }
+      await declineAgreement({ version: agreement.version }).unwrap();
       toast.success("Agreement declined. The tenancy was cancelled.");
     } catch {
       opErrors.failFromServer("Could not decline the agreement. Please try again.");

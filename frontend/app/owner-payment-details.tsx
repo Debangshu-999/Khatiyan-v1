@@ -1,25 +1,29 @@
-import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { Switch, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { CircleCheck } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { OwnerPaymentDetailsSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, FormInput } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
 import { UpiQrField } from "@/features/billing/upi-qr-field";
+import { PaymentMethodToggle } from "@/features/billing/payment-method-toggle";
+import { METHOD_LABEL, METHOD_ORDER, type TenderMethod } from "@/features/billing/payment-methods";
 import { useAppSelector } from "@/store/hooks";
 import {
   useGetPropertyPaymentDetailsQuery,
+  useLookupIfscQuery,
   useUpdatePropertyPaymentDetailsMutation,
+  type IfscLookup,
 } from "@/store/services/payment-intent-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -30,6 +34,11 @@ import { useTheme } from "@/theme/use-theme";
  * rather than a soft settings control.
  */
 const FIELD_RADIUS = 6;
+
+/** Four letters, a zero, six letters or digits: every Indian branch code. */
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const IFSC_NOT_FOUND = "No bank branch uses this IFSC. Check your cheque book or passbook.";
+const ACCOUNT_MISMATCH = "Account numbers do not match.";
 
 /**
  * Where this property's rent should be paid to.
@@ -51,15 +60,38 @@ export default function OwnerPaymentDetailsScreen() {
   const hydrated = useAppSelector((state) => state.auth.hydrated);
   const detailsQuery = useGetPropertyPaymentDetailsQuery(propertyId ?? "", { skip: !propertyId });
   const [save, saveState] = useUpdatePropertyPaymentDetailsMutation();
-  const form = useFormErrors<"bankAccountNumber" | "bankIfsc" | "payeeName" | "upiPhone" | "upiQr" | "upiVpa">();
+  const form = useFormErrors<
+    "bankAccountConfirm" | "bankAccountNumber" | "bankIfsc" | "payeeName" | "upiPhone" | "upiQr" | "upiVpa"
+  >();
 
   const [upiVpa, setUpiVpa] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [upiPhone, setUpiPhone] = useState("");
   const [upiQrImageUrl, setUpiQrImageUrl] = useState("");
   const [bankAccountNumber, setBankAccountNumber] = useState("");
+  // Typed a second time and matched before saving (user, 2026-09-29). A digit
+  // wrong sends a tenant's rent to someone else, and nothing here can check
+  // an account number against the bank for free.
+  const [bankAccountConfirm, setBankAccountConfirm] = useState("");
   const [bankIfsc, setBankIfsc] = useState("");
   const [bankAccountHolder, setBankAccountHolder] = useState("");
+  // Checked against the bank directory once the code is well formed, which is
+  // also the debounce: nothing goes out mid-word. A directory that cannot be
+  // reached blocks nothing, only a definite "no such branch" does.
+  const ifscCode = bankIfsc.trim();
+  const ifscWellFormed = IFSC_PATTERN.test(ifscCode);
+  const ifscLookup = useLookupIfscQuery(ifscCode, { skip: !ifscWellFormed });
+  const ifscMissing = ifscWellFormed && !ifscLookup.isFetching && ifscLookup.data?.status === "NOT_FOUND";
+  // Live, once something is typed in the second field: a mismatch is said
+  // under it and holds Save back. An empty second field is asked for on Save.
+  const accountMismatch =
+    bankAccountConfirm.trim().length > 0 && bankAccountConfirm.trim() !== bankAccountNumber.trim();
+  // Which ways the property takes money, and whether cash needs the tenant's
+  // code (2026-09-28). Cash only, no code, until the owner changes it.
+  const [accepted, setAccepted] = useState<Set<TenderMethod>>(() => new Set<TenderMethod>(["CASH"]));
+  const [cashOtp, setCashOtp] = useState(false);
+  /** The method the owner just tried to untick while it was the last one on. */
+  const [lastMethod, setLastMethod] = useState<TenderMethod | null>(null);
 
   // Seeded once the server copy lands, keyed on the property so switching
   // workspaces reloads rather than carrying one property's payout details onto
@@ -74,9 +106,38 @@ export default function OwnerPaymentDetailsScreen() {
     setUpiPhone(held.upiPhone ?? "");
     setUpiQrImageUrl(held.upiQrImageUrl ?? "");
     setBankAccountNumber(held.bankAccountNumber ?? "");
+    // The saved number was matched when it was saved.
+    setBankAccountConfirm(held.bankAccountNumber ?? "");
     setBankIfsc(held.bankIfsc ?? "");
     setBankAccountHolder(held.bankAccountHolder ?? "");
+    setAccepted(new Set(held.acceptedMethods.filter((method): method is TenderMethod => method !== "OTHER")));
+    setCashOtp(held.cashOtpRequired);
   }, [held, propertyId]);
+
+  /**
+   * One method is always on (user, 2026-09-28): unticking the last one is
+   * refused with a warning, rather than leaving tenants no way to pay.
+   */
+  function toggleMethod(method: TenderMethod) {
+    if (accepted.has(method) && accepted.size === 1) {
+      setLastMethod(method);
+      return;
+    }
+    setAccepted((current) => {
+      const next = new Set(current);
+      if (next.has(method)) {
+        next.delete(method);
+      } else {
+        next.add(method);
+      }
+      return next;
+    });
+    form.clearField("upiVpa");
+    form.clearField("bankAccountNumber");
+  }
+  const heldMethods = (held?.acceptedMethods ?? []).filter((method) => method !== "OTHER");
+  const methodsChanged =
+    heldMethods.length !== accepted.size || heldMethods.some((method) => !accepted.has(method as TenderMethod));
 
   /**
    * The four UPI details go together: all of them, or none.
@@ -105,7 +166,9 @@ export default function OwnerPaymentDetailsScreen() {
       upiQrImageUrl !== (held?.upiQrImageUrl ?? "") ||
       bankAccountNumber.trim() !== (held?.bankAccountNumber ?? "") ||
       bankIfsc.trim() !== (held?.bankIfsc ?? "") ||
-      bankAccountHolder.trim() !== (held?.bankAccountHolder ?? ""));
+      bankAccountHolder.trim() !== (held?.bankAccountHolder ?? "") ||
+      methodsChanged ||
+      cashOtp !== (held?.cashOtpRequired ?? false));
 
   function clearUpiErrors() {
     form.clearField("upiQr");
@@ -120,17 +183,28 @@ export default function OwnerPaymentDetailsScreen() {
     // with no IFSC.
     const account = bankAccountNumber.trim();
     const ifsc = bankIfsc.trim();
-    const incomplete = "Add this too, or clear the other UPI details.";
+    const confirm = bankAccountConfirm.trim();
+    // A ticked UPI or bank transfer needs its details: tenants are offered it.
+    const takesUpi = accepted.has("UPI");
+    const takesBank = accepted.has("BANK_TRANSFER");
+    const incomplete = takesUpi ? "Needed to take UPI." : "Add this too, or clear the other UPI details.";
+    const needUpi = anyUpi || takesUpi;
     const cleared = form.validate({
-      ...(anyUpi && !upiFilled.upiQr ? { upiQr: incomplete } : {}),
-      ...(anyUpi && !upiFilled.upiVpa ? { upiVpa: incomplete } : {}),
-      ...(anyUpi && !upiFilled.upiPhone ? { upiPhone: incomplete } : {}),
-      ...(anyUpi && !upiFilled.payeeName ? { payeeName: incomplete } : {}),
-      ...(Boolean(account) === Boolean(ifsc)
-        ? {}
-        : account
+      ...(needUpi && !upiFilled.upiQr ? { upiQr: incomplete } : {}),
+      ...(needUpi && !upiFilled.upiVpa ? { upiVpa: incomplete } : {}),
+      ...(needUpi && !upiFilled.upiPhone ? { upiPhone: incomplete } : {}),
+      ...(needUpi && !upiFilled.payeeName ? { payeeName: incomplete } : {}),
+      ...(takesBank && !account ? { bankAccountNumber: "Needed to take bank transfers." } : {}),
+      ...(account && !confirm ? { bankAccountConfirm: "Re-enter the account number." } : {}),
+      ...(account && confirm && confirm !== account ? { bankAccountConfirm: ACCOUNT_MISMATCH } : {}),
+      ...(takesBank && !ifsc ? { bankIfsc: "Needed to take bank transfers." } : {}),
+      ...(ifsc && !IFSC_PATTERN.test(ifsc) ? { bankIfsc: "Enter a valid IFSC. It is 11 characters: 4 letters, a 0, then 6 letters or digits." } : {}),
+      ...(ifscMissing ? { bankIfsc: IFSC_NOT_FOUND } : {}),
+      ...(!takesBank && Boolean(account) !== Boolean(ifsc)
+        ? account
           ? { bankIfsc: "Add the IFSC as well, or clear the account number." }
-          : { bankAccountNumber: "Add the account number as well, or clear the IFSC." }),
+          : { bankAccountNumber: "Add the account number as well, or clear the IFSC." }
+        : {}),
     });
     if (!cleared || !propertyId) {
       return;
@@ -138,6 +212,8 @@ export default function OwnerPaymentDetailsScreen() {
 
     try {
       await save({
+        // The setup as loaded (2026-09-29). 0 before its first save.
+        version: held?.version ?? 0,
         bankAccountHolder: bankAccountHolder.trim() || null,
         bankAccountNumber: account || null,
         bankIfsc: ifsc || null,
@@ -146,6 +222,8 @@ export default function OwnerPaymentDetailsScreen() {
         upiPhone: upiPhone.trim() || null,
         upiQrImageUrl: upiQrImageUrl || null,
         upiVpa: upiVpa.trim() || null,
+        acceptedMethods: METHOD_ORDER.filter((method) => accepted.has(method)),
+        cashOtpRequired: cashOtp,
       }).unwrap();
       toast.success("Payment setup saved.");
     } catch (caught) {
@@ -177,7 +255,7 @@ export default function OwnerPaymentDetailsScreen() {
         <ScreenHeader
           title="Payment"
           italicTail="setup."
-          subtitle="Where your tenants' rent should be paid. Leave it blank to keep collecting offline."
+          subtitle="How your tenants can pay. Tick the ways you take money."
         />
         <OwnerPaymentDetailsSkeleton />
       </ScreenScrollView>
@@ -214,7 +292,7 @@ export default function OwnerPaymentDetailsScreen() {
       <ScreenHeader
         title="Payment"
         italicTail="setup."
-        subtitle="Where your tenants' rent should be paid. Leave it blank to keep collecting offline."
+        subtitle="How your tenants can pay. Tick the ways you take money."
       />
 
       {/* The screen's shape: two sections, each a card of fields, and the save
@@ -226,12 +304,47 @@ export default function OwnerPaymentDetailsScreen() {
         <OwnerPaymentDetailsSkeleton />
       ) : (
         <>
-          <Section title="UPI">
-            <Card>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                Add all four to let tenants pay from the app. Leave all empty to keep collecting offline.
-              </Text>
+          <MethodBlock
+            checked={accepted.has("CASH")}
+            description="Tenants hand over cash at your desk. No claim is raised, you mark the bill paid."
+            method="CASH"
+            onToggle={() => toggleMethod("CASH")}
+          >
+            {/* Its own grey panel, so the one setting cash has reads as a
+                control and not as more of the explanation above it. */}
+            <View
+              style={{
+                backgroundColor: colors.surfaceSunken,
+                borderCurve: "continuous",
+                borderRadius: radii.card,
+                padding: spacing.md,
+              }}
+            >
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[type.bodyStrong, { color: colors.ink }]}>Verify cash with OTP</Text>
+                  <Text style={[type.description, { color: colors.muted }]}>
+                    The tenant reads out a code sent to their phone before you mark the bill paid.
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityLabel="Verify cash with OTP"
+                  onValueChange={setCashOtp}
+                  thumbColor={colors.surface}
+                  trackColor={{ false: colors.neutralSoft, true: colors.primary }}
+                  value={cashOtp}
+                />
+              </View>
+            </View>
+          </MethodBlock>
 
+          <MethodBlock
+            checked={accepted.has("UPI")}
+            description="Tenants pay from their UPI app, then raise a claim you confirm."
+            method="UPI"
+            onToggle={() => toggleMethod("UPI")}
+          >
+            <Card>
               {/* Changing any one UPI detail can resolve another's "add this
                   too" error (clearing everything is a valid answer), so each
                   change clears all four rather than only its own. */}
@@ -289,15 +402,15 @@ export default function OwnerPaymentDetailsScreen() {
               />
 
             </Card>
-          </Section>
+          </MethodBlock>
 
-          <Section title="Bank transfer">
+          <MethodBlock
+            checked={accepted.has("BANK_TRANSFER")}
+            description="Tenants transfer to this account quoting the bill reference, then raise a claim you confirm."
+            method="BANK_TRANSFER"
+            onToggle={() => toggleMethod("BANK_TRANSFER")}
+          >
             <Card>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-                Optional. Fill both fields and tenants get a bank tab alongside UPI, with a reminder to quote the bill
-                reference so you can match the transfer.
-              </Text>
-
               <FormInput
                 label="Account holder"
                 onChangeText={setBankAccountHolder}
@@ -311,31 +424,78 @@ export default function OwnerPaymentDetailsScreen() {
                 label="Account number"
                 maxLength={18}
                 onChangeText={(text) => {
-                  setBankAccountNumber(text.replace(/[^0-9]/g, ""));
+                  const digits = text.replace(/[^0-9]/g, "");
+                  // A changed number is typed again from scratch.
+                  if (digits !== bankAccountNumber) {
+                    setBankAccountConfirm("");
+                  }
+                  setBankAccountNumber(digits);
                   form.clearField("bankAccountNumber");
+                  form.clearField("bankAccountConfirm");
                 }}
                 placeholder=""
                 radius={FIELD_RADIUS}
                 value={bankAccountNumber}
               />
               <FormInput
+                error={form.errors.bankAccountConfirm ?? (accountMismatch ? ACCOUNT_MISMATCH : undefined)}
+                keyboardType="number-pad"
+                label="Re-enter account number"
+                maxLength={18}
+                noPaste
+                onChangeText={(text) => {
+                  setBankAccountConfirm(text.replace(/[^0-9]/g, ""));
+                  form.clearField("bankAccountConfirm");
+                }}
+                placeholder=""
+                radius={FIELD_RADIUS}
+                value={bankAccountConfirm}
+              />
+              <FormInput
                 autoCapitalize="characters"
-                error={form.errors.bankIfsc}
+                error={form.errors.bankIfsc ?? (ifscMissing ? IFSC_NOT_FOUND : undefined)}
                 label="IFSC"
                 maxLength={11}
                 onChangeText={(text) => {
                   setBankIfsc(text.toUpperCase());
                   form.clearField("bankIfsc");
                 }}
-                placeholder="HDFC0001234"
+                // Not an example code: every well-formed example is somebody's
+                // real branch (HDFC0001234 is HDFC Park Street, Jaipur), and
+                // owners typed it in as a dummy.
+                placeholder="On your cheque book or passbook"
                 radius={FIELD_RADIUS}
                 value={bankIfsc}
               />
+              {ifscWellFormed ? <IfscBranchNote fetching={ifscLookup.isFetching} lookup={ifscLookup.data} /> : null}
             </Card>
-          </Section>
+          </MethodBlock>
 
+          <MethodBlock
+            checked={accepted.has("CARD")}
+            description="Tenants pay by card at your desk, then raise a claim with the slip's approval code or a photo."
+            method="CARD"
+            onToggle={() => toggleMethod("CARD")}
+          />
+
+          <MethodBlock
+            checked={accepted.has("CHEQUE")}
+            description="Tenants hand over a cheque, then raise a claim with its number or a photo."
+            method="CHEQUE"
+            onToggle={() => toggleMethod("CHEQUE")}
+          />
+
+          {/* Bank transfer is never saved against an IFSC with no branch
+              (user, 2026-09-28), nor while the check is still out. */}
           <ActionButton
-            disabled={saveState.isLoading || form.blocked || !isDirty}
+            disabled={
+              saveState.isLoading ||
+              form.blocked ||
+              !isDirty ||
+              ifscMissing ||
+              (ifscWellFormed && ifscLookup.isFetching) ||
+              accountMismatch
+            }
             label={saveState.isLoading ? "Saving…" : "Save payment setup"}
             onPress={() => void submit()}
           />
@@ -343,6 +503,65 @@ export default function OwnerPaymentDetailsScreen() {
       )}
 
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
+      {lastMethod ? (
+        <AlertModal
+          message={`${METHOD_LABEL[lastMethod]} is the only way tenants can pay right now. Tick another method before turning it off.`}
+          onClose={() => setLastMethod(null)}
+          tone="warning"
+        />
+      ) : null}
     </ScreenScrollView>
+  );
+}
+
+/**
+ * One payment method in Payment setup: its checkbox as the heading, what it
+ * means for tenants in a blue notice, then its settings. Everything stays open
+ * whether it is ticked or not, so an owner can read what a method does before
+ * turning it on.
+ */
+function MethodBlock({
+  checked,
+  children,
+  description,
+  method,
+  onToggle,
+}: {
+  checked: boolean;
+  children?: ReactNode;
+  description: string;
+  method: TenderMethod;
+  onToggle: () => void;
+}) {
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <PaymentMethodToggle checked={checked} method={method} onToggle={onToggle} />
+      <NoticeBar message={description} title="How it works" tone="info" />
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The branch an IFSC belongs to, named back while the owner types, so a
+ * mistyped code is caught before a tenant sends money to it. Quiet when the
+ * directory could not be reached: that is not the owner's mistake. A code with
+ * no branch shows as the field's own error instead.
+ */
+function IfscBranchNote({ fetching, lookup }: { fetching: boolean; lookup: IfscLookup | undefined }) {
+  const { colors, fonts, type } = useTheme();
+  if (fetching) {
+    return <Text style={[type.caption, { color: colors.muted, marginTop: -spacing.xs }]}>Checking branch…</Text>;
+  }
+  if (lookup?.status !== "FOUND") {
+    return null;
+  }
+  return (
+    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, marginTop: -spacing.xs }}>
+      <CircleCheck color={colors.successText} size={15} strokeWidth={2.4} style={{ marginTop: 1 }} />
+      <Text selectable style={{ color: colors.successText, flex: 1, fontFamily: fonts.sansBold, fontSize: 12.5, lineHeight: 18 }}>
+        {[lookup.bank, [lookup.branch, lookup.city].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
+      </Text>
+    </View>
   );
 }

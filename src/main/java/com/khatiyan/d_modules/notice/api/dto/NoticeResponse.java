@@ -54,7 +54,6 @@ public record NoticeResponse(
             notice.getOccurrenceDate(),
             notice.getCreatedAt(),
             notice.getUpdatedAt(),
-            attachments == null ? List.of() : attachments
-        );
+            attachments == null ? List.of() : attachments);
     }
 }

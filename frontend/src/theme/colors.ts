@@ -53,6 +53,8 @@ export const themes = {
     terracottaSoft: "#FBEDE7",
 
     jade: "#047857",
+    /** Jade with more weight, like primaryDeep for blue: a heading that must read as green at a glance. */
+    jadeDeep: "#065F46",
     jadeSoft: "#ECFDF5",
     /**
      * The fill under a selected tab.
@@ -121,6 +123,8 @@ export const themes = {
     terracottaSoft: "#2A1812",
 
     jade: "#6EE7B7",
+    /** More emphasis on a dark surface means lighter, as primaryDeep does. */
+    jadeDeep: "#A7F3D0",
     jadeSoft: "#102018",
     tabSelected: "#4A6B87",
     tabSelectedDeep: "#9FC4E0",

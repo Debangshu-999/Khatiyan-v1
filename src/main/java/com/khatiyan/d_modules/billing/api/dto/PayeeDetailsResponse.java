@@ -37,18 +37,24 @@ public record PayeeDetailsResponse(
     boolean hasBankDetails
 ) {
 
+    /**
+     * Only the halves the owner has ticked (2026-09-28). An unticked method's
+     * details are kept on the property but never sent to a tenant.
+     */
     public static PayeeDetailsResponse from(PropertyPaymentDetails details) {
-        if (details == null) {
+        if (details == null || (!details.offersUpi() && !details.offersBankTransfer())) {
             return null;
         }
+        boolean upi = details.offersUpi();
+        boolean bank = details.offersBankTransfer();
         return new PayeeDetailsResponse(
-                details.getPayeeName(),
-                details.getUpiVpa(),
-                details.getUpiPhone(),
-                details.getUpiQrImageUrl(),
-                details.getBankAccountNumber(),
-                details.getBankIfsc(),
-                details.getBankAccountHolder(),
-                details.hasBankDetails());
+                upi ? details.getPayeeName() : details.getBankAccountHolder(),
+                upi ? details.getUpiVpa() : null,
+                upi ? details.getUpiPhone() : null,
+                upi ? details.getUpiQrImageUrl() : null,
+                bank ? details.getBankAccountNumber() : null,
+                bank ? details.getBankIfsc() : null,
+                bank ? details.getBankAccountHolder() : null,
+                bank);
     }
 }

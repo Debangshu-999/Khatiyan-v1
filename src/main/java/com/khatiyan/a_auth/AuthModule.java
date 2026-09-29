@@ -94,20 +94,17 @@ public class AuthModule {
      * Records the identity a government check established, and freezes it.
      *
      * <p>For the verification module alone. The values REPLACE what was typed
-     * rather than being merged with it — an address from UIDAI and one typed
-     * into a form will never agree character for character, and the
-     * government's is the one worth keeping.
+     * rather than being merged with it: the government's copy is the one worth
+     * keeping. The address is not among them (owner's decision, 2026-09-27).
      */
     public void applyVerifiedIdentity(
             UUID userId,
             String fullName,
             LocalDate dateOfBirth,
-            String permanentAddress,
-            String permanentAddressPincode,
+            com.khatiyan.a_auth.model.Gender gender,
             String source,
             java.time.Instant verifiedAt) {
-        authService.applyVerifiedIdentity(
-                userId, fullName, dateOfBirth, permanentAddress, permanentAddressPincode, source, verifiedAt);
+        authService.applyVerifiedIdentity(userId, fullName, dateOfBirth, gender, source, verifiedAt);
     }
 
     public UUID provisionManagerUser(String phone, String fullName, UUID provisionedBy) {
@@ -133,6 +130,22 @@ public class AuthModule {
     /** Verifies and spends a signing code. Returns the masked destination it went to. */
     public String completeAgreementSigning(UUID userId, String otp) {
         return authService.completeAgreementSigning(userId, otp);
+    }
+
+    /**
+     * Sends a cash-payment confirmation code, returning the masked destination.
+     *
+     * <p>The phone must be resolved by the caller from its own records — the
+     * account's number, or a guest stay's recorded one — and never taken from a
+     * request. A code sent to a number the collector chose proves nothing.
+     */
+    public String startCashPaymentConfirmation(String phone, String requestIpAddress, String detail) {
+        return authService.startCashPaymentConfirmation(phone, requestIpAddress, detail);
+    }
+
+    /** Verifies and spends a cash-payment code sent to {@code phone}. */
+    public void completeCashPaymentConfirmation(String phone, String otp) {
+        authService.completeCashPaymentConfirmation(phone, otp);
     }
 
     public void markActiveTenant(UUID userId) {

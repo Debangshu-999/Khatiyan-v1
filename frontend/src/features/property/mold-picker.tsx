@@ -156,7 +156,7 @@ export function MoldPicker({
                 <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                   No room types yet
                 </Text>
-                <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
+                <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
                   A room is cut from a type. Set them up on the property first.
                 </Text>
               </View>

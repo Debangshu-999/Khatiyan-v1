@@ -28,6 +28,8 @@ import {
   OwnerTenancySnapshotSkeleton,
 } from "@/components/skeletons/owner";
 import { ActiveTenancyCard, PastTenancyCard } from "@/features/owner/tenancy-list";
+import { ProvideAttemptsSheet } from "@/features/compliance/provide-attempts-sheet";
+import { useGetPendingAgreementDeadlinesQuery } from "@/store/services/compliance-api";
 import { useAppSelector } from "@/store/hooks";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -65,6 +67,13 @@ export default function OwnerTenancyWorkspaceScreen() {
   // Withdrawing a stay the tenant never accepted. Held here rather than in the
   // card so one dialog serves the whole list.
   const [pendingRemoval, setPendingRemoval] = useState<TenancySummary | null>(null);
+  // The pending stay whose tenant the owner is giving more verification attempts.
+  const [attemptsFor, setAttemptsFor] = useState<TenancySummary | null>(null);
+  // When each unsigned agreement expires, shown on its pending card.
+  const deadlinesQuery = useGetPendingAgreementDeadlinesQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty?.id,
+  });
+  const agreementExpiry = new Map((deadlinesQuery.data ?? []).map((row) => [row.tenancyId, row.expiresAt]));
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [cancelPendingTenancy] = useCancelPendingTenancyMutation();
   const removeErrors = useFormErrors<never>();
@@ -115,23 +124,20 @@ export default function OwnerTenancyWorkspaceScreen() {
   // rather than fetched again.
   const upcomingExits = useMemo(() => {
     const today = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()));
-    const horizon = new Date(today);
-    horizon.setDate(horizon.getDate() + 7);
-
     return (activeTenancies?.items ?? [])
       .filter((tenancy) => {
-        const checkout = tenancy.billingType === "DAILY" ? tenancy.plannedEndDate : tenancy.endDate;
+        // The one checkout date, inside this stay's own window: a fixed term
+        // shows 7, 15 or 30 days out by its length, everything else 7.
+        const checkout = tenancy.checkoutDate;
         if (!checkout) {
           return false;
         }
+        const horizon = new Date(today);
+        horizon.setDate(horizon.getDate() + tenancy.endingSoonLeadDays);
         const date = new Date(checkout);
         return date >= today && date <= horizon;
       })
-      .sort((a, b) => {
-        const left = (a.billingType === "DAILY" ? a.plannedEndDate : a.endDate) ?? "";
-        const right = (b.billingType === "DAILY" ? b.plannedEndDate : b.endDate) ?? "";
-        return left.localeCompare(right);
-      });
+      .sort((a, b) => (a.checkoutDate ?? "").localeCompare(b.checkoutDate ?? ""));
   }, [activeTenancies]);
   const tenancySnapshot = dashboardQuery.data?.tenancy;
 
@@ -175,11 +181,7 @@ export default function OwnerTenancyWorkspaceScreen() {
           the inline arrow belongs to nested screens, which name their parent
           in the eyebrow beside it. */}
       <ScreenHeader
-        italicTail="workspace."
-        titleAdjustsFontSizeToFit
-        titleMinimumFontScale={0.82}
-        titleNumberOfLines={1}
-        titleStyle={{ fontSize: 22, letterSpacing: -0.5, lineHeight: 28 }}
+        italicTail="control."
         subtitle={
           selectedProperty
             ? `Tenancy workspace for ${selectedProperty.name}.`
@@ -362,6 +364,8 @@ export default function OwnerTenancyWorkspaceScreen() {
                     ending={false}
                     onEndTenancy={() => router.push({ pathname: "/owner-end-tenancy", params: { tenancyId: tenancy.id } })}
                     onOpen={() => openActiveTenancy(tenancy)}
+                    agreementExpiresAt={agreementExpiry.get(tenancy.id) ?? null}
+                    onProvideAttempts={canManage("TENANCY_CREATE") ? () => setAttemptsFor(tenancy) : undefined}
                     onRemove={() => setPendingRemoval(tenancy)}
                     removing={removingId === tenancy.id}
                     roomLabel={roomLabel}
@@ -388,6 +392,10 @@ export default function OwnerTenancyWorkspaceScreen() {
         </>
       ) : null}
       {accessDialog}
+      {attemptsFor ? (
+        <ProvideAttemptsSheet onClose={() => setAttemptsFor(null)} tenancyId={attemptsFor.id} />
+      ) : null}
+
       {pendingRemoval ? (
         <ConfirmDialog
           confirmLabel="Remove"
@@ -400,7 +408,9 @@ export default function OwnerTenancyWorkspaceScreen() {
             setRemovingId(target.id);
             void (async () => {
               try {
-                await cancelPendingTenancy({ tenancyId: target.id }).unwrap();
+                // The stay as shown (2026-09-29): refused if the tenant accepted or
+                // declined since.
+                await cancelPendingTenancy({ tenancyId: target.id, version: target.version }).unwrap();
                 toast.success(`${target.tenantName?.trim() || "Tenancy"} removed.`);
               } catch (caught) {
                 removeErrors.failFromServer(
@@ -574,7 +584,7 @@ function TenancySnapshotTile({
           previous={delta.previous}
         />
       ) : hint ? (
-        <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
+        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {hint}
         </Text>
       ) : null}

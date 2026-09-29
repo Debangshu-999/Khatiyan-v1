@@ -91,6 +91,11 @@ export type ChatThread = {
   lastMessageSeq: number;
   unread: boolean;
   counterpartLastReadSeq: number;
+  /**
+   * Management reading a tenant's team thread while the tenant's agreement is
+   * still unsigned. Always false for the tenant themselves.
+   */
+  pendingAgreement: boolean;
 };
 
 export type ChatContact = {
@@ -306,8 +311,8 @@ export const chatApi = api.injectEndpoints({
       invalidatesTags: ["Chat", "ChatUnread"],
     }),
 
-    closeChatThread: builder.mutation<void, string>({
-      query: (threadId) => ({ method: "POST", url: `${base}/threads/${threadId}/close` }),
+    closeChatThread: builder.mutation<void, { threadId: string }>({
+      query: ({ threadId }) => ({ method: "POST", url: `${base}/threads/${threadId}/close` }),
       invalidatesTags: ["Chat"],
     }),
   }),

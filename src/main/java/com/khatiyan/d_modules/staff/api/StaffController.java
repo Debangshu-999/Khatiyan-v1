@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.ManagerEmploymentResponse;
@@ -74,6 +75,7 @@ public class StaffController {
     }
 
     @PatchMapping("/categories/{categoryId}")
+    @RequiresVersion
     public StaffCategoryResponse updateCategory(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -83,6 +85,7 @@ public class StaffController {
     }
 
     @DeleteMapping("/categories/{categoryId}")
+    @RequiresVersion
     public ResponseEntity<Void> deactivateCategory(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -110,6 +113,7 @@ public class StaffController {
     }
 
     @PatchMapping("/members/{staffReferenceCode}")
+    @RequiresVersion
     public StaffMemberResponse updateMember(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -127,6 +131,7 @@ public class StaffController {
     }
 
     @PostMapping("/members/{staffReferenceCode}/end")
+    @RequiresVersion
     public ResponseEntity<Void> endMember(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -144,6 +149,7 @@ public class StaffController {
     }
 
     @PatchMapping("/managers/{managerReferenceCode}")
+    @RequiresVersion
     public ManagerEmploymentResponse updateManagerEmployment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -161,6 +167,7 @@ public class StaffController {
     }
 
     @PostMapping("/managers/{managerReferenceCode}/end")
+    @RequiresVersion
     public ResponseEntity<Void> endManagerEmployment(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

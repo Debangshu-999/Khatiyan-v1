@@ -11,7 +11,8 @@ import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, FormInput, NoticeBar } from "@/features/owner/owner-ui";
-import { FoodProfileMark, FoodStatusChip, NoDescription, foodIcon } from "@/features/food/food-ui";
+import { FOOD_CATEGORY_OPTIONS, FoodProfileMark, FoodStatusChip, NoDescription, foodIcon } from "@/features/food/food-ui";
+import { SingleOptionPicker } from "@/components/option-picker";
 import { FoodProfileSubscribersSheet } from "@/features/food/owner-food-subscribers";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -20,6 +21,7 @@ import {
   useDeactivateFoodProfileMutation,
   useUpdateFoodProfileMutation,
   type FoodProfile,
+  type FoodProfileCategory,
   type FoodProfileSubscriberSummary,
   type FoodSubscriber,
 } from "@/store/services/food-api";
@@ -182,7 +184,7 @@ function ProfileCard({
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-        <FoodProfileMark name={profile.name} size={48} />
+        <FoodProfileMark category={profile.category} name={profile.name} size={48} />
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
             <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
@@ -191,7 +193,7 @@ function ProfileCard({
             <FoodStatusChip icon="check-circle" label="Active" tone="success" />
           </View>
           {profile.description ? (
-            <Text numberOfLines={3} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
+            <Text numberOfLines={3} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
               {profile.description}
             </Text>
           ) : (
@@ -226,12 +228,12 @@ function ProfileCard({
         />
         {!readOnly ? <ActionButton compact icon={foodIcon("pencil-outline")} label="Edit" onPress={onEdit} variant="secondary" /> : null}
       </View>
-      {!readOnly ? <ActionButton compact label="Retire profile" onPress={onRetire} variant="danger" /> : null}
+      {!readOnly ? <ActionButton compact icon={foodIcon("archive-arrow-down-outline")} label="Retire profile" onPress={onRetire} variant="dangerQuiet" /> : null}
     </View>
   );
 }
 
-type Field = "name";
+type Field = "name" | "category";
 
 function FoodProfileSheet({
   onClose,
@@ -246,20 +248,27 @@ function FoodProfileSheet({
   const form = useFormErrors<Field>();
   const [name, setName] = useState(profile?.name ?? "");
   const [description, setDescription] = useState(profile?.description ?? "");
+  const [category, setCategory] = useState<FoodProfileCategory | null>(profile?.category ?? null);
   const [create, createState] = useCreateFoodProfileMutation();
   const [update, updateState] = useUpdateFoodProfileMutation();
   const saving = createState.isLoading || updateState.isLoading;
 
   async function submit() {
     const trimmed = name.trim();
-    if (!form.validate(trimmed ? {} : { name: "Name this profile." })) {
+    if (
+      !form.validate({
+        ...(trimmed ? {} : { name: "Name this profile." }),
+        ...(category ? {} : { category: "Choose a category." }),
+      })
+      || !category
+    ) {
       return;
     }
 
     // displayOrder is left to the server. Ordering profiles by hand is a
     // control nobody asked for, and an owner with three of them will never
     // reach for it.
-    const body = { description: description.trim() || null, name: trimmed };
+    const body = { category, description: description.trim() || null, name: trimmed };
 
     try {
       if (profile) {
@@ -288,6 +297,24 @@ function FoodProfileSheet({
         placeholder="Vegetarian"
         required
         value={name}
+      />
+      {/* The diet, from a fixed list (2026-09-28). The name stays free text, so
+          "Veg basic" and "Veg premium" can both be Veg. */}
+      <SingleOptionPicker<FoodProfileCategory>
+        centered
+        emptyLabel="Choose a category"
+        error={form.errors.category}
+        label="Category"
+        onChange={(next) => {
+          setCategory(next);
+          form.clearField("category");
+        }}
+        optionIcon={(value) => <FoodProfileMark category={value} name="" size={32} />}
+        options={FOOD_CATEGORY_OPTIONS}
+        required
+        showIcon={false}
+        title="Category"
+        value={category}
       />
       <FormInput
         label="Description"

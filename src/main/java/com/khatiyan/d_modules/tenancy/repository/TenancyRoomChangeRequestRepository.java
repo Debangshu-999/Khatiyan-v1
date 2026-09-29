@@ -25,6 +25,19 @@ public interface TenancyRoomChangeRequestRepository extends JpaRepository<Tenanc
     @Query("SELECT request FROM TenancyRoomChangeRequest request WHERE request.id = :requestId")
     Optional<TenancyRoomChangeRequest> findByIdForUpdate(UUID requestId);
 
+    /** Lock candidate departures while onboarding claims at most one booking per bed. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT request FROM TenancyRoomChangeRequest request
+        WHERE request.propertyId = :propertyId
+          AND request.currentRoomId = :roomId
+          AND request.status = com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus.APPROVED
+          AND request.effectiveTransferDate BETWEEN :today AND :startDate
+        ORDER BY request.effectiveTransferDate ASC
+        """)
+    List<TenancyRoomChangeRequest> findBookableDeparturesForUpdate(
+            UUID propertyId, UUID roomId, LocalDate today, LocalDate startDate);
+
     @Query("""
         SELECT request
         FROM TenancyRoomChangeRequest request
@@ -34,6 +47,8 @@ public interface TenancyRoomChangeRequestRepository extends JpaRepository<Tenanc
     Optional<TenancyRoomChangeRequest> findOpenByTenancyId(
             UUID tenancyId,
             List<TenancyRoomChangeRequestStatus> statuses);
+
+    List<TenancyRoomChangeRequest> findByPropertyIdAndStatus(UUID propertyId, TenancyRoomChangeRequestStatus status);
 
     @Query("""
         SELECT request

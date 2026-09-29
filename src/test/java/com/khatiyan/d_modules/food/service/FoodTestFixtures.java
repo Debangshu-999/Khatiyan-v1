@@ -56,7 +56,7 @@ final class FoodTestFixtures {
                 null,
                 null,
                 false,
-                true);
+                true, 0L);
     }
 
     static TenancyResponse tenancy(UUID tenancyId, UUID tenantUserId, UUID propertyId) {

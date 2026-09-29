@@ -5,6 +5,7 @@ export * from "./modules/board";
 export * from "./modules/concerns";
 export * from "./modules/deposits";
 export * from "./modules/finance";
+export * from "./modules/tenants";
 export * from "./modules/notices";
 export * from "./modules/onboarding";
 export * from "./modules/payments";

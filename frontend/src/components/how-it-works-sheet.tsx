@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -51,8 +52,8 @@ export function HowItWorksSheet({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <View
           style={{
             backgroundColor: colors.surface,
@@ -79,7 +80,7 @@ export function HowItWorksSheet({
               accessibilityLabel={`Close ${title.toLowerCase()}`}
               accessibilityRole="button"
               hitSlop={10}
-              onPress={onClose}
+              onPress={() => dismiss()}
               style={{
                 alignItems: "center",
                 backgroundColor: colors.neutralSoft,
@@ -123,7 +124,7 @@ export function HowItWorksSheet({
                     {step.title}
                   </Text>
                 </View>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   {step.body}
                 </Text>
                 {step.extra ? <View style={{ marginTop: spacing.xs }}>{step.extra}</View> : null}
@@ -134,7 +135,7 @@ export function HowItWorksSheet({
           {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
           <AnimatedPressable
             accessibilityRole="button"
-            onPress={onClose}
+            onPress={() => dismiss()}
             style={{
               alignItems: "center",
               backgroundColor: colors.ink,
@@ -148,7 +149,7 @@ export function HowItWorksSheet({
             <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
           </AnimatedPressable>
         </View>
-      </View>
-    </Modal>
+      </View>}
+    </BottomSheetModal>
   );
 }

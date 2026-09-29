@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.d_modules.property.api.dto.CreateRoomsFromMoldRequest;
 import com.khatiyan.d_modules.property.api.dto.RecutRoomRequest;
 import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
@@ -113,6 +114,7 @@ public class PropertyController {
     }
 
     @PatchMapping("/{propertyId}")
+    @RequiresVersion
     public PropertyResponse updateProperty(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -151,6 +153,7 @@ public class PropertyController {
     }
 
     @PatchMapping("/{propertyId}/exit-policies")
+    @RequiresVersion
     public PropertyExitPolicyResponse updateExitPolicies(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -173,6 +176,7 @@ public class PropertyController {
      * meant neither read as a whole rule.
      */
     @PatchMapping("/{propertyId}/premature-exit-policy")
+    @RequiresVersion
     public PropertyExitPolicyResponse updatePrematureExitPolicy(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -213,6 +217,7 @@ public class PropertyController {
     }
 
     @PostMapping("/{propertyId}/managers/{managerUserId}/shift")
+    @RequiresVersion
     public PropertyManagerResponse shiftManager(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -234,7 +239,8 @@ public class PropertyController {
                 propertyId,
                 user.userId(),
                 managerAccessPolicy.isOwner(user.userId(), propertyId),
-                managerAccessPolicy.levelsFor(user.userId(), propertyId));
+                managerAccessPolicy.levelsFor(user.userId(), propertyId),
+                managerAccessPolicy.assignmentVersion(propertyId, user.userId()));
     }
 
     /** One manager's grants. Owner-only: this is the permission screen. */
@@ -248,7 +254,8 @@ public class PropertyController {
                 propertyId,
                 managerUserId,
                 false,
-                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+                managerAccessPolicy.grantsFor(propertyId, managerUserId),
+                managerAccessPolicy.assignmentVersion(propertyId, managerUserId));
     }
 
     /**
@@ -256,6 +263,7 @@ public class PropertyController {
      * replacement — anything omitted is revoked.
      */
     @PutMapping("/{propertyId}/managers/{managerUserId}/permissions")
+    @RequiresVersion
     public ManagerPermissionsResponse replaceManagerPermissions(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -266,10 +274,12 @@ public class PropertyController {
                 propertyId,
                 managerUserId,
                 false,
-                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+                managerAccessPolicy.grantsFor(propertyId, managerUserId),
+                managerAccessPolicy.assignmentVersion(propertyId, managerUserId));
     }
 
     @DeleteMapping("/{propertyId}/managers/{managerUserId}")
+    @RequiresVersion
     public ResponseEntity<Void> removeManager(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -357,6 +367,7 @@ public class PropertyController {
 
     /** Moves an existing room onto a different mold — the upgrade path. */
     @PostMapping("/{propertyId}/rooms/{roomId}/recut")
+    @RequiresVersion
     public RoomResponse recutRoom(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -366,6 +377,7 @@ public class PropertyController {
     }
 
     @PutMapping("/{propertyId}/rooms/{roomId}/amenities")
+    @RequiresVersion
     public RoomResponse updateRoomAmenities(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -400,6 +412,7 @@ public class PropertyController {
     }
 
     @PatchMapping("/{propertyId}/rooms/{roomId}/status")
+    @RequiresVersion
     public RoomResponse markRoomStatus(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -410,6 +423,7 @@ public class PropertyController {
     }
 
     @PatchMapping("/{propertyId}/rooms/{roomId}/maintenance")
+    @RequiresVersion
     public RoomResponse updateRoomMaintenance(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -420,6 +434,7 @@ public class PropertyController {
     }
 
     @PostMapping("/{propertyId}/rooms/{roomId}/reactivate")
+    @RequiresVersion
     public RoomResponse reactivateRoom(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -428,6 +443,7 @@ public class PropertyController {
     }
 
     @PatchMapping("/{propertyId}/rooms/{roomId}")
+    @RequiresVersion
     public RoomResponse updateRoom(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -437,6 +453,7 @@ public class PropertyController {
     }
 
     @DeleteMapping("/{propertyId}/rooms/{roomId}")
+    @RequiresVersion
     public ResponseEntity<Void> deactivateRoom(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

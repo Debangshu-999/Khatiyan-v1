@@ -60,7 +60,9 @@ public record PropertyResponse(
     /** Whether visitors are allowed. Null when the owner has not said. */
     Boolean visitorsAllowed,
     boolean discoveryProfileCreated,
-    boolean active
+    boolean active,
+    /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+    long version
 ) {
 
     public static PropertyResponse from(Property property) {
@@ -97,7 +99,6 @@ public record PropertyResponse(
             property.getPrematureExitPolicy(),
             property.getVisitorsAllowed(),
             property.isDiscoveryProfileCreated(),
-            property.isCurrentlyActive()
-        );
+            property.isCurrentlyActive(), property.getVersion());
     }
 }

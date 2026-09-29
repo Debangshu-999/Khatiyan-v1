@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.expense.api.dto.ExpenseCategoryResponse;
@@ -66,6 +67,7 @@ public class ExpenseCategoryService {
             UUID actorUserId, UUID propertyId, UUID categoryId, UpsertExpenseCategoryRequest request) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
         ExpenseCategory category = category(propertyId, categoryId);
+        VersionGuard.claim(category);
         String normalized = normalize(request.name());
         // Renaming ONTO a deleted name still refuses: two rows would share it and
         // the unique constraint would reject the flush. Said plainly, so nobody
@@ -86,7 +88,9 @@ public class ExpenseCategoryService {
     @Transactional
     public void deactivateCategory(UUID actorUserId, UUID propertyId, UUID categoryId) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);
-        category(propertyId, categoryId).deactivate();
+        ExpenseCategory category = category(propertyId, categoryId);
+        VersionGuard.claim(category);
+        category.deactivate();
     }
 
     /**

@@ -16,6 +16,22 @@ export type RequestBlock = {
   title: string;
 };
 
+/**
+ * A stay past its checkout date is waiting for the owner to end it: every
+ * request is closed. The server refuses them too. This says why before the
+ * tenant fills in a form.
+ */
+export function pendingExitBlock(tenancy: { status: string; referenceCode: string }): RequestBlock | null {
+  if (tenancy.status !== "PENDING_EXIT") {
+    return null;
+  }
+  return {
+    message: "Your stay has passed its checkout date, so new requests are closed. Your owner will end the stay with you at move-out.",
+    referenceCode: tenancy.referenceCode,
+    title: "Your stay has ended",
+  };
+}
+
 export function isBlockingExitRequest(request: TenancyExitRequest) {
   return request.status === "REQUESTED"
     || request.status === "APPROVED"
@@ -182,7 +198,7 @@ export function RequestBlockedModal({
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
               {block.referenceCode}
             </Text>
-            <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               {block.message}
             </Text>
           </View>

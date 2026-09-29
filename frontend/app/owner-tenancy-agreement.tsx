@@ -131,11 +131,12 @@ export default function OwnerTenancyAgreementScreen() {
       return;
     }
     try {
-      await save({ propertyId, template: draft }).unwrap();
+      // The settings as loaded (2026-09-29), 0 before the first save.
+      await save({ propertyId, template: draft, version: settingsQuery.data?.version ?? 0 }).unwrap();
       // Two writes because they live in two modules: the clause template is
       // compliance's, the premature-exit policy is the property's. They are one
       // decision to an owner, so they save together.
-      await savePolicy({ prematureExitPolicy: prematureExit.trim(), propertyId }).unwrap();
+      await savePolicy({ prematureExitPolicy: prematureExit.trim(), propertyId, version: policiesQuery.data?.version ?? 0 }).unwrap();
       toast.success("Agreement saved");
     } catch (error) {
       saveErrors.failFromServer(errorMessage(error));
@@ -178,7 +179,7 @@ export default function OwnerTenancyAgreementScreen() {
           <>
             <Section title="Agreement Term">
               <View style={{ gap: spacing.md }}>
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   How long a new tenancy's agreement runs, and what ending it early costs. Onboarding can vary
                   this for one stay.
                 </Text>
@@ -256,7 +257,7 @@ export default function OwnerTenancyAgreementScreen() {
                   )}
                 </View>
 
-                <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   Your own words, applied by a person at move-out — never charged automatically.
                 </Text>
               </View>

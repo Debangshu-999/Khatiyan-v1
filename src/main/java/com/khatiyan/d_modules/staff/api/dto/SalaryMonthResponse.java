@@ -21,7 +21,10 @@ public record SalaryMonthResponse(
         long paidAmountPaise,
         SalaryPaymentStatus paymentStatus,
         List<SalaryAdjustmentResponse> adjustments,
-        List<SalaryPaymentResponse> payments) {
+        List<SalaryPaymentResponse> payments,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
+) {
 
     public static SalaryMonthResponse from(
             SalaryMonth month,
@@ -41,6 +44,6 @@ public record SalaryMonthResponse(
                 month.getPaidAmountPaise(),
                 month.getPaymentStatus(),
                 adjustments,
-                payments);
+                payments, month.getVersion());
     }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Modal, ScrollView, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { ChevronRight, X } from "lucide-react-native";
+import { ChevronRight, X, Lock } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -79,7 +79,7 @@ export function PropertyBoardHero() {
             Board
           </Text>
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           Rules, timings and important house information.
         </Text>
       </View>
@@ -202,12 +202,7 @@ export function PropertyBoardCategoryCard({
               </Text>
               <Text
                 numberOfLines={2}
-                style={{
-                  color: colors.muted,
-                  fontFamily: fonts.sans,
-                  fontSize: 12,
-                  lineHeight: 16,
-                }}
+                style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
               >
                 {item.body}
               </Text>
@@ -222,10 +217,13 @@ export function PropertyBoardCategoryCard({
 
 export function PropertyBoardHomeCard({
   items,
+  lockedText,
   onOpenBoard,
   onOpenItem,
 }: {
   items: PropertyBoardItem[];
+  /** Set while the board is closed to this person: shown in place of the items. */
+  lockedText?: string;
   onOpenBoard: () => void;
   onOpenItem: (item: PropertyBoardItem) => void;
 }) {
@@ -275,7 +273,12 @@ export function PropertyBoardHomeCard({
         </View>
       </AnimatedPressable>
 
-      {items.length > 0 ? (
+      {lockedText ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+          <Lock color={colors.muted} size={15} strokeWidth={2.2} />
+          <Text style={[type.body, { color: colors.muted }]}>{lockedText}</Text>
+        </View>
+      ) : items.length > 0 ? (
         <View style={{ gap: spacing.sm }}>
           {items.map((item) => (
             <AnimatedPressable
@@ -312,12 +315,7 @@ export function PropertyBoardHomeCard({
                 </Text>
                 <Text
                   numberOfLines={1}
-                  style={{
-                    color: colors.muted,
-                    fontFamily: fonts.sans,
-                    fontSize: 12.5,
-                    lineHeight: 17,
-                  }}
+                  style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
                 >
                   {item.body}
                 </Text>
@@ -363,7 +361,8 @@ export function PropertyBoardItemModal({
     <Modal
       animationType="none"
       navigationBarTranslucent
-      onRequestClose={() => {}}
+      // The device back button closes it too (user, 2026-09-29).
+      onRequestClose={onClose}
       statusBarTranslucent
       transparent
       visible={item !== null}

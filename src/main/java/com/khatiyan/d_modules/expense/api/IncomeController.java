@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.expense.api.dto.CreateIncomeRequest;
@@ -51,6 +52,7 @@ public class IncomeController {
     }
 
     @PostMapping("/{incomeId}/reverse")
+    @RequiresVersion
     public IncomeResponse reverse(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

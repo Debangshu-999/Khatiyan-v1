@@ -578,7 +578,7 @@ function IncomeRow({
         ) : null}
       </View>
       {entry.description ? (
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {entry.description}
         </Text>
       ) : null}
@@ -597,7 +597,7 @@ function IncomeRow({
                 Reversed {formatDate(reversal.receivedDate)}
               </Text>
               {reversal.description ? (
-                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+                <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
                   {reversal.description}
                 </Text>
               ) : null}
@@ -736,7 +736,7 @@ function ReverseIncomeSheet({ entry, onClose, propertyId }: { entry: IncomeEntry
       return;
     }
     try {
-      await reverseIncome({ incomeId: entry.id, propertyId, reason: reason.trim() }).unwrap();
+      await reverseIncome({ incomeId: entry.id, propertyId, reason: reason.trim(), version: entry.version }).unwrap();
       onClose();
       toast.success("Income reversed.");
     } catch (caught) {

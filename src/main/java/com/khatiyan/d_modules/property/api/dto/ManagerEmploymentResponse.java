@@ -32,7 +32,9 @@ public record ManagerEmploymentResponse(
     String employmentReview,
     Instant createdAt,
     Instant updatedAt,
-    boolean active
+    boolean active,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
 ) {
 
     public static ManagerEmploymentResponse from(PropertyManager manager, String fullName, String phone, Integer age) {
@@ -55,7 +57,6 @@ public record ManagerEmploymentResponse(
             manager.getEmploymentReview(),
             manager.getCreatedAt(),
             manager.getUpdatedAt(),
-            manager.isCurrentlyActive()
-        );
+            manager.isCurrentlyActive(), manager.getVersion());
     }
 }

@@ -58,6 +58,10 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
     List<PaymentIntent> findByBillingCycleIdInAndStatusIn(
             Collection<UUID> billingCycleIds, Collection<PaymentIntentStatus> statuses);
 
+    /** One bill's claims the owner may see, newest first (the bill card's claims sheet). */
+    List<PaymentIntent> findByBillingCycleIdAndStatusInOrderByCreatedAtDesc(
+            UUID billingCycleId, Collection<PaymentIntentStatus> statuses);
+
     /** The owner's review queue: oldest claim first, so nobody waits longest. */
     /**
      * The claims on a property inside a window that its owner may see, newest

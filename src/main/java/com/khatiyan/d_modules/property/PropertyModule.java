@@ -216,7 +216,8 @@ public class PropertyModule {
                 // Owner iff they hold MANAGE without any grant existing — the policy
                 // owns that rule, so it is asked rather than re-derived here.
                 managerAccessPolicy.isOwner(actorUserId, propertyId),
-                managerAccessPolicy.levelsFor(actorUserId, propertyId));
+                managerAccessPolicy.levelsFor(actorUserId, propertyId),
+                managerAccessPolicy.assignmentVersion(propertyId, actorUserId));
     }
 
     /** The grants an owner has given one manager, for the permission screen. */
@@ -226,7 +227,8 @@ public class PropertyModule {
                 propertyId,
                 managerUserId,
                 false,
-                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+                managerAccessPolicy.grantsFor(propertyId, managerUserId),
+                managerAccessPolicy.assignmentVersion(propertyId, managerUserId));
     }
 
     public ManagerPermissionsResponse replaceManagerGrants(
@@ -239,7 +241,8 @@ public class PropertyModule {
                 propertyId,
                 managerUserId,
                 false,
-                managerAccessPolicy.grantsFor(propertyId, managerUserId));
+                managerAccessPolicy.grantsFor(propertyId, managerUserId),
+                managerAccessPolicy.assignmentVersion(propertyId, managerUserId));
     }
 
     public ManagerAccessLevel accessLevel(UUID actorUserId, UUID propertyId, ManagerResource resource) {

@@ -9,6 +9,7 @@ import { MessageCircle, MessageCirclePlus, Trash2, UsersRound, type LucideProps 
  */
 const TAB_BAR_HEIGHT_PX = 60;
 
+import { threadRoute } from "@/features/chat/thread-route";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -43,34 +44,6 @@ const NO_CHATS_ILLUSTRATION = require("../../assets/workspace/No-Chats_512x512.p
 
 type Section = "TENANTS" | "MINE" | "ENQUIRIES";
 type PersonalSection = "MINE" | "ENQUIRIES";
-
-/**
- * The conversation route, carrying its own header text.
- *
- * <p>Passed as params rather than refetched on the other side: the list already
- * knows the title, and a header that arrives a beat after the screen reads as a
- * flicker on every open.
- */
-function threadRoute(
-  threadId: string,
-  thread: Pick<ChatThread, "counterpartPhotoUrl" | "counterpartUserId" | "kind" | "title">,
-  subtitle?: string | null,
-) {
-  const query = new URLSearchParams({ title: thread.title });
-  if (subtitle) {
-    query.set("subtitle", subtitle);
-  }
-  if (thread.counterpartPhotoUrl) {
-    query.set("photo", thread.counterpartPhotoUrl);
-  }
-  // Only when the other side is the PROPERTY. Management opening a tenant's
-  // team thread is looking at a person, and flashing a building for one frame
-  // before the server answers is a wrong first impression of whose chat it is.
-  if (thread.kind === "TEAM" && thread.counterpartUserId === null) {
-    query.set("team", "1");
-  }
-  return `/chat/${threadId}?${query.toString()}`;
-}
 
 /**
  * Conversations.
@@ -583,6 +556,7 @@ function PersonalChats() {
     (tenancy
       ? {
           counterpartLastReadSeq: 0,
+          pendingAgreement: false,
           counterpartPhotoUrl: null,
           counterpartUserId: null,
           id: null,
@@ -716,10 +690,8 @@ function PersonalChats() {
         <View
           style={{
             backgroundColor: colors.surface,
-            // Top only. Every row draws its own rule underneath, so a border
-            // here as well would double the line at the foot of the list.
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
+            // No rule above the first row (user, 2026-09-27): the chips sit
+            // straight on the list. Rows still draw their own rule underneath.
             // Cancels the screen gutter so the rows run edge to edge. A list of
             // conversations is the screen, not a card sitting on it, and a
             // rounded box around it turns each row into an entry in a widget.

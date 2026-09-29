@@ -74,6 +74,9 @@ public class VerificationProperties {
      * limit is a tenant who can spend someone else's balance. Separate from the
      * granted count, which is the owner's decision — this one is the floor
      * under it.
+     *
+     * <p>0 or less switches the cap off. For testing only, and startup logs a
+     * warning while it is off.
      */
     private int maxAttemptsPerDay = 5;
 
@@ -89,6 +92,55 @@ public class VerificationProperties {
      * succeeds.
      */
     private String devName = "DEV TEST USER";
+
+    /** Where the provider posts results, and where the DEV stand-in is served. No trailing slash. */
+    private String publicBaseUrl = "http://localhost:8080";
+
+    /** Where the Aadhaar App sends the tenant back. */
+    private String returnUrl = "khatiyan://verification/return";
+
+    /** Ask the Aadhaar App for its face check: the owner is not present at a check. */
+    private boolean faceAuthentication = true;
+
+    /** How long a DEV session stays open. A real provider sets its own. */
+    private int sessionValidityMinutes = 10;
+
+    /**
+     * Trimmed first: {@code .env} is read as Java properties, which keep a
+     * trailing space, and one there (seen 2026-09-27) put a space inside the
+     * callback link sent to the provider.
+     */
+    public String getPublicBaseUrl() {
+        return publicBaseUrl == null ? "" : publicBaseUrl.trim().replaceAll("/+$", "");
+    }
+
+    public void setPublicBaseUrl(String publicBaseUrl) {
+        this.publicBaseUrl = publicBaseUrl;
+    }
+
+    public String getReturnUrl() {
+        return returnUrl == null ? "" : returnUrl.trim();
+    }
+
+    public void setReturnUrl(String returnUrl) {
+        this.returnUrl = returnUrl;
+    }
+
+    public boolean isFaceAuthentication() {
+        return faceAuthentication;
+    }
+
+    public void setFaceAuthentication(boolean faceAuthentication) {
+        this.faceAuthentication = faceAuthentication;
+    }
+
+    public int getSessionValidityMinutes() {
+        return sessionValidityMinutes;
+    }
+
+    public void setSessionValidityMinutes(int sessionValidityMinutes) {
+        this.sessionValidityMinutes = sessionValidityMinutes;
+    }
 
     public boolean isEnabled() {
         return enabled;

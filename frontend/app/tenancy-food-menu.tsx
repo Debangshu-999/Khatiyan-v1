@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 
 import { EmptyState } from "@/components/empty-state";
@@ -12,16 +11,15 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   DAY_LABEL,
   DayStrip,
-  FoodItemThumb,
-  MEAL_ICON,
   MEAL_LABEL,
   MEAL_ORDER,
   foodIcon,
   formatQuantity,
   todayInIst,
-  weekFrom,
+  weekStartingOn,
   weekdayOf,
 } from "@/features/food/food-ui";
+import { TenantMealIcon, TenantMenuItemRow } from "@/features/food/tenant-food-ui";
 import { useGetMyFoodProfileMenuQuery, type DayOfWeek } from "@/store/services/food-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -39,12 +37,12 @@ import { useTheme } from "@/theme/use-theme";
  */
 export default function TenancyFoodMenuScreen() {
   const router = useGuardedRouter();
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const { profileId } = useLocalSearchParams<{ profileId?: string }>();
   const query = useGetMyFoodProfileMenuQuery(profileId ?? "", { skip: !profileId });
 
   const today = useMemo(() => todayInIst(), []);
-  const week = useMemo(() => weekFrom(today), [today]);
+  const week = useMemo(() => weekStartingOn(today), [today]);
   const [day, setDay] = useState<DayOfWeek>(() => weekdayOf(today));
 
   const entries = (query.data?.entries ?? []).filter(
@@ -54,12 +52,7 @@ export default function TenancyFoodMenuScreen() {
   if (!query.data && query.isFetching) {
     return (
       <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-        <ScreenHeader
-          eyebrow="Food preference"
-          italicTail="menu."
-          subtitle="Meal plan"
-          title="Weekly"
-        />
+        <ScreenHeader italicTail="menu." title="Weekly" />
         <FoodMenuSkeleton />
       </ScreenScrollView>
     );
@@ -70,12 +63,9 @@ export default function TenancyFoodMenuScreen() {
       onRefresh={profileId ? async () => void (await query.refetch()) : undefined}
       safeAreaEdges={["top", "bottom"]}
     >
-      <ScreenHeader
-        eyebrow="Food preference"
-        italicTail="menu."
-        subtitle={query.data?.profile.name ?? "Meal plan"}
-        title="Weekly"
-      />
+      {/* Titled after the plan ("Jain menu."), so its name is not repeated
+          as a line underneath. */}
+      <ScreenHeader italicTail="menu." title={query.data?.profile.name ?? "Weekly"} />
 
       <DayStrip onSelect={setDay} selected={day} week={week} />
 
@@ -116,34 +106,21 @@ export default function TenancyFoodMenuScreen() {
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-              <MaterialCommunityIcons color={colors.ink} name={MEAL_ICON[meal]} size={17} />
+              <TenantMealIcon meal={meal} size={19} />
               <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 15 }}>
                 {MEAL_LABEL[meal]}
               </Text>
             </View>
-            {rows.map((entry, index) => (
-              <View
-                key={entry.id}
-                style={{
-                  alignItems: "center",
-                  borderTopColor: colors.border,
-                  borderTopWidth: index === 0 ? 0 : 1,
-                  flexDirection: "row",
-                  gap: spacing.sm,
-                  paddingTop: index === 0 ? 0 : spacing.sm,
-                }}
-              >
-                <FoodItemThumb imageUrl={entry.itemImageUrl} size={42} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 13.5 }]}>
-                    {entry.itemName}
-                  </Text>
-                  <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
-                    {formatQuantity(entry.baseQuantityPerSubscriber, entry.quantityUnit)} per person
-                  </Text>
-                </View>
-              </View>
-            ))}
+            <View style={{ gap: spacing.xs }}>
+              {rows.map((entry) => (
+                <TenantMenuItemRow
+                  imageUrl={entry.itemImageUrl}
+                  key={entry.id}
+                  name={entry.itemName}
+                  quantity={formatQuantity(entry.baseQuantityPerSubscriber, entry.quantityUnit)}
+                />
+              ))}
+            </View>
           </View>
         );
       })}

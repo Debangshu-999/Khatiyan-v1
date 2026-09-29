@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.expense.api.dto.CreateRecurringExpenseRequest;
 import com.khatiyan.d_modules.expense.api.dto.RecurringExpenseResponse;
@@ -49,6 +50,7 @@ public class RecurringExpenseController {
     }
 
     @PatchMapping("/{recurringExpenseId}")
+    @RequiresVersion
     public RecurringExpenseResponse update(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
@@ -59,6 +61,7 @@ public class RecurringExpenseController {
 
     @DeleteMapping("/{recurringExpenseId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresVersion
     public void deactivate(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,

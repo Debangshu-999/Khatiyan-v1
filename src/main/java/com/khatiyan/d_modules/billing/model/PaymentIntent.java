@@ -91,8 +91,14 @@ public class PaymentIntent extends BaseEntity {
     @Column(name = "reference_code", nullable = false, length = 40, updatable = false)
     private String referenceCode;
 
-    @Column(name = "upi_vpa", nullable = false, length = 120, updatable = false)
+    /** Null on a claim that is not UPI: there was no address to snapshot. */
+    @Column(name = "upi_vpa", length = 120, updatable = false)
     private String upiVpa;
+
+    /** How the tenant says they paid. UPI for every link attempt (2026-09-28). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20, updatable = false)
+    private ManualPaymentMethod method;
 
     /** The tenant's UTR, if they had one to hand. Optional by design. */
     @Column(name = "tenant_reference_text", length = MAX_REFERENCE_LENGTH)
@@ -133,7 +139,8 @@ public class PaymentIntent extends BaseEntity {
             UUID tenantUserId,
             long amountPaise,
             String referenceCode,
-            String upiVpa) {
+            String upiVpa,
+            ManualPaymentMethod method) {
         this.id = UUID.randomUUID();
         this.billingCycleId = billingCycleId;
         this.propertyId = propertyId;
@@ -143,6 +150,7 @@ public class PaymentIntent extends BaseEntity {
         this.amountPaise = amountPaise;
         this.referenceCode = referenceCode;
         this.upiVpa = upiVpa;
+        this.method = method;
     }
 
     public static PaymentIntent open(
@@ -157,7 +165,37 @@ public class PaymentIntent extends BaseEntity {
             throw new ValidationException("A payment link needs an amount greater than zero.");
         }
         return new PaymentIntent(
-                billingCycleId, propertyId, tenancyId, tenantUserId, amountPaise, referenceCode, upiVpa);
+                billingCycleId, propertyId, tenancyId, tenantUserId, amountPaise, referenceCode, upiVpa,
+                ManualPaymentMethod.UPI);
+    }
+
+    /**
+     * A claim raised straight from a payment method's tab (2026-09-28): the
+     * tenant says they paid by UPI, bank transfer, card or cheque, and it goes
+     * to the owner at once. Proof is optional, as on a UPI confirmation. Cash is
+     * never claimed: it is handed over at the desk and the owner records it.
+     */
+    public static PaymentIntent claim(
+            UUID billingCycleId,
+            UUID propertyId,
+            UUID tenancyId,
+            UUID tenantUserId,
+            long amountPaise,
+            String referenceCode,
+            ManualPaymentMethod method,
+            String referenceText,
+            String note,
+            List<String> proofUrls) {
+        if (method == null || method == ManualPaymentMethod.CASH || method == ManualPaymentMethod.OTHER) {
+            throw new ValidationException("A claim is for UPI, bank transfer, card or cheque.");
+        }
+        if (amountPaise <= 0) {
+            throw new ValidationException("There is nothing to pay on this bill.");
+        }
+        PaymentIntent intent = new PaymentIntent(
+                billingCycleId, propertyId, tenancyId, tenantUserId, amountPaise, referenceCode, null, method);
+        intent.confirmByTenant(referenceText, note, proofUrls);
+        return intent;
     }
 
     public boolean isLive() {

@@ -238,7 +238,7 @@ export function NearbySearchSheet({
 
         {nothingYet ? (
           <Text
-            style={[type.body, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}
+            style={[type.description, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}
           >
             {settled.length < MIN_SUGGEST_LENGTH
               ? "Keep typing to see suggestions."
@@ -318,7 +318,7 @@ function SuggestionRow({
       <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
         <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{title}</MarqueeText>
         {subtitle ? (
-          <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             {subtitle}
           </Text>
         ) : null}

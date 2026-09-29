@@ -24,8 +24,20 @@ import { useTheme } from "@/theme/use-theme";
  * <p>No title, though. "Could not continue" over "Room number already exists"
  * is the same sentence twice.
  */
-export function AlertModal({ message, onClose }: { message: string; onClose: () => void }) {
-  const { colors, fonts } = useTheme();
+export function AlertModal({
+  message,
+  onClose,
+  tone = "error",
+}: {
+  message: string;
+  onClose: () => void;
+  /**
+   * "info" for a plain "not yet" that nothing went wrong to cause, such as a
+   * request that opens once the stay starts. Refusals keep the red mark.
+   */
+  tone?: "error" | "info" | "warning";
+}) {
+  const { colors, fonts, type } = useTheme();
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
@@ -54,16 +66,8 @@ export function AlertModal({ message, onClose }: { message: string; onClose: () 
             width: "100%",
           }}
         >
-          <StatusIcon size={38} tone="error" />
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.sansMedium,
-              fontSize: 15,
-              lineHeight: 22,
-              textAlign: "center",
-            }}
-          >
+          <StatusIcon size={38} tone={tone} />
+          <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
             {message}
           </Text>
           <AnimatedPressable

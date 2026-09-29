@@ -24,7 +24,9 @@ public record TenancyAgreementResponse(
         List<AgreementClause> clauses,
         String contentHash,
         UUID acceptedByUserId,
-        Instant acceptedAt) {
+        Instant acceptedAt,
+        /** The row's version (2026-09-29), sent back as If-Match when acting on it. */
+        long version) {
 
     public static TenancyAgreementResponse from(TenancyAgreement agreement) {
         return new TenancyAgreementResponse(
@@ -36,6 +38,7 @@ public record TenancyAgreementResponse(
                 agreement.getClauses(),
                 agreement.getContentHash(),
                 agreement.getAcceptedByUserId(),
-                agreement.getAcceptedAt());
+                agreement.getAcceptedAt(),
+                agreement.getVersion());
     }
 }

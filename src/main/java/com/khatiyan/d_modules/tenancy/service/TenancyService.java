@@ -2,7 +2,9 @@ package com.khatiyan.d_modules.tenancy.service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -16,10 +18,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.d_modules.tenancy.api.dto.BlockedBookingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
+import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
@@ -40,10 +45,15 @@ import com.khatiyan.d_modules.tenancy.event.TenancyCancellationRoute;
 import com.khatiyan.d_modules.tenancy.event.TenancyCancelledEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyActivatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyStartedEvent;
+import com.khatiyan.d_modules.tenancy.event.FutureBookingBlockedEvent;
+import com.khatiyan.d_modules.tenancy.event.FutureBookingOccupancyEvent;
 import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
+import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
+import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,29 +62,37 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class TenancyService {
 
+    private static final ZoneId TENANCY_ZONE = ZoneId.of("Asia/Kolkata");
+
     private final TenancyRepository tenancyRepository;
+    private final TenancyRoomChangeRequestRepository roomChangeRequestRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PropertyModule propertyModule;
     private final TenancyAccessPolicy tenancyAccessPolicy;
     private final AuthModule authModule;
     private final BillingModule billingModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
+    private final FutureVacancies futureVacancies;
 
     public TenancyService(
             TenancyRepository tenancyRepository,
+            TenancyRoomChangeRequestRepository roomChangeRequestRepository,
             ApplicationEventPublisher eventPublisher,
             PropertyModule propertyModule,
             TenancyAccessPolicy tenancyAccessPolicy,
             AuthModule authModule,
             @Lazy BillingModule billingModule,
-            ReferenceCodeGenerator referenceCodeGenerator) {
+            ReferenceCodeGenerator referenceCodeGenerator,
+            FutureVacancies futureVacancies) {
         this.tenancyRepository = tenancyRepository;
+        this.roomChangeRequestRepository = roomChangeRequestRepository;
         this.eventPublisher = eventPublisher;
         this.propertyModule = propertyModule;
         this.tenancyAccessPolicy = tenancyAccessPolicy;
         this.authModule = authModule;
         this.billingModule = billingModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
+        this.futureVacancies = futureVacancies;
     }
 
     private String placeholderTenantName(String tenantPhone) {
@@ -97,6 +115,40 @@ public class TenancyService {
         return tenancy;
     }
 
+    /**
+     * Claims one departure from a full room for a monthly agreement booking: an
+     * approved room change, or a stay certain to end soon. See {@link FutureVacancies}.
+     */
+    private FutureVacancies.Claim futureVacancyClaim(UUID propertyId, UUID roomId, LocalDate startDate) {
+        if (propertyModule.hasAvailableVacancy(propertyId, roomId)) {
+            return null;
+        }
+        LocalDate today = LocalDate.now(TENANCY_ZONE);
+        if (startDate == null || startDate.isBefore(today)) {
+            throw new ValidationException("Room has no available vacancy");
+        }
+        FutureVacancies.Claim claim = futureVacancies.claim(propertyId, roomId, startDate, today);
+        if (claim == null) {
+            throw new ValidationException("Room has no available vacancy on the selected start date");
+        }
+        return claim;
+    }
+
+    @Transactional(readOnly = true)
+    public IdCheckedParticulars findIdCheckedParticulars(UUID tenancyId) {
+        return tenancyRepository.findById(tenancyId)
+                .map(tenancy -> new IdCheckedParticulars(
+                        tenancy.getIdCheckedGender(), tenancy.getIdCheckedDateOfBirth()))
+                .orElse(IdCheckedParticulars.NONE);
+    }
+
+    /** Full-room beds the owner can book ahead, for the onboarding room picker. */
+    @Transactional(readOnly = true)
+    public List<FutureVacancies.UpcomingVacancy> listUpcomingVacancies(UUID actorUserId, UUID propertyId) {
+        tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
+        return futureVacancies.upcoming(propertyId, LocalDate.now(TENANCY_ZONE));
+    }
+
     @Transactional
     public Tenancy create(
             UUID actorUserId,
@@ -117,9 +169,9 @@ public class TenancyService {
 
     /**
      * Shared creation body. With {@code holdForAcceptance} the tenancy is saved
-     * as {@code PENDING_ACCEPTANCE}: the bed is still reserved (the started
-     * event fires as usual), but the user is NOT marked an active tenant and
-     * billing does NOT initialize — both happen at acceptance.
+     * as {@code PENDING_ACCEPTANCE}. A currently free bed is held immediately;
+     * a booked room-change bed is not occupied until the move executes. The
+     * user is not marked an active tenant and billing does not initialize yet.
      */
     private Tenancy createInternal(
             UUID actorUserId,
@@ -168,9 +220,7 @@ public class TenancyService {
             throw new ValidationException("User already has an active tenancy");
         }
 
-        if (!propertyModule.hasAvailableVacancy(propertyId, roomId)) {
-            throw new ValidationException("Room has no available vacancy");
-        }
+        FutureVacancies.Claim claim = futureVacancyClaim(propertyId, roomId, startDate);
 
         Tenancy tenancy = createMonthlyTenancy(
                 tenantId,
@@ -185,15 +235,27 @@ public class TenancyService {
         if (holdForAcceptance) {
             tenancy.markPendingAcceptance();
         }
+        if (claim != null) {
+            if (!holdForAcceptance) {
+                throw new ValidationException("Booking a bed ahead requires a monthly agreement");
+            }
+            if (claim.roomChangeRequestId() != null) {
+                tenancy.claimFutureVacancy(claim.roomChangeRequestId());
+            } else {
+                tenancy.claimDepartingStay(claim.departingTenancyId());
+            }
+        }
 
         // Stamped before the save and the started event: the declaration is part of
         // the onboarding record, not an afterthought applied to it.
         if (idCheck != null && idCheck.confirmed()) {
-            tenancy.confirmIdCheck(actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour());
+            tenancy.confirmIdCheck(
+                    actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour(),
+                    idCheck.gender(), idCheck.dateOfBirth());
         }
 
         tenancy = tenancyRepository.save(tenancy);
-        if (!holdForAcceptance) {
+        if (!holdForAcceptance && claim == null) {
             authModule.markActiveTenant(tenancy.getUserId());
             billingModule.initializeStartedTenancy(actorUserId, TenancyResponse.from(tenancy));
         }
@@ -205,9 +267,10 @@ public class TenancyService {
                 tenancy.getPropertyId(),
                 tenancy.getRoomId(),
                 tenancy.getStartDate(),
-                // Waiting on a signature means nothing has started yet. The bed
-                // is taken either way, which is why this event still fires.
-                holdForAcceptance));
+                // The event starts the agreement/notification workflow. A future
+                // booking does not take physical occupancy at creation.
+                holdForAcceptance,
+                claim != null));
 
         log.info(
                 "Tenancy created tenancyId={} userId={} actorUserId={} propertyId={} roomId={} billingType={} startDate={}",
@@ -322,7 +385,9 @@ public class TenancyService {
         // is on the account path: the declaration is part of the onboarding
         // record rather than something applied to it afterwards.
         if (idCheck != null && idCheck.confirmed()) {
-            tenancy.confirmIdCheck(actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour());
+            tenancy.confirmIdCheck(
+                    actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour(),
+                    idCheck.gender(), idCheck.dateOfBirth());
         }
 
         tenancy = tenancyRepository.save(tenancy);
@@ -341,6 +406,7 @@ public class TenancyService {
                 tenancy.getStartDate(),
                 // A guest stay begins the moment it is booked. There is nothing
                 // to sign and nothing to wait for.
+                false,
                 false));
 
         log.info(
@@ -358,9 +424,9 @@ public class TenancyService {
 
     /**
      * Agreement-path onboarding: creates a monthly tenancy held as
-     * {@code PENDING_ACCEPTANCE}. The bed is reserved, but the user only becomes
-     * an active tenant — and billing only starts — when they accept the
-     * agreement via {@link #acceptTermsAndActivate}.
+     * {@code PENDING_ACCEPTANCE}. For a future room-change booking, the
+     * agreement is sent now, while occupancy and billing wait for both its
+     * signature and the chosen start date.
      */
     @Transactional
     public TenancyOnboardingResponse onboardPending(
@@ -384,10 +450,9 @@ public class TenancyService {
     }
 
     /**
-     * Tenant accepted the agreement: activates the pending tenancy, marks the
-     * user an active tenant, and starts billing. Billing initialization runs as
-     * the onboarding owner/manager (billing verifies the actor manages the
-     * property, which the tenant does not).
+     * Tenant accepted the agreement. An ordinary pending tenancy activates
+     * immediately; a room-change booking becomes SCHEDULED until its date and
+     * outgoing transfer complete. Billing runs as the onboarding manager.
      */
     @Transactional
     public Tenancy acceptTermsAndActivate(UUID tenancyId, UUID tenantUserId) {
@@ -398,6 +463,12 @@ public class TenancyService {
         }
 
         tenancy.acceptTos();
+        if (tenancy.getStatus() == TenancyStatus.SCHEDULED) {
+            // Signing confirms the future booking now; the actual stay waits
+            // for both its chosen date and the outgoing room change to execute.
+            activateScheduledIfReady(tenancy, LocalDate.now(TENANCY_ZONE));
+            return tenancy;
+        }
         authModule.markActiveTenant(tenancy.getUserId());
         billingModule.initializeStartedTenancy(tenancy.getCreatedByUserId(), TenancyResponse.from(tenancy));
 
@@ -418,6 +489,132 @@ public class TenancyService {
                 tenancy.getUserId());
 
         return tenancy;
+    }
+
+    /** Due bookings are processed after approved room changes have run. */
+    @Transactional(readOnly = true)
+    public List<UUID> findDueScheduledIds(LocalDate today, int limit) {
+        return tenancyRepository.findDueScheduledIds(today, PageRequest.of(0, Math.max(1, limit)));
+    }
+
+    /**
+     * Starts a due booking whose bed has freed. One that should have started and
+     * cannot is flagged instead: management is told once and the action center
+     * lists it. It keeps waiting, and this run retries it every hour.
+     */
+    @Transactional
+    public boolean activateScheduledBooking(UUID tenancyId, LocalDate today) {
+        Tenancy tenancy = tenancyRepository.findByIdForUpdate(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        if (activateScheduledIfReady(tenancy, today)) {
+            return true;
+        }
+        if (futureVacancies.isLate(tenancy, today)) {
+            flagStartBlocked(tenancy);
+        }
+        return false;
+    }
+
+    /**
+     * A booked room change failed its run. The booking cannot count on its date
+     * any more, so management hears now, not on the start date. The move stays
+     * approved and is retried.
+     */
+    @Transactional
+    public void reportBookedMoveFailed(UUID roomChangeRequestId) {
+        tenancyRepository.findFirstByFutureVacancySourceIdAndActiveTrue(roomChangeRequestId)
+                .ifPresent(this::flagStartBlocked);
+    }
+
+    /**
+     * Bookings flagged as unable to start whose bed is still not free, for the
+     * action center. One drops off the moment its bed frees.
+     */
+    @Transactional(readOnly = true)
+    public List<BlockedBookingResponse> findBlockedBookings(UUID propertyId) {
+        List<Tenancy> bookings = new ArrayList<>();
+        List<FutureVacancies.Blocker> blockers = new ArrayList<>();
+        for (Tenancy booking : tenancyRepository.findByPropertyIdAndActiveTrueAndStartBlockedAtIsNotNull(propertyId)) {
+            if (booking.getStatus() != TenancyStatus.SCHEDULED
+                    && booking.getStatus() != TenancyStatus.PENDING_ACCEPTANCE) {
+                continue;
+            }
+            FutureVacancies.Blocker blocker = futureVacancies.blocker(booking);
+            if (blocker != null) {
+                bookings.add(booking);
+                blockers.add(blocker);
+            }
+        }
+        if (bookings.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> userIds = new ArrayList<>();
+        for (int i = 0; i < bookings.size(); i++) {
+            userIds.add(bookings.get(i).getUserId());
+            Tenancy blocking = blockers.get(i).blockingStay();
+            if (blocking != null && blocking.getUserId() != null) {
+                userIds.add(blocking.getUserId());
+            }
+        }
+        Map<UUID, UserSummaryResponse> users = authModule.findByIds(userIds);
+
+        List<BlockedBookingResponse> blocked = new ArrayList<>();
+        for (int i = 0; i < bookings.size(); i++) {
+            Tenancy booking = bookings.get(i);
+            Tenancy blocking = blockers.get(i).blockingStay();
+            blocked.add(new BlockedBookingResponse(
+                    booking.getId(),
+                    nameOf(users, booking.getUserId()),
+                    booking.getRoomId(),
+                    booking.getStartDate(),
+                    blockers.get(i).reason(),
+                    blocking == null ? null : blocking.getId(),
+                    blocking == null ? null : nameOf(users, blocking.getUserId())));
+        }
+        return blocked;
+    }
+
+    private static String nameOf(Map<UUID, UserSummaryResponse> users, UUID userId) {
+        UserSummaryResponse user = userId == null ? null : users.get(userId);
+        return user == null ? null : user.fullName();
+    }
+
+    private void flagStartBlocked(Tenancy booking) {
+        FutureVacancies.Blocker blocker = futureVacancies.blocker(booking);
+        if (blocker == null || !booking.markStartBlocked(Instant.now())) {
+            return;
+        }
+        eventPublisher.publishEvent(new FutureBookingBlockedEvent(
+                booking.getId(),
+                booking.getPropertyId(),
+                booking.getRoomId(),
+                booking.getStartDate(),
+                blocker.reason(),
+                blocker.blockingStay() == null ? null : blocker.blockingStay().getId()));
+        log.warn("Future booking cannot start tenancyId={} roomId={} startDate={} reason={}",
+                booking.getId(), booking.getRoomId(), booking.getStartDate(), blocker.reason());
+    }
+
+    private boolean activateScheduledIfReady(Tenancy tenancy, LocalDate today) {
+        if (tenancy.getStatus() != TenancyStatus.SCHEDULED
+                || !tenancy.hasFutureVacancyClaim()
+                || tenancy.getStartDate().isAfter(today)) {
+            return false;
+        }
+        if (!futureVacancies.bedFreed(tenancy)) {
+            return false;
+        }
+
+        // Starts today if its bed freed late: never billed for nights it could not move in.
+        tenancy.activateScheduled(today);
+        authModule.markActiveTenant(tenancy.getUserId());
+        billingModule.initializeStartedTenancy(tenancy.getCreatedByUserId(), TenancyResponse.from(tenancy));
+        eventPublisher.publishEvent(new FutureBookingOccupancyEvent(tenancy.getPropertyId(), tenancy.getRoomId()));
+        eventPublisher.publishEvent(new TenancyActivatedEvent(
+                tenancy.getId(), tenancy.getUserId(), tenancy.getCreatedByUserId(),
+                tenancy.getPropertyId(), tenancy.getRoomId(), tenancy.getStartDate()));
+        return true;
     }
 
     /**
@@ -488,6 +685,10 @@ public class TenancyService {
             TenancyCancellationRoute route,
             UUID actorUserId,
             String reason) {
+        // A booking holds a bed only once its departure freed it; before that
+        // there is nothing to release.
+        boolean booking = tenancy.hasFutureVacancyClaim();
+        boolean futureBedHeld = booking && futureVacancies.bedFreed(tenancy);
         tenancy.cancelPending(reason);
         eventPublisher.publishEvent(new TenancyCancelledEvent(
                 tenancy.getId(),
@@ -496,7 +697,9 @@ public class TenancyService {
                 tenancy.getRoomId(),
                 route,
                 actorUserId,
-                reason));
+                reason,
+                !booking,
+                futureBedHeld));
 
         log.info(
                 "Pending tenancy cancelled tenancyId={} userId={} route={} reason={}",
@@ -586,9 +789,21 @@ public class TenancyService {
 
     @Transactional
     public void end(UUID actorUserId, UUID tenancyId, LocalDate endDate, String reason) {
-        Tenancy tenancy = getActiveTenancy(tenancyId);
+        // Not getActiveTenancy: a stay past its checkout (PENDING_EXIT) is
+        // exactly the one waiting to be ended, and that getter refuses it.
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        if (!tenancy.isCurrentlyActive() && tenancy.getStatus() != TenancyStatus.PENDING_EXIT) {
+            throw new ValidationException("Tenancy is not active");
+        }
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
         billingModule.ensureLatestCyclePaidForExit(actorUserId, tenancyId);
+
+        // A booking waiting on this bed, directly or through this stay's
+        // approved move. Ending no longer refuses a booked mover: leaving frees
+        // the bed as surely as moving does, and refusing it left a mover past
+        // their checkout (who can no longer move) impossible to end at all.
+        Tenancy waitingBooking = futureVacancies.bookingWaitingOn(tenancy);
 
         tenancy.end(endDate, reason);
         tenancyRepository.save(tenancy);
@@ -599,7 +814,15 @@ public class TenancyService {
                 actorUserId,
                 tenancy.getPropertyId(),
                 tenancy.getRoomId(),
-                endDate));
+                endDate,
+                waitingBooking != null));
+
+        // Due already: the new tenant moves in now. Otherwise the bed stays
+        // held and the hourly run starts the booking on its date.
+        if (waitingBooking != null) {
+            tenancyRepository.findByIdForUpdate(waitingBooking.getId())
+                    .ifPresent(booking -> activateScheduledIfReady(booking, LocalDate.now(TENANCY_ZONE)));
+        }
 
         // A guest stay has no account, so there is no active-tenant flag to
         // clear. Called unconditionally this reached findById(null), which
@@ -653,10 +876,23 @@ public class TenancyService {
             UUID tenancyId,
             UUID newRoomId,
             LocalDate transferDate) {
+        return transferRoom(actorUserId, tenancyId, newRoomId, transferDate, false);
+    }
+
+    @Transactional
+    public Tenancy transferRoom(
+            UUID actorUserId,
+            UUID tenancyId,
+            UUID newRoomId,
+            LocalDate transferDate,
+            boolean holdOldRoomForFutureBooking) {
         Tenancy tenancy = getActiveTenancy(tenancyId);
         UUID propertyId = tenancy.getPropertyId();
         UUID oldRoomId = tenancy.getRoomId();
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, propertyId);
+        if (!holdOldRoomForFutureBooking) {
+            ensureNoPromisedDeparture(tenancy);
+        }
 
         if (oldRoomId.equals(newRoomId)) {
             throw new ValidationException("New room must be different from the current room");
@@ -690,7 +926,8 @@ public class TenancyService {
                 oldRoomId,
                 newRoomId,
                 resolvedTransferDate,
-                newRoom.baseRentPaise()));
+                newRoom.baseRentPaise(),
+                holdOldRoomForFutureBooking));
 
         log.info(
                 "Tenancy room transferred tenancyId={} userId={} actorUserId={} propertyId={} oldRoomId={} newRoomId={} newRentAmount={} transferDate={}",
@@ -704,6 +941,18 @@ public class TenancyService {
                 resolvedTransferDate);
 
         return tenancy;
+    }
+
+    /** Do not invalidate an approved outgoing move after its bed was sold forward. */
+    private void ensureNoPromisedDeparture(Tenancy tenancy) {
+        roomChangeRequestRepository.findOpenByTenancyId(
+                tenancy.getId(), List.of(TenancyRoomChangeRequestStatus.APPROVED))
+                .filter(request -> request.getCurrentRoomId().equals(tenancy.getRoomId()))
+                .filter(request -> tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(request.getId()))
+                .ifPresent(request -> {
+                    throw new ValidationException(
+                            "This room change already has a future tenant booked into the departing bed");
+                });
     }
 
     @Transactional

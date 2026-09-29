@@ -83,7 +83,7 @@ export function DepositAccountHeader({ canManage, tenantName }: { canManage: boo
 export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => void; tenancy: TenancySummary }) {
   const { colors, fonts, type } = useTheme();
   const active = tenancy.status === "ACTIVE";
-  const onNotice = tenancy.status === "ON_NOTICE" || tenancy.status === "ON_PREMATURE_NOTICE";
+  const onNotice = tenancy.status === "ON_NOTICE" || tenancy.status === "ON_PREMATURE_NOTICE" || tenancy.status === "PENDING_EXIT";
   const statusColor = active ? colors.jade : onNotice ? colors.warningText : colors.muted;
   return (
     <AnimatedPressable
@@ -261,7 +261,7 @@ export function DepositAccountDetail({
             disabled={busy || !canManage || payable == null}
             label={payable === false ? "Close account" : "Settle deposit"}
             onPress={onSettle}
-            variant="danger"
+            variant="dangerFilled"
           />
         ) : null
       ) : onAdd && onDeduct ? (

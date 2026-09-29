@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.d_modules.notification.api.dto.NotificationDeviceTokenResponse;
@@ -61,12 +62,17 @@ public class NotificationService {
     private final NotificationDeviceTokenRepository notificationDeviceTokenRepository;
     private final TenancyModule tenancyModule;
 
+    /** Its scheduled jobs work one record at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public NotificationService(
             NotificationRepository notificationRepository,
             NotificationRecipientRepository notificationRecipientRepository,
             PushNotificationRepository pushNotificationRepository,
             NotificationDeviceTokenRepository notificationDeviceTokenRepository,
-            TenancyModule tenancyModule) {
+            TenancyModule tenancyModule,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.notificationRepository = notificationRepository;
         this.notificationRecipientRepository = notificationRecipientRepository;
         this.pushNotificationRepository = pushNotificationRepository;
@@ -366,9 +372,20 @@ public class NotificationService {
             return Optional.of(Instant.EPOCH);
         }
 
+        // The window opens at the stay's start, or when it was created if that
+        // is earlier. A pending or future stay starts after it was made: with
+        // the start date alone the floor sat in the future and the feed showed
+        // nothing at all, not even what was sent about the pending stay (seen
+        // 2026-09-27).
         return tenancyModule.findActiveByUserId(userId)
-                .map(TenancyResponse::startDate)
-                .map(startDate -> startDate.atStartOfDay(IST).toInstant())
+                .map(tenancy -> {
+                    Instant start = tenancy.startDate() == null
+                            ? Instant.EPOCH
+                            : tenancy.startDate().atStartOfDay(IST).toInstant();
+                    return tenancy.createdAt() != null && tenancy.createdAt().isBefore(start)
+                            ? tenancy.createdAt()
+                            : start;
+                })
                 .or(() -> Optional.of(Instant.EPOCH));
     }
 
@@ -479,21 +496,20 @@ public class NotificationService {
     /**
      * Archives old notification recipient rows based on the retention policy.
      */
-    @Transactional
     public int archiveOldNotifications() {
         Instant now = Instant.now();
         Instant readCutoff = now.minus(READ_NOTIFICATION_RETENTION);
         Instant unreadCutoff = now.minus(UNREAD_NOTIFICATION_RETENTION);
 
-        List<NotificationRecipient> readRecipients =
-                notificationRecipientRepository.findReadBeforeForArchival(readCutoff);
-        List<NotificationRecipient> unreadRecipients =
-                notificationRecipientRepository.findUnreadBeforeForArchival(unreadCutoff);
+        List<UUID> readRecipients = notificationRecipientRepository.findReadBeforeForArchival(readCutoff)
+                .stream().map(NotificationRecipient::getId).toList();
+        List<UUID> unreadRecipients = notificationRecipientRepository.findUnreadBeforeForArchival(unreadCutoff)
+                .stream().map(NotificationRecipient::getId).toList();
 
-        readRecipients.forEach(recipient -> recipient.archive(now));
-        unreadRecipients.forEach(recipient -> recipient.archive(now));
-
-        int archivedCount = readRecipients.size() + unreadRecipients.size();
+        // One notification per transaction (2026-09-28): someone reading one on
+        // another device at this moment costs only that one until tomorrow.
+        int archivedCount = recordByRecord.run("notification-archive", readRecipients, id -> id, this::archiveRecipient)
+                + recordByRecord.run("notification-archive", unreadRecipients, id -> id, this::archiveRecipient);
 
         log.info(
                 "Notification cleanup archived count={} readCount={} unreadCount={}",
@@ -502,6 +518,15 @@ public class NotificationService {
                 unreadRecipients.size());
 
         return archivedCount;
+    }
+
+    private boolean archiveRecipient(UUID recipientId) {
+        NotificationRecipient recipient = notificationRecipientRepository.findById(recipientId).orElse(null);
+        if (recipient == null) {
+            return false;
+        }
+        recipient.archive(Instant.now());
+        return true;
     }
 
     private NotificationRecipient getUserRecipient(UUID userId, UUID recipientId) {

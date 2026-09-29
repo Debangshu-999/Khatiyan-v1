@@ -22,6 +22,9 @@ public class ValkeyOtpStore {
 
     private static final String OTP_KEY_PREFIX = "khatiyan:auth:otp:";
     private static final String RATE_KEY_PREFIX = "khatiyan:auth:otp-rate:";
+    private static final String IP_RATE_KEY_PREFIX = "khatiyan:auth:otp-rate-ip:";
+    private static final String HOURLY_RATE_KEY_PREFIX = "khatiyan:auth:otp-rate-hour:";
+    private static final String COOLDOWN_KEY_PREFIX = "khatiyan:auth:otp-cooldown:";
 
     private static final String FIELD_PHONE = "phone";
     private static final String FIELD_PURPOSE = "purpose";
@@ -110,7 +113,7 @@ public class ValkeyOtpStore {
      * <p>Read from the counter key's own TTL rather than assumed from the
      * window length: the window starts at the FIRST request, so somebody
      * refused on their third has already used part of it. Telling them to wait
-     * the full fifteen minutes would be wrong by however long they had been
+     * the full window would be wrong by however long they had been
      * going.
      *
      * @return remaining seconds, or 0 when the key is gone or has no expiry
@@ -120,12 +123,87 @@ public class ValkeyOtpStore {
         return ttl == null || ttl < 0 ? 0L : ttl;
     }
 
+    /**
+     * The same count for a phone over the LONG window.
+     *
+     * <p>Its own key, because the two windows start and expire independently:
+     * the ten-minute count can reset while the hour's is still running, which
+     * is exactly what stops somebody waiting out the short one over and over.
+     */
+    public long incrementHourlyRequestCount(String phone, Duration window) {
+        String key = HOURLY_RATE_KEY_PREFIX + phone;
+        Long count = valkeyTemplate.opsForValue().increment(key);
+
+        if (count != null && count == 1L) {
+            valkeyTemplate.expire(key, window);
+        }
+
+        return count == null ? 0L : count;
+    }
+
+    /** Seconds until this phone's hourly budget resets. See {@link #requestWindowRemainingSeconds}. */
+    public long hourlyRequestWindowRemainingSeconds(String phone) {
+        Long ttl = valkeyTemplate.getExpire(HOURLY_RATE_KEY_PREFIX + phone);
+        return ttl == null || ttl < 0 ? 0L : ttl;
+    }
+
+    /**
+     * Counts OTP issue requests from one IP within a Valkey TTL window.
+     *
+     * <p>The limit that stops one device spraying codes at many numbers — SMS
+     * pumping, where every message is billed to us. It used to exist only in
+     * the database check, and so only while that check ran on every request.
+     */
+    public long incrementIpRequestCount(String ipAddress, Duration window) {
+        String key = IP_RATE_KEY_PREFIX + ipAddress;
+        Long count = valkeyTemplate.opsForValue().increment(key);
+
+        if (count != null && count == 1L) {
+            valkeyTemplate.expire(key, window);
+        }
+
+        return count == null ? 0L : count;
+    }
+
+    /** Seconds until this IP's request budget resets. See {@link #requestWindowRemainingSeconds}. */
+    public long ipRequestWindowRemainingSeconds(String ipAddress) {
+        Long ttl = valkeyTemplate.getExpire(IP_RATE_KEY_PREFIX + ipAddress);
+        return ttl == null || ttl < 0 ? 0L : ttl;
+    }
+
+    /**
+     * Starts the pause between one code and the next, if none is running.
+     *
+     * <p>Set-if-absent, so two taps landing together cannot both get through:
+     * exactly one of them starts the cooldown and the other is refused.
+     *
+     * <p>Per number AND purpose. A tenant who has just been sent a login code
+     * can still be sent a cash-payment code — they are different messages for
+     * different reasons — but not a second cash code a moment after the first.
+     *
+     * @return false when a cooldown is already running
+     */
+    public boolean startResendCooldown(String phone, OtpPurpose purpose, Duration cooldown) {
+        Boolean started = valkeyTemplate.opsForValue().setIfAbsent(cooldownKey(phone, purpose), "1", cooldown);
+        return Boolean.TRUE.equals(started);
+    }
+
+    /** Seconds left on the running cooldown, or 0 when there is none. */
+    public long resendCooldownRemainingSeconds(String phone, OtpPurpose purpose) {
+        Long ttl = valkeyTemplate.getExpire(cooldownKey(phone, purpose));
+        return ttl == null || ttl < 0 ? 0L : ttl;
+    }
+
     private String otpKey(String phone, OtpPurpose purpose) {
         return OTP_KEY_PREFIX + purpose.name() + ":" + phone;
     }
 
     private String rateKey(String phone) {
         return RATE_KEY_PREFIX + phone;
+    }
+
+    private String cooldownKey(String phone, OtpPurpose purpose) {
+        return COOLDOWN_KEY_PREFIX + purpose.name() + ":" + phone;
     }
 
     private int intValue(String value) {

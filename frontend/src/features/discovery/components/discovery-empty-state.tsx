@@ -29,7 +29,7 @@ export function DiscoveryEmptyState({ title, description }: DiscoveryEmptyStateP
         >
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {description}
         </Text>
       </View>

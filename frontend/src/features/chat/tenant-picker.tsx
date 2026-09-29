@@ -34,7 +34,7 @@ export function TenantPicker({
   return (
     <SheetShell dismissOnDrag onClose={onClose} title="Message a tenant">
       {tenants.length === 0 ? (
-        <Text style={[type.caption, { color: colors.muted, paddingVertical: spacing.md }]}>
+        <Text style={[type.description, { color: colors.muted, paddingVertical: spacing.md }]}>
           There are no active tenants on this property yet.
         </Text>
       ) : null}

@@ -395,7 +395,7 @@ export default function OwnerVacancyFinderScreen() {
                   {matchCount > 0 ? (
                     <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
                       <View style={{ backgroundColor: colors.border, height: 1 }} />
-                      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                      <Text style={[type.description, { color: colors.muted }]}>
                         These do not match your filters, but they are vacant.
                       </Text>
                     </View>
@@ -739,13 +739,9 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
 // end); monthly stays on notice carry it in endDate. Returns the vacancy date
 // (ISO yyyy-MM-dd) or null.
 function upcomingVacancyDate(tenancy: TenancySummary, today: string): string | null {
-  if (tenancy.billingType === "DAILY") {
-    return tenancy.plannedEndDate && tenancy.plannedEndDate >= today ? tenancy.plannedEndDate : null;
-  }
-  if (tenancy.billingType === "MONTHLY" && (tenancy.status === "ON_NOTICE" || tenancy.status === "ON_PREMATURE_NOTICE")) {
-    return tenancy.endDate && tenancy.endDate >= today ? tenancy.endDate : null;
-  }
-  return null;
+  // The one checkout date covers daily stays, notices AND fixed terms, which
+  // this used to miss: a fixed term's bed frees on its end date too.
+  return tenancy.checkoutDate && tenancy.checkoutDate >= today ? tenancy.checkoutDate : null;
 }
 
 function todayIso(): string {

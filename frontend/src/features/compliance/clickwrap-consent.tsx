@@ -104,20 +104,15 @@ export function ClickwrapConsent({
         padding: spacing.md,
       }}
     >
-      {/* Pressing the text opens it; pressing the box agrees to it. Making the
-          whole block one press meant tapping to READ was tapping to AGREE. */}
+      {/* The box agrees, the expand button opens the full text, and the words
+          themselves do nothing. Making the whole block one press meant tapping
+          to READ was tapping to AGREE, and a text that also opened the window
+          made the block feel like one big button (owner's call, 2026-09-27). */}
       <ConsentTick checked={checked} onToggle={onToggle} />
 
-      <AnimatedPressable
-        accessibilityHint="Opens the full declaration"
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={{ flex: 1 }}
-      >
-        <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, lineHeight: 19 }]}>
-          {statement}
-        </Text>
-      </AnimatedPressable>
+      <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19 }]}>
+        {statement}
+      </Text>
 
       <AnimatedPressable
         accessibilityLabel="Read the full declaration"
@@ -158,7 +153,8 @@ export function ConsentTick({ checked, onToggle }: { checked: boolean; onToggle:
         alignItems: "center",
         backgroundColor: checked ? colors.jade : "transparent",
         borderColor: checked ? colors.jade : colors.borderStrong,
-        borderRadius: 6,
+        // Square, as a checkbox reads. At 6 on a 22px box it read as a pill.
+        borderRadius: 3,
         borderWidth: 2,
         height: 22,
         justifyContent: "center",

@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.enquiry.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,9 +10,10 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
+import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -36,8 +38,12 @@ public class EnquiryExpirySchedulerService {
 
     private final EnquiryRepository enquiryRepository;
 
-    public EnquiryExpirySchedulerService(EnquiryRepository enquiryRepository) {
+    /** One enquiry per transaction (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
+    public EnquiryExpirySchedulerService(EnquiryRepository enquiryRepository, RecordByRecord recordByRecord) {
         this.enquiryRepository = enquiryRepository;
+        this.recordByRecord = recordByRecord;
     }
 
     /**
@@ -55,17 +61,27 @@ public class EnquiryExpirySchedulerService {
 
     @Scheduled(cron = "${app.enquiry.expiry-cron}", zone = "${app.enquiry.expiry-zone}")
     @SchedulerLock(name = "enquiry-expireStale", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
-    @Transactional
     public void expireStaleEnquiries() {
         Instant now = Instant.now();
-        List<Enquiry> stale = enquiryRepository.findOpenPastExpiry(now);
+        List<UUID> stale = enquiryRepository.findOpenPastExpiry(now).stream().map(Enquiry::getId).toList();
 
         if (stale.isEmpty()) {
             log.info("Enquiry expiry sweep found nothing past its date");
             return;
         }
 
-        stale.forEach(Enquiry::expire);
-        log.info("Enquiry expiry sweep aged out {} unanswered enquiries", stale.size());
+        // One enquiry per transaction, re-read inside it (2026-09-28): an owner
+        // answering one at this moment keeps it. This also fixes the startup
+        // catch-up, which called this method directly and so never got the
+        // @Transactional it used to carry.
+        int expired = recordByRecord.run("enquiry-expire", stale, id -> id, id -> {
+            Enquiry enquiry = enquiryRepository.findById(id).orElse(null);
+            if (enquiry == null || enquiry.getStatus() != EnquiryStatus.NEW) {
+                return false;
+            }
+            enquiry.expire();
+            return true;
+        });
+        log.info("Enquiry expiry sweep aged out {} unanswered enquiries", expired);
     }
 }

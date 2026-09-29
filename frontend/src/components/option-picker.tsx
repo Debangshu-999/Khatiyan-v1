@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
-import { ChevronDown, Filter } from "lucide-react-native";
+import { ChevronDown, Filter, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { FieldError } from "@/components/field-error";
-import { RequiredMark } from "@/features/owner/owner-ui";
+import { IconButton, RequiredMark } from "@/features/owner/owner-ui";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
 import { spacing } from "@/theme/spacing";
@@ -105,12 +105,15 @@ export function SingleOptionPicker<T extends string>({
   error,
   label,
   onChange,
+  optionIcon,
   options,
   required,
   showIcon = true,
   title,
   value,
 }: {
+  /** An icon before each option's name, where the options have one worth showing. */
+  optionIcon?: (value: T) => ReactNode;
   /**
    * Opens a centred dialog instead of a bottom sheet.
    *
@@ -157,13 +160,9 @@ export function SingleOptionPicker<T extends string>({
             transparent
             visible
           >
-            {/* Tapping the scrim closes it. A centred dialog with no visible
-                dismiss needs one, and a short choice does not deserve a Cancel
-                button taking up another row. */}
-            <AnimatedPressable
-              accessibilityLabel="Close"
-              accessibilityRole="button"
-              onPress={() => setOpen(false)}
+            {/* Closes only by its close button or a choice (user, 2026-09-29):
+                a tap on the scrim does nothing. */}
+            <View
               style={{
                 alignItems: "center",
                 backgroundColor: colors.overlay,
@@ -172,10 +171,7 @@ export function SingleOptionPicker<T extends string>({
                 paddingHorizontal: spacing.xl,
               }}
             >
-              {/* Its own pressable so a tap on the card does not reach the
-                  scrim behind it and close the picker mid-decision. */}
-              <AnimatedPressable
-                onPress={() => {}}
+              <View
                 style={{
                   backgroundColor: colors.surface,
                   borderCurve: "continuous",
@@ -184,21 +180,26 @@ export function SingleOptionPicker<T extends string>({
                   width: "100%",
                 }}
               >
-                <Text
+                <View
                   style={{
-                    color: colors.muted,
-                    fontFamily: fonts.display,
-                    fontSize: 19,
-                    paddingHorizontal: spacing.lg,
-                    paddingVertical: spacing.md,
+                    alignItems: "center",
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    paddingLeft: spacing.lg,
+                    paddingRight: spacing.md,
+                    paddingVertical: spacing.sm,
                   }}
                 >
-                  {title ?? label}
-                </Text>
+                  <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+                    {title ?? label}
+                  </Text>
+                  <IconButton accessibilityLabel="Close" filled icon={X} onPress={() => setOpen(false)} />
+                </View>
 
-                <View style={{ paddingHorizontal: spacing.lg }}>
+                <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.md }}>
                   {options.map((option) => (
                     <PickerOptionRow
+                      icon={optionIcon?.(option.value)}
                       key={option.value}
                       label={option.label}
                       onPress={() => {
@@ -209,8 +210,8 @@ export function SingleOptionPicker<T extends string>({
                     />
                   ))}
                 </View>
-              </AnimatedPressable>
-            </AnimatedPressable>
+              </View>
+            </View>
           </Modal>
         ) : (
           <SheetShell onClose={() => setOpen(false)} title={title ?? label}>
@@ -218,6 +219,7 @@ export function SingleOptionPicker<T extends string>({
               {options.map((option, index) => (
                 <PickerOptionRow
                   first={index === 0}
+                  icon={optionIcon?.(option.value)}
                   key={option.value}
                   label={option.label}
                   onPress={() => {

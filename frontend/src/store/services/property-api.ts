@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 
 export type PropertyType = "PG" | "HOSTEL" | "APARTMENT" | "SOCIETY";
 /** Occupancy is 1–4, then a dormitory for anything larger. */
@@ -163,6 +163,11 @@ export type OwnerProperty = {
   noticePeriodDays: number;
   discoveryProfileCreated: boolean;
   active: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type OwnerRoom = {
@@ -190,6 +195,11 @@ export type OwnerRoom = {
   maintenanceMarkedByName: string | null;
   maintenanceMarkedAt: string | null;
   updatedAt: string | null;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type PropertyManager = {
@@ -205,6 +215,11 @@ export type PropertyManager = {
   profileCompleted: boolean;
   accountActive: boolean;
   createdAt: string;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type UpdatePropertyPayload = {
@@ -314,6 +329,11 @@ export type PropertyExitPolicy = {
    * that does not show it would clear whatever the owner wrote.
    */
   prematureExitPolicy: string | null;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type DeductionCategory = "DAMAGE" | "UNPAID_DUES" | "CLEANING" | "UTILITIES";
@@ -368,6 +388,11 @@ export type ManagerPermissions = {
   owner: boolean;
   // Always complete — every resource is present, NONE included.
   levels: Record<ManagerResource, ManagerAccessLevel>;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /**
@@ -450,8 +475,8 @@ export const propertyApi = api.injectEndpoints({
       invalidatesTags: ["Property", "Notification"],
     }),
 
-    updateProperty: builder.mutation<OwnerProperty, { propertyId: string; payload: UpdatePropertyPayload }>({
-      query: ({ payload, propertyId }) => ({ body: payload, method: "PATCH", url: `/api/v1/properties/${propertyId}` }),
+    updateProperty: builder.mutation<OwnerProperty, { propertyId: string; payload: UpdatePropertyPayload; version: number }>({
+      query: ({ payload, propertyId, version }) => ({ body: payload, headers: ifMatch(version), method: "PATCH", url: `/api/v1/properties/${propertyId}` }),
       invalidatesTags: ["Property"],
     }),
 
@@ -481,9 +506,10 @@ export const propertyApi = api.injectEndpoints({
       invalidatesTags: ["Property", "Tenancy"],
     }),
 
-    updateRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; payload: CreateRoomPayload }>({
-      query: ({ payload, propertyId, roomId }) => ({
+    updateRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; payload: CreateRoomPayload; version: number }>({
+      query: ({ payload, propertyId, roomId, version }) => ({
         body: payload,
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}`,
       }),
@@ -492,10 +518,11 @@ export const propertyApi = api.injectEndpoints({
 
     markRoomStatus: builder.mutation<
       OwnerRoom,
-      { propertyId: string; roomId: string; status: RoomStatus; reason?: string; until?: string | null }
+      { propertyId: string; roomId: string; status: RoomStatus; reason?: string; until?: string | null; version: number }
     >({
-      query: ({ propertyId, reason, roomId, status, until }) => ({
+      query: ({ propertyId, reason, roomId, status, until, version }) => ({
         body: { reason: reason ?? null, status, until: until ?? null },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}/status`,
       }),
@@ -504,26 +531,28 @@ export const propertyApi = api.injectEndpoints({
 
     updateRoomMaintenance: builder.mutation<
       OwnerRoom,
-      { propertyId: string; roomId: string; reason: string; until?: string | null }
+      { propertyId: string; roomId: string; reason: string; until?: string | null; version: number }
     >({
-      query: ({ propertyId, reason, roomId, until }) => ({
+      query: ({ propertyId, reason, roomId, until, version }) => ({
         body: { reason, until: until ?? null },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}/maintenance`,
       }),
       invalidatesTags: ["Property"],
     }),
 
-    reactivateRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string }>({
-      query: ({ propertyId, roomId }) => ({
+    reactivateRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; version: number }>({
+      query: ({ propertyId, roomId, version }) => ({
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}/reactivate`,
       }),
       invalidatesTags: ["Property", "Tenancy", "Notification"],
     }),
 
-    deactivateRoom: builder.mutation<void, { propertyId: string; roomId: string }>({
-      query: ({ propertyId, roomId }) => ({ method: "DELETE", url: `/api/v1/properties/${propertyId}/rooms/${roomId}` }),
+    deactivateRoom: builder.mutation<void, { propertyId: string; roomId: string; version: number }>({
+      query: ({ propertyId, roomId, version }) => ({ headers: ifMatch(version), method: "DELETE", url: `/api/v1/properties/${propertyId}/rooms/${roomId}` }),
       invalidatesTags: ["Property", "Tenancy", "Notification"],
     }),
 
@@ -587,9 +616,10 @@ export const propertyApi = api.injectEndpoints({
      * anything the caller also wants changed has to be written AFTER this, not
      * before — the recut would overwrite it.
      */
-    recutRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; moldId: string }>({
-      query: ({ moldId, propertyId, roomId }) => ({
+    recutRoom: builder.mutation<OwnerRoom, { propertyId: string; roomId: string; moldId: string; version: number }>({
+      query: ({ moldId, propertyId, roomId, version }) => ({
         body: { moldId },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}/recut`,
       }),
@@ -599,10 +629,11 @@ export const propertyApi = api.injectEndpoints({
     /** Replaces the room's list wholesale — a partial update could not remove the last one. */
     updateRoomAmenities: builder.mutation<
       OwnerRoom,
-      { propertyId: string; roomId: string; amenities: RoomAmenity[]; customAmenities: string[] }
+      { propertyId: string; roomId: string; amenities: RoomAmenity[]; customAmenities: string[]; version: number }
     >({
-      query: ({ amenities, customAmenities, propertyId, roomId }) => ({
+      query: ({ amenities, customAmenities, propertyId, roomId, version }) => ({
         body: { amenities, customAmenities },
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/properties/${propertyId}/rooms/${roomId}/amenities`,
       }),
@@ -623,10 +654,11 @@ export const propertyApi = api.injectEndpoints({
     /** Full replacement — anything omitted is revoked. */
     replaceManagerPermissions: builder.mutation<
       ManagerPermissions,
-      { propertyId: string; managerUserId: string; levels: Record<ManagerResource, ManagerAccessLevel> }
+      { propertyId: string; managerUserId: string; levels: Record<ManagerResource, ManagerAccessLevel>; version: number }
     >({
-      query: ({ levels, managerUserId, propertyId }) => ({
+      query: ({ levels, managerUserId, propertyId, version }) => ({
         body: { levels },
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/properties/${propertyId}/managers/${managerUserId}/permissions`,
       }),
@@ -647,17 +679,19 @@ export const propertyApi = api.injectEndpoints({
       invalidatesTags: ["Property", "Notification", "Staff"],
     }),
 
-    removePropertyManager: builder.mutation<void, { propertyId: string; managerUserId: string }>({
-      query: ({ managerUserId, propertyId }) => ({
+    removePropertyManager: builder.mutation<void, { propertyId: string; managerUserId: string; version: number }>({
+      query: ({ managerUserId, propertyId, version }) => ({
+        headers: ifMatch(version),
         method: "DELETE",
         url: `/api/v1/properties/${propertyId}/managers/${managerUserId}`,
       }),
       invalidatesTags: ["Property", "Staff"],
     }),
 
-    shiftPropertyManager: builder.mutation<PropertyManager, { propertyId: string; managerUserId: string; targetPropertyId: string }>({
-      query: ({ managerUserId, propertyId, targetPropertyId }) => ({
+    shiftPropertyManager: builder.mutation<PropertyManager, { propertyId: string; managerUserId: string; targetPropertyId: string; version: number }>({
+      query: ({ managerUserId, propertyId, targetPropertyId, version }) => ({
         body: { targetPropertyId },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/properties/${propertyId}/managers/${managerUserId}/shift`,
       }),
@@ -671,10 +705,11 @@ export const propertyApi = api.injectEndpoints({
 
     updatePropertyExitPolicies: builder.mutation<
       PropertyExitPolicy,
-      { propertyId: string; payload: UpdateExitPoliciesPayload }
+      { propertyId: string; payload: UpdateExitPoliciesPayload; version: number }
     >({
-      query: ({ payload, propertyId }) => ({
+      query: ({ payload, propertyId, version }) => ({
         body: payload,
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/properties/${propertyId}/exit-policies`,
       }),
@@ -690,10 +725,11 @@ export const propertyApi = api.injectEndpoints({
      */
     updatePrematureExitPolicy: builder.mutation<
       PropertyExitPolicy,
-      { propertyId: string; prematureExitPolicy: string }
+      { propertyId: string; prematureExitPolicy: string; version: number }
     >({
-      query: ({ prematureExitPolicy, propertyId }) => ({
+      query: ({ prematureExitPolicy, propertyId, version }) => ({
         body: { prematureExitPolicy },
+        headers: ifMatch(version),
         method: "PATCH",
         url: `/api/v1/properties/${propertyId}/premature-exit-policy`,
       }),

@@ -110,13 +110,8 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           </Text>
         </View>
         <Text
-          style={{
-            color: colors.muted,
-            fontFamily: fonts.sans,
-            fontSize: 13,
-            lineHeight: 19,
-            marginTop: spacing.xxs,
-          }}
+          style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
+            marginTop: spacing.xxs }}
         >
           {description}
         </Text>

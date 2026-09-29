@@ -5,6 +5,8 @@ import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import jakarta.persistence.OptimisticLockException;
 import com.khatiyan.a_auth.api.dto.SessionLimitResponse;
 import com.khatiyan.a_auth.api.dto.UserSessionResponse;
 import com.khatiyan.a_auth.service.SessionLimitReachedException;
@@ -36,6 +38,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidation(ValidationException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ErrorResponse> handleFieldValidation(FieldValidationException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse.withFieldErrors(e.getCode(), e.getMessage(), e.getFieldErrors()));
     }
 
     /**
@@ -137,6 +145,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUnsupportedMethod(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
             .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "HTTP method is not supported for this endpoint"));
+    }
+
+    /**
+     * Someone else changed the record first (2026-09-28): a stale screen caught
+     * by {@code VersionGuard}, or a same-moment race caught when the losing
+     * save found the row's version already moved. Nothing was written. The app
+     * refetches on {@code STALE} and shows the message.
+     */
+    @ExceptionHandler({
+        StaleVersionException.class,
+        OptimisticLockingFailureException.class,
+        OptimisticLockException.class
+    })
+    public ResponseEntity<ErrorResponse> handleStale(Exception e) {
+        log.info("Refused a stale or raced write: {}", e.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(ErrorResponse.of(StaleVersionException.CODE, StaleVersionException.MESSAGE));
+    }
+
+    /** An action on an existing record sent no version (2026-09-29). */
+    @ExceptionHandler(VersionRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleVersionRequired(VersionRequiredException e) {
+        return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED)
+            .body(ErrorResponse.of(VersionRequiredException.CODE, VersionRequiredException.MESSAGE));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

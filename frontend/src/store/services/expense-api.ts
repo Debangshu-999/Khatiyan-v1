@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Page } from "@/store/pagination";
 
 export type ExpenseEntryType = "MANUAL" | "RECURRING" | "AUTO" | "REVERSAL";
@@ -15,6 +15,11 @@ export type Expense = {
   reversesExpenseId: string | null;
   reversed: boolean;
   createdAt: string;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type ExpenseCategoryTotal = {
@@ -35,6 +40,11 @@ export type ExpenseCategory = {
   name: string;
   system: boolean;
   active: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type BudgetRaiseItem = {
@@ -53,6 +63,11 @@ export type ExpenseBudgetOverview = {
   remainingPaise: number | null;
   savingsPaise: number;
   raises: BudgetRaiseItem[];
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type ExpenseBudgetTrendPoint = {
@@ -79,6 +94,11 @@ export type RecurringExpense = {
   lastGeneratedMonth: string | null;
   // Derived by the platform (projected salary) — read-only, no edit/deactivate.
   system: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type CreateExpensePayload = {
@@ -113,8 +133,8 @@ export const expenseApi = api.injectEndpoints({
       query: ({ propertyId, payload }) => ({ body: payload, method: "POST", url: `${base(propertyId)}/expenses` }),
       invalidatesTags: ["Expense"],
     }),
-    reverseExpense: builder.mutation<Expense, { propertyId: string; expenseId: string; reason: string }>({
-      query: ({ propertyId, expenseId, reason }) => ({ body: { reason }, method: "POST", url: `${base(propertyId)}/expenses/${expenseId}/reverse` }),
+    reverseExpense: builder.mutation<Expense, { propertyId: string; expenseId: string; reason: string; version: number }>({
+      query: ({ propertyId, expenseId, reason, version }) => ({ body: { reason }, headers: ifMatch(version), method: "POST", url: `${base(propertyId)}/expenses/${expenseId}/reverse` }),
       invalidatesTags: ["Expense"],
     }),
 
@@ -126,12 +146,12 @@ export const expenseApi = api.injectEndpoints({
       query: ({ propertyId, name }) => ({ body: { name }, method: "POST", url: `${base(propertyId)}/expense-categories` }),
       invalidatesTags: ["Expense"],
     }),
-    renameExpenseCategory: builder.mutation<ExpenseCategory, { propertyId: string; categoryId: string; name: string }>({
-      query: ({ propertyId, categoryId, name }) => ({ body: { name }, method: "PATCH", url: `${base(propertyId)}/expense-categories/${categoryId}` }),
+    renameExpenseCategory: builder.mutation<ExpenseCategory, { propertyId: string; categoryId: string; name: string; version: number }>({
+      query: ({ propertyId, categoryId, name, version }) => ({ body: { name }, headers: ifMatch(version), method: "PATCH", url: `${base(propertyId)}/expense-categories/${categoryId}` }),
       invalidatesTags: ["Expense"],
     }),
-    deactivateExpenseCategory: builder.mutation<void, { propertyId: string; categoryId: string }>({
-      query: ({ propertyId, categoryId }) => ({ method: "DELETE", url: `${base(propertyId)}/expense-categories/${categoryId}` }),
+    deactivateExpenseCategory: builder.mutation<void, { propertyId: string; categoryId: string; version: number }>({
+      query: ({ propertyId, categoryId, version }) => ({ headers: ifMatch(version), method: "DELETE", url: `${base(propertyId)}/expense-categories/${categoryId}` }),
       invalidatesTags: ["Expense"],
     }),
 
@@ -139,8 +159,8 @@ export const expenseApi = api.injectEndpoints({
       query: ({ propertyId, month }) => ({ url: `${base(propertyId)}/expense-budget`, params: { month } }),
       providesTags: ["Expense"],
     }),
-    setDefaultBudget: builder.mutation<ExpenseBudgetOverview, { propertyId: string; month: string; amountPaise: number }>({
-      query: ({ propertyId, month, amountPaise }) => ({ body: { amountPaise }, method: "PUT", url: `${base(propertyId)}/expense-budget`, params: { month } }),
+    setDefaultBudget: builder.mutation<ExpenseBudgetOverview, { propertyId: string; month: string; amountPaise: number; version: number }>({
+      query: ({ propertyId, month, amountPaise, version }) => ({ body: { amountPaise }, headers: ifMatch(version), method: "PUT", url: `${base(propertyId)}/expense-budget`, params: { month } }),
       invalidatesTags: ["Expense"],
     }),
     raiseBudget: builder.mutation<ExpenseBudgetOverview, { propertyId: string; month: string; amountPaise: number; reason?: string }>({
@@ -160,12 +180,12 @@ export const expenseApi = api.injectEndpoints({
       query: ({ propertyId, payload }) => ({ body: payload, method: "POST", url: `${base(propertyId)}/recurring-expenses` }),
       invalidatesTags: ["Expense"],
     }),
-    updateRecurringExpense: builder.mutation<RecurringExpense, { propertyId: string; recurringExpenseId: string; payload: RecurringExpensePayload }>({
-      query: ({ propertyId, recurringExpenseId, payload }) => ({ body: payload, method: "PATCH", url: `${base(propertyId)}/recurring-expenses/${recurringExpenseId}` }),
+    updateRecurringExpense: builder.mutation<RecurringExpense, { propertyId: string; recurringExpenseId: string; payload: RecurringExpensePayload; version: number }>({
+      query: ({ propertyId, recurringExpenseId, payload, version }) => ({ body: payload, headers: ifMatch(version), method: "PATCH", url: `${base(propertyId)}/recurring-expenses/${recurringExpenseId}` }),
       invalidatesTags: ["Expense"],
     }),
-    deactivateRecurringExpense: builder.mutation<void, { propertyId: string; recurringExpenseId: string }>({
-      query: ({ propertyId, recurringExpenseId }) => ({ method: "DELETE", url: `${base(propertyId)}/recurring-expenses/${recurringExpenseId}` }),
+    deactivateRecurringExpense: builder.mutation<void, { propertyId: string; recurringExpenseId: string; version: number }>({
+      query: ({ propertyId, recurringExpenseId, version }) => ({ headers: ifMatch(version), method: "DELETE", url: `${base(propertyId)}/recurring-expenses/${recurringExpenseId}` }),
       invalidatesTags: ["Expense"],
     }),
   }),

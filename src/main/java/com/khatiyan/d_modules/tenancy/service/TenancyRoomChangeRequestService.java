@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -158,6 +159,8 @@ public class TenancyRoomChangeRequestService {
     public TenancyRoomChangeRequestResponse approve(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
+        // The request as the screen saw it (2026-09-29).
+        VersionGuard.claim(request);
         ensureNoBlockingExitRequest(request.getTenancyId());
         ensureTransferDateAhead(request);
         ensureTargetStillAvailable(request);
@@ -193,6 +196,11 @@ public class TenancyRoomChangeRequestService {
     public TenancyRoomChangeRequestResponse revertApproval(UUID actorUserId, UUID requestId) {
         TenancyRoomChangeRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
+        VersionGuard.claim(request);
+
+        if (tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(requestId)) {
+            throw new ValidationException("This room change has a future tenant booked into the bed it will free");
+        }
 
         request.revertApproval(Instant.now());
         propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
@@ -209,6 +217,7 @@ public class TenancyRoomChangeRequestService {
     public TenancyRoomChangeRequestResponse reject(UUID actorUserId, UUID requestId, String adminNotes) {
         TenancyRoomChangeRequest request = getRequest(requestId);
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, request.getPropertyId());
+        VersionGuard.claim(request);
 
         request.reject(actorUserId, adminNotes);
         log.info("Tenancy room change rejected requestId={} actorUserId={}", requestId, actorUserId);
@@ -227,6 +236,13 @@ public class TenancyRoomChangeRequestService {
     public TenancyRoomChangeRequestResponse execute(UUID actorUserId, UUID requestId) {
         TenancyRoomChangeRequest request = getRequest(requestId);
         return executeApprovedRequest(actorUserId, request);
+    }
+
+    /** Approved moves due by today that a future booking is waiting on: retried hourly until they run. */
+    @Transactional(readOnly = true)
+    public List<UUID> findDueBookedRequestIds(LocalDate today, int limit) {
+        List<UUID> due = findDueApprovedRequestIds(today, limit);
+        return due.isEmpty() ? List.of() : tenancyRepository.findBookedFutureVacancySourceIds(due);
     }
 
     @Transactional(readOnly = true)
@@ -314,6 +330,16 @@ public class TenancyRoomChangeRequestService {
             return;
         }
 
+        // A failed transfer cannot silently cancel the only vacancy promised
+        // to an incoming tenant. Keep the approved move retryable (hourly, by
+        // the booking run) and tell management once, with an action center
+        // item, so a person fixes whatever stopped it.
+        if (tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(requestId)) {
+            log.error("Booked room change failed and remains approved for retry requestId={}", requestId, exception);
+            tenancyService.reportBookedMoveFailed(requestId);
+            return;
+        }
+
         // A business refusal explains itself. Anything else is an internal error,
         // and that belongs in the log, not on somebody's phone.
         String reason = exception instanceof BusinessException
@@ -325,6 +351,12 @@ public class TenancyRoomChangeRequestService {
     }
 
     private void cancelFailedExecution(TenancyRoomChangeRequest request, String reason) {
+        if (tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(request.getId())) {
+            log.error("Booked room change could not execute and remains approved requestId={} reason={}",
+                    request.getId(), reason);
+            tenancyService.reportBookedMoveFailed(request.getId());
+            return;
+        }
         request.cancelAfterExecutionFailure(Instant.now(), reason);
         propertyModule.releaseRoomSlotReservation(request.getPropertyId(), request.getTargetRoomId());
         log.warn(
@@ -413,7 +445,8 @@ public class TenancyRoomChangeRequestService {
                 actorUserId,
                 request.getTenancyId(),
                 request.getTargetRoomId(),
-                request.getEffectiveTransferDate());
+                request.getEffectiveTransferDate(),
+                tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(request.getId()));
         Long rentAmountPaise = tenancy.getRentAmountPaise();
         if (rentAmountPaise == null) {
             throw new ValidationException("Executed room change is missing updated rent amount");
@@ -547,9 +580,14 @@ public class TenancyRoomChangeRequestService {
 
         Map<UUID, String> names = authModule.findByIds(userIds).entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
+        Set<UUID> bookedSourceIds = requests.isEmpty()
+                ? Set.of()
+                : new HashSet<>(tenancyRepository.findBookedFutureVacancySourceIds(
+                        requests.stream().map(TenancyRoomChangeRequest::getId).toList()));
 
         return requests.stream()
-                .map(request -> TenancyRoomChangeRequestResponse.from(request, names))
+                .map(request -> TenancyRoomChangeRequestResponse.from(
+                        request, names, bookedSourceIds.contains(request.getId())))
                 .toList();
     }
 }

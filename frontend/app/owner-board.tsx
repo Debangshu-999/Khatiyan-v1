@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
 
 import { Card } from "@/components/card";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { Section } from "@/components/section";
 import { OwnerBoardCategoriesSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
-import { FieldError } from "@/components/field-error";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
@@ -30,7 +32,7 @@ import {
   type BoardCategory,
   type BoardItem,
 } from "@/store/services/property-board-api";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const NO_CATEGORY_ILLUSTRATION = require("../assets/workspace/No-Category_512x512.png");
@@ -59,16 +61,20 @@ export default function OwnerBoardScreen() {
   const [deactivateItem] = useDeactivateBoardItemMutation();
 
   const [categoryModal, setCategoryModal] = useState<{ category: BoardCategory | null } | null>(null);
-  const [itemModal, setItemModal] = useState<{ item: BoardItem | null; categoryId?: string } | null>(null);
+  const [itemModal, setItemModal] = useState<{ item: BoardItem | null; categoryId: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ kind: "category" | "item"; id: string; label: string } | null>(null);
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <View style={{ flex: 1 }}>
+    <ScreenScrollView
+      contentContainerStyle={{ paddingBottom: selectedProperty ? PINNED_FOOTER_CLEARANCE : undefined }}
+      safeAreaEdges={selectedProperty ? ["top"] : ["top", "bottom"]}
+    >
       <ScreenHeader
         badge={!canManageBoard ? <ViewOnlyChip /> : null}
         title="Property"
         italicTail="board."
-        subtitle="Categories and items shown on this property's board."
+        subtitle="Always-on info for tenants — rules, timings, contacts and shared information, organised by category."
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -82,22 +88,6 @@ export default function OwnerBoardScreen() {
 
       {selectedProperty ? (
         <>
-          <Card>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              Property board
-            </Text>
-            <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>
-              {selectedProperty.name}
-            </Text>
-            <Text style={[type.body, { color: colors.muted }]}>
-              Always-on info for tenants — rules, timings, contacts and shared information, organised by category.
-            </Text>
-          </Card>
-
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton disabled={!canManageBoard} icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} variant="secondary" />
-          </View>
-
           {boardLoading ? (
             <OwnerBoardCategoriesSkeleton />
           ) : categories.length === 0 ? (
@@ -122,11 +112,11 @@ export default function OwnerBoardScreen() {
                       icon={Trash2}
                       label="Delete"
                       onPress={() => setPendingDelete({ id: category.id, kind: "category", label: category.name })}
-                      variant="danger"
+                      variant="dangerFilled"
                     />
                   </View>
                   {categoryItems.length === 0 ? (
-                    <Text style={[type.caption, { color: colors.muted }]}>
+                    <Text style={[type.description, { color: colors.muted }]}>
                       No items in this category yet.
                     </Text>
                   ) : (
@@ -136,7 +126,7 @@ export default function OwnerBoardScreen() {
                         key={item.id}
                         item={item}
                         onDelete={() => setPendingDelete({ id: item.id, kind: "item", label: item.title })}
-                        onEdit={() => setItemModal({ item })}
+                        onEdit={() => setItemModal({ categoryId: item.categoryId, item })}
                       />
                     ))
                   )}
@@ -163,8 +153,7 @@ export default function OwnerBoardScreen() {
 
       {itemModal && selectedProperty ? (
         <ItemModal
-          categories={categories}
-          initialCategoryId={itemModal.categoryId}
+          categoryId={itemModal.categoryId}
           item={itemModal.item}
           onClose={() => setItemModal(null)}
           propertyId={selectedProperty.id}
@@ -197,6 +186,12 @@ export default function OwnerBoardScreen() {
         />
       ) : null}
     </ScreenScrollView>
+    {selectedProperty ? (
+      <PinnedFooter>
+        <ActionButton disabled={!canManageBoard} icon={FolderPlus} label="Add category" onPress={() => setCategoryModal({ category: null })} />
+      </PinnedFooter>
+    ) : null}
+    </View>
   );
 }
 
@@ -231,7 +226,7 @@ function BoardItemCard({
             ) : null}
           </View>
         </View>
-        <Text style={[type.body, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {item.body}
         </Text>
       </View>
@@ -240,7 +235,8 @@ function BoardItemCard({
 }
 
 function CategoryModal({ category, onClose, propertyId }: { category: BoardCategory | null; onClose: () => void; propertyId: string }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
+  const insets = useSafeAreaInsets();
   const keyboardInset = useKeyboardInset();
   const [name, setName] = useState(category?.name ?? "");
   const [order, setOrder] = useState(category ? String(category.displayOrder) : "");
@@ -273,15 +269,16 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, padding: spacing.lg }}>
+      <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
+        <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
             </Text>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
           <FormInput
             error={form.errors.name}
@@ -303,29 +300,28 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
         </View>
       </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
 function ItemModal({
-  categories,
-  initialCategoryId,
+  categoryId,
   item,
   onClose,
   propertyId,
 }: {
-  categories: BoardCategory[];
-  initialCategoryId?: string;
+  categoryId: string;
   item: BoardItem | null;
   onClose: () => void;
   propertyId: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
+  const insets = useSafeAreaInsets();
   const keyboardInset = useKeyboardInset();
-  const [categoryId, setCategoryId] = useState(item?.categoryId ?? initialCategoryId ?? categories[0]?.id ?? "");
   const [title, setTitle] = useState(item?.title ?? "");
   const [body, setBody] = useState(item?.body ?? "");
-  const form = useFormErrors<"category" | "title" | "body">();
+  const form = useFormErrors<"title" | "body">();
   const [createItem, createState] = useCreateBoardItemMutation();
   const [updateItem, updateState] = useUpdateBoardItemMutation();
   const busy = createState.isLoading || updateState.isLoading;
@@ -337,7 +333,6 @@ function ItemModal({
     // Every problem reported at once, each against the field that owns it —
     // rather than one message naming two fields and stopping at the first.
     const problems = {
-      ...(categoryId ? {} : { category: "Pick a category." }),
       ...(title.trim() ? {} : { title: "Enter a title." }),
       ...(body.trim() ? {} : { body: "Enter the details tenants will read." }),
     };
@@ -360,34 +355,16 @@ function ItemModal({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, padding: spacing.lg }}>
+      <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
+        <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}
             </Text>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
-          </View>
-          <View style={{ gap: spacing.xs }}>
-            <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-              Category
-            </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-              {categories.map((category) => (
-                <ChoiceButton
-                  active={category.id === categoryId}
-                  key={category.id}
-                  label={category.name}
-                  onPress={() => {
-                    setCategoryId(category.id);
-                    form.clearField("category");
-                  }}
-                />
-              ))}
-            </View>
-            <FieldError message={form.errors.category} />
+            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
           <FormInput
             error={form.errors.title}
@@ -419,7 +396,8 @@ function ItemModal({
         </View>
       </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 

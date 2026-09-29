@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.billing.model;
 
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -98,6 +100,28 @@ public class PropertyPaymentDetails extends BaseEntity {
     @Column(name = "updated_by_user_id", nullable = false)
     private UUID updatedByUserId;
 
+    // Which ways this property takes money (2026-09-28). Cash only until the
+    // owner ticks more. The UPI and bank details above are kept while their
+    // method is unticked, just not offered to tenants.
+    @Column(name = "accepts_upi", nullable = false)
+    private boolean acceptsUpi = false;
+
+    @Column(name = "accepts_bank_transfer", nullable = false)
+    private boolean acceptsBankTransfer = false;
+
+    @Column(name = "accepts_card", nullable = false)
+    private boolean acceptsCard = false;
+
+    @Column(name = "accepts_cheque", nullable = false)
+    private boolean acceptsCheque = false;
+
+    @Column(name = "accepts_cash", nullable = false)
+    private boolean acceptsCash = true;
+
+    /** Whether cash needs the tenant's code before it is recorded. Off until turned on. */
+    @Column(name = "cash_otp_required", nullable = false)
+    private boolean cashOtpRequired = false;
+
     private PropertyPaymentDetails(UUID propertyId) {
         this.propertyId = propertyId;
     }
@@ -144,6 +168,72 @@ public class PropertyPaymentDetails extends BaseEntity {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * The methods a tenant may be shown, in that order. Cash leads: it is the
+     * default and the one every property starts with. OTHER is never one.
+     */
+    public static final List<ManualPaymentMethod> METHOD_ORDER = List.of(
+            ManualPaymentMethod.CASH,
+            ManualPaymentMethod.UPI,
+            ManualPaymentMethod.BANK_TRANSFER,
+            ManualPaymentMethod.CARD,
+            ManualPaymentMethod.CHEQUE);
+
+    public boolean accepts(ManualPaymentMethod method) {
+        return switch (method) {
+            case UPI -> acceptsUpi;
+            case BANK_TRANSFER -> acceptsBankTransfer;
+            case CARD -> acceptsCard;
+            case CHEQUE -> acceptsCheque;
+            case CASH -> acceptsCash;
+            case OTHER -> false;
+        };
+    }
+
+    /** The ticked methods, in the order tenants and the Mark paid picker show them. */
+    public List<ManualPaymentMethod> acceptedMethods() {
+        return METHOD_ORDER.stream().filter(this::accepts).toList();
+    }
+
+    /**
+     * Sets which methods are taken, and whether cash needs the tenant's code.
+     *
+     * <p>Checked against the details as they stand, so call it after
+     * {@link #update}: a ticked UPI or bank transfer with nothing to pay to
+     * would offer tenants a way to pay that leads nowhere.
+     */
+    public void setAcceptance(Set<ManualPaymentMethod> methods, boolean cashOtp) {
+        Set<ManualPaymentMethod> chosen = methods == null ? Set.of() : methods;
+        if (chosen.isEmpty()) {
+            throw new ValidationException("Choose at least one way to be paid.");
+        }
+        if (chosen.contains(ManualPaymentMethod.OTHER)) {
+            throw new ValidationException("Pick from UPI, bank transfer, card, cheque and cash.");
+        }
+        if (chosen.contains(ManualPaymentMethod.UPI) && !canAcceptUpi()) {
+            throw new ValidationException("Add the UPI details to take UPI, or untick it.");
+        }
+        if (chosen.contains(ManualPaymentMethod.BANK_TRANSFER) && !hasBankDetails()) {
+            throw new ValidationException("Add the bank account number and IFSC to take bank transfers, or untick it.");
+        }
+        this.acceptsUpi = chosen.contains(ManualPaymentMethod.UPI);
+        this.acceptsBankTransfer = chosen.contains(ManualPaymentMethod.BANK_TRANSFER);
+        this.acceptsCard = chosen.contains(ManualPaymentMethod.CARD);
+        this.acceptsCheque = chosen.contains(ManualPaymentMethod.CHEQUE);
+        this.acceptsCash = chosen.contains(ManualPaymentMethod.CASH);
+        this.cashOtpRequired = cashOtp;
+    }
+
+    /** UPI is offered to tenants: ticked, and there is something to pay to. */
+    public boolean offersUpi() {
+        return acceptsUpi && canAcceptUpi();
+    }
+
+    /** Bank transfer is offered to tenants: ticked, and the account is complete. */
+    public boolean offersBankTransfer() {
+        return acceptsBankTransfer && hasBankDetails();
+    }
+
     public void update(
             String upiVpa,
             String payeeName,
@@ -167,7 +257,7 @@ public class PropertyPaymentDetails extends BaseEntity {
         if (trimmedIfsc != null) {
             trimmedIfsc = trimmedIfsc.toUpperCase();
             if (!trimmedIfsc.matches(IFSC_PATTERN)) {
-                throw new ValidationException("An IFSC is 11 characters, like HDFC0001234.");
+                throw new ValidationException("Enter a valid IFSC. It is 11 characters: 4 letters, a 0, then 6 letters or digits.");
             }
         }
 

@@ -91,7 +91,7 @@ export default function AccountSelectScreen() {
       </View>
 
       <Card tone="sunken">
-        <Text style={[type.caption, { color: colors.muted }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           You can switch account mode later from Account settings.
         </Text>
       </Card>

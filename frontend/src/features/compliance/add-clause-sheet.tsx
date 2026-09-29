@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Plus, X } from "lucide-react-native";
 
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { ActionButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { spacing } from "@/theme/spacing";
@@ -24,7 +25,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
   const [body, setBody] = useState("");
   const form = useFormErrors<"body" | "heading">();
 
-  function submit() {
+  function submit(dismiss: (afterClose?: () => void) => void) {
     const cleared = form.validate({
       ...(heading.trim() ? {} : { heading: "Give the clause a heading." }),
       ...(body.trim() ? {} : { body: "Write the clause body." }),
@@ -32,11 +33,12 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
     if (!cleared) {
       return;
     }
-    onAdd(heading.trim(), body.trim());
+    dismiss(() => onAdd(heading.trim(), body.trim()));
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => <>
       {/* iOS keeps the platform avoider, where it works. Android measures the
           keyboard itself and lifts the sheet by margin: "padding" there is
           broken under edge-to-edge — it infers the height from screen minus
@@ -44,7 +46,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
           padding never returns to zero on dismissal, which left the sheet
           shoved up the screen after the keyboard closed. */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -62,7 +64,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
                 New clause
               </Text>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
             <ScrollView
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
@@ -93,12 +95,13 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
                   required
                   value={body}
                 />
-                <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={submit} />
+                <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={() => submit(dismiss)} />
             </ScrollView>
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+      </>}
+    </BottomSheetModal>
   );
 }

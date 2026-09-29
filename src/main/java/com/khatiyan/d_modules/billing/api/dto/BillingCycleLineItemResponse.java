@@ -35,6 +35,8 @@ public record BillingCycleLineItemResponse(
     String createdByName,
     UUID lastAdjustedByUserId,
     int displayOrder,
+    /** Raised with a one-off bill: the bill itself, never an action on it. */
+    boolean issuedWithBill,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -61,6 +63,7 @@ public record BillingCycleLineItemResponse(
             createdByName,
             lineItem.getLastAdjustedByUserId(),
             lineItem.getDisplayOrder(),
+            lineItem.isIssuedWithBill(),
             lineItem.getCreatedAt(),
             lineItem.getUpdatedAt()
         );

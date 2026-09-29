@@ -76,7 +76,7 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
         </View>
       </View>
 
-      <Text style={[type.body, { color: isPrimary ? colors.inkSoft : colors.muted }]}>
+      <Text style={[type.description, { color: isPrimary ? colors.inkSoft : colors.muted }]}>
         {description}
       </Text>
     </>

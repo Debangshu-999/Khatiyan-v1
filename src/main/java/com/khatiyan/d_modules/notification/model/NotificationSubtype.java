@@ -29,6 +29,15 @@ public enum NotificationSubtype {
 
     TENANCY_STARTED,
     TENANCY_ENDED,
+    /** A stay passed its checkout date with nobody having ended it. Sent once, when it becomes pending exit. */
+    TENANCY_PENDING_EXIT,
+    /**
+     * A booked stay cannot start because its bed is not free yet: a pending
+     * exit nobody ended, or a room change that has not run. Sent once per booking.
+     */
+    FUTURE_BOOKING_BLOCKED,
+    /** The owner gave a pending stay's tenant more verification attempts. */
+    VERIFICATION_ATTEMPTS_ADDED,
     /**
      * A pending tenancy cancelled before it ever started.
      *
@@ -70,6 +79,9 @@ public enum NotificationSubtype {
 
     // Notice publication.
     NOTICE_PUBLISHED,
+
+    // Food: one of today's meals was pushed later (2026-09-28).
+    FOOD_MEAL_DELAYED,
 
     // Property management.
     MANAGER_ASSIGNED,

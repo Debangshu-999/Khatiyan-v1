@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
 import { FoodSubscribersSkeleton } from "@/components/skeletons";
-import { foodIcon } from "@/features/food/food-ui";
+import { DAY_LABEL, FoodStatusChip, foodIcon } from "@/features/food/food-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import type { FoodSubscriber } from "@/store/services/food-api";
@@ -58,6 +58,16 @@ export function FoodProfileSubscribersSheet({
                 <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
                   {person.tenantPhone}
                 </Text>
+                {/* A mixed week (user, 2026-09-29): the only tag here, with the
+                    days this tenant eats this profile. */}
+                {person.hybrid ? (
+                  <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginTop: 2 }}>
+                    <FoodStatusChip icon="calendar-week" label="Hybrid" tone="neutral" />
+                    <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+                      {person.days.map((day) => DAY_LABEL[day].slice(0, 3)).join(", ")}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text numberOfLines={1} style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>
                 {person.roomNumber ? `Room ${person.roomNumber}` : "No room"}

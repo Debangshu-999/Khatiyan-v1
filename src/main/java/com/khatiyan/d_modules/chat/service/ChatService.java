@@ -166,7 +166,8 @@ public class ChatService {
                     : nameOf(tenants.get(tenancy.userId()), tenancy.userId());
             rows.add(rowFor(thread, name, tenancy.userId(), propertyId,
                     ChatThreadKind.TEAM, ChatThreadOrigin.TENANCY, tenancy.id(),
-                    photoOf(tenants.get(tenancy.userId())), readPositions, receipts));
+                    photoOf(tenants.get(tenancy.userId())), readPositions, receipts,
+                    tenancy.status() == com.khatiyan.d_modules.tenancy.model.TenancyStatus.PENDING_ACCEPTANCE));
         }
 
         // Started conversations first, then the rest of the roster alphabetically:
@@ -891,6 +892,15 @@ public class ChatService {
         Map<UUID, UserSummaryResponse> people =
                 authModule.findByIds(new HashSet<>(counterparts.values()));
 
+        // Stays behind team threads, to flag an unsigned agreement to management.
+        Set<UUID> tenancyIds = new HashSet<>();
+        for (ChatThread thread : threads) {
+            if (thread.getOrigin() == ChatThreadOrigin.TENANCY && thread.getOriginId() != null) {
+                tenancyIds.add(thread.getOriginId());
+            }
+        }
+        Map<UUID, TenancyResponse> stays = tenancyIds.isEmpty() ? Map.of() : tenancyModule.findByIds(tenancyIds);
+
         List<ChatThreadResponse> rows = new ArrayList<>();
         for (ChatThread thread : threads) {
             UUID counterpartId = counterparts.get(thread.getId());
@@ -910,9 +920,21 @@ public class ChatService {
                     thread.getLastMessageKind(),
                     thread.getLastMessageSeq() == null ? 0L : thread.getLastMessageSeq(),
                     isUnread(thread, positions),
-                    receipts.getOrDefault(thread.getId(), 0L)));
+                    receipts.getOrDefault(thread.getId(), 0L),
+                    pendingAgreementFor(thread, stays, actorUserId)));
         }
         return rows;
+    }
+
+    /** Management reading a team thread whose tenant has not signed yet. */
+    private static boolean pendingAgreementFor(ChatThread thread, Map<UUID, TenancyResponse> stays, UUID actorUserId) {
+        if (thread.getOrigin() != ChatThreadOrigin.TENANCY || thread.getOriginId() == null) {
+            return false;
+        }
+        TenancyResponse stay = stays.get(thread.getOriginId());
+        return stay != null
+                && stay.status() == com.khatiyan.d_modules.tenancy.model.TenancyStatus.PENDING_ACCEPTANCE
+                && !actorUserId.equals(stay.userId());
     }
 
     /**
@@ -946,14 +968,15 @@ public class ChatService {
             UUID originId,
             String counterpartPhotoUrl,
             Map<UUID, Long> positions,
-            Map<UUID, Long> receipts) {
+            Map<UUID, Long> receipts,
+            boolean pendingAgreement) {
         if (thread == null) {
             // A roster row for somebody nobody has written to yet. Null id is the
             // signal to the client that the first message creates the thread.
             return new ChatThreadResponse(
                     null, kind, origin, originId, propertyId,
                     com.khatiyan.d_modules.chat.model.ChatThreadStatus.OPEN,
-                    title, counterpartUserId, counterpartPhotoUrl, null, null, null, 0L, false, 0L);
+                    title, counterpartUserId, counterpartPhotoUrl, null, null, null, 0L, false, 0L, pendingAgreement);
         }
         return new ChatThreadResponse(
                 thread.getId(), thread.getKind(), thread.getOrigin(), thread.getOriginId(),
@@ -962,7 +985,8 @@ public class ChatService {
                 thread.getLastMessagePreview(), thread.getLastMessageAt(), thread.getLastMessageKind(),
                 thread.getLastMessageSeq() == null ? 0L : thread.getLastMessageSeq(),
                 isUnread(thread, positions),
-                receipts.getOrDefault(thread.getId(), 0L));
+                receipts.getOrDefault(thread.getId(), 0L),
+                pendingAgreement);
     }
 
     /** Null unless they have actually uploaded one; initials stand in otherwise. */

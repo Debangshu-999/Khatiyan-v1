@@ -121,6 +121,6 @@ class ConcernModuleTest {
                 null,
                 null,
                 null,
-                List.of());
+                List.of(), 0L);
     }
 }

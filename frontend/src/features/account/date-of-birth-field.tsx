@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { Platform, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { CalendarDays, X, type LucideProps } from "lucide-react-native";
@@ -27,6 +27,7 @@ export function DateOfBirthField({
   disabled,
   icon: Icon,
   label = "Date of birth",
+  labelAccessory,
   onChange,
   value,
 }: {
@@ -34,6 +35,8 @@ export function DateOfBirthField({
   /** A glyph on the label line, so the field below still spans full width. */
   icon?: ComponentType<LucideProps>;
   label?: string;
+  /** Beside the label, e.g. a "Verified" pill on a locked field. */
+  labelAccessory?: ReactNode;
   /** ISO `YYYY-MM-DD`, or empty to clear. */
   onChange: (value: string) => void;
   value: string;
@@ -52,6 +55,7 @@ export function DateOfBirthField({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         {Icon ? <Icon color={colors.muted} size={15} strokeWidth={2.2} /> : null}
         <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+        {labelAccessory}
       </View>
 
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>

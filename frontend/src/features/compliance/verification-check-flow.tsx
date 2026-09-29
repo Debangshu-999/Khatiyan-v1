@@ -1,12 +1,16 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
-import { ShieldCheck, X } from "lucide-react-native";
+import { Text } from "react-native";
 
 import { AlertModal } from "@/components/alert-modal";
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { StatusIcon } from "@/components/status-icon";
 import { ActionButton, FormInput } from "@/features/owner/owner-ui";
+import { AadhaarAppCheckFlow } from "@/features/compliance/aadhaar-app-check-flow";
+import {
+  CheckHeader,
+  CheckResult,
+  InstructionPoint,
+  errorMessage,
+} from "@/features/compliance/verification-flow-parts";
 import { VERIFICATION_SERVICES } from "@/features/compliance/verification-services";
 import { useGetProfileQuery } from "@/store/services/auth-api";
 import {
@@ -15,11 +19,24 @@ import {
   type VerificationGrant,
   type VerificationResult,
 } from "@/store/services/verification-api";
-import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
  * One identity check, start to finish, in the card that opened it.
+ *
+ * <p>The Aadhaar App check is the one owners order now (2026-09-27). The OTP
+ * check below stays for grants ordered before it, which still run.
+ */
+export function VerificationCheckFlow(props: {
+  grant: VerificationGrant;
+  onClose: () => void;
+  onVerified: () => void;
+}) {
+  return props.grant.serviceCode === "AADHAAR" ? <AadhaarAppCheckFlow {...props} /> : <OtpCheckFlow {...props} />;
+}
+
+/**
+ * The retired OTP check, for grants that carry its code.
  *
  * <p>Four steps in one card: what has to match, the number, the code, and how
  * it ended. Separate steps rather than one long form because they are answered
@@ -37,7 +54,7 @@ import { useTheme } from "@/theme/use-theme";
  */
 type Stage = "INSTRUCTIONS" | "AADHAAR" | "OTP" | "RESULT";
 
-export function VerificationCheckFlow({
+function OtpCheckFlow({
   grant,
   onClose,
   onVerified,
@@ -46,7 +63,7 @@ export function VerificationCheckFlow({
   onClose: () => void;
   onVerified: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, type } = useTheme();
   const profileQuery = useGetProfileQuery();
 
   const service = VERIFICATION_SERVICES.find((entry) => entry.key === grant.serviceCode) ?? null;
@@ -70,7 +87,6 @@ export function VerificationCheckFlow({
 
   const busy = startState.isLoading || submitState.isLoading;
   const attemptsLeft = outcome?.grant?.attemptsRemaining ?? grant.attemptsRemaining;
-  const canRetry = outcome !== null && !outcome.verified && attemptsLeft > 0;
 
   async function sendCode() {
     setError(null);
@@ -123,40 +139,14 @@ export function VerificationCheckFlow({
 
   return (
     <Card>
-      {/* The mark leads, the way out closes. No back control at any step: it
-          would promise a previous one that no longer exists. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <ShieldCheck color={colors.muted} size={18} strokeWidth={2} />
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
-          {serviceLabel}
-        </Text>
-        <AnimatedPressable
-          accessibilityLabel={`Close ${serviceLabel.toLowerCase()}`}
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={onClose}
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.neutralSoft,
-            borderCurve: "continuous",
-            borderRadius: 999,
-            height: 32,
-            justifyContent: "center",
-            width: 32,
-          }}
-        >
-          <X color={colors.ink} size={17} strokeWidth={2.4} />
-        </AnimatedPressable>
-      </View>
+      <CheckHeader label={serviceLabel} onClose={onClose} />
 
       {stage === "INSTRUCTIONS" ? (
         <>
-          {/* Only the name is compared. Saying "these must match" about three
-              fields would be false: the date of birth and the address are not
-              checked against anything the account holds — they are read from
-              the Aadhaar record, the date is used for the 18+ test, and both
-              then REPLACE what was there. Which is the point of verifying at
-              all, since the government's copy is the better one. */}
+          {/* Only the name is compared. The date of birth is not checked
+              against anything the account holds: it is read from the Aadhaar
+              record, used for the 18+ test, and then REPLACES what was there.
+              The address is not taken at all (owner's decision, 2026-09-27). */}
           <InstructionPoint
             body={
               profileQuery.data?.fullName
@@ -167,9 +157,9 @@ export function VerificationCheckFlow({
             title="Name matching"
           />
           <InstructionPoint
-            body="Your date of birth and address are taken from your Aadhaar. Your age should be 18+, and both replace what is in your account. They are locked afterwards and cannot be changed thereafter."
+            body="Your date of birth is taken from your Aadhaar and replaces what is in your account. You must be 18 or older. It is locked afterwards."
             number={2}
-            title="Date of Birth and Address"
+            title="Date of birth"
           />
           <InstructionPoint
             body="Keep the phone with your Aadhaar-linked number nearby. A code is sent to it and lasts 10 minutes."
@@ -195,7 +185,7 @@ export function VerificationCheckFlow({
             placeholder="12 digits"
             value={aadhaarNumber}
           />
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             Nobody at the property sees this number. Only the result and its last four digits are
             kept.
           </Text>
@@ -221,7 +211,7 @@ export function VerificationCheckFlow({
             placeholder="6 digits"
             value={otp}
           />
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+          <Text style={[type.description, { color: colors.muted }]}>
             The code lasts 10 minutes. Nobody at the property sees it.
           </Text>
           <ActionButton disabled={busy} label={busy ? "Please wait…" : "Verify"} onPress={confirmCode} />
@@ -234,116 +224,19 @@ export function VerificationCheckFlow({
       {refusal ? <AlertModal message={refusal} onClose={() => setRefusal(null)} /> : null}
 
       {stage === "RESULT" && outcome ? (
-        <View style={{ alignItems: "center", gap: spacing.md, paddingTop: spacing.xs }}>
-          {/* The app's one status mark: a filled disc with the glyph knocked
-              out, the same shape a toast and a refusal use. */}
-          <StatusIcon size={38} tone={outcome.verified ? "success" : "error"} />
-
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, textAlign: "center" }}>
-            {outcome.verified ? "Identity verified" : attemptsLeft > 0 ? "Not verified" : "No attempts left"}
-          </Text>
-
-          <Text
-            style={{
-              color: colors.muted,
-              fontFamily: fonts.sansMedium,
-              fontSize: 14,
-              lineHeight: 21,
-              textAlign: "center",
-            }}
-          >
-            {outcome.verified
-              ? "Your name, date of birth and address now come from your Aadhaar record. They are fixed from here and cannot be edited in the app."
-              : (outcome.message ?? "That did not work.")}
-          </Text>
-
-          {/* Said plainly, because it is what decides whether they try now or
-              go and get the owner to fix something first. */}
-          {!outcome.verified ? (
-            <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
-              {attemptsLeft > 0
-                ? `${attemptsLeft} ${attemptsLeft === 1 ? "attempt" : "attempts"} left`
-                : "Ask the property owner to add more attempts."}
-            </Text>
-          ) : null}
-
-          <View style={{ alignSelf: "stretch", gap: spacing.sm }}>
-            {canRetry ? <ActionButton label="Try again" onPress={retry} /> : null}
-
-            {/* Quiet when it sits under a retry — a second solid button would
-                make the two look like equal choices when one is the point. */}
-            <AnimatedPressable
-              accessibilityRole="button"
-              onPress={outcome.verified ? onVerified : onClose}
-              style={{
-                alignItems: "center",
-                backgroundColor: canRetry ? "transparent" : colors.ink,
-                borderColor: canRetry ? colors.borderStrong : colors.ink,
-                borderCurve: "continuous",
-                borderRadius: 14,
-                borderWidth: 1,
-                paddingVertical: spacing.md,
-              }}
-            >
-              <Text
-                style={{
-                  color: canRetry ? colors.ink : colors.surface,
-                  fontFamily: fonts.sansBold,
-                  fontSize: 15,
-                }}
-              >
-                {outcome.verified ? "Done" : canRetry ? "Not now" : "Close"}
-              </Text>
-            </AnimatedPressable>
-          </View>
-        </View>
+        <CheckResult
+          attemptsLeft={attemptsLeft}
+          message={
+            outcome.verified
+              ? "Your name and date of birth now come from your Aadhaar record. They are fixed from here and cannot be edited in the app."
+              : (outcome.message ?? "That did not work.")
+          }
+          onClose={onClose}
+          onRetry={retry}
+          onVerified={onVerified}
+          verified={outcome.verified}
+        />
       ) : null}
     </Card>
   );
-}
-
-/** One numbered point, in the shared filled-badge style. */
-function InstructionPoint({
-  body,
-  number,
-  title,
-}: {
-  body: string;
-  number: number;
-  title: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.borderStrong,
-          borderRadius: 999,
-          height: 22,
-          justifyContent: "center",
-          marginTop: 1,
-          width: 22,
-        }}
-      >
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11 }}>{number}</Text>
-      </View>
-      <View style={{ flex: 1, gap: 3 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>{title}</Text>
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>{body}</Text>
-      </View>
-    </View>
-  );
-}
-
-/**
- * The server's sentence, when it sent one.
- *
- * <p>Its refusals are written for the person reading them — "there is no mobile
- * number linked to this Aadhaar" is something a tenant can act on, where a
- * generic fallback is not.
- */
-function errorMessage(e: unknown, fallback: string) {
-  const data = (e as { data?: { message?: string } } | undefined)?.data;
-  return data?.message && data.message.trim().length > 0 ? data.message : fallback;
 }

@@ -8,6 +8,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { FieldError } from "@/components/field-error";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -175,6 +176,12 @@ export default function TenancyRoomChangeRequestScreen() {
 
       {activeTenancyQuery.isFetching || roomsQuery.isFetching || roomRequestsQuery.isFetching || exitRequestsQuery.isFetching ? (
         <SkeletonCard />
+      ) : activeTenancyQuery.data && tenancyNotStarted(activeTenancyQuery.data.tenancy.startDate) ? (
+        <EmptyState
+          icon={BedDouble}
+          title="Your tenancy has not started"
+          description={REQUESTS_NOT_STARTED.roomChange}
+        />
       ) : requestBlock ? (
         <EmptyState
           icon={BedDouble}
@@ -355,7 +362,7 @@ function CurrentStayCard({ room }: { room: TenantRoomSummary }) {
               </Text>
             </View>
           </View>
-          <Text style={[type.caption, { color: colors.muted }]}>You are currently staying here.</Text>
+          <Text style={[type.description, { color: colors.muted }]}>You are currently staying here.</Text>
         </View>
       </View>
     </Card>
@@ -442,7 +449,7 @@ function RoomSelectionGroup({
     <View style={{ gap: spacing.md }}>
       <View style={{ gap: spacing.xxs }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18 }}>Choose a new room</Text>
-        <Text style={[type.caption, { color: colors.muted }]}>Available rooms on this floor</Text>
+        <Text style={[type.description, { color: colors.muted }]}>Available rooms on this floor</Text>
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         {rooms.map((room) => {
@@ -534,7 +541,7 @@ function CycleRuleCard({ cycleEndDate, loading }: { cycleEndDate: string | null;
           <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 16 }}>
             Effective on {dateLabel}
           </Text>
-          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19 }}>
+          <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             The request can be raised and approved anytime, but the room change executes on the last day of the
             current billing cycle before the next cycle is generated.
           </Text>
@@ -576,7 +583,7 @@ function EffectiveDateCard({ cycleEndDate, loading }: { cycleEndDate: string | n
         <View style={{ flex: 1, gap: spacing.xs }}>
           <Text style={[type.eyebrow, { color: colors.muted }]}>Effective date</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>Effective on {dateLabel}</Text>
-          <Text style={[type.caption, { color: colors.muted }]}>If approved, your room change will take effect on this date.</Text>
+          <Text style={[type.description, { color: colors.muted }]}>If approved, your room change will take effect on this date.</Text>
         </View>
       </View>
     </Card>

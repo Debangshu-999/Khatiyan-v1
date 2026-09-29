@@ -107,6 +107,25 @@ public class Tenancy extends BaseEntity {
     @Column(name = "billing_started", nullable = false)
     private boolean billingStarted;
 
+    /** Approved outgoing room change whose future vacancy this booking claims. */
+    @Column(name = "future_vacancy_source_id")
+    private UUID futureVacancySourceId;
+
+    /**
+     * A stay certain to end whose bed this booking claims: an approved exit
+     * past its withdrawal window, or a fixed term. Never set together with
+     * {@link #futureVacancySourceId}.
+     */
+    @Column(name = "future_vacancy_tenancy_id")
+    private UUID futureVacancyTenancyId;
+
+    /**
+     * When this signed booking was first found unable to start. Set once, so
+     * management is told once, and the action center lists it until it starts.
+     */
+    @Column(name = "start_blocked_at")
+    private Instant startBlockedAt;
+
     // False only while a monthly tenancy created with an agreement waits for the
     // tenant to accept. True for every other tenancy (no-agreement paths and
     // grandfathered existing rows).
@@ -152,6 +171,21 @@ public class Tenancy extends BaseEntity {
     @Column(name = "id_last_four", length = 4)
     private String idLastFour;
 
+    /**
+     * The gender the owner confirmed at the ID check (owner's rule, 2026-09-27).
+     * Null only on declarations made before it was asked.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "id_checked_gender", length = 20)
+    private Gender idCheckedGender;
+
+    /**
+     * The date of birth the owner confirmed at the ID check, which the 18+ rule
+     * is made against. Monthly stays only: a daily guest records a stated age.
+     */
+    @Column(name = "id_checked_date_of_birth")
+    private LocalDate idCheckedDateOfBirth;
+
     // The guest register for an account-less daily stay. All set together or
     // all null — see GuestDetails, which is the only thing that writes them.
     @Column(name = "guest_name", length = 120)
@@ -169,6 +203,10 @@ public class Tenancy extends BaseEntity {
     @Column(name = "guest_age")
     private Integer guestAge;
 
+    /** As the guest's ID shows it. Null on guests registered before 2026-09-27, who have only an age. */
+    @Column(name = "guest_date_of_birth")
+    private LocalDate guestDateOfBirth;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "guest_gender", length = 20)
     private Gender guestGender;
@@ -180,9 +218,35 @@ public class Tenancy extends BaseEntity {
      * checked is the claim V6104's constraint exists to refuse, and writing one
      * here would only move the failure to the insert.
      */
-    public void confirmIdCheck(UUID actorUserId, Instant at, IdDocumentType documentType, String lastFour) {
+    public void confirmIdCheck(
+            UUID actorUserId,
+            Instant at,
+            IdDocumentType documentType,
+            String lastFour,
+            Gender gender,
+            LocalDate dateOfBirth) {
         if (documentType == null || lastFour == null) {
             throw new ValidationException("An ID check needs the document type and its last four digits");
+        }
+        // Gender is verified on every manual check. Undeclared is an answer an
+        // account may give, not something an ID check can record.
+        if (gender == null || gender == Gender.UNDECLARED) {
+            throw new ValidationException("Select the tenant's gender as you checked it");
+        }
+        // The 18+ check of a manual verification (owner's rule, 2026-09-27),
+        // made on the day the owner checked, in IST. Every stay since the same
+        // day: a daily guest's date of birth is the one on the guest form,
+        // which the check shows and may correct.
+        LocalDate checkedDob = dateOfBirth != null ? dateOfBirth : guestDateOfBirth;
+        if (checkedDob == null) {
+            throw new ValidationException("Enter the date of birth as you checked it");
+        }
+        LocalDate checkedOn = at.atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
+        if (!checkedDob.isBefore(checkedOn) || checkedDob.isBefore(checkedOn.minusYears(120))) {
+            throw new ValidationException("Enter the date of birth shown on the ID");
+        }
+        if (checkedDob.plusYears(18).isAfter(checkedOn)) {
+            throw new ValidationException("The tenant must be 18 or older to be onboarded");
         }
 
         this.idCheckConfirmed = true;
@@ -190,6 +254,8 @@ public class Tenancy extends BaseEntity {
         this.idCheckedAt = at;
         this.idDocumentType = documentType;
         this.idLastFour = lastFour;
+        this.idCheckedGender = gender;
+        this.idCheckedDateOfBirth = checkedDob;
     }
 
     @Builder
@@ -209,6 +275,7 @@ public class Tenancy extends BaseEntity {
             this.guestEmail = guest.email();
             this.guestAddress = guest.address();
             this.guestAge = guest.age();
+            this.guestDateOfBirth = guest.dateOfBirth();
             this.guestGender = guest.gender();
         }
         this.propertyId = propertyId;
@@ -274,6 +341,64 @@ public class Tenancy extends BaseEntity {
         this.tosAccepted = false;
     }
 
+    /** Holds a future bed without recording physical occupancy yet. */
+    public void claimFutureVacancy(UUID roomChangeRequestId) {
+        if (roomChangeRequestId == null || hasFutureVacancyClaim()) {
+            throw new IllegalArgumentException("A future vacancy source is required only once");
+        }
+        this.futureVacancySourceId = roomChangeRequestId;
+        if (status == TenancyStatus.ACTIVE) {
+            this.status = TenancyStatus.SCHEDULED;
+        }
+    }
+
+    /** Holds the bed of a stay that is certain to end, without taking it yet. */
+    public void claimDepartingStay(UUID departingTenancyId) {
+        if (departingTenancyId == null || hasFutureVacancyClaim()) {
+            throw new IllegalArgumentException("A future vacancy source is required only once");
+        }
+        this.futureVacancyTenancyId = departingTenancyId;
+        if (status == TenancyStatus.ACTIVE) {
+            this.status = TenancyStatus.SCHEDULED;
+        }
+    }
+
+    /** Whether this booking waits on a departure: a room change or a stay ending. */
+    public boolean hasFutureVacancyClaim() {
+        return futureVacancySourceId != null || futureVacancyTenancyId != null;
+    }
+
+    /**
+     * Converts a due, signed booking into a live stay. Occupancy is taken by its event.
+     *
+     * <p>A booking whose bed freed late starts the day it freed, not the day it
+     * was booked for (owner's rule, 2026-09-27): the tenant is never billed for
+     * nights they could not move in. A fixed term keeps its full length, so its
+     * end moves with the start.
+     */
+    public void activateScheduled(LocalDate today) {
+        if (status != TenancyStatus.SCHEDULED || !hasFutureVacancyClaim() || !tosAccepted) {
+            throw new IllegalStateException("Tenancy is not an accepted future booking");
+        }
+        if (startDate.isBefore(today)) {
+            this.startDate = today;
+            if (agreementValidityMonths != null) {
+                this.agreementEndDate = today.plusMonths(agreementValidityMonths);
+                this.plannedEndDate = this.agreementEndDate;
+            }
+        }
+        this.status = TenancyStatus.ACTIVE;
+    }
+
+    /** Records the first time this booking was found unable to start. Returns false if already recorded. */
+    public boolean markStartBlocked(Instant now) {
+        if (startBlockedAt != null) {
+            return false;
+        }
+        this.startBlockedAt = now;
+        return true;
+    }
+
     /**
      * Creates a daily stay with no account behind it — the standard path now.
      *
@@ -335,7 +460,8 @@ public class Tenancy extends BaseEntity {
     }
 
     public void end(LocalDate endDate, String reason) {
-        if (!isCurrentlyActive()) {
+        // A stay past its checkout date is exactly the one waiting to be ended.
+        if (!isCurrentlyActive() && status != TenancyStatus.PENDING_EXIT) {
             throw new IllegalStateException("Cannot end a tenancy that is not active");
         }
         if (endDate.isBefore(this.startDate)) {
@@ -456,7 +582,7 @@ public class Tenancy extends BaseEntity {
         if (this.status != TenancyStatus.PENDING_ACCEPTANCE) {
             throw new IllegalStateException("Tenancy is not pending acceptance");
         }
-        this.status = TenancyStatus.ACTIVE;
+        this.status = hasFutureVacancyClaim() ? TenancyStatus.SCHEDULED : TenancyStatus.ACTIVE;
         this.tosAccepted = true;
     }
 
@@ -520,6 +646,51 @@ public class Tenancy extends BaseEntity {
     /** Whether this agreement runs for a fixed term rather than indefinitely. */
     public boolean hasFixedTerm() {
         return agreementValidityMonths != null;
+    }
+
+    /**
+     * The day this stay is due to end, or null for an indefinite stay not on
+     * notice. The ONE rule: a notice carries it in {@code endDate}; a daily
+     * guest and a fixed term carry it in {@code plannedEndDate} from the start.
+     *
+     * <p>Every consumer reads this. Choosing the field by billing type instead
+     * ("daily: planned, monthly: end") is the bug that left fixed-term stays
+     * impossible to end, invisible as due, and billed past their term.
+     */
+    public LocalDate checkoutDate() {
+        return endDate != null ? endDate : plannedEndDate;
+    }
+
+    /** True from the day after the checkout date. On the day itself the stay is due, not past. */
+    public boolean isPastCheckout(LocalDate today) {
+        LocalDate checkout = checkoutDate();
+        return checkout != null && checkout.isBefore(today);
+    }
+
+    /**
+     * Past its checkout date and nobody has ended it: everything halts but the
+     * bed. Only a live stay can get here, and only ending leaves it.
+     */
+    public void markPendingExit() {
+        ensureActive();
+        this.status = TenancyStatus.PENDING_EXIT;
+    }
+
+    /** How early a stay shows as ending soon. See {@link #leadDaysFor(Integer)}. */
+    public int endingSoonLeadDays() {
+        return leadDaysFor(agreementValidityMonths);
+    }
+
+    /**
+     * Scaled to the term (owner's rule, 2026-09-26): a short stay is not flagged
+     * for most of its life, a long one gives a month to refill the bed. A stay
+     * with no fixed term (notices, daily guests) keeps the usual 7 days.
+     */
+    public static int leadDaysFor(Integer validityMonths) {
+        if (validityMonths == null || validityMonths <= 2) {
+            return 7;
+        }
+        return validityMonths <= 5 ? 15 : 30;
     }
 
     /** True while the given checkout date falls inside a fixed term. */

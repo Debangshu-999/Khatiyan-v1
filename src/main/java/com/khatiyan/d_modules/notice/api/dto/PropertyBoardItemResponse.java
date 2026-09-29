@@ -35,7 +35,6 @@ public record PropertyBoardItemResponse(
             item.getDisplayOrder(),
             item.isCurrentlyActive(),
             item.getCreatedAt(),
-            item.getUpdatedAt()
-        );
+            item.getUpdatedAt());
     }
 }

@@ -1,4 +1,5 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
+import type { ManualPaymentMethod } from "@/store/services/billing-api";
 
 /**
  * A tenant's claim that they paid a bill, and the owner's verdict.
@@ -18,6 +19,8 @@ export type PaymentIntent = {
   id: string;
   billingCycleId: string;
   status: PaymentIntentStatus;
+  /** How the tenant says they paid. UPI for every link attempt. */
+  method: ManualPaymentMethod;
   /**
    * Whether this attempt still blocks a fresh one.
    *
@@ -36,6 +39,11 @@ export type PaymentIntent = {
   createdAt: string;
   tenantDecidedAt: string | null;
   ownerDecidedAt: string | null;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /** How a tenant may pay. Never carries anything the tenant may not see. */
@@ -64,6 +72,13 @@ export type TenantPaymentState = {
   payee: PayeeDetails | null;
   /** Non-null means Pay is blocked and the decision modal is what to show. */
   liveIntent: PaymentIntent | null;
+  /**
+   * The ways this tenant can pay, in the order the pay sheet shows them
+   * (2026-09-28). UPI and bank transfer only when their details are complete.
+   */
+  acceptedMethods: ManualPaymentMethod[];
+  /** Cash needs a code sent to the tenant's phone. */
+  cashOtpRequired: boolean;
 };
 
 export type StartPaymentResult = {
@@ -83,6 +98,20 @@ export type PropertyPaymentDetails = {
   bankIfsc: string | null;
   bankAccountHolder: string | null;
   acceptsUpi: boolean;
+  /** The ticked ways to be paid, in display order. Cash only until set. */
+  acceptedMethods: ManualPaymentMethod[];
+  cashOtpRequired: boolean;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
+};
+
+/** Which ways a property takes money. Readable by whoever records a payment. */
+export type PaymentMethods = {
+  acceptedMethods: ManualPaymentMethod[];
+  cashOtpRequired: boolean;
 };
 
 /** The Live digest tile's numbers. */
@@ -92,6 +121,19 @@ export type PaymentIntentDigest = {
   oldestWaitingDays: number;
   /** Approved or rejected in the current IST month — work done, not waiting. */
   resolvedThisMonth: number;
+};
+
+/**
+ * An IFSC resolved against Razorpay's public bank directory. UNAVAILABLE means
+ * the directory could not be reached, never that the code is wrong.
+ */
+export type IfscLookup = {
+  ifsc: string;
+  status: "FOUND" | "NOT_FOUND" | "UNAVAILABLE";
+  bank: string | null;
+  branch: string | null;
+  city: string | null;
+  state: string | null;
 };
 
 export const paymentIntentApi = api.injectEndpoints({
@@ -120,16 +162,19 @@ export const paymentIntentApi = api.injectEndpoints({
       providesTags: ["PaymentIntent"],
     }),
 
-    startPayment: builder.mutation<StartPaymentResult, string>({
-      query: (billingCycleId) => ({
+    startPayment: builder.mutation<StartPaymentResult, { billingCycleId: string; version: number }>({
+      query: ({ billingCycleId, version }) => ({
+        // The bill's version: one whose amount changed is not paid at the old figure.
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/me/cycles/${billingCycleId}/payment-intents`,
       }),
       invalidatesTags: ["PaymentIntent"],
     }),
 
-    cancelMyPaymentIntent: builder.mutation<PaymentIntent, string>({
-      query: (intentId) => ({
+    cancelMyPaymentIntent: builder.mutation<PaymentIntent, { intentId: string; version: number }>({
+      query: ({ intentId, version }) => ({
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/me/payment-intents/${intentId}/cancel`,
       }),
@@ -138,15 +183,41 @@ export const paymentIntentApi = api.injectEndpoints({
 
     confirmMyPaymentIntent: builder.mutation<
       PaymentIntent,
-      { intentId: string; referenceText?: string | null; note?: string | null; proofImageUrls?: string[] }
+      { intentId: string; version: number; referenceText?: string | null; note?: string | null; proofImageUrls?: string[] }
     >({
-      query: ({ intentId, ...body }) => ({
+      query: ({ intentId, version, ...body }) => ({
         body,
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/billing/me/payment-intents/${intentId}/confirm`,
       }),
       // BillingCycle too: claiming moves the bill to confirmation pending, so
       // the bill card behind the modal is stale the moment this returns.
+      invalidatesTags: ["PaymentIntent", "BillingCycle"],
+    }),
+
+    /**
+     * "I paid" by UPI, bank transfer, card or cheque, raised from that method's
+     * tab (2026-09-28). Proof is optional. Goes to the owner to check.
+     */
+    raisePaymentClaim: builder.mutation<
+      PaymentIntent,
+      {
+        billingCycleId: string;
+        /** The bill's version, as the tenant saw it. */
+        version: number;
+        method: ManualPaymentMethod;
+        referenceText?: string | null;
+        note?: string | null;
+        proofImageUrls?: string[];
+      }
+    >({
+      query: ({ billingCycleId, version, ...body }) => ({
+        body,
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/billing/me/cycles/${billingCycleId}/payment-claims`,
+      }),
       invalidatesTags: ["PaymentIntent", "BillingCycle"],
     }),
 
@@ -167,19 +238,49 @@ export const paymentIntentApi = api.injectEndpoints({
       providesTags: ["PaymentIntent"],
     }),
 
-    verifyPaymentIntent: builder.mutation<PaymentIntent, string>({
-      query: (intentId) => ({ method: "POST", url: `/api/v1/billing/payment-intents/${intentId}/verify` }),
+    /** One bill's claims, newest first: the claims icon on a bill card. Owner only. */
+    listBillPaymentClaims: builder.query<PaymentIntent[], string>({
+      query: (billingCycleId) => `/api/v1/billing/cycles/${billingCycleId}/payment-claims`,
+      providesTags: ["PaymentIntent"],
+    }),
+
+    verifyPaymentIntent: builder.mutation<PaymentIntent, { intentId: string; version: number }>({
+      query: ({ intentId, version }) => ({
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/billing/payment-intents/${intentId}/verify`,
+      }),
       // Approving marks the bill paid, which moves collected money, the deposit
       // ledger and the P&L — every one of those reads from cycle state.
       invalidatesTags: ["PaymentIntent", "BillingCycle", "Deposit", "Pnl", "Notification"],
     }),
 
-    rejectPaymentIntent: builder.mutation<PaymentIntent, string>({
-      query: (intentId) => ({ method: "POST", url: `/api/v1/billing/payment-intents/${intentId}/reject` }),
+    rejectPaymentIntent: builder.mutation<PaymentIntent, { intentId: string; version: number }>({
+      query: ({ intentId, version }) => ({
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/billing/payment-intents/${intentId}/reject`,
+      }),
       invalidatesTags: ["PaymentIntent", "BillingCycle"],
     }),
 
     // ---- Owner: where the money goes -------------------------------------
+
+    /** For Mark paid and the end-tenancy picker (2026-09-28). No payout details. */
+    getPaymentMethods: builder.query<PaymentMethods, string>({
+      query: (propertyId) => `/api/v1/billing/properties/${propertyId}/payment-methods`,
+      providesTags: ["PaymentDetails"],
+    }),
+
+    /**
+     * Payment setup's IFSC check (2026-09-28). The endpoint lives in the parked
+     * payment module and is still served: a keyless read of the bank directory.
+     * Branches do not move, so an answer is kept for the session.
+     */
+    lookupIfsc: builder.query<IfscLookup, string>({
+      keepUnusedDataFor: 3600,
+      query: (ifsc) => `/api/v1/payments/ifsc/${ifsc}`,
+    }),
 
     getPropertyPaymentDetails: builder.query<PropertyPaymentDetails, string>({
       query: (propertyId) => `/api/v1/billing/properties/${propertyId}/payment-details`,
@@ -197,10 +298,15 @@ export const paymentIntentApi = api.injectEndpoints({
         bankAccountNumber: string | null;
         bankIfsc: string | null;
         bankAccountHolder: string | null;
+        acceptedMethods: ManualPaymentMethod[];
+        cashOtpRequired: boolean;
+        /** The setup's version as loaded, 0 before its first save. */
+        version: number;
       }
     >({
-      query: ({ propertyId, ...body }) => ({
+      query: ({ propertyId, version, ...body }) => ({
         body,
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/billing/properties/${propertyId}/payment-details`,
       }),
@@ -220,8 +326,12 @@ export const {
   useListMyPaymentIntentsQuery,
   useConfirmMyPaymentIntentMutation,
   useGetMyPaymentStateQuery,
+  useGetPaymentMethodsQuery,
+  useLookupIfscQuery,
   useGetPropertyPaymentDetailsQuery,
   useListPaymentClaimsQuery,
+  useListBillPaymentClaimsQuery,
+  useRaisePaymentClaimMutation,
   useRejectPaymentIntentMutation,
   useStartPaymentMutation,
   useUpdatePropertyPaymentDetailsMutation,

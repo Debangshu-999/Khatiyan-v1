@@ -69,6 +69,7 @@ import {
 import { setRegisteredDeviceTokenId, setSession } from "@/store/slices/auth-slice";
 import { DateOfBirthField } from "@/features/account/date-of-birth-field";
 import { GenderPicker } from "@/features/account/gender-picker";
+import { StatusPill } from "@/components/status-pill";
 import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -620,7 +621,7 @@ function PinVerificationModal({
                   >
                     {title}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     {subtitle}
                   </Text>
                 </View>
@@ -710,7 +711,7 @@ function SettingsRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {description}
         </Text>
       </View>
@@ -746,7 +747,7 @@ function PreferenceRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}>
+        <Text style={[type.description, { color: colors.muted }]}>
           {description}
         </Text>
       </View>
@@ -908,6 +909,11 @@ function formatRelativeTime(iso: string) {
  * rather than printing a blank, so nobody has to answer a question they would
  * rather not to let a tenancy start.
  */
+/** Beside a field whose value comes from a verified ID and is locked. */
+function VerifiedFlag() {
+  return <StatusPill label="Verified" tone="success" />;
+}
+
 function IdentityCard() {
   const { colors, type } = useTheme();
   const toast = useToast();
@@ -945,6 +951,11 @@ function IdentityCard() {
    * whitespace is not a change anyone made.
    */
   const held = identityQuery.data;
+  // Locked by a verified ID: shown, not editable. The server refuses a change
+  // too, rather than quietly dropping it as it once did. Only the date of birth
+  // and gender: the address is not part of verification (2026-09-27).
+  const locked = held?.identityVerified === true;
+  const genderLocked = held?.genderVerified === true;
   const isDirty =
     address.trim() !== (held?.permanentAddress ?? "") ||
     pincode.trim() !== (held?.permanentAddressPincode ?? "") ||
@@ -975,7 +986,7 @@ function IdentityCard() {
 
   return (
     <Card>
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Used on tenancy agreements. Your permanent address is needed before you can onboard a tenant. Age and
         gender are optional, and are left off the agreement when blank.
       </Text>
@@ -1013,12 +1024,25 @@ function IdentityCard() {
           {/* No "(optional)" suffix. The paragraph above already says which fields
               are optional, and repeating it on every label makes the required ones
               look like an oversight rather than a rule. */}
-          <DateOfBirthField icon={CalendarDays} onChange={setDob} value={dob} />
+          <DateOfBirthField
+            disabled={locked}
+            icon={CalendarDays}
+            labelAccessory={locked ? <VerifiedFlag /> : undefined}
+            onChange={setDob}
+            value={dob}
+          />
 
-          <GenderPicker icon={User} onChange={setGender} value={gender} />
+          <GenderPicker
+            disabled={genderLocked}
+            icon={User}
+            labelAccessory={genderLocked ? <VerifiedFlag /> : undefined}
+            onChange={setGender}
+            value={gender}
+          />
         </>
       )}
 
+      {/* Always there: the address is never verified, so it stays editable. */}
       <ActionButton
         disabled={saveState.isLoading || form.blocked || !isDirty}
         label="Save details"

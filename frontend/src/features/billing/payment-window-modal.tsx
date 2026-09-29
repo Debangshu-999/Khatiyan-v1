@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 import { Modal, Text, View } from "react-native";
 import { CalendarCheck2, CalendarRange, Clock3, X, type LucideProps } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { IconButton, NoticeBar } from "@/features/owner/owner-ui";
 import { formatDate, formatMoney } from "@/features/owner/bill-views";
 import { type BillingCycle } from "@/store/services/billing-api";
@@ -14,7 +13,8 @@ import { useTheme } from "@/theme/use-theme";
  * what paying late costs.
  *
  * <p>
- * The owner's screen has a modal of the same shape, deliberately not shared.
+ * The owner's screen has a modal of the same LOOK (its rows are
+ * `PaymentWindowLine`, 2026-09-29), but not the same words, deliberately.
  * Half of its sentences are written to the person who SETS the rate — "you can
  * set a daily rate in property billing settings", "changing it now applies from
  * the next cycle" — which is advice a tenant can do nothing with, and reads as
@@ -28,12 +28,9 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <AnimatedPressable
-        accessibilityLabel="Close"
-        onPress={onClose}
-        style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-        tapLockMs={0}
-      >
+      {/* Closes by its × or the device back button, not a tap on the
+          scrim (user, 2026-09-29). */}
+      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
             alignSelf: "center",
@@ -57,17 +54,17 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
           </View>
 
           <View style={{ borderTopColor: colors.border, borderTopWidth: 1 }}>
-            <WindowLine
+            <PaymentWindowLine
               icon={CalendarRange}
               label="Cycle period"
               value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`}
             />
-            <WindowLine
+            <PaymentWindowLine
               icon={CalendarCheck2}
               label="Billing window"
               value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.rentDueDate)}`}
             />
-            <WindowLine
+            <PaymentWindowLine
               icon={Clock3}
               label="Grace days"
               last
@@ -94,18 +91,19 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
           />
 
           {cycle.lateFeeAmountPaise > 0 ? (
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on this
               bill as a line item and grows each night it stays overdue.
             </Text>
           ) : null}
         </View>
-      </AnimatedPressable>
+      </View>
     </Modal>
   );
 }
 
-function WindowLine({
+/** One row of a payment window: icon, label, value. Shared with the owner's modal. */
+export function PaymentWindowLine({
   icon: Icon,
   label,
   last = false,

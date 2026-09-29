@@ -383,7 +383,7 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
 
   return (
     <SheetShell onClose={onClose} title="Action log">
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Every time someone reached out to {firstName(enquiry.enquirerName)}.
       </Text>
 
@@ -413,7 +413,7 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
             {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
           </Text>
           {response.note ? (
-            <Text style={[type.caption, { color: colors.muted, marginTop: 2 }]}>
+            <Text style={[type.description, { color: colors.muted, marginTop: 2 }]}>
               {response.note}
             </Text>
           ) : null}
@@ -476,7 +476,7 @@ function RespondSheet({
     }
 
     try {
-      const detail = await respond({ channel: "CHAT", enquiryId: enquiry.id, note: null }).unwrap();
+      const detail = await respond({ channel: "CHAT", enquiryId: enquiry.id, note: null, version: enquiry.version }).unwrap();
       if (!detail.chatThreadId) {
         setError("The conversation could not be opened. Try again.");
         return;
@@ -508,7 +508,7 @@ function RespondSheet({
     }
 
     try {
-      await respond({ channel, enquiryId: enquiry.id, note: null }).unwrap();
+      await respond({ channel, enquiryId: enquiry.id, note: null, version: enquiry.version }).unwrap();
     } catch {
       // The reply is already happening; a failed bookkeeping write must not
       // look like a failed response.
@@ -521,7 +521,7 @@ function RespondSheet({
       {/* "nothing is sent from inside the app" went with the dash. It stopped
           being true when chat became a real reply: that one IS sent from in
           here, and the line was promising the opposite directly above it. */}
-      <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         Reach them directly through these available channels.
       </Text>
 

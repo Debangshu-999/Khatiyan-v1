@@ -19,6 +19,10 @@ import com.khatiyan.a_auth.model.User;
  *                       a name, a VERIFIED email, and a permanent address. Age and
  *                       gender are deliberately excluded — they are optional on a
  *                       profile and a deed omits them when absent.
+ * @param identityVerified the name and date of birth come from a verified ID
+ *                       and are locked. Not the address, which is never verified.
+ * @param genderVerified the gender came from the verified ID too (the Aadhaar
+ *                       App check) and is locked with them
  */
 public record UserIdentityResponse(
         UUID id,
@@ -30,7 +34,9 @@ public record UserIdentityResponse(
         String permanentAddressPincode,
         LocalDate dateOfBirth,
         Gender gender,
-        boolean agreementReady) {
+        boolean agreementReady,
+        boolean identityVerified,
+        boolean genderVerified) {
 
     public static UserIdentityResponse from(User user) {
         return new UserIdentityResponse(
@@ -43,7 +49,9 @@ public record UserIdentityResponse(
                 user.getPermanentAddressPincode(),
                 user.getDateOfBirth(),
                 user.getGender(),
-                user.hasAgreementIdentity());
+                user.hasAgreementIdentity(),
+                user.isIdentityLocked(),
+                user.isIdentityLocked() && user.isIdentityGenderVerified());
     }
 
     /** Age in whole years on a given day, or null when no birth date is held. */

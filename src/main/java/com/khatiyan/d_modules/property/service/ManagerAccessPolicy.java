@@ -7,11 +7,13 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.property.model.ManagerAccessLevel;
 import com.khatiyan.d_modules.property.model.ManagerPermission;
 import com.khatiyan.d_modules.property.model.ManagerResource;
+import com.khatiyan.d_modules.property.model.PropertyManager;
 import com.khatiyan.d_modules.property.repository.ManagerPermissionRepository;
 import com.khatiyan.d_modules.property.repository.PropertyManagerRepository;
 import com.khatiyan.d_modules.property.repository.PropertyRepository;
@@ -149,6 +151,14 @@ public class ManagerAccessPolicy {
         return levels;
     }
 
+    /** A manager's assignment version (2026-09-29), 0 when they hold none. */
+    @Transactional(readOnly = true)
+    public long assignmentVersion(UUID propertyId, UUID managerUserId) {
+        return propertyManagerRepository.findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
+                .map(PropertyManager::getVersion)
+                .orElse(0L);
+    }
+
     /** Grants for one manager, for the owner's permission screen. */
     @Transactional(readOnly = true)
     public Map<ManagerResource, ManagerAccessLevel> grantsFor(UUID propertyId, UUID managerUserId) {
@@ -179,6 +189,10 @@ public class ManagerAccessPolicy {
         if (!isActiveManager(managerUserId, propertyId)) {
             throw new ValidationException("That user is not an active manager of this property");
         }
+        // The manager's grants as the owner's screen showed them (2026-09-29):
+        // their assignment is the record, since permission rows are replaced.
+        propertyManagerRepository.findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
+                .ifPresent(VersionGuard::claim);
 
         Map<ManagerResource, ManagerPermission> existing = new EnumMap<>(ManagerResource.class);
         for (ManagerPermission permission : managerPermissionRepository

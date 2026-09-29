@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ClipboardCheck, FileSignature, ShieldCheck, X } from "lucide-react-native";
+import { ClipboardCheck, FileSignature, MessageCircle, ShieldCheck } from "lucide-react-native";
+import { useRouter } from "expo-router";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -8,11 +9,14 @@ import { EmptyState } from "@/components/empty-state";
 import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { StatusIcon } from "@/components/status-icon";
+import { useToast } from "@/components/toast";
+import { threadRoute } from "@/features/chat/thread-route";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { AgreementAcceptanceView } from "@/features/compliance/agreement-acceptance-view";
 import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { VERIFICATION_SERVICES } from "@/features/compliance/verification-services";
 import { useGetMyAgreementQuery } from "@/store/services/compliance-api";
+import { useOpenTeamThreadMutation } from "@/store/services/chat-api";
 import {
   useListMyVerificationsQuery,
   useStartVerificationOtpMutation,
@@ -47,8 +51,35 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
   // checked an ID themselves and there is nothing here for the tenant to do.
   const verificationQuery = useListMyVerificationsQuery();
   const [step, setStep] = useState<StepKey>("agreement");
+  // Once the tenant has moved on from the agreement, it keeps its tick, even
+  // when they come back to re-read it. It used to lose it on return, which
+  // read as if reading it again had undone something.
+  const [agreementRead, setAgreementRead] = useState(false);
   const [openCheck, setOpenCheck] = useState<VerificationGrant | null>(null);
   const header = usePinnedWizardHeader();
+  const router = useRouter();
+  const toast = useToast();
+  const [openTeamThread, openTeamThreadState] = useOpenTeamThreadMutation();
+  const openingChat = openTeamThreadState.isLoading;
+
+  /** Out of attempts: the tenant reaches the owner in the stay's team chat. */
+  async function contactOwner(tenancyId: string) {
+    try {
+      const opened = await openTeamThread(tenancyId).unwrap();
+      if (opened.id) {
+        router.push(
+          threadRoute(
+            opened.id,
+            opened,
+            "Property management team",
+            "I have run out of Aadhaar verification attempts. Could you provide extra attempts?",
+          ),
+        );
+      }
+    } catch {
+      toast.error("Could not open the chat. Try again in a moment.");
+    }
+  }
 
   /**
    * Moves between steps, closing whatever check was open.
@@ -59,10 +90,21 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
    */
   function goToStep(next: StepKey) {
     setOpenCheck(null);
+    if (step === "agreement" && next !== "agreement") {
+      setAgreementRead(true);
+    }
     setStep(next);
   }
 
-  const grants = verificationQuery.data ?? [];
+  // Only this stay's checks. `/my` lists every check on the account, and one
+  // left on an earlier stay must neither show here nor hold signing back.
+  // A check with no tenancy id (a server from before 2026-09-27) is KEPT: an
+  // empty list reads as "the owner checked the ID by hand", so dropping checks
+  // we cannot place would tell the tenant there is nothing to do.
+  const tenancyId = agreementQuery.data?.tenancyId ?? null;
+  const grants = (verificationQuery.data ?? []).filter(
+    (grant) => !grant.tenancyId || grant.tenancyId === tenancyId,
+  );
   // Nothing ordered is not the same as nothing done. An owner who checked an ID
   // themselves has left their tenant no work, and the step says so rather than
   // showing an empty list.
@@ -80,7 +122,7 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
           const current = step === entry.key;
           const done =
             (entry.key === "verify" && verificationDone) ||
-            (entry.key === "agreement" && step !== "agreement");
+            (entry.key === "agreement" && (agreementRead || step !== "agreement"));
 
           return (
             <AnimatedPressable
@@ -199,7 +241,7 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
                   Nothing to do here
                 </Text>
                 <Text
-                  style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19, textAlign: "center" }]}
+                  style={[type.description, { color: colors.muted, textAlign: "center" }]}
                 >
                   Your onboarding verification was completed manually by the person in charge of your
                   onboarding.
@@ -207,7 +249,7 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
               </View>
             ) : (
               <>
-                <Text style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 19 }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   {propertyName} asked you to complete these checks. Each one happens on your phone, and
                   nobody at the property sees your numbers or your codes.
                 </Text>
@@ -254,9 +296,7 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
                           {service.label}
                         </Text>
                         <Text
-                          style={[
-                            type.caption,
-                            { color: done ? colors.jade : exhausted ? colors.danger : colors.muted },
+                          style={[type.description, { color: done ? colors.jade : exhausted ? colors.danger : colors.muted },
                           ]}
                         >
                           {done
@@ -267,20 +307,47 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
                             // saw the number.
                             ? "Verified"
                             : exhausted
-                              ? "No attempts left, ask the property owner"
+                              ? "Verification attempts exhausted"
                               : `${grant.attemptsRemaining} ${grant.attemptsRemaining === 1 ? "attempt" : "attempts"} left`}
                         </Text>
                       </View>
                       {done ? <StatusIcon size={20} tone="success" /> : null}
-                      {exhausted ? <X color={colors.danger} size={18} strokeWidth={2.6} /> : null}
                     </AnimatedPressable>
                   );
                 })}
 
+                {/* Owner's decision, 2026-09-27: no request flow. The tenant
+                    reaches the owner in chat, and the owner adds attempts from
+                    the stay's card. The team thread, not a direct one: a direct
+                    chat needs an active stay, and this one is still pending. */}
+                {grants.some((grant) => grant.status === "EXHAUSTED") && agreement?.tenancyId ? (
+                  <View style={{ gap: 4 }}>
+                    <AnimatedPressable
+                      accessibilityRole="link"
+                      disabled={openingChat}
+                      hitSlop={8}
+                      onPress={() => void contactOwner(agreement.tenancyId)}
+                      style={{ alignItems: "center", alignSelf: "flex-start", flexDirection: "row", gap: spacing.xs }}
+                    >
+                      <MessageCircle color={colors.ink} size={16} strokeWidth={2.2} />
+                      <Text
+                        style={{
+                          color: colors.ink,
+                          fontFamily: fonts.sansBold,
+                          fontSize: 14,
+                          textDecorationLine: "underline",
+                        }}
+                      >
+                        Contact your owner
+                      </Text>
+                    </AnimatedPressable>
+                  </View>
+                ) : null}
+
                 {verificationDone ? (
                   <ActionButton label="Continue to signing" onPress={() => goToStep("sign")} />
                 ) : (
-                  <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     Signing unlocks once these are done.
                   </Text>
                 )}

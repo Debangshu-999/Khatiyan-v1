@@ -83,6 +83,14 @@ public class BillingCycleLineItem extends BaseEntity {
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 
+    /**
+     * Written when a one-off bill was raised, so it IS the bill (2026-09-28):
+     * not an action to list in its history or to revert. Only a charge or a
+     * discount added afterwards is one.
+     */
+    @Column(name = "issued_with_bill", nullable = false)
+    private boolean issuedWithBill;
+
     @Builder
     private BillingCycleLineItem(
             UUID billingCycleId,
@@ -98,7 +106,8 @@ public class BillingCycleLineItem extends BaseEntity {
             BillingLineSettlementAction settlementAction,
             boolean systemGenerated,
             UUID createdByUserId,
-            int displayOrder) {
+            int displayOrder,
+            boolean issuedWithBill) {
         validateAmount(amountPaise);
         validateAmount(settlementAmountPaise);
         // tenantUserId is deliberately NOT required. It is a denormalisation that
@@ -130,6 +139,7 @@ public class BillingCycleLineItem extends BaseEntity {
         this.systemGenerated = systemGenerated;
         this.createdByUserId = createdByUserId;
         this.displayOrder = displayOrder;
+        this.issuedWithBill = issuedWithBill;
     }
 
     public static BillingCycleLineItem systemCharge(
@@ -275,14 +285,13 @@ public class BillingCycleLineItem extends BaseEntity {
     }
 
     /**
-     * An extra charge taken out of the deposit rather than added to the bill:
-     * it owes nothing now ({@code amountPaise} 0) but records the full amount
-     * as the settlement figure.
+     * A line a one-off bill is raised with: the owner's reason and amount, or
+     * one of an exit's charges. Charged like an extra charge, but it is the
+     * bill itself, so it never shows as something done to it.
      */
-    public static BillingCycleLineItem extraChargeAdjustedFromDeposit(
+    public static BillingCycleLineItem oneOffBillLine(
             BillingCycle cycle,
             String label,
-            String description,
             long amountPaise,
             UUID createdByUserId,
             int displayOrder) {
@@ -294,13 +303,13 @@ public class BillingCycleLineItem extends BaseEntity {
                 .type(BillingCycleLineItemType.EXTRA_CHARGE)
                 .status(BillingCycleLineItemStatus.ADDED)
                 .label(label)
-                .description(description)
-                .amountPaise(0)
+                .amountPaise(amountPaise)
                 .settlementAmountPaise(amountPaise)
-                .settlementAction(BillingLineSettlementAction.ADJUSTED_FROM_DEPOSIT)
+                .settlementAction(BillingLineSettlementAction.ADDED_TO_BILL)
                 .systemGenerated(false)
                 .createdByUserId(createdByUserId)
                 .displayOrder(displayOrder)
+                .issuedWithBill(true)
                 .build();
     }
 

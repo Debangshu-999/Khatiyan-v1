@@ -96,12 +96,17 @@ public enum LegalStatement {
      * better to put it yet.
      */
     TENANT_ID_DECLARATION(
-            1,
+            // 2 (2026-09-27): adds the gender and date of birth (or a guest's age)
+            // the owner now records with the check. Version 1 declarations keep
+            // their own wording on their attestation.
+            2,
             """
             I solemnly declare that I have physically met this tenant, that I have seen the \
             original of the government-issued identification document selected above, and \
             that the last four digits recorded above are taken from that document. I confirm \
-            that I have satisfied myself that the photograph on that document is of the tenant.
+            that I have satisfied myself that the photograph on that document is of the tenant, \
+            and that the gender and the date of birth or age recorded above are as that \
+            document shows them, or as the tenant stated them where it does not.
 
             I confirm that the tenant chose which identification document to produce, and was \
             not required by me to produce any particular one.

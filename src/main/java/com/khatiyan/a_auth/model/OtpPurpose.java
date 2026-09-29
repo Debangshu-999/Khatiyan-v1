@@ -21,5 +21,17 @@ public enum OtpPurpose {
      * grants access, which the person can undo by signing out. This one binds
      * them to a contract.
      */
-    AGREEMENT_ACCEPTANCE
+    AGREEMENT_ACCEPTANCE,
+
+    /**
+     * A tenant confirming, face to face, that they handed over cash for a bill.
+     *
+     * <p>Cash leaves no trail of its own — no UPI reference, no bank line — so
+     * "the owner says it was paid" was the whole record. The tenant reading
+     * this code aloud is what turns that into something both sides agreed to.
+     *
+     * <p>Its own purpose for the same reason as the agreement: a code sent to
+     * log in must not be spendable as an admission that money changed hands.
+     */
+    CASH_PAYMENT
 }

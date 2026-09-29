@@ -20,6 +20,8 @@ export type TabOption<T extends string> = {
   icon?: ComponentType<LucideProps>;
   label: string;
   value: T;
+  /** A small red dot on the icon: something in this tab needs the reader. */
+  dot?: boolean;
 };
 
 /**
@@ -111,11 +113,29 @@ export function TabSwitcher<T extends string>({
             }}
           >
             {Icon ? (
-              <Icon
-                color={selected ? colors.onTabSelected : colors.muted}
-                size={18}
-                strokeWidth={selected ? 2.3 : 2}
-              />
+              <View style={{ position: "relative" }}>
+                <Icon
+                  color={selected ? colors.onTabSelected : colors.muted}
+                  size={18}
+                  strokeWidth={selected ? 2.3 : 2}
+                />
+                {option.dot ? (
+                  <View
+                    accessibilityLabel="Needs attention"
+                    style={{
+                      backgroundColor: colors.danger,
+                      borderColor: selected ? colors.tabSelected : colors.surfaceSunken,
+                      borderRadius: 999,
+                      borderWidth: 1.5,
+                      height: 8,
+                      position: "absolute",
+                      right: -4,
+                      top: -3,
+                      width: 8,
+                    }}
+                  />
+                ) : null}
+              </View>
             ) : null}
 
             <Text
@@ -131,6 +151,13 @@ export function TabSwitcher<T extends string>({
             >
               {option.label}
             </Text>
+
+            {option.dot && !Icon ? (
+              <View
+                accessibilityLabel="Needs attention"
+                style={{ backgroundColor: colors.danger, borderRadius: 999, height: 7, width: 7 }}
+              />
+            ) : null}
           </AnimatedPressable>
         );
       })}

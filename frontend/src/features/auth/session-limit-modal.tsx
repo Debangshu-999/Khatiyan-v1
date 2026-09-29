@@ -63,15 +63,7 @@ export function SessionLimitModal({
         >
           <StatusIcon tone="warning" />
 
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: fonts.sansMedium,
-              fontSize: 15,
-              lineHeight: 22,
-              textAlign: "center",
-            }}
-          >
+          <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
             {message} Choose one to sign out.
           </Text>
 

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.khatiyan.a_auth.model.Gender;
 import com.khatiyan.c_shared.audit.BaseEntity;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.servicebalance.model.ServiceCode;
@@ -15,7 +16,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -139,12 +139,25 @@ public class VerificationGrant extends BaseEntity {
     @Column(name = "adult_at_verification")
     private Boolean adultAtVerification;
 
+    /** The gender on the Aadhaar credential, adopted and locked on the account. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "verified_gender", length = 20)
+    private Gender verifiedGender;
+
+    /** Whether the Aadhaar App's face check passed. Null when not run. */
+    @Column(name = "face_matched")
+    private Boolean faceMatched;
+
+    /** What an Aadhaar App check adds to a pass: the gender on the credential and the face check. */
+    public void recordCredentialExtras(Gender verifiedGender, Boolean faceMatched) {
+        this.verifiedGender = verifiedGender;
+        this.faceMatched = faceMatched;
+    }
+
     @Column(name = "created_by_user_id", updatable = false)
     private UUID createdByUserId;
 
-    @Version
-    @Column(nullable = false)
-    private long version;
+    // Optimistic lock: the version on BaseEntity (2026-09-28).
 
     private VerificationGrant(
             UUID tenancyId,
@@ -206,6 +219,23 @@ public class VerificationGrant extends BaseEntity {
      * abandons a check halfway has still had the provider send them an OTP, and
      * leaving the count untouched would let one tenant generate OTPs forever.
      */
+    /**
+     * The owner gives more tries. An exhausted check opens again, since it was
+     * only closed for want of tries. A passed or cancelled one is not reopened.
+     */
+    public void addAttempts(int attempts) {
+        if (attempts <= 0) {
+            throw new ValidationException("Add at least one attempt");
+        }
+        if (status == VerificationGrantStatus.VERIFIED || status == VerificationGrantStatus.CANCELLED) {
+            throw new ValidationException("This check is already finished");
+        }
+        this.attemptsGranted += attempts;
+        if (status == VerificationGrantStatus.EXHAUSTED) {
+            this.status = VerificationGrantStatus.PENDING;
+        }
+    }
+
     public void useAttempt() {
         if (!isOpen()) {
             throw new ValidationException("This check is already finished");

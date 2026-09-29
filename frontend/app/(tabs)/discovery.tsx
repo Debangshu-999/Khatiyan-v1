@@ -47,7 +47,7 @@ import {
   type SmartSearchListing,
   type SmartSearchResult,
 } from "@/store/services/intelligence-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { ListingResultsSkeleton } from "@/components/skeletons/discovery/listing-results";
 
@@ -130,6 +130,10 @@ const NearbyMapIcon = foodIcon("map-search-outline");
 
 function NearbyMapCard({ onPress }: { onPress: () => void }) {
   const { colors, isDark, type } = useTheme();
+  // One see-through fill under each piece, not one wash over the whole map
+  // (user, 2026-09-27): the map stays visible between them, and each piece of
+  // text still sits on a calm ground.
+  const frost = isDark ? "rgba(15, 23, 42, 0.72)" : "rgba(255, 255, 255, 0.78)";
 
   return (
     <AnimatedPressable accessibilityLabel="View nearby places on map" accessibilityRole="button" onPress={onPress}>
@@ -148,25 +152,54 @@ function NearbyMapCard({ onPress }: { onPress: () => void }) {
         <View
           style={{
             alignItems: "flex-start",
-            backgroundColor: isDark ? "rgba(15, 23, 42, 0.62)" : "rgba(255, 255, 255, 0.18)",
             flexDirection: "row",
             gap: spacing.md,
             padding: spacing.lg,
           }}
         >
-          <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: frost,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              height: 42,
+              justifyContent: "center",
+              width: 42,
+            }}
+          >
             <NearbyMapIcon color={colors.ink} size={22} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: spacing.sm }}>
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-              <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 19, lineHeight: 25 }]}>
-                View on map
-              </Text>
+              <View
+                style={{
+                  backgroundColor: frost,
+                  borderCurve: "continuous",
+                  borderRadius: 8,
+                  flexShrink: 1,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 25 }]}>View on map</Text>
+              </View>
               <ArrowUpRight color={colors.kicker} size={18} strokeWidth={2} style={{ marginTop: 3 }} />
             </View>
-            <Text style={[type.body, { color: colors.inkSoft }]}>
-              See what your property listed, and search anything around you.
-            </Text>
+            <View
+              style={{
+                alignSelf: "flex-start",
+                backgroundColor: frost,
+                borderCurve: "continuous",
+                borderRadius: 8,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.xs,
+              }}
+            >
+              <Text style={[type.body, { color: colors.inkSoft }]}>
+                See what your property listed, and search anything around you.
+              </Text>
+            </View>
           </View>
         </View>
       </ImageBackground>
@@ -311,10 +344,9 @@ export default function DiscoveryScreen() {
     setActiveTab(isActiveTenant ? "locations" : "properties");
   }, [isActiveTenant]);
 
-  // Prefill the search with the device-location hint ONCE, when it first becomes
-  // available. Guarding with a ref means clearing the search (which empties both
-  // searchText and submittedSearch) doesn't instantly re-fill the box — the X
-  // stays cleared.
+  // Prefill when the device-location hint first becomes available. Guarding with
+  // a ref means clearing the search doesn't instantly re-fill the box. The ref
+  // is reset only when returning from Smart search without a ready location.
   const didAutofillHintRef = useRef(false);
   useEffect(() => {
     if (!didAutofillHintRef.current && location.status === "ready" && location.searchHint && !searchText && !submittedSearch.text) {
@@ -581,7 +613,7 @@ export default function DiscoveryScreen() {
 
   // Clearing the search box clears the whole location scope in one action — text
   // and picked city/area/state — so the pills don't linger after the address is
-  // emptied. Falls back to the auto device-location search.
+  // emptied. Returns to the no-location-selected empty state.
   function clearSearch() {
     setManualSelection(false);
     setSearchText("");
@@ -695,6 +727,25 @@ export default function DiscoveryScreen() {
    */
   const reloadingResults = propertiesQuery.isFetching && page === 0;
   const loadingMore = propertiesQuery.isFetching && page > 0;
+  const searchStatus: "idle" | "searching" | "searched" = aiOn
+    ? aiSearching
+      ? "searching"
+      : showingAiResults && aiResult?.status === "READY"
+        ? "searched"
+        : "idle"
+    : !hasActiveSearch
+      ? "idle"
+      : reloadingResults
+        ? "searching"
+        : propertiesQuery.data && !propertiesQuery.isError
+          ? "searched"
+          : "idle";
+  // Describe the submitted scope, not edits in the box that have not been searched yet.
+  const searchLocationLabel = aiOn
+    ? aiResult?.resolvedLocation?.displayName?.trim() || areaLabel || (location.searchHint ?? "").trim()
+    : selectedArea && selectedCity
+      ? `${selectedArea}, ${selectedCity}`
+      : areaLabel;
 
   /**
    * Asks for more when the end comes into view.
@@ -857,6 +908,17 @@ export default function DiscoveryScreen() {
               setAiSort("RELEVANCE");
               setAppliedFilters(emptyPropertyFilters);
               setDraftFilters(emptyPropertyFilters);
+              if (!on) {
+                // Switching back to manual search is the same fresh device-
+                // location search that runs when Discovery first opens. If the
+                // location is still resolving, allow the autofill effect to run.
+                const currentHint = location.status === "ready" ? (location.searchHint ?? "").trim() : "";
+                didAutofillHintRef.current = Boolean(currentHint);
+                if (currentHint) {
+                  setSearchText(currentHint);
+                  setSubmittedSearch({ text: currentHint });
+                }
+              }
             }}
             onAiQueryChange={(value) => {
               setAiQuery(value);
@@ -913,6 +975,8 @@ export default function DiscoveryScreen() {
             }}
             onSuggestionSelect={selectSuggestion}
             searchText={searchText}
+            searchStatus={searchStatus}
+            searchLocationLabel={searchLocationLabel}
             selectedArea={selectedArea}
             selectedCity={selectedCity}
             suggestions={suggestions}
@@ -967,7 +1031,7 @@ export default function DiscoveryScreen() {
                 </Text>
                 <Text
                   numberOfLines={2}
-                  style={[type.body, { color: colors.muted, fontSize: 13, lineHeight: 18 }]}
+                  style={[type.description, { color: colors.muted }]}
                 >
                   {propertyPage
                     ? exactProperties.length === 0
@@ -1028,7 +1092,7 @@ export default function DiscoveryScreen() {
                 >
                   No listings found
                 </Text>
-                <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+                <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
                   {areaLabel ? `No listings found for "${areaLabel}".` : "No listings were found for this location."}
                 </Text>
                 <AnimatedPressable
@@ -1092,7 +1156,7 @@ export default function DiscoveryScreen() {
 
           {nearbyProperties.length > 0 && !reloadingResults ? (
             <>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "700", marginTop: spacing.xs }]}>
+              <Text style={[type.description, { color: colors.muted, marginTop: spacing.xs }]}>
                 {nearbyProperties.length} listing{nearbyProperties.length === 1 ? "" : "s"}
                 {nearbyCityLabel ? ` elsewhere in ${nearbyCityLabel}` : " nearby"}
               </Text>
@@ -1339,7 +1403,7 @@ function EmptySearchPrompt({
         >
           {title}
         </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+        <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
           {description}
         </Text>
       </View>

@@ -1,6 +1,9 @@
 package com.khatiyan.d_modules.food.service;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +38,7 @@ public class FoodCatalogService {
     private final FoodProfileRepository profileRepository;
     private final FoodMenuEntryRepository menuEntryRepository;
     private final FoodSubscriptionRepository subscriptionRepository;
+    private final Clock clock;
 
     public FoodCatalogService(
             PropertyModule propertyModule,
@@ -43,7 +47,8 @@ public class FoodCatalogService {
             FoodItemRepository itemRepository,
             FoodProfileRepository profileRepository,
             FoodMenuEntryRepository menuEntryRepository,
-            FoodSubscriptionRepository subscriptionRepository) {
+            FoodSubscriptionRepository subscriptionRepository,
+            Clock clock) {
         this.propertyModule = propertyModule;
         this.accessPolicy = accessPolicy;
         this.moduleSettingService = moduleSettingService;
@@ -51,6 +56,7 @@ public class FoodCatalogService {
         this.profileRepository = profileRepository;
         this.menuEntryRepository = menuEntryRepository;
         this.subscriptionRepository = subscriptionRepository;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -173,7 +179,8 @@ public class FoodCatalogService {
                 actorUserId,
                 request.name(),
                 request.description(),
-                valueOrZero(request.displayOrder()));
+                valueOrZero(request.displayOrder()),
+                request.category());
         return FoodProfileResponse.from(profileRepository.save(profile));
     }
 
@@ -194,7 +201,7 @@ public class FoodCatalogService {
         FoodProfile profile = getActiveProfile(profileId);
         ensureEnabledForManage(actorUserId, profile.getPropertyId());
         ensureProfileNameAvailable(profile.getPropertyId(), request.name(), profile.getId());
-        profile.update(request.name(), request.description(), valueOrZero(request.displayOrder()));
+        profile.update(request.name(), request.description(), valueOrZero(request.displayOrder()), request.category());
         return FoodProfileResponse.from(profile);
     }
 
@@ -202,7 +209,8 @@ public class FoodCatalogService {
     public void deactivateProfile(UUID actorUserId, UUID profileId) {
         FoodProfile profile = getActiveProfile(profileId);
         ensureEnabledForManage(actorUserId, profile.getPropertyId());
-        if (subscriptionRepository.existsByProfileIdAndActiveTrue(profileId)) {
+        // Any plan eating it on some day, today's or one starting tomorrow (2026-09-29).
+        if (subscriptionRepository.isProfileInUse(profileId, today())) {
             throw new ValidationException("Move or end active subscriptions before deactivating this profile");
         }
         profile.deactivate();
@@ -229,7 +237,7 @@ public class FoodCatalogService {
                 property.includedMeals(),
                 itemRepository.countByPropertyIdAndActiveTrue(propertyId),
                 profileRepository.countByPropertyIdAndActiveTrue(propertyId),
-                subscriptionRepository.countByPropertyIdAndActiveTrue(propertyId));
+                subscriptionRepository.countCovering(propertyId, today()));
     }
 
     private PropertyResponse ensureEnabledForManage(UUID actorUserId, UUID propertyId) {
@@ -255,5 +263,9 @@ public class FoodCatalogService {
 
     private int valueOrZero(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private LocalDate today() {
+        return ZonedDateTime.now(clock).withZoneSameInstant(MealScheduleRules.ZONE).toLocalDate();
     }
 }

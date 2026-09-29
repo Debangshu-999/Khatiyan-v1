@@ -87,6 +87,16 @@ public class BillingManualPayment extends BaseEntity {
     @Column(name = "collected_at", nullable = false)
     private Instant collectedAt;
 
+    /**
+     * When the tenant confirmed this payment by reading out their code.
+     *
+     * <p>Set on every cash payment recorded through the bill, because cash cannot
+     * be recorded there without one. Null for other methods — they carry their
+     * own trail — and for cash recorded before codes existed.
+     */
+    @Column(name = "tenant_confirmed_at")
+    private Instant tenantConfirmedAt;
+
     private BillingManualPayment(
             UUID billingCycleId,
             UUID tenancyId,
@@ -137,5 +147,9 @@ public class BillingManualPayment extends BaseEntity {
                 note,
                 collectedByUserId,
                 collectedAt);
+    }
+
+    public void confirmByTenant(Instant confirmedAt) {
+        this.tenantConfirmedAt = confirmedAt;
     }
 }

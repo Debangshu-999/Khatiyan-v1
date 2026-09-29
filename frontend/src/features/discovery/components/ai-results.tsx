@@ -145,7 +145,7 @@ export function AiResults({
             >
               No listings found
             </Text>
-            <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
+            <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
               Nothing matches that search yet. Try a wider area or fewer requirements.
             </Text>
             <AnimatedPressable
@@ -199,7 +199,7 @@ export function AiResults({
             >
               Related results
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[type.description, { color: colors.muted }]}>
               These match part of your search. Each one says what it does not.
             </Text>
           </View>

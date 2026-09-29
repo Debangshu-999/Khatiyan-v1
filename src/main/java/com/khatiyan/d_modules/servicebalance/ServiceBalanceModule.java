@@ -305,7 +305,7 @@ public class ServiceBalanceModule {
 
     private static String memoFor(ServiceCode service) {
         return switch (service) {
-            case AADHAAR_OKYC -> "Identity check";
+            case AADHAAR_OKYC, AADHAAR -> "Identity check";
         };
     }
 

@@ -98,7 +98,7 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
         </View>
       ) : null}
 
-      <Text style={[type.caption, { color: colors.muted }]}>
+      <Text style={[type.description, { color: colors.muted }]}>
         The owner is always listed and cannot be removed. Managers you add here appear on the public listing.
       </Text>
 

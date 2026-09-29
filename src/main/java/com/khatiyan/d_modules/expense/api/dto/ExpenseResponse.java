@@ -18,7 +18,10 @@ public record ExpenseResponse(
         String description,
         UUID reversesExpenseId,
         boolean reversed,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
+        long version
+) {
 
     public static ExpenseResponse from(Expense expense, String categoryName, boolean reversed) {
         return new ExpenseResponse(
@@ -32,6 +35,6 @@ public record ExpenseResponse(
                 expense.getDescription(),
                 expense.getReversesExpenseId(),
                 reversed,
-                expense.getCreatedAt());
+                expense.getCreatedAt(), expense.getVersion());
     }
 }

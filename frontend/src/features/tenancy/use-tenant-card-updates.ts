@@ -15,9 +15,9 @@ type StoredSnapshots = {
   requests?: Snapshot;
 };
 
+// Bills are not tracked here. The My Bills dot means "something to pay",
+// read straight from the bills' statuses (2026-09-27), not "something changed".
 type TrackerInput = {
-  bills: TrackedItem[];
-  billsReady: boolean;
   concerns: TrackedItem[];
   concernsReady: boolean;
   requests: TrackedItem[];
@@ -32,10 +32,6 @@ function snapshotOf(items: TrackedItem[]): Snapshot {
     snapshot[item.id] = item.status;
     return snapshot;
   }, {});
-}
-
-function hasBillUpdate(previous: Snapshot, current: Snapshot) {
-  return Object.entries(current).some(([id, status]) => previous[id] === undefined || previous[id] !== status);
 }
 
 function hasLifecycleUpdate(previous: Snapshot, current: Snapshot) {
@@ -69,8 +65,6 @@ async function saveSnapshots(storageKey: string, snapshots: StoredSnapshots) {
 }
 
 export function useTenantCardUpdates({
-  bills,
-  billsReady,
   concerns,
   concernsReady,
   requests,
@@ -79,18 +73,15 @@ export function useTenantCardUpdates({
 }: TrackerInput) {
   const storageKey = scopeKey ? STORAGE_PREFIX + scopeKey : null;
   const [stored, setStored] = useState<StoredSnapshots | null>(null);
-  const [billUpdate, setBillUpdate] = useState(false);
   const [concernUpdate, setConcernUpdate] = useState(false);
   const [requestUpdate, setRequestUpdate] = useState(false);
 
-  const billSnapshot = useMemo(() => snapshotOf(bills), [bills]);
   const concernSnapshot = useMemo(() => snapshotOf(concerns), [concerns]);
   const requestSnapshot = useMemo(() => snapshotOf(requests), [requests]);
 
   useEffect(() => {
     let cancelled = false;
     setStored(null);
-    setBillUpdate(false);
     setConcernUpdate(false);
     setRequestUpdate(false);
 
@@ -110,16 +101,6 @@ export function useTenantCardUpdates({
 
     const next = { ...stored };
     let initialized = false;
-
-    if (billsReady) {
-      if (stored.bills === undefined) {
-        next.bills = billSnapshot;
-        initialized = true;
-        setBillUpdate(false);
-      } else {
-        setBillUpdate(hasBillUpdate(stored.bills, billSnapshot));
-      }
-    }
 
     if (requestsReady) {
       if (stored.requests === undefined) {
@@ -146,8 +127,6 @@ export function useTenantCardUpdates({
       void saveSnapshots(storageKey, next);
     }
   }, [
-    billSnapshot,
-    billsReady,
     concernSnapshot,
     concernsReady,
     requestSnapshot,
@@ -164,7 +143,6 @@ export function useTenantCardUpdates({
         void saveSnapshots(storageKey, next);
         return next;
       });
-      if (kind === "bills") setBillUpdate(false);
       if (kind === "requests") setRequestUpdate(false);
       if (kind === "concerns") setConcernUpdate(false);
     },
@@ -172,9 +150,7 @@ export function useTenantCardUpdates({
   );
 
   return {
-    billUpdate,
     concernUpdate,
-    markBillsSeen: useCallback(() => markSeen("bills", billSnapshot), [billSnapshot, markSeen]),
     markConcernsSeen: useCallback(
       () => markSeen("concerns", concernSnapshot),
       [concernSnapshot, markSeen],

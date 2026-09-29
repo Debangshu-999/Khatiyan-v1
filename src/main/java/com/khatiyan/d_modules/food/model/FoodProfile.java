@@ -7,6 +7,8 @@ import com.khatiyan.c_shared.exception.ValidationException;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -41,16 +43,25 @@ public class FoodProfile extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean active;
 
+    /**
+     * The diet, picked from a fixed list (2026-09-28). Required: profiles from
+     * before it were backfilled from their name, and the rest became OTHER.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private FoodProfileCategory category;
+
     private FoodProfile(
             UUID propertyId,
             UUID createdByUserId,
             String name,
             String description,
-            int displayOrder) {
+            int displayOrder,
+            FoodProfileCategory category) {
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
         this.createdByUserId = createdByUserId;
-        update(name, description, displayOrder);
+        update(name, description, displayOrder, category);
         this.active = true;
     }
 
@@ -59,11 +70,15 @@ public class FoodProfile extends BaseEntity {
             UUID createdByUserId,
             String name,
             String description,
-            int displayOrder) {
-        return new FoodProfile(propertyId, createdByUserId, name, description, displayOrder);
+            int displayOrder,
+            FoodProfileCategory category) {
+        return new FoodProfile(propertyId, createdByUserId, name, description, displayOrder, category);
     }
 
-    public void update(String name, String description, int displayOrder) {
+    public void update(String name, String description, int displayOrder, FoodProfileCategory category) {
+        if (category == null) {
+            throw new ValidationException("Choose a category for this food profile");
+        }
         if (name == null || name.isBlank()) {
             throw new ValidationException("Food profile name is required");
         }
@@ -77,6 +92,7 @@ public class FoodProfile extends BaseEntity {
         this.name = normalizedName;
         this.description = normalizeDescription(description);
         this.displayOrder = displayOrder;
+        this.category = category;
     }
 
     public void deactivate() {

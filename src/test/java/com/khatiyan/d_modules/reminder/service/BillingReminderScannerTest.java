@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -88,7 +89,66 @@ class BillingReminderScannerTest {
         assertThat(created).isEqualTo(1);
     }
 
+    /**
+     * A one-off bill is not rent (2026-09-29): the reminder said "Your rent
+     * bill ... is due today" for an extra-charge bill.
+     */
+    @Test
+    void remindsAOneOffBillAsABillNotRent() {
+        when(billingModule.findCyclesDueBetweenForReminders(TODAY, TODAY.plusDays(3)))
+                .thenReturn(List.of(cycle(TENANT_ID, TODAY, BillingCycleCategory.ONE_OFF)));
+        when(billingModule.findOverdueCyclesForReminders()).thenReturn(List.of());
+
+        scanner.scan(TODAY);
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(reminderService).createPendingIfAbsent(
+                anyString(), any(), any(), any(), any(), any(), any(), any(),
+                title.capture(), body.capture(), any(), any(), any(), any());
+        assertThat(title.getValue()).isEqualTo("Bill due today");
+        assertThat(body.getValue()).isEqualTo("Your one-off bill of Rs. 1300.00 is due today.");
+    }
+
+    @Test
+    void remindsAnOverdueOneOffBillAsABillNotRent() {
+        when(billingModule.findCyclesDueBetweenForReminders(TODAY, TODAY.plusDays(3))).thenReturn(List.of());
+        when(billingModule.findOverdueCyclesForReminders())
+                .thenReturn(List.of(cycle(TENANT_ID, TODAY.minusDays(2), BillingCycleCategory.ONE_OFF)));
+
+        scanner.scan(TODAY);
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(reminderService).createPendingIfAbsent(
+                anyString(), any(), any(), any(), any(), any(), any(), any(),
+                title.capture(), body.capture(), any(), any(), any(), any());
+        assertThat(title.getValue()).isEqualTo("Bill overdue");
+        assertThat(body.getValue()).isEqualTo("Your one-off bill of Rs. 1300.00 is overdue. Please complete the payment.");
+    }
+
+    @Test
+    void stillCallsARentCycleRent() {
+        when(billingModule.findCyclesDueBetweenForReminders(TODAY, TODAY.plusDays(3)))
+                .thenReturn(List.of(cycle(TENANT_ID, TODAY)));
+        when(billingModule.findOverdueCyclesForReminders()).thenReturn(List.of());
+
+        scanner.scan(TODAY);
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(reminderService).createPendingIfAbsent(
+                anyString(), any(), any(), any(), any(), any(), any(), any(),
+                title.capture(), body.capture(), any(), any(), any(), any());
+        assertThat(title.getValue()).isEqualTo("Rent due today");
+        assertThat(body.getValue()).isEqualTo("Your rent bill of Rs. 1300.00 is due today.");
+    }
+
     private static BillingCycleResponse cycle(UUID tenantUserId, LocalDate rentDueDate) {
+        return cycle(tenantUserId, rentDueDate, BillingCycleCategory.RENT_CYCLE);
+    }
+
+    private static BillingCycleResponse cycle(UUID tenantUserId, LocalDate rentDueDate, BillingCycleCategory category) {
         return new BillingCycleResponse(
                 UUID.randomUUID(),
                 "BIL-2026-000001",
@@ -102,8 +162,8 @@ class BillingReminderScannerTest {
                 UUID.randomUUID(),
                 "101",
                 tenantUserId == null ? TenancyBillingType.DAILY : TenancyBillingType.MONTHLY,
-                BillingCycleCategory.RENT_CYCLE,
-                1,
+                category,
+                category == BillingCycleCategory.ONE_OFF ? null : 1,
                 TODAY.minusDays(1),
                 rentDueDate,
                 rentDueDate,
@@ -119,6 +179,6 @@ class BillingReminderScannerTest {
                 null,
                 Instant.now(),
                 Instant.now(),
-                List.of(), null);
+                List.of(), null, 0L);
     }
 }

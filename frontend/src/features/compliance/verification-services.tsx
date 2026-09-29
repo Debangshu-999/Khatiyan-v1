@@ -17,7 +17,7 @@ import { useTheme } from "@/theme/use-theme";
  * choose which checks a tenancy needs and how many attempts to grant, and the
  * tenant does the checking from their own phone.
  */
-export type VerificationServiceKey = "AADHAAR_OKYC" | "PAN";
+export type VerificationServiceKey = "AADHAAR" | "PAN";
 
 export type VerificationService = {
   available: boolean;
@@ -33,10 +33,12 @@ export type VerificationService = {
 
 export const VERIFICATION_SERVICES: VerificationService[] = [
   {
+    // The Aadhaar App check (2026-09-27). The OTP check it replaced is no
+    // longer offered, and grants that carry its code show as "Identity check".
     available: true,
-    description: "OTP based Aadhaar verification",
+    description: "Verified in the Aadhaar App, with a face check",
     icon: Fingerprint,
-    key: "AADHAAR_OKYC",
+    key: "AADHAAR",
     label: "Aadhaar verification",
     pricePaise: 1_500,
     shortLabel: "Aadhaar",
@@ -139,7 +141,7 @@ export function VerificationServicePicker({
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15 }}>
                 {service.label}
               </Text>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {service.available ? service.description : "Coming soon."}
               </Text>
             </View>

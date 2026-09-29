@@ -1,5 +1,8 @@
 package com.khatiyan.d_modules.billing.api.dto;
 
+import java.util.List;
+
+import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 /**
  * Everything the tenant's Pay Now button needs, in one call.
  *
@@ -30,6 +33,16 @@ public record TenantPaymentStateResponse(
      * tenant should see instead — including the case where they closed it last
      * time without answering.
      */
-    PaymentIntentResponse liveIntent
+    PaymentIntentResponse liveIntent,
+
+    /**
+     * The ways the tenant can pay this bill, in the order the pay sheet shows
+     * them (2026-09-28). UPI and bank transfer only when their details are
+     * complete. Cash only until the owner ticks more.
+     */
+    List<ManualPaymentMethod> acceptedMethods,
+
+    /** Cash needs a code sent to the tenant's phone. */
+    boolean cashOtpRequired
 ) {
 }

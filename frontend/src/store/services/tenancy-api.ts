@@ -1,4 +1,4 @@
-import { api } from "@/store/api";
+import { api, ifMatch } from "@/store/api";
 import type { Gender } from "@/store/services/auth-api";
 import type { Page } from "@/store/pagination";
 import type { NoticePeriod } from "@/store/services/property-api";
@@ -6,9 +6,12 @@ import type { NoticePeriod } from "@/store/services/property-api";
 export type TenancyBillingType = "DAILY" | "MONTHLY";
 export type TenancyStatus =
   | "PENDING_ACCEPTANCE"
+  | "SCHEDULED"
   | "ACTIVE"
   | "ON_NOTICE"
   | "ON_PREMATURE_NOTICE"
+  /** Past its checkout date, waiting for someone to end it. The bed is held, everything else has stopped. */
+  | "PENDING_EXIT"
   | "EXITED"
   | "EVICTED"
   | "CANCELLED";
@@ -33,6 +36,12 @@ export function tenancyStatusLabel(status: TenancyStatus) {
   if (status === "PENDING_ACCEPTANCE") {
     return "Pending agreement";
   }
+  if (status === "SCHEDULED") {
+    return "Booked for future start";
+  }
+  if (status === "PENDING_EXIT") {
+    return "Pending exit";
+  }
   return status
     .replace(/_/g, " ")
     .toLowerCase()
@@ -47,7 +56,7 @@ export type ExitChargeInstrument = "DEPOSIT" | "ONE_OFF_BILL";
 export type ExitCustomCharge = { reason: string; amountPaise: number };
 
 /** How money collected at move-out actually arrived. Mirrors the server enum. */
-export type ExitCollectionMethod = "CASH" | "UPI" | "CARD" | "CHEQUE" | "OTHER";
+export type ExitCollectionMethod = "CASH" | "UPI" | "CARD" | "CHEQUE" | "OTHER" | "BANK_TRANSFER";
 
 export type ExitCharge = {
   amountPaise: number;
@@ -65,6 +74,8 @@ export type ExitCharge = {
  */
 export type EndTenancyPayload = {
   tenancyId: string;
+  /** The stay's version this screen loaded. Travels as If-Match, not in the body. */
+  version: number;
   /**
    * The early-exit charge, possibly split: part taken from the deposit and the
    * rest billed, for when one charge outgrows the deposit.
@@ -77,6 +88,11 @@ export type EndTenancyPayload = {
     customCharges: ExitCustomCharge[];
     instrument: ExitChargeInstrument;
     collectedVia: ExitCollectionMethod | null;
+    /**
+     * With the deposit instrument, how much the deposit takes when it cannot
+     * cover all the damage; the rest joins the move-out bill. Null for no split.
+     */
+    fromDepositPaise: number | null;
   } | null;
   /** Advisory: recorded as the actor's assessment, never a gate. */
   checklistConfirmed: string[];
@@ -107,6 +123,14 @@ export type TenancySummary = {
   startDate: string;
   plannedEndDate: string | null;
   endDate: string | null;
+  /**
+   * THE day this stay is due to end, from the server: a notice's end date, or
+   * the planned end a daily stay or a fixed term carries. Read this, never pick
+   * between the two by billing type: that is what hid every fixed term.
+   */
+  checkoutDate: string | null;
+  /** How many days before its checkout this stay shows "Ends soon": 7, 15 or 30 by term length. */
+  endingSoonLeadDays: number;
   status: TenancyStatus;
   createdAt: string;
   billingStarted: boolean;
@@ -135,6 +159,11 @@ export type TenancySummary = {
   /** Stated at check-in and never recomputed. */
   guestAge: number | null;
   guestGender: Gender | null;
+  /**
+   * The row's version (2026-09-28). Sent back as If-Match when a screen acts on
+   * the stay, so a stay someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type TenantPropertySummary = {
@@ -238,6 +267,11 @@ export type TenancyExitRequest = {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 /** The dates a tenant may choose to leave on. */
@@ -273,6 +307,18 @@ export type TenancyRoomChangeRequestStatus =
   /** Nobody reviewed it within 5 days. */
   | "EXPIRED";
 
+/**
+ * A bed in a full room that a new monthly stay can be booked into ahead. The
+ * server's one rule: an approved room change, or a stay certain to end soon
+ * (an approved exit past its withdrawal window, or a fixed term, inside its
+ * Ends-soon window).
+ */
+export type UpcomingVacancy = {
+  roomId: string;
+  availableFrom: string;
+  source: "ROOM_CHANGE" | "EXIT";
+};
+
 export type TenancyRoomChangeRequest = {
   id: string;
   /** Short code shown to both sides. Display this, never the id. */
@@ -302,8 +348,15 @@ export type TenancyRoomChangeRequest = {
   reRaiseAllowed: boolean;
   /** Server-computed: management may still return this approval for review. */
   approvalRevertAllowed: boolean;
+  /** The outgoing bed is already reserved for an incoming monthly tenant. */
+  outgoingBedBooked: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The row's version (2026-09-29). Sent back as If-Match when a screen acts
+   * on it, so a record someone else changed since is refused, not overwritten.
+   */
+  version: number;
 };
 
 export type CreateRoomChangeRequestPayload = {
@@ -375,7 +428,8 @@ export type OnboardDailyStayPayload = {
   guestEmail?: string | null;
   guestAddress: string;
   /** Age as stated at check-in, not a date of birth. */
-  guestAge: number;
+  /** `YYYY-MM-DD` as the guest's ID shows it. The register's age is worked out from it. */
+  guestDateOfBirth: string;
   guestGender: Gender;
   // The owner declaring they checked the guest's ID proof and photograph.
   // The server rejects onboarding without it.
@@ -384,6 +438,10 @@ export type OnboardDailyStayPayload = {
     confirmed: boolean;
     documentType: string | null;
     lastFour: string;
+    /** As the owner checked it. Required on every manual check, never UNDECLARED. */
+    gender: Gender | null;
+    /** `YYYY-MM-DD` as the ID shows it. Required on a monthly stay (the 18+ check), null on a daily one. */
+    dateOfBirth: string | null;
   };
 };
 
@@ -496,10 +554,11 @@ export const tenancyApi = api.injectEndpoints({
      */
     withdrawApprovedExitRequest: builder.mutation<
       TenancyExitRequest,
-      { requestId: string; reason: string | null }
+      { requestId: string; reason: string | null; version: number }
     >({
-      query: ({ reason, requestId }) => ({
+      query: ({ reason, requestId, version }) => ({
         body: { reason },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/me/exit-requests/${requestId}/withdraw`,
       }),
@@ -518,18 +577,25 @@ export const tenancyApi = api.injectEndpoints({
       providesTags: ["Tenancy"],
     }),
 
-    approveExitRequest: builder.mutation<TenancyExitRequest, { requestId: string; payload: ApproveExitRequestPayload }>({
-      query: ({ payload, requestId }) => ({
+    listPropertyUpcomingVacancies: builder.query<UpcomingVacancy[], string>({
+      query: (propertyId) => `/api/v1/tenancies/properties/${propertyId}/upcoming-vacancies`,
+      providesTags: ["Tenancy"],
+    }),
+
+    approveExitRequest: builder.mutation<TenancyExitRequest, { requestId: string; payload: ApproveExitRequestPayload; version: number }>({
+      query: ({ payload, requestId, version }) => ({
         body: payload,
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/exit-requests/${requestId}/approve`,
       }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
 
-    rejectExitRequest: builder.mutation<TenancyExitRequest, { requestId: string; adminNotes: string | null }>({
-      query: ({ adminNotes, requestId }) => ({
+    rejectExitRequest: builder.mutation<TenancyExitRequest, { requestId: string; adminNotes: string | null; version: number }>({
+      query: ({ adminNotes, requestId, version }) => ({
         body: { adminNotes },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/exit-requests/${requestId}/reject`,
       }),
@@ -543,44 +609,50 @@ export const tenancyApi = api.injectEndpoints({
      */
     decideExitWithdrawal: builder.mutation<
       TenancyExitRequest,
-      { requestId: string; approved: boolean; adminNotes: string | null }
+      { requestId: string; approved: boolean; adminNotes: string | null; version: number }
     >({
-      query: ({ adminNotes, approved, requestId }) => ({
+      query: ({ adminNotes, approved, requestId, version }) => ({
         body: { adminNotes, approved },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/exit-requests/${requestId}/withdrawal-decision`,
       }),
       invalidatesTags: ["Tenancy", "Notification", "Property", "BillingCycle"],
     }),
 
-    approveRoomChangeRequest: builder.mutation<TenancyRoomChangeRequest, { requestId: string; adminNotes: string | null }>({
-      query: ({ adminNotes, requestId }) => ({
+    approveRoomChangeRequest: builder.mutation<TenancyRoomChangeRequest, { requestId: string; adminNotes: string | null; version: number }>({
+      query: ({ adminNotes, requestId, version }) => ({
         body: { adminNotes },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/room-change-requests/${requestId}/approve`,
       }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
 
-    rejectRoomChangeRequest: builder.mutation<TenancyRoomChangeRequest, { requestId: string; adminNotes: string | null }>({
-      query: ({ adminNotes, requestId }) => ({
+    rejectRoomChangeRequest: builder.mutation<TenancyRoomChangeRequest, { requestId: string; adminNotes: string | null; version: number }>({
+      query: ({ adminNotes, requestId, version }) => ({
         body: { adminNotes },
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/room-change-requests/${requestId}/reject`,
       }),
       invalidatesTags: ["Tenancy", "Notification"],
     }),
 
-    revertRoomChangeApproval: builder.mutation<TenancyRoomChangeRequest, string>({
-      query: (requestId) => ({
+    revertRoomChangeApproval: builder.mutation<TenancyRoomChangeRequest, { requestId: string; version: number }>({
+      query: ({ requestId, version }) => ({
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/room-change-requests/${requestId}/revert-approval`,
       }),
       invalidatesTags: ["Tenancy", "Notification", "Property"],
     }),
     endTenancy: builder.mutation<void, EndTenancyPayload>({
-      query: ({ tenancyId, ...body }) => ({
+      query: ({ tenancyId, version, ...body }) => ({
         body,
+        // Refused with 409 STALE if the stay changed since this screen loaded it.
+        headers: ifMatch(version),
         method: "POST",
         url: `/api/v1/tenancies/${tenancyId}/end`,
       }),
@@ -614,6 +686,7 @@ export const {
   useListMyTenanciesQuery,
   useListPropertyExitRequestsQuery,
   useListPropertyRoomChangeRequestsQuery,
+  useListPropertyUpcomingVacanciesQuery,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
   useListPropertyTenanciesQuery,

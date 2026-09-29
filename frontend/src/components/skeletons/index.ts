@@ -1,6 +1,7 @@
 export * from "./boundary";
 export * from "./account";
 export * from "./chat/thread-list";
+export * from "./chat/messages";
 export * from "./discovery/property-profile";
 export * from "./discovery/listing-results";
 export * from "./food";

@@ -45,19 +45,22 @@ public class PropertyDiscoveryService {
     private final PropertyModule propertyModule;
     private final DiscoveryAccessPolicy discoveryAccessPolicy;
     private final AuthModule authModule;
-    private final PropertyImageService propertyImageService;    private final PropertyContactService propertyContactService;
+    private final PropertyImageService propertyImageService;
+    private final PropertyContactService propertyContactService;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
             PropertyModule propertyModule,
             DiscoveryAccessPolicy discoveryAccessPolicy,
             AuthModule authModule,
-            PropertyImageService propertyImageService,            PropertyContactService propertyContactService) {
+            PropertyImageService propertyImageService,
+            PropertyContactService propertyContactService) {
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
         this.discoveryAccessPolicy = discoveryAccessPolicy;
         this.authModule = authModule;
-        this.propertyImageService = propertyImageService;        this.propertyContactService = propertyContactService;
+        this.propertyImageService = propertyImageService;
+        this.propertyContactService = propertyContactService;
     }
 
     // Public/user side property discovery

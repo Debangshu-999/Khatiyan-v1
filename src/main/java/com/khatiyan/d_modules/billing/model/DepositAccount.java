@@ -106,6 +106,16 @@ public class DepositAccount extends BaseEntity {
         return status == DepositAccountStatus.SETTLED;
     }
 
+    /**
+     * Marks the account aggregate as active when one of its ledger movements is
+     * created, edited, or cleared. The balance lives in child movement rows,
+     * but clients read this account's {@code updatedAt} as the ledger's last
+     * activity time.
+     */
+    public void recordLedgerActivity() {
+        touchUpdatedAt();
+    }
+
     private void ensureActive() {
         if (status != DepositAccountStatus.ACTIVE) {
             throw new ValidationException("Deposit account is not active");

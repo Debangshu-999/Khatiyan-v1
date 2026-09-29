@@ -76,7 +76,23 @@ public record ApplyExitPolicyRequest(
             @Valid List<CustomCharge> customCharges,
             @NotNull(message = "Choose how damage charges are collected") ExitChargeInstrument instrument,
             /** How a billed damage charge was collected. Null falls back to cash. */
-            ManualPaymentMethod collectedVia) {
+            ManualPaymentMethod collectedVia,
+            /**
+             * With the deposit instrument, how much of the damage the deposit
+             * takes when it cannot cover all of it; the rest joins the move-out
+             * bill. Null takes everything from the deposit. Ignored for a bill.
+             * The same split the early-exit charge has (2026-09-28).
+             */
+            @Positive(message = "The deposit's share must be greater than zero") Long fromDepositPaise) {
+
+        /** Everything on one instrument, no split. */
+        public DamageCharge(
+                List<String> itemNames,
+                List<CustomCharge> customCharges,
+                ExitChargeInstrument instrument,
+                ManualPaymentMethod collectedVia) {
+            this(itemNames, customCharges, instrument, collectedVia, null);
+        }
     }
 
     public record CustomCharge(

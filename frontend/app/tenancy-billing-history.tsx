@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { SlidersHorizontal } from "lucide-react-native";
+import { SlidersHorizontal, X } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
 import { CountTabPills } from "@/components/filter-bubbles";
@@ -232,7 +232,7 @@ export default function TenancyBillingHistoryScreen() {
               <ActivityIndicator color={colors.muted} size="small" />
             </View>
           ) : shown.length > PAGE_SIZE ? (
-            <Text style={[type.caption, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}>
+            <Text style={[type.description, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}>
               That is every past bill on this stay.
             </Text>
           ) : null}
@@ -283,39 +283,37 @@ function StatusFilterDialog({
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <Pressable
-        accessibilityLabel="Close"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={{
+      {/* Closes by its own close button, a choice or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{
           alignItems: "center",
           backgroundColor: colors.overlay,
           flex: 1,
           justifyContent: "center",
           paddingHorizontal: spacing.xl,
-        }}
-      >
-        <Pressable
-          onPress={(event) => event.stopPropagation()}
-          style={{
+        }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: 14,
             overflow: "hidden",
             width: "100%",
-          }}
-        >
-          <Text
+          }}>
+          <View
             style={{
-              color: colors.muted,
-              fontFamily: fonts.display,
-              fontSize: 19,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.md,
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
             }}
           >
-            Payment status
-          </Text>
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Payment status
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
 
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {STATUS_OPTIONS.map((option) => (
@@ -330,8 +328,8 @@ function StatusFilterDialog({
               />
             ))}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

@@ -26,7 +26,10 @@ import { useGetMyTenancyDepositQuery } from "@/store/services/billing-api";
  */
 export default function TenancyDepositScreen() {
   const { tenancyId } = useLocalSearchParams<{ tenancyId?: string }>();
-  const depositQuery = useGetMyTenancyDepositQuery(tenancyId ?? "", { skip: !tenancyId });
+  const depositQuery = useGetMyTenancyDepositQuery(tenancyId ?? "", {
+    refetchOnMountOrArgChange: true,
+    skip: !tenancyId,
+  });
   const deposit = depositQuery.data;
 
   return (

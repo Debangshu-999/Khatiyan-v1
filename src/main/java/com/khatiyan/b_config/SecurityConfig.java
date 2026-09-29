@@ -116,6 +116,14 @@ public class SecurityConfig {
                         // which carries no token. Addressed by an unguessable
                         // id and shows only an amount and a gateway order.
                         .requestMatchers(HttpMethod.GET, "/api/v1/service-balance/checkout/*").permitAll()
+                        // The verification provider cannot carry a token. The
+                        // one-time token in the path is the authentication:
+                        // only its hash is stored, and it names one attempt.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/verification/callbacks/*").permitAll()
+                        // The development stand-in for the Aadhaar App, opened
+                        // in the phone's browser. Answers 404 unless the DEV
+                        // provider is the one running.
+                        .requestMatchers("/api/v1/verification/dev-sessions/*").permitAll()
                         // Owner-only, reads included: managers run properties,
                         // they do not hold the purse.
                         .requestMatchers("/api/v1/service-balance/**").hasRole("OWNER")
@@ -163,10 +171,13 @@ public class SecurityConfig {
         // The device headers are here for the same reason PUT is in the method
         // list above: a header the browser has not been told to allow fails at
         // preflight, and the request never reaches the controller to explain why.
+        // If-Match carries the version a screen loaded (2026-09-28). Missing here,
+        // every versioned action from the web app died at preflight.
         configuration.setAllowedHeaders(List.of(
                 "Authorization",
                 "Content-Type",
                 "Idempotency-Key",
+                "If-Match",
                 "X-Device-Label",
                 "X-Device-Platform"));
         configuration.setExposedHeaders(List.of("Location"));

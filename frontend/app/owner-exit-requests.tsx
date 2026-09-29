@@ -1,6 +1,7 @@
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { FieldError } from "@/components/field-error";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -148,7 +149,7 @@ export default function OwnerExitRequestsScreen() {
 
   async function decideWithdrawal(request: TenancyExitRequest, approved: boolean) {
     try {
-      await decideWithdrawalMutation({ adminNotes: null, approved, requestId: request.id }).unwrap();
+      await decideWithdrawalMutation({ adminNotes: null, approved, requestId: request.id, version: request.version }).unwrap();
       toast.success(approved ? "Exit cancelled — the tenancy continues." : "The exit stands.");
     } catch (caught) {
       decisionErrors.failFromServer(errorMessage(caught));
@@ -204,7 +205,7 @@ export default function OwnerExitRequestsScreen() {
                 <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
                   <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
                   <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Exit request history</Text>
-                  <Text style={[type.body, { color: colors.muted }]}>
+                  <Text style={[type.description, { color: colors.muted }]}>
                     Requests that have expired and can no longer be acted on.
                   </Text>
                 </View>
@@ -373,11 +374,12 @@ function PastExitRequestsModal({
   const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
 
   return (
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Full width. These cards now carry a timeline button and an alternating
-          rail behind it, and an inset sheet left the rail squeezed into about
-          half the screen with the labels wrapping. */}
-      <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        {/* Full width. These cards now carry a timeline button and an alternating
+            rail behind it, and an inset sheet left the rail squeezed into about
+            half the screen with the labels wrapping. */}
         <View
           style={{
             backgroundColor: colors.surface,
@@ -393,7 +395,7 @@ function PastExitRequestsModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Exit request history</Text>
             </View>
-            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={onClose} />
+            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={() => dismiss()} />
           </View>
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
@@ -424,7 +426,8 @@ function PastExitRequestsModal({
           )}
         </View>
       </View>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
@@ -557,7 +560,7 @@ function ExitRequestCard({
 
           {withdrawalPending ? (
             <View style={{ gap: spacing.sm }}>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 This tenant asked to cancel their approved exit and stay on. Refusing is a plain no —
                 you may already have promised the room, and you owe no explanation.
               </Text>
@@ -684,9 +687,10 @@ function ExitReviewModal({
           // the server refuses anything else.
           payload: { adminNotes: notes.trim() || null },
           requestId: request.id,
+          version: request.version,
         }).unwrap();
       } else {
-        await rejectExit({ adminNotes: notes.trim(), requestId: request.id }).unwrap();
+        await rejectExit({ adminNotes: notes.trim(), requestId: request.id, version: request.version }).unwrap();
       }
       onClose();
     } catch (caught) {
@@ -696,9 +700,10 @@ function ExitReviewModal({
 
   return (
     <>
-    <Modal animationType="slide" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+      {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -722,7 +727,7 @@ function ExitReviewModal({
                   {title}
                 </Text>
               </View>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
+              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
 
             <ScrollView
@@ -824,7 +829,8 @@ function ExitReviewModal({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
     {confirm ? (
       <ConfirmDialog
         confirmLabel={confirm.confirmLabel}
@@ -889,13 +895,10 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
   const { colors, fonts, type } = useTheme();
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <Pressable
-        onPress={onClose}
-        style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}
-      >
-        <Pressable
-          onPress={() => {}}
-          style={{
+      {/* Closes by its own close button or the device back button, not a tap
+          on the scrim (user, 2026-09-29). */}
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <View style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderRadius: 18,
@@ -904,8 +907,7 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
             maxWidth: 360,
             padding: spacing.lg,
             width: "100%",
-          }}
-        >
+          }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
               {title}
@@ -915,8 +917,8 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
           <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
             {value}
           </Text>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

@@ -83,7 +83,7 @@ export function LocationPinCard({
             <Text style={[type.bodyStrong, { color: colors.ink }]}>
               Set location on map
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={2}>
+            <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
               Search your area or drop a pin — the address fills in automatically.
             </Text>
           </>

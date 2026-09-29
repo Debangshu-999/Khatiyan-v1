@@ -96,7 +96,7 @@ export function PaymentDecisionModal({
 
   async function markFailed() {
     try {
-      await cancelIntent(intent.id).unwrap();
+      await cancelIntent({ intentId: intent.id, version: intent.version }).unwrap();
       toast.success("Payment cancelled. You can try again.");
       onSettled();
     } catch (caught) {
@@ -126,6 +126,7 @@ export function PaymentDecisionModal({
     try {
       await confirmIntent({
         intentId: intent.id,
+        version: intent.version,
         proofImageUrls: proofUrls,
         referenceText: reference.trim() || null,
       }).unwrap();
@@ -246,7 +247,7 @@ export function PaymentDecisionModal({
         ) : (
           <>
             <View style={{ gap: spacing.xs }}>
-              <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 UPI reference number / transaction ID
               </Text>
               <AppTextInput
@@ -293,7 +294,7 @@ export function PaymentDecisionModal({
                 nothing filled in. The extra top margin is what stops it and the
                 button crowding the picker above them. */}
             <View style={{ gap: spacing.md, marginTop: spacing.md }}>
-              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 Optional, but it helps them find your payment faster.
               </Text>
 

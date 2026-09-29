@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.concurrency.VersionGuard;
+import com.khatiyan.c_shared.concurrency.RecordByRecord;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.model.UserRole;
@@ -56,6 +58,9 @@ public class PropertyManagerService {
     private final TenancyModule tenancyModule;
     private final ApplicationEventPublisher eventPublisher;
 
+    /** Its scheduled job works one assignment at a time (2026-09-28). */
+    private final RecordByRecord recordByRecord;
+
     public PropertyManagerService(
             PropertyService propertyService,
             PropertyRepository propertyRepository,
@@ -64,7 +69,9 @@ public class PropertyManagerService {
             // @Lazy: tenancy already depends on property, so eager injection here
             // would form a bean cycle. We only call the facade at request time.
             @Lazy TenancyModule tenancyModule,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            RecordByRecord recordByRecord) {
+        this.recordByRecord = recordByRecord;
         this.propertyService = propertyService;
         this.propertyRepository = propertyRepository;
         this.propertyManagerRepository = propertyManagerRepository;
@@ -210,6 +217,7 @@ public class PropertyManagerService {
             String referenceCode,
             ManagerEmploymentDetails employment) {
         PropertyManager manager = managerByReference(propertyId, referenceCode);
+        VersionGuard.claim(manager);
 
         // Frozen once they have actually started, not from the moment the record
         // exists. Salary accrues FROM the start date and is CALCULATED by the
@@ -247,6 +255,7 @@ public class PropertyManagerService {
         PropertyManager manager = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
                 .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
+                VersionGuard.claim(manager);
         manager.endEmployment(LocalDate.now(), reason, review);
         log.info("Property manager employment ended propertyId={} managerUserId={} ownerId={}", propertyId, managerUserId, ownerId);
         eventPublisher.publishEvent(new ManagerRemovedEvent(propertyId, managerUserId, ownerId));
@@ -264,6 +273,7 @@ public class PropertyManagerService {
         PropertyManager manager = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(propertyId, managerUserId)
                 .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
+                VersionGuard.claim(manager);
         manager.scheduleEnd(endDate, reason, review);
         log.info("Property manager end scheduled propertyId={} managerUserId={} endDate={} ownerId={}",
                 propertyId, managerUserId, endDate, ownerId);
@@ -277,18 +287,23 @@ public class PropertyManagerService {
      *
      * @return how many were ended
      */
-    @Transactional
     public int endDueScheduledAssignments(LocalDate today) {
-        List<PropertyManager> due =
-                propertyManagerRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today);
-        for (PropertyManager manager : due) {
+        List<UUID> due = propertyManagerRepository.findByActiveTrueAndEmploymentEndDateLessThanEqual(today)
+                .stream().map(PropertyManager::getId).toList();
+        // One assignment per transaction, re-read inside it (2026-09-28).
+        return recordByRecord.run("manager-end-scheduled", due, id -> id, id -> {
+            PropertyManager manager = propertyManagerRepository.findById(id).orElse(null);
+            if (manager == null || !manager.isActive() || manager.getEmploymentEndDate() == null
+                    || manager.getEmploymentEndDate().isAfter(today)) {
+                return false;
+            }
             manager.endScheduled();
             log.info("Scheduled manager end actioned propertyId={} managerUserId={} endDate={}",
                     manager.getPropertyId(), manager.getManagerUserId(), manager.getEmploymentEndDate());
             eventPublisher.publishEvent(new ManagerRemovedEvent(
                     manager.getPropertyId(), manager.getManagerUserId(), manager.getAssignedByUserId()));
-        }
-        return due.size();
+            return true;
+        });
     }
 
     /** Removed (inactive) managers for the employee history. */
@@ -338,6 +353,7 @@ public class PropertyManagerService {
         PropertyManager current = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(fromProperty.getId(), managerUserId)
                 .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
+        VersionGuard.claim(current);
 
         if (toProperty.getOwnerId().equals(managerUserId)) {
             throw new ValidationException("Owner cannot be assigned as manager");
@@ -393,6 +409,7 @@ public class PropertyManagerService {
         PropertyManager manager = propertyManagerRepository
                 .findByPropertyIdAndManagerUserIdAndActiveTrue(property.getId(), managerUserId)
                 .orElseThrow(() -> new NotFoundException("PropertyManager", managerUserId));
+                VersionGuard.claim(manager);
 
         manager.deactivate();
 

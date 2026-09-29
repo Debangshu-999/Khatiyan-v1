@@ -85,7 +85,7 @@ export default function ConcernDetailScreen() {
     }
 
     try {
-      await reopenConcern({ concernId: concern.id, reopenReason: trimmedReason }).unwrap();
+      await reopenConcern({ concernId: concern.id, reopenReason: trimmedReason, version: concern.version }).unwrap();
       closeReopenModal();
     } catch {
       setReopenError("Could not reopen this concern. Please check the reopen window and try again.");
@@ -128,7 +128,7 @@ export default function ConcernDetailScreen() {
               <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]}>
                 {concern.title}
               </Text>
-              <Text style={[type.body, { color: colors.muted }]}>
+              <Text style={[type.description, { color: colors.muted }]}>
                 {concern.description}
               </Text>
             </View>
@@ -678,7 +678,7 @@ function ReopenConcernModal({
                 >
                   {concern.title}
                 </Text>
-                <Text style={[type.body, { color: colors.muted }]}>
+                <Text style={[type.description, { color: colors.muted }]}>
                   Tell the property team why this resolution still needs work.
                 </Text>
               </View>
