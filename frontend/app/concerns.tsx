@@ -17,7 +17,11 @@ import { useToast } from "@/components/toast";
 import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import type { ConcernSummary } from "@/store/services/concern-api";
-import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
+import {
+  splitTenantConcerns,
+  useListMyConcernHistoryQuery,
+  useListMyCurrentConcernsQuery,
+} from "@/store/services/concern-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { radii, spacing } from "@/theme/spacing";
@@ -36,22 +40,12 @@ export default function ConcernsScreen() {
   // too), so the tile answers with an OK modal instead of opening the form.
   const activeTenancy = useGetMyActiveTenancyQuery().data;
   const [notStartedOpen, setNotStartedOpen] = useState(false);
-  const currentData = currentQuery.data ?? [];
-  const currentConcerns = useMemo(
-    () => uniqueConcerns(currentData.filter(isActiveConcern)).sort(sortLatest),
-    [currentData],
+  const { closed, closedCount, open } = useMemo(
+    () => splitTenantConcerns(currentQuery.data, historyQuery.data),
+    [currentQuery.data, historyQuery.data],
   );
-  const concernHistory = useMemo(
-    () =>
-      uniqueConcerns([
-        ...currentData.filter((concern) => !isActiveConcern(concern)),
-        ...(historyQuery.data?.items ?? []),
-      ])
-        .filter((concern) => !isActiveConcern(concern))
-        .sort(sortLatest),
-    [currentData, historyQuery.data],
-  );
-  const closedCount = Math.max(historyQuery.data?.totalElements ?? 0, concernHistory.length);
+  const currentConcerns = useMemo(() => [...open].sort(sortLatest), [open]);
+  const concernHistory = useMemo(() => [...closed].sort(sortLatest), [closed]);
   const toast = useToast();
   const toastShownRef = useRef(false);
 
@@ -103,7 +97,7 @@ export default function ConcernsScreen() {
         </Section>
 
         <Section title="Open concerns">
-          {currentQuery.isFetching && !currentQuery.data ? (
+          {(currentQuery.isFetching && !currentQuery.data) || (historyQuery.isFetching && !historyQuery.data) ? (
             <SkeletonCard />
           ) : currentConcerns.length > 0 ? (
             currentConcerns.map((concern) => (
@@ -113,7 +107,7 @@ export default function ConcernsScreen() {
             <EmptyState
               artwork={CONCERN_EMPTY_ILLUSTRATION}
               title="No open concerns"
-              description="New concerns and in-progress issues will appear here."
+              description="New, in-progress and resolved concerns stay here until they are closed."
             />
           )}
         </Section>
@@ -225,6 +219,11 @@ function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: (
             Note: {concern.statusNote}
           </Text>
         ) : null}
+        {concern.status === "RESOLVED" && concern.reopenUntil && new Date(concern.reopenUntil).getTime() > Date.now() ? (
+          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            Reopen until {formatDateTime(concern.reopenUntil)}. It closes after that.
+          </Text>
+        ) : null}
         {concern.reopened ? (
           <Text numberOfLines={1} style={[type.caption, { color: colors.danger }]}>
             Reopened: {concern.reopenReason ?? "No reason provided"}
@@ -292,7 +291,7 @@ function ClosedConcernsModal({
                 <EmptyState
                   artwork={CONCERN_EMPTY_ILLUSTRATION}
                   title="No history yet"
-                  description="Resolved and closed concerns will appear here."
+                  description="Concerns move here once they are closed."
                 />
               ) : null}
             </ScrollView>
@@ -301,10 +300,6 @@ function ClosedConcernsModal({
       </View>}
     </BottomSheetModal>
   );
-}
-
-function isActiveConcern(concern: ConcernSummary) {
-  return concern.status !== "RESOLVED" && concern.status !== "CLOSED";
 }
 
 function sortLatest(left: ConcernSummary, right: ConcernSummary) {
@@ -318,13 +313,4 @@ function formatDateTime(value: string) {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
-}
-
-function uniqueConcerns(concerns: ConcernSummary[]) {
-  const seen = new Set<string>();
-  return concerns.filter((concern) => {
-    if (seen.has(concern.id)) return false;
-    seen.add(concern.id);
-    return true;
-  });
 }

@@ -59,6 +59,38 @@ export type ConcernSummary = {
   version: number;
 };
 
+/**
+ * A tenant's concern is closed only once it reaches CLOSED. RESOLVED stays
+ * open on the tenant side: they can still reopen it until the reopen window
+ * lapses and the server closes it.
+ */
+export function isConcernClosed(concern: Pick<ConcernSummary, "status">) {
+  return concern.status === "CLOSED";
+}
+
+/**
+ * Splits a tenant's concerns into open and closed by their own status, not by
+ * which endpoint returned them. Older servers still list RESOLVED under
+ * history; sorting on status keeps such a concern in Open instead of losing
+ * it between the two lists.
+ */
+export function splitTenantConcerns(current: ConcernSummary[] | undefined, history: Page<ConcernSummary> | undefined) {
+  const seen = new Set<string>();
+  const all = [...(current ?? []), ...(history?.items ?? [])].filter((concern) => {
+    if (seen.has(concern.id)) return false;
+    seen.add(concern.id);
+    return true;
+  });
+  const open = all.filter((concern) => !isConcernClosed(concern));
+  const closed = all.filter(isConcernClosed);
+  // totalElements also counts history rows beyond the fetched page; take out
+  // the ones on this page that turned out not to be closed.
+  const historyItems = history?.items ?? [];
+  const notClosedInHistory = historyItems.filter((concern) => !isConcernClosed(concern)).length;
+  const closedCount = Math.max((history?.totalElements ?? 0) - notClosedInHistory, closed.length);
+  return { closed, closedCount, open };
+}
+
 export const concernApi = api.injectEndpoints({
   endpoints: (builder) => ({
     createConcern: builder.mutation<
