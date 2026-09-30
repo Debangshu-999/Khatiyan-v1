@@ -37,7 +37,7 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type PropertyTab = "all" | "available" | "escalated";
-type MyTab = "all" | "review" | "progress" | "reopened" | "history";
+type MyTab = "all" | "review" | "progress" | "reopened" | "resolved" | "history";
 type QueueTab = "property" | "mine";
 
 const CONCERNS_PER_PAGE = 8;
@@ -58,7 +58,8 @@ function myTabHeadingText(tab: MyTab) {
   if (tab === "review") return "Concerns under review";
   if (tab === "progress") return "Concerns in progress";
   if (tab === "reopened") return "Reopened concerns";
-  return "Resolved by me";
+  if (tab === "resolved") return "Resolved concerns";
+  return "Closed by me";
 }
 
 const CONCERN_HEADER_ILLUSTRATION = require("../assets/workspace/concern-header.png");
@@ -82,8 +83,8 @@ export default function OwnerConcernsScreen() {
 
   const availableQuery = useListPropertyAvailableConcernsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const escalatedQuery = useListPropertyEscalatedConcernsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
-  // Used only for the "resolved by me" sub-tab and the weekly metric, so fetch a
-  // large page to keep those derivations complete.
+  // Feeds the "Resolved" and "History" sub-tabs and the weekly metric, so fetch
+  // a large page to keep those derivations complete.
   const historyQuery = useListPropertyConcernHistoryQuery(
     { page: 0, propertyId: selectedProperty?.id ?? "", size: 200 },
     { skip: !selectedProperty },
@@ -118,12 +119,21 @@ export default function OwnerConcernsScreen() {
   const myReopened = useMemo(() => myConcerns.filter((concern) => concern.reopened), [myConcerns]);
   const myInReview = useMemo(() => myConcerns.filter((concern) => concern.status === "UNDER_REVIEW" && !concern.reopened), [myConcerns]);
   const myInProgress = useMemo(() => myConcerns.filter((concern) => concern.status === "IN_PROGRESS" && !concern.reopened), [myConcerns]);
-  // "All" is the working queue only. Resolved-by-me stays its own History
-  // filter with its own count (user, 2026-09-30).
-  const myActive = useMemo(() => [...myReopened, ...myInReview, ...myInProgress], [myInProgress, myInReview, myReopened]);
-  const myHistoryRaw = useMemo(() => {
-    return (historyQuery.data?.items ?? []).filter((concern) => currentUserId && concern.resolvedByUserId === currentUserId);
-  }, [currentUserId, historyQuery.data]);
+  // Concerns I resolved. The server lists them under property history, but a
+  // RESOLVED concern is still live: the tenant can reopen it until its window
+  // lapses. So it has its own "Resolved" filter and counts towards "All"; only
+  // once it is CLOSED does it move to "History" (user, 2026-09-30).
+  const myResolvedByMe = useMemo(() => {
+    return (historyQuery.data?.items ?? []).filter(
+      (concern) => Boolean(currentUserId) && concern.resolvedByUserId === currentUserId && concern.propertyId === selectedProperty?.id,
+    );
+  }, [currentUserId, historyQuery.data, selectedProperty?.id]);
+  const myResolved = useMemo(() => myResolvedByMe.filter((concern) => concern.status === "RESOLVED"), [myResolvedByMe]);
+  const myHistoryRaw = useMemo(() => myResolvedByMe.filter((concern) => concern.status === "CLOSED"), [myResolvedByMe]);
+  const myActive = useMemo(
+    () => [...myReopened, ...myInReview, ...myInProgress, ...myResolved],
+    [myInProgress, myInReview, myReopened, myResolved],
+  );
 
   const propertyConcerns = propertyTab === "all" ? propertyAll : propertyTab === "available" ? propertyAvailable : propertyEscalated;
   const availableLoading = availableQuery.isFetching && !availableQuery.data;
@@ -131,11 +141,19 @@ export default function OwnerConcernsScreen() {
   const propertyLoading = propertyTab === "all"
     ? availableLoading || escalatedLoading
     : propertyTab === "available" ? availableLoading : escalatedLoading;
-  const myRawConcerns = myTab === "all" ? myActive : myTab === "review" ? myInReview : myTab === "progress" ? myInProgress : myTab === "reopened" ? myReopened : myHistoryRaw;
+  const myRawConcerns =
+    myTab === "all" ? myActive
+      : myTab === "review" ? myInReview
+      : myTab === "progress" ? myInProgress
+      : myTab === "reopened" ? myReopened
+      : myTab === "resolved" ? myResolved
+      : myHistoryRaw;
   const myVisibleConcerns = sortLatest(myRawConcerns);
-  const myLoading = myTab === "history"
-    ? historyQuery.isFetching && !historyQuery.data
-    : undertakenQuery.isFetching && !undertakenQuery.data;
+  const undertakenLoading = undertakenQuery.isFetching && !undertakenQuery.data;
+  const historyLoading = historyQuery.isFetching && !historyQuery.data;
+  const myLoading = myTab === "all"
+    ? undertakenLoading || historyLoading
+    : myTab === "resolved" || myTab === "history" ? historyLoading : undertakenLoading;
   const overviewLoading =
     (availableQuery.isFetching && !availableQuery.data) ||
     (escalatedQuery.isFetching && !escalatedQuery.data) ||
@@ -294,10 +312,11 @@ export default function OwnerConcernsScreen() {
                 heading={myTabHeadingText(myTab)}
                 onChange={setMyTab}
                 options={[
-                  { count: undertakenQuery.data ? myActive.length : undefined, label: "All", value: "all" },
+                  { count: undertakenQuery.data && historyQuery.data ? myActive.length : undefined, label: "All", value: "all" },
                   { count: undertakenQuery.data ? myInReview.length : undefined, label: "In review", value: "review" },
                   { count: undertakenQuery.data ? myInProgress.length : undefined, label: "In progress", value: "progress" },
                   { count: undertakenQuery.data ? myReopened.length : undefined, label: "Reopened", value: "reopened" },
+                  { count: historyQuery.data ? myResolved.length : undefined, label: "Resolved", value: "resolved" },
                   { count: historyQuery.data ? myHistoryRaw.length : undefined, label: "History", value: "history" },
                 ]}
                 value={myTab}
@@ -309,7 +328,7 @@ export default function OwnerConcernsScreen() {
                         actionLabel="View"
                         concern={concern}
                         key={concern.id}
-                        onPress={() => openConcern(concern, myTab === "history" ? "history" : "taken")}
+                        onPress={() => openConcern(concern, concern.status === "RESOLVED" || concern.status === "CLOSED" ? "history" : "taken")}
                       />
                     ))
                   ) : (
