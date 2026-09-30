@@ -21,6 +21,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { OwnerConcernMetricsSkeleton, OwnerConcernQueueSkeleton } from "@/components/skeletons/owner";
+import { ConcernMetaRow } from "@/features/concerns/concern-meta-row";
 import { ActionButton, IconButton, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -639,7 +640,6 @@ function ConcernRouteCard({
 
 function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
   const { colors, type } = useTheme();
-  const photoCount = concern.photos.filter((photo) => Boolean(photo.photoUrl)).length;
   // Escalation is only surfaced while the concern is still open/unassigned; once
   // it is being worked on (under review / in progress) we show the status instead.
   const showEscalation = concern.escalationLevel !== "NONE" && concern.status === "OPEN";
@@ -656,12 +656,7 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
         </View>
         <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</Text>
         <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>{concern.description}</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <Text style={[type.caption, { color: colors.kicker }]}>{humanizeToken(concern.category)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>Room {concern.roomNumber}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>{formatDateTime(concern.createdAt)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>{photoCount ? `${photoCount} image${photoCount === 1 ? "" : "s"}` : "No images"}</Text>
-        </View>
+        <ConcernMetaRow concern={concern} />
         {concern.statusNote ? (
           <Text style={[type.caption, { color: colors.primary }]} numberOfLines={1}>Note: {concern.statusNote}</Text>
         ) : null}
@@ -750,10 +745,6 @@ function sortByEscalation(concerns: ConcernSummary[]) {
 
 function sortLatest(concerns: ConcernSummary[]) {
   return [...concerns].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", hour: "numeric", minute: "2-digit", month: "short" }).format(new Date(value));
 }
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {

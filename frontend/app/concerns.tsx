@@ -14,6 +14,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { SkeletonCard } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
+import { ConcernMetaRow } from "@/features/concerns/concern-meta-row";
 import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import type { ConcernSummary } from "@/store/services/concern-api";
@@ -183,7 +184,6 @@ function ConcernActionTile({
 // owner queue. The detail screen carries the full status and assignment grid.
 function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: () => void }) {
   const { colors, type } = useTheme();
-  const photoCount = concern.photos.filter((photo) => Boolean(photo.photoUrl)).length;
   const showEscalation = concern.escalationLevel !== "NONE" && concern.status === "OPEN";
 
   return (
@@ -206,14 +206,7 @@ function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: (
         <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {concern.description}
         </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <Text style={[type.caption, { color: colors.kicker }]}>{humanizeToken(concern.category)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>Room {concern.roomNumber}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>{formatDateTime(concern.createdAt)}</Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {photoCount ? String(photoCount) + " image" + (photoCount === 1 ? "" : "s") : "No images"}
-          </Text>
-        </View>
+        <ConcernMetaRow concern={concern} />
         {concern.statusNote ? (
           <Text numberOfLines={1} style={[type.caption, { color: colors.primary }]}>
             Note: {concern.statusNote}
