@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, BackHandler, Image, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
@@ -43,13 +43,11 @@ import type { TenancyStatus, TenancySummary } from "@/store/services/tenancy-api
 import { tenancyStatusLabel, useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { PropertyArtwork } from "@/components/artwork-icon";
 import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
 import { DepositCorrectionModal as CorrectionModal, type CorrectionMode } from "@/features/billing/deposit-correction-modal";
 
 // Pending exit still holds its deposit: it settles when the stay is ended.
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE", "PENDING_EXIT"];
-const DEPOSIT_HEADER_ILLUSTRATION = require("../assets/workspace/deposit-header.png");
 
 export default function OwnerDepositManagerScreen() {
   const router = useGuardedRouter();
@@ -207,7 +205,6 @@ export default function OwnerDepositManagerScreen() {
         <DepositAccountHeader canManage={canManageDeposits} tenantName={selectedTenancy?.tenantName ?? null} />
       ) : (
         <ScreenHeader
-          artwork={DEPOSIT_HEADER_ILLUSTRATION}
           badge={!canManageDeposits ? <ViewOnlyChip /> : null}
           italicTail="manager."
           subtitle={property ? `Deposit accounts workspace for ${property.name}.` : "Select a property on Home first."}
@@ -404,30 +401,6 @@ function TenancyPicker({
           <Path d="M0 65 C58 18 83 53 125 30 C151 16 170 5 190 0 V65 Z" fill={colors.primarySoft} />
           <Path d="M62 65 C111 43 150 53 190 29 V65 Z" fill={colors.primary} opacity={0.08} />
         </Svg>
-        <View
-          style={{
-            alignItems: "center",
-            height: 44,
-            justifyContent: "center",
-            width: 44,
-          }}
-        >
-          {/* The property artwork with a person on it. A house with a rupee
-              inside read as "property value" rather than "whose deposit", which
-              is the one thing this control exists to choose.
-
-              The person is filled, not outlined: at 19pt against the artwork's
-              own detail an open glyph disappeared into it, and a solid shape
-              is the only thing that still reads as a person at that size. */}
-          <PropertyArtwork size={34} />
-          <UserRound
-            color={colors.primary}
-            fill={colors.primary}
-            size={19}
-            strokeWidth={1.6}
-            style={{ bottom: 0, position: "absolute", right: -2 }}
-          />
-        </View>
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <Text
             numberOfLines={2}

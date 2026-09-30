@@ -7,6 +7,7 @@ import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRou
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { Card } from "@/components/card";
+import { ConcernDataCard, NoteCard } from "@/components/concern-detail-cards";
 import { ImageCarousel } from "@/components/image-carousel";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -179,8 +180,8 @@ export default function OwnerConcernDetailScreen() {
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
         badge={!canAct ? <ViewOnlyChip /> : null}
-        title={concern?.referenceCode ?? "Concern"}
-        italicTail="details."
+        title="Concern"
+        italicTail="Details"
         subtitle="Review the concern, keep the tenant updated, and resolve it."
       />
 
@@ -192,13 +193,7 @@ export default function OwnerConcernDetailScreen() {
           <ConcernMediaCarousel concern={concern} />
 
           {/* What the concern IS, before how it is being handled. */}
-          <Card>
-            <View style={{ gap: spacing.sm }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Description</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 23, lineHeight: 29 }]}>{concern.title}</Text>
-              <Text style={[type.description, { color: colors.muted }]}>{concern.description}</Text>
-            </View>
-          </Card>
+          <NoteCard title="Description" heading={concern.title} body={concern.description} />
 
           <ConcernDataCard concern={concern} />
 
@@ -343,156 +338,4 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
   return (
     <ImageCarousel images={images} />
   );
-}
-
-type BadgeTone = "primary" | "danger" | "success" | "warning" | "neutral";
-
-function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
-  const { colors, fonts, type } = useTheme();
-  const status = tonePalette(statusTone(concern.status), colors);
-  const assignedTo = concern.assignedToName ?? (concern.assignedToUserId ? shortId(concern.assignedToUserId) : "Unassigned");
-  const assignedBy = concern.assignedByName ?? (concern.assignedByUserId ? shortId(concern.assignedByUserId) : null);
-
-  return (
-    <Card style={{ overflow: "hidden", padding: 0 }}>
-      <View style={{ backgroundColor: status.fg, height: 5 }} />
-      <View style={{ gap: spacing.md, padding: spacing.lg }}>
-        {/* No icon tile. The 5px rail above already states the status in colour,
-            and a second coloured badge saying the same thing crowded the one
-            line anybody reads. The status word is the heading now. */}
-        <View style={{ gap: spacing.xxs }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>Current status</Text>
-            <Text style={[type.caption, { color: colors.muted }]}>{formatDateTime(concern.updatedAt)}</Text>
-          </View>
-          <Text style={{ color: status.fg, fontFamily: fonts.display, fontSize: 27, lineHeight: 33 }}>
-            {humanizeToken(concern.status)}
-          </Text>
-        </View>
-
-        {/* Three deliberate rows: the tenancy reference is long enough to need
-            the full width, and the two pairs below read as comparisons. */}
-        <FactTile label="Tenancy" tone="neutral" value={concern.tenancyReferenceCode} wide />
-
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <FactTile label="Category" tone="neutral" value={humanizeToken(concern.category)} />
-          <FactTile label="Room" tone="primary" value={concern.roomNumber} />
-        </View>
-
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <FactTile label="Assigned to" tone="neutral" value={assignedTo} />
-          <FactTile
-            label="Escalation"
-            tone={concern.escalationLevel === "NONE" ? "neutral" : "danger"}
-            value={humanizeToken(concern.escalationLevel)}
-          />
-        </View>
-
-        {assignedBy ? (
-          <Text style={[type.caption, { color: colors.muted }]}>
-            Assigned by {assignedBy}{concern.assignedAt ? ` · ${formatDateTime(concern.assignedAt)}` : ""}
-          </Text>
-        ) : concern.assignedAt ? (
-          <Text style={[type.caption, { color: colors.muted }]}>
-            Assigned on {formatDateTime(concern.assignedAt)}
-          </Text>
-        ) : null}
-
-        {concern.reopened ? (
-          <View style={{ backgroundColor: colors.dangerSoft, borderColor: colors.danger, borderRadius: 14, borderWidth: 1, gap: spacing.xs, padding: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.danger }]}>Reopened</Text>
-            <Text style={[type.body, { color: colors.ink }]}>{concern.reopenReason ?? "No reopen reason provided."}</Text>
-          </View>
-        ) : null}
-
-        <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-        <View style={{ gap: spacing.sm }}>
-          <TimelineRow label="Raised" value={formatDateTime(concern.createdAt)} />
-          {concern.inProgressAt ? <TimelineRow label="In progress" value={formatDateTime(concern.inProgressAt)} /> : null}
-          {concern.resolvedAt ? <TimelineRow label="Resolved" value={formatDateTime(concern.resolvedAt)} /> : null}
-          {concern.reopenUntil ? <TimelineRow label="Reopen until" value={formatDateTime(concern.reopenUntil)} /> : null}
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-function FactTile({ label, tone, value, wide }: { label: string; tone: BadgeTone; value: string; wide?: boolean }) {
-  const { colors, type } = useTheme();
-  const palette = tonePalette(tone, colors);
-  return (
-    <View
-      style={{
-        backgroundColor: palette.bg,
-        borderColor: palette.border,
-        borderRadius: 12,
-        borderWidth: 1,
-        gap: spacing.xs,
-        padding: spacing.md,
-        width: wide ? "100%" : "48%",
-      }}
-    >
-      <Text style={[type.eyebrow, { color: palette.fg, letterSpacing: 1.2 }]}>{label}</Text>
-      <Text style={[type.bodyStrong, { color: colors.ink }]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function TimelineRow({ label, value }: { label: string; value: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-      <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 8, width: 8 }} />
-      <Text style={[type.caption, { color: colors.muted, flex: 1, fontWeight: "700" }]}>{label}</Text>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "800", textAlign: "right" }]}>{value}</Text>
-    </View>
-  );
-}
-
-function tonePalette(tone: BadgeTone, colors: ReturnType<typeof useTheme>["colors"]) {
-  const palette: Record<BadgeTone, { bg: string; border: string; fg: string }> = {
-    danger: { bg: colors.dangerSoft, border: colors.danger, fg: colors.danger },
-    neutral: { bg: colors.neutralSoft, border: colors.borderStrong, fg: colors.neutralText },
-    primary: { bg: colors.primarySoft, border: colors.primary, fg: colors.primary },
-    success: { bg: colors.successSoft, border: colors.successText, fg: colors.successText },
-    warning: { bg: colors.warningSoft, border: colors.warningText, fg: colors.warningText },
-  };
-  return palette[tone];
-}
-
-function statusTone(status: ConcernStatus): BadgeTone {
-  if (status === "RESOLVED") return "success";
-  if (status === "CLOSED") return "neutral";
-  if (status === "UNDER_REVIEW") return "warning";
-  return "primary";
-}
-
-function escalationTone(escalationLevel: string): BadgeTone {
-  if (escalationLevel === "CRITICAL") return "danger";
-  if (escalationLevel === "ESCALATED") return "warning";
-  if (escalationLevel === "ATTENTION") return "primary";
-  return "neutral";
-}
-
-function shortId(value: string) {
-  return value.slice(0, 8);
-}
-
-function NoteCard({ body, title }: { body: string; title: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <Card>
-      <View style={{ gap: spacing.sm }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>{title}</Text>
-        <Text style={[type.body, { color: colors.ink }]}>{body}</Text>
-      </View>
-    </Card>
-  );
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", hour: "numeric", minute: "2-digit", month: "short" }).format(new Date(value));
 }

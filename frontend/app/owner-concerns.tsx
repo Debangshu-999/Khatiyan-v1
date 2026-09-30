@@ -3,6 +3,7 @@ import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet,
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { useFocusEffect } from "expo-router";
 import { Activity, AlertCircle, ArrowUp, CheckCircle2, ChevronDown, ChevronUp, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
 
 import { Image, type ImageSourcePropType } from "react-native";
@@ -79,6 +80,22 @@ export default function OwnerConcernsScreen() {
   const [myTab, setMyTab] = useState<MyTab>("all");
   const [queueTab, setQueueTab] = useState<QueueTab>("property");
   const [propertyHistoryOpen, setPropertyHistoryOpen] = useState(false);
+  const [propertyHistoryPage, setPropertyHistoryPage] = useState(0);
+  const returnToHistoryProperty = useRef<string | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    const returningProperty = returnToHistoryProperty.current;
+    if (returningProperty) {
+      returnToHistoryProperty.current = null;
+      if (returningProperty === selectedProperty?.id) {
+        setPropertyHistoryOpen(true);
+      }
+    }
+  }, [selectedProperty?.id]));
+
+  useEffect(() => {
+    setPropertyHistoryPage(0);
+  }, [selectedProperty?.id]);
 
   const availableQuery = useListPropertyAvailableConcernsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const escalatedQuery = useListPropertyEscalatedConcernsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
@@ -336,8 +353,17 @@ export default function OwnerConcernsScreen() {
 
       {propertyHistoryOpen && selectedProperty ? (
         <HistoryModal
+          page={propertyHistoryPage}
+          onPageChange={setPropertyHistoryPage}
           onClose={() => setPropertyHistoryOpen(false)}
-          onOpen={(concern) => openConcern(concern, "history")}
+          onOpen={(concern) => {
+            // dismiss(afterClose) animates the sheet out but delegates closing
+            // to this callback. Unmount it so its native Modal cannot keep
+            // intercepting touches behind the detail screen or after Back.
+            setPropertyHistoryOpen(false);
+            returnToHistoryProperty.current = selectedProperty.id;
+            openConcern(concern, "history");
+          }}
           propertyId={selectedProperty.id}
         />
       ) : null}
@@ -649,7 +675,7 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
         {concern.reopened ? (
           <Text style={[type.caption, { color: colors.danger }]} numberOfLines={1}>Reopened: {concern.reopenReason ?? "No reason provided"}</Text>
         ) : null}
-        <ActionButton icon={actionLabel === "View" ? Eye : Clock3} label={actionLabel} onPress={onPress} variant="secondary" />
+        <ActionButton icon={actionLabel === "View" ? Eye : Clock3} label={actionLabel} onPress={onPress} variant={actionLabel === "View" ? "primary" : "secondary"} />
       </View>
     </Card>
   );
@@ -659,14 +685,17 @@ function HistoryModal({
   onClose,
   onOpen,
   propertyId,
+  page,
+  onPageChange,
 }: {
   onClose: () => void;
   onOpen: (concern: ConcernSummary) => void;
   propertyId: string;
+  page: number;
+  onPageChange: (page: number) => void;
 }) {
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
-  const [page, setPage] = useState(0);
   const query = useListPropertyConcernHistoryQuery({ page, propertyId, size: 20 });
   const pageData = query.data;
   const sorted = useMemo(() => sortLatest(pageData?.items ?? []), [pageData]);
@@ -693,7 +722,7 @@ function HistoryModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</Text>
             </View>
-            <IconButton accessibilityLabel="Close property history" icon={X} onPress={() => dismiss()} />
+            <IconButton accessibilityLabel="Close property history" filled icon={X} onPress={() => dismiss()} />
           </View>
           {query.isFetching && !pageData ? (
             <OwnerConcernQueueSkeleton />
@@ -707,8 +736,8 @@ function HistoryModal({
             <PaginationBar
               hasNext={pageData.hasNext}
               hasPrevious={pageData.hasPrevious}
-              onNext={() => setPage((current) => current + 1)}
-              onPrevious={() => setPage((current) => Math.max(0, current - 1))}
+              onNext={() => onPageChange(page + 1)}
+              onPrevious={() => onPageChange(Math.max(0, page - 1))}
               page={pageData.page}
               totalElements={pageData.totalElements}
               totalPages={pageData.totalPages}
