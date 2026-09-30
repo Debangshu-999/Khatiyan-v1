@@ -43,14 +43,17 @@ public class AgreementExpiryNotificationEventListener {
 
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
+    private final NotificationReferenceCodes codes;
     private final Clock clock;
 
     public AgreementExpiryNotificationEventListener(
             NotificationModule notificationModule,
             PropertyModule propertyModule,
+            NotificationReferenceCodes codes,
             Clock clock) {
         this.notificationModule = notificationModule;
         this.propertyModule = propertyModule;
+        this.codes = codes;
         this.clock = clock;
     }
 
@@ -70,6 +73,7 @@ public class AgreementExpiryNotificationEventListener {
 
         Map<String, String> data = new LinkedHashMap<>();
         data.put("tenancyId", event.tenancyId().toString());
+        codes.putTenancy(data, event.tenancyId());
         data.put("tenantUserId", event.tenantUserId().toString());
         data.put("propertyId", property.id().toString());
         data.put("propertyName", property.name());

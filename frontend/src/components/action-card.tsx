@@ -17,17 +17,21 @@ type ActionCardProps = {
   meta?: string;
   // Optional leading icon rendered in a soft rounded box.
   icon?: ComponentType<LucideProps>;
+  /** Larger module cards can opt into a more prominent leading glyph. */
+  iconSize?: number;
   // When > 0, renders a red attention badge with the count next to the arrow.
   badge?: number;
   borderRadius?: number;
   onPress?: () => void;
+  /** Keep navigation behavior while allowing a card group to omit the corner affordance. */
+  showArrow?: boolean;
   tone?: "default" | "primary";
 };
 
 // Press-target card with a tracked-out kicker, a serif title, and a quiet
 // affordance arrow at the corner so it reads as navigable without a noisy
 // "Open" button.
-export function ActionCard({ badge, borderRadius, description, flush, icon: Icon, meta, onPress, title, tone = "default" }: ActionCardProps) {
+export function ActionCard({ badge, borderRadius, description, flush, icon: Icon, iconSize = 22, meta, onPress, showArrow = true, title, tone = "default" }: ActionCardProps) {
   const { colors, fonts, type } = useTheme();
   const badgeLabel = badge != null && badge > 0 ? (badge > 99 ? "99+" : String(badge)) : null;
   const isPrimary = tone === "primary";
@@ -72,7 +76,7 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
               </Text>
             </View>
           ) : null}
-          {onPress ? <ArrowUpRight color={arrowColor} size={18} strokeWidth={2} /> : null}
+          {onPress && showArrow ? <ArrowUpRight color={arrowColor} size={18} strokeWidth={2} /> : null}
         </View>
       </View>
 
@@ -98,8 +102,8 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
         {/* The glyph alone — no tile, no ring. A container behind an icon
             competes with the card's own edge and turns a label into a badge. */}
         {Icon ? (
-          <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
-            <Icon color={colors.ink} size={22} strokeWidth={2.2} />
+          <View style={{ alignItems: "center", height: Math.max(42, iconSize), justifyContent: "center", width: Math.max(42, iconSize) }}>
+            <Icon color={colors.ink} size={iconSize} strokeWidth={2.2} />
           </View>
         ) : null}
         {Icon ? <View style={{ flex: 1, gap: spacing.sm }}>{content}</View> : content}

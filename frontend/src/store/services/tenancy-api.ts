@@ -36,8 +36,10 @@ export function tenancyStatusLabel(status: TenancyStatus) {
   if (status === "PENDING_ACCEPTANCE") {
     return "Pending agreement";
   }
+  // Just "Booked" (user, 2026-09-30). It was "Booked for future start", which
+  // the card chip and the status filter both had to fit.
   if (status === "SCHEDULED") {
-    return "Booked for future start";
+    return "Booked";
   }
   if (status === "PENDING_EXIT") {
     return "Pending exit";
@@ -479,9 +481,27 @@ export const tenancyApi = api.injectEndpoints({
       providesTags: ["Tenancy"],
     }),
 
-    listActivePropertyTenancies: builder.query<Page<TenancySummary>, { page?: number; propertyId: string; query?: string; size?: number }>({
-      query: ({ page = 0, propertyId, query, size = 10 }) => ({
-        params: { page, size, ...(query?.trim() ? { query: query.trim() } : {}) },
+    listActivePropertyTenancies: builder.query<
+      Page<TenancySummary>,
+      {
+        /** The card's "Ends today" / "Ends soon" chips, worked out from the checkout date on the server. */
+        ending?: "TODAY" | "SOON";
+        page?: number;
+        propertyId: string;
+        query?: string;
+        size?: number;
+        status?: TenancyStatus;
+      }
+    >({
+      // "ON_NOTICE" also matches premature notice on the server, as both read "On notice".
+      query: ({ ending, page = 0, propertyId, query, size = 10, status }) => ({
+        params: {
+          page,
+          size,
+          ...(query?.trim() ? { query: query.trim() } : {}),
+          ...(status ? { status } : {}),
+          ...(ending ? { ending } : {}),
+        },
         url: `/api/v1/tenancies/properties/${propertyId}/active`,
       }),
       providesTags: ["Tenancy"],

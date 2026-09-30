@@ -3,6 +3,7 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { BellOff } from "lucide-react-native";
 
+import { ListEnd } from "@/components/list-end";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -140,9 +141,7 @@ export default function NotificationsOlderScreen() {
               {hasMore ? (
                 <ActivityIndicator color={colors.muted} />
               ) : olderItems.length > PAGE_SIZE ? (
-                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-                  That&apos;s all for now
-                </Text>
+                <ListEnd />
               ) : null}
             </View>
           )}

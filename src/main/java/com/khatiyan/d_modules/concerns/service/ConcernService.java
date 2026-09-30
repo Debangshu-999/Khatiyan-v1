@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -584,6 +585,12 @@ public class ConcernService {
     @Transactional(readOnly = true)
     public UUID findTenancyIdForConcern(UUID concernId) {
         return getConcern(concernId).getTenancyId();
+    }
+
+    /** The concern's short code (CON-), for messages that must never show its id. */
+    @Transactional(readOnly = true)
+    public Optional<String> findReferenceCode(UUID concernId) {
+        return concernRepository.findById(concernId).map(Concern::getReferenceCode);
     }
 
     /** Null-safe ordinal, so a concern with no level yet counts as the floor. */

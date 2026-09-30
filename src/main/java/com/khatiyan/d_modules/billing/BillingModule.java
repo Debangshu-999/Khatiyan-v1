@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.billing;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -198,6 +199,11 @@ public class BillingModule {
             long newRentAmountPaise) {
         billingCycleService.applyRoomTransferToUpcomingCycles(
                 tenancyId, raisedAgainstCycleId, newRoomId, newRentAmountPaise);
+    }
+
+    /** A bill's short code (BIL-), for messages that must never show its id. */
+    public Optional<String> findCycleReferenceCode(UUID billingCycleId) {
+        return billingCycleService.findReferenceCode(billingCycleId);
     }
 
     public BillingCycleResponse getMyCycle(UUID tenantUserId, UUID billingCycleId) {

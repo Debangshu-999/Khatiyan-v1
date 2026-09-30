@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, BackHandler, Image, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, BackHandler, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronRight, PartyPopper, Phone, Plus, ReceiptIndianRupee, ReceiptText, Sparkles, UserRound, Users, X } from "lucide-react-native";
+import { ChevronRight, Info, Phone, Plus, ReceiptIndianRupee, ReceiptText, UserRound, Users, X } from "lucide-react-native";
 
+import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -13,7 +14,6 @@ import { usePropertyPermissions } from "@/features/owner/use-property-permission
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { SheetShell } from "@/components/sheet-shell";
-import { Section } from "@/components/section";
 import { OwnerPaymentListSkeleton, OwnerTenancyListSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
@@ -34,7 +34,6 @@ const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.pn
 const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
 
 const PAGE_SIZE = 8;
-const TENANT_BILLS_HEADER_ILLUSTRATION = require("../assets/workspace/tenant-bills-header.png");
 
 /** How close to the end before the next batch is revealed. */
 const LOAD_MORE_THRESHOLD_PX = 220;
@@ -186,7 +185,7 @@ export default function OwnerTenantBillsScreen() {
         }}
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Sparkles color={colors.primary} size={19} strokeWidth={2} />
+          <Info color={colors.primary} size={19} strokeWidth={2} />
           <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
             {canManageBilling
               ? `Raises a one-off bill for ${selected.tenantName?.trim() || "this tenant"}, separate from rent cycles.`
@@ -228,8 +227,8 @@ function TenantBillsHeader({
       : "Select a property from Home to view tenant bills.";
 
   return (
-    <View style={{ minHeight: 108, position: "relative" }}>
-      <View style={{ gap: spacing.sm, paddingRight: 146 }}>
+    <View>
+      <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
           <Text
             adjustsFontSizeToFit
@@ -255,13 +254,6 @@ function TenantBillsHeader({
           </Text>
         </View>
       </View>
-
-      <Image
-        accessibilityIgnoresInvertColors
-        resizeMode="contain"
-        source={TENANT_BILLS_HEADER_ILLUSTRATION}
-        style={{ height: 100, position: "absolute", right: -2, top: 3, width: 150 }}
-      />
     </View>
   );
 }
@@ -407,7 +399,7 @@ function TenantBills({
   // not allowed", so it read as a bug.
   const { canManage: canManageResource } = usePropertyPermissions(tenancy.propertyId);
   const canManageBilling = canManageResource("BILLING_CYCLES");
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const cyclesQuery = useListManagedTenancyBillingCyclesQuery(tenancy.id);
   const [filter, setFilter] = useState<BillFilter>("ALL");
 
@@ -445,7 +437,21 @@ function TenantBills({
         ))}
       </View>
 
-      <Section title={`${filtered.length} bill${filtered.length === 1 ? "" : "s"}`}>
+      <View style={{ gap: spacing.md }}>
+        {/* The count as a small grey bubble, not a section heading (user, 2026-09-30). */}
+        <View
+          style={{
+            alignSelf: "flex-start",
+            backgroundColor: colors.surfaceSunken,
+            borderRadius: 999,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>
+            {`${filtered.length} bill${filtered.length === 1 ? "" : "s"}`}
+          </Text>
+        </View>
         {cyclesQuery.isFetching && all.length === 0 ? <OwnerPaymentListSkeleton rows={4} /> : null}
 
         {!cyclesQuery.isFetching && filtered.length === 0 ? (
@@ -465,25 +471,9 @@ function TenantBills({
         {hasMore ? (
           <ActivityIndicator color={colors.muted} />
         ) : filtered.length > 0 ? (
-          <View style={{ alignItems: "center", gap: spacing.xs, paddingVertical: spacing.sm }}>
-            <View
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.primarySoft,
-                borderColor: colors.border,
-                borderRadius: 999,
-                borderWidth: 1,
-                height: 36,
-                justifyContent: "center",
-                width: 36,
-              }}
-            >
-              <PartyPopper color={colors.primary} size={18} strokeWidth={2} />
-            </View>
-            <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>That&apos;s all for now</Text>
-          </View>
+          <ListEnd />
         ) : null}
-      </Section>
+      </View>
 
     </>
   );

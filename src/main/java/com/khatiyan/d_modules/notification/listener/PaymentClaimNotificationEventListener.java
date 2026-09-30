@@ -33,12 +33,15 @@ public class PaymentClaimNotificationEventListener {
 
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
+    private final NotificationReferenceCodes codes;
 
     public PaymentClaimNotificationEventListener(
             NotificationModule notificationModule,
-            PropertyModule propertyModule) {
+            PropertyModule propertyModule,
+            NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
         this.propertyModule = propertyModule;
+        this.codes = codes;
     }
 
     /**
@@ -54,6 +57,7 @@ public class PaymentClaimNotificationEventListener {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("paymentIntentId", event.paymentIntentId().toString());
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("propertyId", event.propertyId().toString());
         data.put("tenantUserId", event.tenantUserId().toString());
         data.put("referenceCode", event.referenceCode());
@@ -103,6 +107,7 @@ public class PaymentClaimNotificationEventListener {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("paymentIntentId", event.paymentIntentId().toString());
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("propertyId", event.propertyId().toString());
         data.put("referenceCode", event.referenceCode());
         data.put("amountPaise", Long.toString(event.amountPaise()));

@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.concerns;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -109,6 +110,11 @@ public class ConcernModule {
 
     public UUID findTenancyIdForConcern(UUID concernId) {
         return concernService.findTenancyIdForConcern(concernId);
+    }
+
+    /** A concern's short code (CON-), for messages that must never show its id. */
+    public Optional<String> findReferenceCode(UUID concernId) {
+        return concernService.findReferenceCode(concernId);
     }
 
     public int updateConcernEscalationLevels() {

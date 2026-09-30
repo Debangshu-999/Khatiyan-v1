@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useLocalSearchParams } from "expo-router";
 import { AlertModal } from "@/components/alert-modal";
-import { ConfirmDialog } from "@/features/owner/owner-ui";
+import { ConfirmDialog, IconButton } from "@/features/owner/owner-ui";
 import { useToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useCancelPendingTenancyMutation } from "@/store/services/compliance-api";
 import { errorMessage } from "@/features/forms/server-error";
-import { Image, Text, View } from "react-native";
-import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Bell, FileSignature, History, Lock, LogOut, Minus, UserMinus, UserPlus, Users, UsersRound } from "lucide-react-native";
+import { Image, Modal, Text, View } from "react-native";
+import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Bell, FileSignature, History, Lock, LogOut, Minus, SlidersHorizontal, UserMinus, UserPlus, Users, UsersRound, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
 import { SheetShell } from "@/components/sheet-shell";
@@ -18,6 +18,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
+import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
@@ -27,13 +28,14 @@ import {
   OwnerTenancyListSkeleton,
   OwnerTenancySnapshotSkeleton,
 } from "@/components/skeletons/owner";
-import { ActiveTenancyCard, PastTenancyCard } from "@/features/owner/tenancy-list";
+import { ActiveTenancyCard, PastTenancyCard, TenancyStatusChip, type TenancyCardStatusChip } from "@/features/owner/tenancy-list";
 import { ProvideAttemptsSheet } from "@/features/compliance/provide-attempts-sheet";
 import { useGetPendingAgreementDeadlinesQuery } from "@/store/services/compliance-api";
 import { useAppSelector } from "@/store/hooks";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import {
+  tenancyStatusLabel,
   type TenancySummary,
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
@@ -82,6 +84,8 @@ export default function OwnerTenancyWorkspaceScreen() {
   const [pastPage, setPastPage] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StayStatusFilter>("ALL");
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   // Debounce the search box so each keystroke doesn't fire a request; reset both
   // tabs to the first page whenever the committed query changes.
   useEffect(() => {
@@ -103,7 +107,19 @@ export default function OwnerTenancyWorkspaceScreen() {
   const activeTenanciesQuery = useListActivePropertyTenanciesQuery(
     // Only filter the active query while the active tab is showing, so the "Active"
     // metric stays accurate when searching from the past tab.
-    { page: activePage, propertyId: selectedProperty?.id ?? "", query: committedQuery, size: TENANCY_PAGE_SIZE },
+    {
+      page: activePage,
+      propertyId: selectedProperty?.id ?? "",
+      query: committedQuery,
+      size: TENANCY_PAGE_SIZE,
+      ...(statusFilter === "ENDS_TODAY"
+        ? { ending: "TODAY" as const }
+        : statusFilter === "ENDS_SOON"
+          ? { ending: "SOON" as const }
+          : statusFilter === "ALL"
+            ? {}
+            : { status: statusFilter }),
+    },
     { skip: !selectedProperty },
   );
   const pastTenanciesQuery = useListPastPropertyTenanciesQuery(
@@ -330,7 +346,34 @@ export default function OwnerTenancyWorkspaceScreen() {
               />
             ) : (
             <View style={{ gap: spacing.md }}>
-              <SearchField onChangeText={setSearchDraft} placeholder="Search by tenant name, phone or tenancy ID" value={searchDraft} />
+              <SearchField
+                onChangeText={setSearchDraft}
+                placeholder="Search by tenant name, phone or tenancy ID"
+                trailing={
+                  // Status filter, the same control Billing has (user, 2026-09-30).
+                  <AnimatedPressable
+                    accessibilityLabel="Filter tenancies by status"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: statusFilter !== "ALL" }}
+                    onPress={() => setStatusPickerOpen(true)}
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: statusFilter === "ALL" ? colors.surfaceSunken : colors.primary,
+                      borderRadius: 999,
+                      height: 34,
+                      justifyContent: "center",
+                      width: 34,
+                    }}
+                  >
+                    <SlidersHorizontal
+                      color={statusFilter === "ALL" ? colors.ink : colors.onPrimary}
+                      size={17}
+                      strokeWidth={2.3}
+                    />
+                  </AnimatedPressable>
+                }
+                value={searchDraft}
+              />
 
               {isLoading && !visiblePage ? <OwnerTenancyListSkeleton /> : null}
 
@@ -346,11 +389,13 @@ export default function OwnerTenancyWorkspaceScreen() {
               {!isLoading && !isError && visiblePage?.items.length === 0 ? (
                 <EmptyState
                   artwork={NO_PERSON_ILLUSTRATION}
-                  title={committedQuery ? "No tenancies found" : "No active tenancies"}
+                  title={committedQuery || statusFilter !== "ALL" ? "No tenancies found" : "No active tenancies"}
                   description={
                     committedQuery
                       ? "No tenancy matched that tenant name, phone or tenancy ID."
-                      : "Newly onboarded tenants for this property will appear here."
+                      : statusFilter !== "ALL"
+                        ? STAY_STATUS_FILTER_OPTIONS.find((option) => option.value === statusFilter)?.empty ?? ""
+                        : "Newly onboarded tenants for this property will appear here."
                   }
                 />
               ) : null}
@@ -392,6 +437,16 @@ export default function OwnerTenancyWorkspaceScreen() {
         </>
       ) : null}
       {accessDialog}
+      {statusPickerOpen ? (
+        <StayStatusFilterDialog
+          onClose={() => setStatusPickerOpen(false)}
+          onSelect={(value) => {
+            setStatusFilter(value);
+            setActivePage(0);
+          }}
+          value={statusFilter}
+        />
+      ) : null}
       {attemptsFor ? (
         <ProvideAttemptsSheet onClose={() => setAttemptsFor(null)} tenancyId={attemptsFor.id} />
       ) : null}
@@ -697,4 +752,143 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
   }
 
   return properties.length === 1 ? properties[0] : null;
+}
+
+type StayStatusFilter =
+  | "ALL"
+  | "PENDING_ACCEPTANCE"
+  | "SCHEDULED"
+  | "ACTIVE"
+  | "ON_NOTICE"
+  | "PENDING_EXIT"
+  | "ENDS_TODAY"
+  | "ENDS_SOON";
+
+/**
+ * Everything a live stay's card can say about it, named the way the card names
+ * it (user, 2026-09-30): its status, plus the "Ends today" and "Ends soon"
+ * chips, which come from the checkout date rather than the status. Both notice
+ * kinds are one "On notice", as they are everywhere else. Ended stays are in
+ * Tenancy history, so they aren't offered here.
+ */
+const STAY_STATUS_FILTER_OPTIONS: {
+  /** The chip the card shows, drawn in the picker. "Any status" has none and stays text. */
+  chip?: TenancyCardStatusChip;
+  empty: string;
+  label: string;
+  value: StayStatusFilter;
+}[] = [
+  { empty: "", label: "Any status", value: "ALL" },
+  {
+    chip: { key: "filter-active", kind: "tenancy", status: "ACTIVE" },
+    empty: "No stay is active right now.",
+    label: tenancyStatusLabel("ACTIVE"),
+    value: "ACTIVE",
+  },
+  {
+    chip: { key: "filter-notice", kind: "tenancy", status: "ON_NOTICE" },
+    empty: "No stay is on notice right now.",
+    label: tenancyStatusLabel("ON_NOTICE"),
+    value: "ON_NOTICE",
+  },
+  {
+    chip: { key: "filter-today", kind: "timing", label: "Ends today", tone: "warning" },
+    empty: "No stay ends today.",
+    label: "Ends today",
+    value: "ENDS_TODAY",
+  },
+  {
+    chip: { key: "filter-soon", kind: "timing", label: "Ends soon", tone: "warning" },
+    empty: "No stay is ending soon.",
+    label: "Ends soon",
+    value: "ENDS_SOON",
+  },
+  {
+    chip: { key: "filter-pending-exit", kind: "tenancy", status: "PENDING_EXIT" },
+    empty: "No stay is waiting to be ended.",
+    label: tenancyStatusLabel("PENDING_EXIT"),
+    value: "PENDING_EXIT",
+  },
+  {
+    chip: { key: "filter-agreement", kind: "tenancy", status: "PENDING_ACCEPTANCE" },
+    empty: "No stay is waiting on an agreement.",
+    label: tenancyStatusLabel("PENDING_ACCEPTANCE"),
+    value: "PENDING_ACCEPTANCE",
+  },
+  {
+    chip: { key: "filter-booked", kind: "tenancy", status: "SCHEDULED" },
+    empty: "No stay is booked to start later.",
+    label: tenancyStatusLabel("SCHEDULED"),
+    value: "SCHEDULED",
+  },
+];
+
+/** The status picker, the same centred dialog Billing uses for bill status. */
+function StayStatusFilterDialog({
+  onClose,
+  onSelect,
+  value,
+}: {
+  onClose: () => void;
+  onSelect: (value: StayStatusFilter) => void;
+  value: StayStatusFilter;
+}) {
+  const { colors, fonts } = useTheme();
+
+  return (
+    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+      {/* Closes by its close button, a choice or the device back button,
+          not a tap on the scrim (user, 2026-09-29). */}
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.overlay,
+          flex: 1,
+          justifyContent: "center",
+          paddingHorizontal: spacing.xl,
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderCurve: "continuous",
+            borderRadius: 14,
+            overflow: "hidden",
+            width: "100%",
+          }}
+        >
+          <View
+            style={{
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+              Tenancy status
+            </Text>
+            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
+          </View>
+
+          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+            {STAY_STATUS_FILTER_OPTIONS.map((option) => (
+              <PickerOptionRow
+                content={option.chip ? <TenancyStatusChip chip={option.chip} /> : undefined}
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onSelect(option.value);
+                  onClose();
+                }}
+                selected={option.value === value}
+              />
+            ))}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }

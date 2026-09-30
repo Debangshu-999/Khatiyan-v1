@@ -32,6 +32,8 @@ function isExpectedFailure(endpoint: string, status: unknown) {
 const API_TAGS = [
   "Profile",
   "Property",
+  // Its own tag, so saving visit slots does not refetch every property read.
+  "PropertyVisits",
   "Tenancy",
   "BillingCycle",
   "Concern",

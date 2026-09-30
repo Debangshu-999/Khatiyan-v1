@@ -3,6 +3,7 @@ import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSynth
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, Landmark } from "lucide-react-native";
 
+import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -179,9 +180,7 @@ export default function OwnerDepositHistoryScreen() {
             loadingMore ? (
               <ActivityIndicator color={colors.muted} />
             ) : pageData?.hasNext ? null : (
-              <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-                {items.length === 1 ? "1 deposit account" : items.length + " deposit accounts"}
-              </Text>
+              <ListEnd message={items.length === 1 ? "1 deposit account" : items.length + " deposit accounts"} />
             )
           ) : null}
 

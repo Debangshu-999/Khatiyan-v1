@@ -142,7 +142,7 @@ function notificationDetails(notification: NotificationItem) {
     case "TENANCY_PENDING_EXIT":
       add(details, "Property", data.propertyName);
       add(details, "Room", data.roomNumber);
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
       add(
         details,
         notification.subtype === "TENANCY_ENDED" ? "End date" : notification.subtype === "TENANCY_PENDING_EXIT" ? "Checkout date" : "Start date",
@@ -153,7 +153,7 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Property", data.propertyName);
       add(details, "Room", data.roomNumber);
       add(details, "Booked from", formatDate(data.startDate));
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
       break;
     // No room number and no dates: the tenancy never started, so the only
     // facts are which offer it was and who ended it. "Cancelled by" is the one
@@ -163,12 +163,12 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Property", data.propertyName);
       add(details, "Cancelled by", data.cancelledBy);
       add(details, "Reason", data.reason);
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
       break;
     case "TENANCY_ROOM_TRANSFERRED":
       add(details, "Property", data.propertyName);
       add(details, "New room", data.newRoomNumber);
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
       add(details, "Transfer date", formatDate(data.transferDate));
       break;
     // Every exit row quotes the REQUEST's short code. It used to print eight
@@ -209,7 +209,7 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Property", data.propertyName);
       add(details, "Agreement ends", formatDate(data.agreementEndDate));
       add(details, "Days left", data.daysRemaining);
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
       break;
     case "CONCERN_RAISED":
     case "CONCERN_ASSIGNED":
@@ -221,33 +221,35 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Property", data.propertyName);
       add(details, "Concern", data.concernTitle);
       add(details, "Status", titleCase(data.status));
-      add(details, "Concern ID", shortId(data.concernId));
+      add(details, "Reference", code(data.concernReferenceCode));
       break;
+    // Every bill row names the bill by its BIL- code, which is the same code
+    // the bill screens show. One-off bills have no cycle to speak of.
     case "BILLING_CYCLE_GENERATED":
       add(details, "Cycle", data.cycleNumber);
       add(details, "Due date", formatDate(data.rentDueDate));
       add(details, "Amount", formatPaise(data.totalAmountPaise));
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Bill", code(data.billReferenceCode));
       break;
     case "BILLING_CYCLE_CANCELLED":
       add(details, "Amount", formatPaise(data.totalAmountPaise));
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Bill", code(data.billReferenceCode));
       break;
     case "BILLING_LATE_FEE_APPLIED":
       add(details, "Late fee", formatPaise(data.lateFeeAmountPaise));
-      add(details, "Billing cycle ID", shortId(data.billingCycleId));
-      add(details, "Tenancy ID", shortId(data.tenancyId));
+      add(details, "Bill", code(data.billReferenceCode));
       break;
     case "BILLING_LINE_ITEM_CHANGED":
       add(details, "Line", data.label);
       add(details, "Type", titleCase(data.lineType));
       add(details, "Amount", formatPaise(data.amountPaise));
       add(details, "Status", titleCase(data.status));
+      add(details, "Bill", code(data.billReferenceCode));
       break;
     case "PAYMENT_SUCCEEDED":
     case "PAYMENT_FAILED":
       add(details, "Amount", formatPaise(data.amountPaise));
-      add(details, "Billing cycle ID", shortId(data.billingCycleId));
+      add(details, "Bill", code(data.billReferenceCode));
       add(details, "Reason", data.failureReason);
       break;
     case "BUDGET_RAISED":
@@ -305,43 +307,16 @@ function notificationDetails(notification: NotificationItem) {
   return details.slice(0, 5);
 }
 
+/**
+ * For a row with no layout of its own (reminders, claims): whichever short
+ * codes came with it. Never the source id, which used to print here as
+ * "Payment reference: 8c7f8b9e" (user, 2026-09-30). With no code, no line.
+ */
 function addFallbackSourceDetail(details: Array<{ label: string; value: string }>, notification: NotificationItem) {
-  // Prefer the human-readable TEN- reference the backend attaches; only fall
-  // back to the (truncated) raw source UUID when it is absent.
-  const tenancyRef = notification.data?.tenancyReferenceCode ?? null;
-  const sourceId = shortId(notification.sourceId);
-
-  if (notification.category === "TENANCY" && tenancyRef) {
-    add(details, "Tenancy ID", tenancyRef);
-    return;
-  }
-
-  if (!sourceId) {
-    return;
-  }
-
-  switch (notification.category) {
-    case "TENANCY":
-      add(details, "Tenancy ID", sourceId);
-      break;
-    case "CONCERN":
-      add(details, "Concern ID", sourceId);
-      break;
-    case "NOTICE":
-      add(details, "Notice ID", sourceId);
-      break;
-    case "PAYMENT":
-      add(details, "Payment reference", sourceId);
-      break;
-    case "PROPERTY":
-      add(details, "Property ID", sourceId);
-      break;
-    case "AUTH":
-      add(details, "Account ID", sourceId);
-      break;
-    default:
-      break;
-  }
+  const data = notification.data ?? {};
+  add(details, "Bill", code(data.billReferenceCode));
+  add(details, "Tenancy", code(data.tenancyReferenceCode));
+  add(details, "Reference", code(data.concernReferenceCode ?? data.referenceCode));
 }
 
 function add(details: Array<{ label: string; value: string }>, label: string, value?: string | null) {
@@ -351,16 +326,17 @@ function add(details: Array<{ label: string; value: string }>, label: string, va
   details.push({ label, value });
 }
 
-// Raw UUIDs (36 chars, hyphen-segmented hex) are unreadable, so shorten those to
-// their leading segment. Human reference codes (e.g. TEN-2026-000108) are already
-// short and meaningful — never slice them.
+// Notifications show short codes (BIL-2026-000123, TEN-..., CON-...) and never
+// an internal id, not even cut short: eight characters of a UUID name nothing
+// anyone can look up (user, 2026-09-30). This drops any id that ends up in a
+// code field by mistake.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function shortId(value?: string | null) {
-  if (!value) {
+function code(value?: string | null) {
+  if (!value || UUID_PATTERN.test(value)) {
     return null;
   }
-  return UUID_PATTERN.test(value) ? value.slice(0, 8) : value;
+  return value;
 }
 
 function titleCase(value?: string | null) {

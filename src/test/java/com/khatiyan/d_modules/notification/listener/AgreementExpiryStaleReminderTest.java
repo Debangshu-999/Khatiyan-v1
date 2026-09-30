@@ -49,7 +49,7 @@ class AgreementExpiryStaleReminderTest {
         // 27 Sep in India, 10:00.
         Clock clock = Clock.fixed(Instant.parse("2026-09-27T04:30:00Z"), ZoneId.of("UTC"));
 
-        new AgreementExpiryNotificationEventListener(notifications, properties, clock)
+        new AgreementExpiryNotificationEventListener(notifications, properties, null, clock)
                 .onAgreementExpiryApproaching(event(2));
 
         verifyNoInteractions(notifications, properties);

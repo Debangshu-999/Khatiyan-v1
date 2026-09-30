@@ -50,7 +50,7 @@ export function FacilityOverviewGrid({
           // Matches the detail grids on the same screen — the outlined boxes
           // on this page all take the stronger hairline.
           borderColor: colors.borderStrong,
-          borderRadius: 14,
+          borderRadius: 10,
           borderWidth: 1,
           overflow: "hidden",
         }}

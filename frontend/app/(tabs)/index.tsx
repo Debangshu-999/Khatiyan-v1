@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
-import * as Clipboard from "expo-clipboard";
+import { ActivityIndicator, Animated, Easing, Image, ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, ChartPie, AlertTriangle, Ban, Banknote, BedDouble, Bell, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clipboard as ClipboardIcon, ClipboardList, Compass, FileText, Home, KeyRound, LayoutGrid, LocateFixed, Lock, LogOut, type LucideProps, MapPin, Megaphone, MessageSquareWarning, Navigation, Pin, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, UserMinus, UserPlus, UserRound, Users, Waves, Wrench, X } from "lucide-react-native";
+import { Activity, AlertCircle, ChartPie, AlertTriangle, Ban, Banknote, BedDouble, Bell, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Compass, FileText, Home, Info, KeyRound, LayoutGrid, LocateFixed, Lock, LogOut, type LucideProps, MapPin, Megaphone, MessageSquareWarning, Navigation, Pin, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, UserMinus, UserPlus, UserRound, Users, Waves, Wrench, X } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path, Rect } from "react-native-svg";
 
 import { clearStoredSession } from "@/auth/session-storage";
@@ -84,10 +84,9 @@ import {
   useGetMyFoodAvailabilityQuery,
   useGetMyFoodSubscriptionQuery,
   useGetMyMealScheduleQuery,
-  type DayOfWeek,
   type FoodPlan,
 } from "@/store/services/food-api";
-import { MealGlyph, MEAL_LABEL, foodIcon, formatMealTime, todayInIst, weekdayOf } from "@/features/food/food-ui";
+import { MealGlyph, MEAL_LABEL, foodIcon, formatMealTime } from "@/features/food/food-ui";
 import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import { TenancyStartsSoonBubble } from "@/features/tenancy/starts-soon-bubble";
 import { radii, spacing } from "@/theme/spacing";
@@ -171,6 +170,8 @@ export default function HomeScreen() {
 
   const isManagerAccount = activeAccount === "manager";
   const isWorkspace = activeAccount === "owner" || isManagerAccount;
+  const isTenantAccount = activeAccount === "tenant";
+  const hasBlueHomeHeader = isWorkspace || isTenantAccount;
   const ownerHeaderSecondary = isDark ? "rgba(5, 5, 5, 0.70)" : "rgba(255, 255, 255, 0.82)";
   const ownerHeaderAccent = isDark ? "rgba(5, 5, 5, 0.88)" : "#DCE8FF";
 
@@ -230,13 +231,16 @@ export default function HomeScreen() {
       <View
         style={{
           alignItems: "flex-start",
-          backgroundColor: isWorkspace ? colors.primary : "transparent",
+          backgroundColor: hasBlueHomeHeader ? colors.primary : "transparent",
+          borderBottomLeftRadius: isTenantAccount ? 18 : 0,
+          borderBottomRightRadius: isTenantAccount ? 18 : 0,
+          borderCurve: "continuous",
           flexDirection: "row",
           gap: spacing.sm,
           justifyContent: "space-between",
-          marginHorizontal: isWorkspace ? -spacing.lg : 0,
-          paddingBottom: isWorkspace ? spacing.lg : 0,
-          paddingHorizontal: isWorkspace ? spacing.lg : 0,
+          marginHorizontal: hasBlueHomeHeader ? -spacing.lg : 0,
+          paddingBottom: hasBlueHomeHeader ? spacing.lg : 0,
+          paddingHorizontal: hasBlueHomeHeader ? spacing.lg : 0,
           // The status-bar strip is part of the blue band rather than a safe
           // area above it, so the fill runs to the top of the display. Padding
           // rather than a painted lid: a lid would have to change colour as the
@@ -248,30 +252,30 @@ export default function HomeScreen() {
           // The other Home modes pad by the inset too, now that no mode takes
           // a top safe area: their header starts below the clock, and what
           // scrolls up passes under it.
-          paddingTop: safeAreaInsets.top + (isWorkspace ? spacing.sm : 0),
+          paddingTop: safeAreaInsets.top + (hasBlueHomeHeader ? spacing.sm : 0),
         }}
       >
         <View style={{ flex: 1, gap: spacing.sm }}>
           <HomeLocationBar
-            compact={isWorkspace}
-            inverse={isWorkspace}
+            compact={hasBlueHomeHeader}
+            inverse={hasBlueHomeHeader}
             location={location}
             onRefresh={() => void dispatch(fetchCurrentLocation())}
           />
           <View style={{ gap: spacing.xs }}>
             <Text
               style={{
-                color: isWorkspace ? colors.onPrimary : colors.ink,
+                color: hasBlueHomeHeader ? colors.onPrimary : colors.ink,
                 fontFamily: fonts.display,
-                fontSize: isWorkspace ? 22 : 30,
+                fontSize: hasBlueHomeHeader ? 22 : 30,
                 letterSpacing: -0.4,
-                lineHeight: isWorkspace ? 28 : 36,
+                lineHeight: hasBlueHomeHeader ? 28 : 36,
               }}
             >
               {greeting},{" "}
               <Text
                 style={{
-                  color: isWorkspace ? ownerHeaderAccent : colors.primary,
+                  color: hasBlueHomeHeader ? ownerHeaderAccent : colors.primary,
                   fontStyle: "italic",
                   fontWeight: "400",
                 }}
@@ -279,7 +283,7 @@ export default function HomeScreen() {
                 {firstName}.
               </Text>
             </Text>
-            {isWorkspace ? (
+            {hasBlueHomeHeader ? (
               <View
                 style={{
                   flexDirection: "row",
@@ -327,7 +331,7 @@ export default function HomeScreen() {
               tenant has no property selector, so their bell is never blocked. */}
           <HomeAlertsButton
             disabled={awaitingPropertyChoice}
-            inverse={isWorkspace}
+            inverse={hasBlueHomeHeader}
             onPress={() => router.push("/notifications")}
           />
           {isWorkspace ? (
@@ -1279,6 +1283,8 @@ function TenantHome({
 }
 
 const FOOD_PREFERENCE_ARTWORK = require("../../assets/workspace/food-preference-module-card.png");
+const FOOD_PREFERENCE_BACKGROUND = require("../../assets/workspace/tenant-food-card-background.jpg");
+const FoodPlanIcon = foodIcon("silverware-fork-knife");
 
 /**
  * The tenant's food card on Home: the next meal, their plan, and an arrow
@@ -1292,98 +1298,175 @@ function FoodPreferenceHomeCard({
   moduleEnabled: boolean;
   onPress: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
   // The server's meal day (2026-09-28): the next meal, its time and any delay.
   // Nothing is next once the day's last meal is over, until midnight.
   const upcoming = useGetMyMealScheduleQuery().data?.nextMeal ?? null;
   const subscriptionQuery = useGetMyFoodSubscriptionQuery(undefined, { skip: !moduleEnabled });
-  const planLine = foodPlanLine(subscriptionQuery.data ?? null);
+  const planCopy = foodPlanCopy(subscriptionQuery.data ?? null);
+  const frost = isDark ? "rgba(15, 23, 42, 0.78)" : "rgba(255, 255, 255, 0.82)";
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onPress}>
-      <View
+      <ImageBackground
+        imageStyle={{ borderRadius: radii.xl }}
+        resizeMode="cover"
+        source={FOOD_PREFERENCE_BACKGROUND}
         style={{
-          alignItems: "center",
-          backgroundColor: colors.surface,
           borderColor: colors.borderStrong,
           borderCurve: "continuous",
-          borderRadius: 20,
+          borderRadius: radii.xl,
           borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.md,
-          padding: spacing.lg,
+          overflow: "hidden",
         }}
       >
-        {/* The owner's Food preference module mark, so the module reads the
-            same on both sides. */}
-        <View style={{ alignItems: "center", borderRadius: 999, height: 72, justifyContent: "center", overflow: "hidden", width: 72 }}>
-          <Image
-            accessibilityIgnoresInvertColors
-            accessible={false}
-            resizeMode="contain"
-            source={FOOD_PREFERENCE_ARTWORK}
-            style={{ height: 70, width: 70 }}
-          />
-        </View>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 25 }]}>Food preference</Text>
-          {upcoming ? (
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
-              <MealGlyph color={colors.primary} meal={upcoming.mealType} size={16} />
-              <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
-                {upcoming.status === "SERVING"
-                  ? `Now: ${MEAL_LABEL[upcoming.mealType]}`
-                  : `Up next: ${MEAL_LABEL[upcoming.mealType]} at ${formatMealTime(upcoming.startTime)}`}
-              </Text>
+        <View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: isDark ? "rgba(15, 23, 42, 0.34)" : "rgba(255, 255, 255, 0.38)" },
+          ]}
+        />
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md, padding: spacing.lg }}>
+          {/* Keep the owner's Food preference module mark, but place it in the
+              same frosted icon tile used by View on map. */}
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: frost,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              height: 52,
+              justifyContent: "center",
+              overflow: "hidden",
+              width: 52,
+            }}
+          >
+            <Image
+              accessibilityIgnoresInvertColors
+              accessible={false}
+              resizeMode="contain"
+              source={FOOD_PREFERENCE_ARTWORK}
+              style={{ height: 48, width: 48 }}
+            />
+          </View>
+
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+              <View
+                style={{
+                  backgroundColor: frost,
+                  borderCurve: "continuous",
+                  borderRadius: 8,
+                  flexShrink: 1,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 25 }]}>Food preference</Text>
+              </View>
+              <ChevronRight color={colors.kicker} size={19} strokeWidth={2.2} style={{ marginTop: 4 }} />
             </View>
-          ) : null}
-          {upcoming && upcoming.delayMinutes > 0 ? (
-            <View style={{ alignSelf: "flex-start" }}>
-              <DelayedChip minutes={upcoming.delayMinutes} />
+
+            <View
+              style={{
+                alignSelf: "stretch",
+                backgroundColor: frost,
+                borderCurve: "continuous",
+                borderRadius: 8,
+                gap: spacing.xs,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.sm,
+              }}
+            >
+              {upcoming ? (
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+                  <MealGlyph color={colors.primary} meal={upcoming.mealType} size={17} />
+                  <Text style={{ color: colors.primary, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
+                    {upcoming.status === "SERVING"
+                      ? `Now: ${MEAL_LABEL[upcoming.mealType]}`
+                      : `Up next: ${MEAL_LABEL[upcoming.mealType]} at ${formatMealTime(upcoming.startTime)}`}
+                  </Text>
+                </View>
+              ) : null}
+              {upcoming && upcoming.delayMinutes > 0 ? (
+                <View style={{ alignSelf: "flex-start" }}>
+                  <DelayedChip minutes={upcoming.delayMinutes} />
+                </View>
+              ) : null}
+              {moduleEnabled ? (
+                <>
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
+                    <FoodPlanIcon color={colors.primary} size={17} />
+                    <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
+                      Your plan:
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[type.description, { color: colors.inkSoft, flex: 1, fontFamily: fonts.sansBold }]}
+                    >
+                      {planCopy.name}
+                    </Text>
+                  </View>
+                  {planCopy.note ? (
+                    <Text style={[type.description, { color: colors.muted, marginLeft: 23 }]}>
+                      {planCopy.note}
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 6 }}>
+                  <Info color={colors.primary} size={17} strokeWidth={2.2} />
+                  <Text
+                    style={[
+                      type.description,
+                      {
+                        color: colors.inkSoft,
+                        flex: 1,
+                        fontFamily: fonts.sansBold,
+                      },
+                    ]}
+                  >
+                    Meals are now being directly managed by your property.
+                  </Text>
+                </View>
+              )}
             </View>
-          ) : null}
-          <Text style={[type.description, { color: colors.muted }]}>
-            {!moduleEnabled
-              ? "Food is managed directly by your property right now."
-              : planLine}
-          </Text>
+          </View>
         </View>
-        <ChevronRight color={colors.primary} size={18} strokeWidth={2.2} />
-      </View>
+      </ImageBackground>
     </AnimatedPressable>
   );
 }
 
 /**
- * One line for the tenant's plan (2026-09-29): what they eat today, and what
- * changes after midnight.
+ * Compact plan copy for the Home card.
  */
-function foodPlanLine(plan: FoodPlan | null): string {
+function foodPlanCopy(plan: FoodPlan | null): { name: string; note: string | null } {
   const today = plan?.today ?? null;
   const next = plan?.fromTomorrow ?? null;
   if (!today && !next) {
-    return "No meal plan chosen yet.";
+    return { name: "No plan selected", note: null };
   }
-  if (!today) {
-    return "Your plan starts tomorrow.";
+  if (!today && next) {
+    return { name: foodPlanName(next), note: "Starts tomorrow" };
   }
-  const todayDay = today.days.find((day) => day.day === todayWeekdayInIst());
-  const name = today.hybrid ? `Hybrid, ${todayDay?.profileName ?? ""} today` : today.profileName ?? "";
+  const name = foodPlanName(today);
   if (plan?.endsTonight) {
-    return `Your plan: ${name}. Ends tonight.`;
+    return { name, note: "Ends tonight" };
   }
   if (next) {
-    return `Your plan: ${name}. ${next.hybrid ? "Hybrid plan" : next.profileName} from tomorrow.`;
+    return { name, note: `Switches to ${foodPlanName(next)} tomorrow` };
   }
-  return `Your plan: ${name}`;
+  return { name, note: null };
 }
 
-function todayWeekdayInIst(): DayOfWeek {
-  return weekdayOf(todayInIst());
+function foodPlanName(plan: NonNullable<FoodPlan["today"]>): string {
+  return plan.hybrid ? "Hybrid" : plan.profileName ?? "Plan selected";
 }
 
 function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantActiveTenancy }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
   const property = activeTenancy.property;
   const room = activeTenancy.room;
   const tenancy = activeTenancy.tenancy;
@@ -1394,16 +1477,27 @@ function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantAct
   return (
     <Card
       style={{
-        borderLeftColor: colors.tabSelected,
-        borderLeftWidth: 4,
         gap: spacing.md,
+        overflow: "hidden",
         padding: spacing.md,
       }}
     >
+      <Image
+        accessibilityIgnoresInvertColors
+        resizeMode="cover"
+        source={PROPERTY_CARD_ART}
+        style={{
+          bottom: 0,
+          left: 0,
+          opacity: isDark ? 0.1 : 0.16,
+          position: "absolute",
+          right: 0,
+          top: 0,
+        }}
+      />
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <PropertyArtwork size={28} />
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>Current property</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             adjustsFontSizeToFit
             minimumFontScale={0.78}
@@ -1424,7 +1518,6 @@ function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantAct
         <TenantHomeFact icon={CalendarDays} label="Stay type" value={humanizeToken(tenancy.billingType)} />
       </View>
 
-      <View style={{ backgroundColor: colors.border, height: 1 }} />
       <AddressInfoLine address={propertyAddress} />
     </Card>
   );
@@ -1439,15 +1532,14 @@ function TenantHomeFact({
   label: string;
   value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
+  const frost = isDark ? "rgba(15, 23, 42, 0.78)" : "rgba(255, 255, 255, 0.82)";
 
   return (
     <View
       style={{
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
-        borderRadius: radii.lg,
-        borderWidth: 1,
+        backgroundColor: frost,
+        borderRadius: 8,
         flex: 1,
         gap: spacing.xs,
         minWidth: 0,
@@ -1540,7 +1632,11 @@ function OwnerHome({
   const [tab, setTab] = useState<OwnerTab>("workspace");
   const workspaceRole: "Owner" | "Manager" = account === "manager" ? "Manager" : "Owner";
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
-  const selectorPanelOpen = selectorOpen || !selectedProperty;
+  // Before a property is chosen, the list is the primary content rather than a
+  // dropdown. Deriving this state prevents the one-frame collapsed picker that
+  // appeared while the effect below caught up with hydrated properties.
+  const selectorOpenForDisplay = selectorOpen || (!selectedProperty && properties.length > 1);
+  const selectorPanelOpen = selectorOpenForDisplay || !selectedProperty;
   const { dialog: routeGateDialog, gate: routeGate } = useRouteGate(selectedProperty?.id);
   const navigate = useCallback(
     (href: OwnerRoute) => {
@@ -1602,34 +1698,47 @@ function OwnerHome({
   };
 
   return (
-    <FadeInUp>
+    <View>
       <View
         style={{
           backgroundColor: colors.primary,
           // In the open state this blue surface is the selector card's outer
           // frame, so its lower corners use the same radius as that card.
+          borderBottomColor: colors.background,
           borderBottomLeftRadius: selectorPanelOpen ? 18 : 0,
           borderBottomRightRadius: selectorPanelOpen ? 18 : 0,
+          borderBottomWidth: selectorPanelOpen ? StyleSheet.hairlineWidth : 0,
           borderCurve: "continuous",
           gap: spacing.md,
-          marginHorizontal: -spacing.lg,
+          // Paint one point beyond each viewport edge so Android cannot reveal
+          // the scroll surface as a white sliver. The matching padding increase
+          // below keeps the property card and tab geometry exactly where it is.
+          marginHorizontal: -spacing.lg - 1,
+          // The greeting header and this selector surface are painted by
+          // separate native views. Overlap them by one point so Android cannot
+          // expose a raster seam between two otherwise identical blue fills.
+          marginTop: -1,
           overflow: selectorPanelOpen ? "hidden" : "visible",
           // The closed tab bar draws its entire blue-to-page boundary itself.
           // Extra header padding would leave a separate blue baseline beneath it.
           paddingBottom: selectorPanelOpen ? spacing.md : 0,
-          paddingHorizontal: spacing.lg,
+          paddingHorizontal: spacing.lg + 1,
         }}
       >
         <OwnerPropertyPicker
-          open={selectorOpen}
+          open={selectorOpenForDisplay}
           onSelect={selectProperty}
           renderOptions={false}
           properties={properties}
           selectedProperty={selectedProperty}
           workspaceRole={workspaceRole}
-          onToggle={() => setSelectorOpen((currentValue) => !currentValue)}
+          onToggle={() => {
+            if (selectedProperty) {
+              setSelectorOpen((currentValue) => !currentValue);
+            }
+          }}
         />
-        {selectedProperty && !selectorOpen ? <OwnerTabBar onChange={setTab} tab={tab} /> : null}
+        {selectedProperty && !selectorOpenForDisplay ? <OwnerTabBar onChange={setTab} tab={tab} /> : null}
       </View>
 
       <View
@@ -1642,7 +1751,7 @@ function OwnerHome({
         {/* The open picker takes the selected tab's content slot. The tab
             switcher remains steady while the old property's workspace and
             dashboard disappear until a new property is chosen. */}
-        {selectorOpen && properties.length > 1 ? (
+        {selectorOpenForDisplay && properties.length > 1 ? (
           <>
             <OwnerPropertyOptions
               onSelect={selectProperty}
@@ -1660,7 +1769,7 @@ function OwnerHome({
           </>
         ) : null}
 
-        {selectedProperty && !selectorOpen && dashboardQuery.isFetching && !dashboard ? (
+        {selectedProperty && !selectorOpenForDisplay && dashboardQuery.isFetching && !dashboard ? (
           tab === "dashboard" ? (
             <OwnerDashboardDataSkeleton />
           ) : (
@@ -1673,7 +1782,7 @@ function OwnerHome({
           )
         ) : null}
 
-        {selectedProperty && !selectorOpen && dashboard ? (
+        {selectedProperty && !selectorOpenForDisplay && dashboard ? (
           tab === "dashboard" ? (
             <DashboardTab dashboard={dashboard} />
           ) : (
@@ -1682,7 +1791,7 @@ function OwnerHome({
         ) : null}
         {routeGateDialog}
       </View>
-    </FadeInUp>
+    </View>
   );
 }
 
@@ -1693,7 +1802,14 @@ function DashboardGlyph({ color, size }: LucideProps) {
 
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
   const { colors, fonts } = useTheme();
-  const [tabBarSize, setTabBarSize] = useState({ height: 0, width: 0 });
+  const { width: windowWidth } = useWindowDimensions();
+  // The tab row has a fixed 56-point height and spans the screen minus the
+  // page gutters. Seed those dimensions so its SVG is present on the very
+  // first frame; onLayout still corrects them if the host is ever narrower.
+  const [tabBarSize, setTabBarSize] = useState(() => ({
+    height: 56,
+    width: Math.max(0, windowWidth - spacing.lg * 2),
+  }));
   const options: { icon: ComponentType<LucideProps>; label: string; value: OwnerTab }[] = [
     { icon: LayoutGrid, label: "Workspace", value: "workspace" },
     { icon: DashboardGlyph, label: "Dashboard", value: "dashboard" },
@@ -1751,18 +1867,25 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
           width={canvasWidth}
         >
           <Rect fill={colors.primary} height={shapeHeight} width={canvasWidth} x={0} y={0} />
+          {/* Fills only, no outline. The two fills meet cleanly on their own. */}
           <Path d={pageShape} fill={colors.background} />
-          <Path
-            d={contourPath}
-            fill="none"
-            stroke={colors.primaryDeep}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeOpacity={0.65}
-            strokeWidth={1.5}
-          />
         </Svg>
       ) : null}
+      <View
+        pointerEvents="none"
+        style={{
+          backgroundColor: colors.background,
+          bottom: -1,
+          // Straddle the SVG/page boundary instead of ending on it. This
+          // covers both its final raster row and any half-pixel seam beneath
+          // the unselected tab on high-density Android screens.
+          height: 2,
+          left: -spacing.lg - edgeBleed,
+          position: "absolute",
+          right: -spacing.lg - edgeBleed,
+          zIndex: 1,
+        }}
+      />
 
       {options.map((option) => {
         const active = option.value === tab;
@@ -3065,7 +3188,6 @@ function OwnerPropertyPicker({
   const { colors, fonts, isDark, type } = useTheme();
   const isManager = workspaceRole === "Manager";
   const hasMultipleProperties = properties.length > 1;
-  const eyebrowLabel = isManager ? "Managed property" : "Active property";
   const selectorTitle = selectedProperty?.name ?? (isManager ? "Select managed property" : "Select property");
   const selectorSubtitle = selectedProperty
     ? [selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")
@@ -3139,14 +3261,30 @@ function OwnerPropertyPicker({
             third, and boxing a glyph inside a card inside a page is one edge
             too many. Without the border it can take the tile's full width
             instead of sitting shrunk in the middle of it. */}
-        <PropertyArtwork size={42} />
+        <View style={{ alignItems: "center", alignSelf: "flex-start", marginTop: -3, width: 42 }}>
+          <PropertyArtwork size={selectedProperty ? 36 : 42} />
+          {selectedProperty ? (
+            <View style={{ height: 18, marginTop: 3, width: 18 }}>
+              <Ionicons color={colors.primary} name="location-sharp" size={18} />
+              <View
+                pointerEvents="none"
+                style={{
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 3,
+                  height: 5,
+                  left: 6.5,
+                  position: "absolute",
+                  top: 4,
+                  width: 5,
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
         <View style={{ flex: 1, gap: spacing.xxs }}>
           {/* Ink, not the usual kicker grey. These two lines now sit on a
               photograph, and a light grey that reads fine on flat white
               dissolves into the building behind it. */}
-          <Text style={[type.eyebrow, { color: selectedProperty ? colors.inkSoft : colors.primary }]}>
-            {eyebrowLabel}
-          </Text>
           <Text
             numberOfLines={1}
             style={{
@@ -3162,14 +3300,6 @@ function OwnerPropertyPicker({
             {selectorSubtitle}
           </Text>
         </View>
-        {hasMultipleProperties ? (
-          <ChevronDown
-            color={colors.muted}
-            size={20}
-            strokeWidth={2.2}
-            style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }}
-          />
-        ) : null}
       </AnimatedPressable>
 
       {renderOptions && open && hasMultipleProperties ? (
@@ -3219,17 +3349,7 @@ function OwnerPropertyPicker({
                   padding: spacing.md,
                 }}
               >
-                <View style={{ flex: 1, gap: spacing.xxs }}>
-                  <Text style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink }]}>
-                    {property.name}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[type.caption, { color: colors.muted, fontSize: 11 }]}
-                  >
-                    {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
-                  </Text>
-                </View>
+                <OwnerPropertyOptionContent property={property} selected={selected} />
               </AnimatedPressable>
             );
           })}
@@ -3248,7 +3368,7 @@ function OwnerPropertyOptions({
   properties: OwnerProperty[];
   selectedProperty: OwnerProperty | null;
 }) {
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
 
   return (
     <View
@@ -3280,15 +3400,7 @@ function OwnerPropertyOptions({
               padding: spacing.md,
             }}
           >
-            <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink }]}>
-                {property.name}
-              </Text>
-              <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
-                {[property.city, property.state, property.pincode].filter(Boolean).join(", ")}
-              </Text>
-            </View>
-            {selected ? <Check color={colors.terracotta} size={18} strokeWidth={2.4} /> : null}
+            <OwnerPropertyOptionContent property={property} selected={selected} />
           </AnimatedPressable>
         );
       })}
@@ -3375,70 +3487,79 @@ function CurrentLocationCard({
 }
 
 function AddressInfoLine({ address }: { address: string }) {
-  const { colors, type } = useTheme();
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copiedTimer.current) {
-        clearTimeout(copiedTimer.current);
-      }
-    };
-  }, []);
-
-  const copyAddress = async () => {
-    await Clipboard.setStringAsync(address);
-    setCopied(true);
-
-    if (copiedTimer.current) {
-      clearTimeout(copiedTimer.current);
-    }
-
-    copiedTimer.current = setTimeout(() => {
-      setCopied(false);
-      copiedTimer.current = null;
-    }, 3000);
-  };
+  const { colors, fonts, isDark, type } = useTheme();
+  const frost = isDark ? "rgba(15, 23, 42, 0.78)" : "rgba(255, 255, 255, 0.82)";
 
   return (
-    <View style={{ gap: spacing.xs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <MapPin color={colors.kicker} size={15} strokeWidth={2.2} />
-        <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-          {address}
-        </Text>
-        <AnimatedPressable
-          accessibilityLabel="Copy property address"
-          onPress={copyAddress}
-          style={{
-            alignItems: "center",
-            height: 34,
-            justifyContent: "center",
-            width: 34,
-          }}
-        >
-          <ClipboardIcon color={colors.ink} size={18} strokeWidth={2.1} />
-        </AnimatedPressable>
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: frost,
+        borderRadius: 8,
+        flexDirection: "row",
+        gap: spacing.sm,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <MapPin color={colors.danger} size={15} strokeWidth={2.2} />
+      <Text
+        style={[
+          type.description,
+          {
+            color: colors.ink,
+            flex: 1,
+            fontFamily: fonts.sansBold,
+            fontSize: 12.5,
+            lineHeight: 17,
+          },
+        ]}
+      >
+        {address}
+      </Text>
+    </View>
+  );
+}
+
+function OwnerPropertyOptionContent({ property, selected }: { property: OwnerProperty; selected: boolean }) {
+  const { colors, fonts, type } = useTheme();
+  const address = [property.city, property.state, property.pincode].filter(Boolean).join(", ");
+  const typeLabel = property.type === "PG" ? "PG" : humanizeToken(property.type);
+
+  return (
+    <>
+      <View style={{ alignItems: "center", gap: spacing.xs, width: 24 }}>
+        <Ionicons color={colors.muted} name="home-outline" size={24} />
+        <MapPin color={colors.muted} size={14} strokeWidth={2.2} />
       </View>
-      {copied ? (
-        <View
-          style={{
-            alignSelf: "flex-end",
-            backgroundColor: "#E5F5EA",
-            borderColor: "#A9D7B7",
-            borderRadius: 999,
-            borderWidth: 1,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 5,
-          }}
-        >
-          <Text style={[type.eyebrow, { color: "#1F7A3A", fontSize: 10 }]}>
-            Copied to clipboard
+      <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <Text
+            numberOfLines={1}
+            style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink, flexShrink: 1 }]}
+          >
+            {property.name}
+          </Text>
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderRadius: 999,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 3,
+            }}
+          >
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10, lineHeight: 13 }}>
+              {typeLabel}
+            </Text>
+          </View>
+        </View>
+        <View style={{ alignItems: "center", flexDirection: "row", minWidth: 0 }}>
+          <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1, fontSize: 11 }]}>
+            {address}
           </Text>
         </View>
-      ) : null}
-    </View>
+      </View>
+    </>
   );
 }
 

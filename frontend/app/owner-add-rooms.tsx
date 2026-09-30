@@ -549,9 +549,8 @@ function PathCard({
           <View
             style={{
               alignItems: "center",
-              borderColor: colors.ink,
+              backgroundColor: colors.surfaceSunken,
               borderRadius: 999,
-              borderWidth: 1.5,
               height: 34,
               justifyContent: "center",
               width: 34,

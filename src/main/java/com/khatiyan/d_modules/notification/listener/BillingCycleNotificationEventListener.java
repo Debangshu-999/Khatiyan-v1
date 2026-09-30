@@ -23,9 +23,11 @@ import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 public class BillingCycleNotificationEventListener {
 
     private final NotificationModule notificationModule;
+    private final NotificationReferenceCodes codes;
 
-    public BillingCycleNotificationEventListener(NotificationModule notificationModule) {
+    public BillingCycleNotificationEventListener(NotificationModule notificationModule, NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
+        this.codes = codes;
     }
 
     @ApplicationModuleListener
@@ -39,6 +41,7 @@ public class BillingCycleNotificationEventListener {
 
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());
         data.put("tenantUserId", event.tenantUserId().toString());
@@ -79,6 +82,7 @@ public class BillingCycleNotificationEventListener {
 
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());
         data.put("tenantUserId", event.tenantUserId().toString());
@@ -113,6 +117,7 @@ public class BillingCycleNotificationEventListener {
 
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("manualPaymentId", event.manualPaymentId().toString());
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());
@@ -146,6 +151,7 @@ public class BillingCycleNotificationEventListener {
 
         Map<String, String> data = new LinkedHashMap<>();
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("lineItemId", event.lineItemId().toString());
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());

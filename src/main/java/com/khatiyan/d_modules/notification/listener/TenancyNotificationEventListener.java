@@ -36,12 +36,15 @@ public class TenancyNotificationEventListener {
 
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
+    private final NotificationReferenceCodes codes;
 
     public TenancyNotificationEventListener(
             NotificationModule notificationModule,
-            PropertyModule propertyModule) {
+            PropertyModule propertyModule,
+            NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
         this.propertyModule = propertyModule;
+        this.codes = codes;
     }
 
     @ApplicationModuleListener
@@ -402,6 +405,7 @@ public class TenancyNotificationEventListener {
     private Map<String, String> baseTenancyData(UUID tenancyId, UUID tenantUserId, PropertyResponse property) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("tenancyId", tenancyId.toString());
+        codes.putTenancy(data, tenancyId);
         // Absent on a guest stay, which has no account. Omitted rather than
         // written as "null", because a client reading this map wants to know
         // there is no tenant to open, not to be handed the string.

@@ -3,6 +3,7 @@ import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSynth
 import { LinearGradient } from "expo-linear-gradient";
 import { Info } from "lucide-react-native";
 
+import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
@@ -204,9 +205,7 @@ export default function OwnerPaymentClaimsScreen() {
               </Text>
             </View>
           ) : claims.length > PAGE_SIZE ? (
-            <Text style={[type.caption, { color: colors.kicker, paddingVertical: spacing.sm, textAlign: "center" }]}>
-              That is every claim raised this month.
-            </Text>
+            <ListEnd message="That is every claim raised this month." />
           ) : null}
         </>
       )}

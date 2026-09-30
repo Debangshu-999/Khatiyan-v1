@@ -21,6 +21,8 @@ type EmptyStateProps = {
    * header above it, rather than falling back to a generic mark.
    */
   artwork?: ImageSourcePropType;
+  /** Visual gap between an image artwork and the title block. */
+  artworkTextGap?: number;
   icon?: ComponentType<LucideProps>;
   title: string;
   description: string;
@@ -44,7 +46,7 @@ type EmptyStateProps = {
  * "Property required") sitting directly above a title that said the same thing
  * in more words.
  */
-export function EmptyState({ action, artwork, artworkNode, compact, description, icon: Icon, title }: EmptyStateProps) {
+export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spacing.sm, compact, description, icon: Icon, title }: EmptyStateProps) {
   const { colors, fonts, type } = useTheme();
 
   // Roughly what is left below a header, filter row and section heading.
@@ -75,7 +77,7 @@ export function EmptyState({ action, artwork, artworkNode, compact, description,
           accessibilityIgnoresInvertColors
           resizeMode="contain"
           source={artwork}
-          style={{ height: 132, marginBottom: -spacing.sm, width: 132 }}
+          style={{ height: 132, marginBottom: artworkTextGap - spacing.md, width: 132 }}
         />
       ) : Icon ? (
         <View style={{ alignItems: "center", justifyContent: "center", marginBottom: -spacing.xs }}>

@@ -12,6 +12,8 @@ type MetricTileProps = {
   value: string;
   hint?: string;
   icon?: ComponentType<LucideProps>;
+  /** Places side icons in a soft semantic circle instead of leaving them bare. */
+  iconFilled?: boolean;
   iconTone?: "primary" | "success" | "violet" | "warning" | "danger";
   /**
    * Where the glyph sits.
@@ -31,7 +33,7 @@ type MetricTileProps = {
   dense?: boolean;
 };
 
-export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "top", iconTone = "primary", label, surfaceTone = "default", tone = "default", value }: MetricTileProps) {
+export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false, iconPlacement = "top", iconTone = "primary", label, surfaceTone = "default", tone = "default", value }: MetricTileProps) {
   const { colors, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
   // Most tiles stay white. Screens that need more separation from a white page
@@ -68,6 +70,16 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "t
           : iconTone === "danger"
             ? colors.danger
             : colors.primary;
+  const iconBackgroundColor =
+    iconTone === "success"
+      ? colors.successSoft
+      : iconTone === "warning"
+        ? colors.warningSoft
+        : iconTone === "danger"
+          ? colors.dangerSoft
+          : iconTone === "violet"
+            ? colors.surfaceSunken
+            : colors.primarySoft;
 
   return (
     <View
@@ -96,17 +108,22 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "t
       <View
         style={
           iconPlacement === "side" && Icon
-            ? { alignItems: "center", flexDirection: "row", gap: spacing.xs }
+            ? { alignItems: "center", flexDirection: "row", gap: iconFilled ? spacing.sm : spacing.xs }
             : undefined
         }
       >
         {Icon && iconPlacement === "side" ? (
-          <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
-            {/* Ink, not the tone colour. In the rail the glyph sits directly
-                beside the label it names, and a coloured mark there competed
-                with the number for the eye — the tone still carries in the
-                value, which is where the reading actually happens. */}
-            <Icon color={iconColor} size={38} strokeWidth={1.75} />
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: iconFilled ? iconBackgroundColor : "transparent",
+              borderRadius: 999,
+              height: iconFilled ? 52 : undefined,
+              justifyContent: "center",
+              width: iconFilled ? 52 : 44,
+            }}
+          >
+            <Icon color={iconColor} size={iconFilled ? 28 : 38} strokeWidth={iconFilled ? 2 : 1.75} />
           </View>
         ) : null}
 
@@ -127,7 +144,7 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "t
               app-wide overflow-label rule; in the rail it wraps to two lines
               instead, which is what the billing tile does. */}
           {iconPlacement === "side" ? (
-            <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+            <Text numberOfLines={iconFilled ? 1 : 2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
               {label}
             </Text>
           ) : (
@@ -154,7 +171,7 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconPlacement = "t
               tile, which pushed the number to the top of the icon instead of
               sitting level with it. */}
           {hint && iconPlacement === "side" ? (
-            <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 15 }]}>
+            <Text numberOfLines={iconFilled ? 1 : 2} style={[type.caption, { color: colors.muted, fontSize: iconFilled ? 10.5 : 11, lineHeight: 15 }]}>
               {hint}
             </Text>
           ) : null}

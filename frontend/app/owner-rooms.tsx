@@ -12,7 +12,6 @@ import {
   AirVent,
   Bed,
   BedDouble,
-  BedSingle,
   CalendarDays,
   ChevronDown,
   ChevronUp,
@@ -222,13 +221,13 @@ export default function OwnerRoomsScreen() {
       {selectedProperty ? (
         <>
           {roomsLoading ? <OwnerRoomMetricsSkeleton /> : <><View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={DoorClosed} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} tone="primary" />
-            <MetricTile icon={BedDouble} iconPlacement="side" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
+            <MetricTile icon={DoorClosed} iconFilled iconPlacement="side" iconTone="primary" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} />
+            <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="primary" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={Wrench} iconPlacement="side" label="In service" value={String(rooms.length - maintenanceCount)} hint={`${maintenanceCount} under maintenance`} />
-            <MetricTile icon={BedSingle} iconPlacement="side" label="Occupied" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
+            <MetricTile icon={Wrench} iconFilled iconPlacement="side" iconTone="success" label="In service" value={String(rooms.length - maintenanceCount)} hint={`${maintenanceCount} unavailable`} />
+            <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="warning" label="Occupied" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
           </View></>}
 
           {/* Both paths kept. One room is the common act and wants one field;
@@ -289,8 +288,8 @@ export default function OwnerRoomsScreen() {
                   }
                 >
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <MetricTile icon={DoorOpen} iconPlacement="side" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} tone="primary" />
-                    <MetricTile icon={BedDouble} iconPlacement="side" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
+                    <MetricTile icon={DoorOpen} iconFilled iconPlacement="side" iconTone="success" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} />
+                    <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="warning" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
                   </View>
                   {visibleFloorRooms.length === 0 ? (
                     <EmptyState

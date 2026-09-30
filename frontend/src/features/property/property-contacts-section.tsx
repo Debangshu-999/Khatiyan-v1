@@ -11,7 +11,7 @@ import { SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
 import {
   useAddPropertyContactManagerMutation,
   useListPropertyContactsQuery,
@@ -98,9 +98,11 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
         </View>
       ) : null}
 
-      <Text style={[type.description, { color: colors.muted }]}>
-        The owner is always listed and cannot be removed. Managers you add here appear on the public listing.
-      </Text>
+      <NoticeBar
+        message="The owner cannot be removed. Managers you add here appear on the public listing."
+        title="Owner is always listed"
+        tone="info"
+      />
 
       {pickerOpen ? (
         <ManagerPickerSheet

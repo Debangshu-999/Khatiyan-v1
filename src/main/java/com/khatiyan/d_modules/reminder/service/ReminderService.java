@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationAudience;
 import com.khatiyan.d_modules.notification.model.NotificationCategory;
@@ -39,6 +40,7 @@ public class ReminderService {
     private final ReminderRecordRepository reminderRecordRepository;
     private final NotificationModule notificationModule;
     private final TenancyModule tenancyModule;
+    private final BillingModule billingModule;
     private final TransactionTemplate transactionTemplate;
     private final int batchSize;
 
@@ -46,11 +48,13 @@ public class ReminderService {
             ReminderRecordRepository reminderRecordRepository,
             NotificationModule notificationModule,
             TenancyModule tenancyModule,
+            BillingModule billingModule,
             TransactionTemplate transactionTemplate,
             @Value("${app.reminder.processing-batch-size:100}") int batchSize) {
         this.reminderRecordRepository = reminderRecordRepository;
         this.notificationModule = notificationModule;
         this.tenancyModule = tenancyModule;
+        this.billingModule = billingModule;
         this.transactionTemplate = transactionTemplate;
         this.batchSize = batchSize;
     }
@@ -148,6 +152,12 @@ public class ReminderService {
                         tenancyModule.findById(reminder.getTenancyId())
                                 .map(TenancyResponse::referenceCode)
                                 .ifPresent(code -> data.put("tenancyReferenceCode", code));
+                    }
+                    // And the bill's own short code, so a bill reminder never
+                    // shows the bill's id either (2026-09-30).
+                    if (reminder.getSourceType() == ReminderSourceType.BILLING_CYCLE && reminder.getSourceId() != null) {
+                        billingModule.findCycleReferenceCode(reminder.getSourceId())
+                                .ifPresent(code -> data.put("billReferenceCode", code));
                     }
 
                     notificationModule.notifyUser(

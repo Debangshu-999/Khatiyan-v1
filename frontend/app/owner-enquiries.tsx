@@ -4,6 +4,7 @@ import { History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
 
 import { openDialer } from "@/lib/dial";
 
+import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -28,7 +29,9 @@ import { useTheme } from "@/theme/use-theme";
 
 // The screen's empty state. It used to be the header artwork, with a borrowed
 // concerns illustration for the empty state.
-const ENQUIRIES_ILLUSTRATION = require("../assets/workspace/enquiries.png");
+// Shared with the Property workspace card so both entry point and empty state
+// use the same enquiries visual language.
+const ENQUIRIES_ILLUSTRATION = require("../assets/property-control/enquiries.png");
 
 type EnquiryFilter = "new" | "all";
 
@@ -170,6 +173,7 @@ export default function OwnerEnquiriesScreen() {
                   : "People who find this property in discovery can ask a question from its profile."
               }
               artwork={ENQUIRIES_ILLUSTRATION}
+              artworkTextGap={-6}
               title={enquiries.length > 0 ? "All answered" : "No enquiries yet"}
             />
           ) : (
@@ -185,9 +189,7 @@ export default function OwnerEnquiriesScreen() {
               {/* The list ends by saying so, rather than with a pager whose
                   numbers nobody was using to navigate. */}
               {!hasMore ? (
-                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-                  That&apos;s all for now
-                </Text>
+                <ListEnd />
               ) : null}
             </>
           )}

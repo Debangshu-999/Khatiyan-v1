@@ -24,9 +24,11 @@ import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 public class BillingNotificationEventListener {
 
     private final NotificationModule notificationModule;
+    private final NotificationReferenceCodes codes;
 
-    public BillingNotificationEventListener(NotificationModule notificationModule) {
+    public BillingNotificationEventListener(NotificationModule notificationModule, NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
+        this.codes = codes;
     }
 
     @ApplicationModuleListener
@@ -39,6 +41,7 @@ public class BillingNotificationEventListener {
         data.put("lineItemId", event.lineItemId().toString());
         if (event.billingCycleId() != null) {
             data.put("billingCycleId", event.billingCycleId().toString());
+            codes.putBill(data, event.billingCycleId());
         }
         data.put("tenancyId", event.tenancyId().toString());
         data.put("propertyId", event.propertyId().toString());

@@ -46,6 +46,8 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenantLookupResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TransferTenancyRoomRequest;
 import com.khatiyan.d_modules.tenancy.api.dto.UpdateTenancyRequest;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
+import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
+import com.khatiyan.d_modules.tenancy.api.dto.StayEnding;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
@@ -172,9 +174,11 @@ public class TenancyController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @RequestParam(required = false) String query,
+            @RequestParam(required = false) TenancyStatus status,
+            @RequestParam(required = false) StayEnding ending,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return tenancyService.listActiveForManagedProperty(user.userId(), propertyId, query, page, size);
+        return tenancyService.listActiveForManagedProperty(user.userId(), propertyId, query, status, ending, page, size);
     }
 
     @GetMapping("/properties/{propertyId}/past")

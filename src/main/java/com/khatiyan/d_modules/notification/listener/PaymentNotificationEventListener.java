@@ -22,9 +22,11 @@ import com.khatiyan.d_modules.payment.event.PaymentSucceededEvent;
 public class PaymentNotificationEventListener {
 
     private final NotificationModule notificationModule;
+    private final NotificationReferenceCodes codes;
 
-    public PaymentNotificationEventListener(NotificationModule notificationModule) {
+    public PaymentNotificationEventListener(NotificationModule notificationModule, NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
+        this.codes = codes;
     }
 
     @ApplicationModuleListener
@@ -79,6 +81,7 @@ public class PaymentNotificationEventListener {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("ownerTransferId", event.ownerTransferId().toString());
         data.put("billingCycleId", event.billingCycleId().toString());
+        codes.putBill(data, event.billingCycleId());
         data.put("propertyId", event.propertyId().toString());
         data.put("amountPaise", Long.toString(event.ownerNetPaise()));
         if (event.currency() != null) {
@@ -108,6 +111,7 @@ public class PaymentNotificationEventListener {
         data.put("paymentOrderId", paymentOrderId.toString());
         if (billingCycleId != null) {
             data.put("billingCycleId", billingCycleId.toString());
+            codes.putBill(data, billingCycleId);
         }
         data.put("tenancyId", tenancyId.toString());
         data.put("propertyId", propertyId.toString());

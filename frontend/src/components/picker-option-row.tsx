@@ -26,6 +26,7 @@ import { useTheme } from "@/theme/use-theme";
  * control of their own.
  */
 export function PickerOptionRow({
+  content,
   first: _first,
   icon,
   label,
@@ -33,7 +34,13 @@ export function PickerOptionRow({
   onPress,
   selected,
   subtitle,
+  trailing,
 }: {
+  /**
+   * Drawn in place of the label text, such as the status chip a card shows
+   * (2026-09-30). The label still names the row for screen readers.
+   */
+  content?: ReactNode;
   /** Kept for callers from the ruled-row days; rows no longer draw a rule. */
   first?: boolean;
   /** Drawn before the label. Leave it out for a words-only picker. */
@@ -44,11 +51,14 @@ export function PickerOptionRow({
   selected: boolean;
   /** A second line under the label — a price, a bed count, a description. */
   subtitle?: string;
+  /** Drawn at the right of the row, such as a count. */
+  trailing?: ReactNode;
 }) {
   const { colors, fonts, type } = useTheme();
 
   return (
     <AnimatedPressable
+      accessibilityLabel={content ? label : undefined}
       accessibilityRole={mode === "multi" ? "checkbox" : "radio"}
       accessibilityState={mode === "multi" ? { checked: selected } : { selected }}
       onPress={onPress}
@@ -66,8 +76,8 @@ export function PickerOptionRow({
       }}
     >
       {icon}
-      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text
+      <View style={{ alignItems: content ? "flex-start" : undefined, flex: 1, gap: 2, minWidth: 0 }}>
+        {content ?? <Text
           style={{
             color: selected ? colors.primaryDeep : colors.ink,
             fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
@@ -75,13 +85,14 @@ export function PickerOptionRow({
           }}
         >
           {label}
-        </Text>
+        </Text>}
         {subtitle ? (
           <Text numberOfLines={1} style={[type.description, { color: colors.muted }]}>
             {subtitle}
           </Text>
         ) : null}
       </View>
+      {trailing}
     </AnimatedPressable>
   );
 }

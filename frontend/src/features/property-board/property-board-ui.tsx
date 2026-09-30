@@ -268,7 +268,18 @@ export function PropertyBoardHomeCard({
             >
               Property Board
             </Text>
-            <ChevronRight color={colors.primary} size={18} strokeWidth={2.2} />
+            <View
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surfaceSunken,
+                borderRadius: 999,
+                height: 32,
+                justifyContent: "center",
+                width: 32,
+              }}
+            >
+              <ChevronRight color={colors.ink} size={18} strokeWidth={2.2} />
+            </View>
           </View>
         </View>
       </AnimatedPressable>
@@ -320,7 +331,6 @@ export function PropertyBoardHomeCard({
                   {item.body}
                 </Text>
               </View>
-              <ChevronRight color={colors.primary} size={16} strokeWidth={2.2} />
             </AnimatedPressable>
           ))}
         </View>

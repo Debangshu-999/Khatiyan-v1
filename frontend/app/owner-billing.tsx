@@ -95,14 +95,31 @@ type BillingStatusFilter =
   | "PAID"
   | "LATE_PAY";
 
-const BILLING_STATUS_FILTER_OPTIONS: { label: string; value: BillingStatusFilter }[] = [
+/**
+ * The status picker shows each status as the chip its bill card shows (user,
+ * 2026-09-30), drawn by BillStatusPill from a minimal bill in that state, the
+ * way the status legend does. "Any status" has no chip and stays text.
+ */
+const BILLING_STATUS_FILTER_OPTIONS: {
+  label: string;
+  sample?: Pick<BillingCycle, "paidAt" | "rentDueDate" | "status">;
+  value: BillingStatusFilter;
+}[] = [
   { label: "Any status", value: "ALL" },
-  { label: "Upcoming", value: "UPCOMING" },
-  { label: "Unpaid", value: "UNPAID" },
-  { label: "Overdue", value: "OVERDUE" },
-  { label: "Awaiting", value: "CONFIRMATION_PENDING" },
-  { label: "Paid", value: "PAID" },
-  { label: "Late Pay", value: "LATE_PAY" },
+  { label: "Upcoming", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "UPCOMING" }, value: "UPCOMING" },
+  { label: "Unpaid", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "UNPAID" }, value: "UNPAID" },
+  { label: "Overdue", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "OVERDUE" }, value: "OVERDUE" },
+  {
+    label: "Awaiting",
+    sample: { paidAt: null, rentDueDate: "2026-01-05", status: "CONFIRMATION_PENDING" },
+    value: "CONFIRMATION_PENDING",
+  },
+  { label: "Paid", sample: { paidAt: "2026-01-04T10:00:00Z", rentDueDate: "2026-01-05", status: "PAID" }, value: "PAID" },
+  {
+    label: "Late Pay",
+    sample: { paidAt: "2026-01-09T10:00:00Z", rentDueDate: "2026-01-05", status: "PAID" },
+    value: "LATE_PAY",
+  },
 ];
 
 // Both controls in a bill card's action row are locked to this, so the circle
@@ -970,6 +987,7 @@ function BillingStatusFilterDialog({
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {BILLING_STATUS_FILTER_OPTIONS.map((option) => (
               <PickerOptionRow
+                content={option.sample ? <BillStatusPill cycle={option.sample as BillingCycle} /> : undefined}
                 key={option.value}
                 label={option.label}
                 onPress={() => {

@@ -3,6 +3,7 @@ import { ActivityIndicator, Modal, Pressable, Text, View, type NativeScrollEvent
 import { useLocalSearchParams } from "expo-router";
 import { SlidersHorizontal, X } from "lucide-react-native";
 
+import { ListEnd } from "@/components/list-end";
 import { EmptyState } from "@/components/empty-state";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { PickerOptionRow } from "@/components/picker-option-row";
@@ -232,9 +233,7 @@ export default function TenancyBillingHistoryScreen() {
               <ActivityIndicator color={colors.muted} size="small" />
             </View>
           ) : shown.length > PAGE_SIZE ? (
-            <Text style={[type.description, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}>
-              That is every past bill on this stay.
-            </Text>
+            <ListEnd message="That is every past bill on this stay." />
           ) : null}
         </>
       )}

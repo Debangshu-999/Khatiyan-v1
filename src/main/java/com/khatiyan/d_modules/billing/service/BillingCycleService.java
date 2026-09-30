@@ -1575,6 +1575,12 @@ public class BillingCycleService {
                 endDate)));
     }
 
+    /** A bill's short code (BIL-), for messages that must never show its id. */
+    @Transactional(readOnly = true)
+    public Optional<String> findReferenceCode(UUID billingCycleId) {
+        return billingCycleRepository.findById(billingCycleId).map(BillingCycle::getReferenceCode);
+    }
+
     @Transactional(readOnly = true)
     public List<BillingCycleResponse> findOverdueCyclesForReminders() {
         return toResponses(withoutPendingExit(billingCycleRepository.findOverdueCycles()));

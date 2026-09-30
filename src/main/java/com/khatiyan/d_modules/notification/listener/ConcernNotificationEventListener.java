@@ -31,12 +31,15 @@ public class ConcernNotificationEventListener {
 
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
+    private final NotificationReferenceCodes codes;
 
     public ConcernNotificationEventListener(
             NotificationModule notificationModule,
-            PropertyModule propertyModule) {
+            PropertyModule propertyModule,
+            NotificationReferenceCodes codes) {
         this.notificationModule = notificationModule;
         this.propertyModule = propertyModule;
+        this.codes = codes;
     }
 
     @ApplicationModuleListener
@@ -179,6 +182,7 @@ public class ConcernNotificationEventListener {
     private Map<String, String> baseConcernData(UUID concernId, PropertyResponse property, String concernTitle) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("concernId", concernId.toString());
+        codes.putConcern(data, concernId);
         data.put("propertyId", property.id().toString());
         data.put("propertyName", property.name());
         if (concernTitle != null) {

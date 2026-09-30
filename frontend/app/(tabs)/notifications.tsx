@@ -5,6 +5,7 @@ import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSynth
 import { Bell, BellOff, ChevronRight } from "lucide-react-native";
 import { useGetNudgeUnreadCountQuery, NUDGE_REFETCH_OPTIONS } from "@/store/services/nudge-api";
 
+import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -265,9 +266,7 @@ export default function NotificationsScreen() {
               {hasMore ? (
                 <ActivityIndicator color={colors.muted} />
               ) : (
-                <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>
-                  That&apos;s all for now
-                </Text>
+                <ListEnd />
               )}
             </View>
           )}

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Activity, AlertCircle, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
+import { Activity, AlertCircle, ArrowUp, CheckCircle2, ChevronDown, ChevronUp, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
 
 import { Image, type ImageSourcePropType } from "react-native";
 
@@ -13,6 +13,8 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
+import { PickerOptionRow } from "@/components/picker-option-row";
+import { useHardwareBack } from "@/components/use-hardware-back";
 import { HeaderGradient } from "@/components/header-gradient";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -31,11 +33,11 @@ import {
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { useToast } from "@/components/toast";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-type PropertyTab = "available" | "escalated";
-type MyTab = "review" | "progress" | "reopened" | "history";
+type PropertyTab = "all" | "available" | "escalated";
+type MyTab = "all" | "review" | "progress" | "reopened" | "history";
 type QueueTab = "property" | "mine";
 
 const CONCERNS_PER_PAGE = 8;
@@ -52,6 +54,7 @@ function pageOf(items: ConcernSummary[], page: number) {
 }
 
 function myTabHeadingText(tab: MyTab) {
+  if (tab === "all") return "All my concerns";
   if (tab === "review") return "Concerns under review";
   if (tab === "progress") return "Concerns in progress";
   if (tab === "reopened") return "Reopened concerns";
@@ -72,8 +75,8 @@ export default function OwnerConcernsScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
-  const [propertyTab, setPropertyTab] = useState<PropertyTab>("available");
-  const [myTab, setMyTab] = useState<MyTab>("review");
+  const [propertyTab, setPropertyTab] = useState<PropertyTab>("all");
+  const [myTab, setMyTab] = useState<MyTab>("all");
   const [queueTab, setQueueTab] = useState<QueueTab>("property");
   const [propertyHistoryOpen, setPropertyHistoryOpen] = useState(false);
 
@@ -105,6 +108,8 @@ export default function OwnerConcernsScreen() {
 
   const propertyAvailable = useMemo(() => sortLatest(propertyAvailableRaw), [propertyAvailableRaw]);
   const propertyEscalated = useMemo(() => sortByEscalation(propertyEscalatedRaw), [propertyEscalatedRaw]);
+  // "All" leads with what needs the owner: escalated first, then available.
+  const propertyAll = useMemo(() => [...propertyEscalated, ...propertyAvailable], [propertyAvailable, propertyEscalated]);
 
   const myConcerns = useMemo(() => {
     return (undertakenQuery.data ?? []).filter((concern) => concern.propertyId === selectedProperty?.id);
@@ -113,15 +118,20 @@ export default function OwnerConcernsScreen() {
   const myReopened = useMemo(() => myConcerns.filter((concern) => concern.reopened), [myConcerns]);
   const myInReview = useMemo(() => myConcerns.filter((concern) => concern.status === "UNDER_REVIEW" && !concern.reopened), [myConcerns]);
   const myInProgress = useMemo(() => myConcerns.filter((concern) => concern.status === "IN_PROGRESS" && !concern.reopened), [myConcerns]);
+  // "All" is the working queue only. Resolved-by-me stays its own History
+  // filter with its own count (user, 2026-09-30).
+  const myActive = useMemo(() => [...myReopened, ...myInReview, ...myInProgress], [myInProgress, myInReview, myReopened]);
   const myHistoryRaw = useMemo(() => {
     return (historyQuery.data?.items ?? []).filter((concern) => currentUserId && concern.resolvedByUserId === currentUserId);
   }, [currentUserId, historyQuery.data]);
 
-  const propertyConcerns = propertyTab === "available" ? propertyAvailable : propertyEscalated;
-  const propertyLoading = propertyTab === "available"
-    ? availableQuery.isFetching && !availableQuery.data
-    : escalatedQuery.isFetching && !escalatedQuery.data;
-  const myRawConcerns = myTab === "review" ? myInReview : myTab === "progress" ? myInProgress : myTab === "reopened" ? myReopened : myHistoryRaw;
+  const propertyConcerns = propertyTab === "all" ? propertyAll : propertyTab === "available" ? propertyAvailable : propertyEscalated;
+  const availableLoading = availableQuery.isFetching && !availableQuery.data;
+  const escalatedLoading = escalatedQuery.isFetching && !escalatedQuery.data;
+  const propertyLoading = propertyTab === "all"
+    ? availableLoading || escalatedLoading
+    : propertyTab === "available" ? availableLoading : escalatedLoading;
+  const myRawConcerns = myTab === "all" ? myActive : myTab === "review" ? myInReview : myTab === "progress" ? myInProgress : myTab === "reopened" ? myReopened : myHistoryRaw;
   const myVisibleConcerns = sortLatest(myRawConcerns);
   const myLoading = myTab === "history"
     ? historyQuery.isFetching && !historyQuery.data
@@ -235,12 +245,18 @@ export default function OwnerConcernsScreen() {
           <Section title="Concern queues">
             <ConcernQueueTabs onChange={setQueueTab} tab={queueTab} />
             {queueTab === "property" ? (
-              <View style={{ gap: spacing.md }}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
-                  <TabChip active={propertyTab === "available"} count={availableQuery.data ? propertyAvailableRaw.length : undefined} label="Available" onPress={() => setPropertyTab("available")} />
-                  <TabChip active={propertyTab === "escalated"} blink={propertyEscalatedRaw.length > 0} count={escalatedQuery.data ? propertyEscalatedRaw.length : undefined} label="Escalated" onPress={() => setPropertyTab("escalated")} />
-                </ScrollView>
-                <TabHeading count={propertyLoading ? undefined : propertyConcerns.length} text={propertyTab === "available" ? "Available concerns" : "Escalated concerns"} />
+              <FilteredQueue
+                blink={propertyEscalatedRaw.length > 0}
+                count={propertyLoading ? undefined : propertyConcerns.length}
+                heading={propertyTab === "all" ? "All concerns" : propertyTab === "available" ? "Available concerns" : "Escalated concerns"}
+                onChange={setPropertyTab}
+                options={[
+                  { count: availableQuery.data && escalatedQuery.data ? propertyAll.length : undefined, label: "All", value: "all" },
+                  { count: availableQuery.data ? propertyAvailableRaw.length : undefined, label: "Available", value: "available" },
+                  { count: escalatedQuery.data ? propertyEscalatedRaw.length : undefined, danger: true, label: "Escalated", value: "escalated" },
+                ]}
+                value={propertyTab}
+              >
                 <QueueWindow loading={propertyLoading}>
                   {propertyConcerns.length > 0 ? (
                     propertyPaged.items.map((concern) => (
@@ -261,7 +277,7 @@ export default function OwnerConcernsScreen() {
                     />
                   ) : null}
                 </QueueWindow>
-              </View>
+              </FilteredQueue>
             ) : !canWorkConcerns ? (
               // The tab still opens — hiding it would read as a bug. What it
               // shows is why it is empty, since a view-only manager can never
@@ -273,14 +289,19 @@ export default function OwnerConcernsScreen() {
                 description="Your access to concerns is view-only, so nothing can be assigned to you here. Ask the property owner if you need to work on them."
               />
             ) : (
-              <View style={{ gap: spacing.md }}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
-                  <TabChip active={myTab === "review"} count={undertakenQuery.data ? myInReview.length : undefined} label="In review" onPress={() => setMyTab("review")} />
-                  <TabChip active={myTab === "progress"} count={undertakenQuery.data ? myInProgress.length : undefined} label="In progress" onPress={() => setMyTab("progress")} />
-                  <TabChip active={myTab === "reopened"} count={undertakenQuery.data ? myReopened.length : undefined} label="Reopened" onPress={() => setMyTab("reopened")} />
-                  <TabChip active={myTab === "history"} count={historyQuery.data ? myHistoryRaw.length : undefined} label="History" onPress={() => setMyTab("history")} />
-                </ScrollView>
-                <TabHeading count={myLoading ? undefined : myVisibleConcerns.length} text={myTabHeadingText(myTab)} />
+              <FilteredQueue
+                count={myLoading ? undefined : myVisibleConcerns.length}
+                heading={myTabHeadingText(myTab)}
+                onChange={setMyTab}
+                options={[
+                  { count: undertakenQuery.data ? myActive.length : undefined, label: "All", value: "all" },
+                  { count: undertakenQuery.data ? myInReview.length : undefined, label: "In review", value: "review" },
+                  { count: undertakenQuery.data ? myInProgress.length : undefined, label: "In progress", value: "progress" },
+                  { count: undertakenQuery.data ? myReopened.length : undefined, label: "Reopened", value: "reopened" },
+                  { count: historyQuery.data ? myHistoryRaw.length : undefined, label: "History", value: "history" },
+                ]}
+                value={myTab}
+              >
                 <QueueWindow loading={myLoading}>
                   {myVisibleConcerns.length > 0 ? (
                     myPaged.items.map((concern) => (
@@ -306,7 +327,7 @@ export default function OwnerConcernsScreen() {
                     />
                   ) : null}
                 </QueueWindow>
-              </View>
+              </FilteredQueue>
             )}
           </Section>
 
@@ -337,24 +358,137 @@ function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void
   );
 }
 
-function TabChip({
-  active,
+type FilterOption<T extends string> = { count?: number; danger?: boolean; label: string; value: T };
+
+/**
+ * A queue with its filter (user, 2026-09-30). The count line runs across the
+ * top with a filter bubble at its far right, and the bubble's list floats over
+ * the cards below rather than pushing them down. "All" comes first and is the
+ * default.
+ *
+ * <p>The list is drawn inside this wrapper, which also holds the cards, so it
+ * stays within its parent's bounds: Android drops touches on anything drawn
+ * outside them. The wrapper grows while the list is open, in case the queue
+ * is shorter than the list.
+ */
+function FilteredQueue<T extends string>({
   blink = false,
+  children,
   count,
+  heading,
+  onChange,
+  options,
+  value,
+}: {
+  blink?: boolean;
+  children: React.ReactNode;
+  count?: number;
+  heading: string;
+  onChange: (value: T) => void;
+  options: FilterOption<T>[];
+  value: T;
+}) {
+  const { colors, fonts } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [menuHeight, setMenuHeight] = useState(0);
+  const chosen = options.find((option) => option.value === value) ?? options[0];
+  const menuTop = headerHeight + spacing.xs;
+
+  // The device back closes the list first, like any other open overlay.
+  const closeOnBack = useCallback(() => {
+    setOpen(false);
+    return true;
+  }, []);
+  useHardwareBack(closeOnBack, open);
+
+  return (
+    <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
+      <View
+        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+        style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <TabHeading count={count} text={heading} />
+        </View>
+        <FilterBubble blink={blink} label={chosen.label} onPress={() => setOpen((current) => !current)} open={open} />
+      </View>
+      {children}
+      {open ? (
+        <>
+          {/* Clear, so a tap anywhere on the queue closes the list instead of
+              opening the card under it. A sibling of the list, never its parent. */}
+          <Pressable accessibilityLabel="Close filter" onPress={() => setOpen(false)} style={StyleSheet.absoluteFill} />
+          <View
+            onLayout={(event) => setMenuHeight(event.nativeEvent.layout.height)}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              borderWidth: 1,
+              elevation: 12,
+              padding: spacing.xs,
+              position: "absolute",
+              right: 0,
+              shadowColor: colors.shadow,
+              shadowOffset: { height: 6, width: 0 },
+              shadowOpacity: 0.16,
+              shadowRadius: 14,
+              top: menuTop,
+              width: 220,
+              zIndex: 20,
+            }}
+          >
+            {options.map((option) => (
+              <PickerOptionRow
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                selected={option.value === value}
+                trailing={
+                  option.count == null ? undefined : (
+                    <Text
+                      style={{
+                        color: option.danger && option.count > 0 ? colors.danger : colors.muted,
+                        fontFamily: fonts.sansBold,
+                        fontSize: 12,
+                      }}
+                    >
+                      {option.count}
+                    </Text>
+                  )
+                }
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The bubble that opens a queue's filter. It blinks a red ring while escalated
+ * concerns are waiting, as the Escalated chip it replaced did.
+ */
+function FilterBubble({
+  blink,
   label,
   onPress,
+  open,
 }: {
-  active: boolean;
-  blink?: boolean;
-  count?: number;
+  blink: boolean;
   label: string;
   onPress: () => void;
+  open: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const pulse = useRef(new Animated.Value(0)).current;
 
-  // When urgent (escalated count > 0) the chip gets a softly blinking red ring
-  // to draw the eye, regardless of whether the tab is currently active.
   useEffect(() => {
     if (!blink) {
       return;
@@ -371,18 +505,22 @@ function TabChip({
 
   return (
     <AnimatedPressable
+      accessibilityLabel={`Filter: ${label}`}
       accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.primary : colors.surfaceSunken,
-        borderColor: active ? colors.primary : colors.border,
+        // Light grey, with the chevron sitting straight on it (user, 2026-09-30).
+        backgroundColor: colors.surfaceSunken,
+        borderColor: open ? colors.primary : colors.border,
         borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        gap: 6,
+        paddingLeft: spacing.md,
+        paddingRight: spacing.sm,
+        paddingVertical: 6,
       }}
     >
       {blink ? (
@@ -401,24 +539,12 @@ function TabChip({
           }}
         />
       ) : null}
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
-        {label}
-      </Text>
-      {count != null ? <View
-        style={{
-          alignItems: "center",
-          backgroundColor: active ? "rgba(255,255,255,0.22)" : colors.surface,
-          borderRadius: 999,
-          justifyContent: "center",
-          minWidth: 22,
-          paddingHorizontal: 6,
-          paddingVertical: 1,
-        }}
-      >
-        <Text style={{ color: active ? colors.onPrimary : colors.muted, fontFamily: fonts.sansBold, fontSize: 11, }}>
-          {count}
-        </Text>
-      </View> : null}
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{label}</Text>
+      {open ? (
+        <ChevronUp color={colors.inkSoft} size={16} strokeWidth={2.4} />
+      ) : (
+        <ChevronDown color={colors.inkSoft} size={16} strokeWidth={2.4} />
+      )}
     </AnimatedPressable>
   );
 }

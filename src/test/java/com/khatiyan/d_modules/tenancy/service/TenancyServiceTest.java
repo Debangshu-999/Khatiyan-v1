@@ -61,6 +61,7 @@ import com.khatiyan.d_modules.tenancy.model.GuestDetails;
 import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
+import com.khatiyan.d_modules.tenancy.api.dto.StayEnding;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequest;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
@@ -544,7 +545,7 @@ class TenancyServiceTest {
         when(tenancyRepository.findByPropertyIdAndActiveFalse(PROPERTY_ID))
                 .thenReturn(java.util.List.of(pastTenancy));
 
-        var activePage = tenancyService.listActiveForManagedProperty(ACTOR_ID, PROPERTY_ID, null, 0, 10);
+        var activePage = tenancyService.listActiveForManagedProperty(ACTOR_ID, PROPERTY_ID, null, null, null, 0, 10);
         var pastPage = tenancyService.listPastForManagedProperty(ACTOR_ID, PROPERTY_ID, null, 0, 10);
 
         assertThat(activePage.items()).extracting(TenancyResponse::id).containsExactly(activeTenancy.getId());
@@ -553,6 +554,57 @@ class TenancyServiceTest {
         assertThat(pastPage.totalElements()).isEqualTo(1);
         // Both pages are reads of the stays list.
         verify(tenancyAccessPolicy, org.mockito.Mockito.times(2)).ensureCanViewStays(ACTOR_ID, PROPERTY_ID);
+    }
+
+    @Test
+    void filtersLiveStaysByStatusCountingBothNoticeKindsAsOnNotice() {
+        Tenancy active = Tenancy.start(
+                TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID, 12_000_00, 10_000_00, LocalDate.of(2026, 6, 1));
+        Tenancy leavingEarly = Tenancy.start(
+                TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID, 12_000_00, 10_000_00, LocalDate.of(2026, 6, 2));
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                leavingEarly, "status", TenancyStatus.ON_PREMATURE_NOTICE);
+
+        when(authModule.findByIds(any())).thenReturn(java.util.Map.of(TENANT_ID, userSummary(false)));
+        when(tenancyRepository.findByPropertyIdAndActiveTrue(PROPERTY_ID))
+                .thenReturn(java.util.List.of(active, leavingEarly));
+
+        var onNotice = tenancyService.listActiveForManagedProperty(
+                ACTOR_ID, PROPERTY_ID, null, TenancyStatus.ON_NOTICE, null, 0, 10);
+        var activeOnly = tenancyService.listActiveForManagedProperty(
+                ACTOR_ID, PROPERTY_ID, null, TenancyStatus.ACTIVE, null, 0, 10);
+        var anyStatus = tenancyService.listActiveForManagedProperty(ACTOR_ID, PROPERTY_ID, null, null, null, 0, 10);
+
+        assertThat(onNotice.items()).extracting(TenancyResponse::id).containsExactly(leavingEarly.getId());
+        assertThat(activeOnly.items()).extracting(TenancyResponse::id).containsExactly(active.getId());
+        assertThat(anyStatus.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void filtersLiveStaysByEndsTodayAndEndsSoonFromTheCheckoutDate() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        Tenancy endsToday = Tenancy.start(
+                TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID, 12_000_00, 10_000_00, today.minusDays(40));
+        Tenancy endsSoon = Tenancy.start(
+                TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID, 12_000_00, 10_000_00, today.minusDays(41));
+        Tenancy endsLater = Tenancy.start(
+                TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID, 12_000_00, 10_000_00, today.minusDays(42));
+        org.springframework.test.util.ReflectionTestUtils.setField(endsToday, "plannedEndDate", today);
+        // No fixed term, so the ending-soon window is the usual 7 days.
+        org.springframework.test.util.ReflectionTestUtils.setField(endsSoon, "plannedEndDate", today.plusDays(3));
+        org.springframework.test.util.ReflectionTestUtils.setField(endsLater, "plannedEndDate", today.plusDays(20));
+
+        when(authModule.findByIds(any())).thenReturn(java.util.Map.of(TENANT_ID, userSummary(false)));
+        when(tenancyRepository.findByPropertyIdAndActiveTrue(PROPERTY_ID))
+                .thenReturn(java.util.List.of(endsToday, endsSoon, endsLater));
+
+        var todayPage = tenancyService.listActiveForManagedProperty(
+                ACTOR_ID, PROPERTY_ID, null, null, StayEnding.TODAY, 0, 10);
+        var soonPage = tenancyService.listActiveForManagedProperty(
+                ACTOR_ID, PROPERTY_ID, null, null, StayEnding.SOON, 0, 10);
+
+        assertThat(todayPage.items()).extracting(TenancyResponse::id).containsExactly(endsToday.getId());
+        assertThat(soonPage.items()).extracting(TenancyResponse::id).containsExactly(endsSoon.getId());
     }
 
     @Test

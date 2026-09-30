@@ -1,7 +1,9 @@
 package com.khatiyan.d_modules.property.api;
 
 import java.net.URI;
+import java.time.DayOfWeek;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -34,6 +36,9 @@ import com.khatiyan.d_modules.property.api.dto.CreateRoomRequest;
 import com.khatiyan.d_modules.property.api.dto.ManagerLookupResponse;
 import com.khatiyan.d_modules.property.api.dto.MarkRoomStatusRequest;
 import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
+import com.khatiyan.d_modules.property.api.dto.PropertyVisitSlotsResponse;
+import com.khatiyan.d_modules.property.api.dto.SaveVisitSlotsRequest;
+import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
 import com.khatiyan.d_modules.property.api.dto.PropertyManagerResponse;
 import com.khatiyan.d_modules.property.api.dto.ManagerPermissionsResponse;
 import com.khatiyan.d_modules.property.api.dto.UpdateManagerPermissionsRequest;
@@ -73,6 +78,7 @@ public class PropertyController {
     private final PropertyManagerService propertyManagerService;
     private final ManagerAccessPolicy managerAccessPolicy;
     private final PropertyAccessPolicy propertyAccessPolicy;
+    private final PropertyVisitSlotService propertyVisitSlotService;
 
     public PropertyController(
             PropertyService propertyService,
@@ -80,13 +86,15 @@ public class PropertyController {
             RoomMoldService roomMoldService,
             PropertyManagerService propertyManagerService,
             ManagerAccessPolicy managerAccessPolicy,
-            PropertyAccessPolicy propertyAccessPolicy) {
+            PropertyAccessPolicy propertyAccessPolicy,
+            PropertyVisitSlotService propertyVisitSlotService) {
         this.propertyService = propertyService;
         this.roomService = roomService;
         this.roomMoldService = roomMoldService;
         this.propertyManagerService = propertyManagerService;
         this.managerAccessPolicy = managerAccessPolicy;
         this.propertyAccessPolicy = propertyAccessPolicy;
+        this.propertyVisitSlotService = propertyVisitSlotService;
     }
 
     @PostMapping
@@ -183,6 +191,49 @@ public class PropertyController {
             @Valid @RequestBody UpdatePrematureExitPolicyRequest request) {
         managerAccessPolicy.ensureCanManage(user.userId(), propertyId, ManagerResource.TENANCY_RULES);
         return propertyService.updatePrematureExitPolicy(user.userId(), propertyId, request.prematureExitPolicy());
+    }
+
+    /**
+     * A property's visit slots (2026-09-30): the times tenants can book a
+     * visit, per day of the week. Read under PROPERTY_SETTINGS.
+     */
+    @GetMapping("/{propertyId}/visit-slots")
+    public PropertyVisitSlotsResponse getVisitSlots(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return propertyVisitSlotService.get(user.userId(), propertyId);
+    }
+
+    /**
+     * The first visit slots. There is no version yet, so no If-Match: the
+     * service refuses it as stale instead if someone else set them up first.
+     */
+    @PostMapping("/{propertyId}/visit-slots")
+    public PropertyVisitSlotsResponse createVisitSlots(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody SaveVisitSlotsRequest request) {
+        return propertyVisitSlotService.create(user.userId(), propertyId, request);
+    }
+
+    /** The chosen days take exactly these slots, replacing theirs. */
+    @PutMapping("/{propertyId}/visit-slots")
+    @RequiresVersion
+    public PropertyVisitSlotsResponse saveVisitSlots(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody SaveVisitSlotsRequest request) {
+        return propertyVisitSlotService.save(user.userId(), propertyId, request);
+    }
+
+    /** These days take no visits: {@code ?days=SUNDAY} or several. */
+    @DeleteMapping("/{propertyId}/visit-slots")
+    @RequiresVersion
+    public PropertyVisitSlotsResponse clearVisitDays(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam Set<DayOfWeek> days) {
+        return propertyVisitSlotService.clearDays(user.userId(), propertyId, days);
     }
 
     @PostMapping("/{propertyId}/managers")

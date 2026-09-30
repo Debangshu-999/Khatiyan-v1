@@ -1,23 +1,20 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { ScrollView, Switch, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useEffect, useState } from "react";
+import { Switch, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { BedDouble, ClipboardList, DoorOpen, EyeOff, FileSignature, Globe, MapPin, MessageSquare, Pencil, X } from "lucide-react-native";
+import { EyeOff, Globe, Pencil } from "lucide-react-native";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
-import { foodIcon } from "@/features/food/food-ui";
 import { ActionCard } from "@/components/action-card";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
-import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { ScreenHeader } from "@/components/screen-header";
 import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
@@ -28,30 +25,25 @@ import {
 } from "@/components/skeletons/owner";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { PropertyContactsSection } from "@/features/property/property-contacts-section";
+import {
+  EnquiriesIcon,
+  ManageListingIcon,
+  NearbyLocationsIcon,
+  PropertyBoardIcon,
+  PropertyVisitsIcon,
+  RoomsAndBedsIcon,
+} from "@/features/property/property-control-icons";
 import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid";
-import { ActionButton, ChoiceButton, FormInput, IconButton, formatDepositPaise, formatMoneyPaise, humanizeToken, rupeesToPaise, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, formatDepositPaise, formatMoneyPaise, humanizeToken, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
-  PROPERTY_TYPES,
-  BATHROOM_TYPES,
-  MEAL_TYPES,
-  PG_FOR_OPTIONS,
-  PREFERRED_TENANT_OPTIONS,
-  ROOM_TYPES,
   useListMyPropertiesQuery,
   useUpdatePropertyMutation,
-  type BathroomType,
-  type MealType,
   NOTICE_PERIOD_LABELS,
   useListPropertyRoomsQuery,
   type OwnerProperty,
   type OwnerRoom,
-  type PgFor,
-  type PreferredTenantType,
-  type PropertyFacility,
-  type PropertyType,
-  type RoomType,
 } from "@/store/services/property-api";
 import { useGetOpenEnquiryCountQuery } from "@/store/services/enquiry-api";
 import {
@@ -66,11 +58,14 @@ import { skipToken } from "@reduxjs/toolkit/query";
 import { useTheme } from "@/theme/use-theme";
 
 type PropertyRoute =
+  | "/owner-manage-listing"
+  | "/owner-enquiries"
   | "/owner-rooms"
   | "/owner-staff"
   | "/owner-board"
   | "/owner-food"
-  | "/owner-nearby-places";
+  | "/owner-nearby-places"
+  | "/owner-property-visits";
 
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
@@ -90,14 +85,19 @@ export default function OwnerPropertyScreen() {
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? skipToken);
   const startingRentPaise = lowestActiveRoomRentPaise(roomsQuery.data ?? []);
   const roomsLoading = roomsQuery.isFetching && !roomsQuery.data;
+  const openEnquiryCountQuery = useGetOpenEnquiryCountQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty,
+  });
+  const openEnquiryCount = openEnquiryCountQuery.data ?? 0;
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-      {/* The chip shares the back row rather than taking one of its own: it
-          qualifies the whole screen, so it belongs level with the way out. */}
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        {!canManageSettings ? <ViewOnlyChip /> : null}
-      </View>
+      <ScreenHeader
+        badge={selectedProperty && !canManageSettings ? <ViewOnlyChip /> : null}
+        italicTail="control."
+        subtitle={selectedProperty ? `Property workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
+        title="Property"
+      />
 
       {propertiesQuery.isFetching && properties.length === 0 ? (
         <OwnerPropertyOverviewSkeleton />
@@ -132,11 +132,8 @@ export default function OwnerPropertyScreen() {
               </Text>
             </View>
             </View>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row" }}>
               <ActionButton disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="secondary" />
-              {/* Enquiries belong on the property, not in a tools list: they are
-                  asked ABOUT this property, from its public profile. */}
-              <EnquiriesIconButton propertyId={selectedProperty.id} />
             </View>
           </Card>
 
@@ -182,53 +179,70 @@ export default function OwnerPropertyScreen() {
             )}
           </View>
 
-          {/* Same grid a prospective tenant sees on the discovery profile. The
-              owner was previously shown flat pills — the same facts in a weaker
-              form, so they could not tell how their own listing actually reads. */}
-          {/* A Section like the others, not a card with an eyebrow inside it.
-              The grid already draws its own tiles, so the surface around them
-              was a container holding containers — and the heading now matches
-              "Property workspace" and "Listing" instead of being a smaller
-              label in a different place. */}
           {selectedProperty.facilities.length || selectedProperty.customFacilities.length ? (
-            <Section title="Facilities">
-              <FacilityOverviewGrid
-                facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]}
-              />
-            </Section>
+            <FacilityOverviewGrid
+              facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]}
+            />
           ) : null}
-
-          {selectedProperty.discoveryProfileCreated ? <DiscoveryListingCard canManage={canManageSettings} propertyId={selectedProperty.id} /> : null}
 
           <Section title="Property workspace">
             <ActionCard
-              icon={BedDouble}
+              borderRadius={12}
+              icon={ManageListingIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Manage listing"
+              description="Control discovery visibility, listing details and the contacts prospects can use."
+              onPress={() => open(router, "/owner-manage-listing")}
+            />
+            <ActionCard
+              badge={openEnquiryCount}
+              borderRadius={12}
+              icon={EnquiriesIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Enquiries"
+              description="Review questions from interested people and respond from the property enquiry inbox."
+              onPress={() => open(router, "/owner-enquiries")}
+            />
+            <ActionCard
+              borderRadius={12}
+              icon={RoomsAndBedsIcon}
+              iconSize={58}
+              showArrow={false}
               title="Rooms & beds"
               description="Create rooms single or in bulk, edit, set status and manage occupancy."
               onPress={() => open(router, "/owner-rooms")}
             />
             <ActionCard
-              icon={ClipboardList}
+              borderRadius={12}
+              icon={PropertyBoardIcon}
+              iconSize={58}
+              showArrow={false}
               title="Property board"
               description="Always-on info for tenants - rules, timings and contacts, organised by category."
               onPress={() => open(router, "/owner-board")}
             />
-            {/* Food hangs off the property, not off tenancy: what the kitchen
-                cooks is a property-level operation, and the meals it can plan
-                for are the ones this property advertises. */}
             <ActionCard
-              icon={foodIcon("silverware-fork-knife")}
-              title="Food preference"
-              description="Food items, meal profiles, weekly menus and how much to cook each day."
-              onPress={() => open(router, "/owner-food")}
-            />
-            <ActionCard
-              icon={MapPin}
-              title="Nearby places"
+              borderRadius={12}
+              icon={NearbyLocationsIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Nearby locations"
               description="See what tenants find around the property, then curate the landmarks and services."
               onPress={() => open(router, "/owner-nearby-places")}
             />
+            <ActionCard
+              borderRadius={12}
+              icon={PropertyVisitsIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Property visits"
+              description="Set the time slots, day by day, when tenants can book a visit to the property."
+              onPress={() => open(router, "/owner-property-visits")}
+            />
           </Section>
+
         </>
       ) : null}
 
@@ -239,7 +253,7 @@ export default function OwnerPropertyScreen() {
 // List/unlist toggle for discovery visibility. Wraps the existing publish /
 // unpublish endpoints; unlisting only hides the property from discovery search —
 // onboarded tenants and the owner's other workspaces are unaffected.
-function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; propertyId: string }) {
+export function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; propertyId: string }) {
   // Server refusal — nothing on screen to correct, so it interrupts.
   const listErrors = useFormErrors<never>();
 
@@ -267,13 +281,14 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
 
   if (loadingProfile) {
     return (
-      <Section title="Listing">
-        <OwnerDataCardSkeleton actions={1} bodyLines={2} />
-        <Card>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>Property contacts</Text>
+      <>
+        <Section title="Listing">
+          <OwnerDataCardSkeleton actions={1} bodyLines={2} />
+        </Section>
+        <Section title="Property contacts">
           <PropertyContactsSection canManage={canManage} propertyId={propertyId} />
-        </Card>
-      </Section>
+        </Section>
+      </>
     );
   }
 
@@ -304,8 +319,9 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
   }
 
   return (
-    <Section title="Listing">
-      <Card>
+    <>
+      <Section title="Listing">
+        <Card>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
           <View
             style={{
@@ -362,23 +378,18 @@ function DiscoveryListingCard({ canManage, propertyId }: { canManage: boolean; p
             variant="secondary"
           />
         </View>
-      {listErrors.serverError ? <AlertModal message={listErrors.serverError} onClose={listErrors.dismissServerError} /> : null}
-      </Card>
+        {listErrors.serverError ? <AlertModal message={listErrors.serverError} onClose={listErrors.dismissServerError} /> : null}
+        </Card>
+      </Section>
 
-      {/* Its own card. It belongs to the listing, but it is a list somebody
-          edits rather than a property of the listing — folded into the card
-          above it read as one more field of the same form. */}
-      <Card>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          Property contacts
-        </Text>
+      <Section title="Property contacts">
         <PropertyContactsSection canManage={canManage} propertyId={propertyId} />
-      </Card>
+      </Section>
 
       {detailsOpen && profile ? (
         <EditListingDetailsSheet onClose={() => setDetailsOpen(false)} profile={profile} propertyId={propertyId} />
       ) : null}
-    </Section>
+    </>
   );
 }
 
@@ -480,65 +491,6 @@ function EditListingDetailsSheet({
 
 function open(router: ReturnType<typeof useGuardedRouter>, route: PropertyRoute) {
   router.push(route);
-}
-
-/**
- * Way into the enquiries screen, badged with what is unanswered.
- *
- * <p>Outlined container, ink glyph, no fill — the house treatment for icons. The
- * badge appears only when something is waiting; at zero the icon stays put and
- * stays tappable, because "no enquiries" is a thing an owner may want to confirm
- * rather than a reason to hide the door to them.
- */
-function EnquiriesIconButton({ propertyId }: { propertyId: string }) {
-  const router = useGuardedRouter();
-  const { colors, fonts } = useTheme();
-  const openCountQuery = useGetOpenEnquiryCountQuery(propertyId, { skip: !propertyId });
-  const count = openCountQuery.data ?? 0;
-
-  return (
-    <View>
-      <AnimatedPressable
-        accessibilityLabel={count > 0 ? `Enquiries, ${count} unanswered` : "Enquiries"}
-        accessibilityRole="button"
-        onPress={() => router.push("/owner-enquiries")}
-        style={{
-          alignItems: "center",
-          borderColor: colors.ink,
-          borderCurve: "continuous",
-          borderRadius: 12,
-          borderWidth: 1,
-          height: 44,
-          justifyContent: "center",
-          width: 44,
-        }}
-      >
-        <MessageSquare color={colors.ink} size={20} strokeWidth={2} />
-      </AnimatedPressable>
-      {count > 0 ? (
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.primary,
-            borderColor: colors.surface,
-            borderRadius: 999,
-            borderWidth: 2,
-            height: 20,
-            justifyContent: "center",
-            minWidth: 20,
-            paddingHorizontal: 4,
-            position: "absolute",
-            right: -6,
-            top: -6,
-          }}
-        >
-          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 10 }}>
-            {count > 9 ? "9+" : count}
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {

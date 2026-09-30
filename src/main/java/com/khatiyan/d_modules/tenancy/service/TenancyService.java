@@ -52,6 +52,7 @@ import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyBillingType;
 import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
+import com.khatiyan.d_modules.tenancy.api.dto.StayEnding;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
 
@@ -1113,9 +1114,11 @@ public class TenancyService {
             UUID actorUserId,
             UUID propertyId,
             String query,
+            TenancyStatus status,
+            StayEnding ending,
             int page,
             int size) {
-        return listPropertyTenancies(actorUserId, propertyId, true, query, page, size);
+        return listPropertyTenancies(actorUserId, propertyId, true, query, status, ending, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -1125,20 +1128,23 @@ public class TenancyService {
             String query,
             int page,
             int size) {
-        return listPropertyTenancies(actorUserId, propertyId, false, query, page, size);
+        return listPropertyTenancies(actorUserId, propertyId, false, query, null, null, page, size);
     }
 
     /**
      * Lists a managed property's tenancies, newest first, optionally filtered by a
      * free-text query matched against tenant name, tenancy reference code and
-     * tenancy id. The tenant name lives in the auth module, so responses are built
-     * (with a batched name lookup) and filtered in memory before paging.
+     * tenancy id, and by status or ending when one is given. The tenant name lives in the
+     * auth module, so responses are built (with a batched name lookup) and
+     * filtered in memory before paging.
      */
     private PageResponse<TenancyResponse> listPropertyTenancies(
             UUID actorUserId,
             UUID propertyId,
             boolean active,
             String query,
+            TenancyStatus status,
+            StayEnding ending,
             int page,
             int size) {
         tenancyAccessPolicy.ensureCanViewStays(actorUserId, propertyId);
@@ -1160,9 +1166,43 @@ public class TenancyService {
                 .sorted(order)
                 .map(tenancy -> TenancyResponse.from(tenancy, users.get(tenancy.getUserId())))
                 .filter(response -> matchesTenancyQuery(response, normalizedQuery))
+                .filter(response -> matchesStatus(response.status(), status))
+                .filter(response -> matchesEnding(response, ending, LocalDate.now(TENANCY_ZONE)))
                 .toList();
 
         return PageResponse.of(responses, page, size);
+    }
+
+    /**
+     * The owner's status filter on the stay list (user, 2026-09-30). ON_NOTICE
+     * covers both notice kinds, because the app shows both as "On notice".
+     */
+    /**
+     * The card's "Ends today" and "Ends soon" chips as a filter (user,
+     * 2026-09-30), worked out from the one checkout date the way the card does.
+     */
+    private static boolean matchesEnding(TenancyResponse response, StayEnding ending, LocalDate today) {
+        if (ending == null) {
+            return true;
+        }
+        LocalDate checkout = response.checkoutDate();
+        if (checkout == null) {
+            return false;
+        }
+        return switch (ending) {
+            case TODAY -> checkout.isEqual(today);
+            case SOON -> checkout.isAfter(today) && !checkout.isAfter(today.plusDays(response.endingSoonLeadDays()));
+        };
+    }
+
+    private static boolean matchesStatus(TenancyStatus actual, TenancyStatus wanted) {
+        if (wanted == null) {
+            return true;
+        }
+        if (wanted == TenancyStatus.ON_NOTICE) {
+            return actual == TenancyStatus.ON_NOTICE || actual == TenancyStatus.ON_PREMATURE_NOTICE;
+        }
+        return actual == wanted;
     }
 
     private static boolean matchesTenancyQuery(TenancyResponse response, String normalizedQuery) {

@@ -1,5 +1,30 @@
 import { api, ifMatch } from "@/store/api";
 
+/** A day of the week, as the server names it. */
+export type VisitDay = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
+
+/** Numbered by start time on its day: Slot 1 is the earliest. Times are "HH:mm" or "HH:mm:ss". */
+export type PropertyVisitSlot = { endTime: string; number: number; startTime: string };
+
+/**
+ * A property's visit slots (2026-09-30), all seven days Monday first. A day
+ * with no slots takes no visits. Each configured day carries its own visitor
+ * limit; version is null until the first save.
+ */
+export type PropertyVisitSlots = {
+  configured: boolean;
+  days: { day: VisitDay; slots: PropertyVisitSlot[]; visitorsPerSlot: number | null }[];
+  propertyId: string;
+  version: number | null;
+};
+
+/** These days take exactly these slots, replacing theirs. */
+export type SaveVisitSlotsBody = {
+  days: VisitDay[];
+  slots: { endTime: string; startTime: string }[];
+  visitorsPerSlot: number;
+};
+
 export type PropertyType = "PG" | "HOSTEL" | "APARTMENT" | "SOCIETY";
 /** Occupancy is 1–4, then a dormitory for anything larger. */
 export type RoomType = "SINGLE" | "DOUBLE" | "TRIPLE" | "FOUR_SHARING" | "DORMITORY";
@@ -735,6 +760,40 @@ export const propertyApi = api.injectEndpoints({
       }),
       invalidatesTags: ["Property", "Compliance"],
     }),
+
+    getPropertyVisitSlots: builder.query<PropertyVisitSlots, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/visit-slots`,
+      providesTags: ["PropertyVisits"],
+    }),
+
+    /** The first save. No version yet, so the server refuses it as stale if someone set them up first. */
+    createPropertyVisitSlots: builder.mutation<PropertyVisitSlots, { body: SaveVisitSlotsBody; propertyId: string }>({
+      query: ({ body, propertyId }) => ({ body, method: "POST", url: `/api/v1/properties/${propertyId}/visit-slots` }),
+      invalidatesTags: ["PropertyVisits"],
+    }),
+
+    savePropertyVisitSlots: builder.mutation<
+      PropertyVisitSlots,
+      { body: SaveVisitSlotsBody; propertyId: string; version: number }
+    >({
+      query: ({ body, propertyId, version }) => ({
+        body,
+        headers: ifMatch(version),
+        method: "PUT",
+        url: `/api/v1/properties/${propertyId}/visit-slots`,
+      }),
+      invalidatesTags: ["PropertyVisits"],
+    }),
+
+    /** These days take no visits. */
+    clearPropertyVisitDays: builder.mutation<PropertyVisitSlots, { days: VisitDay[]; propertyId: string; version: number }>({
+      query: ({ days, propertyId, version }) => ({
+        headers: ifMatch(version),
+        method: "DELETE",
+        url: `/api/v1/properties/${propertyId}/visit-slots?${days.map((day) => `days=${day}`).join("&")}`,
+      }),
+      invalidatesTags: ["PropertyVisits"],
+    }),
   }),
   // Fast Refresh re-runs this whole module on every edit, so injectEndpoints
   // sees endpoints it already registered and logs an error for each one — two
@@ -745,6 +804,10 @@ export const propertyApi = api.injectEndpoints({
 });
 
 export const {
+  useClearPropertyVisitDaysMutation,
+  useCreatePropertyVisitSlotsMutation,
+  useGetPropertyVisitSlotsQuery,
+  useSavePropertyVisitSlotsMutation,
   useAddPropertyManagerMutation,
   useCreatePropertyMutation,
   useCreateRoomMoldMutation,

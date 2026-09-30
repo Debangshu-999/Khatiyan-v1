@@ -237,7 +237,7 @@ export function ActiveTenancyCard({
   );
 }
 
-type TenancyCardStatusChip =
+export type TenancyCardStatusChip =
   | {
       key: string;
       kind: "tenancy";
@@ -407,7 +407,7 @@ function TenancyStatusCarousel({ chips }: { chips: TenancyCardStatusChip[] }) {
   );
 }
 
-function TenancyStatusChip({ chip, fill = false }: { chip: TenancyCardStatusChip; fill?: boolean }) {
+export function TenancyStatusChip({ chip, fill = false }: { chip: TenancyCardStatusChip; fill?: boolean }) {
   return chip.kind === "tenancy" ? (
     <TenancyStatusBadge fill={fill} status={chip.status} />
   ) : (

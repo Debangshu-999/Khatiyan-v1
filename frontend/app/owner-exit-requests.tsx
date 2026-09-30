@@ -30,6 +30,7 @@ import {
   type ExitRequestChain,
 } from "@/features/tenancy/request-chain";
 import { useToast } from "@/components/toast";
+import { ScreenHeader } from "@/components/screen-header";
 import { ActionButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -168,9 +169,16 @@ export default function OwnerExitRequestsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        {!canManageExits ? <ViewOnlyChip /> : null}
-      </View>
+      <ScreenHeader
+        badge={!canManageExits ? <ViewOnlyChip /> : null}
+        italicTail="requests."
+        subtitle={
+          selectedProperty
+            ? `Review and decide tenants' requests to move out of ${selectedProperty.name}.`
+            : "Select a property on Home first."
+        }
+        title="Exit"
+      />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState

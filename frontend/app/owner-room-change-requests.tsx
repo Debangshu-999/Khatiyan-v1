@@ -29,6 +29,7 @@ import {
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { OwnerRequestListSkeleton } from "@/components/skeletons/owner";
+import { ScreenHeader } from "@/components/screen-header";
 import { ActionButton, ConfirmDialog, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -142,9 +143,16 @@ export default function OwnerRoomChangeRequestsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        {!canManageRoomChanges ? <ViewOnlyChip /> : null}
-      </View>
+      <ScreenHeader
+        badge={!canManageRoomChanges ? <ViewOnlyChip /> : null}
+        italicTail="changes."
+        subtitle={
+          selectedProperty
+            ? `Review and decide tenants' requests to move to another room at ${selectedProperty.name}.`
+            : "Select a property on Home first."
+        }
+        title="Room"
+      />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
