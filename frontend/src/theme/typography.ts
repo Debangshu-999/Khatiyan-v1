@@ -43,6 +43,11 @@ export const fonts = {
   /** Inter — body, labels, captions, data. */
   sans: "Inter_400Regular",
   sansMedium: "Inter_500Medium",
+  /**
+   * A true italic cut. Android does not slant a custom face for
+   * `fontStyle: "italic"`, so italics need the italic file itself.
+   */
+  sansMediumItalic: "Inter_500Medium_Italic",
   /** Inter SemiBold — the weight all-caps labels are set in. See `type.eyebrow`. */
   sansSemiBold: "Inter_600SemiBold",
   sansBold: "Inter_700Bold",

@@ -1,6 +1,7 @@
 import {
   Inter_400Regular,
   Inter_500Medium,
+  Inter_500Medium_Italic,
   Inter_600SemiBold,
   Inter_700Bold,
   useFonts as useInterFonts,
@@ -29,6 +30,7 @@ export function useAppFonts() {
   const [loaded, error] = useInterFonts({
     Inter_400Regular,
     Inter_500Medium,
+    Inter_500Medium_Italic,
     Inter_600SemiBold,
     Inter_700Bold,
     PlusJakartaSans_700Bold,
