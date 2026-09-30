@@ -46,7 +46,11 @@ import { useTenantCardUpdates } from "@/features/tenancy/use-tenant-card-updates
 import type { BillingCycle } from "@/store/services/billing-api";
 import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import type { ConcernSummary } from "@/store/services/concern-api";
-import { useListMyConcernHistoryQuery, useListMyCurrentConcernsQuery } from "@/store/services/concern-api";
+import {
+  splitTenantConcerns,
+  useListMyConcernHistoryQuery,
+  useListMyCurrentConcernsQuery,
+} from "@/store/services/concern-api";
 import {
   useGetMyActiveTenancyQuery,
   useListMyExitRequestsQuery,
@@ -201,19 +205,13 @@ export default function TenancyScreen() {
         .sort(compareRequests),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
   );
-  const currentConcerns = useMemo(
-    () => (concernsQuery.data ?? []).filter(isOpenConcern),
-    [concernsQuery.data],
-  );
-  const closedConcerns = useMemo(
-    () =>
-      uniqueConcerns([
-        ...(concernsQuery.data ?? []).filter((concern) => !isOpenConcern(concern)),
-        ...(concernHistoryQuery.data?.items ?? []),
-      ]).filter((concern) => !isOpenConcern(concern)),
+  const {
+    closedCount: closedConcernCount,
+    open: currentConcerns,
+  } = useMemo(
+    () => splitTenantConcerns(concernsQuery.data, concernHistoryQuery.data),
     [concernHistoryQuery.data, concernsQuery.data],
   );
-  const closedConcernCount = Math.max(concernHistoryQuery.data?.totalElements ?? 0, closedConcerns.length);
   const trackedConcerns = useMemo(
     () => uniqueConcerns([...(concernsQuery.data ?? []), ...(concernHistoryQuery.data?.items ?? [])]),
     [concernHistoryQuery.data, concernsQuery.data],
@@ -1244,10 +1242,6 @@ function humanizeToken(value: string) {
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function isOpenConcern(concern: ConcernSummary) {
-  return concern.status !== "RESOLVED" && concern.status !== "CLOSED";
 }
 
 function uniqueConcerns(concerns: ConcernSummary[]) {

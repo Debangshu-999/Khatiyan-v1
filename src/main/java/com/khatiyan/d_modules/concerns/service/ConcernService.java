@@ -270,6 +270,9 @@ public class ConcernService {
 
     /**
      * Lists non-closed concerns raised by the authenticated tenant.
+     *
+     * <p>RESOLVED counts as current: the tenant can still reopen it, and it
+     * only leaves this list when the reopen window lapses and it is CLOSED.
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listTenantCurrentConcerns(UUID tenantUserId) {
@@ -283,7 +286,7 @@ public class ConcernService {
     }
 
     /**
-     * Lists closed concerns raised by the authenticated tenant.
+     * Lists CLOSED concerns raised by the authenticated tenant.
      */
     @Transactional(readOnly = true)
     public List<ConcernResponse> listTenantConcernHistory(UUID tenantUserId) {

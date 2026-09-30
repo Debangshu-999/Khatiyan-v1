@@ -79,11 +79,7 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         SELECT c
         FROM Concern c
         WHERE c.raisedByUserId = :tenantUserId
-          AND c.status IN (
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
-          )
+          AND c.status <> com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
         ORDER BY c.updatedAt DESC
     """)
     List<Concern> findCurrentByRaisedByUserId(UUID tenantUserId);
@@ -93,11 +89,7 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         FROM Concern c
         WHERE c.raisedByUserId = :tenantUserId
           AND c.propertyId = :propertyId
-          AND c.status IN (
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.OPEN,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.UNDER_REVIEW,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.IN_PROGRESS
-          )
+          AND c.status <> com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
         ORDER BY c.updatedAt DESC
     """)
     List<Concern> findCurrentByRaisedByUserIdAndPropertyId(UUID tenantUserId, UUID propertyId);
@@ -106,10 +98,7 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         SELECT c
         FROM Concern c
         WHERE c.raisedByUserId = :tenantUserId
-          AND c.status IN (
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.RESOLVED,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
-          )
+          AND c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
         ORDER BY c.updatedAt DESC
     """)
     List<Concern> findHistoryByRaisedByUserId(UUID tenantUserId);
@@ -119,10 +108,7 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
         FROM Concern c
         WHERE c.raisedByUserId = :tenantUserId
           AND c.propertyId = :propertyId
-          AND c.status IN (
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.RESOLVED,
-              com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
-          )
+          AND c.status = com.khatiyan.d_modules.concerns.model.ConcernStatus.CLOSED
         ORDER BY c.updatedAt DESC
     """)
     List<Concern> findHistoryByRaisedByUserIdAndPropertyId(UUID tenantUserId, UUID propertyId);
