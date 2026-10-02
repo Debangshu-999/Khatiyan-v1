@@ -32,7 +32,7 @@ export function ResetPinStep({
 }) {
   return (
     <>
-      <StepProgress step={2} total={2} label="Choose a new PIN" />
+      <StepProgress step={2} total={2} />
       {/* Spread into the room above the buttons, as on signup. */}
       <View style={{ flexGrow: 1, gap: spacing.md }}>
         <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />

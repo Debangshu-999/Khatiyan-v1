@@ -33,7 +33,7 @@ export function SetupPinStep({
 }) {
   return (
     <>
-      <StepProgress step={2} total={2} label="Choose your PIN" />
+      <StepProgress step={2} total={2} />
       <View style={{ flexGrow: 1, gap: spacing.md }}>
         <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />
         <FieldSpacer />
