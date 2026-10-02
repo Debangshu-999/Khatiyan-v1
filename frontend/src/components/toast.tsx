@@ -284,7 +284,7 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
           accessibilityRole="button"
           hitSlop={10}
           onPress={close}
-          style={{ alignItems: "center", borderRadius: 8, height: 26, justifyContent: "center", width: 26 }}
+          style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: 999, height: 26, justifyContent: "center", width: 26 }}
         >
           <X color={colors.kicker} size={15} strokeWidth={2.4} />
         </AnimatedPressable>
