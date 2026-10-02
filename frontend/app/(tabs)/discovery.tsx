@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, BackHandler, Easing, Image, ImageBackground, RefreshControl, ScrollView, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { Animated, Easing, Image, ImageBackground, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { ArrowUpRight, MapPin } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -10,8 +8,6 @@ import { PropertyIcon } from "@/components/property-icon";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SlideInView } from "@/components/slide-in-view";
-import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { AiResults } from "@/features/discovery/components/ai-results";
 import { ListingSortButton, ListingSortModal } from "@/features/discovery/components/listing-sort";
 import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
@@ -27,12 +23,10 @@ import {
   type PropertyFilterState,
 } from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
-import { PropertyProfile } from "@/features/discovery/components/property-profile";
-import { PropertyProfileSkeleton } from "@/components/skeletons/discovery/property-profile";
+import { PropertyProfileLayer, type PropertyProfileLayerHandle } from "@/features/discovery/components/property-profile-layer";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
 import {
-  useGetDiscoveryPropertyQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
   useSearchDiscoveryPropertiesQuery,
@@ -241,49 +235,12 @@ export default function DiscoveryScreen() {
   // which location source drives the query so both paths behave identically.
   const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
-  // The profile is a layer over the results list, not a replacement for it
-  // (user, 2026-10-02). Swapping the list out meant rebuilding every card on
-  // the way back, which was the delay, and losing the scroll position with
-  // it. Kept mounted underneath, the list is exactly as it was left.
-  //
-  // closeProfile slides the layer out before dropping it; the search paths
-  // that clear the selection while no profile is showing set it directly.
-  const profileExit = useRef(new Animated.Value(0)).current;
-  const profileClosing = useRef(false);
-  function closeProfile() {
-    if (profileClosing.current) return;
-    profileClosing.current = true;
-    Animated.timing(profileExit, { duration: 180, easing: Easing.in(Easing.quad), toValue: 1, useNativeDriver: true }).start(() => {
-      // Only drop the layer here. Resetting profileExit in the same breath
-      // flickered (user, 2026-10-02): the native value snapped back to fully
-      // visible a frame before React unmounted the layer. It resets when the
-      // next profile opens instead, while nothing is on screen to show it.
-      setSelectedPropertyId(null);
-      profileClosing.current = false;
-    });
-  }
-  useEffect(() => {
-    if (selectedPropertyId) profileExit.setValue(0);
-  }, [profileExit, selectedPropertyId]);
-  const [detailRefreshing, setDetailRefreshing] = useState(false);
+  // The property profile lives in its own layer component with its own state
+  // (see PropertyProfileLayer), opened through this ref so that opening or
+  // closing it never re-renders the results list underneath.
+  const profileLayer = useRef<PropertyProfileLayerHandle>(null);
+  const openProfile = useCallback((propertyId: string) => profileLayer.current?.open(propertyId), []);
 
-  // The property profile is a state on this tab, not a route, so the device
-  // back button knew nothing about it and popped the tab instead — landing on
-  // home with the profile silently discarded. Close the profile first; only
-  // let the press through when the list is what is showing.
-  useFocusEffect(
-    useCallback(() => {
-      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-        if (selectedPropertyId) {
-          closeProfile();
-          return true;
-        }
-        return false;
-      });
-      return () => subscription.remove();
-    }, [selectedPropertyId]),
-  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
@@ -472,12 +429,6 @@ export default function DiscoveryScreen() {
   const propertiesQuery = useSearchDiscoveryPropertiesQuery(propertyQueryArgs, {
     skip: activeTab !== "properties" || !hasActiveSearch,
   });
-  const detailQuery = useGetDiscoveryPropertyQuery(
-    {
-      propertyId: selectedPropertyId ?? "",
-    },
-    { skip: !selectedPropertyId },
-  );
   function handleSearch() {
     // The toggle chooses the input method, so it chooses what Search does.
     if (aiOn) {
@@ -485,7 +436,7 @@ export default function DiscoveryScreen() {
       return;
     }
 
-    setSelectedPropertyId(null);
+    profileLayer.current?.dismiss();
     setPage(0);
     setAiExtras(noAiExtras);
 
@@ -539,7 +490,7 @@ export default function DiscoveryScreen() {
     }
 
     aiInFlight.current = true;
-    setSelectedPropertyId(null);
+    profileLayer.current?.dismiss();
     setPage(0);
     setAiNotice(null);
     // The previous answer goes now, not when the next one lands. The skeleton
@@ -646,7 +597,7 @@ export default function DiscoveryScreen() {
     setSelectedArea("");
     setTextScope(null);
     setSubmittedSearch(defaultSearch);
-    setSelectedPropertyId(null);
+    profileLayer.current?.dismiss();
     setPage(0);
     setAiExtras(noAiExtras);
     setAiNotUsed([]);
@@ -674,7 +625,7 @@ export default function DiscoveryScreen() {
     const label = suggestion.name ?? suggestion.address ?? "";
     setManualSelection(true);
     setSearchText(label);
-    setSelectedPropertyId(null);
+    profileLayer.current?.dismiss();
     setPage(0);
     setSubmittedSearch({ text: label });
     setAiExtras(noAiExtras);
@@ -822,93 +773,10 @@ export default function DiscoveryScreen() {
     return unique;
   }, [suggestionsQuery.data]);
 
-  async function refreshDetail() {
-    setDetailRefreshing(true);
-    try {
-      await detailQuery.refetch().unwrap();
-    } catch {
-      // The error state on screen already says the load failed; a refresh that
-      // fails the same way has nothing to add.
-    } finally {
-      setDetailRefreshing(false);
-    }
-  }
-  // formSurface, the lighter ground this screen had before the app-wide shade.
-  // A profile is mostly one large photograph and a stack of white cards; the
-  // deeper grey put a heavy band either side of the image and made the page
-  // compete with the picture it exists to show.
-  const profileLayer = selectedPropertyId ? (
-      <Animated.View
-        style={{
-          backgroundColor: colors.surfaceRaised,
-          bottom: 0,
-          left: 0,
-          opacity: profileExit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-          position: "absolute",
-          right: 0,
-          top: 0,
-          transform: [{ translateX: profileExit.interpolate({ inputRange: [0, 1], outputRange: [0, 28] }) }],
-        }}
-      >
-        <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          {/* Slides in like a pushed screen, and back out the way it came
-              (user, 2026-10-02). */}
-          <SlideInView from="right">
-          {/* A plain ScrollView, so it has to bring its own RefreshControl —
-              ScreenScrollView supplies one everywhere else, which is why the
-              gesture worked on every screen except this one. Its own state
-              rather than the query's isFetching: that is also true while the
-              detail loads on first open, and the spinner would appear over a
-              screen nobody pulled. */}
-          <ScrollView
-            // spacing.sm to match the app's header gap. A plain ScrollView does
-            // not inherit ScreenScrollView's preset, so this branch kept the
-            // old lg while every other screen moved — and it is the branch that
-            // lost its back button, which is what the lg used to sit under.
-            contentContainerStyle={{ gap: spacing.lg, paddingBottom: 96, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
-            keyboardShouldPersistTaps="handled"
-            refreshControl={
-              <RefreshControl
-                colors={[colors.primary]}
-                onRefresh={() => void refreshDetail()}
-                progressBackgroundColor={colors.surface}
-                refreshing={detailRefreshing}
-                tintColor={colors.primary}
-              />
-            }
-            showsVerticalScrollIndicator={false}
-          >
-            {/* isLoading, not isFetching: isFetching is also true during a pull
-                refresh, so the skeleton replaced the profile someone was looking
-                at and the refresh read as the screen reloading from scratch.
-                isLoading is only the first fetch, when there is nothing to keep
-                on screen anyway. */}
-            {detailQuery.isLoading ? <PropertyProfileSkeleton /> : null}
-
-            {detailQuery.data ? (
-              <PropertyProfile property={detailQuery.data} />
-            ) : null}
-
-            {detailQuery.isError ? (
-              <DiscoveryEmptyState
-                title="Could not load property"
-                description="The property profile could not be loaded. Go back and try again."
-              />
-            ) : null}
-
-            {!detailQuery.isLoading && !detailQuery.data && !detailQuery.isError ? (
-              <DiscoveryButton label="Back to listings" muted onPress={closeProfile} />
-            ) : null}
-          </ScrollView>
-          </SlideInView>
-        </SafeAreaView>
-      </Animated.View>
-  ) : null;
 
   return (
     <View style={{ flex: 1 }}>
-    {/* Hidden from screen readers while the profile covers it. */}
-    <View importantForAccessibility={selectedPropertyId ? "no-hide-descendants" : "auto"} style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
     <ScreenScrollView onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
       <DiscoveryHeader />
 
@@ -1047,7 +915,7 @@ export default function DiscoveryScreen() {
                 setDraftFilters(emptyPropertyFilters);
                 setSuggestionRound((round) => round + 1);
               }}
-              onView={setSelectedPropertyId}
+              onView={openProfile}
               result={aiResult}
               sort={aiSort}
               visible={aiVisible}
@@ -1189,7 +1057,7 @@ export default function DiscoveryScreen() {
               filters={appliedFilters}
               hideDistance={distanceIsNotFromHere}
               key={property.propertyId}
-              onView={() => setSelectedPropertyId(property.propertyId)}
+              onView={() => openProfile(property.propertyId)}
               property={property}
             />
           ))}
@@ -1209,7 +1077,7 @@ export default function DiscoveryScreen() {
                   filters={appliedFilters}
                   hideDistance={distanceIsNotFromHere}
                   key={property.propertyId}
-                  onView={() => setSelectedPropertyId(property.propertyId)}
+                  onView={() => openProfile(property.propertyId)}
                   property={property}
                 />
               ))}
@@ -1284,7 +1152,7 @@ export default function DiscoveryScreen() {
 
     </ScreenScrollView>
     </View>
-    {profileLayer}
+    <PropertyProfileLayer ref={profileLayer} />
     </View>
   );
 }
