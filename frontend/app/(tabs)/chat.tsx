@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BellRing, MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
-import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import OwnerNudgesScreen from "../owner-nudges";
 import NudgesScreen from "../nudges";
 
@@ -235,7 +234,6 @@ function ManagementChats() {
           </Text>
         </View>
 
-        {section !== "NUDGES" ? <DeleteThreadButton selection={selection} /> : null}
       </View>
 
       {/* Pills rather than tabs: Enquiries is empty until that module is wired,
@@ -296,6 +294,7 @@ function ManagementChats() {
                 onPress={() =>
                   selection.selectedId ? selection.clear() : void openThread(thread)
                 }
+                onDelete={selection.ask}
                 selected={selection.selectedId === thread.id}
                 thread={thread}
               />
@@ -679,7 +678,6 @@ function PersonalChats() {
           Chats
         </Text>
 
-        {section !== "NUDGES" ? <DeleteThreadButton selection={selection} /> : null}
       </View>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -737,7 +735,8 @@ function PersonalChats() {
             <ThreadRow
               onLongPress={showPinned.id ? () => selection.select(showPinned.id!) : undefined}
               onPress={() => (selection.selectedId ? selection.clear() : void openPinned())}
-              selected={selection.selectedId === showPinned.id}
+              onDelete={selection.ask}
+                selected={selection.selectedId === showPinned.id}
               thread={showPinned}
             />
           ) : null}
@@ -756,7 +755,8 @@ function PersonalChats() {
                   );
                 }
               }}
-              selected={selection.selectedId === thread.id}
+              onDelete={selection.ask}
+                selected={selection.selectedId === thread.id}
               subtitle={thread.origin === "ENQUIRY" ? "Enquiry" : null}
               thread={thread}
             />
@@ -796,36 +796,3 @@ function PersonalChats() {
   );
 }
 
-/**
- * The bin, beside the screen title.
- *
- * <p>Present only while a conversation is held. A delete control standing
- * permanently next to a heading reads as "delete all of this", and there is
- * nothing on this screen that should offer that.
- */
-function DeleteThreadButton({
-  selection,
-}: {
-  selection: ReturnType<typeof useDeleteThreadSelection>;
-}) {
-  const { colors } = useTheme();
-
-  if (!selection.selectedId) {
-    return null;
-  }
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel="Delete conversation"
-      accessibilityRole="button"
-      hitSlop={10}
-      onPress={selection.ask}
-      // Bare, and sitting a little low so it reads against the title's baseline
-      // rather than its ascender. A ring around it looked like a control that is
-      // always there, when it only appears while a row is held.
-      style={{ marginTop: 6, padding: 2 }}
-    >
-      <Trash2 color={colors.danger} size={19} strokeWidth={2.2} />
-    </AnimatedPressable>
-  );
-}

@@ -2,6 +2,7 @@ import { View } from "react-native";
 import { AlertTriangle, Ban, FileText, Image as ImageIcon } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { DeleteIcon } from "@/components/delete-icon";
 import { GhostText } from "@/components/skeletons/boundary";
 import { selectHaptic } from "@/lib/haptics";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
@@ -36,6 +37,7 @@ function ghostWidthFor(text: string | null | undefined, min: number, max: number
  * and tapping it is what creates the thread.
  */
 export function ThreadRow({
+  onDelete,
   onLongPress,
   onPress,
   selected,
@@ -50,6 +52,12 @@ export function ThreadRow({
    * removed rather than the chat.
    */
   onLongPress?: () => void;
+  /**
+   * Deletes the held row. Its bin replaces the time and unread dot at the
+   * row's right end while the row is selected (user, 2026-10-02); it used to
+   * sit beside the screen title.
+   */
+  onDelete?: () => void;
   onPress: () => void;
   selected?: boolean;
   /** Room number, role, whatever places this person. Optional. */
@@ -153,6 +161,17 @@ export function ThreadRow({
           sibling of the whole text block and so sat centred against three
           lines of it, landing beside the preview instead of under the date it
           belongs to. */}
+      {selected && onDelete ? (
+        <AnimatedPressable
+          accessibilityLabel="Delete conversation"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onDelete}
+          style={{ padding: 2 }}
+        >
+          <DeleteIcon color={colors.danger} size={24} strokeWidth={2.2} />
+        </AnimatedPressable>
+      ) : (
       <View style={{ alignItems: "flex-end", gap: 6 }}>
         {started ? (
           <GhostText ghostWidth={34} style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
@@ -173,6 +192,7 @@ export function ThreadRow({
           />
         ) : null}
       </View>
+      )}
       </View>
     </AnimatedPressable>
   );
