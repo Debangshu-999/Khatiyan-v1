@@ -255,11 +255,17 @@ export default function DiscoveryScreen() {
     if (profileClosing.current) return;
     profileClosing.current = true;
     Animated.timing(profileExit, { duration: 180, easing: Easing.in(Easing.quad), toValue: 1, useNativeDriver: true }).start(() => {
+      // Only drop the layer here. Resetting profileExit in the same breath
+      // flickered (user, 2026-10-02): the native value snapped back to fully
+      // visible a frame before React unmounted the layer. It resets when the
+      // next profile opens instead, while nothing is on screen to show it.
       setSelectedPropertyId(null);
-      profileExit.setValue(0);
       profileClosing.current = false;
     });
   }
+  useEffect(() => {
+    if (selectedPropertyId) profileExit.setValue(0);
+  }, [profileExit, selectedPropertyId]);
   const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   // The property profile is a state on this tab, not a route, so the device
