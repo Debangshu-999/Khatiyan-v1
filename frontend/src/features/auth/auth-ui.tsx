@@ -1,8 +1,8 @@
 import { CenterModal } from "@/components/center-modal";
-import { useState, type ComponentType, type ReactNode } from "react";
-import { ActivityIndicator, Modal, Text, View } from "react-native";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { ActivityIndicator, Keyboard, LayoutAnimation, Modal, Text, TextInput, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Eye, EyeOff, KeyRound, Lock, Pencil, type LucideProps } from "lucide-react-native";
+import { Eye, EyeOff, KeyRound, Lock, Pencil, SquarePen, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -124,7 +124,7 @@ export function AuthAlertModal({ message, onClose }: { message: string; onClose:
   );
 }
 
-export function StepProgress({ step, total, label }: { step: number; total: number; label: string }) {
+export function StepProgress({ step, total, label }: { step: number; total: number; label?: string }) {
   const { colors, fonts } = useTheme();
 
   return (
@@ -142,9 +142,11 @@ export function StepProgress({ step, total, label }: { step: number; total: numb
           />
         ))}
       </View>
-      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, letterSpacing: 0.2 }}>
-        {label}
-      </Text>
+      {label ? (
+        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, letterSpacing: 0.2 }}>
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -181,8 +183,150 @@ export function PhoneSummaryRow({ phone, onEdit }: { phone: string; onEdit: () =
         onPress={onEdit}
         style={{ paddingHorizontal: spacing.xs, paddingVertical: spacing.xs }}
       >
-        <Pencil color={colors.primary} size={16} strokeWidth={2.4} />
+        {/* The square-and-pencil "edit" mark most apps use, in black
+            (user, 2026-10-02). */}
+        <SquarePen color={colors.ink} size={17} strokeWidth={2.2} />
       </AnimatedPressable>
+    </View>
+  );
+}
+
+/** Grows into spare height between two fields, up to a ceiling. */
+export function FieldSpacer() {
+  return <View style={{ flexGrow: 1, maxHeight: spacing.xxxl - spacing.md * 2 }} />;
+}
+
+/**
+ * Six-box OTP entry, copied from the wallet lock's PIN sheet
+ * (`WalletPinModal`): the same boxes, the same single hidden input laid over
+ * them, and the same keyboard handling (user, 2026-10-02).
+ *
+ * <p>Typing the sixth digit dismisses the keyboard smoothly and hands the code
+ * to {@code onComplete}, so the step verifies itself; its Verify button stays
+ * as the fallback. The caller clears {@code value} after a refusal, and the
+ * keyboard stays down until a box is tapped, as on the wallet sheet.
+ *
+ * <p>Unlike the PIN sheet it shows the digits (a texted code is not a secret
+ * to the person holding the phone) and opts into SMS autofill.
+ */
+export function OtpBoxes({
+  value,
+  onChangeText,
+  onComplete,
+  busy = false,
+  error,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onComplete: (code: string) => void;
+  busy?: boolean;
+  error?: string;
+}) {
+  const { colors, fonts } = useTheme();
+  const input = useRef<TextInput>(null);
+  const active = useRef(true);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const keyboardOpen = useRef(false);
+  const message = error?.trim().replace(/\.+$/, "");
+
+  useEffect(() => {
+    const shown = Keyboard.addListener("keyboardDidShow", () => {
+      keyboardOpen.current = true;
+    });
+    const hidden = Keyboard.addListener("keyboardDidHide", () => {
+      keyboardOpen.current = false;
+    });
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+
+  // Open the keyboard once the step has settled: a request during the screen's
+  // own entrance is ignored on Android, as it is during the sheet's opening.
+  useEffect(() => {
+    active.current = true;
+    focusTimer.current = setTimeout(() => { if (active.current) focusBoxes(); }, 300);
+    return () => { active.current = false; clearTimeout(focusTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A refusal empties the boxes: drop the keyboard so the message is seen,
+  // and let a tap on a box bring it back for the next attempt.
+  const previousError = useRef(error);
+  useEffect(() => {
+    if (error && error !== previousError.current) {
+      clearTimeout(focusTimer.current);
+      dismissKeyboardSmoothly();
+    }
+    previousError.current = error;
+  }, [error]);
+
+  function focusBoxes() {
+    if (busy) return;
+    if (input.current?.isFocused() && keyboardOpen.current) return;
+    // A dismissed Android keyboard can leave its input focused. Refocusing
+    // alone does nothing in that state; reset focus before requesting it.
+    input.current?.blur();
+    requestAnimationFrame(() => { if (active.current) input.current?.focus(); });
+  }
+
+  function dismissKeyboardSmoothly() {
+    LayoutAnimation.configureNext({
+      duration: 250,
+      update: { type: LayoutAnimation.Types.easeInEaseOut },
+    });
+    input.current?.blur();
+    Keyboard.dismiss();
+  }
+
+  return (
+    <View>
+      <AnimatedPressable onPress={focusBoxes} accessible={false} style={{ flexDirection: "row", gap: 8 }}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <View
+            key={index}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.surface,
+              borderColor: message ? colors.danger : index === Math.min(value.length, 5) ? colors.ink : colors.borderStrong,
+              borderRadius: 9,
+              borderWidth: 1.5,
+              flex: 1,
+              height: 54,
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 24 }}>{value[index] ?? ""}</Text>
+          </View>
+        ))}
+      </AnimatedPressable>
+      <TextInput
+        ref={input}
+        accessibilityLabel="Enter six-digit code"
+        value={value}
+        keyboardType="number-pad"
+        showSoftInputOnFocus
+        maxLength={6}
+        autoComplete="sms-otp"
+        textContentType="oneTimeCode"
+        importantForAutofill="yes"
+        autoCorrect={false}
+        caretHidden
+        onPressIn={focusBoxes}
+        style={{ backgroundColor: "transparent", color: "transparent", height: 54, left: 0, opacity: 0.02, position: "absolute", right: 0, top: 0 }}
+        onChangeText={(text) => {
+          if (busy) return;
+          const next = digitsOnly(text).slice(0, 6);
+          onChangeText(next);
+          if (next.length === 6) {
+            dismissKeyboardSmoothly();
+            onComplete(next);
+          }
+        }}
+      />
+      {message ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, paddingTop: 6 }}>
+          {message}
+        </Text>
+      ) : null}
     </View>
   );
 }

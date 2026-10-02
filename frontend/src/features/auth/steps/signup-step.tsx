@@ -3,7 +3,7 @@ import { Mail, User } from "lucide-react-native";
 
 import { UserCheck } from "lucide-react-native";
 
-import { AuthChipLink, AuthTextField, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
+import { AuthChipLink, AuthTextField, FieldSpacer, PhoneField, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -65,9 +65,4 @@ export function SignupStep({
       </View>
     </>
   );
-}
-
-/** Grows into spare height between two fields, up to a ceiling. */
-function FieldSpacer() {
-  return <View style={{ flexGrow: 1, maxHeight: spacing.xxxl - spacing.md * 2 }} />;
 }

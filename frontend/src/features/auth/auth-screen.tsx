@@ -85,6 +85,10 @@ export function AuthScreen() {
   const [loginEmail, setLoginEmail] = useState("");
   const [emailLoginOtpRequested, setEmailLoginOtpRequested] = useState(false);
   const [signupPhone, setSignupPhone] = useState("");
+  // The provisioned-account door's own number. It shared signupPhone, so a
+  // number typed on Create account showed up already filled in here
+  // (user, 2026-10-02): every door keeps its own field.
+  const [activatePhone, setActivatePhone] = useState("");
   // setupOtp/setupPin are shared by signup and activation, so the "edit phone"
   // pencil has to know which door the person came through — sending an
   // activating tenant to Create account strands them on a form that will refuse
@@ -207,6 +211,9 @@ export function AuthScreen() {
       verifyOtpState.isLoading,
     ],
   );
+
+  /** The number the setup steps act on: whichever door opened them. */
+  const setupPhone = setupOrigin === "activate" ? activatePhone : signupPhone;
 
   const otpCooldownSeconds = otpRequestedAt
     ? Math.max(0, 30 - Math.floor((currentTimeMs - otpRequestedAt) / 1000))
@@ -402,12 +409,12 @@ export function AuthScreen() {
    */
   async function handleActivateAccount() {
     clearFieldErrors();
-    if (!validatePhone(signupPhone)) {
+    if (!validatePhone(activatePhone)) {
       return;
     }
 
     try {
-      await requestOtp({ phone: signupPhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
+      await requestOtp({ phone: activatePhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
       setOtp("");
       setNewPin("");
       setConfirmPin("");
@@ -422,12 +429,12 @@ export function AuthScreen() {
 
   async function handleRequestSetupOtp() {
     clearFieldErrors();
-    if (!validatePhone(signupPhone)) {
+    if (!validatePhone(setupPhone)) {
       return;
     }
 
     try {
-      await requestOtp({ phone: signupPhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
+      await requestOtp({ phone: setupPhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
       startOtpCooldown();
       setMessage("PIN setup OTP requested.");
     } catch (error) {
@@ -435,20 +442,29 @@ export function AuthScreen() {
     }
   }
 
-  async function handleVerifySetupOtp() {
+  /**
+   * Takes the code directly: the six-box entry verifies on its sixth digit,
+   * before the state update carrying that digit has rendered.
+   */
+  async function handleVerifySetupOtp(code: string = otp) {
+    if (verifyOtpState.isLoading) {
+      return;
+    }
     clearFieldErrors();
-    if (otp.length !== 6) {
-      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
+    if (code.length !== 6) {
+      showFieldErrors({ otp: code.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
 
     try {
-      await verifyOtp({ phone: signupPhone, otp, purpose: "LOGIN" }).unwrap();
+      await verifyOtp({ phone: setupPhone, otp: code, purpose: "LOGIN" }).unwrap();
       setNewPin("");
       setConfirmPin("");
       setStep("setupPin");
       setMessage("OTP verified. Choose your PIN.");
     } catch (error) {
+      // Empty the boxes for the next attempt, as the wallet PIN sheet does.
+      setOtp("");
       setAlertMessage(errorMessage(error));
     }
   }
@@ -469,7 +485,7 @@ export function AuthScreen() {
       // the provisioned-account door typed neither, and blank values must not
       // overwrite what the property owner recorded.
       const response = await setPinMutation({
-        phone: signupPhone,
+        phone: setupPhone,
         otp,
         pin: newPin,
         ...(setupOrigin === "signup"
@@ -499,20 +515,24 @@ export function AuthScreen() {
     }
   }
 
-  async function handleVerifyResetOtp() {
+  async function handleVerifyResetOtp(code: string = otp) {
+    if (verifyOtpState.isLoading) {
+      return;
+    }
     clearFieldErrors();
-    if (otp.length !== 6) {
-      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
+    if (code.length !== 6) {
+      showFieldErrors({ otp: code.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
 
     try {
-      await verifyOtp({ phone: resetPhone, otp, purpose: "PIN_RESET" }).unwrap();
+      await verifyOtp({ phone: resetPhone, otp: code, purpose: "PIN_RESET" }).unwrap();
       setNewPin("");
       setConfirmPin("");
       setStep("resetPin");
       setMessage("OTP verified. Choose a new PIN.");
     } catch (error) {
+      setOtp("");
       setAlertMessage(errorMessage(error));
     }
   }
@@ -528,8 +548,12 @@ export function AuthScreen() {
     }
 
     try {
-      const response = await confirmPinReset({ phone: resetPhone, otp, newPin }).unwrap();
-      await persistTokenSession(response);
+      // The reset no longer signs in (user, 2026-10-02): the session it returns
+      // is dropped and the person signs in with the new PIN, which also proves
+      // they remember it.
+      await confirmPinReset({ phone: resetPhone, otp, newPin }).unwrap();
+      goToLogin();
+      toast.show("PIN reset. Log in with your new PIN.", "success");
     } catch (error) {
       setAlertMessage(errorMessage(error));
     }
@@ -575,10 +599,29 @@ export function AuthScreen() {
     setOtpRequestedAt(null);
   }
 
+  /**
+   * Empties every field on the flow (user, 2026-10-02). No input carries a
+   * value into another door: leaving a screen, or backing out of a
+   * process, starts the next one blank. The one exception is the OTP screen's
+   * edit-phone pencil, whose whole point is to correct the number it kept.
+   */
+  function clearAllInputs() {
+    resetTransientState();
+    setLoginPhone("");
+    setPin("");
+    setLoginEmail("");
+    setEmailLoginOtpRequested(false);
+    setSignupPhone("");
+    setSignupEmail("");
+    setFullName("");
+    setActivatePhone("");
+    setResetPhone("");
+  }
+
   function goToLogin() {
     setMode("login");
     setStep("entry");
-    resetTransientState();
+    clearAllInputs();
   }
 
   /**
@@ -592,10 +635,7 @@ export function AuthScreen() {
   function goToActivate() {
     setMode("login");
     setStep("activate");
-    resetTransientState();
-    // signupPhone is what setupOtp/setupPin read, so activation binds to it too
-    // rather than adding a fourth phone field that means the same thing.
-    setSignupPhone("");
+    clearAllInputs();
   }
 
   /** Pencil target for activation. Keeps the number so they can correct it. */
@@ -610,24 +650,29 @@ export function AuthScreen() {
   function goToSignup() {
     setMode("signup");
     setStep("entry");
+    clearAllInputs();
+  }
+
+  /** Pencil target for signup: back to the form with what was typed intact. */
+  function backToSignup() {
+    setMode("signup");
+    setStep("entry");
     resetTransientState();
   }
 
   /**
-   * The device back button, walking the flow back one step at a time.
+   * The device back button.
    *
    * <p>
    * This screen is eight steps behind one route, so the navigator has nothing to
-   * pop — without this, back from the middle of a PIN reset left the app
-   * entirely, throwing away a verified code and a half-typed PIN.
+   * pop — without this, back left the app entirely.
    *
    * <p>
-   * <b>One step, not straight out.</b> Each step returns to the one that opened
-   * it, which is the same place that step's own visible control goes: the OTP
-   * screens back to the phone they were sent to, the PIN screens back to the
-   * code. The codes survive the trip — {@code verifyOtp} only peeks, and the
-   * real consumption happens later with the PIN, so a code is still live on the
-   * way back.
+   * <b>Blocked inside the two-step processes</b> (user, 2026-10-02): the OTP
+   * and PIN steps of signup, activation and PIN reset swallow the press. Their
+   * "Back to login" control is the way out, and the OTP screen's edit-phone
+   * pencil the way back, so a stray press never discards a verified code.
+   * Elsewhere it returns to sign-in, clearing what was typed.
    *
    * <p>
    * Returning false on the sign-in screen hands back to the system, which is the
@@ -654,21 +699,9 @@ export function AuthScreen() {
           goToLogin();
           return true;
         case "setupOtp":
-          if (setupOrigin === "activate") {
-            backToActivate();
-          } else {
-            goToSignup();
-          }
-          return true;
         case "setupPin":
-          setStep("setupOtp");
-          return true;
         case "resetOtp":
-          setStep("resetRequest");
-          resetTransientState();
-          return true;
         case "resetPin":
-          setStep("resetOtp");
           return true;
         default:
           return false;
@@ -680,9 +713,9 @@ export function AuthScreen() {
     // whenever that changes. The nav helpers are stable within a render and
     // deliberately left out — listing them would re-register on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, setupOrigin, step]);
+  }, [mode, step]);
 
-  const heroCopy = authHeroCopy(step, mode, { resetPhone, signupPhone });
+  const heroCopy = authHeroCopy(step, mode, { resetPhone, signupPhone: setupPhone });
   const [activateInfoOpen, setActivateInfoOpen] = useState(false);
 
   return (
@@ -793,17 +826,13 @@ export function AuthScreen() {
               busy={busy}
               onLogin={() => void handleLogin()}
               onForgotPin={() => {
+                clearAllInputs();
                 setStep("resetRequest");
-                clearFieldErrors();
-                setOtp("");
-                setNewPin("");
-                setConfirmPin("");
               }}
               onActivateAccount={() => goToActivate()}
               onEmailLogin={() => {
+                clearAllInputs();
                 setStep("emailLogin");
-                setOtp("");
-                setEmailLoginOtpRequested(false);
               }}
               phoneError={fieldErrors.phone}
               pinError={fieldErrors.pin}
@@ -830,8 +859,8 @@ export function AuthScreen() {
 
           {step === "activate" ? (
             <ActivateStep
-              phone={signupPhone}
-              onPhoneChange={setSignupPhone}
+              phone={activatePhone}
+              onPhoneChange={setActivatePhone}
               busy={busy}
               onSendCode={() => void handleActivateAccount()}
               phoneError={fieldErrors.phone}
@@ -870,15 +899,15 @@ export function AuthScreen() {
 
           {step === "setupOtp" ? (
             <SetupOtpStep
-              phone={signupPhone}
+              phone={setupPhone}
               otp={otp}
               onOtpChange={setOtp}
               cooldownSeconds={otpCooldownSeconds}
               resendBusy={requestOtpState.isLoading}
               verifyBusy={verifyOtpState.isLoading}
               onResendOtp={() => void handleRequestSetupOtp()}
-              onVerifyOtp={() => void handleVerifySetupOtp()}
-              onEditPhone={setupOrigin === "activate" ? backToActivate : goToSignup}
+              onVerifyOtp={(code) => void handleVerifySetupOtp(code)}
+              onEditPhone={setupOrigin === "activate" ? backToActivate : backToSignup}
               otpError={fieldErrors.otp}
               onBackToLogin={goToLogin}
               activating={setupOrigin === "activate"}
@@ -895,6 +924,7 @@ export function AuthScreen() {
               newPinError={fieldErrors.newPin}
               confirmPinError={fieldErrors.confirmPin}
               onSetPin={() => void handleSetPin()}
+              onBackToLogin={goToLogin}
             />
           ) : null}
 
@@ -918,7 +948,7 @@ export function AuthScreen() {
               busy={busy}
               onResendOtp={() => void handleRequestResetOtp()}
               otpError={fieldErrors.otp}
-              onVerifyOtp={() => void handleVerifyResetOtp()}
+              onVerifyOtp={(code) => void handleVerifyResetOtp(code)}
               onEditPhone={() => {
                 setStep("resetRequest");
                 resetTransientState();

@@ -41,7 +41,7 @@ export function ActivateStep({
       <PhoneField label="Registered phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
 
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
-        <PrimaryButton label="Send setup code" onPress={onSendCode} busy={busy} />
+        <PrimaryButton label="Activate" onPress={onSendCode} busy={busy} />
         <AuthChipLink icon={ArrowLeft} label="Back to PIN login" onPress={onBackToLogin} />
       </View>
     </>

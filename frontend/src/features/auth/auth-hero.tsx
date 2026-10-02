@@ -41,7 +41,7 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         tint: "jade",
         eyebrow: "Account setup",
         title: "Activate account",
-        subtitle: "Your account was created for you. Confirm your number to set a PIN.",
+        subtitle: "Your account was created for you by the property team.",
       };
     case "setupOtp":
       return {
@@ -49,8 +49,7 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         tint: "jade",
         eyebrow: "Secure your account",
         title: "Verify your code",
-        // Empty: the "Sent to +91 … ✎" row inside the step is the sub-line.
-        subtitle: "",
+        subtitle: "Enter the 6-digit OTP sent to verify your number.",
       };
     case "setupPin":
       return {
@@ -74,8 +73,7 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
         tint: "accent",
         eyebrow: "PIN recovery",
         title: "Verify reset OTP",
-        // Empty: the "Sent to +91 … ✎" row inside the step is the sub-line.
-        subtitle: "",
+        subtitle: "Enter the 6-digit OTP sent to verify your number.",
       };
     case "resetPin":
       return {

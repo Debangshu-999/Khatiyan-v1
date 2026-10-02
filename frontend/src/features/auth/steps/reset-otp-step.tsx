@@ -1,7 +1,7 @@
 import { View } from "react-native";
 import { ArrowLeft } from "lucide-react-native";
 
-import { AuthChipLink, CodeField, LinkButton, PhoneSummaryRow, PrimaryButton, StepProgress, otpTimerLabel } from "@/features/auth/auth-ui";
+import { AuthChipLink, OtpBoxes, PhoneSummaryRow, PrimaryButton, StepProgress, otpTimerLabel } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 
 /**
@@ -26,17 +26,18 @@ export function ResetOtpStep({
   cooldownSeconds: number;
   busy: boolean;
   onResendOtp: () => void;
-  onVerifyOtp: () => void;
+  onVerifyOtp: (code?: string) => void;
   onEditPhone: () => void;
   onBackToLogin: () => void;
   otpError?: string;
 }) {
   return (
     <>
-      <StepProgress step={1} total={2} label="Verify your number" />
+      <StepProgress step={1} total={2} />
       {/* Shows where the code went; Edit returns to the phone-entry step. */}
       <PhoneSummaryRow phone={phone} onEdit={onEditPhone} />
-      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} error={otpError} />
+      {/* Verifies itself on the sixth digit; Validate below is the fallback. */}
+      <OtpBoxes value={otp} onChangeText={onOtpChange} onComplete={onVerifyOtp} busy={busy} error={otpError} />
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <PrimaryButton
@@ -47,7 +48,7 @@ export function ResetOtpStep({
             muted
             grow
           />
-          <PrimaryButton label="Validate" onPress={onVerifyOtp} busy={busy} grow />
+          <PrimaryButton label="Validate" onPress={() => onVerifyOtp()} busy={busy} grow />
         </View>
         <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>

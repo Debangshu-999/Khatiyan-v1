@@ -2,7 +2,7 @@ import { Text, View } from "react-native";
 
 import { ArrowLeft } from "lucide-react-native";
 
-import { AuthChipLink, CodeField, otpTimerLabel, PhoneSummaryRow, PrimaryButton, StepProgress } from "@/features/auth/auth-ui";
+import { AuthChipLink, OtpBoxes, otpTimerLabel, PhoneSummaryRow, PrimaryButton, StepProgress } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -31,7 +31,7 @@ export function SetupOtpStep({
   resendBusy: boolean;
   verifyBusy: boolean;
   onResendOtp: () => void;
-  onVerifyOtp: () => void;
+  onVerifyOtp: (code?: string) => void;
   onEditPhone: () => void;
   // True when the person got here from the provisioned-account door. Only they
   // can be waiting on a code that will never come: that request answers 202 for
@@ -46,10 +46,11 @@ export function SetupOtpStep({
 
   return (
     <>
-      <StepProgress step={1} total={2} label="Verify your number" />
+      <StepProgress step={1} total={2} />
       {/* Shows where the code went; Edit returns to signup with values intact. */}
       <PhoneSummaryRow phone={phone} onEdit={onEditPhone} />
-      <CodeField label="OTP" value={otp} onChangeText={onOtpChange} error={otpError} />
+      {/* Verifies itself on the sixth digit; Verify below is the fallback. */}
+      <OtpBoxes value={otp} onChangeText={onOtpChange} onComplete={onVerifyOtp} busy={verifyBusy} error={otpError} />
       {activating ? (
         <Text style={[type.caption, { color: colors.muted }]}>
           No code? Contact Provisioner.
@@ -65,7 +66,7 @@ export function SetupOtpStep({
           muted
           grow
         />
-        <PrimaryButton label="Verify" onPress={onVerifyOtp} busy={verifyBusy} grow />
+        <PrimaryButton label="Verify" onPress={() => onVerifyOtp()} busy={verifyBusy} grow />
         </View>
         {/* Every other step offers a way back to sign-in; this one stranded
             anyone who opened it by mistake, or whose code never arrived. */}
