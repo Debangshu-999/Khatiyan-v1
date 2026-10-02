@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -19,6 +19,7 @@ import {
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { PropertyIcon } from "@/components/property-icon";
+import { PropertyFiltersSkeleton } from "@/components/skeletons";
 import { ChoiceChip, ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import {
   BATHROOM_TYPES,
@@ -39,6 +40,9 @@ import { useTheme } from "@/theme/use-theme";
 import { humanizeToken } from "../discovery-format";
 
 type LucideIcon = ComponentType<LucideProps>;
+
+/** The bottom sheet's entrance, after which the real controls render. */
+const SHEET_ENTER_MS = 320;
 
 const PG_FOR_ICONS: Record<PgFor, LucideIcon> = {
   ANYONE: UsersRound,
@@ -108,6 +112,19 @@ export function PropertyFilterModal({
 }: PropertyFilterModalProps) {
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // The sheet's skeleton holds while it slides up (user, 2026-10-02): the
+  // eight sections of chips are the heaviest thing on the frame, and laying
+  // them out on the same frames as the slide made the opening stutter.
+  const [contentReady, setContentReady] = useState(false);
+  useEffect(() => {
+    if (!visible) {
+      setContentReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setContentReady(true), SHEET_ENTER_MS);
+    return () => clearTimeout(timer);
+  }, [visible]);
 
   function update(partial: Partial<PropertyFilterState>) {
     onUpdate({ ...filters, ...partial });
@@ -209,6 +226,7 @@ export function PropertyFilterModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
+            {!contentReady ? <PropertyFiltersSkeleton /> : (<>
             <ChoiceSection
               description="What kind of place are you looking for?"
               icon={PropertyIcon}
@@ -330,6 +348,7 @@ export function PropertyFilterModal({
                 ))}
               </View>
             </ChoiceSection>
+            </>)}
           </ScrollView>
 
           <View

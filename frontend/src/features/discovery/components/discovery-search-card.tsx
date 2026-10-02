@@ -19,7 +19,7 @@ import {
   MapPin,
   Pencil,
   Search,
-  SlidersHorizontal,
+  Funnel,
   Sparkles,
   X,
 } from "lucide-react-native";
@@ -342,12 +342,16 @@ export function DiscoverySearchCard({
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
         {searchText.length > 0 && !loadingSuggestions ? (
+          // The same 36pt box as the filter button, so the divider between
+          // them sits centred (user, 2026-10-02).
           <AnimatedPressable
             accessibilityLabel="Clear search"
+            accessibilityRole="button"
             onPress={() => {
               setPickedFromList(false);
               onClearSearch();
             }}
+            style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}
           >
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
@@ -365,7 +369,7 @@ export function DiscoverySearchCard({
             width: 36,
           }}
         >
-          <SlidersHorizontal color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
+          <Funnel color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
           {activeFilterCount > 0 ? (
             <View
               style={{

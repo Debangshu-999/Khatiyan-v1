@@ -4,6 +4,7 @@ export * from "./chat/thread-list";
 export * from "./chat/messages";
 export * from "./discovery/property-profile";
 export * from "./discovery/listing-results";
+export * from "./discovery/property-filters";
 export * from "./food";
 export * from "./primitives";
 export * from "./property-board";

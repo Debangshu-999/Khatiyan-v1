@@ -1036,16 +1036,25 @@ export default function DiscoveryScreen() {
           <Card style={{ borderRadius: 28, overflow: "hidden" }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text
-                  style={{
-                    color: colors.ink,
-                    fontFamily: fonts.display,
-                    fontSize: 20,
-                    letterSpacing: -0.3,
-                  }}
-                >
-                  Listing Results
-                </Text>
+                {/* Sort sits beside the title (user, 2026-10-02), not on a
+                    row of its own under the count. */}
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.ink,
+                      flexShrink: 1,
+                      fontFamily: fonts.display,
+                      fontSize: 20,
+                      letterSpacing: -0.3,
+                    }}
+                  >
+                    Listing Results
+                  </Text>
+                  {(propertyPage?.items.length ?? 0) > 1 ? (
+                    <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
+                  ) : null}
+                </View>
                 <Text
                   numberOfLines={2}
                   style={[type.description, { color: colors.muted }]}
@@ -1058,11 +1067,6 @@ export default function DiscoveryScreen() {
                       : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${listingAreaLabel ? ` for "${listingAreaLabel}"` : ""}`
                     : "Loading listing results"}
                 </Text>
-                {(propertyPage?.items.length ?? 0) > 1 ? (
-                  <View style={{ alignSelf: "flex-start", marginTop: 2 }}>
-                    <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
-                  </View>
-                ) : null}
               </View>
               <View
                 style={{
