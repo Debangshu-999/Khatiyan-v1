@@ -199,15 +199,22 @@ export function ListingSortModal({
             <SortGroup options={["RENT_LOW", "RENT_HIGH"]} onChoose={(next) => dismiss(() => choose(next))} sort={sort} title="Rent" />
             <SortGroup options={["DEPOSIT_LOW", "DEPOSIT_HIGH"]} onChoose={(next) => dismiss(() => choose(next))} sort={sort} title="Deposit" />
 
-            {/* Last, full width. Dimmed while there is nothing to clear. */}
+            {/* Last, full width. Grey while the default order is chosen and
+                there is nothing to clear, blue once there is (user,
+                2026-10-02); a faded blue read as active. */}
             <DiscoveryButton
               disabled={sort === "RELEVANCE"}
-              label="Clear all filters"
+              label="Clear filters"
               onPress={() => dismiss(() => {
                 onChange("RELEVANCE");
                 onClose();
               })}
-              style={{ marginTop: spacing.xs }}
+              style={
+                sort === "RELEVANCE"
+                  ? { backgroundColor: colors.border, marginTop: spacing.xs, opacity: 1 }
+                  : { marginTop: spacing.xs }
+              }
+              textStyle={sort === "RELEVANCE" ? { color: colors.muted } : undefined}
             />
           </View>
         </View>
