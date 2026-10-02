@@ -242,16 +242,24 @@ export default function DiscoveryScreen() {
   const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
-  // Where the results list sat when a profile opened. The profile replaces the
-  // list rather than stacking on it, so the list remounts on the way back and
-  // used to start from the top (user, 2026-10-02); this puts it back.
-  const listScrollY = useRef(0);
-  // The list slides back in only when it is returning from a profile, not
-  // on the tab's first appearance.
-  const returningFromProfile = useRef(false);
-  useEffect(() => {
-    if (selectedPropertyId) returningFromProfile.current = true;
-  }, [selectedPropertyId]);
+  // The profile is a layer over the results list, not a replacement for it
+  // (user, 2026-10-02). Swapping the list out meant rebuilding every card on
+  // the way back, which was the delay, and losing the scroll position with
+  // it. Kept mounted underneath, the list is exactly as it was left.
+  //
+  // closeProfile slides the layer out before dropping it; the search paths
+  // that clear the selection while no profile is showing set it directly.
+  const profileExit = useRef(new Animated.Value(0)).current;
+  const profileClosing = useRef(false);
+  function closeProfile() {
+    if (profileClosing.current) return;
+    profileClosing.current = true;
+    Animated.timing(profileExit, { duration: 180, easing: Easing.in(Easing.quad), toValue: 1, useNativeDriver: true }).start(() => {
+      setSelectedPropertyId(null);
+      profileExit.setValue(0);
+      profileClosing.current = false;
+    });
+  }
   const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   // The property profile is a state on this tab, not a route, so the device
@@ -262,7 +270,7 @@ export default function DiscoveryScreen() {
     useCallback(() => {
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
         if (selectedPropertyId) {
-          setSelectedPropertyId(null);
+          closeProfile();
           return true;
         }
         return false;
@@ -766,7 +774,6 @@ export default function DiscoveryScreen() {
    */
   function handleResultsScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    listScrollY.current = contentOffset.y;
     const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - LOAD_MORE_SLACK;
     if (!atEnd) {
       return;
@@ -820,17 +827,26 @@ export default function DiscoveryScreen() {
       setDetailRefreshing(false);
     }
   }
-  if (selectedPropertyId) {
-    // formSurface, the lighter ground this screen had before the app-wide
-    // shade. A profile is mostly one large photograph and a stack of white
-    // cards; the deeper grey put a heavy band either side of the image and made
-    // the page compete with the picture it exists to show.
-    return (
-      <View style={{ backgroundColor: colors.surfaceRaised, flex: 1 }}>
+  // formSurface, the lighter ground this screen had before the app-wide shade.
+  // A profile is mostly one large photograph and a stack of white cards; the
+  // deeper grey put a heavy band either side of the image and made the page
+  // compete with the picture it exists to show.
+  const profileLayer = selectedPropertyId ? (
+      <Animated.View
+        style={{
+          backgroundColor: colors.surfaceRaised,
+          bottom: 0,
+          left: 0,
+          opacity: profileExit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+          position: "absolute",
+          right: 0,
+          top: 0,
+          transform: [{ translateX: profileExit.interpolate({ inputRange: [0, 1], outputRange: [0, 28] }) }],
+        }}
+      >
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          {/* Slides in like a pushed screen (user, 2026-10-02): the profile
-              replaces the list in place, which used to cut over with no
-              motion at all. */}
+          {/* Slides in like a pushed screen, and back out the way it came
+              (user, 2026-10-02). */}
           <SlideInView from="right">
           {/* A plain ScrollView, so it has to bring its own RefreshControl —
               ScreenScrollView supplies one everywhere else, which is why the
@@ -875,18 +891,19 @@ export default function DiscoveryScreen() {
             ) : null}
 
             {!detailQuery.isLoading && !detailQuery.data && !detailQuery.isError ? (
-              <DiscoveryButton label="Back to listings" muted onPress={() => setSelectedPropertyId(null)} />
+              <DiscoveryButton label="Back to listings" muted onPress={closeProfile} />
             ) : null}
           </ScrollView>
           </SlideInView>
         </SafeAreaView>
-      </View>
-    );
-  }
+      </Animated.View>
+  ) : null;
 
   return (
-    <SlideInView from={returningFromProfile.current ? "left" : "none"}>
-    <ScreenScrollView initialScrollY={listScrollY.current} onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
+    <View style={{ flex: 1 }}>
+    {/* Hidden from screen readers while the profile covers it. */}
+    <View importantForAccessibility={selectedPropertyId ? "no-hide-descendants" : "auto"} style={{ flex: 1 }}>
+    <ScreenScrollView onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
       <DiscoveryHeader />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
@@ -1260,7 +1277,9 @@ export default function DiscoveryScreen() {
       )}
 
     </ScreenScrollView>
-    </SlideInView>
+    </View>
+    {profileLayer}
+    </View>
   );
 }
 

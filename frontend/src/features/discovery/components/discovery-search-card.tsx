@@ -341,9 +341,11 @@ export function DiscoverySearchCard({
           value={searchText}
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
+        {/* Clear, divider and filter as one tight group (user, 2026-10-02):
+            no row gap between them, and 32pt boxes, so the two icons sit close
+            with the divider centred between them. */}
+        <View style={{ alignItems: "center", flexDirection: "row" }}>
         {searchText.length > 0 && !loadingSuggestions ? (
-          // The same 36pt box as the filter button, so the divider between
-          // them sits centred (user, 2026-10-02).
           <AnimatedPressable
             accessibilityLabel="Clear search"
             accessibilityRole="button"
@@ -351,7 +353,7 @@ export function DiscoverySearchCard({
               setPickedFromList(false);
               onClearSearch();
             }}
-            style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}
+            style={{ alignItems: "center", height: 36, justifyContent: "center", width: 32 }}
           >
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
@@ -366,7 +368,7 @@ export function DiscoverySearchCard({
             height: 36,
             justifyContent: "center",
             position: "relative",
-            width: 36,
+            width: 32,
           }}
         >
           <Funnel color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
@@ -390,6 +392,7 @@ export function DiscoverySearchCard({
             </View>
           ) : null}
         </AnimatedPressable>
+        </View>
       </View>
       )}
 
