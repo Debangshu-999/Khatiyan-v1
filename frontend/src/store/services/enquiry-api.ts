@@ -54,6 +54,8 @@ export type EnquiryDetail = {
   handlerUserId?: string | null;
   handlerName?: string | null;
   handlerAssignedAt?: string | null;
+  /** When the first attempt reached them. Null until it has. Gates booking a visit. */
+  respondedAt?: string | null;
   /** Whether the person asking may act on it: its handler, the owner, or anyone while unhandled. */
   viewerMayAct?: boolean;
   /**

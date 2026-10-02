@@ -237,6 +237,13 @@ public class LeadVisitService {
         if (enquiry.isOver(now)) {
             throw new ValidationException("This conversation has ended, so a visit can no longer be booked from it.");
         }
+        // Not before the enquiry has been answered with a successful attempt
+        // (user, 2026-10-02): until someone has actually reached them there is
+        // no conversation to book a visit out of. The screens grey the button
+        // out too; this is the rule they mirror.
+        if (enquiry.respondedAt() == null) {
+            throw new ValidationException("A visit can be booked once this enquiry has been answered.");
+        }
 
         // Makes sure the lead exists and is level with the enquiry, and holds
         // this person's turn at this property until the booking commits.

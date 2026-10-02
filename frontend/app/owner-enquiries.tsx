@@ -350,7 +350,16 @@ function EnquiryCard({
             <ActionButton compact disabled={!canAct} label="Respond" onPress={onRespond} />
           </View>
           <View style={{ flex: 1 }}>
-            <ActionButton compact disabled={!canAct} icon={CalendarPlus} label="Schedule visit" onPress={onSchedule} variant="secondary" />
+            {/* Greyed until a response has reached them (user, 2026-10-02);
+                the server refuses a booking before that as well. */}
+            <ActionButton
+              compact
+              disabled={!canAct || !enquiry.respondedAt}
+              icon={CalendarPlus}
+              label="Schedule visit"
+              onPress={onSchedule}
+              variant="secondary"
+            />
           </View>
           <ActionLogButton count={enquiry.responses.length} onPress={onViewLog} />
         </View>
