@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { CalendarPlus, History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -15,6 +16,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
+import { useEnquiryTabsSeen, type EnquiryTabKey } from "@/features/enquiry/use-enquiry-tabs-seen";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -39,7 +41,7 @@ const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
  * All: enquiries nobody handles yet. Mine: the ones the viewer handles. An
  * enquiry leaves All the moment it gets a handler (user, 2026-10-02).
  */
-type EnquiryTab = "all" | "mine";
+type EnquiryTab = EnquiryTabKey;
 
 const PAGE_SIZE = 6;
 
@@ -102,19 +104,49 @@ export default function OwnerEnquiriesScreen() {
   });
 
   const enquiries = useMemo(() => enquiriesQuery.data ?? [], [enquiriesQuery.data]);
-  const unhandled = useMemo(() => enquiries.filter((enquiry) => !enquiry.handlerUserId), [enquiries]);
+  // Newest first in both (user, 2026-10-02), so a new arrival lands at the top
+  // with its NEW ribbon: All by when it was asked, Mine by when it was handed
+  // to the viewer.
+  const unhandled = useMemo(
+    () => newestFirst(enquiries.filter((enquiry) => !enquiry.handlerUserId), (enquiry) => enquiry.createdAt),
+    [enquiries],
+  );
   const mine = useMemo(
-    () => (currentUserId ? enquiries.filter((enquiry) => enquiry.handlerUserId === currentUserId) : []),
+    () =>
+      currentUserId
+        ? newestFirst(
+            enquiries.filter((enquiry) => enquiry.handlerUserId === currentUserId),
+            (enquiry) => enquiry.handlerAssignedAt ?? enquiry.createdAt,
+          )
+        : [],
     [currentUserId, enquiries],
   );
   // Opens on All, unless All is empty and something is in Mine: opening onto
   // an empty tab reads as "no enquiries" when there are some.
   const effectiveTab: EnquiryTab = tab === "all" && unhandled.length === 0 && mine.length > 0 ? "mine" : tab;
   const visible = effectiveTab === "all" ? unhandled : mine;
+
+  // Red counts for what arrived since each tab was last seen (user,
+  // 2026-10-02): enquiries raised since in All, enquiries handed to the viewer
+  // since in My enquiries. A tab counts as seen when it is left, or when the
+  // screen is, so the count stays readable while that list is open.
+  const { markSeen, seenAt } = useEnquiryTabsSeen(
+    currentUserId && selectedProperty ? `${currentUserId}.${selectedProperty.id}` : null,
+  );
+  const newInAll = seenAt ? unhandled.filter((enquiry) => Date.parse(enquiry.createdAt) > seenAt.all).length : 0;
+  const newInMine = seenAt
+    ? mine.filter((enquiry) => Date.parse(enquiry.handlerAssignedAt ?? enquiry.createdAt) > seenAt.mine).length
+    : 0;
+  const openTab = useRef(effectiveTab);
+  openTab.current = effectiveTab;
+  useFocusEffect(
+    useCallback(() => () => markSeen(openTab.current), [markSeen]),
+  );
   const shown = visible.slice(0, visibleCount);
   const hasMore = visibleCount < visible.length;
 
   function changeTab(next: EnquiryTab) {
+    if (next !== effectiveTab) markSeen(effectiveTab);
     setTab(next);
     setVisibleCount(PAGE_SIZE);
   }
@@ -172,8 +204,8 @@ export default function OwnerEnquiriesScreen() {
               <CountTabPills
                 onChange={changeTab}
                 options={[
-                  { count: unhandled.length, label: "All", value: "all" as const },
-                  { count: mine.length, label: "My enquiries", value: "mine" as const },
+                  { badge: newInAll, count: unhandled.length, label: "All enquiries", value: "all" as const },
+                  { badge: newInMine, count: mine.length, label: "My enquiries", value: "mine" as const },
                 ]}
                 value={effectiveTab}
               />
@@ -320,6 +352,10 @@ function EnquiryCard({
       </View>
     </Card>
   );
+}
+
+function newestFirst(list: EnquiryDetail[], when: (enquiry: EnquiryDetail) => string) {
+  return [...list].sort((left, right) => Date.parse(when(right)) - Date.parse(when(left)));
 }
 
 /**

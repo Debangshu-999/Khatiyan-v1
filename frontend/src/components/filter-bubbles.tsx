@@ -70,7 +70,17 @@ export function CountTabPills<T extends string>({
    * is the only thing telling the reader that tapping it asks a question
    * instead of filtering on the spot.
    */
-  options: { chevron?: boolean; count?: number; label: string; value: T }[];
+  options: {
+    /**
+     * Items added since the tab was last seen, as a red count beside the
+     * label (enquiries, 2026-10-02). Nothing renders at 0.
+     */
+    badge?: number;
+    chevron?: boolean;
+    count?: number;
+    label: string;
+    value: T;
+  }[];
   value: T;
 }) {
   return (
@@ -92,6 +102,7 @@ export function CountTabPills<T extends string>({
       {options.map((option) => (
         <CountTabPill
           active={option.value === value}
+          badge={option.badge}
           chevron={option.chevron}
           compact={compact}
           count={option.count}
@@ -106,6 +117,7 @@ export function CountTabPills<T extends string>({
 
 function CountTabPill({
   active,
+  badge = 0,
   chevron = false,
   compact = false,
   count,
@@ -113,6 +125,7 @@ function CountTabPill({
   onPress,
 }: {
   active: boolean;
+  badge?: number;
   chevron?: boolean;
   compact?: boolean;
   count?: number;
@@ -124,7 +137,7 @@ function CountTabPill({
 
   return (
     <AnimatedPressable
-      accessibilityLabel={count == null ? label : `${label}, ${count}`}
+      accessibilityLabel={`${count == null ? label : `${label}, ${count}`}${badge > 0 ? `, ${badge} new` : ""}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
@@ -160,6 +173,24 @@ function CountTabPill({
           {count == null ? label : `${label} (${count})`}
         </Text>
         {chevron ? <ChevronDown color={inkColor} size={compact ? 12 : 14} strokeWidth={2.4} /> : null}
+        {badge > 0 ? (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.danger,
+              borderRadius: 999,
+              height: 16,
+              justifyContent: "center",
+              marginLeft: 2,
+              minWidth: 16,
+              paddingHorizontal: 4,
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 10, lineHeight: 13 }}>
+              {badge > 99 ? "99+" : badge}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <View
         style={{
