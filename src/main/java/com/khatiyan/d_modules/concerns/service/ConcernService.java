@@ -112,7 +112,8 @@ public class ConcernService {
                 roomNumberFor(concern),
                 tenancyReferenceCodeFor(concern),
                 userNameFor(concern.getAssignedToUserId()),
-                userNameFor(concern.getAssignedByUserId()));
+                userNameFor(concern.getAssignedByUserId()),
+                userNameFor(concern.getRaisedByUserId()));
     }
 
     private List<ConcernResponse> toResponses(List<Concern> concerns) {
@@ -137,6 +138,7 @@ public class ConcernService {
 
         Set<UUID> userIds = new HashSet<>();
         concerns.forEach(concern -> {
+            userIds.add(concern.getRaisedByUserId());
             if (concern.getAssignedToUserId() != null) {
                 userIds.add(concern.getAssignedToUserId());
             }
@@ -156,7 +158,8 @@ public class ConcernService {
                                 new RoomDisplayKey(concern.getPropertyId(), concern.getRoomId()), "Unavailable"),
                         tenancyReferenceCodes.getOrDefault(concern.getTenancyId(), "Unavailable"),
                         userNameFor(concern.getAssignedToUserId(), userNames),
-                        userNameFor(concern.getAssignedByUserId(), userNames)))
+                        userNameFor(concern.getAssignedByUserId(), userNames),
+                        userNameFor(concern.getRaisedByUserId(), userNames)))
                 .toList();
     }
 

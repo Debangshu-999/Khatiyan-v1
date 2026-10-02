@@ -26,6 +26,22 @@ class ExitRequestEligibilityTest {
     }
 
     @Test
+    void fixedTermEligibilityDependsOnAgreementLength() {
+        assertThat(TenancyExitRequestService.earlyExitAllowed(1, TODAY.minusMonths(2), 3, TODAY)).isFalse();
+        assertThat(TenancyExitRequestService.earlyExitAllowed(2, TODAY.minusDays(1), 1, TODAY)).isTrue();
+        assertThat(TenancyExitRequestService.earlyExitAllowed(11, TODAY.minusDays(1), 1, TODAY)).isTrue();
+    }
+
+    @Test
+    void indefiniteStayAllowsEarlyExitAtEitherSecondCycleOrSecondMonth() {
+        LocalDate start = TODAY.minusMonths(1);
+        assertThat(TenancyExitRequestService.earlyExitAllowed(null, start, 1, TODAY.minusDays(1))).isFalse();
+        assertThat(TenancyExitRequestService.earlyExitAllowed(null, start, 1, TODAY)).isTrue();
+        assertThat(TenancyExitRequestService.earlyExitAllowed(null, TODAY.minusDays(10), 2, TODAY)).isTrue();
+        assertThat(TenancyExitRequestService.earlyExitAllowed(null, TODAY.minusDays(10), 1, TODAY)).isFalse();
+    }
+
+    @Test
     @DisplayName("cycle one clamps the picker to the full-notice date")
     void firstCycleUsesFullNoticeAsItsFloor() {
         LocalDate leadFloor = LocalDate.of(2026, 9, 20);

@@ -179,6 +179,7 @@ public class SecurityConfig {
                 "Idempotency-Key",
                 "If-Match",
                 "X-Device-Label",
+                "X-Wallet-Unlock",
                 "X-Device-Platform"));
         configuration.setExposedHeaders(List.of("Location"));
         configuration.setAllowCredentials(true);

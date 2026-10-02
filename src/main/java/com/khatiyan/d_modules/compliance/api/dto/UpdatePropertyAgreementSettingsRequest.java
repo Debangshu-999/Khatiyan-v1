@@ -3,6 +3,7 @@ package com.khatiyan.d_modules.compliance.api.dto;
 import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
 
 /**
  * Replaces a property's agreement template wholesale.
@@ -13,5 +14,5 @@ import jakarta.validation.constraints.NotNull;
  * restore every dropped clause, or silently keep drops the owner just cleared.
  */
 public record UpdatePropertyAgreementSettingsRequest(
-        @NotNull AgreementTemplate template) {
+        @Valid @NotNull AgreementTemplate template) {
 }

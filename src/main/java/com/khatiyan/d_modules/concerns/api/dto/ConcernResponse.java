@@ -44,14 +44,17 @@ public record ConcernResponse(
     Instant updatedAt,
     List<ConcernPhotoResponse> photos,
         /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
-        long version
+        long version,
+        String raisedByName,
+        Instant reopenResolvedAt
 ) {
     public static ConcernResponse from(
             Concern concern,
             String roomNumber,
             String tenancyReferenceCode,
             String assignedToName,
-            String assignedByName) {
+            String assignedByName,
+            String raisedByName) {
         List<ConcernPhotoResponse> photos = concern.getPhotos()
             .stream()
             .sorted(Comparator.comparingInt(photo -> photo.getDisplayOrder()))
@@ -87,6 +90,6 @@ public record ConcernResponse(
             concern.getReopenedAt(),
             concern.getCreatedAt(),
             concern.getUpdatedAt(),
-            photos, concern.getVersion());
+            photos, concern.getVersion(), raisedByName, concern.getReopenResolvedAt());
     }
 }

@@ -578,7 +578,11 @@ public class TenancyRoomChangeRequestService {
             }
         }
 
-        Map<UUID, String> names = authModule.findByIds(userIds).entrySet().stream()
+        var users = authModule.findByIds(userIds);
+        Map<UUID, String> roles = users.entrySet().stream()
+                .filter(entry -> entry.getValue().role() != null)
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().role().name()));
+        Map<UUID, String> names = users.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
         Set<UUID> bookedSourceIds = requests.isEmpty()
                 ? Set.of()
@@ -587,7 +591,7 @@ public class TenancyRoomChangeRequestService {
 
         return requests.stream()
                 .map(request -> TenancyRoomChangeRequestResponse.from(
-                        request, names, bookedSourceIds.contains(request.getId())))
+                        request, names, bookedSourceIds.contains(request.getId()), roles))
                 .toList();
     }
 }

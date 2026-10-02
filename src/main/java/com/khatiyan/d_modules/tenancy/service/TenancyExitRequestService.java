@@ -256,9 +256,8 @@ public class TenancyExitRequestService {
             throw new ValidationException(
                     "The earliest checkout date is " + minimumCheckoutDate + " (10 days from today)");
         }
-        if (!prematureExitAllowed(currentCycle.cycleNumber())) {
-            throw new ValidationException(
-                    "Premature exit is not available during the first billing cycle");
+        if (!earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.getStartDate(), currentCycle.cycleNumber(), today)) {
+            throw new ValidationException(earlyExitRestriction(tenancy.getAgreementValidityMonths()));
         }
         if (!tenancy.isWithinTerm(requestedCheckoutDate)) {
             throw new ValidationException(
@@ -731,10 +730,10 @@ public class TenancyExitRequestService {
             LocalDate anchor,
             boolean reRaise) {
         LocalDate earliestPossible = minimumCheckoutDate(LocalDate.now(EXIT_ZONE));
-        boolean prematureAllowed = prematureExitAllowed(cycle.cycleNumber());
+        boolean prematureAllowed = earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.getStartDate(), cycle.cycleNumber(), LocalDate.now(EXIT_ZONE));
         String restrictionMessage = prematureAllowed
                 ? null
-                : "Premature exit is available from the second billing cycle.";
+                : earlyExitRestriction(tenancy.getAgreementValidityMonths());
 
         // A fixed term cannot go on notice (owner's rule, 2026-09-26): the stay
         // ends with the agreement, on a date agreed at the start. The only request
@@ -801,6 +800,20 @@ public class TenancyExitRequestService {
 
     static boolean prematureExitAllowed(Integer cycleNumber) {
         return cycleNumber != null && cycleNumber > 1;
+    }
+
+    static boolean earlyExitAllowed(Integer fixedMonths, LocalDate startDate, Integer cycleNumber, LocalDate today) {
+        if (fixedMonths != null) {
+            return fixedMonths >= 2;
+        }
+        return prematureExitAllowed(cycleNumber)
+                || (startDate != null && !today.isBefore(startDate.plusMonths(1)));
+    }
+
+    private static String earlyExitRestriction(Integer fixedMonths) {
+        return fixedMonths != null
+                ? "Early exit is not available for a 1-month fixed agreement."
+                : "Early exit is available from the second billing cycle or the beginning of the second month of your stay.";
     }
 
     static LocalDate earliestPermittedDate(
@@ -1003,7 +1016,11 @@ public class TenancyExitRequestService {
             }
         }
 
-        Map<UUID, String> names = authModule.findByIds(userIds).entrySet().stream()
+        var users = authModule.findByIds(userIds);
+        Map<UUID, String> roles = users.entrySet().stream()
+                .filter(entry -> entry.getValue().role() != null)
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().role().name()));
+        Map<UUID, String> names = users.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().fullName()));
         LocalDate today = LocalDate.now(EXIT_ZONE);
 
@@ -1016,7 +1033,7 @@ public class TenancyExitRequestService {
 
         return requests.stream()
                 .map(request -> TenancyExitRequestResponse.from(
-                        request, today, names, superseded.contains(request.getId())))
+                        request, today, names, superseded.contains(request.getId()), roles))
                 .toList();
     }
 }

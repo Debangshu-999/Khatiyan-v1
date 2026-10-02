@@ -39,6 +39,11 @@ public class ServiceBalanceAccount extends BaseEntity {
     @Column(name = "owner_user_id", nullable = false, updatable = false)
     private UUID ownerUserId;
 
+    @Column(name = "wallet_lock_enabled", nullable = false)
+    private boolean walletLockEnabled;
+
+    public void setWalletLockEnabled(boolean enabled) { this.walletLockEnabled = enabled; }
+
     /** Spendable right now. */
     @Column(name = "available_paise", nullable = false)
     private long availablePaise;

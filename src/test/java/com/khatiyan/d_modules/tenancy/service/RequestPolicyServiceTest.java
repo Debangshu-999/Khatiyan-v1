@@ -561,9 +561,10 @@ class RequestPolicyServiceTest {
     }
 
     @Test
-    @DisplayName("a first-cycle agreement tenant cannot request a premature exit")
+    @DisplayName("a one-month fixed agreement cannot request a premature exit")
     void firstBillingCycleBlocksPrematureExitInTheServicePath() {
         Tenancy tenancy = fixedTermTenancy();
+        tenancy.stampAgreementTerms(1, "");
         BillingCycleResponse cycle = billingCycle(1);
         when(tenancyRepository.findByUserIdAndActiveTrueForUpdate(TENANT_ID))
                 .thenReturn(Optional.of(tenancy));
@@ -572,7 +573,7 @@ class RequestPolicyServiceTest {
         assertThatThrownBy(() -> exitRequestService.requestAgreementExit(
                 TENANT_ID, LocalDate.now(REQUEST_ZONE).plusDays(10), "Leaving early"))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("first billing cycle");
+                .hasMessageContaining("1-month fixed agreement");
 
         verify(exitRequestRepository, never()).save(any(TenancyExitRequest.class));
     }
@@ -750,8 +751,8 @@ class RequestPolicyServiceTest {
     void aFixedTermNearItsEndCannotRequestAnExit() {
         LocalDate today = LocalDate.now(REQUEST_ZONE);
         Tenancy tenancy = Tenancy.start("TEN-2026-000002", TENANT_ID, PROPERTY_ID, CURRENT_ROOM_ID, ACTOR_ID,
-                12_000_00L, 10_000_00L, today.plusDays(5).minusMonths(1));
-        tenancy.stampAgreementTerms(1, null);
+                12_000_00L, 10_000_00L, today.plusDays(5).minusMonths(2));
+        tenancy.stampAgreementTerms(2, null);
         withCheckoutWindowInputs(tenancy, billingCycle(2), NoticePeriod.ONE_MONTH);
 
         assertThatThrownBy(() -> exitRequestService.getExitCheckoutWindow(TENANT_ID))

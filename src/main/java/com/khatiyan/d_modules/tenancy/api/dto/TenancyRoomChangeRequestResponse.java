@@ -50,7 +50,8 @@ public record TenancyRoomChangeRequestResponse(
      * The row's version (2026-09-29). A screen sends it back as If-Match when
      * it acts, and a record changed since the screen loaded it is refused.
      */
-    long version
+    long version,
+    String decidedByRole
 ) {
     public static TenancyRoomChangeRequestResponse from(TenancyRoomChangeRequest request) {
         return from(request, Map.of(), false);
@@ -69,6 +70,12 @@ public record TenancyRoomChangeRequestResponse(
             TenancyRoomChangeRequest request,
             Map<UUID, String> names,
             boolean outgoingBedBooked) {
+        return from(request, names, outgoingBedBooked, Map.of());
+    }
+
+    public static TenancyRoomChangeRequestResponse from(
+            TenancyRoomChangeRequest request, Map<UUID, String> names,
+            boolean outgoingBedBooked, Map<UUID, String> roles) {
         return new TenancyRoomChangeRequestResponse(
             request.getId(),
             request.getReferenceCode(),
@@ -96,7 +103,8 @@ public record TenancyRoomChangeRequestResponse(
             outgoingBedBooked,
             request.getCreatedAt(),
             request.getUpdatedAt(),
-            request.getVersion()
+            request.getVersion(),
+            nameOf(roles, request.getDecidedByUserId())
         );
     }
 

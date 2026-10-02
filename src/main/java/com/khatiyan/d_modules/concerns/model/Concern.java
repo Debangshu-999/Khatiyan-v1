@@ -114,6 +114,9 @@ public class Concern extends BaseEntity {
     @Column(name = "reopened_at")
     private Instant reopenedAt;
 
+    @Column(name = "reopen_resolved_at")
+    private Instant reopenResolvedAt;
+
     @BatchSize(size = 50)
     @OneToMany(mappedBy = "concern", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ConcernPhoto> photos = new ArrayList<>();
@@ -200,7 +203,6 @@ public class Concern extends BaseEntity {
         this.assignedToUserId = null;
         this.reopened = false;
         this.reopenReason = null;
-        this.reopenedAt = null;
         this.status = ConcernStatus.OPEN;
     }
 
@@ -237,11 +239,15 @@ public class Concern extends BaseEntity {
         this.resolvedByUserId = resolvedByUserId;
         this.resolutionNote = resolutionNote;
         this.statusNote = null;
-        this.resolvedAt = resolvedAt;
+        if (this.reopenedAt != null) {
+            this.reopenResolvedAt = resolvedAt;
+        } else if (this.resolvedAt == null) {
+            this.resolvedAt = resolvedAt;
+        }
         this.reopenUntil = resolvedAt.plus(REOPEN_WINDOW);
         this.reopened = false;
         this.reopenReason = null;
-        this.reopenedAt = null;
+        // Keep the latest reopen timestamp for the lifecycle timeline.
     }
 
     public void reopen(String reopenReason, Instant now) {
@@ -262,12 +268,14 @@ public class Concern extends BaseEntity {
         this.escalationLevel = ConcernEscalationLevel.NONE;
         this.reopened = true;
         this.reopenReason = reopenReason;
-        this.statusNote = reopenReason;
+        this.statusNote = null;
         this.reopenedAt = now;
+        this.reopenResolvedAt = null;
         
         this.resolvedByUserId = null;
         this.resolutionNote = null;
-        this.resolvedAt = null;
+        // Reopening changes the working status, not the fact it was resolved.
+        // Later resolutions use reopenResolvedAt; the first resolution is immutable.
         this.reopenUntil = null;
     }
 

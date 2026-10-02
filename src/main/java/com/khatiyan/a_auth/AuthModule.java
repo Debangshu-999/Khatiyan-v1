@@ -34,6 +34,10 @@ public class AuthModule {
         return authService.findById(userId);
     }
 
+    public void verifyOwnerWalletPin(UUID userId, String pin, String ipAddress) {
+        authService.verifyOwnerWalletPin(userId, pin, ipAddress);
+    }
+
     public Map<UUID, UserSummaryResponse> findByIds(Collection<UUID> userIds) {
         return authService.findByIds(userIds);
     }

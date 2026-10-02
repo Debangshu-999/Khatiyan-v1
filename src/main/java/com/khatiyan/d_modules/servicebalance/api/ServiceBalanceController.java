@@ -28,6 +28,11 @@ import com.khatiyan.d_modules.servicebalance.service.ServiceBalanceProperties;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotBlank;
+import com.khatiyan.c_shared.http.ClientIpResolver;
+import jakarta.servlet.http.HttpServletRequest;
+import com.khatiyan.d_modules.servicebalance.service.WalletUnlockService;
 
 /**
  * The owner's Service balance.
@@ -44,23 +49,43 @@ public class ServiceBalanceController {
 
     private final ServiceBalanceModule serviceBalanceModule;
     private final ServiceBalanceProperties properties;
+    private final WalletUnlockService walletUnlock;
+    private final ClientIpResolver clientIpResolver;
 
     public ServiceBalanceController(
-            ServiceBalanceModule serviceBalanceModule, ServiceBalanceProperties properties) {
+            ServiceBalanceModule serviceBalanceModule, ServiceBalanceProperties properties, WalletUnlockService walletUnlock, ClientIpResolver clientIpResolver) {
         this.serviceBalanceModule = serviceBalanceModule;
         this.properties = properties;
+        this.walletUnlock = walletUnlock;
+        this.clientIpResolver = clientIpResolver;
+    }
+
+    public record UnlockRequest(@NotBlank @Pattern(regexp = "\\d{6}", message = "PIN must be exactly 6 digits") String pin) {}
+    public record LockSettingRequest(boolean enabled, @Pattern(regexp = "\\d{6}", message = "PIN must be exactly 6 digits") String pin) {}
+
+    @PostMapping("/wallet-lock")
+    public WalletUnlockService.LockSettingResponse setWalletLock(@AuthenticationPrincipal UserPrincipal user, @Valid @RequestBody LockSettingRequest body, HttpServletRequest request) {
+        return walletUnlock.setLock(user, body.enabled(), body.pin(), clientIpResolver.resolve(request));
+    }
+
+    @PostMapping("/unlock")
+    public WalletUnlockService.UnlockResponse unlock(@AuthenticationPrincipal UserPrincipal user, @Valid @RequestBody UnlockRequest body, HttpServletRequest request) {
+        return walletUnlock.unlock(user, body.pin(), clientIpResolver.resolve(request));
     }
 
     @GetMapping
     public ResponseEntity<ServiceBalanceResponse> summary(@AuthenticationPrincipal UserPrincipal user) {
-        return ResponseEntity.ok(serviceBalanceModule.summary(user.userId()));
+        // The home card can show the amount without revealing the locked ledger.
+        return ResponseEntity.ok(serviceBalanceModule.summary(user.userId(), false));
     }
 
     @GetMapping("/entries")
     public ResponseEntity<Page<ServiceBalanceEntryResponse>> statement(
             @AuthenticationPrincipal UserPrincipal user,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestHeader(name = "X-Wallet-Unlock", required = false) String unlockToken) {
+        walletUnlock.requireUnlocked(user, unlockToken);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         return ResponseEntity.ok(
                 serviceBalanceModule.statement(user.userId(), PageRequest.of(Math.max(page, 0), safeSize)));
@@ -69,7 +94,9 @@ public class ServiceBalanceController {
     @PostMapping("/top-ups")
     public ResponseEntity<TopUpResponse> startTopUp(
             @AuthenticationPrincipal UserPrincipal user,
-            @Valid @RequestBody CreateTopUpRequest request) {
+            @Valid @RequestBody CreateTopUpRequest request,
+            @RequestHeader(name = "X-Wallet-Unlock", required = false) String unlockToken) {
+        walletUnlock.requireUnlocked(user, unlockToken);
         return ResponseEntity.ok(
                 serviceBalanceModule.startTopUp(user.userId(), request.amountPaise(), requestBaseUrl()));
     }
@@ -84,7 +111,9 @@ public class ServiceBalanceController {
     @GetMapping("/top-ups/{topUpId}")
     public ResponseEntity<TopUpResponse> readTopUp(
             @AuthenticationPrincipal UserPrincipal user,
-            @PathVariable UUID topUpId) {
+            @PathVariable UUID topUpId,
+            @RequestHeader(name = "X-Wallet-Unlock", required = false) String unlockToken) {
+        walletUnlock.requireUnlocked(user, unlockToken);
         return ResponseEntity.ok(serviceBalanceModule.readTopUp(user.userId(), topUpId, requestBaseUrl()));
     }
 

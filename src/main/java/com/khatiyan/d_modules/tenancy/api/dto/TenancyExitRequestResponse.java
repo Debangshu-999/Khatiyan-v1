@@ -75,7 +75,9 @@ public record TenancyExitRequestResponse(
      * The row's version (2026-09-29). A screen sends it back as If-Match when
      * it acts, and a record changed since the screen loaded it is refused.
      */
-    long version
+    long version,
+    String decidedByRole,
+    String withdrawalDecidedByRole
 ) {
     public static TenancyExitRequestResponse from(TenancyExitRequest request) {
         return from(request, LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")), Map.of());
@@ -108,6 +110,12 @@ public record TenancyExitRequestResponse(
             LocalDate today,
             Map<UUID, String> names,
             boolean supersededByNewer) {
+        return from(request, today, names, supersededByNewer, Map.of());
+    }
+
+    public static TenancyExitRequestResponse from(
+            TenancyExitRequest request, LocalDate today, Map<UUID, String> names,
+            boolean supersededByNewer, Map<UUID, String> roles) {
         return new TenancyExitRequestResponse(
             request.getId(),
             request.getReferenceCode(),
@@ -142,7 +150,9 @@ public record TenancyExitRequestResponse(
             request.getExpiresAt(),
             request.getCreatedAt(),
             request.getUpdatedAt(),
-            request.getVersion()
+            request.getVersion(),
+            nameOf(roles, request.getDecidedByUserId()),
+            nameOf(roles, request.getWithdrawalDecidedByUserId())
         );
     }
 

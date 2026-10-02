@@ -1149,4 +1149,33 @@ public class AuthService {
         return userRepository.findById(userId)
                 .filter(user -> user.isCurrentlyActive());
     }
+
+    /** Reauthenticates an owner without issuing a login token or opening a session. */
+    @Transactional(noRollbackFor = ValidationException.class)
+    public void verifyOwnerWalletPin(UUID userId, String pin, String ipAddress) {
+        if (pin == null || !pin.matches("\\d{6}")) throw new ValidationException("PIN must be exactly 6 digits");
+        User user = findActiveUserById(userId).orElseThrow(() -> new NotFoundException("User", userId));
+        if (user.getRole() != UserRole.OWNER) throw new com.khatiyan.c_shared.exception.ForbiddenException("Owner account required");
+        String phone = user.getPhone();
+        try {
+            phoneLoginLockService.ensureNotLocked(phone);
+            checkLoginRateLimits(phone);
+            loginAttemptService.checkDurableWindow(phone, ipAddress);
+        } catch (ValidationException limited) {
+            throw new ValidationException("Too many wallet unlock attempts. Try again later");
+        }
+        Instant now = Instant.now();
+        user.releaseExpiredLoginLock(now);
+        if (user.isLoginTemporarilyLocked(now)) throw new ValidationException("Too many wallet unlock attempts. Try again later");
+        if (!user.hasPin() || !pinService.matches(pin, user.getPinHash())) {
+            int attempts = user.getFailedLoginAttempts() + 1;
+            user.recordFailedLoginAttempt(loginRateLimitProperties.progressiveLockFailedAttempts(), loginRateLimitProperties.lockDurationForFailedAttempt(attempts), now);
+            phoneLoginLockService.recordFailure(phone);
+            loginAttemptService.recordFailure(phone, ipAddress, LoginFailureReason.INVALID_PIN);
+            throw new ValidationException("Incorrect wallet PIN");
+        }
+        user.recordSuccessfulLogin(now);
+        phoneLoginLockService.clear(phone);
+        loginAttemptService.recordSuccess(phone, ipAddress);
+    }
 }

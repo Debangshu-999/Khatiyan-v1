@@ -75,12 +75,16 @@ public class ServiceBalanceModule {
     }
 
     public ServiceBalanceResponse summary(UUID ownerUserId) {
+        return summary(ownerUserId, true);
+    }
+
+    public ServiceBalanceResponse summary(UUID ownerUserId, boolean includeEntries) {
         // Before reporting a balance, make sure it is the true one: a payment
         // the app stopped waiting for is still the owner's money.
         topUpService.reconcilePendingFor(ownerUserId);
 
         ServiceBalanceAccount account = balanceService.readAccount(ownerUserId);
-        List<ServiceBalanceEntryResponse> recent = account.getId() == null
+        List<ServiceBalanceEntryResponse> recent = !includeEntries || account.getId() == null
                 ? List.of()
                 : balanceService.recentEntries(account.getId()).stream()
                         .map(ServiceBalanceEntryResponse::from)

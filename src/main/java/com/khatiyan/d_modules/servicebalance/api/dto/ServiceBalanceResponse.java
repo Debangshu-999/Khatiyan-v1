@@ -26,7 +26,8 @@ public record ServiceBalanceResponse(
         long maxTopUpPaise,
         List<Long> quickAmountsPaise,
         boolean topUpEnabled,
-        List<ServiceBalanceEntryResponse> recentEntries) {
+        List<ServiceBalanceEntryResponse> recentEntries,
+        boolean walletLockEnabled) {
 
     public static ServiceBalanceResponse of(
             ServiceBalanceAccount account,
@@ -49,6 +50,7 @@ public record ServiceBalanceResponse(
                 maxTopUpPaise,
                 quickAmountsPaise,
                 topUpEnabled,
-                recentEntries);
+                recentEntries,
+                account.isWalletLockEnabled());
     }
 }

@@ -5,6 +5,8 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 
 /**
  * The owner's choices about a deed, as opposed to the deed itself.
@@ -41,6 +43,8 @@ public record AgreementTemplate(
          * owner a deed they will never issue. Onboarding may still override it for
          * one stay.
          */
+        @Min(value = 1, message = "Agreement term must be between 1 and 11 months")
+        @Max(value = 11, message = "Agreement term must be between 1 and 11 months")
         Integer defaultValidityMonths,
 
         /** What leaving a fixed term early costs, in the owner's words. */
