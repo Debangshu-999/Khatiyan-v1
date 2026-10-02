@@ -40,17 +40,20 @@ const PROPERTY_CARD_ART = require("../../assets/images/workspace/property-card.j
 // tile, with every glyph in black (user, 2026-10-02). Rooms and Vacancy reuse
 // the Rooms & beds marks so a fact looks the same on both screens.
 const TILE_ICON_COLOR = "#000000";
-function TenanciesTileIcon({ size = 22 }: LucideProps) {
-  return <MaterialCommunityIcons name="account-outline" color={TILE_ICON_COLOR} size={Number(size)} />;
+// A touch under the 38pt the side rail draws by default (user, 2026-10-02).
+const TILE_ICON_SIZE = 32;
+function TenanciesTileIcon(_props: LucideProps) {
+  return <MaterialCommunityIcons name="account" color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
 }
 function RoomsTileIcon(props: LucideProps) {
-  return <RoomsSummaryIcon {...props} color={TILE_ICON_COLOR} />;
+  return <RoomsSummaryIcon {...props} color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
 }
 function VacancyTileIcon(props: LucideProps) {
-  return <InServiceIcon {...props} color={TILE_ICON_COLOR} />;
+  return <InServiceIcon {...props} color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
 }
-function PropertyTileIcon(props: LucideProps) {
-  return <PropertyIcon {...props} color={TILE_ICON_COLOR} />;
+// The Home tab's own glyph, so the tile names the property the way the tab bar does.
+function PropertyTileIcon(_props: LucideProps) {
+  return <MaterialCommunityIcons name="home-outline" color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
 }
 
 export default function OwnerScreen() {
