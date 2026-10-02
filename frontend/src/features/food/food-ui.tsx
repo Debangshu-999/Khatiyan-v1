@@ -5,7 +5,6 @@ import { Coffee, Soup, type LucideProps } from "lucide-react-native";
 import Svg, { Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { MarqueeText } from "@/components/marquee-text";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import type { MealType } from "@/store/services/property-api";
@@ -624,7 +623,15 @@ export function FoodStat({
         padding: spacing.md,
       }}
     >
-      <MaterialCommunityIcons color={colors.primary} name={icon} size={22} />
+      {/* The label heads the card beside its glyph (user, 2026-10-02). As a
+          scrolling caption under the number it went missing on device; a
+          plain header that wraps to two lines always shows. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <MaterialCommunityIcons color={colors.primary} name={icon} size={20} />
+        <Text numberOfLines={2} style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansSemiBold, fontSize: 12, lineHeight: 16 }}>
+          {label}
+        </Text>
+      </View>
       <Text
         numberOfLines={longValue ? 2 : 1}
         style={[
@@ -634,9 +641,6 @@ export function FoodStat({
       >
         {value}
       </Text>
-      <MarqueeText style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
-        {label}
-      </MarqueeText>
     </View>
   );
 }
