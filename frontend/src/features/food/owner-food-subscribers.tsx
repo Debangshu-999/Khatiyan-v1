@@ -63,9 +63,9 @@ export function FoodProfileSubscribersSheet({
                 {person.hybrid ? (
                   <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginTop: 2 }}>
                     <FoodStatusChip icon="calendar-week" label="Hybrid" tone="neutral" />
-                    <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
-                      {person.days.map((day) => DAY_LABEL[day].slice(0, 3)).join(", ")}
-                    </Text>
+                    {/* The days ride in a grey pill beside the tag, styled
+                        as it is (user, 2026-10-02). */}
+                    <FoodStatusChip label={person.days.map((day) => DAY_LABEL[day].slice(0, 3)).join(", ")} tone="neutral" />
                   </View>
                 ) : null}
               </View>

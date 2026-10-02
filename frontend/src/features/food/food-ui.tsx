@@ -364,7 +364,8 @@ export function FoodStatusChip({
   label,
   tone,
 }: {
-  icon: MaterialIconName;
+  /** Optional: a pill that only carries detail can go without one. */
+  icon?: MaterialIconName;
   label: string;
   tone: "success" | "neutral" | "warning";
 }) {
@@ -388,7 +389,7 @@ export function FoodStatusChip({
         paddingVertical: 4,
       }}
     >
-      <MaterialCommunityIcons color={palette.ink} name={icon} size={13} />
+      {icon ? <MaterialCommunityIcons color={palette.ink} name={icon} size={13} /> : null}
       <Text style={{ color: palette.ink, fontFamily: fonts.sansBold, fontSize: 11.5 }}>{label}</Text>
     </View>
   );
