@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { ArrowLeft, ArrowLeftRight, Banknote, BriefcaseBusiness, Building2, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, UsersRound, X } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
@@ -28,7 +27,8 @@ import {
   OwnerStaffProfileSkeleton,
 } from "@/components/skeletons/owner";
 import { TabSwitcher } from "@/components/tab-switcher";
-import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { HeaderGradient } from "@/components/header-gradient";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
@@ -128,28 +128,17 @@ const STAFF_HEADER_ILLUSTRATION = require("../../../assets/images/workspace/staf
 const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/staff-history.png");
 const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/payroll-payment-history.png");
 
-function StaffScreenBackground() {
-  const { colors } = useTheme();
-
-  return (
-    <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-      <LinearGradient
-        colors={[colors.primarySoft, colors.surface]}
-        end={{ x: 0.5, y: 1 }}
-        locations={[0, 1]}
-        start={{ x: 0.5, y: 0 }}
-        style={{ height: 260 }}
-      />
-    </View>
-  );
-}
-
-function StaffHeader({ propertyName }: { propertyName: string }) {
+// Laid out exactly as the Billing header (user, 2026-10-02): same wash, the
+// "control." italic tail, the view-only chip, and a fallback line when no
+// property is selected.
+function StaffHeader({ propertyName, viewOnly = false }: { propertyName?: string; viewOnly?: boolean }) {
   return (
     <ScreenHeader
-      subtitle={`Staff workspace for ${propertyName}.`}
       artwork={STAFF_HEADER_ILLUSTRATION}
-      title="Staff Control"
+      badge={viewOnly ? <ViewOnlyChip /> : null}
+      italicTail="control."
+      subtitle={propertyName ? `Staff workspace for ${propertyName}.` : "Select a property on Home first."}
+      title="Staff"
     />
   );
 }
@@ -270,9 +259,10 @@ export function StaffWorkspace() {
 
   if (!property) {
     return (
-      <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} surface={colors.surface}
-      contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}
+      <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} surface={colors.surface}
+      contentContainerStyle={{ gap: spacing.lg, paddingBottom: PINNED_FOOTER_CLEARANCE }}
     >
+        <StaffHeader />
         <EmptyState icon={UsersRound} title="Choose a property" description="Select one of your properties from Home to manage its team." />
       </ScreenScrollView>
     );
@@ -284,7 +274,7 @@ export function StaffWorkspace() {
   }
 
   return (
-    <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
       <StaffHeader propertyName={property.name} />
 
       {/* A little clear of the header. The header's artwork hangs below its
@@ -327,8 +317,8 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
   const employment = employmentQuery.data;
 
   return (
-    <ScreenScrollView background={<StaffScreenBackground />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
-      <StaffHeader propertyName={property.name} />
+    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+      <StaffHeader propertyName={property.name} viewOnly />
 
       <Section title="My employment">
         {employmentQuery.isLoading ? (
