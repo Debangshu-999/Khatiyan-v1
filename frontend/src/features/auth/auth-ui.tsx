@@ -530,7 +530,10 @@ function FieldNotch({ error, fill, focused, label }: { error?: string; fill: str
           accessibilityRole={message ? "alert" : undefined}
           numberOfLines={1}
           style={{
-            color: message ? colors.danger : focused ? colors.primary : colors.inkSoft,
+            color: message ? colors.danger : focused ? colors.primary : colors.ink,
+            // A resting label is a faded black; focus and errors stay full
+            // strength so they read as the state they are (user, 2026-10-02).
+            opacity: message || focused ? 1 : 0.65,
             fontFamily: fonts.sansBold,
             fontSize: 11,
             letterSpacing: message ? 0 : 0.3,
