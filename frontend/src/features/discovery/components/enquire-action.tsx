@@ -209,7 +209,9 @@ function GreyActionButton({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.neutralSoft,
+        // A step greyer than neutralSoft, which all but vanished against the
+        // profile's near-white ground (user, 2026-10-02).
+        backgroundColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
         flex: 1,

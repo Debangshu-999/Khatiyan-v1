@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, BackHandler, Easing, Image, ImageBackground, RefreshControl, ScrollView, Text, View, useWindowDimensions, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Animated, BackHandler, Easing, Image, ImageBackground, RefreshControl, ScrollView, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { ArrowUpRight, MapPin } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { HeaderNote } from "@/components/header-note";
 import { PropertyIcon } from "@/components/property-icon";
 import { TabSwitcher } from "@/components/tab-switcher";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SlideInView } from "@/components/slide-in-view";
 import { DiscoveryButton } from "@/features/discovery/components/discovery-button";
 import { AiResults } from "@/features/discovery/components/ai-results";
 import { ListingSortButton, ListingSortModal } from "@/features/discovery/components/listing-sort";
@@ -121,7 +122,6 @@ const AI_WINDOW = 8;
 /** Pixels from the bottom at which the next page is asked for. */
 const LOAD_MORE_SLACK = 700;
 
-const DISCOVERY_HERO = require("../../assets/images/discovery-hero.png");
 const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/empty-states/discovery-empty-search.png");
 const LISTING_RESULTS_ILLUSTRATION = require("../../assets/images/listing-results-illustration.jpg");
 const NO_LOCATION_ILLUSTRATION = require("../../assets/empty-states/No-Location_512x512.png");
@@ -246,6 +246,12 @@ export default function DiscoveryScreen() {
   // list rather than stacking on it, so the list remounts on the way back and
   // used to start from the top (user, 2026-10-02); this puts it back.
   const listScrollY = useRef(0);
+  // The list slides back in only when it is returning from a profile, not
+  // on the tab's first appearance.
+  const returningFromProfile = useRef(false);
+  useEffect(() => {
+    if (selectedPropertyId) returningFromProfile.current = true;
+  }, [selectedPropertyId]);
   const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   // The property profile is a state on this tab, not a route, so the device
@@ -822,6 +828,10 @@ export default function DiscoveryScreen() {
     return (
       <View style={{ backgroundColor: colors.surfaceRaised, flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+          {/* Slides in like a pushed screen (user, 2026-10-02): the profile
+              replaces the list in place, which used to cut over with no
+              motion at all. */}
+          <SlideInView from="right">
           {/* A plain ScrollView, so it has to bring its own RefreshControl —
               ScreenScrollView supplies one everywhere else, which is why the
               gesture worked on every screen except this one. Its own state
@@ -868,12 +878,14 @@ export default function DiscoveryScreen() {
               <DiscoveryButton label="Back to listings" muted onPress={() => setSelectedPropertyId(null)} />
             ) : null}
           </ScrollView>
+          </SlideInView>
         </SafeAreaView>
       </View>
     );
   }
 
   return (
+    <SlideInView from={returningFromProfile.current ? "left" : "none"}>
     <ScreenScrollView initialScrollY={listScrollY.current} onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
       <DiscoveryHeader />
 
@@ -1024,16 +1036,25 @@ export default function DiscoveryScreen() {
           <Card style={{ borderRadius: 28, overflow: "hidden" }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text
-                  style={{
-                    color: colors.ink,
-                    fontFamily: fonts.display,
-                    fontSize: 20,
-                    letterSpacing: -0.3,
-                  }}
-                >
-                  Listing Results
-                </Text>
+                {/* Sort sits beside the title (user, 2026-10-02), not on a
+                    row of its own under the count. */}
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.ink,
+                      flexShrink: 1,
+                      fontFamily: fonts.display,
+                      fontSize: 20,
+                      letterSpacing: -0.3,
+                    }}
+                  >
+                    Listing Results
+                  </Text>
+                  {(propertyPage?.items.length ?? 0) > 1 ? (
+                    <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
+                  ) : null}
+                </View>
                 <Text
                   numberOfLines={2}
                   style={[type.description, { color: colors.muted }]}
@@ -1046,11 +1067,6 @@ export default function DiscoveryScreen() {
                       : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${listingAreaLabel ? ` for "${listingAreaLabel}"` : ""}`
                     : "Loading listing results"}
                 </Text>
-                {(propertyPage?.items.length ?? 0) > 1 ? (
-                  <View style={{ alignSelf: "flex-start", marginTop: 2 }}>
-                    <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
-                  </View>
-                ) : null}
               </View>
               <View
                 style={{
@@ -1244,6 +1260,7 @@ export default function DiscoveryScreen() {
       )}
 
     </ScreenScrollView>
+    </SlideInView>
   );
 }
 
@@ -1324,40 +1341,18 @@ function editDistanceAtMost(a: string, b: string, max: number) {
 // Shown on the properties tab when nothing is searched (initial no-location
 // state, or after the search box is cleared). A magnifying glass sits inside a
 // soft badge with a looping "sonar ping" ring, over a large centred prompt.
+/**
+ * "Discovery", with its description close under it and no artwork
+ * (user, 2026-10-02). The negative bottom margin pulls the tab switcher a
+ * little closer than the scroll view's section gap.
+ */
 function DiscoveryHeader() {
-  const { colors, type } = useTheme();
-  const { width } = useWindowDimensions();
-  const compact = width < 390;
-
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.62}
-        numberOfLines={1}
-        style={[type.brand, { color: colors.ink, fontSize: 30, lineHeight: 36, transform: [{ translateY: 9 }] }]}
-      >
-        Find
-        <Text style={[type.brandItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]}>
-          {" "}nearby.
-        </Text>
-      </Text>
-
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View style={{ flex: 1 }}>
-          <HeaderNote>Properties and local services around your selected location.</HeaderNote>
-        </View>
-        <View style={{ height: compact ? 76 : 94, width: compact ? 112 : 148 }}>
-          <Image
-            accessibilityIgnoresInvertColors
-            accessible={false}
-            resizeMode="contain"
-            source={DISCOVERY_HERO}
-            style={{ height: "100%", width: "100%" }}
-          />
-        </View>
-      </View>
-    </View>
+    <ScreenHeader
+      style={{ marginBottom: -spacing.xs }}
+      subtitle="Properties and local services around your selected location."
+      title="Discovery"
+    />
   );
 }
 function EmptySearchPrompt({

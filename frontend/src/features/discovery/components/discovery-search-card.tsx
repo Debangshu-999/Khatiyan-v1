@@ -19,7 +19,7 @@ import {
   MapPin,
   Pencil,
   Search,
-  SlidersHorizontal,
+  Funnel,
   Sparkles,
   X,
 } from "lucide-react-native";
@@ -140,6 +140,20 @@ export function DiscoverySearchCard({
   const showSuggestions =
     !aiLocked && focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
+
+  // A filled-in address (current location, a picked suggestion) reads from its
+  // start, not scrolled to its end (user, 2026-10-02). Android leaves the caret,
+  // and so the view, at the end of text set from outside. The caret is pinned
+  // to 0 whenever the value changes without typing, and let go the moment
+  // someone types or taps into the box.
+  const typedText = useRef(searchText);
+  const [caretAtStart, setCaretAtStart] = useState(false);
+  useEffect(() => {
+    if (searchText !== typedText.current) {
+      typedText.current = searchText;
+      setCaretAtStart(searchText.length > 0);
+    }
+  }, [searchText]);
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
 
   return (
@@ -305,10 +319,14 @@ export function DiscoverySearchCard({
           onChangeText={(text) => {
             // Typing means they are searching again, so the list may reopen.
             setPickedFromList(false);
+            typedText.current = text;
+            setCaretAtStart(false);
             onSearchTextChange(text);
           }}
           onFocus={() => setFocused(true)}
+          onPressIn={() => setCaretAtStart(false)}
           onSubmitEditing={onSearch}
+          selection={caretAtStart ? { end: 0, start: 0 } : undefined}
           placeholder="Search city, area or pincode"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
@@ -324,12 +342,16 @@ export function DiscoverySearchCard({
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
         {searchText.length > 0 && !loadingSuggestions ? (
+          // The same 36pt box as the filter button, so the divider between
+          // them sits centred (user, 2026-10-02).
           <AnimatedPressable
             accessibilityLabel="Clear search"
+            accessibilityRole="button"
             onPress={() => {
               setPickedFromList(false);
               onClearSearch();
             }}
+            style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}
           >
             <X color={colors.muted} size={18} strokeWidth={2.2} />
           </AnimatedPressable>
@@ -347,7 +369,7 @@ export function DiscoverySearchCard({
             width: 36,
           }}
         >
-          <SlidersHorizontal color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
+          <Funnel color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
           {activeFilterCount > 0 ? (
             <View
               style={{

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { Image, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { ImageOff, Images } from "lucide-react-native";
 
 import { Lightbox } from "@/components/image-carousel";
@@ -19,6 +19,11 @@ const THUMBNAIL_SLOTS = 5;
  * stable thumbnail slots. The fixed strip keeps the gallery from changing
  * shape as listings gain photos, while the fifth slot becomes the full-gallery
  * entry point only when there are more than five images.
+ *
+ * <p>The hero swipes (user, 2026-10-02): a paging strip of every image, one
+ * page per swipe, and landing on a page selects its thumbnail. A thumbnail
+ * tap slides the hero to it, so the two always agree. Past the fourth image
+ * the "+n" slot lights, standing for the rest.
  */
 export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMediaCarouselProps) {
   const { colors, fonts } = useTheme();
@@ -27,6 +32,19 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const activeIndex = selectedIndex < images.length ? selectedIndex : 0;
   const overflowCount = Math.max(0, images.length - THUMBNAIL_SLOTS);
+  const hero = useRef<ScrollView>(null);
+  const [heroWidth, setHeroWidth] = useState(0);
+
+  function showImage(index: number) {
+    setSelectedIndex(index);
+    hero.current?.scrollTo({ animated: true, x: index * heroWidth });
+  }
+
+  function onHeroSettled(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (heroWidth <= 0) return;
+    const index = Math.round(event.nativeEvent.contentOffset.x / heroWidth);
+    setSelectedIndex(Math.max(0, Math.min(images.length - 1, index)));
+  }
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -42,13 +60,27 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
         }}
       >
         {images.length > 0 ? (
-          <Pressable
-            accessibilityLabel={`Image ${activeIndex + 1} of ${images.length} for ${propertyName}. Opens full screen.`}
-            accessibilityRole="button"
-            onPress={() => setExpandedIndex(activeIndex)}
-            style={{ flex: 1 }}
-          >
-            <Image resizeMode="cover" source={{ uri: images[activeIndex] }} style={{ height: "100%", width: "100%" }} />
+          <View onLayout={(event) => setHeroWidth(event.nativeEvent.layout.width)} style={{ flex: 1 }}>
+            <ScrollView
+              horizontal
+              onMomentumScrollEnd={onHeroSettled}
+              pagingEnabled
+              ref={hero}
+              showsHorizontalScrollIndicator={false}
+              style={{ flex: 1 }}
+            >
+              {images.map((url, index) => (
+                <Pressable
+                  accessibilityLabel={`Image ${index + 1} of ${images.length} for ${propertyName}. Opens full screen.`}
+                  accessibilityRole="button"
+                  key={`${url}-${index}`}
+                  onPress={() => setExpandedIndex(index)}
+                  style={{ height: "100%", width: heroWidth || undefined }}
+                >
+                  <Image resizeMode="cover" source={{ uri: url }} style={{ height: "100%", width: "100%" }} />
+                </Pressable>
+              ))}
+            </ScrollView>
             <View
               pointerEvents="none"
               style={{
@@ -65,7 +97,7 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
                 {activeIndex + 1} / {images.length}
               </Text>
             </View>
-          </Pressable>
+          </View>
         ) : (
           <View style={{ alignItems: "center", flex: 1, gap: spacing.sm, justifyContent: "center", padding: spacing.lg }}>
             <Images color={colors.kicker} size={36} strokeWidth={1.7} />
@@ -82,8 +114,8 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
       <View style={{ flexDirection: "row", gap: 7 }}>
         {Array.from({ length: THUMBNAIL_SLOTS }, (_, slotIndex) => {
           const imageUrl = images[slotIndex];
-          const isSelected = Boolean(imageUrl) && activeIndex === slotIndex;
           const isOverflow = slotIndex === THUMBNAIL_SLOTS - 1 && overflowCount > 0;
+          const isSelected = Boolean(imageUrl) && (isOverflow ? activeIndex >= slotIndex : activeIndex === slotIndex);
 
           return (
             <Pressable
@@ -103,7 +135,7 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
                   setExpandedIndex(slotIndex);
                   return;
                 }
-                setSelectedIndex(slotIndex);
+                showImage(slotIndex);
               }}
               style={{
                 alignItems: "center",
