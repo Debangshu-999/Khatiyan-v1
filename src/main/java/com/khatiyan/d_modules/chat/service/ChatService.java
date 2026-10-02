@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ import com.khatiyan.d_modules.chat.api.dto.ChatMessageResponse;
 import com.khatiyan.d_modules.chat.api.dto.ChatThreadReaderResponse;
 import com.khatiyan.d_modules.chat.api.dto.ChatThreadResponse;
 import com.khatiyan.d_modules.chat.api.dto.SendChatMessageRequest;
+import com.khatiyan.d_modules.chat.event.ChatMessageSentEvent;
 import com.khatiyan.d_modules.chat.model.ChatMessage;
 import com.khatiyan.d_modules.chat.model.ChatMessageAttachment;
 import com.khatiyan.d_modules.chat.model.ChatReadState;
@@ -90,6 +92,7 @@ public class ChatService {
     private final PropertyModule propertyModule;
     private final TenancyModule tenancyModule;
     private final AuthModule authModule;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ChatService(
             ChatThreadRepository chatThreadRepository,
@@ -101,7 +104,9 @@ public class ChatService {
             RateLimitService rateLimitService,
             PropertyModule propertyModule,
             TenancyModule tenancyModule,
-            AuthModule authModule) {
+            AuthModule authModule,
+            ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
         this.chatThreadRepository = chatThreadRepository;
         this.chatThreadMemberRepository = chatThreadMemberRepository;
         this.chatMessageRepository = chatMessageRepository;
@@ -434,6 +439,22 @@ public class ChatService {
                         .orElse(0L));
     }
 
+    @Transactional
+    public void closeEnquiryThread(UUID enquiryId) {
+        chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiryId).ifPresent(thread -> {
+            if (thread.isOpen()) {
+                thread.close();
+                log.info("Chat enquiry thread closed with its enquiry threadId={} enquiryId={}",
+                        thread.getId(), enquiryId);
+            }
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasWrittenSince(UUID threadId, UUID authorUserId, Instant since) {
+        return chatMessageRepository.existsByThreadIdAndAuthorUserIdAndCreatedAtAfter(threadId, authorUserId, since);
+    }
+
     /** Sends into an existing conversation. */
     @Transactional
     public ChatMessageResponse send(UUID actorUserId, UUID threadId, SendChatMessageRequest request) {
@@ -460,6 +481,12 @@ public class ChatService {
         // Announced, not delivered — the message is already durable. This is the
         // tap on the shoulder, and it is allowed to fail silently.
         chatNotifier.announce(thread, message, authorName);
+
+        // The fact of it, for other modules, after this commits. The enquiry
+        // module reads it to tell that an enquirer replied. No text travels.
+        eventPublisher.publishEvent(new ChatMessageSentEvent(
+                thread.getId(), thread.getPropertyId(), thread.getOrigin(), thread.getOriginId(),
+                actorUserId, message.getCreatedAt()));
 
         return ChatMessageResponse.from(message, authorName, photoOf(author), actorUserId);
     }

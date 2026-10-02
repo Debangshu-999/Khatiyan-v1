@@ -52,6 +52,17 @@ public class PropertyVisitSlotService {
         this.managerAccessPolicy = managerAccessPolicy;
     }
 
+    /**
+     * The slots as a booking reads them. No permission check: a prospect books
+     * against them, and they are what the property offers the public.
+     */
+    @Transactional(readOnly = true)
+    public PropertyVisitSlotsResponse forBooking(UUID propertyId) {
+        return settingsRepository.findByPropertyId(propertyId)
+                .map(PropertyVisitSlotsResponse::from)
+                .orElseGet(() -> PropertyVisitSlotsResponse.notSetUp(propertyId));
+    }
+
     @Transactional(readOnly = true)
     public PropertyVisitSlotsResponse get(UUID actorUserId, UUID propertyId) {
         managerAccessPolicy.ensureCanView(actorUserId, propertyId, ManagerResource.PROPERTY_SETTINGS);

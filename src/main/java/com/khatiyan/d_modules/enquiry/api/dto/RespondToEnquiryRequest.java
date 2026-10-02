@@ -6,8 +6,11 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * Choosing a channel is the response. The note is optional and is for the
- * owner's own record — the enquirer is told the channel, not the note.
+ * Starts reaching out on a channel: CALL_BACK or CHAT.
+ *
+ * <p>The note is optional, is kept on a call attempt only, and is for
+ * management's own record. The enquirer never sees it. How the call went is
+ * said afterwards, with {@link SettleEnquiryAttemptRequest}.
  */
 public record RespondToEnquiryRequest(
     @NotNull(message = "Choose how you will get back to them.")

@@ -1,0 +1,573 @@
+package com.khatiyan.d_modules.lead.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.sql.Timestamp;
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.d_modules.analytics.LargePropertySeeder;
+import com.khatiyan.d_modules.analytics.LargePropertySeeder.Seeded;
+import com.khatiyan.d_modules.chat.ChatModule;
+import com.khatiyan.d_modules.chat.event.ChatMessageSentEvent;
+import com.khatiyan.d_modules.chat.model.ChatThreadOrigin;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
+import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.SetEnquirySentimentRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.UpdateEnquiryChannelConsentsRequest;
+import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
+import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
+import com.khatiyan.d_modules.enquiry.service.EnquiryChannelConsentService;
+import com.khatiyan.d_modules.enquiry.service.EnquiryService;
+import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
+import com.khatiyan.d_modules.lead.api.dto.LeadResponse;
+import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
+import com.khatiyan.d_modules.lead.api.dto.ScheduleVisitRequest;
+import com.khatiyan.d_modules.lead.api.dto.VisitAvailabilityResponse;
+import com.khatiyan.d_modules.lead.api.dto.VisitResponse;
+import com.khatiyan.d_modules.lead.model.LeadCloseReason;
+import com.khatiyan.d_modules.lead.model.LeadStage;
+import com.khatiyan.d_modules.lead.model.LeadState;
+import com.khatiyan.d_modules.notification.NotificationModule;
+import com.khatiyan.d_modules.notification.model.NotificationAudience;
+import com.khatiyan.d_modules.notification.model.NotificationSubtype;
+import com.khatiyan.d_modules.property.api.dto.SaveVisitSlotsRequest;
+import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
+import com.khatiyan.support.IntegrationTest;
+import com.khatiyan.support.PublishedEvents;
+
+/**
+ * The enquiry chat's action bar, end to end: sentiment, booking a visit from
+ * either side, moving it, and ending the conversation.
+ *
+ * <p>The property offers two slots every day, 10 to 11 and 4 to 5, each taking
+ * two visits. Chat and notifications are mocks, as in the other flow tests, so
+ * all three share one context.
+ */
+@IntegrationTest
+class EnquiryChatActionsIntegrationTest {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final LocalTime TEN = LocalTime.of(10, 0);
+    private static final LocalTime FOUR = LocalTime.of(16, 0);
+
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private EnquiryService enquiryService;
+    @Autowired private EnquiryChannelConsentService consentService;
+    @Autowired private PropertyVisitSlotService visitSlots;
+    @Autowired private LeadVisitService visits;
+    @Autowired private LeadQueryService leads;
+
+    @MockitoBean private NotificationModule notifications;
+    @MockitoBean private ChatModule chat;
+
+    private Seeded seeded;
+    private UUID property;
+    private UUID owner;
+    private UUID manager;
+    private UUID otherManager;
+    private List<UUID> prospects;
+    private final UUID thread = UUID.randomUUID();
+    private final LocalDate tomorrow = LocalDate.now(IST).plusDays(1);
+
+    @BeforeEach
+    void seed() {
+        seeded = LargePropertySeeder.seed(jdbc, LocalDate.now(IST), 8, 1, 61L);
+        property = seeded.propertyId();
+        owner = seeded.ownerId();
+        prospects = seeded.userIds().stream().filter(id -> !id.equals(owner)).limit(3).toList();
+        assertThat(prospects).hasSize(3);
+        manager = manager("Manager A");
+        otherManager = manager("Manager B");
+        when(chat.openEnquiryThread(any(), any(), any(), any())).thenReturn(thread);
+
+        visitSlots.create(owner, property, new SaveVisitSlotsRequest(
+                EnumSet.allOf(DayOfWeek.class),
+                List.of(new SaveVisitSlotsRequest.SlotInput(TEN, LocalTime.of(11, 0)),
+                        new SaveVisitSlotsRequest.SlotInput(FOUR, LocalTime.of(17, 0))),
+                2));
+    }
+
+    @AfterEach
+    void remove() {
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        jdbc.update("DELETE FROM lead.leads WHERE property_id = ?", property);
+        jdbc.update("DELETE FROM enquiry.enquiries WHERE property_id = ?", property);
+        for (UUID prospect : prospects) {
+            jdbc.update("DELETE FROM enquiry.enquiry_channel_consents WHERE user_id = ?", prospect);
+        }
+        jdbc.update("""
+                DELETE FROM property.property_visit_slots WHERE settings_id IN
+                    (SELECT id FROM property.property_visit_settings WHERE property_id = ?)
+                """, property);
+        jdbc.update("DELETE FROM property.property_visit_settings WHERE property_id = ?", property);
+        jdbc.update("DELETE FROM property.property_managers WHERE property_id = ?", property);
+        LargePropertySeeder.remove(jdbc, seeded);
+        jdbc.update("DELETE FROM auth.users WHERE id IN (?, ?)", manager, otherManager);
+    }
+
+    // ---- The bar ---------------------------------------------------------
+
+    @Test
+    void theBarOffersNothingUntilTheEnquirerHasReplied() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = raise(prospect);
+        enquiryService.respond(manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CHAT, null));
+        enquiryService.onChatMessage(message(enquiry, manager));
+
+        EnquiryChatActionsResponse forManager = visits.chatActions(manager, enquiry);
+        assertThat(forManager.viewer()).isEqualTo(EnquiryParty.ACTING_MANAGEMENT);
+        assertThat(forManager.answered()).isFalse();
+        assertThat(forManager.canSetSentiment()).isFalse();
+        assertThat(forManager.canScheduleVisit()).isFalse();
+        assertThat(visits.chatActions(prospect, enquiry).canScheduleVisit()).isFalse();
+        assertThatThrownBy(() -> enquiryService.setSentiment(
+                manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("not replied yet");
+
+        enquiryService.onChatMessage(message(enquiry, prospect));
+
+        // The handler is asked for a sentiment. The prospect can already book.
+        EnquiryChatActionsResponse afterReply = visits.chatActions(manager, enquiry);
+        assertThat(afterReply.answered()).isTrue();
+        assertThat(afterReply.canSetSentiment()).isTrue();
+        assertThat(afterReply.sentiment()).isNull();
+        assertThat(afterReply.canScheduleVisit()).isFalse();
+        assertThat(afterReply.canEndConversation()).isFalse();
+        EnquiryChatActionsResponse forProspect = visits.chatActions(prospect, enquiry);
+        assertThat(forProspect.viewer()).isEqualTo(EnquiryParty.ENQUIRER);
+        assertThat(forProspect.canScheduleVisit()).isTrue();
+        assertThat(forProspect.canSetSentiment()).isFalse();
+    }
+
+    @Test
+    void onlyWhoeverHandlesItSetsTheSentimentAndTheEnquirerNeverSeesIt() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+
+        assertThatThrownBy(() -> enquiryService.setSentiment(
+                otherManager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Someone else is handling");
+
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.NOT_INTERESTED);
+        // Another manager reads it and may do nothing with it.
+        EnquiryChatActionsResponse forOther = visits.chatActions(otherManager, enquiry);
+        assertThat(forOther.viewer()).isEqualTo(EnquiryParty.OTHER_MANAGEMENT);
+        assertThat(forOther.sentiment()).isEqualTo(EnquirySentiment.NOT_INTERESTED);
+        assertThat(forOther.canSetSentiment()).isFalse();
+        assertThat(forOther.canEndConversation()).isFalse();
+        // The enquirer is not told what the handler made of them.
+        assertThat(visits.chatActions(prospect, enquiry).sentiment()).isNull();
+        // An outsider gets nothing at all.
+        assertThatThrownBy(() -> visits.chatActions(prospects.get(1), enquiry)).isInstanceOf(RuntimeException.class);
+
+        // It can be changed.
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
+    }
+
+    // ---- Booking ---------------------------------------------------------
+
+    @Test
+    void theHandlerBooksOnceInterestedAndTheLeadBecomesAnEarlyLead() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).canScheduleVisit()).isTrue();
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(2);
+
+        reset(notifications);
+        EnquiryChatActionsResponse booked = visits.schedule(manager, enquiry, new ScheduleVisitRequest(tomorrow, FOUR));
+
+        assertThat(booked.visit()).isNotNull();
+        assertThat(booked.visit().referenceCode()).startsWith("VIS-");
+        assertThat(booked.visit().date()).isEqualTo(tomorrow);
+        assertThat(booked.visit().slotStart()).isEqualTo(FOUR);
+        assertThat(booked.visit().slotEnd()).isEqualTo(LocalTime.of(17, 0));
+        assertThat(booked.visit().canReschedule()).isTrue();
+        assertThat(booked.canScheduleVisit()).isFalse();
+
+        // One place taken in that slot, none in the other.
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(1);
+        assertThat(spotsLeft(tomorrow, TEN)).isEqualTo(2);
+
+        LeadResponse lead = onlyLead();
+        assertThat(lead.stage()).isEqualTo(LeadStage.EARLY_LEAD);
+        assertThat(lead.earlyLeadAt()).isNotNull();
+        assertThat(lead.state()).isEqualTo(LeadState.OPEN);
+
+        // The prospect is told, in their own workspace, and sees the visit on their bar.
+        verify(notifications, times(1)).notifyUser(
+                eq(prospect), eq("Visit scheduled"), contains("scheduled your visit for"), any(), any(),
+                eq(NotificationSubtype.VISIT_SCHEDULED), any(), any(), any(), eq(NotificationAudience.TENANT));
+        assertThat(visits.chatActions(prospect, enquiry).visit().id()).isEqualTo(booked.visit().id());
+
+        // One visit still to happen per lead: a second is refused, from either side.
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("already scheduled");
+    }
+
+    /** "Just in case someone changes their mind": not interested does not take the prospect's button away. */
+    @Test
+    void theProspectCanStillBookAfterBeingMarkedNotInterested() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+
+        EnquiryChatActionsResponse forManager = visits.chatActions(manager, enquiry);
+        assertThat(forManager.canEndConversation()).isTrue();
+        assertThat(forManager.canScheduleVisit()).isFalse();
+        assertThat(visits.chatActions(prospect, enquiry).canScheduleVisit()).isTrue();
+
+        reset(notifications);
+        visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN));
+
+        assertThat(onlyLead().stage()).isEqualTo(LeadStage.EARLY_LEAD);
+        // The handler is told, and is no longer offered to end a conversation with a visit pending.
+        verify(notifications, times(1)).notifyUser(
+                eq(manager), eq("Visit scheduled"), contains("booked a visit to"), any(), any(),
+                eq(NotificationSubtype.VISIT_SCHEDULED), any(), any(), any(), eq(NotificationAudience.MANAGEMENT));
+        assertThat(visits.chatActions(manager, enquiry).canEndConversation()).isFalse();
+    }
+
+    @Test
+    void aSlotStopsTakingBookingsWhenItsPlacesRunOut() {
+        // Two places in the 4 pm slot. Three people want it.
+        UUID first = answered(prospects.get(0));
+        UUID second = answered(prospects.get(1));
+        UUID third = answered(prospects.get(2));
+
+        visits.schedule(prospects.get(0), first, new ScheduleVisitRequest(tomorrow, FOUR));
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(1);
+        visits.schedule(prospects.get(1), second, new ScheduleVisitRequest(tomorrow, FOUR));
+        assertThat(spotsLeft(tomorrow, FOUR)).isZero();
+
+        assertThatThrownBy(() -> visits.schedule(prospects.get(2), third, new ScheduleVisitRequest(tomorrow, FOUR)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("slot is full");
+
+        // The same slot on another day, and the other slot the same day, are still open.
+        assertThat(spotsLeft(tomorrow.plusDays(1), FOUR)).isEqualTo(2);
+        visits.schedule(prospects.get(2), third, new ScheduleVisitRequest(tomorrow, TEN));
+        assertThat(spotsLeft(tomorrow, TEN)).isEqualTo(1);
+    }
+
+    @Test
+    void aVisitIsBookedFromTomorrowToThirtyDaysAheadIntoASlotThePropertyOffers() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        LocalDate today = LocalDate.now(IST);
+
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(today, FOUR)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("from tomorrow");
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(today.plusDays(31), FOUR)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("30 days ahead");
+        assertThatThrownBy(() -> visits.schedule(
+                prospect, enquiry, new ScheduleVisitRequest(tomorrow, LocalTime.of(13, 0))))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("does not offer that slot");
+
+        VisitAvailabilityResponse open = visits.availability(property);
+        assertThat(open.configured()).isTrue();
+        assertThat(open.days()).hasSize(30);
+        assertThat(open.days().get(0).date()).isEqualTo(tomorrow);
+        assertThat(open.days().get(29).date()).isEqualTo(today.plusDays(30));
+        assertThat(open.days().get(0).slots()).extracting(VisitAvailabilityResponse.Slot::startTime)
+                .containsExactly(TEN, FOUR);
+
+        visits.schedule(prospect, enquiry, new ScheduleVisitRequest(today.plusDays(30), TEN));
+        assertThat(spotsLeft(today.plusDays(30), TEN)).isEqualTo(1);
+    }
+
+    // ---- Moving ----------------------------------------------------------
+
+    @Test
+    void theProspectMovesTheirVisitTwiceThenThePropertyHasTo() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        assertThat(visit.tenantReschedulesLeft()).isEqualTo(2);
+
+        reset(notifications);
+        VisitResponse once = visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(2), TEN, null));
+
+        assertThat(once.date()).isEqualTo(tomorrow.plusDays(2));
+        assertThat(once.slotStart()).isEqualTo(TEN);
+        assertThat(once.tenantReschedulesLeft()).isEqualTo(1);
+        // Its old place is free again, its new one is taken.
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(2);
+        assertThat(spotsLeft(tomorrow.plusDays(2), TEN)).isEqualTo(1);
+        verify(notifications, times(1)).notifyUser(
+                eq(manager), eq("Visit moved"), contains("moved their visit"), any(), any(),
+                eq(NotificationSubtype.VISIT_RESCHEDULED), any(), any(), any(), eq(NotificationAudience.MANAGEMENT));
+
+        VisitResponse twice = visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(3), TEN, null));
+        assertThat(twice.tenantReschedulesLeft()).isZero();
+        assertThat(twice.canReschedule()).isFalse();
+        assertThat(twice.rescheduleRefusal()).contains("moved this visit twice");
+        assertThat(visits.chatActions(prospect, enquiry).visit().canReschedule()).isFalse();
+
+        assertThatThrownBy(() -> visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(4), TEN, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("moved this visit twice");
+
+        // The handler still can, and it is not counted against the prospect.
+        assertThat(visits.chatActions(manager, enquiry).visit().canReschedule()).isTrue();
+        reset(notifications);
+        VisitResponse byHandler = visits.reschedule(
+                manager, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(4), FOUR, "Owner is away that day"));
+        assertThat(byHandler.date()).isEqualTo(tomorrow.plusDays(4));
+        verify(notifications, times(1)).notifyUser(
+                eq(prospect), eq("Visit moved"), contains("moved your visit to"), any(), any(),
+                eq(NotificationSubtype.VISIT_RESCHEDULED), any(), any(), any(), eq(NotificationAudience.TENANT));
+
+        // Moving it to where it already is, or into a full slot, is refused.
+        assertThatThrownBy(() -> visits.reschedule(
+                manager, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(4), FOUR, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("already in");
+        // Somebody who is neither side cannot move it.
+        assertThatThrownBy(() -> visits.reschedule(
+                prospects.get(1), visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(5), FOUR, null)))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    /**
+     * A missed visit gets a new date by being moved. It is never booked again,
+     * by either side, while its enquiry still runs.
+     */
+    @Test
+    void aMissedVisitIsMovedToANewDateAndNotBookedAgain() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        assertThat(visit.upcoming()).isTrue();
+        assertThat(visit.missed()).isFalse();
+
+        // The day comes and goes without them.
+        setVisitDate(visit.id(), LocalDate.now(IST).minusDays(1));
+
+        EnquiryChatActionsResponse forProspect = visits.chatActions(prospect, enquiry);
+        assertThat(forProspect.visit().upcoming()).isFalse();
+        assertThat(forProspect.visit().missed()).isTrue();
+        assertThat(forProspect.visit().canReschedule()).isTrue();
+        assertThat(forProspect.canScheduleVisit()).isFalse();
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("after this enquiry expires");
+        // The handler cannot book them a second one either.
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).canScheduleVisit()).isFalse();
+        assertThatThrownBy(() -> visits.schedule(manager, enquiry, new ScheduleVisitRequest(tomorrow, TEN)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("after it expires");
+
+        // Moving it is the second chance, and it counts as one of their two.
+        VisitResponse moved = visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(1), TEN, null));
+
+        assertThat(moved.id()).isEqualTo(visit.id());
+        assertThat(moved.upcoming()).isTrue();
+        assertThat(moved.missed()).isFalse();
+        assertThat(moved.tenantReschedulesLeft()).isEqualTo(1);
+        assertThat(spotsLeft(tomorrow.plusDays(1), TEN)).isEqualTo(1);
+    }
+
+    /** Up until the day arrives, and not on it. */
+    @Test
+    void aVisitIsNotMovedOnItsOwnDay() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        assertThat(visit.canReschedule()).isTrue();
+
+        setVisitDate(visit.id(), LocalDate.now(IST));
+
+        for (UUID viewer : List.of(prospect, manager)) {
+            VisitResponse today = visits.chatActions(viewer, enquiry).visit();
+            assertThat(today.upcoming()).isTrue();
+            assertThat(today.canReschedule()).isFalse();
+            assertThat(today.rescheduleRefusal()).contains("The visit is today");
+            assertThatThrownBy(() -> visits.reschedule(
+                    viewer, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(1), TEN, null)))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("The visit is today");
+        }
+    }
+
+    /** One visit per enquiry: a new one is booked only on the person's next enquiry. */
+    @Test
+    void afterTheEnquiryExpiresTheyAskAgainAndCanBookAgain() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        setVisitDate(visit.id(), LocalDate.now(IST).minusDays(1));
+
+        // A visit that is over does not hold the conversation open.
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).canEndConversation()).isTrue();
+
+        // The enquiry runs out. They ask again, are answered again, and can book again.
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+        UUID next = answered(prospect);
+
+        assertThat(visits.chatActions(prospect, next).canScheduleVisit()).isTrue();
+        EnquiryChatActionsResponse again = visits.schedule(prospect, next, new ScheduleVisitRequest(tomorrow, TEN));
+        assertThat(again.visit().upcoming()).isTrue();
+        assertThat(again.visit().id()).isNotEqualTo(visit.id());
+        // Still the one record for this person at this property.
+        assertThat(onlyLead().stage()).isEqualTo(LeadStage.EARLY_LEAD);
+    }
+
+    // ---- Ending ----------------------------------------------------------
+
+    @Test
+    void endingTheConversationClosesTheChatEndsTheEnquiryAndClosesTheLead() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+
+        enquiryService.endConversation(manager, enquiry);
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+
+        verify(chat, times(1)).closeEnquiryThread(enquiry);
+        for (UUID viewer : List.of(manager, prospect)) {
+            EnquiryChatActionsResponse after = visits.chatActions(viewer, enquiry);
+            assertThat(after.ended()).isTrue();
+            assertThat(after.canScheduleVisit()).isFalse();
+            assertThat(after.canSetSentiment()).isFalse();
+            assertThat(after.canEndConversation()).isFalse();
+        }
+        LeadResponse lead = onlyLead();
+        assertThat(lead.state()).isEqualTo(LeadState.CLOSED);
+        assertThat(lead.closeReason()).isEqualTo(LeadCloseReason.NOT_INTERESTED);
+
+        // Nothing more can be done with it, and ending twice changes nothing.
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("conversation has ended");
+        assertThatThrownBy(() -> enquiryService.setSentiment(
+                manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED)))
+                .isInstanceOf(ValidationException.class);
+        enquiryService.endConversation(manager, enquiry);
+        verify(chat, times(1)).closeEnquiryThread(enquiry);
+
+        // The person may ask again, and that starts a new record.
+        UUID again = raise(prospect);
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        assertThat(again).isNotEqualTo(enquiry);
+        assertThat(leads.pageForProperty(owner, property, LeadState.OPEN, null, 0, 20).items()).hasSize(1);
+    }
+
+    @Test
+    void anEnquiryChatClosesByItselfWhenTheEnquirysDatePasses() {
+        UUID enquiry = answered(prospects.get(0));
+
+        // Inside its window the sweep leaves the chat alone.
+        assertThat(enquiryService.closeChatOfExpired(enquiry)).isFalse();
+        verify(chat, never()).closeEnquiryThread(any());
+
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+
+        assertThat(enquiryService.closeChatOfExpired(enquiry)).isTrue();
+        verify(chat, times(1)).closeEnquiryThread(enquiry);
+        assertThat(visits.chatActions(manager, enquiry).ended()).isTrue();
+        // Once closed it is not closed again.
+        assertThat(enquiryService.closeChatOfExpired(enquiry)).isFalse();
+        verify(chat, times(1)).closeEnquiryThread(enquiry);
+    }
+
+    // ---- Helpers ---------------------------------------------------------
+
+    private UUID raise(UUID prospect) {
+        consentService.replace(prospect,
+                new UpdateEnquiryChannelConsentsRequest(Set.of(EnquiryResponseChannel.CALL_BACK), true));
+        return enquiryService.raise(prospect, property, new RaiseEnquiryRequest("Is a single room free?")).enquiryId();
+    }
+
+    /** An enquiry the manager wrote to over chat and the prospect replied on. */
+    private UUID answered(UUID prospect) {
+        UUID enquiry = raise(prospect);
+        enquiryService.respond(manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CHAT, null));
+        enquiryService.onChatMessage(message(enquiry, manager));
+        enquiryService.onChatMessage(message(enquiry, prospect));
+        return enquiry;
+    }
+
+    private ChatMessageSentEvent message(UUID enquiry, UUID sender) {
+        return new ChatMessageSentEvent(thread, property, ChatThreadOrigin.ENQUIRY, enquiry, sender, Instant.now());
+    }
+
+    private void setVisitDate(UUID visit, LocalDate date) {
+        jdbc.update("UPDATE lead.visits SET visit_date = ? WHERE id = ?", java.sql.Date.valueOf(date), visit);
+    }
+
+    private int spotsLeft(LocalDate date, LocalTime slotStart) {
+        return visits.availability(property).days().stream()
+                .filter(day -> day.date().equals(date))
+                .flatMap(day -> day.slots().stream())
+                .filter(slot -> slot.startTime().equals(slotStart))
+                .findFirst()
+                .orElseThrow()
+                .spotsLeft();
+    }
+
+    private LeadResponse onlyLead() {
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        List<LeadResponse> all = leads.pageForProperty(owner, property, null, null, 0, 20).items();
+        assertThat(all).hasSize(1);
+        return all.get(0);
+    }
+
+    private UUID manager(String name) {
+        UUID id = UUID.randomUUID();
+        String phone = "+9195" + String.format("%08d", ThreadLocalRandom.current().nextInt(100_000_000));
+        jdbc.update("""
+                INSERT INTO auth.users (id, phone, full_name, role, is_active, is_phone_verified,
+                    credential_version, gender, date_of_birth, created_at, updated_at)
+                VALUES (?, ?, ?, 'USER', true, true, 0, 'MALE', DATE '1990-01-01', now(), now())
+                """, id, phone, name);
+        jdbc.update("""
+                INSERT INTO property.property_managers (id, property_id, manager_user_id, assigned_by_user_id,
+                    is_active, reference_code, created_at, updated_at)
+                VALUES (?, ?, ?, ?, true, ?, now(), now())
+                """, UUID.randomUUID(), property, id, owner, "MGR-T-" + id.toString().substring(0, 12));
+        return id;
+    }
+}

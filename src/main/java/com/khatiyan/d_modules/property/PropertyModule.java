@@ -13,6 +13,8 @@ import com.khatiyan.c_shared.employment.ManagerEmploymentDetails;
 import com.khatiyan.d_modules.property.api.dto.ManagerEmploymentResponse;
 import com.khatiyan.d_modules.property.api.dto.ManagerPayrollView;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
+import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
+import com.khatiyan.d_modules.property.api.dto.PropertyVisitSlotsResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyBillingPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomActivityResponse;
@@ -42,13 +44,16 @@ public class PropertyModule {
     private final PropertyManagerService propertyManagerService;
     private final ManagerAccessPolicy managerAccessPolicy;
     private final RoomMoldService roomMoldService;
+    private final PropertyVisitSlotService propertyVisitSlotService;
 
     public PropertyModule(
             RoomService roomService,
             PropertyService propertyService,
             PropertyManagerService propertyManagerService,
             ManagerAccessPolicy managerAccessPolicy,
-            RoomMoldService roomMoldService) {
+            RoomMoldService roomMoldService,
+            PropertyVisitSlotService propertyVisitSlotService) {
+        this.propertyVisitSlotService = propertyVisitSlotService;
         this.roomService = roomService;
         this.propertyService = propertyService;
         this.propertyManagerService = propertyManagerService;
@@ -62,6 +67,19 @@ public class PropertyModule {
 
     public List<PropertyResponse> listActiveProperties() {
         return propertyService.listActiveProperties();
+    }
+
+    /**
+     * The property's visit slots, weekday by weekday, as a booking reads them.
+     * Unguarded: a prospect books against them.
+     */
+    public PropertyVisitSlotsResponse findVisitSlots(UUID propertyId) {
+        return propertyVisitSlotService.forBooking(propertyId);
+    }
+
+    /** Several active properties in one read, for a job that works across properties. */
+    public List<PropertyResponse> findActiveProperties(Collection<UUID> propertyIds) {
+        return propertyService.findActiveProperties(propertyIds);
     }
 
     public List<PropertyResponse> listOwnerProperties(UUID ownerId) {

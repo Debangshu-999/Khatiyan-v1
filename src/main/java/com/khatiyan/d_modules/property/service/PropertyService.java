@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.property.service;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -178,6 +179,18 @@ public class PropertyService {
         }
 
         return byId.values().stream()
+                .map(property -> PropertyResponse.from(property))
+                .toList();
+    }
+
+    /** Several active properties in one read. Ids that are missing or inactive are left out. */
+    @Transactional(readOnly = true)
+    public List<PropertyResponse> findActiveProperties(Collection<UUID> propertyIds) {
+        if (propertyIds.isEmpty()) {
+            return List.of();
+        }
+        return propertyRepository.findByIdInAndActiveTrue(propertyIds)
+                .stream()
                 .map(property -> PropertyResponse.from(property))
                 .toList();
     }

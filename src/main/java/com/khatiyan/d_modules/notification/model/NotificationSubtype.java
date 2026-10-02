@@ -129,6 +129,16 @@ public enum NotificationSubtype {
     // Enquiries from a property's public profile.
     ENQUIRY_RECEIVED,
     ENQUIRY_ANSWERED,
+    /** An enquiry was given to this person: by the system's turn, or by the owner. */
+    ENQUIRY_ASSIGNED,
+    /** The owner assigns each enquiry, and some are still waiting. Sent once a day. */
+    ENQUIRY_UNASSIGNED,
+    /** The enquirer replied on the enquiry chat, which answers the enquiry. Told to its handler. */
+    ENQUIRY_CHAT_REPLIED,
+    /** A visit was booked. Sent to whichever side did not book it. */
+    VISIT_SCHEDULED,
+    /** A visit was moved. Sent to whichever side did not move it. */
+    VISIT_RESCHEDULED,
 
     /**
      * Somebody wrote in a conversation.

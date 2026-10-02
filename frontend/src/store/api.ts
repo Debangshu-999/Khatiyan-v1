@@ -60,6 +60,10 @@ const API_TAGS = [
   // Separate from "Enquiry" so the consent modal saving does not invalidate
   // the property's enquiry list on a screen the enquirer cannot even see.
   "EnquiryConsent",
+  // The action bar of an enquiry's chat and the visit slots behind it.
+  // Separate from "Enquiry" so booking a visit does not refetch the
+  // property's whole enquiry list.
+  "EnquiryChat",
   "Session",
   // The tenant's own identity checks. Separate from "Tenancy" so completing
   // a check refreshes the step bar without refetching the whole agreement

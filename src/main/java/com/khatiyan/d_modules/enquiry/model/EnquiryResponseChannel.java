@@ -1,26 +1,32 @@
 package com.khatiyan.d_modules.enquiry.model;
 
 /**
- * How management said they would get back to the enquirer.
+ * How management reaches an enquirer.
  *
- * <p>Choosing one IS the response — there is no reply message yet. The channel
- * is what the enquirer is told, so it has to be one they can actually be reached
- * on: phone is verified on every account, email only sometimes.
+ * <p>Choosing one starts an attempt, it does not answer the enquiry. See
+ * {@link EnquiryResponse}.
  */
 public enum EnquiryResponseChannel {
 
-    /** Always available. A verified phone is a precondition of having an account. */
+    /**
+     * A phone call. Offered when the enquirer agreed to share their number. A
+     * verified phone is a precondition of having an account.
+     */
     CALL_BACK,
 
     /**
-     * Only offered when the enquirer has an email that is present AND verified.
-     * An unverified address is an address nobody has proved they can read.
+     * Removed as a channel on 2026-10-02. A sent email cannot be tracked, so
+     * nobody could say whether it reached anyone. It is never offered, never
+     * accepted, and no longer something an enquirer can agree to.
+     *
+     * <p>The constant stays because stored rows carry it: old responses, old
+     * consents and old enquiries' shared-channel snapshots.
      */
     EMAIL,
 
     /**
-     * Declared, unreachable. Chat does not exist yet; the value is here so the
-     * enum does not need a migration on the day it does.
+     * The in-app conversation. Always open and needs no consent: it hands the
+     * responder nothing they could keep.
      */
     CHAT
 }

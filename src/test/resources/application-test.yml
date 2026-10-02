@@ -46,6 +46,7 @@ app:
       update-escalations-cron: "-"
     enquiry:
       expiry-cron: "-"
+      unassigned-reminder-cron: "-"
     expense:
       recurring-generation-cron: "-"
     geo:

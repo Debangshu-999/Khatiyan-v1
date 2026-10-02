@@ -25,7 +25,7 @@ import {
   Image as ImageIcon,
   Paperclip,
   Pencil,
-  SendHorizontal,
+  Send,
   X } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
@@ -39,6 +39,7 @@ import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { dayDivider } from "@/features/chat/chat-time";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
 import { MessageBubble, type MessageAnchor } from "@/features/chat/message-bubble";
+import { EnquiryActionBar } from "@/features/enquiry/enquiry-action-bar";
 import {
   AttachmentError,
   openFileWithApp,
@@ -56,6 +57,7 @@ import {
   type ChatAttachmentDraft,
   type ChatMessage,
 } from "@/store/services/chat-api";
+import { useGetEnquiryChatActionsQuery } from "@/store/services/enquiry-chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -96,7 +98,24 @@ export default function ChatThreadScreen() {
   // the header would be blank for one round trip on every open, and without the
   // server it would be blank forever on a push deep link.
   const title = thread?.title ?? params.title ?? "Conversation";
-  const readOnly = thread?.status === "READ_ONLY";
+  // An enquiry's conversation carries a bar of actions above the message box:
+  // the handler's reading of the enquirer, a visit to schedule, ending it.
+  const enquiryId = thread?.origin === "ENQUIRY" ? thread.originId : null;
+  const enquiryActionsQuery = useGetEnquiryChatActionsQuery(enquiryId ?? "", { skip: !enquiryId });
+  const enquiryActions = enquiryId ? enquiryActionsQuery.data : undefined;
+  const refetchEnquiryActions = enquiryActionsQuery.refetch;
+  const messageCount = messages.length;
+  // What the bar offers follows the conversation: a reply is what makes it
+  // appear, and each message can move the enquiry on the server. So it is read
+  // again whenever a message arrives or is sent.
+  useEffect(() => {
+    if (enquiryId && messageCount > 0) {
+      void refetchEnquiryActions();
+    }
+  }, [enquiryId, messageCount, refetchEnquiryActions]);
+  // Closed on the server, or an enquiry past its date whose chat the hourly
+  // sweep has not closed yet. Either way nothing more is said in it.
+  const readOnly = thread?.status === "READ_ONLY" || Boolean(enquiryActions?.ended);
   const [sendMessage, sendState] = useSendChatMessageMutation();
   const [deleteMessage] = useDeleteChatMessageMutation();
   const [editMessage] = useEditChatMessageMutation();
@@ -570,11 +589,12 @@ export default function ChatThreadScreen() {
             }}
           >
             <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-              This conversation is closed. You can still read it.
+              {enquiryId ? "Conversation has ended" : "This conversation is closed. You can still read it."}
             </Text>
           </View>
         ) : (
         <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}>
+          {enquiryActions ? <EnquiryActionBar actions={enquiryActions} /> : null}
           {editing ? (
             <View
               style={{
@@ -672,6 +692,9 @@ export default function ChatThreadScreen() {
             </AnimatedPressable>
           </View>
 
+          {/* Blue once there is something to send, grey until then. The same
+              height as a one-line message box, so the two sit level, and a
+              taller draft leaves it resting beside the last line. */}
           <AnimatedPressable
             accessibilityLabel="Send"
             accessibilityRole="button"
@@ -679,17 +702,20 @@ export default function ChatThreadScreen() {
             onPress={() => void send()}
             style={{
               alignItems: "center",
-              backgroundColor: draft.trim() ? colors.ink : colors.surfaceSunken,
+              backgroundColor: draft.trim() ? colors.primary : colors.surfaceSunken,
               borderRadius: 999,
-              height: 36,
+              height: 38,
               justifyContent: "center",
-              width: 36,
+              width: 38,
             }}
           >
-            <SendHorizontal
-              color={draft.trim() ? colors.surface : colors.kicker}
+            {/* The paper plane's weight sits to its upper right. Nudged down
+                and left by a point so it reads as centred in the circle. */}
+            <Send
+              color={draft.trim() ? colors.onPrimary : colors.kicker}
               size={17}
               strokeWidth={2.3}
+              style={{ marginLeft: -2, marginTop: 1 }}
             />
           </AnimatedPressable>
         </View>

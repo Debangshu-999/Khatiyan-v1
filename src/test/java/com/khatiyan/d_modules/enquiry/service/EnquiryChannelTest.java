@@ -28,6 +28,9 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
  * <p>Chat is the exception to both halves. It became a real reply path when the
  * chat module landed, and it hands the responder nothing they could keep, so it
  * is always offered, carries no target, and needs no consent.
+ *
+ * <p>Email is the opposite exception (2026-10-02): never offered, whatever the
+ * account holds and whatever was agreed to. A sent email cannot be tracked.
  */
 class EnquiryChannelTest {
 
@@ -61,36 +64,19 @@ class EnquiryChannelTest {
         assertThat(channels.get(0).target()).isEqualTo("+919000000000");
     }
 
+    /**
+     * The best case for email there is: on the account, verified, and agreed
+     * to, as an enquiry raised before the removal still records. It is still
+     * not offered, and the address is not handed over.
+     */
     @Test
-    void offersEmailOnlyWhenVerified() {
+    void neverOffersEmailEvenWhenVerifiedAndConsented() {
         var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", true), BOTH);
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(
-                        EnquiryResponseChannel.CALL_BACK,
-                        EnquiryResponseChannel.EMAIL,
-                        EnquiryResponseChannel.CHAT);
-        assertThat(channels.get(1).target()).isEqualTo("anita@example.com");
-    }
-
-    /**
-     * The case that matters. An address on file is not an address anyone has
-     * proved they can read, and offering it sends the owner's reply nowhere.
-     */
-    @Test
-    void withholdsAnUnverifiedEmailEvenWhenConsented() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "anita@example.com", false), BOTH);
-
-        assertThat(channels).extracting(ReachableChannelResponse::channel)
                 .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
-    }
-
-    @Test
-    void treatsABlankEmailAsAbsent() {
-        var channels = EnquiryService.reachableChannels(user("+919000000000", "   ", true), BOTH);
-
-        assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
+        assertThat(channels).extracting(ReachableChannelResponse::target)
+                .doesNotContain("anita@example.com");
     }
 
     /**
@@ -105,11 +91,8 @@ class EnquiryChannelTest {
                 Set.of(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL, EnquiryResponseChannel.CHAT));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(
-                        EnquiryResponseChannel.CALL_BACK,
-                        EnquiryResponseChannel.EMAIL,
-                        EnquiryResponseChannel.CHAT);
-        assertThat(channels.get(2).target()).isNull();
+                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
+        assertThat(channels.get(1).target()).isNull();
     }
 
     @Test
@@ -132,17 +115,7 @@ class EnquiryChannelTest {
                 Set.of(EnquiryResponseChannel.EMAIL));
 
         assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.EMAIL, EnquiryResponseChannel.CHAT);
-    }
-
-    @Test
-    void withholdsAVerifiedEmailThatWasNotConsentedTo() {
-        var channels = EnquiryService.reachableChannels(
-                user("+919000000000", "anita@example.com", true),
-                Set.of(EnquiryResponseChannel.CALL_BACK));
-
-        assertThat(channels).extracting(ReachableChannelResponse::channel)
-                .containsExactly(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.CHAT);
+                .containsExactly(EnquiryResponseChannel.CHAT);
     }
 
     /**
@@ -156,9 +129,8 @@ class EnquiryChannelTest {
                 .containsExactly(EnquiryResponseChannel.CHAT);
     }
 
-    // The footnote tells the enquirer to fix the one thing that is missing —
-    // "register and verify" against "verify" are different instructions, and
-    // telling someone to add an email they already added reads as inattention.
+    // Still reported for the app versions that read it, though it no longer
+    // opens a channel.
 
     @Test
     void distinguishesAMissingEmailFromAnUnverifiedOne() {

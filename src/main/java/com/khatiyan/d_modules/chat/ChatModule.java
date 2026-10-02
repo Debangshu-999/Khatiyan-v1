@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.chat;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -43,5 +44,27 @@ public class ChatModule {
      */
     public UUID openEnquiryThread(UUID propertyId, UUID enquiryId, UUID enquirerUserId, UUID responderUserId) {
         return chatService.openEnquiryThread(propertyId, enquiryId, enquirerUserId, responderUserId).getId();
+    }
+
+    /**
+     * Closes the conversation of an enquiry, for both sides. Does nothing when
+     * there is none, or it is closed already.
+     *
+     * <p>The enquiry module calls it when the handler ends the conversation,
+     * and when the enquiry's date passes.
+     */
+    public void closeEnquiryThread(UUID enquiryId) {
+        chatService.closeEnquiryThread(enquiryId);
+    }
+
+    /**
+     * Whether one person has written in a conversation after a moment.
+     *
+     * <p>For the enquiry module, which hears of messages one event at a time and
+     * not always in the order they were sent. It asks this to tell that a reply
+     * already followed the message it has just been told about.
+     */
+    public boolean hasWrittenSince(UUID threadId, UUID authorUserId, Instant since) {
+        return chatService.hasWrittenSince(threadId, authorUserId, since);
     }
 }

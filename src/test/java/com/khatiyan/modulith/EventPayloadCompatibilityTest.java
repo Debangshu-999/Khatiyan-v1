@@ -2,6 +2,7 @@ package com.khatiyan.modulith;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -13,6 +14,8 @@ import org.springframework.modulith.events.core.EventSerializer;
 
 import com.khatiyan.d_modules.billing.event.BillingCycleGeneratedEvent;
 import com.khatiyan.d_modules.billing.event.PaymentClaimRaisedEvent;
+import com.khatiyan.d_modules.enquiry.event.EnquiryRespondedEvent;
+import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 import com.khatiyan.d_modules.property.event.PropertyCreatedEvent;
 import com.khatiyan.d_modules.tenancy.event.TenancyExitWithdrawalDecidedEvent;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestType;
@@ -81,6 +84,13 @@ class EventPayloadCompatibilityTest {
             ID_A, ID_B, ID_C, ID_D, "Jane \"JJ\" Smith", "PAY-2026-000001", 12_000_00L,
             "UPI ref 402931 — paid 9pm", false);
 
+    /**
+     * An Instant. The enquiry and chat events of 2026-10-03 are the first to
+     * carry one, so its stored shape is pinned here from their first day.
+     */
+    private static final EnquiryRespondedEvent ENQUIRY_RESPONDED = new EnquiryRespondedEvent(
+            ID_A, ID_B, ID_C, EnquiryResponseChannel.CHAT, Instant.parse("2026-10-03T06:00:00.123456Z"));
+
     // ------------------------------------------------- the JSON as stored today
 
     private static final String BILLING_CYCLE_JSON =
@@ -114,7 +124,19 @@ class EventPayloadCompatibilityTest {
                     + "\"amountPaise\":1200000,\"tenantReferenceText\":\"UPI ref 402931 — paid 9pm\","
                     + "\"hasProof\":false}";
 
+    private static final String ENQUIRY_RESPONDED_JSON =
+            "{\"enquiryId\":\"11111111-1111-4111-8111-111111111111\","
+                    + "\"propertyId\":\"22222222-2222-4222-8222-222222222222\","
+                    + "\"enquirerUserId\":\"33333333-3333-4333-8333-333333333333\","
+                    + "\"channel\":\"CHAT\",\"respondedAt\":\"2026-10-03T06:00:00.123456Z\"}";
+
     // -------------------------------------------------------------------- tests
+
+    @Test
+    @DisplayName("with an instant read back unchanged")
+    void enquiryRespondedEvent() {
+        assertRoundTrip(ENQUIRY_RESPONDED, ENQUIRY_RESPONDED_JSON, EnquiryRespondedEvent.class);
+    }
 
     @Test
     @DisplayName("with dates and numbers read back unchanged")

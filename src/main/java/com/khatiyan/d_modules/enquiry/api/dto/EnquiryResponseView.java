@@ -3,6 +3,7 @@ package com.khatiyan.d_modules.enquiry.api.dto;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 
@@ -14,7 +15,9 @@ public record EnquiryResponseView(
     String respondedByName,
     /** The owner's private note. Never shown to the enquirer. */
     String note,
-    Instant respondedAt
+    Instant respondedAt,
+    EnquiryAttemptOutcome outcome,
+    Instant settledAt
 ) {
     public static EnquiryResponseView of(EnquiryResponse response, String respondedByName) {
         return new EnquiryResponseView(
@@ -23,6 +26,8 @@ public record EnquiryResponseView(
                 response.getRespondedByUserId(),
                 respondedByName,
                 response.getNote(),
-                response.getCreatedAt());
+                response.getCreatedAt(),
+                response.getOutcome(),
+                response.getSettledAt());
     }
 }

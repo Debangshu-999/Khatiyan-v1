@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.chat.repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,4 +48,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
             ORDER BY message.seq ASC
             """)
     List<ChatMessage> findAfter(UUID threadId, long afterSeq, Pageable pageable);
+
+    /** Whether one person has written in a conversation after a moment. */
+    boolean existsByThreadIdAndAuthorUserIdAndCreatedAtAfter(UUID threadId, UUID authorUserId, Instant after);
 }

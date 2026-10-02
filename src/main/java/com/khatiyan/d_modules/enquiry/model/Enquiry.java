@@ -38,8 +38,14 @@ public class Enquiry extends BaseEntity {
 
     public static final int MAX_MESSAGE_LENGTH = 500;
 
-    /** How long an unanswered enquiry stays actionable. */
-    public static final Duration LIFETIME = Duration.ofDays(7);
+    /**
+     * How long an unanswered enquiry stays actionable.
+     *
+     * <p>Thirty days since 2026-10-02 (it was seven). Someone planning a move
+     * next month is still looking a week later, and with attempts that can fail
+     * a week was not long enough to reach them.
+     */
+    public static final Duration LIFETIME = Duration.ofDays(30);
 
     /**
      * How long an EXPIRED enquiry stays visible after it stopped being
@@ -114,6 +120,52 @@ public class Enquiry extends BaseEntity {
      */
     @Column(name = "chat_thread_id")
     private UUID chatThreadId;
+
+    /**
+     * The owner or manager handling this enquiry, or null while nobody is.
+     *
+     * <p>How they are chosen is the property's {@link EnquiryHandlerMode}. Once
+     * set, only they and the owner may act on the enquiry.
+     */
+    @Column(name = "handler_user_id")
+    private UUID handlerUserId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "handler_assigned_by", length = 20)
+    private EnquiryHandlerAssignment handlerAssignedBy;
+
+    /** The owner who assigned it, when the owner did. */
+    @Column(name = "handler_assigned_by_user_id")
+    private UUID handlerAssignedByUserId;
+
+    @Column(name = "handler_assigned_at")
+    private Instant handlerAssignedAt;
+
+    /** When the first attempt succeeded. Null while unanswered. */
+    @Column(name = "responded_at")
+    private Instant respondedAt;
+
+    /** The handler's reading of the enquirer. Null until they give one. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private EnquirySentiment sentiment;
+
+    @Column(name = "sentiment_set_by_user_id")
+    private UUID sentimentSetByUserId;
+
+    @Column(name = "sentiment_set_at")
+    private Instant sentimentSetAt;
+
+    /** When the handler ended the conversation. Null when nobody did. */
+    @Column(name = "ended_at")
+    private Instant endedAt;
+
+    @Column(name = "ended_by_user_id")
+    private UUID endedByUserId;
+
+    /** When its chat was closed, by ending or by the sweep. Null while the chat is open, or there is none. */
+    @Column(name = "chat_closed_at")
+    private Instant chatClosedAt;
 
     private Enquiry(UUID propertyId, UUID enquirerUserId, String message, Set<EnquiryResponseChannel> sharedChannels) {
         this.id = UUID.randomUUID();
@@ -196,16 +248,94 @@ public class Enquiry extends BaseEntity {
     }
 
     /**
-     * Marks the enquiry as dealt with. Idempotent by design.
+     * Marks the enquiry answered, because an attempt to reach the enquirer
+     * succeeded. Idempotent by design.
      *
-     * <p>An earlier version threw on a second response, back when choosing a
-     * channel was a promise made to the enquirer and changing it would have left
-     * them waiting on the wrong one. It no longer is: picking a channel opens the
-     * dialer or the mail app, and an owner may reasonably call twice, or call and
-     * then write. Each attempt is its own row; the status only ever moves once.
+     * <p>Each attempt is its own row, and the handler may call twice, or call
+     * and then write. The status only ever moves once, and {@code respondedAt}
+     * keeps the moment of the FIRST success: the tenant's time to book a visit
+     * runs from it.
+     *
+     * @return true the first time, false when it was answered or expired already
      */
-    public void markResponded() {
+    public boolean markResponded(Instant now) {
+        if (this.status != EnquiryStatus.NEW) {
+            return false;
+        }
         this.status = EnquiryStatus.RESPONDED;
+        this.respondedAt = now;
+        return true;
+    }
+
+    /**
+     * Gives the enquiry to a handler, for the first time or a new one.
+     *
+     * @param byUserId the owner who assigned it, kept only when {@code how} is OWNER
+     */
+    public void assignHandler(UUID handlerUserId, EnquiryHandlerAssignment how, UUID byUserId, Instant now) {
+        if (handlerUserId == null || how == null) {
+            throw new ValidationException("Choose who handles this enquiry.");
+        }
+        this.handlerUserId = handlerUserId;
+        this.handlerAssignedBy = how;
+        this.handlerAssignedByUserId = how == EnquiryHandlerAssignment.OWNER ? byUserId : null;
+        this.handlerAssignedAt = now;
+    }
+
+    public boolean hasHandler() {
+        return handlerUserId != null;
+    }
+
+    /** Records, or changes, what the handler makes of the enquirer. */
+    public void setSentiment(EnquirySentiment sentiment, UUID byUserId, Instant now) {
+        if (sentiment == null) {
+            throw new ValidationException("Choose Interested or Not interested.");
+        }
+        this.sentiment = sentiment;
+        this.sentimentSetByUserId = byUserId;
+        this.sentimentSetAt = now;
+    }
+
+    public boolean isEnded() {
+        return endedAt != null;
+    }
+
+    /**
+     * Ends the enquiry now, because the handler ended the conversation.
+     *
+     * <p>Its window closes on the spot, so {@link #isExpired()} is true from
+     * here on and nothing more can be done with it. An unanswered one is also
+     * moved to EXPIRED, which is what lets the person ask again. An answered one
+     * keeps saying it was answered: that happened.
+     *
+     * @return true when it ended now, false when it had ended already
+     */
+    public boolean end(UUID byUserId, Instant now) {
+        if (isEnded()) {
+            return false;
+        }
+        this.endedAt = now;
+        this.endedByUserId = byUserId;
+        if (this.expiresAt == null || this.expiresAt.isAfter(now)) {
+            this.expiresAt = now;
+        }
+        expire();
+        return true;
+    }
+
+    /** Whether it has a chat that is still open. */
+    public boolean hasOpenChat() {
+        return chatThreadId != null && chatClosedAt == null;
+    }
+
+    public void markChatClosed(Instant now) {
+        if (this.chatClosedAt == null) {
+            this.chatClosedAt = now;
+        }
+    }
+
+    public boolean isHandledBy(UUID userId) {
+        return handlerUserId != null && handlerUserId.equals(userId);
     }
 
     /**

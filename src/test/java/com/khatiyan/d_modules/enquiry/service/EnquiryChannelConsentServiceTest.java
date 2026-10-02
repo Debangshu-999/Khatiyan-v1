@@ -113,14 +113,12 @@ class EnquiryChannelConsentServiceTest {
      */
     @Test
     void revokingNeedsNoAgreement() {
-        service.replace(USER_ID, request(true, EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL));
+        service.replace(USER_ID, request(true, EnquiryResponseChannel.CALL_BACK));
 
-        var result = service.replace(USER_ID, request(false, EnquiryResponseChannel.CALL_BACK));
+        var result = service.replace(USER_ID, request(false));
 
-        assertThat(granted(result.channels())).containsExactly(EnquiryResponseChannel.CALL_BACK);
-        assertThat(stored).filteredOn(consent -> consent.getChannel() == EnquiryResponseChannel.EMAIL)
-                .singleElement()
-                .satisfies(consent -> assertThat(consent.isLive()).isFalse());
+        assertThat(granted(result.channels())).isEmpty();
+        assertThat(stored).singleElement().satisfies(consent -> assertThat(consent.isLive()).isFalse());
     }
 
     /** Re-sending what is already live changes nothing and asks for nothing. */
@@ -136,14 +134,36 @@ class EnquiryChannelConsentServiceTest {
 
     // ---- What can be agreed to -------------------------------------------
 
-    /** Agreeing to be emailed at an address nobody verified is agreeing to nothing. */
+    /**
+     * Email was removed as a channel on 2026-10-02, so it cannot be agreed to,
+     * however good the address is.
+     */
     @Test
-    void refusesAnUnverifiedEmail() {
-        when(authModule.findById(USER_ID)).thenReturn(Optional.of(user("+919000000000", "anita@example.com", false)));
-
+    void refusesEmailEvenWhenVerified() {
         assertThatThrownBy(() -> service.replace(USER_ID, request(true, EnquiryResponseChannel.EMAIL)))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Verify your email");
+                .hasMessageContaining("Email is no longer");
+
+        assertThat(stored).isEmpty();
+    }
+
+    /**
+     * A grant stored before the removal is not reported as live, is not handed
+     * to an enquiry, and is withdrawn the next time the person saves anything.
+     */
+    @Test
+    void ignoresAnEmailGrantFromBeforeAndWithdrawsItOnTheNextSave() {
+        stored.add(EnquiryChannelConsent.grant(USER_ID, EnquiryResponseChannel.EMAIL));
+
+        assertThat(service.liveChannels(USER_ID)).isEmpty();
+        assertThat(service.myConsents(USER_ID).anyGranted()).isFalse();
+
+        service.replace(USER_ID, request(true, EnquiryResponseChannel.CALL_BACK));
+
+        assertThat(stored).filteredOn(consent -> consent.getChannel() == EnquiryResponseChannel.EMAIL)
+                .singleElement()
+                .satisfies(consent -> assertThat(consent.isLive()).isFalse());
+        assertThat(service.liveChannels(USER_ID)).containsExactly(EnquiryResponseChannel.CALL_BACK);
     }
 
     /** CHAT is the medium, not a detail handed over, so it is never stored. */
@@ -167,36 +187,31 @@ class EnquiryChannelConsentServiceTest {
     // ---- Reporting -------------------------------------------------------
 
     /**
-     * A grant survives the email being unverified afterwards, and must not be
-     * reported as live: saying "granted" would promise a reply that cannot be
-     * sent.
+     * A grant survives the channel becoming unusable afterwards, and must not
+     * be reported as live: saying "granted" would promise a call that cannot be
+     * made.
      */
     @Test
     void reportsAGrantOnAnUnusableChannelAsNotGranted() {
-        service.replace(USER_ID, request(true, EnquiryResponseChannel.EMAIL));
-        when(authModule.findById(USER_ID)).thenReturn(Optional.of(user("+919000000000", "anita@example.com", false)));
+        service.replace(USER_ID, request(true, EnquiryResponseChannel.CALL_BACK));
+        when(authModule.findById(USER_ID)).thenReturn(Optional.of(user(null, "anita@example.com", true)));
 
         var result = service.myConsents(USER_ID);
 
         assertThat(granted(result.channels())).isEmpty();
         assertThat(result.anyGranted()).isFalse();
-        assertThat(result.channels()).filteredOn(option -> option.channel() == EnquiryResponseChannel.EMAIL)
+        assertThat(result.channels()).filteredOn(option -> option.channel() == EnquiryResponseChannel.CALL_BACK)
                 .singleElement()
                 .satisfies(option -> assertThat(option.available()).isFalse());
     }
 
-    /** Every channel is listed even when it cannot be used, so the screen can
-     *  say why rather than silently omitting a row. Chat leads, as the baseline
-     *  the others are added on top of. */
+    /** Chat leads, as the baseline a call is added on top of. Email is not listed at all. */
     @Test
-    void alwaysListsEveryChannelWithChatFirst() {
+    void listsChatThenTheCallAndNeverEmail() {
         var result = service.myConsents(USER_ID);
 
         assertThat(result.channels()).extracting(EnquiryChannelOption::channel)
-                .containsExactly(
-                        EnquiryResponseChannel.CHAT,
-                        EnquiryResponseChannel.CALL_BACK,
-                        EnquiryResponseChannel.EMAIL);
+                .containsExactly(EnquiryResponseChannel.CHAT, EnquiryResponseChannel.CALL_BACK);
     }
 
     // ---- Chat is not the enquirer's to decide ----------------------------

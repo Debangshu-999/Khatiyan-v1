@@ -1,10 +1,16 @@
 package com.khatiyan.d_modules.analytics;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import org.assertj.core.api.SoftAssertions;
@@ -21,7 +27,13 @@ import com.khatiyan.d_modules.analytics.service.AnalyticsService;
 import com.khatiyan.d_modules.billing.BillingModule;
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.dashboard.service.OwnerDashboardService;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
+import com.khatiyan.d_modules.enquiry.service.EnquiryService;
+import com.khatiyan.d_modules.lead.service.LeadQueryService;
+import com.khatiyan.d_modules.lead.service.LeadVisitService;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.api.dto.SaveVisitSlotsRequest;
+import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.support.IntegrationTest;
 import com.khatiyan.support.QueryCount;
@@ -65,6 +77,10 @@ class QueriesDoNotGrowWithRowsTest {
     @Autowired private TenancyModule tenancyModule;
     @Autowired private BillingModule billingModule;
     @Autowired private ConcernModule concernModule;
+    @Autowired private EnquiryService enquiryService;
+    @Autowired private LeadQueryService leadQueryService;
+    @Autowired private LeadVisitService leadVisitService;
+    @Autowired private PropertyVisitSlotService visitSlots;
 
     private final LocalDate today = LocalDate.now(IST);
     private Seeded small;
@@ -74,12 +90,94 @@ class QueriesDoNotGrowWithRowsTest {
     void seed() {
         small = LargePropertySeeder.seed(jdbc, today, 12, 1, 21L);
         large = LargePropertySeeder.seed(jdbc, today, 48, 1, 22L);
+        seedEnquiries(small);
+        seedEnquiries(large);
     }
 
     @AfterEach
     void remove() {
+        for (Seeded seeded : new Seeded[] { small, large }) {
+            if (seeded != null) {
+                // Attempts and shared channels go with their enquiry, and the link with its lead.
+                jdbc.update("DELETE FROM lead.leads WHERE property_id = ?", seeded.propertyId());
+                // The slots go with their settings.
+                jdbc.update("DELETE FROM property.property_visit_settings WHERE property_id = ?", seeded.propertyId());
+                jdbc.update("DELETE FROM enquiry.enquiries WHERE property_id = ?", seeded.propertyId());
+            }
+        }
         LargePropertySeeder.remove(jdbc, small);
         LargePropertySeeder.remove(jdbc, large);
+    }
+
+    /**
+     * One enquiry per bed, each from a different person, handled by the owner,
+     * with a call still to settle and a chat that failed, and the lead that
+     * enquiry opened. So every enquiry and lead read has rows that grow with
+     * the property: the records, their attempts, and the people named on them.
+     */
+    private void seedEnquiries(Seeded property) {
+        List<UUID> enquirers = property.userIds().stream()
+                .filter(id -> !id.equals(property.ownerId()))
+                .limit(property.beds())
+                .toList();
+        List<Object[]> enquiries = new ArrayList<>();
+        List<Object[]> shared = new ArrayList<>();
+        List<Object[]> calls = new ArrayList<>();
+        List<Object[]> chats = new ArrayList<>();
+        List<Object[]> leads = new ArrayList<>();
+        List<Object[]> links = new ArrayList<>();
+        List<Object[]> visits = new ArrayList<>();
+        // One slot a day that takes fifty, so every lead's visit fits and
+        // the count behind "spots left" has a row per lead to add up.
+        visitSlots.create(property.ownerId(), property.propertyId(), new SaveVisitSlotsRequest(
+                EnumSet.allOf(DayOfWeek.class),
+                List.of(new SaveVisitSlotsRequest.SlotInput(LocalTime.of(10, 0), LocalTime.of(11, 0))),
+                50));
+        for (UUID enquirer : enquirers) {
+            UUID enquiry = UUID.randomUUID();
+            UUID lead = UUID.randomUUID();
+            visits.add(new Object[] {
+                    UUID.randomUUID(), "VIS-T-" + lead.toString().substring(0, 18), lead, property.propertyId(),
+                    enquirer, enquiry, java.sql.Date.valueOf(today.plusDays(1 + visits.size() % 20)), enquirer });
+            leads.add(new Object[] {
+                    lead, "LEAD-T-" + lead.toString().substring(0, 18), property.propertyId(), enquirer, enquiry,
+                    property.ownerId() });
+            links.add(new Object[] { enquiry, lead });
+            enquiries.add(new Object[] { enquiry, property.propertyId(), enquirer, property.ownerId() });
+            shared.add(new Object[] { enquiry });
+            calls.add(new Object[] { UUID.randomUUID(), enquiry, property.ownerId() });
+            chats.add(new Object[] { UUID.randomUUID(), enquiry, property.ownerId() });
+        }
+        jdbc.batchUpdate("""
+                INSERT INTO enquiry.enquiries (id, property_id, enquirer_user_id, message, status, expires_at,
+                    handler_user_id, handler_assigned_by, handler_assigned_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'Is a single room free?', 'NEW', now() + INTERVAL '20 days',
+                    ?, 'FIRST_RESPONSE', now(), now(), now())
+                """, enquiries);
+        jdbc.batchUpdate(
+                "INSERT INTO enquiry.enquiry_shared_channels (enquiry_id, channel) VALUES (?, 'CALL_BACK')", shared);
+        jdbc.batchUpdate("""
+                INSERT INTO enquiry.enquiry_responses (id, enquiry_id, channel, responded_by_user_id, outcome,
+                    created_at, updated_at)
+                VALUES (?, ?, 'CALL_BACK', ?, 'OPEN', now(), now())
+                """, calls);
+        jdbc.batchUpdate("""
+                INSERT INTO enquiry.enquiry_responses (id, enquiry_id, channel, responded_by_user_id, outcome,
+                    settled_at, created_at, updated_at)
+                VALUES (?, ?, 'CHAT', ?, 'FAILED', now(), now(), now())
+                """, chats);
+        jdbc.batchUpdate("""
+                INSERT INTO lead.leads (id, reference_code, property_id, prospect_user_id, enquiry_id, stage, state,
+                    handler_user_id, handler_assigned_by, handler_assigned_at, enquired_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'ENQUIRED', 'OPEN', ?, 'FIRST_RESPONSE', now(), now(), now(), now())
+                """, leads);
+        jdbc.batchUpdate(
+                "INSERT INTO lead.lead_enquiries (enquiry_id, lead_id, joined_at) VALUES (?, ?, now())", links);
+        jdbc.batchUpdate("""
+                INSERT INTO lead.visits (id, reference_code, lead_id, property_id, prospect_user_id, enquiry_id,
+                    visit_date, slot_start_minute, slot_end_minute, booked_by, booked_by_user_id, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 600, 660, 'TENANT', ?, 'SCHEDULED')
+                """, visits);
     }
 
     /** Every read that must not grow with the rows, by the name a failure will print. */
@@ -107,6 +205,17 @@ class QueriesDoNotGrowWithRowsTest {
         reads.put("Upcoming bills", p -> billingModule.listUpcomingPropertyCycles(p.ownerId(), p.propertyId(), thisMonth, 0, 20));
         reads.put("Bill summary of a month", p -> billingModule.getPropertyMonthSummaryForDashboard(p.propertyId(), thisMonth));
         reads.put("Concern summary", p -> concernModule.getPropertyConcernSummary(p.ownerId(), p.propertyId()));
+        reads.put("Enquiries, the whole list", p -> enquiryService.listForProperty(p.ownerId(), p.propertyId()));
+        reads.put("Enquiries, a page of the property's",
+                p -> enquiryService.pageForProperty(p.ownerId(), p.propertyId(), EnquiryListScope.ALL, 0, 50));
+        reads.put("Enquiries, a page of my own",
+                p -> enquiryService.pageForProperty(p.ownerId(), p.propertyId(), EnquiryListScope.MINE, 0, 50));
+        reads.put("Enquiry calls to settle", p -> enquiryService.callsToSettle(p.ownerId(), p.propertyId()));
+        reads.put("Enquiry counts", p -> enquiryService.countsForProperty(p.ownerId(), p.propertyId()));
+        reads.put("Leads, a page",
+                p -> leadQueryService.pageForProperty(p.ownerId(), p.propertyId(), null, null, 0, 50));
+        reads.put("Lead counts", p -> leadQueryService.countsForProperty(p.ownerId(), p.propertyId()));
+        reads.put("Visit availability", p -> leadVisitService.availability(p.propertyId()));
         return reads;
     }
 

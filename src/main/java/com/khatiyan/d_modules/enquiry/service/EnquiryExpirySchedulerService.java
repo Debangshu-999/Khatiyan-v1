@@ -7,14 +7,19 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.khatiyan.c_shared.concurrency.RecordByRecord;
+import com.khatiyan.d_modules.enquiry.event.EnquiryExpiredEvent;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
+import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
+import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
+import com.khatiyan.d_modules.enquiry.repository.EnquiryResponseRepository;
 
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 
@@ -30,6 +35,10 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
  * <p>Status is flipped rather than computed from {@code expires_at} at read
  * time precisely because of that index: a derived expiry would leave the row
  * NEW, and the database would go on refusing the next enquiry.
+ *
+ * <p>Since 2026-10-02 it also closes the attempts left open on any enquiry
+ * whose date has passed, answered or not. A chat nobody replied to and a call
+ * nobody settled both end as failed: the window they belonged to is over.
  */
 @Service
 public class EnquiryExpirySchedulerService {
@@ -37,12 +46,23 @@ public class EnquiryExpirySchedulerService {
     private static final Logger log = LoggerFactory.getLogger(EnquiryExpirySchedulerService.class);
 
     private final EnquiryRepository enquiryRepository;
+    private final EnquiryResponseRepository enquiryResponseRepository;
+    private final EnquiryService enquiryService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** One enquiry per transaction (2026-09-28). */
     private final RecordByRecord recordByRecord;
 
-    public EnquiryExpirySchedulerService(EnquiryRepository enquiryRepository, RecordByRecord recordByRecord) {
+    public EnquiryExpirySchedulerService(
+            EnquiryRepository enquiryRepository,
+            EnquiryResponseRepository enquiryResponseRepository,
+            EnquiryService enquiryService,
+            ApplicationEventPublisher eventPublisher,
+            RecordByRecord recordByRecord) {
         this.enquiryRepository = enquiryRepository;
+        this.enquiryResponseRepository = enquiryResponseRepository;
+        this.enquiryService = enquiryService;
+        this.eventPublisher = eventPublisher;
         this.recordByRecord = recordByRecord;
     }
 
@@ -65,11 +85,6 @@ public class EnquiryExpirySchedulerService {
         Instant now = Instant.now();
         List<UUID> stale = enquiryRepository.findOpenPastExpiry(now).stream().map(Enquiry::getId).toList();
 
-        if (stale.isEmpty()) {
-            log.info("Enquiry expiry sweep found nothing past its date");
-            return;
-        }
-
         // One enquiry per transaction, re-read inside it (2026-09-28): an owner
         // answering one at this moment keeps it. This also fixes the startup
         // catch-up, which called this method directly and so never got the
@@ -80,8 +95,34 @@ public class EnquiryExpirySchedulerService {
                 return false;
             }
             enquiry.expire();
+            // Published inside the record's transaction, so the event is stored
+            // only if the expiry is.
+            eventPublisher.publishEvent(new EnquiryExpiredEvent(
+                    enquiry.getId(), enquiry.getPropertyId(), enquiry.getEnquirerUserId(), now));
             return true;
         });
-        log.info("Enquiry expiry sweep aged out {} unanswered enquiries", expired);
+
+        // After the enquiries, so an attempt on one that just expired closes in
+        // the same run. An attempt that someone settles at this moment is left
+        // alone: it is read again inside its own transaction.
+        List<UUID> leftOpen = enquiryResponseRepository.findOpenIdsPastEnquiryExpiry(now);
+        int closed = recordByRecord.run("enquiry-attempt-expire", leftOpen, id -> id, id -> {
+            EnquiryResponse attempt = enquiryResponseRepository.findById(id).orElse(null);
+            if (attempt == null || !attempt.isOpen()) {
+                return false;
+            }
+            attempt.settle(EnquiryAttemptOutcome.FAILED, null, now);
+            return true;
+        });
+
+        // Every enquiry chat closes when its enquiry's date passes, answered or
+        // not (owner's rule, 2026-10-03). Both sides then read "Conversation has
+        // ended".
+        List<UUID> chatsToClose = enquiryRepository.findIdsWithChatToClose(now);
+        int chatsClosed = recordByRecord.run(
+                "enquiry-chat-close", chatsToClose, id -> id, enquiryService::closeChatOfExpired);
+
+        log.info("Enquiry expiry sweep aged out {} unanswered enquiries, closed {} open attempts and {} chats",
+                expired, closed, chatsClosed);
     }
 }

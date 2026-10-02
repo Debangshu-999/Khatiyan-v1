@@ -44,6 +44,12 @@ public enum NotificationAudience {
                     TENANCY_ROOM_CHANGE_REQUESTED,
                     // Someone asking about the property is the owner's to answer.
                     ENQUIRY_RECEIVED,
+                    // Being given an enquiry to handle, and the owner's daily
+                    // reminder that some still wait for a handler.
+                    ENQUIRY_ASSIGNED, ENQUIRY_UNASSIGNED,
+                    // The enquirer wrote back on the chat the handler was
+                    // waiting on. The handler's to read, in their workspace.
+                    ENQUIRY_CHAT_REPLIED,
                     // A tenant claiming they paid is a decision the owner has to
                     // make against their bank statement.
                     PAYMENT_CLAIM_RAISED,
@@ -83,6 +89,9 @@ public enum NotificationAudience {
                     // to whichever one did not send. The caller names the audience
                     // per recipient group.
                     CHAT_MESSAGE_RECEIVED,
+                    // Dual-audience: a visit is booked or moved by one side and
+                    // the other is told. The caller names the audience.
+                    VISIT_SCHEDULED, VISIT_RESCHEDULED,
                     USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
                     TENANT_ONBOARDED, TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
                     // Dual-audience by definition: whichever side did NOT

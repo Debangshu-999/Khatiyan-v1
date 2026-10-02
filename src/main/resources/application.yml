@@ -77,6 +77,7 @@ spring:
       - classpath:db/migration/dashboard
       - classpath:db/migration/nudge
       - classpath:db/migration/enquiry
+      - classpath:db/migration/lead
       - classpath:db/migration/chat
       - classpath:db/migration/servicebalance
       - classpath:db/migration/verification
@@ -360,6 +361,9 @@ app:
   enquiry:
     expiry-cron: ${ENQUIRY_EXPIRY_CRON:0 20 * * * *}
     expiry-zone: ${ENQUIRY_EXPIRY_ZONE:Asia/Kolkata}
+    # Once a day, to owners who assign each enquiry themselves and have some
+    # still waiting. 9:00 am in the zone above.
+    unassigned-reminder-cron: ${ENQUIRY_UNASSIGNED_REMINDER_CRON:0 0 9 * * *}
   notice:
     recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */5 * * * *}
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}

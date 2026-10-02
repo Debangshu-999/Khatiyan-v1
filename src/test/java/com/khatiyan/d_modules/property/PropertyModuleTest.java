@@ -30,6 +30,7 @@ import com.khatiyan.d_modules.property.model.SharingType;
 import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyManagerService;
 import com.khatiyan.d_modules.property.service.PropertyService;
+import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
 import com.khatiyan.d_modules.property.service.RoomMoldService;
 import com.khatiyan.d_modules.property.service.RoomService;
 
@@ -51,12 +52,16 @@ class PropertyModuleTest {
     @Mock
     private RoomMoldService roomMoldService;
 
+    @Mock
+    private PropertyVisitSlotService propertyVisitSlotService;
+
     private PropertyModule propertyModule;
 
     @BeforeEach
     void setUp() {
         propertyModule = new PropertyModule(
-                roomService, propertyService, propertyManagerService, managerAccessPolicy, roomMoldService);
+                roomService, propertyService, propertyManagerService, managerAccessPolicy, roomMoldService,
+                propertyVisitSlotService);
     }
 
     @Test

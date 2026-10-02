@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.khatiyan.d_modules.enquiry.model.EnquiryHandlerAssignment;
+import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 
 /**
@@ -62,6 +64,24 @@ public record EnquiryDetailResponse(
      * enquiry is still open.
      */
     List<EnquiryResponseView> responses,
+    // Who handles it. All null while nobody does.
+    UUID handlerUserId,
+    String handlerName,
+    EnquiryHandlerAssignment handlerAssignedBy,
+    Instant handlerAssignedAt,
+    // When the first attempt succeeded. Null while unanswered.
+    Instant respondedAt,
+    // Whether the person asking may respond to it: the handler, the owner, or
+    // anyone in management while it has no handler and the mode allows it.
+    boolean viewerMayAct,
+    // The call still waiting for "Did they respond?", if there is one, and
+    // whether the person asking is the one to answer it.
+    UUID callToSettleId,
+    boolean viewerSettlesCall,
+    // The handler's reading of the enquirer, once given. Never sent to the enquirer.
+    EnquirySentiment sentiment,
+    // When the handler ended the conversation. Null when nobody did.
+    Instant endedAt,
         /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
         long version
 ) {}

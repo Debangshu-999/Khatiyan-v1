@@ -48,11 +48,13 @@ public class EnquiryChannelConsentService {
      * The channels an enquirer can grant, in the order the modal lists them.
      *
      * <p>
-     * Phone first because it is the one that always works and the one PG
-     * business actually runs on.
+     * The phone, and nothing else. Email was one until 2026-10-02: a sent email
+     * cannot be tracked, so it was removed as a way to respond, and there is no
+     * point agreeing to a channel nobody may use. Grants stored before that are
+     * ignored on every read and withdrawn the next time the person saves.
      */
     private static final List<EnquiryResponseChannel> GRANTABLE =
-            List.of(EnquiryResponseChannel.CALL_BACK, EnquiryResponseChannel.EMAIL);
+            List.of(EnquiryResponseChannel.CALL_BACK);
 
     private final EnquiryChannelConsentRepository consentRepository;
     private final AuthModule authModule;
@@ -71,7 +73,9 @@ public class EnquiryChannelConsentService {
     public Set<EnquiryResponseChannel> liveChannels(UUID userId) {
         Set<EnquiryResponseChannel> channels = EnumSet.noneOf(EnquiryResponseChannel.class);
         for (EnquiryChannelConsent consent : consentRepository.findByUserIdAndRevokedAtIsNull(userId)) {
-            channels.add(consent.getChannel());
+            if (GRANTABLE.contains(consent.getChannel())) {
+                channels.add(consent.getChannel());
+            }
         }
         return channels;
     }
@@ -90,6 +94,9 @@ public class EnquiryChannelConsentService {
             return byUser;
         }
         for (EnquiryChannelConsent consent : consentRepository.findByUserIdInAndRevokedAtIsNull(userIds)) {
+            if (!GRANTABLE.contains(consent.getChannel())) {
+                continue;
+            }
             byUser
                     .computeIfAbsent(consent.getUserId(), key -> EnumSet.noneOf(EnquiryResponseChannel.class))
                     .add(consent.getChannel());
@@ -111,8 +118,7 @@ public class EnquiryChannelConsentService {
      *
      * <p>
      * Adding a channel needs the agreement tick and needs the channel to be
-     * usable — agreeing to be emailed at an address nobody has verified is
-     * agreeing to nothing. Removing one needs neither.
+     * usable. Removing one needs neither.
      */
     @Transactional
     public EnquiryChannelConsentResponse replace(UUID userId, UpdateEnquiryChannelConsentsRequest request) {
@@ -122,6 +128,9 @@ public class EnquiryChannelConsentService {
         for (EnquiryResponseChannel channel : request.channels()) {
             if (channel == EnquiryResponseChannel.CHAT) {
                 throw new ValidationException("Chat is always open and needs no agreement.");
+            }
+            if (channel == EnquiryResponseChannel.EMAIL) {
+                throw new ValidationException("Email is no longer a way to be contacted. Choose a call, or chat only.");
             }
             requested.add(channel);
         }
@@ -143,9 +152,7 @@ public class EnquiryChannelConsentService {
         }
         for (EnquiryResponseChannel channel : added) {
             if (!isUsable(channel, user)) {
-                throw new ValidationException(channel == EnquiryResponseChannel.EMAIL
-                        ? "Verify your email address before sharing it."
-                        : "That channel is not available on your account.");
+                throw new ValidationException("That channel is not available on your account.");
             }
         }
 
@@ -194,8 +201,7 @@ public class EnquiryChannelConsentService {
      *
      * <p>
      * Phone is unconditional — a verified phone is a precondition of having an
-     * account. Email needs an address that is present AND verified, because an
-     * unverified one is an address nobody has proved they can read.
+     * account. Email never can: it is not a channel any more.
      */
     private boolean isUsable(EnquiryResponseChannel channel, UserSummaryResponse user) {
         return targetFor(channel, user) != null;
@@ -207,10 +213,7 @@ public class EnquiryChannelConsentService {
         }
         return switch (channel) {
             case CALL_BACK -> user.phone() != null && !user.phone().isBlank() ? user.phone() : null;
-            case EMAIL -> user.email() != null && !user.email().isBlank() && user.emailVerified()
-                    ? user.email()
-                    : null;
-            case CHAT -> null;
+            case EMAIL, CHAT -> null;
         };
     }
 
