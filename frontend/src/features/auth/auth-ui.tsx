@@ -359,30 +359,32 @@ export function PhoneField({
 }
 
 /**
- * The label and the validation message, both set into the field's top border
- * (user, 2026-10-02). The label holds the left of the notch; a message takes
- * the right and shrinks to one line, so the two can never overlap however long
- * either gets. Each sits on the sheet colour so the border breaks behind it.
+ * The field's label, set into its top border (user, 2026-10-02). While the
+ * field has an error the message takes the label's place in red, so the notch
+ * only ever holds one line. It sits on the sheet colour so the border breaks
+ * behind it.
  */
 function FieldNotch({ error, focused, label }: { error?: string; focused: boolean; label: string }) {
   const { colors, fonts } = useTheme();
-  const notchText = { backgroundColor: colors.authSurface, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 16, paddingHorizontal: 5 } as const;
+  const message = error?.trim().replace(/\.+$/, "");
   return (
-    <View
-      pointerEvents="none"
-      style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", left: 12, position: "absolute", right: 12, top: -9 }}
-    >
+    <View pointerEvents="none" style={{ flexDirection: "row", left: 12, position: "absolute", right: 12, top: -9 }}>
       <Text
+        accessibilityRole={message ? "alert" : undefined}
         numberOfLines={1}
-        style={[notchText, { color: error ? colors.danger : focused ? colors.primary : colors.inkSoft, flexShrink: 0, letterSpacing: 0.3 }]}
+        style={{
+          backgroundColor: colors.authSurface,
+          color: message ? colors.danger : focused ? colors.primary : colors.inkSoft,
+          flexShrink: 1,
+          fontFamily: fonts.sansBold,
+          fontSize: 11,
+          letterSpacing: message ? 0 : 0.3,
+          lineHeight: 16,
+          paddingHorizontal: 5,
+        }}
       >
-        {label}
+        {message || label}
       </Text>
-      {error ? (
-        <Text accessibilityRole="alert" numberOfLines={1} style={[notchText, { color: colors.danger, flexShrink: 1 }]}>
-          {error.trim().replace(/\.+$/, "")}
-        </Text>
-      ) : null}
     </View>
   );
 }
