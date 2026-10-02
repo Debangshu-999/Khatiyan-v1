@@ -125,8 +125,8 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           label={property.foodIncluded ? "Food Included" : "Food Not Included"}
         />
         <QuickHighlight
-          crossed={!property.electricityIncluded}
-          icon="lightning-bolt-outline"
+          banned={!property.electricityIncluded}
+          icon="lightbulb-outline"
           label={property.electricityIncluded ? "Electricity Included" : "Electricity Not Included"}
         />
         <QuickHighlight
@@ -217,7 +217,7 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           />
           <PreferenceCard icon="shower-head" label="Bathroom" value={humanizeToken(property.bathroomType)} />
           <PreferenceCard
-            icon="lightning-bolt-outline"
+            icon="lightbulb-outline"
             label="Electricity"
             value={property.electricityIncluded ? "Included" : "Not included"}
           />
@@ -306,7 +306,15 @@ function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; lab
   );
 }
 
-function QuickHighlight({ crossed, icon, label }: { crossed?: boolean; icon: MaterialIconName; label: string }) {
+/** The ring of the "not available" sign, sized to circle the 27pt glyph. */
+const BAN_RING = 34;
+
+/**
+ * @param crossed a single strike through the glyph.
+ * @param banned  the prohibition sign: the glyph inside a ring with a strike
+ *                across it (user, 2026-10-02, for electricity not included).
+ */
+function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; crossed?: boolean; icon: MaterialIconName; label: string }) {
   const { colors, fonts } = useTheme();
   return (
     <View
@@ -329,8 +337,31 @@ function QuickHighlight({ crossed, icon, label }: { crossed?: boolean; icon: Mat
         width: "48%",
       }}
     >
-      <View style={{ alignItems: "center", justifyContent: "center" }}>
-        <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={27} />
+      <View style={{ alignItems: "center", height: banned ? BAN_RING : undefined, justifyContent: "center", width: banned ? BAN_RING : undefined }}>
+        <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={banned ? 20 : 27} />
+        {banned ? (
+          <>
+            <View
+              style={{
+                borderColor: colors.inkSoft,
+                borderRadius: BAN_RING / 2,
+                borderWidth: 2,
+                height: BAN_RING,
+                position: "absolute",
+                width: BAN_RING,
+              }}
+            />
+            <View
+              style={{
+                backgroundColor: colors.inkSoft,
+                height: 2,
+                position: "absolute",
+                transform: [{ rotate: "-45deg" }],
+                width: BAN_RING - 2,
+              }}
+            />
+          </>
+        ) : null}
         {crossed ? (
           <View
             style={{
