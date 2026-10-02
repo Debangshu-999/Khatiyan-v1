@@ -273,16 +273,16 @@ export function PropertyListingCard({
         </View>
       ) : null}
 
-      {property.dailyRentingAvailable ? (
-        <View
-          style={[section, { alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xs }]}
-        >
-          <CalendarDays color={colors.jade} size={18} strokeWidth={2.2} />
-          <Text style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
-            Daily renting available
-          </Text>
-        </View>
-      ) : null}
+      {/* Every card states it, either way (user, 2026-10-02): a missing row
+          read as "not mentioned" rather than "not offered". */}
+      <View
+        style={[section, { alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xs }]}
+      >
+        <CalendarDays color={property.dailyRentingAvailable ? colors.jade : colors.kicker} size={18} strokeWidth={2.2} />
+        <Text style={{ color: property.dailyRentingAvailable ? colors.inkSoft : colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
+          {property.dailyRentingAvailable ? "Daily renting available" : "Daily renting unavailable"}
+        </Text>
+      </View>
 
       {reason ? (
         <View style={[section, { paddingHorizontal: 0 }]}>

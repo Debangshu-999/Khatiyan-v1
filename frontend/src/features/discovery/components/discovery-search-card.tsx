@@ -593,6 +593,12 @@ function AiSearchIcon({ color, searching }: { color: string; searching: boolean 
   );
 }
 
+/** How far a picker's border label rises above the box's inner edge. */
+const PICKER_NOTCH_RISE = 9;
+const PICKER_BORDER_WIDTH = 1;
+/** Where the border's centre line crosses the label, from its top. */
+const PICKER_NOTCH_SPLIT = PICKER_NOTCH_RISE - PICKER_BORDER_WIDTH / 2;
+
 function FilterPickerButton({
   disabled = false,
   label,
@@ -606,19 +612,21 @@ function FilterPickerButton({
   style?: object;
   value: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
+  const fill = disabled ? colors.neutralSoft : colors.surfaceRaised;
 
   return (
     <AnimatedPressable
+      accessibilityLabel={`${label}: ${value}`}
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
       style={{
-        backgroundColor: disabled ? colors.neutralSoft : colors.surfaceRaised,
+        backgroundColor: fill,
         borderColor: colors.border,
         borderRadius: 12,
-        borderWidth: 1,
-        gap: spacing.xs,
+        borderWidth: PICKER_BORDER_WIDTH,
+        justifyContent: "center",
         minHeight: 58,
         opacity: disabled ? 0.55 : 1,
         paddingHorizontal: spacing.md,
@@ -626,9 +634,18 @@ function FilterPickerButton({
         ...style,
       }}
     >
-      <Text style={[type.eyebrow, { color: colors.kicker }]}>
-        {label}
-      </Text>
+      {/* The label sits in the top border, as on the sign-in fields
+          (user, 2026-10-02): bolder, in the same grey. Its ground splits at
+          the border line, card white above and the box's fill below. */}
+      <View pointerEvents="none" style={{ flexDirection: "row", left: 10, position: "absolute", right: 10, top: -PICKER_NOTCH_RISE }}>
+        <View style={{ overflow: "hidden" }}>
+          <View style={{ backgroundColor: colors.surface, height: PICKER_NOTCH_SPLIT, left: 0, position: "absolute", right: 0, top: 0 }} />
+          <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: PICKER_NOTCH_SPLIT }} />
+          <Text numberOfLines={1} style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 11.5, letterSpacing: 0.3, lineHeight: 16, paddingHorizontal: 5 }}>
+            {label}
+          </Text>
+        </View>
+      </View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]}>
           {value}
