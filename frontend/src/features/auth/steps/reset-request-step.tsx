@@ -28,7 +28,7 @@ export function ResetRequestStep({
       <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
 
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
-        <PrimaryButton label="Request reset OTP" onPress={onRequestOtp} busy={busy} />
+        <PrimaryButton label="Send OTP" onPress={onRequestOtp} busy={busy} />
         <AuthChipLink icon={ArrowLeft} label="Back to login" onPress={onBackToLogin} />
       </View>
     </>
