@@ -129,14 +129,25 @@ export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { 
   </Modal>;
 }
 
-/** Also guards direct links, before sensitive screen queries are mounted. */
-export function WalletPinGate({ children }: { children: ReactNode }) {
+/**
+ * Also guards direct links, before sensitive screen queries are mounted.
+ *
+ * <p>While locked, the screen's own placeholder stays behind the PIN sheet. The
+ * real screen cannot: it would show the ledger the lock exists to hide, and its
+ * queries would be refused. Nothing at all left a white page under the sheet
+ * each time the five minutes ran out.
+ */
+export function WalletPinGate({ children, fallback }: { children: ReactNode; /** The guarded screen's placeholder. The wallet's by default. */ fallback?: ReactNode }) {
   const unlocked = useWalletUnlocked();
   const [focused, setFocused] = useState(true);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   const balance = useGetServiceBalanceQuery(undefined, { refetchOnMountOrArgChange: true, refetchOnFocus: true });
   const router = useGuardedRouter();
-  if (!balance.data) return balance.isError ? <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}><AnimatedPressable onPress={() => void balance.refetch()}><Text>Could not check wallet lock. Tap to retry</Text></AnimatedPressable></View> : <WalletScreenSkeleton />;
+  const placeholder = fallback ?? <WalletScreenSkeleton />;
+  if (!balance.data) return balance.isError ? <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}><AnimatedPressable onPress={() => void balance.refetch()}><Text>Could not check wallet lock. Tap to retry</Text></AnimatedPressable></View> : <>{placeholder}</>;
   if (!balance.data.walletLockEnabled || unlocked) return <>{children}</>;
-  return focused ? <WalletPinModal onCancel={() => router.canGoBack() ? router.back() : router.replace("/")} onUnlocked={() => {}} /> : null;
+  return <>
+    {placeholder}
+    {focused ? <WalletPinModal onCancel={() => router.canGoBack() ? router.back() : router.replace("/")} onUnlocked={() => {}} /> : null}
+  </>;
 }

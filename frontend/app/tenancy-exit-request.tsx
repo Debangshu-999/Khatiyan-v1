@@ -274,7 +274,7 @@ function NoticeWindowForm({
               Early exit unavailable
             </Text>
             <Text style={[type.description, { color: colors.muted }]}>
-              {checkoutWindow.restrictionMessage} You can still request an exit by serving your full notice period; the available dates below reflect that.
+              {checkoutWindow.restrictionMessage} You can still request an exit by serving your full notice period. The dates below reflect that.
             </Text>
           </Card>
         ) : null}

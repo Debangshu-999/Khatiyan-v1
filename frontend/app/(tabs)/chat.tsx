@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
+import { BellRing, MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
+import OwnerNudgesScreen from "../owner-nudges";
+import NudgesScreen from "../nudges";
 
 /**
  * Clearance for the floating button: the tab bar's own height plus whatever
@@ -23,9 +25,11 @@ import { TenantPicker } from "@/features/chat/tenant-picker";
 import { ThreadRow } from "@/features/chat/thread-row";
 import { useDeleteThreadSelection } from "@/features/chat/use-delete-thread-selection";
 import { errorMessage } from "@/features/forms/server-error";
+import { NudgeSheet } from "@/features/nudge/nudge-sheet";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { useAppSelector } from "@/store/hooks";
+import { api } from "@/store/api";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   CHAT_LIVE_OPTIONS,
   THREAD_LIST_POLL_MS,
@@ -38,13 +42,14 @@ import {
   type ChatThread,
 } from "@/store/services/chat-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
+import { NUDGE_REFETCH_OPTIONS, useGetNudgeUnreadCountQuery } from "@/store/services/nudge-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const NO_CHATS_ILLUSTRATION = require("../../assets/empty-states/No-Chats_512x512.png");
 
-type Section = "TENANTS" | "MINE" | "ENQUIRIES";
-type PersonalSection = "MINE" | "ENQUIRIES";
+type Section = "TENANTS" | "MINE" | "ENQUIRIES" | "NUDGES";
+type PersonalSection = "MINE" | "ENQUIRIES" | "NUDGES";
 
 /**
  * Conversations.
@@ -83,6 +88,8 @@ function ManagementChats() {
   const [section, setSection] = useState<Section>("MINE");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [accessListOpen, setAccessListOpen] = useState(false);
+  const [nudgeSheetOpen, setNudgeSheetOpen] = useState(false);
+  const dispatch = useAppDispatch();
 
   const isOwner = useAppSelector((state) => state.account.activeAccount) === "owner";
   const permissions = usePropertyPermissions(propertyId);
@@ -210,6 +217,9 @@ function ManagementChats() {
       // nothing on the one screen where people reach for it most.
       contentContainerStyle={{ flexGrow: 1 }}
       onRefresh={async () => {
+        // The sent nudges are fetched by the embedded section, not here, so
+        // they are refreshed by their tag.
+        dispatch(api.util.invalidateTags(["Nudge"]));
         await Promise.all([tenants.refetch(), mine.refetch(), enquiries.refetch()]);
       }}
       safeAreaEdges={["top", "bottom"]}
@@ -225,7 +235,7 @@ function ManagementChats() {
           </Text>
         </View>
 
-        <DeleteThreadButton selection={selection} />
+        {section !== "NUDGES" ? <DeleteThreadButton selection={selection} /> : null}
       </View>
 
       {/* Pills rather than tabs: Enquiries is empty until that module is wired,
@@ -252,11 +262,13 @@ function ManagementChats() {
           onPress={() => setSection("ENQUIRIES")}
           selected={section === "ENQUIRIES"}
         />
+        <SectionPill count={0} label="Nudges" onPress={() => setSection("NUDGES")} selected={section === "NUDGES"} />
       </View>
 
-      {active.isLoading ? <ChatThreadListSkeleton /> : null}
+      {section === "NUDGES" ? <OwnerNudgesScreen embedded /> : null}
+      {section !== "NUDGES" && active.isLoading ? <ChatThreadListSkeleton /> : null}
 
-      {!active.isLoading && threads.length === 0 ? (
+      {section !== "NUDGES" && !active.isLoading && threads.length === 0 ? (
         <CentredEmpty>
           <EmptyState
             compact
@@ -267,7 +279,7 @@ function ManagementChats() {
         </CentredEmpty>
       ) : null}
 
-      {threads.length > 0 ? (
+      {section !== "NUDGES" && threads.length > 0 ? (
         <View
           style={{
             backgroundColor: colors.surface,
@@ -298,7 +310,17 @@ function ManagementChats() {
           to the bottom of should not scroll its own "start something new" away.
           Sits outside ScreenScrollView so the tab bar does not cover it. */}
       <FloatingActions>
-        {section !== "ENQUIRIES" ? (
+        {/* The Nudges section lists what was sent. Sending starts here, on a
+            sheet: the tenants first, then the message for the one picked. */}
+        {section === "NUDGES" ? (
+          <FloatingAction
+            accessibilityLabel="Nudge a tenant"
+            icon={BellRing}
+            label="Nudge"
+            onPress={() => setNudgeSheetOpen(true)}
+          />
+        ) : null}
+        {section !== "ENQUIRIES" && section !== "NUDGES" ? (
           <FloatingAction
             accessibilityLabel="Start a new chat"
             icon={MessageCirclePlus}
@@ -319,6 +341,10 @@ function ManagementChats() {
           />
         ) : null}
       </FloatingActions>
+
+      {nudgeSheetOpen && propertyId ? (
+        <NudgeSheet onClose={() => setNudgeSheetOpen(false)} propertyId={propertyId} />
+      ) : null}
 
       {/* Two pickers, because the sections open two different KINDS of thread.
           Tenants opens the shared team desk; My chats opens a private
@@ -523,6 +549,7 @@ function PersonalChats() {
   const { colors, fonts, type } = useTheme();
   const router = useGuardedRouter();
   const toast = useToast();
+  const nudgeUnread = useGetNudgeUnreadCountQuery(undefined, NUDGE_REFETCH_OPTIONS);
 
   const threadsQuery = useListMyThreadsQuery(undefined, {
     ...CHAT_LIVE_OPTIONS,
@@ -627,7 +654,7 @@ function PersonalChats() {
     chosenSection ?? (pinned || personal.length > 0 || enquiries.length === 0 ? "MINE" : "ENQUIRIES");
   const others = section === "MINE" ? personal : enquiries;
   const showPinned = section === "MINE" ? pinned : null;
-  const sectionEmpty = !showPinned && others.length === 0 && !threadsQuery.isLoading;
+  const sectionEmpty = section !== "NUDGES" && !showPinned && others.length === 0 && !threadsQuery.isLoading;
 
   return (
     <View style={{ flex: 1 }}>
@@ -652,7 +679,7 @@ function PersonalChats() {
           Chats
         </Text>
 
-        <DeleteThreadButton selection={selection} />
+        {section !== "NUDGES" ? <DeleteThreadButton selection={selection} /> : null}
       </View>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -668,9 +695,16 @@ function PersonalChats() {
           onPress={() => setChosenSection("ENQUIRIES")}
           selected={section === "ENQUIRIES"}
         />
+        <SectionPill
+          count={nudgeUnread.data ?? 0}
+          label="Nudges"
+          onPress={() => setChosenSection("NUDGES")}
+          selected={section === "NUDGES"}
+        />
       </View>
 
-      {threadsQuery.isLoading ? <ChatThreadListSkeleton /> : null}
+      {section === "NUDGES" ? <NudgesScreen embedded /> : null}
+      {section !== "NUDGES" && threadsQuery.isLoading ? <ChatThreadListSkeleton /> : null}
 
       {sectionEmpty ? (
         <CentredEmpty>
@@ -687,7 +721,7 @@ function PersonalChats() {
         </CentredEmpty>
       ) : null}
 
-      {showPinned || others.length > 0 ? (
+      {section !== "NUDGES" && (showPinned || others.length > 0) ? (
         <View
           style={{
             backgroundColor: colors.surface,

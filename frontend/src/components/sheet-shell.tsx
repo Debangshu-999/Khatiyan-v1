@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, Text, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
+import { ArrowLeft, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
@@ -15,6 +15,7 @@ export function SheetShell({
   animated = true,
   children,
   dismissOnDrag = false,
+  onBack,
   onClose,
   onEndReached,
   title,
@@ -43,6 +44,14 @@ export function SheetShell({
    * wants the entrance uses the default animation.
    */
   dismissOnDrag?: boolean;
+  /**
+   * Set while the sheet is showing a later step of a flow that began on it.
+   *
+   * <p>Puts a back arrow before the title, and hands the device back button to
+   * the same handler, so back returns to the earlier step instead of closing
+   * the sheet. The X still closes it from any step.
+   */
+  onBack?: () => void;
   onClose: () => void;
   onEndReached?: () => void;
   title: string;
@@ -311,7 +320,7 @@ export function SheetShell({
   );
 
   return (
-    <Modal animationType={runsOwnAnimation ? "none" : "slide"} navigationBarTranslucent onRequestClose={dismiss} statusBarTranslucent transparent visible>
+    <Modal animationType={runsOwnAnimation ? "none" : "slide"} navigationBarTranslucent onRequestClose={onBack ?? dismiss} statusBarTranslucent transparent visible>
       {/* The backdrop is absolute and OUTSIDE the keyboard avoider, not a flex
           child of it. As a child its height was the window minus the keyboard
           padding, so dismissing the keyboard animated that padding to zero and
@@ -371,6 +380,24 @@ export function SheetShell({
               <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
             </View>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
+              {onBack ? (
+                <AnimatedPressable
+                  accessibilityLabel="Back"
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={onBack}
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceSunken,
+                    borderRadius: 999,
+                    height: 32,
+                    justifyContent: "center",
+                    width: 32,
+                  }}
+                >
+                  <ArrowLeft color={colors.ink} size={16} strokeWidth={2.4} />
+                </AnimatedPressable>
+              ) : null}
               <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
                 {title}
               </Text>

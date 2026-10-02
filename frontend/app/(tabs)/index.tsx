@@ -22,7 +22,6 @@ import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPillRow } from "@/components/filter-bubbles";
-import { ServicesIcon } from "@/components/services-icon";
 import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
@@ -733,19 +732,6 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
     </AnimatedPressable>
     {pinOpen ? <WalletPinModal onCancel={() => setPinOpen(false)} onUnlocked={() => { setPinOpen(false); onPress(); }} /> : null}
     </>
-  );
-}
-
-function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owner" | "Manager" }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <AnimatedPressable accessibilityRole="button" accessibilityLabel="View Services" onPress={onPress}>
-      <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 20, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-        <ServicesIcon />
-        <Text style={{ flex: 1, color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 26 }}>View Services</Text>
-        <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
-      </View>
-    </AnimatedPressable>
   );
 }
 
@@ -1973,7 +1959,7 @@ function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
   // landing on an empty screen.
   const openDivision = (division: AnalyticsDivision) => {
     setLastOpened(division);
-    guardAny(DIVISIONS[division].resources, `${DIVISIONS[division].tileLabel} analytics`, () =>
+    guardAny(DIVISIONS[division].resources, `${DIVISIONS[division].tileLabel} insights`, () =>
       router.push({ params: { division }, pathname: "/owner-analytics/[division]" }),
     );
   };
@@ -1982,9 +1968,9 @@ function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
 
   return (
     <>
-      <Section title="Analytics">
+      <Section title="Property Insights">
         <Text style={[type.description, { color: colors.muted, marginTop: -spacing.xs }]}>
-          Tap a section to see its analytics
+          Tap a section to see its insights
         </Text>
         <View style={{ gap: spacing.sm }}>
           {/* Collected OVER billed. On its own the collected figure reads as ₹0
@@ -2059,7 +2045,7 @@ function AnalyticsRowCard({
   const { colors, fonts, type } = useTheme();
   return (
     <AnimatedPressable
-      accessibilityHint={`Opens ${label} analytics`}
+      accessibilityHint={`Opens ${label} insights`}
       accessibilityLabel={`${label}, ${value}, ${caption}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
@@ -2212,7 +2198,7 @@ function FrequentlyVisited({
       }}
     >
       <AnimatedPressable
-        accessibilityLabel={`Pinned services, ${modules.length} pinned`}
+        accessibilityLabel={`Pinned Services, ${modules.length} pinned`}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         onPress={() => setChosenOpen(!open)}
@@ -2230,7 +2216,7 @@ function FrequentlyVisited({
           <Pin color={colors.primary} fill={colors.primary} size={16} strokeWidth={2.1} />
         </View>
         <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15 }}>
-          Pinned services
+          Pinned Services
         </Text>
         {modules.length > 0 ? (
           <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold }]}>
@@ -2412,7 +2398,6 @@ function WorkspaceTab({
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
-        <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </View>
 
       <Section title="Property Tools">
@@ -2526,7 +2511,6 @@ function WorkspaceTabLoading({
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
-        <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </View>
 
       <Section title="Property Tools">

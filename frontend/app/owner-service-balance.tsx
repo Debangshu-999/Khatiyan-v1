@@ -283,7 +283,7 @@ function OwnerServiceBalanceContent() {
           <View style={{ marginTop: 8 }}>
             <View style={{ borderWidth: 1, borderColor: amountError ? colors.danger : colors.borderStrong, borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, height: 48 }}>
               <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 20 }}>₹</Text>
-              <AppTextInput accessibilityLabel="Add amount" keyboardType="number-pad" onChangeText={(next) => { setAmount(next.replace(/[^0-9]/g, "")); setAmountError(null); }} placeholder={`${minRupees} to ${maxRupees}`} placeholderTextColor={colors.kicker} value={amount} style={{ flex: 1, color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 15, height: 46, paddingVertical: 10, textAlignVertical: "center" }} />
+              <AppTextInput accessibilityLabel="Add amount" keyboardType="number-pad" onChangeText={(next) => { setAmount(next.replace(/[^0-9]/g, "")); setAmountError(null); }} placeholder="Enter an amount" placeholderTextColor={colors.kicker} value={amount} style={{ flex: 1, color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 15, height: 46, paddingVertical: 10, textAlignVertical: "center" }} />
             </View>
             <View pointerEvents="none" style={{ position: "absolute", top: -9, left: 14, backgroundColor: colors.surface, paddingHorizontal: 6 }}>
               <Text style={{ color: amountError ? colors.danger : colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>Add amount <Text style={{ color: colors.danger }}>*</Text></Text>
@@ -361,6 +361,12 @@ function OwnerServiceBalanceContent() {
             {
               body: "Add money once, then services you request are paid for from this balance.",
             title: "It is prepaid",
+          },
+          {
+            // The limits come from the server, so this line follows a change
+            // to them without an app release.
+            body: `You can add between ${formatMoneyPaise(minRupees * 100)} and ${formatMoneyPaise(maxRupees * 100)} at a time.`,
+            title: "How much you can add",
           },
           {
             body: "When you ask for a service, its price is held. It is charged only when the service is actually carried out, and released if it never runs.",

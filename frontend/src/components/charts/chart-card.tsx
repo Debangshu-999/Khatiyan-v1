@@ -103,7 +103,7 @@ export function ChartCard({
       ) : null}
 
       {infoOpen && info ? (
-        <InfoModal onClose={() => setInfoOpen(false)} title={title}>
+        <InfoModal bottomUp onClose={() => setInfoOpen(false)} title={title}>
           <InfoPoints points={info} />
         </InfoModal>
       ) : null}

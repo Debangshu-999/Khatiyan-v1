@@ -1706,14 +1706,14 @@ export default function OwnerOnboardTenantScreen() {
                     keyboardType="number-pad"
                     onChangeText={(text) => {
                       const parsed = Number(text.replace(/[^0-9]/g, ""));
-                      setTermMonths(parsed > 0 ? Math.min(parsed, 12) : null);
+                      setTermMonths(parsed > 0 ? Math.min(parsed, 11) : null);
                     }}
                     placeholder="11"
                     value={termMonths != null ? String(termMonths) : ""}
                   />
                 </Field>
                 <Text style={[type.description, { color: colors.muted }]}>
-                  Min 1, max 12 months. A fixed term ends the tenancy on its last day.
+                  Min 1, max 11 months. A fixed term ends the tenancy on its last day.
                 </Text>
               </>
             ) : (

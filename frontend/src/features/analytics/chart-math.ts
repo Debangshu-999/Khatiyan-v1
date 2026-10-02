@@ -107,6 +107,22 @@ export function lineSegments(values: (number | null)[], x: (index: number) => nu
   return segments;
 }
 
+/** How many buckets an over-time chart shows before it scrolls sideways. */
+export const BUCKETS_PER_VIEW = 5;
+
+/**
+ * One bucket's width and the whole plot's, for an over-time chart.
+ *
+ * Up to five buckets share the width that shows. Past five, each keeps a fifth
+ * of it and the plot grows to the right, to be scrolled. A mark sits at the
+ * middle of its slot, which also keeps the first one clear of the axis labels.
+ */
+export function plotLayout(viewport: number, bucketCount: number): { contentWidth: number; slot: number } {
+  if (viewport <= 0 || bucketCount <= 0) return { contentWidth: Math.max(0, viewport), slot: 0 };
+  const slot = viewport / Math.min(bucketCount, BUCKETS_PER_VIEW);
+  return { contentWidth: slot * bucketCount, slot };
+}
+
 /** A column anchored to the baseline with only its top corners rounded. */
 export function roundedTopBarPath(x: number, baseline: number, width: number, height: number, radius = 4): string {
   if (height <= 0) return "";

@@ -23,11 +23,11 @@ export const DIVISIONS: Record<AnalyticsDivision, DivisionConfig> = {
     now: ["billing.dues", "billing.overdue_ageing", "billing.upi_claims_pending"],
     period: ["billing.collection_rate", "billing.status_mix", "billing.collections_by_mode", "billing.bill_types", "billing.payment_timeliness", "billing.late_fees_discounts"],
     resources: ["BILLING_CYCLES"],
-    tail: "analytics.",
+    tail: "insights.",
     tileLabel: "Billing",
     title: "Billing",
   },
-  concerns: { now: [], period: [], resources: ["CONCERNS"], tail: "analytics.", tileLabel: "Concerns", title: "Concern" },
+  concerns: { now: [], period: [], resources: ["CONCERNS"], tail: "insights.", tileLabel: "Concerns", title: "Concern" },
   finance: {
     now: ["finance.deposits"],
     period: [
@@ -42,7 +42,7 @@ export const DIVISIONS: Record<AnalyticsDivision, DivisionConfig> = {
       "finance.other_income",
     ],
     resources: ["PNL", "EXPENSES", "DEPOSITS"],
-    tail: "analytics.",
+    tail: "insights.",
     tileLabel: "Finance",
     title: "Finance",
   },
@@ -58,7 +58,7 @@ export const DIVISIONS: Record<AnalyticsDivision, DivisionConfig> = {
     now: [],
     period: [],
     resources: ["ROOMS", "TENANCIES", "EXIT_REQUESTS", "FOOD"],
-    tail: "analytics.",
+    tail: "insights.",
     // "Tenancy", not "Tenants" (owner's call, 2026-09-27): the division is about
     // stays, rooms, agreements and food, not only the people.
     tileLabel: "Tenancy",

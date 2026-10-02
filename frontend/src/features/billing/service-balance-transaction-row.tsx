@@ -32,7 +32,12 @@ export function ServiceBalanceTransactionRow({ entry, compact = false }: { entry
 
 export function TransactionSeparator() {
   const { colors } = useTheme();
-  return <Svg width="100%" height={3} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-    <Line x1={1} y1={1.5} x2="100%" y2={1.5} stroke={colors.borderStrong} strokeWidth={1} strokeDasharray="4 6" strokeLinecap="butt" />
-  </Svg>;
+  // Hidden from screen readers through a View, not on the Svg. On the web build
+  // an Svg hands unknown props straight to the DOM, and React logs an error for
+  // each one, which opens the dev overlay every time the wallet is entered.
+  return <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width="100%" height={3}>
+      <Line x1={1} y1={1.5} x2="100%" y2={1.5} stroke={colors.borderStrong} strokeWidth={1} strokeDasharray="4 6" strokeLinecap="butt" />
+    </Svg>
+  </View>;
 }

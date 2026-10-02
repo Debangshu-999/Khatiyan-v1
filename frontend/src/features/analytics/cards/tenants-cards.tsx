@@ -249,8 +249,8 @@ export function RoomVacancyCard({ metric, onRetry }: CardProps) {
 export function StayTypeCard({ compareLabel, metric, onRetry, period }: CardProps) {
   const palette = useChartPalette();
   const segments = slicesOf(metric, [
-    { color: palette.series[0], key: "MONTHLY", label: "Monthly" },
-    { color: palette.series[1], key: "DAILY", label: "Daily guests" },
+    { color: palette.pair[0], key: "MONTHLY", label: "Monthly" },
+    { color: palette.pair[1], key: "DAILY", label: "Daily guests" },
   ], true);
   const trend = metric.series.length > 1;
   const monthly = figure(metric, "monthly");
@@ -284,8 +284,8 @@ export function StayTypeCard({ compareLabel, metric, onRetry, period }: CardProp
             }))}
             formatTick={(tick) => String(tick)}
             formatValue={(value) => String(value)}
-            seriesA={{ color: palette.series[0], label: "Monthly" }}
-            seriesB={{ color: palette.series[1], label: "Daily guests" }}
+            seriesA={{ color: palette.pair[0], label: "Monthly" }}
+            seriesB={{ color: palette.pair[1], label: "Daily guests" }}
           />
         ) : (
           <View style={{ gap: spacing.sm }}>
@@ -661,8 +661,8 @@ function TwoCountsCard({
           }))}
           formatTick={(tick) => String(tick)}
           formatValue={(value) => String(value)}
-          seriesA={{ color: palette.series[0], label: aLabel }}
-          seriesB={{ color: palette.series[1], label: bLabel }}
+          seriesA={{ color: palette.pair[0], label: aLabel }}
+          seriesB={{ color: palette.pair[1], label: bLabel }}
         />
       ) : (
         <View style={{ gap: spacing.sm }}>

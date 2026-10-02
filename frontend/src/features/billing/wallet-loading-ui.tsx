@@ -26,6 +26,16 @@ export function WalletScreenSkeleton() {
   </SafeAreaView>;
 }
 
+/** The All Transactions screen, as a placeholder: its heading, its filter and a page of rows. */
+export function WalletTransactionsScreenSkeleton() {
+  const { colors } = useTheme();
+  return <SafeAreaView edges={["top", "bottom"]} accessibilityLabel="Loading transactions" style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 18, paddingVertical: 16 }}><Skeleton width={36} height={36} radius={18} /><Skeleton width={150} height={18} /></View>
+    <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 18, paddingTop: 10 }}>{[0, 1, 2].map((key) => <View key={key} style={{ flex: 1 }}><Skeleton height={38} /></View>)}</View>
+    <View style={{ paddingHorizontal: 20 }}><WalletTransactionSkeleton count={8} /></View>
+  </SafeAreaView>;
+}
+
 export function WalletTransactionsErrorCard({ onRetry }: { onRetry: () => void }) {
   const { colors, fonts, type } = useTheme();
   return <View accessibilityRole="alert" style={{ marginVertical: 12, padding: 18, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", gap: 10 }}>

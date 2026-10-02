@@ -12,6 +12,16 @@ import type { ThemeMode } from "@/theme/colors";
  */
 export type ChartPalette = {
   series: readonly string[];
+  /**
+   * The two colours of a chart that compares exactly two series side by side
+   * (income and expenses, moved in and moved out).
+   *
+   * Not `series[0]` and `series[1]`: blue beside orange is the loudest pair in
+   * the palette, and a chart of nothing but that pair read as a clash (user,
+   * 2026-10-02). The first stays the series blue, so an entity keeps its
+   * colour. Both pairs pass the dataviz validator on their own surface.
+   */
+  pair: readonly [string, string];
   other: string;
   track: string;
   grid: string;
@@ -28,6 +38,9 @@ export const chartPalettes: Record<ThemeMode, ChartPalette> = {
     baseline: "#3A3A3A",
     grid: "#262626",
     other: "#64748B",
+    // Blue with the palette's own green. A lighter blue cannot work here: inside
+    // the dark surface's lightness band the two blues are too close to tell apart.
+    pair: ["#3987e5", "#199e70"],
     // Evenly stepped in OKLab lightness (~0.12 apart), same blue. The old steps
     // were ~0.07 apart, and 25–34 against 35–44 on the age donut read as one colour.
     ramp: ["#01499b", "#1e6ccf", "#4691f8", "#89bafe", "#c5ddff"],
@@ -40,6 +53,9 @@ export const chartPalettes: Record<ThemeMode, ChartPalette> = {
     baseline: "#CBD5E1",
     grid: "#E5E7EB",
     other: "#94A3B8",
+    // Blue with a lighter blue, the ramp's first step. Told apart by lightness,
+    // so it holds for colour-blind readers, and the legend prints both values.
+    pair: ["#3F6ED8", "#80b5fe"],
     // Evenly stepped in OKLab lightness (~0.11 apart), same blue, light end kept
     // at 2:1 against the surface. See the dark palette for why.
     ramp: ["#80b5fe", "#4590f6", "#206dd0", "#004da3", "#01316d"],

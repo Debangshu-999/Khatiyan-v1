@@ -149,8 +149,8 @@ export function IncomeVsExpensesCard({ compareLabel, metric, onRetry, period }: 
           }))}
           formatTick={moneyTick}
           formatValue={formatPaise}
-          seriesA={{ color: palette.series[0], label: "Income" }}
-          seriesB={{ color: palette.series[1], label: "Expenses" }}
+          seriesA={{ color: palette.pair[0], label: "Income" }}
+          seriesB={{ color: palette.pair[1], label: "Expenses" }}
         />
       ) : (
         <View style={{ gap: spacing.sm }}>

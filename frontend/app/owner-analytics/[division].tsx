@@ -71,12 +71,12 @@ export default function OwnerAnalyticsDivisionScreen() {
     >
       {/* Title only: no back row and no description, as the owner asked. The
           device back button still returns to the Dashboard tab. */}
-      <ScreenHeader italicTail={config?.tail} title={config?.title ?? "Analytics"} />
+      <ScreenHeader italicTail={config?.tail} title={config?.title ?? "Insights"} />
 
       {!property || !config || !division ? (
         <EmptyState description="Open Home, pick a property, then choose a section on the Dashboard tab." icon={ChartColumn} title="Choose a property first" />
       ) : !ready ? (
-        <EmptyState description="These analytics are coming in the next update." icon={ChartColumn} title={`${config.tileLabel} analytics are on the way`} />
+        <EmptyState description="These insights are coming in the next update." icon={ChartColumn} title={`${config.tileLabel} insights are on the way`} />
       ) : (
         <>
           <View style={{ gap: spacing.xs }}>
@@ -105,7 +105,7 @@ export default function OwnerAnalyticsDivisionScreen() {
               </View>
             </SkeletonBoundary>
           ) : query.isError || !data ? (
-            <EmptyState description="Pull down to try again." icon={ChartColumn} title="Couldn't load these analytics" />
+            <EmptyState description="Pull down to try again." icon={ChartColumn} title="Couldn't load these insights" />
           ) : (
             <DivisionSections config={config} data={data} onRetry={() => query.refetch()} />
           )}

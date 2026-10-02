@@ -39,17 +39,6 @@ export type MoneySnapshot = {
   collectedPrevMonthPaise: number;
 };
 
-export type MonthlyTrendPoint = {
-  label: string;
-  occupancyRate: number;
-  collectionRate: number;
-  collectedPaise: number;
-  /** Stays that began in the month. */
-  startedCount: number;
-  /** Stays that ended in the month — ended ones only, never notice served. */
-  endedCount: number;
-};
-
 export type TodayDigest = {
   paymentsMadeToday: number;
   paymentsMadeTodayPaise: number;
@@ -173,7 +162,6 @@ export type OwnerDashboard = {
    */
   paymentIntents: PaymentIntentDigest;
   recentActivity: RecentActivityItem[];
-  monthlyTrends: MonthlyTrendPoint[];
   generatedAt: string;
 };
 

@@ -5,7 +5,6 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { NUDGE_REFETCH_OPTIONS, useListReceivedNudgesQuery, type Nudge } from "@/store/services/nudge-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -20,24 +19,14 @@ const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty
  * response still carries the state from before this visit, so the ones that were
  * new are marked as new on the visit that clears them.
  */
-export default function NudgesScreen() {
-  const router = useGuardedRouter();
+export default function NudgesScreen({ embedded = false }: { embedded?: boolean }) {
   const { colors, type } = useTheme();
   const nudgesQuery = useListReceivedNudgesQuery(undefined, NUDGE_REFETCH_OPTIONS);
 
   const nudges = nudgesQuery.data ?? [];
 
-  return (
-    <ScreenScrollView
-      // The nested-screen top position, shared with every other back-button screen.
-      safeAreaEdges={["top", "bottom"]}
-    >
-      <ScreenHeader
-        italicTail="for you."
-        subtitle="Short messages from your property. These are one-way — reply through a concern if you need to."
-        title="Nudges"
-      />
-
+  const content = (
+    <>
       {nudgesQuery.isLoading ? <SkeletonCard /> : null}
 
       {nudgesQuery.isError ? (
@@ -66,6 +55,19 @@ export default function NudgesScreen() {
           </Text>
         </View>
       ) : null}
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+      <ScreenHeader
+        italicTail="for you."
+        subtitle="Short messages from your property. These are one-way — reply through a concern if you need to."
+        title="Nudges"
+      />
+      {content}
     </ScreenScrollView>
   );
 }

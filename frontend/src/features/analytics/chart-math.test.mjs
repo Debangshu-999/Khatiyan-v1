@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { arcPath, axisScale, donutSegments, lineSegments, rampIndexes, roundedTopBarPath, segmentRects, signedScale } from "./chart-math.ts";
+import { arcPath, axisScale, donutSegments, lineSegments, plotLayout, rampIndexes, roundedTopBarPath, segmentRects, signedScale } from "./chart-math.ts";
+
+test("a plot shows five buckets, then grows to the right", () => {
+  // Up to five share the width.
+  assert.deepEqual(plotLayout(300, 1), { contentWidth: 300, slot: 300 });
+  assert.deepEqual(plotLayout(300, 3), { contentWidth: 300, slot: 100 });
+  assert.deepEqual(plotLayout(300, 5), { contentWidth: 300, slot: 60 });
+  // Past five, a bucket keeps a fifth and the plot is wider than what shows.
+  assert.deepEqual(plotLayout(300, 6), { contentWidth: 360, slot: 60 });
+  assert.deepEqual(plotLayout(300, 12), { contentWidth: 720, slot: 60 });
+  // Nothing to lay out before the chart is measured, or with no buckets.
+  assert.deepEqual(plotLayout(0, 6), { contentWidth: 0, slot: 0 });
+  assert.deepEqual(plotLayout(300, 0), { contentWidth: 300, slot: 0 });
+});
 
 test("a signed scale reaches below zero only when a value does", () => {
   assert.deepEqual(signedScale([12, 30, 24]), { max: 50, min: 0, ticks: [0, 25, 50] });

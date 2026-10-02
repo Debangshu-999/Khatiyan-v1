@@ -10,12 +10,12 @@ import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useListServiceBalanceEntriesQuery, type ServiceBalanceEntry } from "@/store/services/service-balance-api";
 import { useTheme } from "@/theme/use-theme";
 import { WalletPinGate } from "@/features/billing/wallet-pin-gate";
-import { WalletTransactionSkeleton, WalletTransactionsErrorCard } from "@/features/billing/wallet-loading-ui";
+import { WalletTransactionSkeleton, WalletTransactionsErrorCard, WalletTransactionsScreenSkeleton } from "@/features/billing/wallet-loading-ui";
 
 type Filter = "All" | "Credited" | "Debited";
 
 export default function ServiceBalanceTransactionsScreen() {
-  return <WalletPinGate><ServiceBalanceTransactionsContent /></WalletPinGate>;
+  return <WalletPinGate fallback={<WalletTransactionsScreenSkeleton />}><ServiceBalanceTransactionsContent /></WalletPinGate>;
 }
 
 function ServiceBalanceTransactionsContent() {

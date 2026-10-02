@@ -219,7 +219,7 @@ export default function OwnerScreen() {
               ))}
             </View>
             <Text style={[type.caption, { color: colors.kicker }]}>
-              Tap the pin on a service to add it to "Frequently visited" on Home.
+              Tap the pin on a service to add it to "Pinned Services" on Home.
             </Text>
           </Section>
         </>

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { View } from "react-native";
 import Svg, { G, Line, Path, Text as SvgText } from "react-native-svg";
 
+import { PlotScroller } from "@/components/charts/plot-scroller";
 import { axisScale, rampIndexes, roundedTopBarPath } from "@/features/analytics/chart-math";
 import { useChartPalette } from "@/theme/chart-colors";
 import { TapSlots } from "@/components/charts/tap-slots";
@@ -11,7 +11,8 @@ export type ColumnBucket = { key: string; label: string; value: number };
 
 /**
  * Ordered buckets (ageing, tenure, durations) on the blue ramp: darker is older
- * or longer. Tap a column to print its exact figure above it.
+ * or longer. Tap a column to print its exact figure above it. Past five buckets
+ * the plot scrolls sideways, like the over-time charts.
  */
 export function OrderedColumns({
   accessibilityLabel,
@@ -28,7 +29,6 @@ export function OrderedColumns({
 }) {
   const { colors, fonts } = useTheme();
   const palette = useChartPalette();
-  const [width, setWidth] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const height = 150;
   const left = 40;
@@ -38,60 +38,59 @@ export function OrderedColumns({
   const plot = baseline - top;
   const max = Math.max(0, ...buckets.map((bucket) => bucket.value));
   const { ceiling, ticks } = axisScale(max, integer);
+  const tickY = (tick: number) => baseline - (tick / ceiling) * plot;
   const fills = rampIndexes(buckets.length, palette.ramp.length).map((index) => palette.ramp[index]);
-  const slot = buckets.length > 0 ? (width - left) / buckets.length : 0;
-  const barWidth = Math.min(36, slot * 0.6);
 
   return (
-    <View
+    <PlotScroller
       accessibilityLabel={accessibilityLabel}
-      accessible
-      onLayout={(event) => {
-        const next = Math.round(event.nativeEvent.layout.width);
-        setWidth((current) => (current === next ? current : next));
-      }}
-      style={{ height }}
-    >
-      {width > 0 ? (
-        <Svg height={height} width={width}>
-          {ticks.map((tick) => {
-            const y = baseline - (tick / ceiling) * plot;
-            return (
-              <G key={`tick-${tick}`}>
-                <Line stroke={tick === 0 ? palette.baseline : palette.grid} strokeWidth={tick === 0 ? 1 : 0.6} x1={left} x2={width} y1={y} y2={y} />
-                <SvgText fill={palette.axis} fontFamily={fonts.sans} fontSize={11} textAnchor="end" x={left - 6} y={y + 4}>
-                  {formatTick(tick)}
-                </SvgText>
-              </G>
-            );
-          })}
-          {buckets.map((bucket, index) => {
-            const x = left + index * slot + (slot - barWidth) / 2;
-            const barHeight = ceiling > 0 ? (bucket.value / ceiling) * plot : 0;
-            return (
-              <G key={bucket.key}>
-                <Path d={roundedTopBarPath(x, baseline, barWidth, barHeight)} fill={fills[index]} />
-                <SvgText fill={palette.axis} fontFamily={fonts.sans} fontSize={11} textAnchor="middle" x={x + barWidth / 2} y={baseline + 17}>
-                  {bucket.label}
-                </SvgText>
-                {selected === bucket.key ? (
-                  <SvgText fill={colors.ink} fontFamily={fonts.sansSemiBold} fontSize={11} textAnchor="middle" x={x + barWidth / 2} y={baseline - barHeight - 5}>
-                    {formatValue(bucket.value)}
-                  </SvgText>
-                ) : null}
-              </G>
-            );
-          })}
+      axisWidth={left}
+      bucketCount={buckets.length}
+      height={height}
+      renderAxis={() => (
+        <Svg height={height} width={left}>
+          {ticks.map((tick) => (
+            <SvgText fill={palette.axis} fontFamily={fonts.sans} fontSize={11} key={`tick-${tick}`} textAnchor="end" x={left - 6} y={tickY(tick) + 4}>
+              {formatTick(tick)}
+            </SvgText>
+          ))}
         </Svg>
-      ) : null}
-      {width > 0 ? (
-        <TapSlots
-          height={plot}
-          onPress={(key) => setSelected((current) => (current === key ? null : key))}
-          slots={buckets.map((bucket, index) => ({ key: bucket.key, label: `${bucket.label} ${formatValue(bucket.value)}`, width: slot, x: left + index * slot }))}
-          top={top}
-        />
-      ) : null}
-    </View>
+      )}
+      renderPlot={({ contentWidth, slot }) => {
+        const barWidth = Math.min(36, slot * 0.6);
+        return (
+          <>
+            <Svg height={height} width={contentWidth}>
+              {ticks.map((tick) => (
+                <Line key={`grid-${tick}`} stroke={tick === 0 ? palette.baseline : palette.grid} strokeWidth={tick === 0 ? 1 : 0.6} x1={0} x2={contentWidth} y1={tickY(tick)} y2={tickY(tick)} />
+              ))}
+              {buckets.map((bucket, index) => {
+                const x = index * slot + (slot - barWidth) / 2;
+                const barHeight = ceiling > 0 ? (bucket.value / ceiling) * plot : 0;
+                return (
+                  <G key={bucket.key}>
+                    <Path d={roundedTopBarPath(x, baseline, barWidth, barHeight)} fill={fills[index]} />
+                    <SvgText fill={palette.axis} fontFamily={fonts.sans} fontSize={11} textAnchor="middle" x={x + barWidth / 2} y={baseline + 17}>
+                      {bucket.label}
+                    </SvgText>
+                    {selected === bucket.key ? (
+                      <SvgText fill={colors.ink} fontFamily={fonts.sansSemiBold} fontSize={11} textAnchor="middle" x={x + barWidth / 2} y={baseline - barHeight - 5}>
+                        {formatValue(bucket.value)}
+                      </SvgText>
+                    ) : null}
+                  </G>
+                );
+              })}
+            </Svg>
+            <TapSlots
+              height={plot}
+              onPress={(key) => setSelected((current) => (current === key ? null : key))}
+              slots={buckets.map((bucket, index) => ({ key: bucket.key, label: `${bucket.label} ${formatValue(bucket.value)}`, width: slot, x: index * slot }))}
+              top={top}
+            />
+          </>
+        );
+      }}
+    />
   );
 }

@@ -2,11 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { Bell, BellOff, ChevronRight } from "lucide-react-native";
-import { useGetNudgeUnreadCountQuery, NUDGE_REFETCH_OPTIONS } from "@/store/services/nudge-api";
+import { Bell, BellOff } from "lucide-react-native";
 
 import { ListEnd } from "@/components/list-end";
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 
@@ -205,13 +203,8 @@ export default function NotificationsScreen() {
         safeAreaEdges={["top", "bottom"]}
         scrollEventThrottle={16}
       >
-      {/* Nudges sits beside the title, in the slot Mark read used to hold.
-          Its own row above the header was a strip of nothing with one pill in
-          it, and the pill is a sibling of the heading rather than a thing that
-          happens before it. */}
       <ScreenHeader
         title="Notifications"
-        trailing={<NudgesPill isManagement={isManagement} />}
         // No line for anyone else: a pending tenant's notifications show here
         // too now, so "will appear once your tenancy is active" was untrue.
         subtitle={
@@ -285,70 +278,3 @@ export default function NotificationsScreen() {
   );
 }
 
-/**
- * The way into nudges, from the row the back button already occupies.
- *
- * <p>The badge is tenant-only: on the management side this opens the send list,
- * where an unread count would be counting the reader's own messages back at
- * them. The count endpoint is tenant-scoped too, so the query is skipped rather
- * than answered with a 403.
- */
-function NudgesPill({ isManagement }: { isManagement: boolean }) {
-  const router = useGuardedRouter();
-  const { colors, fonts } = useTheme();
-  const unreadQuery = useGetNudgeUnreadCountQuery(undefined, {
-    ...NUDGE_REFETCH_OPTIONS,
-    skip: isManagement,
-  });
-  const unread = isManagement ? 0 : unreadQuery.data ?? 0;
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel={isManagement ? "Nudge a tenant" : "Open your nudges"}
-      accessibilityRole="button"
-      onPress={() => router.push(isManagement ? "/owner-nudges" : "/nudges")}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: 3,
-        height: 30,
-        // Nudged down to sit on the title's baseline rather than its cap line.
-        // A pill top-aligned with a display-size heading reads as floating
-        // above it.
-        marginTop: spacing.xs,
-        paddingHorizontal: spacing.sm,
-      }}
-    >
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        Nudges
-      </Text>
-      {unread > 0 ? (
-        <View
-          style={{
-            backgroundColor: colors.primary,
-            borderRadius: 999,
-            minWidth: 17,
-            paddingHorizontal: 5,
-            paddingVertical: 1,
-          }}
-        >
-          <Text
-            style={{
-              color: colors.onPrimary,
-              fontFamily: fonts.sansBold,
-              fontSize: 10,
-              textAlign: "center",
-            }}
-          >
-            {unread > 9 ? "9+" : unread}
-          </Text>
-        </View>
-      ) : null}
-      <ChevronRight color={colors.muted} size={14} strokeWidth={2.4} />
-    </AnimatedPressable>
-  );
-}
