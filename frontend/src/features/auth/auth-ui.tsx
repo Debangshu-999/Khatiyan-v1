@@ -6,7 +6,6 @@ import { Eye, EyeOff, KeyRound, Lock, Pencil, type LucideProps } from "lucide-re
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
-import { FieldError } from "@/components/field-error";
 import { StatusIcon } from "@/components/status-icon";
 import { errorBody, errorCode, errorMessage } from "@/features/forms/server-error";
 import { spacing } from "@/theme/spacing";
@@ -63,17 +62,6 @@ export function AuthCard({ children, tone = "default" }: { children: ReactNode; 
     </View>
   );
 }
-
-export function FieldLabel({ children }: { children: string }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12.5, letterSpacing: 0.3 }}>
-      {children}
-    </Text>
-  );
-}
-
-export { FieldError };
 
 /**
  * The auth screen's refusal dialog.
@@ -212,7 +200,6 @@ export function AuthTextField({
   error,
   locked,
   onEdit,
-  hideErrorText,
 }: {
   label: string;
   value: string;
@@ -226,21 +213,12 @@ export function AuthTextField({
   locked?: boolean;
   /** Required when locked — a field with no way back is a dead end. */
   onEdit?: () => void;
-  /**
-   * Keep the red border but render the message somewhere else.
-   *
-   * <p>For fields followed by a chip link: the message under the box pushes the
-   * chip down, so the row jumps the moment a validation fails. The caller pairs
-   * the two on one line instead and places <FieldError> itself.
-   */
-  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [focused, setFocused] = useState(false);
 
   return (
     <View style={{ gap: 8 }}>
-      <FieldLabel>{label}</FieldLabel>
       <View
         style={{
           alignItems: "center",
@@ -255,6 +233,7 @@ export function AuthTextField({
           paddingHorizontal: spacing.lg,
         }}
       >
+        <FieldNotch error={error} focused={focused} label={label} />
         {Icon ? <Icon color={focused ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} /> : null}
         <AppTextInput
           value={value}
@@ -289,7 +268,6 @@ export function AuthTextField({
           </AnimatedPressable>
         ) : null}
       </View>
-      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }
@@ -308,21 +286,12 @@ export function PhoneField({
   value: string;
   onChangeText: (value: string) => void;
   error?: string;
-  /**
-   * Keep the red border but render the message somewhere else.
-   *
-   * <p>For fields followed by a chip link: the message under the box pushes the
-   * chip down, so the row jumps the moment a validation fails. The caller pairs
-   * the two on one line instead and places <FieldError> itself.
-   */
-  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [focused, setFocused] = useState(false);
 
   return (
     <View style={{ gap: 8 }}>
-      <FieldLabel>{label}</FieldLabel>
       {/* One box, not two. The dial code is part of the number being typed, so
           boxing it separately read as a second field to fill in — and the gap
           between them broke the line the eye follows while reading the digits
@@ -340,7 +309,7 @@ export function PhoneField({
           paddingHorizontal: spacing.md,
         }}
       >
-        <BorderError message={error} />
+        <FieldNotch error={error} focused={focused} label={label} />
         <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
@@ -389,14 +358,33 @@ export function PhoneField({
   );
 }
 
-function BorderError({ message }: { message?: string }) {
+/**
+ * The label and the validation message, both set into the field's top border
+ * (user, 2026-10-02). The label holds the left of the notch; a message takes
+ * the right and shrinks to one line, so the two can never overlap however long
+ * either gets. Each sits on the sheet colour so the border breaks behind it.
+ */
+function FieldNotch({ error, focused, label }: { error?: string; focused: boolean; label: string }) {
   const { colors, fonts } = useTheme();
-  if (!message) return null;
-  return <Text accessibilityRole="alert" pointerEvents="none" style={{
-    position: "absolute", left: 12, top: -9, maxWidth: "90%",
-    backgroundColor: colors.authSurface, paddingHorizontal: 5,
-    color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 16,
-  }}>{message.trim().replace(/\.+$/, "")}</Text>;
+  const notchText = { backgroundColor: colors.authSurface, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 16, paddingHorizontal: 5 } as const;
+  return (
+    <View
+      pointerEvents="none"
+      style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", left: 12, position: "absolute", right: 12, top: -9 }}
+    >
+      <Text
+        numberOfLines={1}
+        style={[notchText, { color: error ? colors.danger : focused ? colors.primary : colors.inkSoft, flexShrink: 0, letterSpacing: 0.3 }]}
+      >
+        {label}
+      </Text>
+      {error ? (
+        <Text accessibilityRole="alert" numberOfLines={1} style={[notchText, { color: colors.danger, flexShrink: 1 }]}>
+          {error.trim().replace(/\.+$/, "")}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 // Shared six-digit OTP / PIN entry with validation embedded in its border.
@@ -412,14 +400,6 @@ export function CodeField({
   onChangeText: (value: string) => void;
   secureTextEntry?: boolean;
   error?: string;
-  /**
-   * Keep the red border but render the message somewhere else.
-   *
-   * <p>For fields followed by a chip link: the message under the box pushes the
-   * chip down, so the row jumps the moment a validation fails. The caller pairs
-   * the two on one line instead and places <FieldError> itself.
-   */
-  hideErrorText?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   const [showValue, setShowValue] = useState(false);
@@ -430,7 +410,6 @@ export function CodeField({
 
   return (
     <View style={{ gap: 8 }}>
-      <FieldLabel>{label}</FieldLabel>
       <View
         style={{
           alignItems: "center",
@@ -445,7 +424,7 @@ export function CodeField({
           paddingHorizontal: spacing.lg,
         }}
       >
-        <BorderError message={error} />
+        <FieldNotch error={error} focused={focused} label={label} />
         <Icon color={error ? colors.danger : focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
           {/* Placeholder yields as soon as the field is focused, not on typing. */}
