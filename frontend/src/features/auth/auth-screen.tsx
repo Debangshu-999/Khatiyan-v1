@@ -750,7 +750,7 @@ export function AuthScreen() {
       ) : null}
 
       {activateInfoOpen ? (
-        <InfoModal onClose={() => setActivateInfoOpen(false)} title="How it works"><Text style={{ fontFamily: fonts.sans, fontSize: 15, lineHeight: 20, color: colors.muted }}>
+        <InfoModal bottomUp onClose={() => setActivateInfoOpen(false)} title="How it works"><Text style={{ fontFamily: fonts.sans, fontSize: 15, lineHeight: 20, color: colors.muted }}>
                 If your property owner added you as a tenant or a manager, your account already exists — it just has no
                 PIN yet.
               </Text>
@@ -806,7 +806,7 @@ export function AuthScreen() {
                 >
                   {/* A couple of px down: the display face sits high in its line
                       box, so an optically centred icon has to follow it. */}
-        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.2} style={{ marginTop: 3 }} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.2} style={{ marginTop: 6 }} />
                 </AnimatedPressable>
               ) : null}
             </View>
