@@ -22,6 +22,8 @@ import { ChatAccessListSheet } from "@/features/chat/chat-access-list-sheet";
 import { ContactPicker } from "@/features/chat/contact-picker";
 import { TenantPicker } from "@/features/chat/tenant-picker";
 import { ThreadRow } from "@/features/chat/thread-row";
+import { arrivalSide, useSectionSwipe } from "@/features/chat/use-section-swipe";
+import { SlideInView } from "@/components/slide-in-view";
 import { useDeleteThreadSelection } from "@/features/chat/use-delete-thread-selection";
 import { errorMessage } from "@/features/forms/server-error";
 import { NudgeSheet } from "@/features/nudge/nudge-sheet";
@@ -119,6 +121,17 @@ function ManagementChats() {
     }
   }, [canSeeTenants, section]);
 
+  // Sections swipe as well as tap (user, 2026-10-02); either way the new one
+  // slides in from the side it lies on.
+  const sectionOrder: Section[] = canSeeTenants ? ["MINE", "TENANTS", "ENQUIRIES", "NUDGES"] : ["MINE", "ENQUIRIES", "NUDGES"];
+  const [arrivedFrom, setArrivedFrom] = useState<"left" | "right" | "none">("none");
+  function goToSection(next: Section, from: "left" | "right" = arrivalSide(sectionOrder, section, next)) {
+    if (next === section) return;
+    setArrivedFrom(from);
+    setSection(next);
+  }
+  const swipeHandlers = useSectionSwipe(sectionOrder, section, goToSection);
+
   // A conversation list is the one screen where stale is indistinguishable from
   // wrong: the cached copy has yesterday's previews, yesterday's unread flags
   // and yesterday's names, with nothing on the page to hint that it is old. So
@@ -209,7 +222,7 @@ function ManagementChats() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} {...swipeHandlers}>
     <ScreenScrollView
       // The shared default invalidates a fixed set of tags that does not
       // include Chat, so without this the pull gesture spun and changed
@@ -243,26 +256,27 @@ function ManagementChats() {
         <SectionPill
           count={mine.data?.filter((thread) => thread.unread).length ?? 0}
           label="My chats"
-          onPress={() => setSection("MINE")}
+          onPress={() => goToSection("MINE")}
           selected={section === "MINE"}
         />
         {canSeeTenants ? (
           <SectionPill
             count={tenants.data?.filter((thread) => thread.unread).length ?? 0}
             label="Tenants"
-            onPress={() => setSection("TENANTS")}
+            onPress={() => goToSection("TENANTS")}
             selected={section === "TENANTS"}
           />
         ) : null}
         <SectionPill
           count={enquiries.data?.filter((thread) => thread.unread).length ?? 0}
           label="Enquiries"
-          onPress={() => setSection("ENQUIRIES")}
+          onPress={() => goToSection("ENQUIRIES")}
           selected={section === "ENQUIRIES"}
         />
-        <SectionPill count={0} label="Nudges" onPress={() => setSection("NUDGES")} selected={section === "NUDGES"} />
+        <SectionPill count={0} label="Nudges" onPress={() => goToSection("NUDGES")} selected={section === "NUDGES"} />
       </View>
 
+      <SlideInView from={arrivedFrom} key={section}>
       {section === "NUDGES" ? <OwnerNudgesScreen embedded /> : null}
       {section !== "NUDGES" && active.isLoading ? <ChatThreadListSkeleton /> : null}
 
@@ -302,6 +316,7 @@ function ManagementChats() {
           ))}
         </View>
       ) : null}
+      </SlideInView>
 
     </ScreenScrollView>
 
@@ -652,11 +667,19 @@ function PersonalChats() {
   const section: PersonalSection =
     chosenSection ?? (pinned || personal.length > 0 || enquiries.length === 0 ? "MINE" : "ENQUIRIES");
   const others = section === "MINE" ? personal : enquiries;
+  const personalOrder: PersonalSection[] = ["MINE", "ENQUIRIES", "NUDGES"];
+  const [personalArrivedFrom, setPersonalArrivedFrom] = useState<"left" | "right" | "none">("none");
+  function goToPersonal(next: PersonalSection, from: "left" | "right" = arrivalSide(personalOrder, section, next)) {
+    if (next === section) return;
+    setPersonalArrivedFrom(from);
+    setChosenSection(next);
+  }
+  const personalSwipe = useSectionSwipe(personalOrder, section, goToPersonal);
   const showPinned = section === "MINE" ? pinned : null;
   const sectionEmpty = section !== "NUDGES" && !showPinned && others.length === 0 && !threadsQuery.isLoading;
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} {...personalSwipe}>
     <ScreenScrollView
       contentContainerStyle={{ flexGrow: 1 }}
       onRefresh={async () => {
@@ -684,23 +707,24 @@ function PersonalChats() {
         <SectionPill
           count={(pinned?.unread ? 1 : 0) + personal.filter((thread) => thread.unread).length}
           label="My chats"
-          onPress={() => setChosenSection("MINE")}
+          onPress={() => goToPersonal("MINE")}
           selected={section === "MINE"}
         />
         <SectionPill
           count={enquiries.filter((thread) => thread.unread).length}
           label="Enquiries"
-          onPress={() => setChosenSection("ENQUIRIES")}
+          onPress={() => goToPersonal("ENQUIRIES")}
           selected={section === "ENQUIRIES"}
         />
         <SectionPill
           count={nudgeUnread.data ?? 0}
           label="Nudges"
-          onPress={() => setChosenSection("NUDGES")}
+          onPress={() => goToPersonal("NUDGES")}
           selected={section === "NUDGES"}
         />
       </View>
 
+      <SlideInView from={personalArrivedFrom} key={section}>
       {section === "NUDGES" ? <NudgesScreen embedded /> : null}
       {section !== "NUDGES" && threadsQuery.isLoading ? <ChatThreadListSkeleton /> : null}
 
@@ -763,6 +787,7 @@ function PersonalChats() {
           ))}
         </View>
       ) : null}
+      </SlideInView>
 
     </ScreenScrollView>
 
