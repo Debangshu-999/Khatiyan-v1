@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ChevronRight, EyeOff, Globe, Pencil } from "lucide-react-native";
-import type { LucideProps } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Svg, { Circle, Path } from "react-native-svg";
 
@@ -72,19 +71,6 @@ type PropertyRoute =
   | "/owner-food"
   | "/owner-nearby-places"
   | "/owner-property-visits";
-
-function propertySummaryIcon(name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) {
-  return function SummaryIcon({ size = 22 }: LucideProps) {
-    return <MaterialCommunityIcons name={name} color="#000000" size={Number(size)} />;
-  };
-}
-
-const RentSummaryIcon = propertySummaryIcon("currency-inr");
-const DepositSummaryIcon = propertySummaryIcon("database-outline");
-const NoticeSummaryIcon = propertySummaryIcon("clock-outline");
-const GraceSummaryIcon = propertySummaryIcon("timer-sand");
-const LateFeeSummaryIcon = propertySummaryIcon("cash-clock");
-const RoomsSummaryIcon = propertySummaryIcon("door-open");
 
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
@@ -171,7 +157,6 @@ export default function OwnerPropertyScreen() {
               <OwnerMetricTileSkeleton />
             ) : (
               <MetricTile
-                icon={RentSummaryIcon}
                 iconPlacement="side"
                 label="Rent from"
                 value={startingRentPaise == null ? "No rooms yet" : formatMoneyPaise(startingRentPaise)}
@@ -179,18 +164,16 @@ export default function OwnerPropertyScreen() {
                 tone="primary"
               />
             )}
-            <MetricTile icon={DepositSummaryIcon} iconPlacement="side" label="Deposit" value={formatDepositPaise(selectedProperty.standardDepositPaise)} hint="Standard" />
+            <MetricTile iconPlacement="side" label="Deposit" value={formatDepositPaise(selectedProperty.standardDepositPaise)} hint="Standard" />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
-              icon={NoticeSummaryIcon}
               iconPlacement="side"
               label="Notice"
               value={NOTICE_PERIOD_LABELS[selectedProperty.noticePeriod]}
               hint="Notice period"
             />
             <MetricTile
-              icon={GraceSummaryIcon}
               iconPlacement="side"
               label="Grace"
               value={selectedProperty.rentGraceDays > 0 ? `${selectedProperty.rentGraceDays}d` : "None"}
@@ -199,7 +182,6 @@ export default function OwnerPropertyScreen() {
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
-              icon={LateFeeSummaryIcon}
               iconPlacement="side"
               label="Late fee"
               value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/day` : "None"}
@@ -209,7 +191,6 @@ export default function OwnerPropertyScreen() {
               <OwnerMetricTileSkeleton />
             ) : (
               <MetricTile
-                icon={RoomsSummaryIcon}
                 iconPlacement="side"
                 label="Rooms"
                 value={String((roomsQuery.data ?? []).filter((room) => room.active).length)}
@@ -224,7 +205,18 @@ export default function OwnerPropertyScreen() {
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
                   <MaterialCommunityIcons name="home-city" color="#000000" size={32} />
                   <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 17, lineHeight: 23 }]}>View facilities</Text>
-                  <ChevronRight color={colors.ink} size={20} />
+                  <View
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: colors.neutralSoft,
+                      borderRadius: 999,
+                      height: 32,
+                      justifyContent: "center",
+                      width: 32,
+                    }}
+                  >
+                    <ChevronRight color={colors.ink} size={18} />
+                  </View>
                 </View>
               </Card>
             </AnimatedPressable>
