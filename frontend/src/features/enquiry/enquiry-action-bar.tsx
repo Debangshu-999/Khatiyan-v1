@@ -15,7 +15,6 @@ import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
 import { SuccessTick } from "@/components/success-tick";
-import { useToast } from "@/components/toast";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { formatVisitDay, formatVisitWhen } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
@@ -44,7 +43,6 @@ import { useTheme } from "@/theme/use-theme";
  */
 export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
   const { colors } = useTheme();
-  const toast = useToast();
   const [endConversation, endState] = useEndEnquiryConversationMutation();
   const [sentimentOpen, setSentimentOpen] = useState(false);
   const [visitOpen, setVisitOpen] = useState(false);
