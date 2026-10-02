@@ -8,6 +8,7 @@ import { openDialer } from "@/lib/dial";
 
 import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { CenterModal } from "@/components/center-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { CountTabPills } from "@/components/filter-bubbles";
@@ -28,7 +29,7 @@ import {
   type EnquiryResponseChannel,
 } from "@/store/services/enquiry-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // The screen's empty state. It used to be the header artwork, with a borrowed
@@ -72,6 +73,18 @@ export default function OwnerEnquiriesScreen() {
   const [responding, setResponding] = useState<EnquiryDetail | null>(null);
   const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
   const [scheduling, setScheduling] = useState<EnquiryDetail | null>(null);
+  const [visitBlocked, setVisitBlocked] = useState(false);
+
+  // Schedule visit stays tappable before a successful response, and explains
+  // why it cannot book yet rather than doing nothing (user, 2026-10-02). The
+  // server refuses the booking too.
+  function startScheduling(enquiry: EnquiryDetail) {
+    if (!enquiry.respondedAt) {
+      setVisitBlocked(true);
+      return;
+    }
+    setScheduling(enquiry);
+  }
 
   /**
    * The conversation to open once the respond sheet has actually gone.
@@ -232,7 +245,7 @@ export default function OwnerEnquiriesScreen() {
                       enquiry={enquiry}
                       key={enquiry.id}
                       onRespond={() => setResponding(enquiry)}
-                      onSchedule={() => setScheduling(enquiry)}
+                      onSchedule={() => startScheduling(enquiry)}
                       onViewLog={() => setViewingLog(enquiry)}
                     />
                   ))}
@@ -270,6 +283,8 @@ export default function OwnerEnquiriesScreen() {
       ) : null}
 
       {viewingLog ? <ActionLogSheet enquiry={viewingLog} onClose={() => setViewingLog(null)} /> : null}
+
+      {visitBlocked ? <VisitBlockedDialog onClose={() => setVisitBlocked(false)} /> : null}
 
       {/* The chat's own visit sheet, opened from the card (user, 2026-10-02). */}
       {scheduling && selectedProperty ? (
@@ -350,11 +365,11 @@ function EnquiryCard({
             <ActionButton compact disabled={!canAct} label="Respond" onPress={onRespond} />
           </View>
           <View style={{ flex: 1 }}>
-            {/* Greyed until a response has reached them (user, 2026-10-02);
+            {/* Tappable before a response, where it explains why it is blocked;
                 the server refuses a booking before that as well. */}
             <ActionButton
               compact
-              disabled={!canAct || !enquiry.respondedAt}
+              disabled={!canAct}
               icon={CalendarPlus}
               label="Schedule visit"
               onPress={onSchedule}
@@ -441,6 +456,56 @@ function NewRibbon() {
 
 /** The underside of the band, seen where it folds back. */
 const RIBBON_FOLD = "#991B1B";
+
+/**
+ * Why Schedule visit cannot book yet (user, 2026-10-02).
+ *
+ * <p>Plain on purpose: a bold heading, the reason under it and a black Got it.
+ * No icon and no corner cross; Got it, or the device back button, closes it.
+ */
+function VisitBlockedDialog({ onClose }: { onClose: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderCurve: "continuous",
+            borderRadius: 20,
+            gap: spacing.sm,
+            maxWidth: DIALOG_MAX_WIDTH,
+            padding: spacing.lg,
+            width: "100%",
+          }}
+        >
+          <Text accessibilityRole="header" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
+            Schedule visits blocked
+          </Text>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
+            You can schedule a visit after there has been a positive response from the enquirer, either over chat or
+            over a call back, whose response has to be recorded by you manually.
+          </Text>
+          <AnimatedPressable
+            accessibilityRole="button"
+            onPress={onClose}
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.ink,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              justifyContent: "center",
+              marginTop: spacing.sm,
+              minHeight: 48,
+            }}
+          >
+            <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
+          </AnimatedPressable>
+        </View>
+      </View>
+    </CenterModal>
+  );
+}
 
 /**
  * Opens the action log. Outlined container, ink glyph, no fill — the house icon
