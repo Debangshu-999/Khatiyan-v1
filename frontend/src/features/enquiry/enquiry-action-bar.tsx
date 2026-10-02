@@ -67,8 +67,8 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
   async function end() {
     setConfirmEnd(false);
     try {
+      // No toast (user, 2026-10-02): the chat closing is the confirmation.
       await endConversation({ enquiryId: actions.enquiryId, version: actions.enquiryVersion }).unwrap();
-      toast.success("Conversation ended.");
     } catch (error) {
       setNotice({ message: errorMessage(error), tone: "error" });
     }
@@ -132,7 +132,7 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
         <BarPill
           busy={endState.isLoading}
           icon={MessageSquareOff}
-          label="End conversation"
+          label="End"
           onPress={() => setConfirmEnd(true)}
         />
       ) : null}
