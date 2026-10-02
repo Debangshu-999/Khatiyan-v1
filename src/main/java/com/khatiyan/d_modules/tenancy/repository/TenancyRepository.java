@@ -79,6 +79,26 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
     """)
     List<Tenancy> findByPropertyIdAndActiveFalse(UUID propertyId);
 
+    /**
+     * Ended stays that ended on or after a date, newest first.
+     *
+     * <p>The dashboard compares this month with last month, so a stay that ended
+     * before last month began cannot change any figure on it. A stay with no end
+     * date is kept unless it was cancelled, because the month counts treat "no
+     * end date" as still there.
+     */
+    @Query("""
+        SELECT tenancy
+        FROM Tenancy tenancy
+        WHERE tenancy.propertyId = :propertyId
+          AND tenancy.active = false
+          AND (tenancy.endDate >= :endedOnOrAfter
+               OR (tenancy.endDate IS NULL
+                   AND tenancy.status <> com.khatiyan.d_modules.tenancy.model.TenancyStatus.CANCELLED))
+        ORDER BY tenancy.createdAt DESC
+    """)
+    List<Tenancy> findInactiveEndedOnOrAfter(UUID propertyId, LocalDate endedOnOrAfter);
+
     Page<Tenancy> findByPropertyIdAndActive(UUID propertyId, boolean active, Pageable pageable);
 
     @Query("""

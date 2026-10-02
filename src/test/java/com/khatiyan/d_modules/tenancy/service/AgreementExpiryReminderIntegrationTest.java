@@ -69,7 +69,8 @@ class AgreementExpiryReminderIntegrationTest {
 
     @Test
     void aLongTermIsRemindedAMonthOut() {
-        fixedTerm(12, TODAY.plusDays(20));
+        // Eleven months, the longest term there is since 2026-10-02 (V6181).
+        fixedTerm(11, TODAY.plusDays(20));
         assertThat(service.sendDue(TODAY)).isEqualTo(1);
     }
 

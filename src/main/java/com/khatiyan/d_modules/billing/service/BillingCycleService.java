@@ -36,6 +36,7 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.api.dto.BillingDashboardMonths;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
@@ -411,6 +412,32 @@ public class BillingCycleService {
     }
 
     /**
+     * What the owner dashboard needs from last month and this one, as sums.
+     *
+     * <p>The dashboard used to load every bill the property had ever raised, with
+     * its lines, to add up two months of it. On a property three years old that
+     * was most of the time Home took to open.
+     *
+     * <p>No billing check, like the rollup above: the dashboard authorizes the
+     * actor for itself. Billed leaves out cancelled bills, as "billed this month"
+     * always has.
+     *
+     * @param monthStart the first day of the current IST month
+     */
+    @Transactional(readOnly = true)
+    public BillingDashboardMonths getPropertyDashboardMonths(UUID propertyId, LocalDate monthStart) {
+        LocalDate lastMonthStart = monthStart.minusMonths(1);
+        return new BillingDashboardMonths(
+                billingCycleRepository.findRentBilledTenancyIds(propertyId, monthStart, monthStart.plusMonths(1)),
+                billingCycleRepository.sumTotalForPropertyByPeriodStartBetween(propertyId, lastMonthStart, monthStart),
+                billingCycleRepository.sumTotalForPropertyByStatusAndPaidAtBetween(
+                        propertyId,
+                        BillingCycleStatus.PAID,
+                        lastMonthStart.atStartOfDay(DASHBOARD_ZONE).toInstant(),
+                        monthStart.atStartOfDay(DASHBOARD_ZONE).toInstant()));
+    }
+
+    /**
      * Lists billing cycles whose period starts in the selected month, for the
      * whole property and independent of tenancy status.
      */
@@ -432,14 +459,9 @@ public class BillingCycleService {
 
         LocalDate parsed = parseMonthStart(month);
         LocalDate monthStart = parsed != null ? parsed : LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1);
-        LocalDate nextMonth = monthStart.plusMonths(1);
         String normalizedQuery = normalize(query);
 
-        List<BillingCycle> cycles = billingCycleRepository.findByPropertyId(propertyId)
-                .stream()
-                .filter(cycle -> !cycle.getPeriodStartDate().isBefore(monthStart)
-                        && cycle.getPeriodStartDate().isBefore(nextMonth))
-                .toList();
+        List<BillingCycle> cycles = cyclesForReportMonth(propertyId, monthStart);
         Map<UUID, String> tenancyReferenceCodes = tenancyReferenceCodes(cycles);
         Map<UUID, String> tenantPhones = tenantPhones(cycles);
         List<BillingCycle> filteredCycles = cycles.stream()
@@ -448,25 +470,6 @@ public class BillingCycleService {
                 .toList();
 
         return toResponses(filteredCycles, tenancyReferenceCodes);
-    }
-
-    /**
-     * All billing cycles for a property across every month, newest period first.
-     * Used by the owner dashboard, whose six-month trend, prior-month money delta
-     * and recent activity need the full history rather than a single month's slice
-     * (a {@code null} month would otherwise default to the current month only).
-     */
-    @Transactional(readOnly = true)
-    public List<BillingCycleResponse> listAllPropertyCycles(UUID actorUserId, UUID propertyId) {
-        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
-
-        List<BillingCycle> cycles = billingCycleRepository.findByPropertyId(propertyId)
-                .stream()
-                .sorted(Comparator.comparing(BillingCycle::getPeriodStartDate).reversed())
-                .toList();
-        Map<UUID, String> tenancyReferenceCodes = tenancyReferenceCodes(cycles);
-
-        return toResponses(cycles, tenancyReferenceCodes);
     }
 
     /**
@@ -507,7 +510,20 @@ public class BillingCycleService {
         // silently dropped the tenant from this list — raising a one-off made it
         // look as though their rent cycle had already been generated when it had
         // not. Matches findLatestByTenancyId, which the generator uses.
-        Map<UUID, BillingCycle> latestCycleByTenancyId = billingCycleRepository.findByPropertyId(propertyId)
+        //
+        // Asked for by stay: the latest rent bill of each live monthly stay. This
+        // used to be every bill the property had ever raised, reduced to the same
+        // answer in memory. The filter and the merge below stay as a guard, so the
+        // rule does not rest on the query alone.
+        List<TenancyResponse> monthlyStays = tenancyModule.findActiveByPropertyId(propertyId)
+                .stream()
+                .filter(tenancy -> tenancy.billingType() == TenancyBillingType.MONTHLY)
+                .toList();
+        if (monthlyStays.isEmpty()) {
+            return PageResponse.of(List.of(), page, size);
+        }
+        Map<UUID, BillingCycle> latestCycleByTenancyId = billingCycleRepository
+                .findLatestRentCycles(propertyId, monthlyStays.stream().map(TenancyResponse::id).toList())
                 .stream()
                 .filter(cycle -> cycle.getCategory() == BillingCycleCategory.RENT_CYCLE)
                 .collect(Collectors.toMap(
@@ -515,9 +531,8 @@ public class BillingCycleService {
                         cycle -> cycle,
                         (left, right) -> left.getPeriodStartDate().isAfter(right.getPeriodStartDate()) ? left : right));
 
-        List<TenancyResponse> tenancies = tenancyModule.findActiveByPropertyId(propertyId)
+        List<TenancyResponse> tenancies = monthlyStays
                 .stream()
-                .filter(tenancy -> tenancy.billingType() == TenancyBillingType.MONTHLY)
                 .filter(tenancy -> latestCycleByTenancyId.containsKey(tenancy.id()))
                 // Once the selected month's cycle exists, the latest cycle sits in
                 // that month and its "next" is the month after — not upcoming for
@@ -1132,13 +1147,8 @@ public class BillingCycleService {
     }
 
     private List<BillingCycle> cyclesForReportMonth(UUID propertyId, LocalDate reportMonth) {
-        LocalDate nextMonthStart = reportMonth.plusMonths(1);
-
-        return billingCycleRepository.findByPropertyId(propertyId)
-                .stream()
-                .filter(cycle -> !cycle.getPeriodStartDate().isBefore(reportMonth))
-                .filter(cycle -> cycle.getPeriodStartDate().isBefore(nextMonthStart))
-                .toList();
+        return billingCycleRepository.findByPropertyIdAndPeriodStartBetween(
+                propertyId, reportMonth, reportMonth.plusMonths(1));
     }
 
     private BillingMonthlyReport buildMonthlyReport(

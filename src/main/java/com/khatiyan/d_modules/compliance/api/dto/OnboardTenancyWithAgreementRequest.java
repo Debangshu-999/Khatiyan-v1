@@ -163,8 +163,11 @@ public record OnboardTenancyWithAgreementRequest(
     }
 
     public record AgreementTermInput(
-            @Min(value = 1, message = "A fixed term must be at least 1 month")
-            @Max(value = 12, message = "A fixed term cannot exceed 12 months")
+            // The same bounds as the property's default term (AgreementTemplate).
+            // Onboarding can override that default for one stay, so a wider limit
+            // here would let through a term the settings screen refuses.
+            @Min(value = 1, message = "Agreement term must be between 1 and 11 months")
+            @Max(value = 11, message = "Agreement term must be between 1 and 11 months")
             Integer months,
 
             /**

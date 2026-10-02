@@ -18,6 +18,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -103,7 +105,12 @@ public class Room extends BaseEntity {
      * <p>A room that could only ever show its mold's list would make "editable
      * per room" a promise the model could not keep. AC is not among these — it
      * is the conditioning above, and a second copy here could contradict it.
+     *
+     * <p>Batched, with the custom amenities below. A room list reads both sets
+     * for every room, and unbatched that was two queries a room: 150 for a
+     * 75-room property, and most of the time the Home summary took.
      */
+    @BatchSize(size = 100)
     @ElementCollection
     @CollectionTable(
             name = "room_amenities",
@@ -113,6 +120,7 @@ public class Room extends BaseEntity {
     @Column(name = "amenity", nullable = false, length = 40)
     private Set<RoomAmenity> amenities = new HashSet<>();
 
+    @BatchSize(size = 100)
     @ElementCollection
     @CollectionTable(
             name = "room_custom_amenities",

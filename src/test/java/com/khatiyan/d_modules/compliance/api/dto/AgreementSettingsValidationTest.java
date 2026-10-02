@@ -23,6 +23,22 @@ class AgreementSettingsValidationTest {
         }
     }
 
+    @Test
+    void onboardingTermHoldsTheSameBounds() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            var validator = factory.getValidator();
+            for (int months : new int[] { 0, -1, 12, 13, 24 }) {
+                assertThat(validator.validate(new OnboardTenancyWithAgreementRequest.AgreementTermInput(months, "")))
+                        .anySatisfy(violation ->
+                                assertThat(violation.getPropertyPath().toString()).isEqualTo("months"));
+            }
+            for (Integer months : new Integer[] { null, 1, 10, 11 }) {
+                assertThat(validator.validate(new OnboardTenancyWithAgreementRequest.AgreementTermInput(months, "")))
+                        .isEmpty();
+            }
+        }
+    }
+
     private UpdatePropertyAgreementSettingsRequest request(Integer months) {
         return new UpdatePropertyAgreementSettingsRequest(new AgreementTemplate(Set.of(), List.of(), List.of(), months, ""));
     }

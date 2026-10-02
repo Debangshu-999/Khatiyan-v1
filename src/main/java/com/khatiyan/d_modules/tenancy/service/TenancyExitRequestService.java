@@ -595,6 +595,20 @@ public class TenancyExitRequestService {
         return withNames(exitRequestRepository.findByPropertyId(propertyId));
     }
 
+    /**
+     * A property's live requests only: waiting for a decision, approved, or with
+     * a withdrawal pending.
+     *
+     * <p>The dashboard counts these and nothing else, and the full list grows by
+     * one for every tenant who has ever left. Same check as the full list.
+     */
+    @Transactional(readOnly = true)
+    public List<TenancyExitRequestResponse> listOpenForProperty(UUID actorUserId, UUID propertyId) {
+        tenancyAccessPolicy.ensureCanViewExitRequests(actorUserId, propertyId);
+
+        return withNames(exitRequestRepository.findByPropertyIdAndStatusIn(propertyId, OPEN_STATUSES));
+    }
+
     private TenancyExitRequestResponse executeApprovedRequest(
             UUID actorUserId, TenancyExitRequest request, EndTenancyRequest endRequest) {
         tenancyAccessPolicy.ensureCanManageExitRequests(actorUserId, request.getPropertyId());

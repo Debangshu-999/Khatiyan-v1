@@ -10,7 +10,9 @@ import static org.mockito.Mockito.when;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +54,20 @@ class FinanceAnalyticsAssemblerTest {
         // Every month: ₹100 billed (₹80 collected), ₹10 manual income, ₹60 spent.
         when(billingModule.getPropertyMonthSummaryForDashboard(eq(property), anyString()))
                 .thenAnswer(call -> month(call.getArgument(1), 10000, 8000));
-        when(expenses.monthTotals(eq(property), any())).thenReturn(new ExpenseAnalytics.MonthTotals(1000, 6000));
+        // Past months arrive as one span from each module. The current month still
+        // comes from the P&L's own summary, stubbed above.
+        when(billing.monthBilling(eq(property), any(), any())).thenAnswer(call ->
+                everyMonth(call.getArgument(1), call.getArgument(2), new BillingAnalytics.MonthBilling(10000, 8000, 1)));
+        when(expenses.monthTotalsBetween(eq(property), any(), any())).thenAnswer(call ->
+                everyMonth(call.getArgument(1), call.getArgument(2), new ExpenseAnalytics.MonthTotals(1000, 6000)));
+    }
+
+    private static <T> Map<YearMonth, T> everyMonth(YearMonth first, YearMonth last, T value) {
+        Map<YearMonth, T> months = new LinkedHashMap<>();
+        for (YearMonth month = first; !month.isAfter(last); month = month.plusMonths(1)) {
+            months.put(month, value);
+        }
+        return months;
     }
 
     private static BillingMonthSummary month(String month, long billed, long collected) {

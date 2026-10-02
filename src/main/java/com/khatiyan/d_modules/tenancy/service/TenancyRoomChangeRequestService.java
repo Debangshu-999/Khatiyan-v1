@@ -395,6 +395,15 @@ public class TenancyRoomChangeRequestService {
         return withNames(roomChangeRequestRepository.findByPropertyId(propertyId));
     }
 
+    /** A property's requests still waiting for a decision. The dashboard counts only these. Same check as the full list. */
+    @Transactional(readOnly = true)
+    public List<TenancyRoomChangeRequestResponse> listPendingForProperty(UUID actorUserId, UUID propertyId) {
+        tenancyAccessPolicy.ensureCanViewRoomChanges(actorUserId, propertyId);
+
+        return withNames(roomChangeRequestRepository.findByPropertyIdAndStatus(
+                propertyId, TenancyRoomChangeRequestStatus.REQUESTED));
+    }
+
     /**
      * Closes any open room change for a tenancy that has ended and gives back the
      * bed an approved one was holding. Without this the hold would outlive the

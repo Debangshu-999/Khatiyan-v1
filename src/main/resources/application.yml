@@ -49,6 +49,10 @@ spring:
           batch_size: 25
         order_inserts: true
         order_updates: true
+        # A lazy list or reference is loaded for up to fifty owners in one query.
+        # Without it, a screen listing N things, each with a sub-list, costs N
+        # more queries: the room list was 150 for 75 rooms (2026-10-02).
+        default_batch_fetch_size: 50
     open-in-view: false
 
   flyway:
@@ -546,3 +550,19 @@ logging:
     com.khatiyan: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
+
+# Swagger UI (development only, switched off in application-prod.yml).
+springdoc:
+  swagger-ui:
+    # Prints how long each "Try it out" call took, under its response.
+    display-request-duration: true
+    # Keeps the token across a page reload, so Authorize is pressed once.
+    persist-authorization: true
+    # 330 endpoints in 45 groups. Opened with every group closed and in A to Z
+    # order, the page is a list of group names that can be read. A search box
+    # narrows it by group name, and a link can point at one endpoint.
+    doc-expansion: none
+    tags-sorter: alpha
+    operations-sorter: alpha
+    filter: true
+    deep-linking: true

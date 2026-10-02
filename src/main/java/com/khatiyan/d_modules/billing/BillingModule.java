@@ -12,6 +12,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateDepositCorrectionRequest;
 import com.khatiyan.d_modules.billing.api.dto.CreateDiscountRequest;
+import com.khatiyan.d_modules.billing.api.dto.BillingDashboardMonths;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.billing.api.dto.BillingMonthSummary;
 import com.khatiyan.d_modules.billing.api.dto.CreateExtraChargeRequest;
@@ -99,8 +100,9 @@ public class BillingModule {
         return billingCycleService.listPropertyCycles(actorUserId, propertyId, query, month);
     }
 
-    public List<BillingCycleResponse> listAllPropertyCycles(UUID actorUserId, UUID propertyId) {
-        return billingCycleService.listAllPropertyCycles(actorUserId, propertyId);
+    /** Last month's totals and this month's rent bills, for the owner dashboard, which gates itself. */
+    public BillingDashboardMonths getPropertyDashboardMonths(UUID propertyId, LocalDate monthStart) {
+        return billingCycleService.getPropertyDashboardMonths(propertyId, monthStart);
     }
 
     public PageResponse<UpcomingBillingCycleResponse> listUpcomingPropertyCycles(

@@ -454,7 +454,7 @@ class BillingCycleServiceTest {
                 TenancyBillingType.MONTHLY,
                 today);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any()))
                 .thenReturn(List.of(lastMonthsRent, todaysOneOff));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(monthlyTenancy()));
         when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
@@ -521,7 +521,7 @@ class BillingCycleServiceTest {
         java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
         java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any()))
                 .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
         when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
@@ -542,7 +542,7 @@ class BillingCycleServiceTest {
         java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
         java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID)).thenReturn(List.of(
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any())).thenReturn(List.of(
                 rentCycleStarting(thisMonth.atDay(3), 4),
                 rentCycleStarting(nextMonth.atDay(3), 5)));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
@@ -565,7 +565,7 @@ class BillingCycleServiceTest {
         java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
         java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any()))
                 .thenReturn(List.of(rentCycleStarting(thisMonth.minusMonths(1).atDay(3), 3)));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(tenancyAnchoredOnTheThird()));
         when(propertyModule.findRoomsForDisplay(eq(PROPERTY_ID), any())).thenReturn(java.util.Map.of());
@@ -586,7 +586,7 @@ class BillingCycleServiceTest {
         java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
         java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any()))
                 .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(
                 onNoticeLeaving(tenancyAnchoredOnTheThird(), nextMonth.atDay(1))));
@@ -603,7 +603,7 @@ class BillingCycleServiceTest {
         java.time.YearMonth thisMonth = java.time.YearMonth.now(IST);
         java.time.YearMonth nextMonth = thisMonth.plusMonths(1);
 
-        when(billingCycleRepository.findByPropertyId(PROPERTY_ID))
+        when(billingCycleRepository.findLatestRentCycles(eq(PROPERTY_ID), any()))
                 .thenReturn(List.of(rentCycleStarting(thisMonth.atDay(3), 4)));
         when(tenancyModule.findActiveByPropertyId(PROPERTY_ID)).thenReturn(List.of(
                 onNoticeLeaving(tenancyAnchoredOnTheThird(), nextMonth.atDay(20))));

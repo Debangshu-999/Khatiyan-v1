@@ -2,8 +2,10 @@ package com.khatiyan.d_modules.billing.repository;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
@@ -74,6 +76,58 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
         ORDER BY cycle.periodStartDate DESC, cycle.cycleNumber DESC
         """)
     List<BillingCycle> findByPropertyId(UUID propertyId);
+
+    /**
+     * A property's cycles whose period starts in a half-open date range, newest
+     * first.
+     *
+     * <p>A month's bills are asked for by month. They used to be every bill the
+     * property had, filtered in Java, which made one month's summary cost as much
+     * as the property was old.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.periodStartDate >= :fromDate
+          AND cycle.periodStartDate < :toDate
+        ORDER BY cycle.periodStartDate DESC, cycle.cycleNumber DESC
+        """)
+    List<BillingCycle> findByPropertyIdAndPeriodStartBetween(UUID propertyId, LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Stays whose RENT for the range is already billed. One-off bills are not
+     * rent and cancelled bills are not bills, so neither counts.
+     */
+    @Query("""
+        SELECT DISTINCT cycle.tenancyId
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.category = com.khatiyan.d_modules.billing.model.BillingCycleCategory.RENT_CYCLE
+          AND cycle.status <> com.khatiyan.d_modules.billing.model.BillingCycleStatus.CANCELLED
+          AND cycle.periodStartDate >= :fromDate
+          AND cycle.periodStartDate < :toDate
+        """)
+    Set<UUID> findRentBilledTenancyIds(UUID propertyId, LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * The latest RENT bill of each of the given stays. One-off bills never count:
+     * one is dated the day it is raised, so as a stay's "latest" it would hide
+     * the rent bill still to come.
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.tenancyId IN :tenancyIds
+          AND cycle.category = com.khatiyan.d_modules.billing.model.BillingCycleCategory.RENT_CYCLE
+          AND cycle.periodStartDate = (
+              SELECT MAX(other.periodStartDate)
+              FROM BillingCycle other
+              WHERE other.tenancyId = cycle.tenancyId
+                AND other.category = com.khatiyan.d_modules.billing.model.BillingCycleCategory.RENT_CYCLE)
+        """)
+    List<BillingCycle> findLatestRentCycles(UUID propertyId, Collection<UUID> tenancyIds);
 
     /**
      * Finds the latest RENT cycle for one tenancy — one-off bills (e.g. penalties)

@@ -31,6 +31,10 @@ import org.springframework.test.context.ActiveProfiles;
  * context cache start it once and every test annotated with this shares it.
  * Requires Docker to be running.
  *
+ * <p><b>Query counting.</b> The DataSource is wrapped so a test can count the
+ * SQL a call runs ({@link QueryCount}). That is how a query per row is caught
+ * before it ships.
+ *
  * <p>Written as the prerequisite for the Boot 4.1 upgrade and the intelligence
  * module, which both need a regression net that proves the app still boots —
  * see {@code docs/Spring AI/ai-intelligence-platform-spec.md} §6.1.
@@ -41,6 +45,6 @@ import org.springframework.test.context.ActiveProfiles;
 @Target(ElementType.TYPE)
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(PostgresContainer.class)
+@Import({ PostgresContainer.class, QueryCount.Wiring.class })
 public @interface IntegrationTest {
 }

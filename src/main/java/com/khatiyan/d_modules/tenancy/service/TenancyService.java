@@ -1103,6 +1103,12 @@ public class TenancyService {
         return tenancyRepository.findByPropertyIdAndActiveFalse(propertyId);
     }
 
+    /** Ended stays recent enough to change a this-month or last-month figure. */
+    @Transactional(readOnly = true)
+    public List<Tenancy> findInactiveEndedOnOrAfter(UUID propertyId, LocalDate endedOnOrAfter) {
+        return tenancyRepository.findInactiveEndedOnOrAfter(propertyId, endedOnOrAfter);
+    }
+
     @Transactional(readOnly = true)
     public List<Tenancy> findByPropertyId(UUID actorUserId, UUID propertyId) {
         tenancyAccessPolicy.ensureCanViewStays(actorUserId, propertyId);

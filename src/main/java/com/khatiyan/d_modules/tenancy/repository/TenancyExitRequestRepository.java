@@ -57,6 +57,16 @@ public interface TenancyExitRequestRepository extends JpaRepository<TenancyExitR
         """)
     List<TenancyExitRequest> findByPropertyId(UUID propertyId);
 
+    /** A property's requests in the given statuses, newest first. */
+    @Query("""
+        SELECT request
+        FROM TenancyExitRequest request
+        WHERE request.propertyId = :propertyId
+          AND request.status IN :statuses
+        ORDER BY request.createdAt DESC
+        """)
+    List<TenancyExitRequest> findByPropertyIdAndStatusIn(UUID propertyId, List<TenancyExitRequestStatus> statuses);
+
     @Query("""
         SELECT request.id
         FROM TenancyExitRequest request

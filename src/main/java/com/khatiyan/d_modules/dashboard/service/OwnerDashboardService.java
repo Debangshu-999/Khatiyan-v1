@@ -3,12 +3,10 @@ package com.khatiyan.d_modules.dashboard.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -19,10 +17,8 @@ import org.springframework.stereotype.Service;
 
 
 import com.khatiyan.d_modules.billing.BillingModule;
-import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.api.dto.BillingDashboardMonths;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
-import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
-import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.concerns.ConcernModule;
 import com.khatiyan.d_modules.concerns.api.dto.ConcernDashboardSummary;
 import com.khatiyan.d_modules.dashboard.api.dto.ActionCenterProperty;
@@ -33,7 +29,6 @@ import com.khatiyan.d_modules.dashboard.api.dto.BudgetAttention;
 import com.khatiyan.d_modules.dashboard.api.dto.BudgetAttentionLevel;
 import com.khatiyan.d_modules.dashboard.api.dto.ConcernQueueSummary;
 import com.khatiyan.d_modules.dashboard.api.dto.MoneySnapshot;
-import com.khatiyan.d_modules.dashboard.api.dto.MonthlyTrendPoint;
 import com.khatiyan.d_modules.dashboard.api.dto.OccupancySnapshot;
 import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityItem;
 import com.khatiyan.d_modules.dashboard.api.dto.RecentActivityType;
@@ -125,26 +120,31 @@ public class OwnerDashboardService {
         List<TenancyResponse> activeTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
                 .filter(tenancy -> tenancy.status() != TenancyStatus.SCHEDULED)
                 .toList();
-        List<TenancyResponse> inactiveTenancies = tenancyModule.findInactiveByPropertyId(propertyId);
+        // Only what can change a figure here. Every count below is about this
+        // month or last month, or about a request still live, so stays that ended
+        // earlier and requests long since closed are not loaded. Both lists
+        // otherwise grow for as long as the property is on Khatiyan.
+        List<TenancyResponse> inactiveTenancies =
+                tenancyModule.findInactiveEndedOnOrAfter(propertyId, today.withDayOfMonth(1).minusMonths(1));
         List<TenancyExitRequestResponse> exitRequests =
-                tenancyModule.listPropertyExitRequests(actorUserId, propertyId);
+                tenancyModule.listOpenPropertyExitRequests(actorUserId, propertyId);
         List<TenancyRoomChangeRequestResponse> roomChangeRequests =
-                tenancyModule.listPropertyRoomChangeRequests(actorUserId, propertyId);
+                tenancyModule.listPendingPropertyRoomChangeRequests(actorUserId, propertyId);
         BillingDashboardSummary billing = billingModule.getPropertyBillingSummaryForDashboard(propertyId);
         ConcernDashboardSummary concern = concernModule.getPropertyConcernSummary(actorUserId, propertyId);
-        // Full cycle history (not a single month) so the six-month trend, the
-        // prior-month money delta and recent activity all see every month's data.
-        List<BillingCycleResponse> cycles = billingModule.listAllPropertyCycles(actorUserId, propertyId);
 
         List<TenancyResponse> allTenancies = new ArrayList<>(activeTenancies);
         allTenancies.addAll(inactiveTenancies);
 
         LocalDate monthStart = today.withDayOfMonth(1);
-        LocalDate prevMonthStart = monthStart.minusMonths(1);
+        // Last month's totals and this month's rent bills, summed by the database.
+        // This used to take every bill the property had ever raised, with its
+        // lines, on each visit to Home.
+        BillingDashboardMonths months = billingModule.getPropertyDashboardMonths(propertyId, monthStart);
 
         OccupancySnapshot occupancy = buildOccupancy(rooms, activeTenancies);
         TenancySnapshot tenancy = buildTenancy(activeTenancies, inactiveTenancies, allTenancies, exitRequests, today);
-        MoneySnapshot money = buildMoney(billing, cycles, activeTenancies, prevMonthStart, monthStart);
+        MoneySnapshot money = buildMoney(billing, months, activeTenancies, monthStart);
         TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
         long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
         var paymentIntents = billingModule.getPaymentIntentDigestForDashboard(propertyId);
@@ -155,8 +155,6 @@ public class OwnerDashboardService {
         BudgetAttention budget = buildBudget(expenseModule.budgetSnapshot(propertyId, monthStart));
         List<BlockedBookingItem> blockedBookings = buildBlockedBookings(propertyId, rooms);
         ConcernQueueSummary concernQueue = buildConcernQueue(concern);
-        List<MonthlyTrendPoint> monthlyTrends =
-                buildMonthlyTrends(allTenancies, inactiveTenancies, cycles, occupancy.totalBeds(), today);
         // Straight read: the feed is only what listeners have recorded. Nothing is
         // derived from current state any more, which is what let history rewrite itself.
         List<RecentActivityItem> recentActivity = activityEventService.listRecent(propertyId, recentActivityLimit);
@@ -180,7 +178,6 @@ public class OwnerDashboardService {
                 concernQueue,
                 paymentIntents,
                 recentActivity,
-                monthlyTrends,
                 Instant.now());
     }
 
@@ -398,9 +395,8 @@ public class OwnerDashboardService {
 
     private MoneySnapshot buildMoney(
             BillingDashboardSummary billing,
-            List<BillingCycleResponse> cycles,
+            BillingDashboardMonths months,
             List<TenancyResponse> activeTenancies,
-            LocalDate prevMonthStart,
             LocalDate monthStart) {
         LocalDate nextMonthStart = monthStart.plusMonths(1);
 
@@ -414,14 +410,7 @@ public class OwnerDashboardService {
         // not rent, so counting it here suppressed that tenancy's rent projection
         // — three one-off bills were enough to zero the projection for the whole
         // property. Same rule as BillingCycleService.getPropertyMonthSummary.
-        Set<UUID> billedTenancyIds = new HashSet<>();
-        for (BillingCycleResponse cycle : cycles) {
-            if (cycle.status() != BillingCycleStatus.CANCELLED
-                    && cycle.category() == BillingCycleCategory.RENT_CYCLE
-                    && isWithinMonth(cycle.periodStartDate(), monthStart, nextMonthStart)) {
-                billedTenancyIds.add(cycle.tenancyId());
-            }
-        }
+        Set<UUID> billedTenancyIds = months.rentBilledTenancyIds();
         long projectedExtraPaise = 0;
         for (TenancyResponse tenancy : activeTenancies) {
             if (tenancy.billingType() != TenancyBillingType.MONTHLY || tenancy.rentAmountPaise() == null) {
@@ -445,78 +434,8 @@ public class OwnerDashboardService {
                 pending,
                 billing.overduePaise(),
                 billing.overdueCount(),
-                billedInMonth(cycles, prevMonthStart, monthStart),
-                collectedInMonth(cycles, prevMonthStart, monthStart));
-    }
-
-    /**
-     * Builds the trailing six-month trend (oldest first, current month last) used
-     * by the dashboard bar charts. Occupancy rate is active tenancies in the
-     * month over current total beds; collection rate is collected over billed in
-     * the month. Both are clamped to 0..100.
-     *
-     * <p>Started and ended are counted exactly as the current-month figures on
-     * the tenancy snapshot are: any stay whose start date lands in the month,
-     * and only ENDED stays whose end date does. Ended reads from the inactive
-     * list alone because an active stay on notice carries a future end date,
-     * and counting that as an exit would report a month's departures before
-     * anybody had left.
-     */
-    private List<MonthlyTrendPoint> buildMonthlyTrends(
-            List<TenancyResponse> allTenancies,
-            List<TenancyResponse> inactiveTenancies,
-            List<BillingCycleResponse> cycles,
-            long totalBeds,
-            LocalDate today) {
-        List<MonthlyTrendPoint> points = new ArrayList<>();
-        LocalDate currentMonthStart = today.withDayOfMonth(1);
-
-        for (int monthsAgo = 5; monthsAgo >= 0; monthsAgo--) {
-            LocalDate windowStart = currentMonthStart.minusMonths(monthsAgo);
-            LocalDate windowEnd = windowStart.plusMonths(1);
-
-            long activeInMonth = activeTenantsDuring(allTenancies, windowStart, windowEnd);
-            long billed = billedInMonth(cycles, windowStart, windowEnd);
-            long collected = collectedInMonth(cycles, windowStart, windowEnd);
-            long started = startedDuring(allTenancies, windowStart, windowEnd);
-            long ended = inactiveTenancies.stream()
-                    .filter(tenancy -> isWithinMonth(tenancy.endDate(), windowStart, windowEnd))
-                    .count();
-
-            int occupancyRate = totalBeds > 0
-                    ? clampPercent((int) Math.round(100.0 * activeInMonth / totalBeds))
-                    : 0;
-            int collectionRate = billed > 0
-                    ? clampPercent((int) Math.round(100.0 * collected / billed))
-                    : 0;
-
-            String label = windowStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
-            points.add(new MonthlyTrendPoint(label, occupancyRate, collectionRate, collected, started, ended));
-        }
-
-        return points;
-    }
-
-    private int clampPercent(int value) {
-        return Math.min(100, Math.max(0, value));
-    }
-
-    private long billedInMonth(
-            List<BillingCycleResponse> cycles, LocalDate monthStart, LocalDate nextMonthStart) {
-        return cycles.stream()
-                .filter(cycle -> isWithinMonth(cycle.periodStartDate(), monthStart, nextMonthStart))
-                .mapToLong(BillingCycleResponse::totalAmountPaise)
-                .sum();
-    }
-
-    private long collectedInMonth(
-            List<BillingCycleResponse> cycles, LocalDate monthStart, LocalDate nextMonthStart) {
-        return cycles.stream()
-                .filter(cycle -> cycle.status() == BillingCycleStatus.PAID && cycle.paidAt() != null)
-                .filter(cycle -> isWithinMonth(
-                        LocalDate.ofInstant(cycle.paidAt(), IST), monthStart, nextMonthStart))
-                .mapToLong(BillingCycleResponse::totalAmountPaise)
-                .sum();
+                months.billedLastMonthPaise(),
+                months.collectedLastMonthPaise());
     }
 
     private TodayDigest buildToday(

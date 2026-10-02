@@ -10,3 +10,11 @@ logging:
     com.khatiyan: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
+
+# Swagger is a development tool. It lists every endpoint the API has, and its
+# paths are open without a token (SecurityConfig), so it is switched off here.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

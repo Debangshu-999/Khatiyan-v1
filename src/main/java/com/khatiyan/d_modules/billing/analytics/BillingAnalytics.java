@@ -2,7 +2,9 @@ package com.khatiyan.d_modules.billing.analytics;
 
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +34,42 @@ public class BillingAnalytics {
 
     private static MapSqlParameterSource range(UUID propertyId, LocalDate from, LocalDate to) {
         return new MapSqlParameterSource().addValue("propertyId", propertyId).addValue("from", from).addValue("to", to);
+    }
+
+    // ---- Months, for Finance ------------------------------------------------
+
+    /** One month's bills, counted the way the P&L's month summary counts them. */
+    public record MonthBilling(long billedPaise, long collectedPaise, int bills) {}
+
+    /**
+     * Billed and collected for every month from {@code firstMonth} through
+     * {@code lastMonth}, in one query. A month with no bill is absent.
+     *
+     * <p>Finance used to ask for the P&L's month summary once per month, which
+     * made a three-year period cost thirty-seven summaries. For a PAST month this
+     * must return exactly what that summary does: billed is rent plus one-off
+     * bills that are not cancelled, collected is the bills of that month marked
+     * paid, and the month has data when it has any bill at all.
+     * {@code FinanceMonthsMatchThePnlTest} holds the two together.
+     *
+     * <p>Not for the current month. That one also carries the rent still to be
+     * billed, which only the summary projects.
+     */
+    public Map<YearMonth, MonthBilling> monthBilling(UUID propertyId, YearMonth firstMonth, YearMonth lastMonth) {
+        Map<YearMonth, MonthBilling> months = new HashMap<>();
+        jdbc.query("""
+                SELECT date_trunc('month', period_start_date)::date AS month,
+                       COALESCE(SUM(total_amount_paise) FILTER (
+                           WHERE status <> 'CANCELLED' AND category IN ('RENT_CYCLE', 'ONE_OFF')), 0) AS billed,
+                       COALESCE(SUM(total_amount_paise) FILTER (WHERE status = 'PAID'), 0) AS collected,
+                       COUNT(*) AS bills
+                FROM billing.billing_cycles
+                WHERE property_id = :propertyId AND period_start_date >= :from AND period_start_date < :to
+                GROUP BY 1
+                """, range(propertyId, firstMonth.atDay(1), lastMonth.plusMonths(1).atDay(1)),
+                (rs, i) -> months.put(YearMonth.from(rs.getDate("month").toLocalDate()),
+                        new MonthBilling(rs.getLong("billed"), rs.getLong("collected"), rs.getInt("bills"))));
+        return months;
     }
 
     // ---- Snapshot figures ------------------------------------------------

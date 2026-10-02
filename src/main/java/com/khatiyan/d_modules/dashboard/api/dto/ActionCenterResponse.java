@@ -32,7 +32,6 @@ public record ActionCenterResponse(
      */
     PaymentIntentDigestResponse paymentIntents,
     List<RecentActivityItem> recentActivity,
-    List<MonthlyTrendPoint> monthlyTrends,
     Instant generatedAt
 ) {
 }

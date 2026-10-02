@@ -87,6 +87,16 @@ public class TenancyModule {
             .toList();
     }
 
+    /**
+     * Ended stays that ended on or after a date. For the owner dashboard, whose
+     * figures reach back one month and no further.
+     */
+    public List<TenancyResponse> findInactiveEndedOnOrAfter(UUID propertyId, LocalDate endedOnOrAfter) {
+        return tenancyService.findInactiveEndedOnOrAfter(propertyId, endedOnOrAfter).stream()
+            .map(tenancy -> TenancyResponse.from(tenancy))
+            .toList();
+    }
+
     public List<TenancyResponse> findActiveBillingStartedMonthlyTenancies() {
         return tenancyService.findActiveBillingStartedMonthlyTenancies().stream()
             .map(tenancy -> TenancyResponse.from(tenancy))
@@ -113,6 +123,16 @@ public class TenancyModule {
      */
     public List<TenancyRoomChangeRequestResponse> listPropertyRoomChangeRequests(UUID actorUserId, UUID propertyId) {
         return tenancyRoomChangeRequestService.listForProperty(actorUserId, propertyId);
+    }
+
+    /** Exit requests still live (requested, approved, or with a withdrawal pending), for the owner dashboard's counts. */
+    public List<TenancyExitRequestResponse> listOpenPropertyExitRequests(UUID actorUserId, UUID propertyId) {
+        return tenancyExitRequestService.listOpenForProperty(actorUserId, propertyId);
+    }
+
+    /** Room-change requests still waiting for a decision, for the owner dashboard's count. */
+    public List<TenancyRoomChangeRequestResponse> listPendingPropertyRoomChangeRequests(UUID actorUserId, UUID propertyId) {
+        return tenancyRoomChangeRequestService.listPendingForProperty(actorUserId, propertyId);
     }
 
     public boolean isUserTenantOfProperty(UUID userId, UUID propertyId) {

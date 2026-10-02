@@ -5,7 +5,10 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -57,6 +60,41 @@ public class ExpenseAnalytics {
     /** A month's manual income and expense, exactly as the P&L statement computes them (projected salary included). */
     public MonthTotals monthTotals(UUID propertyId, YearMonth month) {
         return new MonthTotals(incomeService.monthlyTotalPaise(propertyId, month), expenseService.monthlyTotalPaise(propertyId, month));
+    }
+
+    /**
+     * {@link #monthTotals} for every month from {@code firstMonth} through
+     * {@code lastMonth}, in two queries where a month at a time took two each.
+     *
+     * <p>Each month equals what {@code monthTotals} returns for it: the ledger's
+     * net for the month, plus the projected salary from the current month on.
+     * {@code FinanceMonthsMatchThePnlTest} holds the two together.
+     */
+    public Map<YearMonth, MonthTotals> monthTotalsBetween(UUID propertyId, YearMonth firstMonth, YearMonth lastMonth) {
+        MapSqlParameterSource span = range(propertyId, firstMonth.atDay(1), lastMonth.plusMonths(1).atDay(1));
+        Map<YearMonth, Long> spent = new HashMap<>();
+        jdbc.query("""
+                SELECT date_trunc('month', incurred_date)::date AS month, SUM(amount_paise) AS total
+                FROM expense.expenses
+                WHERE property_id = :propertyId AND incurred_date >= :from AND incurred_date < :to
+                GROUP BY 1
+                """, span, (rs, i) -> spent.put(YearMonth.from(rs.getDate("month").toLocalDate()), rs.getLong("total")));
+        Map<YearMonth, Long> income = new HashMap<>();
+        jdbc.query("""
+                SELECT date_trunc('month', received_date)::date AS month, SUM(amount_paise) AS total
+                FROM expense.income_entries
+                WHERE property_id = :propertyId AND received_date >= :from AND received_date < :to
+                GROUP BY 1
+                """, span, (rs, i) -> income.put(YearMonth.from(rs.getDate("month").toLocalDate()), rs.getLong("total")));
+
+        YearMonth current = YearMonth.now(IST);
+        Map<YearMonth, MonthTotals> totals = new LinkedHashMap<>();
+        for (YearMonth month = firstMonth; !month.isAfter(lastMonth); month = month.plusMonths(1)) {
+            // A past month has no projection, so the salary estimate is not even asked for.
+            long projectedSalary = month.isBefore(current) ? 0 : expenseService.projectedSalaryPaise(propertyId, month.atDay(1));
+            totals.put(month, new MonthTotals(income.getOrDefault(month, 0L), spent.getOrDefault(month, 0L) + projectedSalary));
+        }
+        return totals;
     }
 
     /** A name the owner typed, its net amount, and how many entries (reversals not counted) make it up. */

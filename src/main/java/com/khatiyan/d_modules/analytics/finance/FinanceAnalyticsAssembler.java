@@ -50,6 +50,7 @@ public class FinanceAnalyticsAssembler implements DivisionAssembler {
     private static final int TOP_FIXED_LINES = 3;
     /** The part key for the estimated salary, on both the categories and the fixed-cost lines. */
     private static final String SALARY_ESTIMATED = "SALARY_ESTIMATED";
+    private static final ExpenseAnalytics.MonthTotals NO_TOTALS = new ExpenseAnalytics.MonthTotals(0, 0);
 
     private final BillingModule billingModule;
     private final BillingAnalytics billing;
@@ -88,10 +89,9 @@ public class FinanceAnalyticsAssembler implements DivisionAssembler {
     public List<MetricResult> assemble(AnalyticsContext context) {
         UUID p = context.propertyId();
         ResolvedPeriod period = context.period();
-        // Built once and shared by the four money metrics: each month costs a
-        // billing summary and two expense totals.
-        Supplier<List<MonthRow>> now = memo(() -> monthRows(p, period.range()));
-        Supplier<List<MonthRow>> before = memo(() -> period.hasComparison() ? monthRows(p, period.comparison()) : null);
+        // Built once and shared by the four money metrics.
+        Supplier<List<MonthRow>> now = memo(() -> monthRows(p, period.range(), context.today()));
+        Supplier<List<MonthRow>> before = memo(() -> period.hasComparison() ? monthRows(p, period.comparison(), context.today()) : null);
         List<MetricResult> out = new ArrayList<>();
 
         MetricGuard.add(out, context, MetricKey.FINANCE_DEPOSITS, () -> deposits(p));
@@ -111,14 +111,41 @@ public class FinanceAnalyticsAssembler implements DivisionAssembler {
 
     // ---- Months -------------------------------------------------------------
 
-    private List<MonthRow> monthRows(UUID p, DateRange range) {
+    /**
+     * The months of a range, read in one pass: three queries for the whole span,
+     * where it used to be three for every month in it.
+     *
+     * <p>Past months come from the billing and expense modules' own month totals,
+     * which are held equal to the P&L's by {@code FinanceMonthsMatchThePnlTest}.
+     * The current month still goes through the P&L's summary itself, because it
+     * also carries the rent not yet billed, and only the summary projects that.
+     */
+    private List<MonthRow> monthRows(UUID p, DateRange range, LocalDate today) {
+        YearMonth first = YearMonth.from(range.from());
+        YearMonth last = YearMonth.from(range.to());
+        YearMonth current = YearMonth.from(today);
+        Map<YearMonth, BillingAnalytics.MonthBilling> billed = billing.monthBilling(p, first, last);
+        Map<YearMonth, ExpenseAnalytics.MonthTotals> totalsByMonth = expenses.monthTotalsBetween(p, first, last);
+
         List<MonthRow> rows = new ArrayList<>();
-        for (YearMonth m = YearMonth.from(range.from()); !m.isAfter(YearMonth.from(range.to())); m = m.plusMonths(1)) {
-            BillingMonthSummary summary = billingModule.getPropertyMonthSummaryForDashboard(p, m.toString());
-            ExpenseAnalytics.MonthTotals totals = expenses.monthTotals(p, m);
-            rows.add(new MonthRow(m, summary.rentBilledPaise() + summary.oneOffBilledPaise(), summary.collectedPaise(),
-                    totals.manualIncomePaise(), totals.expensePaise(),
-                    summary.hasData() || totals.manualIncomePaise() != 0 || totals.expensePaise() != 0));
+        for (YearMonth m = first; !m.isAfter(last); m = m.plusMonths(1)) {
+            ExpenseAnalytics.MonthTotals totals = totalsByMonth.getOrDefault(m, NO_TOTALS);
+            long billedPaise;
+            long collectedPaise;
+            boolean hasBills;
+            if (m.isBefore(current)) {
+                BillingAnalytics.MonthBilling month = billed.get(m);
+                billedPaise = month == null ? 0 : month.billedPaise();
+                collectedPaise = month == null ? 0 : month.collectedPaise();
+                hasBills = month != null && month.bills() > 0;
+            } else {
+                BillingMonthSummary summary = billingModule.getPropertyMonthSummaryForDashboard(p, m.toString());
+                billedPaise = summary.rentBilledPaise() + summary.oneOffBilledPaise();
+                collectedPaise = summary.collectedPaise();
+                hasBills = summary.hasData();
+            }
+            rows.add(new MonthRow(m, billedPaise, collectedPaise, totals.manualIncomePaise(), totals.expensePaise(),
+                    hasBills || totals.manualIncomePaise() != 0 || totals.expensePaise() != 0));
         }
         return rows;
     }
