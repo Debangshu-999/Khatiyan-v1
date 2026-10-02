@@ -171,7 +171,7 @@ export default function OwnerEnquiriesScreen() {
       scrollEventThrottle={16}
     >
       <ScreenHeader
-        italicTail="received."
+        italicTail="queue."
         subtitle={
           selectedProperty
             ? `People asking about ${selectedProperty.name} from its public profile.`
