@@ -483,8 +483,8 @@ function VisitBlockedDialog({ onClose }: { onClose: () => void }) {
             Schedule visits blocked
           </Text>
           <Text style={[type.modalDescription, { color: colors.muted }]}>
-            You can schedule a visit after there has been a positive response from the enquirer, either over chat or
-            over a call back, whose response has to be recorded by you manually.
+            You can schedule a visit after there has been a positive response from the enquirer, either over chat when
+            they respond, or over a call back by you, whose response has to be recorded by you manually.
           </Text>
           <AnimatedPressable
             accessibilityRole="button"
