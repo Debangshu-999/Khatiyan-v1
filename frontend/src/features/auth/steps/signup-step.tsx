@@ -41,20 +41,33 @@ export function SignupStep({
 }) {
   return (
     <>
-      <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
-      <AuthTextField
-        label="Email (optional)"
-        value={email}
-        onChangeText={onEmailChange}
-        placeholder="you@example.com"
-        icon={Mail}
-        error={emailError}
-      />
-      <AuthTextField label="Full name" value={fullName} onChangeText={onFullNameChange} placeholder="Enter your name" autoCapitalize="words" icon={User} error={fullNameError} />
+      {/* Three fields spread into the room above the buttons rather than
+          bunched under the heading, the spacers capped so a tall phone does not
+          pull them apart (user, 2026-10-02). The column's own gap sits around
+          each spacer too, so they never close up below it. */}
+      <View style={{ flexGrow: 1, gap: spacing.md }}>
+        <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
+        <FieldSpacer />
+        <AuthTextField
+          label="Email (optional)"
+          value={email}
+          onChangeText={onEmailChange}
+          placeholder="you@example.com"
+          icon={Mail}
+          error={emailError}
+        />
+        <FieldSpacer />
+        <AuthTextField label="Full name" value={fullName} onChangeText={onFullNameChange} placeholder="Enter your name" autoCapitalize="words" icon={User} error={fullNameError} />
+      </View>
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Create account" onPress={onRegister} busy={busy} />
         <AuthChipLink icon={UserCheck} label="Already have an account?" onPress={onGoToLogin} />
       </View>
     </>
   );
+}
+
+/** Grows into spare height between two fields, up to a ceiling. */
+function FieldSpacer() {
+  return <View style={{ flexGrow: 1, maxHeight: spacing.xxxl - spacing.md * 2 }} />;
 }

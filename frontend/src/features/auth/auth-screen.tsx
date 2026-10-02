@@ -744,8 +744,10 @@ export function AuthScreen() {
       >
       <FadeInView index={1} style={{ flexGrow: 1 }}>
         <View style={{ flexGrow: 1, gap: spacing.md }}>
-          {/* Step heading inside the sheet (Swiggy-style "Enter your number"). */}
-          <View style={{ gap: 4 }}>
+          {/* Step heading inside the sheet (Swiggy-style "Enter your number").
+              The extra bottom margin clears the first field's label, which
+              rises out of its box's top border (user, 2026-10-02). */}
+          <View style={{ gap: 4, marginBottom: spacing.sm }}>
             {/* Display face, not the serif: a step heading inside the sheet is a
                 working label, not a brand moment. The serif stays on the wordmark
                 and the screen headers. */}
