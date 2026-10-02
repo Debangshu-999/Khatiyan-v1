@@ -5,11 +5,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { compareFloors, formatFloor } from "@/features/property/floor";
 import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
+import { InServiceIcon, RoomsSummaryIcon } from "@/features/property/room-summary-icons";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 // Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
-import Svg, { Circle, Path } from "react-native-svg";
 import type { LucideProps } from "lucide-react-native";
 import {
   AirVent,
@@ -80,21 +80,8 @@ import { useKeyboardInset } from "@/components/use-keyboard-inset";
 
 const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
 
-function RoomsSummaryIcon({ color, size = 22 }: LucideProps) {
-  return <MaterialCommunityIcons name="door-open" color={color as string} size={Number(size)} />;
-}
-
 function BedsSummaryIcon({ color, size = 22 }: LucideProps) {
   return <MaterialCommunityIcons name="bed-double" color={color as string} size={Number(size)} />;
-}
-
-function InServiceIcon({ color, size = 22 }: LucideProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path fill={color as string} d="M5 3h8v2H7v15h6v2H5V3Zm4 3 10-4v20L9 18V6Z" />
-      <Circle cx={12} cy={12} r={1.1} fill="#FFFFFF" />
-    </Svg>
-  );
 }
 
 function FloorInServiceIcon(props: LucideProps) {

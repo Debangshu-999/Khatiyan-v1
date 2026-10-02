@@ -1,7 +1,8 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { BedDouble, DoorOpen, MapPin, Pin, UsersRound, type LucideProps } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { Pin, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
@@ -14,6 +15,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { OwnerManageMetricsSkeleton, OwnerManagePropertySkeleton } from "@/components/skeletons/owner";
 import { visibleOwnerModules, type OwnerModuleRoute } from "@/features/owner/owner-modules";
+import { InServiceIcon, RoomsSummaryIcon } from "@/features/property/room-summary-icons";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -34,6 +36,23 @@ import { useTheme } from "@/theme/use-theme";
  */
 const PIN_TILT = { transform: [{ rotate: "32deg" }] } as const;
 const PROPERTY_CARD_ART = require("../../assets/images/workspace/property-card.jpg");
+// The four tiles under the property card share the Property screen's side-rail
+// tile, with every glyph in black (user, 2026-10-02). Rooms and Vacancy reuse
+// the Rooms & beds marks so a fact looks the same on both screens.
+const TILE_ICON_COLOR = "#000000";
+function TenanciesTileIcon({ size = 22 }: LucideProps) {
+  return <MaterialCommunityIcons name="account-outline" color={TILE_ICON_COLOR} size={Number(size)} />;
+}
+function RoomsTileIcon(props: LucideProps) {
+  return <RoomsSummaryIcon {...props} color={TILE_ICON_COLOR} />;
+}
+function VacancyTileIcon(props: LucideProps) {
+  return <InServiceIcon {...props} color={TILE_ICON_COLOR} />;
+}
+function PropertyTileIcon(props: LucideProps) {
+  return <PropertyIcon {...props} color={TILE_ICON_COLOR} />;
+}
+
 export default function OwnerScreen() {
   const router = useGuardedRouter();
   const dispatch = useAppDispatch();
@@ -169,12 +188,12 @@ export default function OwnerScreen() {
           {selectedProperty && !tilesLoading ? (
             <>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={UsersRound} iconTone="success" label="Tenancies" value={String(activeTenancies.length)} hint="Active stays" tone="primary" />
-                <MetricTile icon={BedDouble} iconTone="primary" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
+                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenancies" value={String(activeTenancies.length)} hint="Active stays" tone="primary" />
+                <MetricTile icon={RoomsTileIcon} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={DoorOpen} iconTone="violet" label="Vacancy" value={String(vacantRooms)} hint="Rooms with space" />
-                <MetricTile icon={MapPin} iconTone="primary" label="Property" value={selectedProperty.type} hint={selectedProperty.city ?? "Selected"} />
+                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms with space" />
+                <MetricTile icon={PropertyTileIcon} iconPlacement="side" label="Property" value={selectedProperty.type} hint={selectedProperty.city ?? "Selected"} />
               </View>
             </>
           ) : null}
