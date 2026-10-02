@@ -103,16 +103,15 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
         <Text style={{ color: colors.text, fontFamily: fonts.display, fontSize: 29, letterSpacing: -0.7, lineHeight: 35 }}>
           {property.name}
         </Text>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-          <MaterialCommunityIcons color={colors.inkSoft} name="map-marker-outline" size={21} />
-          <Text style={[type.body, { color: colors.muted, flex: 1, lineHeight: 21 }]}>
+        {/* Sizes swapped (user, 2026-10-02): the description reads at body
+            size, the address at the smaller caption size under the name. */}
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
+          <MaterialCommunityIcons color={colors.inkSoft} name="map-marker-outline" size={16} />
+          <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16 }}>
             {addressLine}
           </Text>
         </View>
-        <Text
-          style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
-            marginTop: spacing.xxs }}
-        >
+        <Text style={[type.body, { color: colors.muted, lineHeight: 21, marginTop: spacing.xxs }]}>
           {description}
         </Text>
       </View>
