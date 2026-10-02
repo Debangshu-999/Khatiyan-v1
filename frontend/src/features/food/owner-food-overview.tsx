@@ -113,7 +113,7 @@ export function ManageFoodCard({
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>Food management</Text>
             <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
-              {enabled ? "Khatiyan is managing this property's food" : "Currently managed outside Khatiyan"}
+              {enabled ? "Khatiyan is managing this property's meals" : "Currently managed outside Khatiyan"}
             </Text>
           </View>
           <Switch
