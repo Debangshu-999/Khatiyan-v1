@@ -98,6 +98,16 @@ export const enquiryChatApi = api.injectEndpoints({
       invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
 
+    /** "Not decided": clears the reading, and with it the visit or end action it offered. */
+    clearEnquirySentiment: builder.mutation<unknown, { enquiryId: string; version: number }>({
+      query: ({ enquiryId, version }) => ({
+        headers: ifMatch(version),
+        method: "DELETE",
+        url: `/api/v1/enquiries/${enquiryId}/sentiment`,
+      }),
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
+    }),
+
     /** Closes the chat for both sides, so the thread itself has to be read again. */
     endEnquiryConversation: builder.mutation<unknown, { enquiryId: string; version: number }>({
       query: ({ enquiryId, version }) => ({
@@ -143,4 +153,5 @@ export const {
   useRescheduleVisitMutation,
   useScheduleVisitMutation,
   useSetEnquirySentimentMutation,
+  useClearEnquirySentimentMutation,
 } = enquiryChatApi;

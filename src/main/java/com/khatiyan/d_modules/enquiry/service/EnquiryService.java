@@ -506,6 +506,33 @@ public class EnquiryService {
     }
 
     /**
+     * Takes the handler's reading back to undecided ("Not decided", 2026-10-02).
+     *
+     * <p>The chat's actions follow from the sentiment, so clearing it also
+     * withdraws the Schedule visit or End conversation it had offered. Same
+     * gate as setting one; clearing what is already clear changes nothing.
+     */
+    @Transactional
+    public EnquiryDetailResponse clearSentiment(UUID actorUserId, UUID enquiryId) {
+        Enquiry enquiry = enquiryRepository.findById(enquiryId)
+                .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
+
+        Viewer viewer = viewerOf(actorUserId, enquiry.getPropertyId());
+        VersionGuard.claim(enquiry);
+
+        if (enquiry.isExpired()) {
+            throw new ValidationException("This conversation has ended.");
+        }
+        handlerService.ensureMayAct(actorUserId, enquiry, viewer.ownerUserId(), viewer.mode());
+
+        enquiry.clearSentiment();
+        log.info("Enquiry sentiment cleared enquiryId={} byUserId={}", enquiryId, actorUserId);
+
+        UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
+        return describeOne(enquiry, enquirer, viewer);
+    }
+
+    /**
      * The handler ends the conversation.
      *
      * <p>Closes the chat for both sides and ends the enquiry's window now.

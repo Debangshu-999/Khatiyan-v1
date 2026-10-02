@@ -216,6 +216,15 @@ public class EnquiryController {
         return enquiryService.setSentiment(user.userId(), enquiryId, request);
     }
 
+    /** Back to undecided: clears the handler's reading, and the actions it offered. */
+    @DeleteMapping("/enquiries/{enquiryId}/sentiment")
+    @RequiresVersion
+    public EnquiryDetailResponse clearSentiment(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID enquiryId) {
+        return enquiryService.clearSentiment(user.userId(), enquiryId);
+    }
+
     /** The handler ends the conversation: the chat closes and the enquiry's window ends now. */
     @PostMapping("/enquiries/{enquiryId}/end")
     @RequiresVersion

@@ -706,6 +706,10 @@ export default function ChatThreadScreen() {
               borderRadius: 999,
               height: 38,
               justifyContent: "center",
+              // Lifted a touch (user, 2026-10-02): the one-line field renders a
+              // little taller than 38 on device, which left the circle sitting
+              // low against it.
+              marginBottom: 3,
               width: 38,
             }}
           >

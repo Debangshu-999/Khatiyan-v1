@@ -1,11 +1,8 @@
-import { Check } from "lucide-react-native";
 import { Text, View } from "react-native";
 
+import { SuccessTick } from "@/components/success-tick";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-
-/** The tick's disc. */
-const MARK_SIZE = 22;
 
 /**
  * The foot of an infinite-scroll list once nothing more is coming: a white
@@ -20,18 +17,7 @@ export function ListEnd({ message = "That's all for now" }: { message?: string }
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "center", gap: spacing.xs, paddingVertical: spacing.sm }}>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.jade,
-          borderRadius: MARK_SIZE / 2,
-          height: MARK_SIZE,
-          justifyContent: "center",
-          width: MARK_SIZE,
-        }}
-      >
-        <Check color="#FFFFFF" size={14} strokeWidth={3} />
-      </View>
+      <SuccessTick />
       <Text style={[type.caption, { color: colors.kicker, textAlign: "center" }]}>{message}</Text>
     </View>
   );

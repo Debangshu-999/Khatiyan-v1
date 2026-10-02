@@ -3,30 +3,31 @@ import { ActivityIndicator, Text, View } from "react-native";
 import {
   CalendarCheck,
   CalendarPlus,
-  Check,
+  CircleHelp,
   MessageSquareOff,
   Smile,
   ThumbsDown,
   ThumbsUp,
-  X,
   type LucideProps,
 } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { CenterModal } from "@/components/center-modal";
+import { SheetShell } from "@/components/sheet-shell";
+import { SuccessTick } from "@/components/success-tick";
 import { useToast } from "@/components/toast";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { formatVisitDay, formatVisitWhen } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import {
+  useClearEnquirySentimentMutation,
   useEndEnquiryConversationMutation,
   useSetEnquirySentimentMutation,
   type EnquiryChatActions,
   type EnquirySentiment,
 } from "@/store/services/enquiry-chat-api";
-import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -215,34 +216,40 @@ function BarPill({
   );
 }
 
+/** What a pick does: set a reading, or take it back to undecided. */
+type SentimentChoice = EnquirySentiment | "UNDECIDED";
+
 /**
  * The handler's reading of the enquirer: interested or not.
  *
- * <p>A centred modal, closed by its cross or by choosing. The backdrop does
- * nothing, as with every centred modal in the app.
+ * <p>A bottom sheet (user, 2026-10-02). Options are grey cards with no
+ * outline; the chosen one carries the green tick on its right. Once a reading
+ * is set, "Not decided" joins them to clear it, and with it the Schedule visit
+ * or End conversation it had offered.
  */
 function SentimentModal({ actions, onClose }: { actions: EnquiryChatActions; onClose: () => void }) {
-  const { colors, fonts } = useTheme();
-  const [setSentiment, state] = useSetEnquirySentimentMutation();
-  const [choosing, setChoosing] = useState<EnquirySentiment | null>(null);
+  const [setSentiment, setState] = useSetEnquirySentimentMutation();
+  const [clearSentiment, clearState] = useClearEnquirySentimentMutation();
+  const [choosing, setChoosing] = useState<SentimentChoice | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const busy = setState.isLoading || clearState.isLoading;
 
-  async function choose(sentiment: EnquirySentiment) {
-    if (state.isLoading) {
+  async function choose(choice: SentimentChoice) {
+    if (busy) {
       return;
     }
     // Choosing what is already chosen changes nothing, so it just closes.
-    if (sentiment === actions.sentiment) {
+    if (choice === (actions.sentiment ?? "UNDECIDED")) {
       onClose();
       return;
     }
-    setChoosing(sentiment);
+    setChoosing(choice);
     try {
-      await setSentiment({
-        enquiryId: actions.enquiryId,
-        sentiment,
-        version: actions.enquiryVersion,
-      }).unwrap();
+      if (choice === "UNDECIDED") {
+        await clearSentiment({ enquiryId: actions.enquiryId, version: actions.enquiryVersion }).unwrap();
+      } else {
+        await setSentiment({ enquiryId: actions.enquiryId, sentiment: choice, version: actions.enquiryVersion }).unwrap();
+      }
       onClose();
     } catch (error) {
       setFailure(errorMessage(error));
@@ -258,83 +265,31 @@ function SentimentModal({ actions, onClose }: { actions: EnquiryChatActions; onC
   }
 
   return (
-    <CenterModal
-      animationType="fade"
-      navigationBarTranslucent
-      onRequestClose={onClose}
-      statusBarTranslucent
-      transparent
-      visible
-    >
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          padding: spacing.lg,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.borderStrong,
-            borderCurve: "continuous",
-            borderRadius: 20,
-            borderWidth: 1,
-            gap: spacing.sm,
-            maxWidth: DIALOG_MAX_WIDTH,
-            padding: spacing.lg,
-            width: "100%",
-          }}
-        >
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              gap: spacing.sm,
-              justifyContent: "space-between",
-              marginBottom: spacing.xs,
-            }}
-          >
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}>
-              Enquiry sentiment
-            </Text>
-            <AnimatedPressable
-              accessibilityLabel="Close"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={onClose}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surfaceSunken,
-                borderRadius: 999,
-                height: 32,
-                justifyContent: "center",
-                width: 32,
-              }}
-            >
-              <X color={colors.ink} size={16} strokeWidth={2.4} />
-            </AnimatedPressable>
-          </View>
-
-          <SentimentOption
-            busy={choosing === "INTERESTED"}
-            icon={ThumbsUp}
-            label="Interested"
-            onPress={() => void choose("INTERESTED")}
-            selected={actions.sentiment === "INTERESTED"}
-          />
-          <SentimentOption
-            busy={choosing === "NOT_INTERESTED"}
-            icon={ThumbsDown}
-            label="Not interested"
-            onPress={() => void choose("NOT_INTERESTED")}
-            selected={actions.sentiment === "NOT_INTERESTED"}
-          />
-        </View>
-      </View>
-    </CenterModal>
+    <SheetShell onClose={onClose} title="Enquiry sentiment">
+      <SentimentOption
+        busy={choosing === "INTERESTED"}
+        icon={ThumbsUp}
+        label="Interested"
+        onPress={() => void choose("INTERESTED")}
+        selected={actions.sentiment === "INTERESTED"}
+      />
+      <SentimentOption
+        busy={choosing === "NOT_INTERESTED"}
+        icon={ThumbsDown}
+        label="Not interested"
+        onPress={() => void choose("NOT_INTERESTED")}
+        selected={actions.sentiment === "NOT_INTERESTED"}
+      />
+      {actions.sentiment ? (
+        <SentimentOption
+          busy={choosing === "UNDECIDED"}
+          icon={CircleHelp}
+          label="Not decided"
+          onPress={() => void choose("UNDECIDED")}
+          selected={false}
+        />
+      ) : null}
+    </SheetShell>
   );
 }
 
@@ -360,10 +315,9 @@ function SentimentOption({
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderColor: selected ? colors.primary : colors.borderStrong,
+        backgroundColor: colors.neutralSoft,
         borderCurve: "continuous",
         borderRadius: radii.card,
-        borderWidth: selected ? 1.5 : 1,
         flexDirection: "row",
         gap: spacing.sm,
         paddingHorizontal: spacing.md,
@@ -372,11 +326,7 @@ function SentimentOption({
     >
       <Icon color={colors.ink} size={18} strokeWidth={2.2} />
       <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15 }}>{label}</Text>
-      {busy ? (
-        <ActivityIndicator color={colors.primary} size="small" />
-      ) : selected ? (
-        <Check color={colors.primary} size={18} strokeWidth={2.6} />
-      ) : null}
+      {busy ? <ActivityIndicator color={colors.primary} size="small" /> : selected ? <SuccessTick /> : null}
     </AnimatedPressable>
   );
 }

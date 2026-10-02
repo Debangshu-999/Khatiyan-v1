@@ -296,6 +296,13 @@ public class Enquiry extends BaseEntity {
         this.sentimentSetAt = now;
     }
 
+    /** Takes the handler's reading back to undecided ("Not decided", 2026-10-02). */
+    public void clearSentiment() {
+        this.sentiment = null;
+        this.sentimentSetByUserId = null;
+        this.sentimentSetAt = null;
+    }
+
     public boolean isEnded() {
         return endedAt != null;
     }
