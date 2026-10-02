@@ -140,6 +140,20 @@ export function DiscoverySearchCard({
   const showSuggestions =
     !aiLocked && focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
+
+  // A filled-in address (current location, a picked suggestion) reads from its
+  // start, not scrolled to its end (user, 2026-10-02). Android leaves the caret,
+  // and so the view, at the end of text set from outside. The caret is pinned
+  // to 0 whenever the value changes without typing, and let go the moment
+  // someone types or taps into the box.
+  const typedText = useRef(searchText);
+  const [caretAtStart, setCaretAtStart] = useState(false);
+  useEffect(() => {
+    if (searchText !== typedText.current) {
+      typedText.current = searchText;
+      setCaretAtStart(searchText.length > 0);
+    }
+  }, [searchText]);
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
 
   return (
@@ -305,10 +319,14 @@ export function DiscoverySearchCard({
           onChangeText={(text) => {
             // Typing means they are searching again, so the list may reopen.
             setPickedFromList(false);
+            typedText.current = text;
+            setCaretAtStart(false);
             onSearchTextChange(text);
           }}
           onFocus={() => setFocused(true)}
+          onPressIn={() => setCaretAtStart(false)}
           onSubmitEditing={onSearch}
+          selection={caretAtStart ? { end: 0, start: 0 } : undefined}
           placeholder="Search city, area or pincode"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
