@@ -226,14 +226,14 @@ export function AuthTextField({
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
           borderRadius: 8,
-          borderWidth: 1.5,
+          borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           gap: spacing.sm,
           minHeight: 56,
           paddingHorizontal: spacing.lg,
         }}
       >
-        <FieldNotch error={error} focused={focused} label={label} />
+        <FieldNotch error={error} fill={locked ? colors.surfaceSunken : colors.surfaceRaised} focused={focused} label={label} />
         {Icon ? <Icon color={focused ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} /> : null}
         <AppTextInput
           value={value}
@@ -303,13 +303,13 @@ export function PhoneField({
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
           borderRadius: 8,
-          borderWidth: 1.5,
+          borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           minHeight: 56,
           paddingHorizontal: spacing.md,
         }}
       >
-        <FieldNotch error={error} focused={focused} label={label} />
+        <FieldNotch error={error} fill={colors.surfaceRaised} focused={focused} label={label} />
         <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
@@ -358,33 +358,45 @@ export function PhoneField({
   );
 }
 
+/** How far the notch rises above the box's inner edge. */
+const NOTCH_RISE = 9;
+/** Every auth box's border width. */
+const FIELD_BORDER_WIDTH = 1.5;
+/** Where the border's centre line crosses the notch, measured from its top. */
+const NOTCH_SPLIT = NOTCH_RISE - FIELD_BORDER_WIDTH / 2;
+
 /**
  * The field's label, set into its top border (user, 2026-10-02). While the
  * field has an error the message takes the label's place in red, so the notch
- * only ever holds one line. It sits on the sheet colour so the border breaks
- * behind it.
+ * only ever holds one line.
+ *
+ * <p>Its ground is split at the border line: the screen colour above, the
+ * field's own fill below, so the label reads as cut into the border rather
+ * than pasted over it (user, 2026-10-02).
  */
-function FieldNotch({ error, focused, label }: { error?: string; focused: boolean; label: string }) {
+function FieldNotch({ error, fill, focused, label }: { error?: string; fill: string; focused: boolean; label: string }) {
   const { colors, fonts } = useTheme();
   const message = error?.trim().replace(/\.+$/, "");
   return (
-    <View pointerEvents="none" style={{ flexDirection: "row", left: 12, position: "absolute", right: 12, top: -9 }}>
-      <Text
-        accessibilityRole={message ? "alert" : undefined}
-        numberOfLines={1}
-        style={{
-          backgroundColor: colors.authSurface,
-          color: message ? colors.danger : focused ? colors.primary : colors.inkSoft,
-          flexShrink: 1,
-          fontFamily: fonts.sansBold,
-          fontSize: 11,
-          letterSpacing: message ? 0 : 0.3,
-          lineHeight: 16,
-          paddingHorizontal: 5,
-        }}
-      >
-        {message || label}
-      </Text>
+    <View pointerEvents="none" style={{ flexDirection: "row", left: 12, position: "absolute", right: 12, top: -NOTCH_RISE }}>
+      <View style={{ flexShrink: 1, overflow: "hidden" }}>
+        <View style={{ backgroundColor: colors.authSurface, height: NOTCH_SPLIT, left: 0, position: "absolute", right: 0, top: 0 }} />
+        <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: NOTCH_SPLIT }} />
+        <Text
+          accessibilityRole={message ? "alert" : undefined}
+          numberOfLines={1}
+          style={{
+            color: message ? colors.danger : focused ? colors.primary : colors.inkSoft,
+            fontFamily: fonts.sansBold,
+            fontSize: 11,
+            letterSpacing: message ? 0 : 0.3,
+            lineHeight: 16,
+            paddingHorizontal: 5,
+          }}
+        >
+          {message || label}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -419,14 +431,14 @@ export function CodeField({
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
           borderRadius: 8,
-          borderWidth: 1.5,
+          borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           gap: spacing.sm,
           minHeight: 56,
           paddingHorizontal: spacing.lg,
         }}
       >
-        <FieldNotch error={error} focused={focused} label={label} />
+        <FieldNotch error={error} fill={colors.surfaceRaised} focused={focused} label={label} />
         <Icon color={error ? colors.danger : focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
           {/* Placeholder yields as soon as the field is focused, not on typing. */}
