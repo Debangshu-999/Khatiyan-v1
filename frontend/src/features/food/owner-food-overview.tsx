@@ -13,6 +13,7 @@ import {
   type CookingForecast,
   type FoodModuleOverview,
   type MealSlot,
+  useGetCookingForecastQuery,
 } from "@/store/services/food-api";
 import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import {
@@ -431,11 +432,16 @@ export function CookingPreview({
 /** The counts across the top of the overview. */
 /**
  * The four food figures, as the Billing and Tenancy snapshot tiles: a card
- * with a black glyph in a side rail and the label, number and a hint beside it
+ * with a glyph in a side rail and the label, number and a hint beside it
  * (user, 2026-10-02). "Active" moves from the labels into the hints.
+ *
+ * <p>Not serving counts today's dishes taken off the menu, across every meal
+ * the property serves (user, 2026-10-02). Each meal's forecast already lists
+ * the items marked unavailable for its date, so this adds those up; it shares
+ * the cache with the meal preview below, so the next meal costs nothing extra.
  */
-export function FoodStats({ overview }: { overview: FoodModuleOverview }) {
-  const meals = MEAL_ORDER.filter((meal) => overview.availableMeals.includes(meal));
+export function FoodStats({ date, overview, propertyId }: { date?: string; overview: FoodModuleOverview; propertyId: string }) {
+  const notServing = useNotServingToday(propertyId, date, overview.availableMeals);
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -444,27 +450,46 @@ export function FoodStats({ overview }: { overview: FoodModuleOverview }) {
       </View>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <MetricTile icon={SubscriptionsIcon} iconPlacement="side" label="Subscriptions" value={String(overview.activeSubscriptions)} hint="Active" />
-        {/* The count leads like every other tile; the meal names, which used
-            to be the value and shrank to fit, read in the hint instead. */}
-        <MetricTile
-          icon={AvailableMealsIcon}
-          iconPlacement="side"
-          label="Available meals"
-          value={String(meals.length)}
-          hint={meals.length > 0 ? meals.map((meal) => MEAL_LABEL[meal]).join(", ") : "None set"}
-        />
+        <MetricTile icon={NotServingIcon} iconPlacement="side" label="Not serving" value={notServing == null ? "-" : String(notServing)} hint="Today" />
       </View>
     </View>
   );
 }
 
+/**
+ * Dishes marked unavailable today, summed over the served meals. A dish taken
+ * off two meals counts twice: each is a meal it will not be served at. Null
+ * until every meal's forecast has answered, so the tile never shows a partial
+ * sum as the day's figure.
+ */
+function useNotServingToday(propertyId: string, date: string | undefined, meals: MealType[]) {
+  const serves = (meal: MealType) => meals.includes(meal);
+  const args = (meal: MealType) => ({ date: date ?? "", mealType: meal, propertyId });
+  const skip = (meal: MealType) => ({ skip: !propertyId || !date || !serves(meal) });
+  // One hook per meal, in a fixed order, so the hook count never changes.
+  const breakfast = useGetCookingForecastQuery(args("BREAKFAST"), skip("BREAKFAST"));
+  const lunch = useGetCookingForecastQuery(args("LUNCH"), skip("LUNCH"));
+  const snacks = useGetCookingForecastQuery(args("EVENING_SNACKS"), skip("EVENING_SNACKS"));
+  const dinner = useGetCookingForecastQuery(args("DINNER"), skip("DINNER"));
+  const byMeal: Record<MealType, typeof lunch> = { BREAKFAST: breakfast, DINNER: dinner, EVENING_SNACKS: snacks, LUNCH: lunch };
+
+  if (!date) return null;
+  const served = MEAL_ORDER.filter(serves);
+  if (served.some((meal) => !byMeal[meal].data)) return null;
+  return served.reduce((total, meal) => total + (byMeal[meal].data?.unavailableItems.length ?? 0), 0);
+}
+
+// Blue, and a size under the rail's 38pt default (user, 2026-10-02).
+const FOOD_STAT_ICON_SIZE = 30;
 function foodStatIcon(name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) {
-  return function FoodStatIcon({ size = 22 }: LucideProps) {
-    return <MaterialCommunityIcons name={name} color="#000000" size={Number(size)} />;
+  return function FoodStatIcon(_props: LucideProps) {
+    const { colors } = useTheme();
+    return <MaterialCommunityIcons name={name} color={colors.primary} size={FOOD_STAT_ICON_SIZE} />;
   };
 }
 
-const FoodProfilesIcon = foodStatIcon("account-outline");
+// A dish cover (cloche), the profile being a set menu (user, 2026-10-02).
+const FoodProfilesIcon = foodStatIcon("room-service-outline");
 const FoodItemsIcon = foodStatIcon("silverware-fork-knife");
 const SubscriptionsIcon = foodStatIcon("account-group-outline");
-const AvailableMealsIcon = foodStatIcon("food-variant");
+const NotServingIcon = foodStatIcon("food-off-outline");

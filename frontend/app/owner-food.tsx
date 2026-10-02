@@ -324,7 +324,7 @@ export default function OwnerFoodScreen() {
                 />
               ) : (
                 <>
-                  <FoodStats overview={overview} />
+                  <FoodStats date={schedule?.date} overview={overview} propertyId={propertyId} />
                   {upcoming ? (
                     <CookingPreview
                       forecast={forecastQuery.data}
