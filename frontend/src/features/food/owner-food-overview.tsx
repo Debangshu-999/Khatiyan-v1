@@ -1,8 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Switch, Text, View } from "react-native";
+import type { LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { MetricTile } from "@/components/metric-tile";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -14,7 +16,6 @@ import {
 } from "@/store/services/food-api";
 import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import {
-  FoodStat,
   FoodStatusChip,
   MealGlyph,
   type MaterialIconName,
@@ -428,18 +429,42 @@ export function CookingPreview({
 }
 
 /** The counts across the top of the overview. */
+/**
+ * The four food figures, as the Billing and Tenancy snapshot tiles: a card
+ * with a black glyph in a side rail and the label, number and a hint beside it
+ * (user, 2026-10-02). "Active" moves from the labels into the hints.
+ */
 export function FoodStats({ overview }: { overview: FoodModuleOverview }) {
   const meals = MEAL_ORDER.filter((meal) => overview.availableMeals.includes(meal));
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      <FoodStat icon="account-outline" label="Active food profiles" value={String(overview.activeProfiles)} />
-      <FoodStat icon="silverware-fork-knife" label="Food items" value={String(overview.activeItems)} />
-      <FoodStat icon="account-group-outline" label="Active subscriptions" value={String(overview.activeSubscriptions)} />
-      <FoodStat
-        icon="food-variant"
-        label="Available meals"
-        value={meals.length > 0 ? meals.map((meal) => MEAL_LABEL[meal]).join(", ") : "None"}
-      />
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <MetricTile icon={FoodProfilesIcon} iconPlacement="side" label="Food profiles" value={String(overview.activeProfiles)} hint="Active" />
+        <MetricTile icon={FoodItemsIcon} iconPlacement="side" label="Food items" value={String(overview.activeItems)} hint="Active" />
+      </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <MetricTile icon={SubscriptionsIcon} iconPlacement="side" label="Subscriptions" value={String(overview.activeSubscriptions)} hint="Active" />
+        {/* The count leads like every other tile; the meal names, which used
+            to be the value and shrank to fit, read in the hint instead. */}
+        <MetricTile
+          icon={AvailableMealsIcon}
+          iconPlacement="side"
+          label="Available meals"
+          value={String(meals.length)}
+          hint={meals.length > 0 ? meals.map((meal) => MEAL_LABEL[meal]).join(", ") : "None set"}
+        />
+      </View>
     </View>
   );
 }
+
+function foodStatIcon(name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) {
+  return function FoodStatIcon({ size = 22 }: LucideProps) {
+    return <MaterialCommunityIcons name={name} color="#000000" size={Number(size)} />;
+  };
+}
+
+const FoodProfilesIcon = foodStatIcon("account-outline");
+const FoodItemsIcon = foodStatIcon("silverware-fork-knife");
+const SubscriptionsIcon = foodStatIcon("account-group-outline");
+const AvailableMealsIcon = foodStatIcon("food-variant");
