@@ -67,7 +67,7 @@ export function OtpCodeEntry({
 
   return (
     <View style={{ gap: spacing.md }}>
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         {message}
       </Text>
 

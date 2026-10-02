@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { Modal, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -40,7 +41,7 @@ export function AlertModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -67,7 +68,7 @@ export function AlertModal({
           }}
         >
           <StatusIcon size={38} tone={tone} />
-          <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
+          <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
             {message}
           </Text>
           <AnimatedPressable
@@ -88,6 +89,6 @@ export function AlertModal({
           </AnimatedPressable>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

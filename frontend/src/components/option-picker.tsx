@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
 import { ChevronDown, Filter, X } from "lucide-react-native";
@@ -152,7 +153,7 @@ export function SingleOptionPicker<T extends string>({
       />
       {open ? (
         centered ? (
-          <Modal
+          <CenterModal
             animationType="fade"
             navigationBarTranslucent
             onRequestClose={() => setOpen(false)}
@@ -212,7 +213,7 @@ export function SingleOptionPicker<T extends string>({
                 </View>
               </View>
             </View>
-          </Modal>
+          </CenterModal>
         ) : (
           <SheetShell onClose={() => setOpen(false)} title={title ?? label}>
             <View>

@@ -9,7 +9,7 @@ import { useTheme } from "@/theme/use-theme";
  * One option inside a picker modal — the app's selection style.
  *
  * <p>No radio ring (user, 2026-09-28). The chosen row is filled pale blue and
- * its label goes bold blue, so the choice reads from across the list rather
+ * its label stays bold soft-black, so the choice reads from across the list rather
  * than from a small mark at its edge. Pale blue as a fill is otherwise banned
  * in this app; selected picker rows are the one standing exception.
  *
@@ -79,8 +79,8 @@ export function PickerOptionRow({
       <View style={{ alignItems: content ? "flex-start" : undefined, flex: 1, gap: 2, minWidth: 0 }}>
         {content ?? <Text
           style={{
-            color: selected ? colors.primaryDeep : colors.ink,
-            fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
+            color: colors.inkSoft,
+            fontFamily: fonts.sansBold,
             fontSize: 15,
           }}
         >

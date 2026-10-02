@@ -19,7 +19,7 @@ import { useGetMyPaymentStateQuery, type PaymentIntent } from "@/store/services/
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 export default function TenancyBillingCycleScreen() {
   const router = useRouter();

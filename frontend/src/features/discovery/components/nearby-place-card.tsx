@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { openDialer } from "@/lib/dial";
 import { Linking, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Info, MapPin, Navigation, Pencil, Phone, Star, Trash2 } from "lucide-react-native";
+import { Info, MapPin, Navigation, Pencil, Phone, Star } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { MarqueeText } from "@/components/marquee-text";

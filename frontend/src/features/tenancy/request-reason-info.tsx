@@ -32,7 +32,7 @@ export function RequestReasonInfo({ label, value }: { label: string; value: stri
           paddingVertical: 2,
         }}
       >
-        <Info color={colors.muted} size={14} strokeWidth={2.2} />
+        <CircleHelp color={colors.muted} size={14} strokeWidth={2.2} />
         <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
       </AnimatedPressable>
 
@@ -44,3 +44,4 @@ export function RequestReasonInfo({ label, value }: { label: string; value: stri
     </>
   );
 }
+import { CircleHelp } from "lucide-react-native";

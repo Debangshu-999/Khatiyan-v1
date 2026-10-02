@@ -1,3 +1,4 @@
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -177,7 +178,7 @@ export default function OwnerManagerPermissionsScreen() {
                   style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
                   tapLockMs={0}
                 >
-                  <Info color={colors.kicker} size={17} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.4} />
                 </AnimatedPressable>
               }
             >
@@ -274,89 +275,7 @@ function PermissionRulesSheet({ onClose }: { onClose: () => void }) {
   // bars on Android, so the sheet's own padding no longer clears the navigation
   // bar and the button at its foot becomes untappable. The billing rules sheet
   // omits it and sits correctly.
-  return (
-    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
-      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            borderWidth: 1,
-            gap: spacing.md,
-            maxHeight: "85%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                Access
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
-                How permissions work
-              </Text>
-            </View>
-            <IconButton accessibilityLabel="Close permission rules" icon={X} onPress={() => dismiss()} />
-          </View>
-
-          <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
-            {rules.map((rule, index) => (
-              <View
-                key={rule.title}
-                style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
-              >
-                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                  <View
-                    style={{
-                      alignItems: "center",
-                      borderColor: colors.ink,
-                      borderWidth: 1,
-                      borderRadius: 999,
-                      height: 22,
-                      justifyContent: "center",
-                      width: 22,
-                    }}
-                  >
-                    <Text
-                      style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11, }}
-                    >
-                      {index + 1}
-                    </Text>
-                  </View>
-                  <Text
-                    style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14, }}
-                  >
-                    {rule.title}
-                  </Text>
-                </View>
-                <Text style={[type.description, { color: colors.muted }]}>
-                  {rule.body}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => dismiss()}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.ink,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              justifyContent: "center",
-              minHeight: 46,
-            }}
-          >
-            <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
-          </AnimatedPressable>
-        </View>
-      </View>}
-    </BottomSheetModal>
-  );
+  return <HowItWorksSheet eyebrow="Access" title="How permissions work" steps={rules} onClose={onClose} />;
 }
 
 function ModuleCard({
@@ -591,12 +510,12 @@ function ScreenHeading({ screen }: { screen: AccessScreen }) {
         style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
         tapLockMs={0}
       >
-        <Info color={colors.kicker} size={16} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={16} strokeWidth={2.4} />
       </AnimatedPressable>
 
       {open ? (
         <InfoModal onClose={() => setOpen(false)} title={screen.label}>
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             {screen.description}
           </Text>
         </InfoModal>
@@ -672,3 +591,5 @@ function LevelOption({
     </AnimatedPressable>
   );
 }
+import { CircleHelp } from "lucide-react-native";
+import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";

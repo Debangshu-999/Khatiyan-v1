@@ -1,3 +1,4 @@
+import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -77,10 +78,10 @@ import { formatFloor } from "@/features/property/floor";
 
 // The same drawing the owner's Deposit manager tile carries on Home. A deposit
 // is one thing across both sides of the app and should look like one thing.
-const DEPOSIT_ARTWORK = require("../../assets/home-tools/deposit-manager.png");
-const BILLS_ARTWORK = require("../../assets/workspace/tenant-bills-header.png");
-const REQUESTS_ARTWORK = require("../../assets/workspace/tenancy-module.png");
-const CONCERNS_ARTWORK = require("../../assets/workspace/concern-module.png");
+const DEPOSIT_ARTWORK = require("../../assets/icons/home-tools/deposit-manager.png");
+const BILLS_ARTWORK = require("../../assets/images/workspace/tenant-bills-header.png");
+const REQUESTS_ARTWORK = require("../../assets/images/workspace/tenancy-module.png");
+const CONCERNS_ARTWORK = require("../../assets/images/workspace/concern-module.png");
 
 export default function TenancyScreen() {
   const router = useGuardedRouter();
@@ -357,7 +358,7 @@ export default function TenancyScreen() {
               />
               <RequestTile
                 disabled={requestAvailabilityLoading}
-                icon={LogOut}
+                icon={ExitTenancyIcon}
                 label="Exit request"
                 onPress={openExitRequest}
               />
@@ -537,7 +538,23 @@ function TenancyOverviewCard({
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <TenancyStat icon={CalendarDays} label="Started" value={formatDate(activeTenancy.tenancy.startDate)} />
+        <TenancyStat
+          icon={CalendarDays}
+          label="Ending"
+          value={activeTenancy.tenancy.checkoutDate || activeTenancy.tenancy.agreementEndDate
+            ? formatDate(activeTenancy.tenancy.checkoutDate ?? activeTenancy.tenancy.agreementEndDate!)
+            : "----"}
+        />
+      </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <TenancyStat icon={ReceiptText} label="Billing" value={humanizeToken(activeTenancy.tenancy.billingType)} />
+        <TenancyStat
+          icon={FileSignature}
+          label="Agreement"
+          value={activeTenancy.tenancy.agreementValidityMonths != null
+            ? `${activeTenancy.tenancy.agreementValidityMonths} ${activeTenancy.tenancy.agreementValidityMonths === 1 ? "month" : "months"}`
+            : "Indefinite"}
+        />
       </View>
 
       {/* The owner's field card, rows and type scale unchanged: a muted

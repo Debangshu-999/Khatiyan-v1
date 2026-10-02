@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -454,7 +455,7 @@ function FoodItemPickerDialog({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -595,7 +596,7 @@ function FoodItemPickerDialog({
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
-    </Modal>
+    </CenterModal>
   );
 }
 

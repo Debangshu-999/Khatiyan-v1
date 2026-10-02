@@ -91,7 +91,6 @@ function FieldWithError({ children, error }: { children: ReactNode; error?: stri
       {field}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1 }}>
-          <FieldError message={error} />
         </View>
         {chip}
       </View>

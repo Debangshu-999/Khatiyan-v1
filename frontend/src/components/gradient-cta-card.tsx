@@ -22,10 +22,12 @@ export function GradientCtaCard({
   kicker,
   onPress,
   title,
+  light = false,
 }: {
   description: string;
   icon: ComponentType<LucideProps>;
-  kicker: string;
+  kicker?: string;
+  light?: boolean;
   onPress: () => void;
   title: string;
 }) {
@@ -34,12 +36,14 @@ export function GradientCtaCard({
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onPress}>
       <LinearGradient
-        colors={[colors.primary, colors.primaryDeep] as const}
-        end={{ x: 1, y: 1 }}
+        colors={light ? ["#FFFFFF", "#EAF2FF"] : [colors.primary, colors.primaryDeep]}
+        end={{ x: 1, y: light ? 0 : 1 }}
         start={{ x: 0, y: 0 }}
         style={{
           borderCurve: "continuous",
           borderRadius: 20,
+          borderWidth: light ? 1 : 0,
+          borderColor: colors.borderStrong,
           gap: spacing.sm,
           overflow: "hidden",
           padding: spacing.lg,
@@ -49,7 +53,7 @@ export function GradientCtaCard({
           <View
             style={{
               alignItems: "center",
-              backgroundColor: "rgba(255, 255, 255, 0.18)",
+              backgroundColor: light ? colors.primarySoft : "rgba(255, 255, 255, 0.18)",
               borderCurve: "continuous",
               borderRadius: 14,
               height: 48,
@@ -57,13 +61,13 @@ export function GradientCtaCard({
               width: 48,
             }}
           >
-            <Icon color={colors.onPrimary} size={24} strokeWidth={2.2} />
+            <Icon color={light ? colors.primary : colors.onPrimary} size={24} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: 3 }}>
-            <Text style={[type.eyebrow, { color: colors.onPrimary, opacity: 0.82 }]}>
+            {kicker ? <Text style={[type.eyebrow, { color: colors.onPrimary, opacity: 0.82 }]}>
               {kicker}
-            </Text>
-            <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
+            </Text> : null}
+            <Text style={{ color: light ? colors.ink : colors.onPrimary, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
               {title}
             </Text>
           </View>
@@ -77,10 +81,10 @@ export function GradientCtaCard({
               width: 34,
             }}
           >
-            <ChevronRight color={colors.onPrimary} size={19} strokeWidth={2.6} />
+            <ChevronRight color={light ? colors.inkSoft : colors.onPrimary} size={19} strokeWidth={2.6} />
           </View>
         </View>
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, opacity: 0.85 }}>
+        <Text style={{ color: light ? colors.muted : colors.onPrimary, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, opacity: light ? 1 : 0.85 }}>
           {description}
         </Text>
       </LinearGradient>

@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -80,7 +81,7 @@ export function ProfileEditModal({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={field !== null}>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={field !== null}>
       {/* A plain dim, not a blur.
           expo-blur can only blur content inside a BlurTargetView that the
           BlurView itself sits within. A React Native Modal renders in its own
@@ -147,7 +148,7 @@ export function ProfileEditModal({
             />
 
             {isEmail ? (
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Changing this sends a fresh verification link.
               </Text>
             ) : null}
@@ -176,6 +177,6 @@ export function ProfileEditModal({
           {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
         </KeyboardAvoidingView>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

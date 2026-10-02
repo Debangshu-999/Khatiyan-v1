@@ -279,7 +279,7 @@ export function VerificationOrderSummary({
               style={{ alignItems: "center", height: 22, justifyContent: "center", width: 22 }}
               tapLockMs={0}
             >
-              <Info color={colors.kicker} size={15} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={15} strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
@@ -377,3 +377,4 @@ function AttemptStepper({
     </View>
   );
 }
+import { CircleHelp } from "lucide-react-native";

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, CalendarDays } from "lucide-react-native";
 
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
+import { SectionHeading } from "@/components/section-heading";
 import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
@@ -751,19 +752,13 @@ const EDIT_TABS: { label: string; value: EditTab }[] = [
  * again, leaving the inputs narrower than the button under them.
  */
 function ModalSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
-  const { colors, fonts } = useTheme();
   return (
     <View style={{ gap: spacing.md }}>
       {/* No eyebrow. It named the section — "Basics", "Money" — which is the
           job the tab above it now does, and two labels for one section left the
           reader deciding which was the heading. The title takes the weight the
           pair used to carry between them. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
-          {title}
-        </Text>
-        {trailing}
-      </View>
+      <SectionHeading title={title} trailing={trailing} />
       <View style={{ gap: spacing.md }}>{children}</View>
     </View>
   );

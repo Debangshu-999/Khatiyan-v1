@@ -1,349 +1,97 @@
 import { Text, View } from "react-native";
-
 import { SheetShell } from "@/components/sheet-shell";
-import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { flattenTimeline, type TimelineEntry } from "./request-chain";
 
-import { flattenTimeline, type RequestActor, type TimelineEntry } from "./request-chain";
-
-/** Whose screen this is. Their own side of the conversation sits on the right. */
 export type TimelineViewer = "TENANT" | "MANAGEMENT";
+type Step = ReturnType<typeof flattenTimeline>[number];
 
-/**
- * A request's history as an alternating timeline down a central rail.
- *
- * <p>Sides carry meaning: <b>your own actions sit on the left, the other
- * party's on the right</b>, so a tenant reading their own timeline sees
- * management's replies opposite them and an owner sees the mirror image. That
- * makes a request legible as a conversation — who moved, and who was waiting —
- * which a single flat column cannot show.
- *
- * <p>System events (a scheduled execution, a request lapsing unreviewed) run
- * down the middle. Neither party did them, and pinning them to a side would
- * imply someone had.
- *
- * <p>When an exit was re-raised, all attempts run together in one chronological
- * rail rather than as separate blocks — it is one intent, and the attempt number
- * rides on the step for anyone who needs it.
- */
-export function RequestTimelineSheet({
-  anchorNote,
-  entries,
-  onClose,
-  referenceCode,
-  roomLabel,
-  tenantName,
-  viewer,
-}: {
-  /** Shown above the rail, e.g. that notice counts from the first request. */
-  anchorNote?: string | null;
-  entries: TimelineEntry[];
-  onClose: () => void;
-  referenceCode?: string | null;
-  roomLabel?: string | null;
-  tenantName?: string | null;
-  viewer: TimelineViewer;
+/** Both request types share a single-sided history, with explicit actor labels. */
+export function RequestTimelineSheet({ anchorNote, entries, onClose, referenceCode,
+  roomLabel, tenantName, viewer }: {
+  anchorNote?: string | null; entries: TimelineEntry[]; onClose: () => void;
+  referenceCode?: string | null; roomLabel?: string | null;
+  tenantName?: string | null; viewer: TimelineViewer;
 }) {
   const { colors, fonts, type } = useTheme();
   const steps = flattenTimeline(entries);
-
   return (
     <SheetShell onClose={onClose} title="Request timeline">
-      <View style={{ gap: spacing.md }}>
-        {/* Who this is about, so a timeline opened from a long list still says
-            whose it is without scrolling back to the card. */}
-        {tenantName ? (
-          <View style={{ alignItems: "baseline", flexDirection: "row", gap: spacing.sm }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
-              {tenantName}
-            </Text>
-            {roomLabel ? (
-              <Text style={[type.caption, { color: colors.muted }]}>{roomLabel}</Text>
-            ) : null}
+      <View style={{ gap: 16 }}>
+        <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 14, padding: 14, gap: 6 }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 26 }}>
+            {viewer === "TENANT" ? "You" : tenantName ?? "Tenant request"}
+            {roomLabel ? <Text style={[type.caption, { color: colors.muted }]}> · {roomLabel}</Text> : null}
+          </Text>
+          {referenceCode ? <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>{referenceCode}</Text> : null}
+        </View>
+        {anchorNote ? (
+          <View style={{ backgroundColor: colors.primarySoft, borderRadius: 12, borderLeftWidth: 4,
+            borderLeftColor: colors.primary, padding: 12, gap: 8 }}>
+            {anchorNote.split(/\.\s+(?=Notice counts)/).map((note, index) => (
+              <View key={index} style={{ flexDirection: "row", gap: 8 }}>
+                <Text style={{ color: colors.ink, fontWeight: "700" }}>•</Text>
+                <Text style={[type.modalDescription, { color: colors.ink, fontWeight: "700", flex: 1 }]}>{note}</Text>
+              </View>
+            ))}
           </View>
         ) : null}
-        {referenceCode ? (
-          <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
-            {referenceCode}
-          </Text>
-        ) : null}
-
-        {anchorNote ? (
-          <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>{anchorNote}</Text>
-        ) : null}
-
-        <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "center" }}>
-          <SideLabel text="You" />
-          <View style={{ width: RAIL_WIDTH }} />
-          <SideLabel text={viewer === "TENANT" ? "Management" : "Tenant"} />
-        </View>
-
         <View>
-          {/* One continuous rail behind the rows, so the line does not break
-              between entries the way a per-row border would. */}
-          <View
-            style={{
-              backgroundColor: colors.border,
-              bottom: 0,
-              left: "50%",
-              marginLeft: -1,
-              position: "absolute",
-              top: 0,
-              width: 2,
-            }}
-          />
-
-          {steps.map((step) => (
-            <TimelineRow
-              key={`${step.entryId}-${step.at}-${step.label}`}
-              step={step}
-              viewer={viewer}
-            />
-          ))}
+          {steps.map((step, index) => <TimelineRow key={step.entryId + "-" + step.at + "-" + step.label}
+            step={step} last={index === steps.length - 1} />)}
         </View>
       </View>
     </SheetShell>
   );
 }
 
-const RAIL_WIDTH = 28;
-
-function SideLabel({ text }: { text: string }) {
-  const { colors, type } = useTheme();
-
-  return (
-    <Text style={[type.caption, { color: colors.kicker, flex: 1, fontWeight: "800", textAlign: "center" }]}>
-      {text.toUpperCase()}
-    </Text>
-  );
-}
-
-function TimelineRow({
-  step,
-  viewer,
-}: {
-  step: {
-    actor: RequestActor;
-    at: string;
-    attemptOrdinal: number;
-    detail: string | null;
-    label: string;
-    showAttempt: boolean;
-  };
-  viewer: TimelineViewer;
+function TimelineRow({ step, last }: {
+  step: Step; last: boolean;
 }) {
-  const { colors } = useTheme();
-  const side = sideFor(step.actor, viewer);
-
-  if (side === "CENTER") {
-    return (
-      <View style={{ alignItems: "center", paddingVertical: spacing.sm }}>
-        <View
-          style={{
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 12,
-            maxWidth: "88%",
-            padding: spacing.sm,
-          }}
-        >
-          <StepBody centered step={step} />
+  const { colors, type } = useTheme();
+  const management = step.actor === "MANAGEMENT";
+  const system = step.actor === "SYSTEM";
+  const actorColor = system ? colors.muted : management ? colors.accent : colors.primary;
+  const actorFill = system ? colors.surfaceSunken : management ? colors.accentSoft : colors.primarySoft;
+  const role = step.actorRole === "OWNER" ? "Owner" : step.actorRole === "MANAGER" ? "Manager" : "Property team";
+  const actor = system ? "System" : management
+    ? step.actorName ? step.actorName + " (" + role.toLowerCase() + ")" : role
+    : "You";
+  const outcomeColor = step.label.startsWith("Rejected") || step.label.startsWith("Withdrawal refused")
+    ? colors.danger : step.label.startsWith("Approved") || step.label.startsWith("Withdrawal allowed")
+      ? colors.successText : colors.ink;
+  const dotColor = outcomeColor === colors.ink ? colors.muted : outcomeColor;
+  return (
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <View style={{ width: 18, alignItems: "center" }}>
+        {!last ? <View style={{ position: "absolute", top: 18, bottom: 0, width: 2, backgroundColor: colors.border }} /> : null}
+        <View style={{ marginTop: 17, width: 12, height: 12, borderRadius: 6, backgroundColor: dotColor, borderWidth: 2, borderColor: colors.surface }} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, marginBottom: last ? 0 : 12, padding: 12,
+        borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.surface, gap: 6 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+          <View style={{ maxWidth: "100%", backgroundColor: actorFill, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <Text style={{ color: actorColor, fontSize: 11, lineHeight: 16, fontWeight: "700" }}>{actor}</Text>
+          </View>
+          {step.showAttempt ? (
+            <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+              <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, fontWeight: "700" }}>Attempt {step.attemptOrdinal}</Text>
+            </View>
+          ) : null}
         </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flexDirection: "row", paddingVertical: spacing.xs }}>
-      {side === "LEFT" ? <StepCard step={step} /> : <View style={{ flex: 1 }} />}
-
-      <View style={{ alignItems: "center", justifyContent: "center", width: RAIL_WIDTH }}>
-        <View
-          style={{
-            backgroundColor: colors.primary,
-            borderColor: colors.surface,
-            borderRadius: 6,
-            borderWidth: 2,
-            height: 12,
-            width: 12,
-          }}
-        />
-      </View>
-
-      {side === "RIGHT" ? <StepCard step={step} /> : <View style={{ flex: 1 }} />}
-    </View>
-  );
-}
-
-function StepCard({
-  step,
-}: {
-  step: { at: string; attemptOrdinal: number; detail: string | null; label: string; showAttempt: boolean };
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderRadius: 14,
-        borderWidth: 1,
-        flex: 1,
-        flexDirection: "row",
-      }}
-    >
-      <View style={{ flex: 1, padding: spacing.sm }}>
-        <StepBody step={step} />
-      </View>
-      <DateBlock at={step.at} />
-    </View>
-  );
-}
-
-function StepBody({
-  centered = false,
-  step,
-}: {
-  centered?: boolean;
-  step: {
-    actorName?: string | null;
-    at: string;
-    attemptOrdinal: number;
-    detail: string | null;
-    label: string;
-    showAttempt: boolean;
-  };
-}) {
-  const { colors, type } = useTheme();
-
-  return (
-    <View style={{ gap: 2 }}>
-      <Text
-        style={[
-          type.body,
-          {
-            // An outcome should read as its outcome at a glance, before anyone
-            // parses the word.
-            color: labelColour(step.label, colors),
-            fontWeight: "800",
-            textAlign: centered ? "center" : "left",
-          },
-        ]}
-      >
-        {step.label}
-      </Text>
-      {step.actorName ? (
-        <Text
-          style={[
-            type.caption,
-            { color: colors.muted, textAlign: centered ? "center" : "left" },
-          ]}
-        >
-          by {step.actorName}
+        <Text style={[type.body, { color: outcomeColor, fontWeight: "800", fontSize: 15, lineHeight: 20 }]}>{step.label}</Text>
+        <Text style={[type.caption, { color: colors.muted, fontSize: 11, lineHeight: 16 }]}>
+          {formatDateTime(step.at)}
         </Text>
-      ) : null}
-      {step.showAttempt ? (
-        <Text
-          style={[
-            type.caption,
-            { color: colors.kicker, textAlign: centered ? "center" : "left" },
-          ]}
-        >
-          Attempt {step.attemptOrdinal}
-        </Text>
-      ) : null}
-      {step.detail ? (
-        <Text
-          style={[type.description, { color: colors.muted, textAlign: centered ? "center" : "left" },
-          ]}
-        >
-          {step.detail}
-        </Text>
-      ) : null}
-      <Text
-        style={[
-          type.caption,
-          { color: colors.kicker, textAlign: centered ? "center" : "left" },
-        ]}
-      >
-        {formatTime(step.at)}
-      </Text>
+        {step.detail ? <Text style={[type.description, { color: colors.muted }]}>{step.detail}</Text> : null}
+      </View>
     </View>
   );
-}
-
-/** The month / day / year stack from the reference, in its own divided column. */
-function DateBlock({ at }: { at: string }) {
-  const { colors, fonts, type } = useTheme();
-  const date = new Date(at);
-
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        borderLeftColor: colors.border,
-        borderLeftWidth: 1,
-        justifyContent: "center",
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.sm,
-      }}
-    >
-      <Text style={[type.caption, { color: colors.muted }]}>
-        {new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date)}
-      </Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, lineHeight: 26 }}>
-        {new Intl.DateTimeFormat("en-IN", { day: "2-digit" }).format(date)}
-      </Text>
-      <Text style={[type.caption, { color: colors.muted }]}>
-        {new Intl.DateTimeFormat("en-IN", { year: "numeric" }).format(date)}
-      </Text>
-    </View>
-  );
-}
-
-/**
- * Which side a step belongs on.
- *
- * <p>"You" is always the <b>left</b>-hand column, so the same request read by a
- * tenant and by their manager is a mirror of itself rather than two different
- * stories — each sees their own moves on the left and the other party's replies
- * opposite.
- */
-function sideFor(actor: RequestActor, viewer: TimelineViewer) {
-  if (actor === "SYSTEM") {
-    return "CENTER" as const;
-  }
-  return actor === viewer ? ("LEFT" as const) : ("RIGHT" as const);
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(value));
-}
-
-/**
- * Green for approved, red for rejected, ink for everything else.
- *
- * <p>Keyed off the label rather than the status because a single request's
- * timeline holds several outcomes — an approval and a refused withdrawal can sit
- * on the same rail, and they are not the same colour.
- */
-function labelColour(label: string, colors: { danger: string; ink: string; successText: string }) {
-  if (label.startsWith("Approved") || label.startsWith("Withdrawal allowed")) {
-    return colors.successText;
-  }
-  if (label.startsWith("Rejected") || label.startsWith("Withdrawal refused")) {
-    return colors.danger;
-  }
-  return colors.ink;
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(
-    new Date(value),
-  );
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric",
+    hour: "numeric", minute: "2-digit" }).format(date);
 }

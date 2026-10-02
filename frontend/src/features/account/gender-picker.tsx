@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
 import { ChevronDown, X, type LucideProps } from "lucide-react-native";
@@ -126,7 +127,7 @@ export function GenderPicker({
       </View>
 
       {open ? (
-        <Modal
+        <CenterModal
           animationType="fade"
           navigationBarTranslucent
           onRequestClose={() => setOpen(false)}
@@ -188,7 +189,7 @@ export function GenderPicker({
               </View>
             </View>
           </View>
-        </Modal>
+        </CenterModal>
       ) : null}
     </View>
   );

@@ -115,6 +115,7 @@ export type RequestTimelineStep = {
   actor: RequestActor;
   /** Who did it, by name, where we know. */
   actorName?: string | null;
+  actorRole?: string | null;
 };
 
 /**
@@ -172,6 +173,7 @@ export function exitRequestTimeline(
       actor: "MANAGEMENT",
       at: request.withdrawalDecidedAt,
       actorName: request.withdrawalDecidedByName,
+      actorRole: request.withdrawalDecidedByRole,
       detail: null,
       label: allowed ? "Withdrawal allowed — staying on" : "Withdrawal refused — exit stands",
     });
@@ -196,6 +198,7 @@ export function exitRequestTimeline(
     steps.push({
       actor: "MANAGEMENT",
       actorName: request.decidedByName,
+      actorRole: request.decidedByRole,
       at: request.decidedAt,
       detail: null,
       label: request.status === "REJECTED" ? "Rejected" : "Approved",
@@ -287,6 +290,7 @@ export function roomChangeTimelineEntries(
     if (request.decidedAt) {
       steps.push({
         actorName: request.decidedByName,
+        actorRole: request.decidedByRole,
         actor: "MANAGEMENT",
         at: request.decidedAt,
         detail: null,

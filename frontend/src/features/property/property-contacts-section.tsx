@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Plus, Trash2, UserRoundPlus } from "lucide-react-native";
+import { Plus, UserRoundPlus } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -22,7 +23,7 @@ import { useListPropertyManagersQuery } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_PERSON_ILLUSTRATION = require("../../../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
 /**
  * Who the listing tells a prospect to call.

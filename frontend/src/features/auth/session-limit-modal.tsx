@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { Modal, Text, View } from "react-native";
 import { Globe, Laptop, Monitor, Smartphone, Tablet, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -37,7 +38,7 @@ export function SessionLimitModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -63,7 +64,7 @@ export function SessionLimitModal({
         >
           <StatusIcon tone="warning" />
 
-          <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
+          <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
             {message} Choose one to sign out.
           </Text>
 
@@ -98,7 +99,7 @@ export function SessionLimitModal({
           </AnimatedPressable>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

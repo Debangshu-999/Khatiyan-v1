@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Switch, Text, View } from "react-native";
+import { ScrollView, Switch, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { EyeOff, Globe, Pencil } from "lucide-react-native";
+import { ChevronRight, EyeOff, Globe, Pencil } from "lucide-react-native";
+import type { LucideProps } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Svg, { Circle, Path } from "react-native-svg";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
@@ -11,6 +14,9 @@ import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Card } from "@/components/card";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
+import { HelpModalClose } from "@/components/help-modal-header";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -67,9 +73,23 @@ type PropertyRoute =
   | "/owner-nearby-places"
   | "/owner-property-visits";
 
+function propertySummaryIcon(name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) {
+  return function SummaryIcon({ size = 22 }: LucideProps) {
+    return <MaterialCommunityIcons name={name} color="#000000" size={Number(size)} />;
+  };
+}
+
+const RentSummaryIcon = propertySummaryIcon("currency-inr");
+const DepositSummaryIcon = propertySummaryIcon("database-outline");
+const NoticeSummaryIcon = propertySummaryIcon("clock-outline");
+const GraceSummaryIcon = propertySummaryIcon("timer-sand");
+const LateFeeSummaryIcon = propertySummaryIcon("cash-clock");
+const RoomsSummaryIcon = propertySummaryIcon("door-open");
+
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
+  const [facilitiesOpen, setFacilitiesOpen] = useState(false);
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
@@ -118,19 +138,28 @@ export default function OwnerPropertyScreen() {
             {/* The property mark beside its own name, as on the Home selector.
                 This card IS the property; every other card on the screen is a
                 part of it, and the glyph is what says which is which. */}
-            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-              <PropertyArtwork size={34} />
-            <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                {selectedProperty.referenceCode}  /  {humanizeToken(selectedProperty.type)}
-              </Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 29 }]}>
-                {selectedProperty.name}
-              </Text>
-              <Text style={[type.body, { color: colors.muted }]}>
-                {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
-              </Text>
-            </View>
+            <View style={{ gap: spacing.xs }}>
+              <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginLeft: 34 + spacing.md }}>
+                <Text style={[type.eyebrow, { color: colors.kicker }]}>{selectedProperty.referenceCode}</Text>
+                <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Text style={[type.caption, { color: colors.inkSoft }]}>{humanizeToken(selectedProperty.type)}</Text>
+                </View>
+              </View>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+                <PropertyArtwork size={34} />
+                <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 24, lineHeight: 29 }]}>{selectedProperty.name}</Text>
+              </View>
+              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+                <View style={{ alignItems: "center", width: 34, paddingTop: 2 }}>
+                  <Svg width={21} height={24} viewBox="0 0 24 24" accessible={false}>
+                    <Path fill={colors.danger} d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8Z" />
+                    <Circle cx={12} cy={10} r={3} fill="#FFFFFF" />
+                  </Svg>
+                </View>
+                <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
+                  {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
+                </Text>
+              </View>
             </View>
             <View style={{ flexDirection: "row" }}>
               <ActionButton disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="secondary" />
@@ -142,21 +171,27 @@ export default function OwnerPropertyScreen() {
               <OwnerMetricTileSkeleton />
             ) : (
               <MetricTile
+                icon={RentSummaryIcon}
+                iconPlacement="side"
                 label="Rent from"
                 value={startingRentPaise == null ? "No rooms yet" : formatMoneyPaise(startingRentPaise)}
                 hint="Lowest room"
                 tone="primary"
               />
             )}
-            <MetricTile label="Deposit" value={formatDepositPaise(selectedProperty.standardDepositPaise)} hint="Standard" />
+            <MetricTile icon={DepositSummaryIcon} iconPlacement="side" label="Deposit" value={formatDepositPaise(selectedProperty.standardDepositPaise)} hint="Standard" />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
+              icon={NoticeSummaryIcon}
+              iconPlacement="side"
               label="Notice"
               value={NOTICE_PERIOD_LABELS[selectedProperty.noticePeriod]}
               hint="Notice period"
             />
             <MetricTile
+              icon={GraceSummaryIcon}
+              iconPlacement="side"
               label="Grace"
               value={selectedProperty.rentGraceDays > 0 ? `${selectedProperty.rentGraceDays}d` : "None"}
               hint="Rent grace"
@@ -164,14 +199,18 @@ export default function OwnerPropertyScreen() {
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <MetricTile
+              icon={LateFeeSummaryIcon}
+              iconPlacement="side"
               label="Late fee"
-              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/d` : "None"}
-              hint="Per day"
+              value={selectedProperty.rentLateFeePerDayPaise ? `${formatMoneyPaise(selectedProperty.rentLateFeePerDayPaise)}/day` : "None"}
+              hint="After due date"
             />
             {roomsLoading ? (
               <OwnerMetricTileSkeleton />
             ) : (
               <MetricTile
+                icon={RoomsSummaryIcon}
+                iconPlacement="side"
                 label="Rooms"
                 value={String((roomsQuery.data ?? []).filter((room) => room.active).length)}
                 hint="Active"
@@ -180,9 +219,15 @@ export default function OwnerPropertyScreen() {
           </View>
 
           {selectedProperty.facilities.length || selectedProperty.customFacilities.length ? (
-            <FacilityOverviewGrid
-              facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]}
-            />
+            <AnimatedPressable accessibilityRole="button" accessibilityLabel="View facilities" onPress={() => setFacilitiesOpen(true)}>
+              <Card>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+                  <MaterialCommunityIcons name="home-city" color="#000000" size={32} />
+                  <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 17, lineHeight: 23 }]}>View facilities</Text>
+                  <ChevronRight color={colors.ink} size={20} />
+                </View>
+              </Card>
+            </AnimatedPressable>
           ) : null}
 
           <Section title="Property workspace">
@@ -237,7 +282,7 @@ export default function OwnerPropertyScreen() {
               icon={PropertyVisitsIcon}
               iconSize={58}
               showArrow={false}
-              title="Property visits"
+              title="Visiting Hours"
               description="Set the time slots, day by day, when tenants can book a visit to the property."
               onPress={() => open(router, "/owner-property-visits")}
             />
@@ -246,6 +291,21 @@ export default function OwnerPropertyScreen() {
         </>
       ) : null}
 
+      {facilitiesOpen && selectedProperty ? (
+        <BottomSheetModal navigationBarTranslucent statusBarTranslucent onRequestClose={() => setFacilitiesOpen(false)}>
+          {(dismiss) => (
+            <View style={{ flex: 1, justifyContent: "flex-end" }}>
+              <HelpModalClose onClose={() => dismiss()} />
+              <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.md, maxHeight: "76%" }}>
+                <Text style={[type.display, { color: colors.ink, fontSize: 22, textAlign: "center" }]}>Facilities</Text>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1, width: "100%" }} contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: spacing.md }}>
+                  <FacilityOverviewGrid variant="cards" collapsible={false} facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]} />
+                </ScrollView>
+              </View>
+            </View>
+          )}
+        </BottomSheetModal>
+      ) : null}
     </ScreenScrollView>
   );
 }

@@ -103,11 +103,9 @@ export function GeyserIcon(props: AmenityIconProps) {
 export function ToiletIcon(props: AmenityIconProps) {
   return (
     <Glyph {...props}>
-      <Rect height={4.5} rx={1} width={8} x={8} y={2.5} />
-      <Line x1={12} x2={12} y1={7} y2={8.6} />
-      <Ellipse cx={12} cy={12.4} rx={5.4} ry={3.8} />
-      <Path d="M7.6 15.1 6.6 20.4h10.8l-1-5.3" />
-      <Line x1={5.6} x2={18.4} y1={20.8} y2={20.8} />
+      <Rect height={10} rx={1.5} width={9} x={7.5} y={2} />
+      <Path d="M5 12h14v2a7 5 0 0 1-14 0v-2Z" />
+      <Path d="M9 18v4h6v-4" />
     </Glyph>
   );
 }

@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useRef, useState } from "react";
 import {
   FlatList,
@@ -79,7 +80,7 @@ export function ImageCaptionDialog({
     // system bars, and the KeyboardAvoidingView then measures the keyboard
     // against a taller frame than the one it pads — the dialog rises and never
     // comes back down.
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View
           style={{
@@ -228,7 +229,7 @@ export function ImageCaptionDialog({
             {/* Captions are optional and this says so, rather than a Skip button
                 beside Add: with a carousel there is nothing to skip PAST — not
                 typing is already skipping. */}
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               {many
                 ? "Slide to caption each photo. Captions are optional."
                 : "Optional — it helps prospects tell your photos apart."}
@@ -244,6 +245,6 @@ export function ImageCaptionDialog({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </CenterModal>
   );
 }

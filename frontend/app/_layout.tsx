@@ -129,11 +129,12 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-payment-details" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenant-bills" options={{ headerShown: false }} />
         <Stack.Screen name="owner-upcoming-cycles" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-deposit-manager" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-deposit-manager" options={{ animation: "fade", headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exits-today" options={{ headerShown: false }} />
         <Stack.Screen name="owner-service-balance" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-service-balance-transactions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food-menu" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food-forecast" options={{ headerShown: false }} />
@@ -147,9 +148,9 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-edit-room" options={{ headerShown: false }} />
         <Stack.Screen name="owner-register-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-rooms" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-vacancy-finder" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-expenses" options={{ headerShown: false }} />
-        <Stack.Screen name="owner-pnl" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-vacancy-finder" options={{ animation: "fade", headerShown: false }} />
+        <Stack.Screen name="owner-expenses" options={{ animation: "fade", headerShown: false }} />
+        <Stack.Screen name="owner-pnl" options={{ animation: "fade", headerShown: false }} />
         <Stack.Screen name="owner-local-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-nearby-places" options={{ headerShown: false }} />
         <Stack.Screen name="owner-add-manager" options={{ headerShown: false }} />

@@ -49,6 +49,11 @@ export const tenantType = {
    * lines on the tenant's property board set it. Colour it `colors.muted`,
    * and pick out an amount or a name with a nested bold Text in `colors.ink`.
    */
+  modalDescription: {
+    fontFamily: tenantFonts.sansMedium,
+    fontSize: 15,
+    lineHeight: 20,
+  } satisfies TextStyle,
   description: {
     fontFamily: tenantFonts.sans,
     fontSize: 12,

@@ -21,7 +21,7 @@ import { useDebouncedValue } from "../use-debounced-value";
 import { CategoryPickerModal, type CategorySelection } from "./category-picker-modal";
 import { NearbyPlaceCard } from "./nearby-place-card";
 
-const NO_LOCATION_ILLUSTRATION = require("../../../../assets/workspace/No-Location_512x512.png");
+const NO_LOCATION_ILLUSTRATION = require("../../../../assets/empty-states/No-Location_512x512.png");
 
 type NearbyPlacesViewProps = {
   mode: "tenant" | "admin";

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertTriangle, Check, DoorOpen, Info, Plus, Shield, Trash2 } from "lucide-react-native";
+import { AlertTriangle, Check, DoorOpen, Info, Plus, Shield } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -1159,19 +1160,14 @@ export default function OwnerEndTenancyScreen() {
       ) : null}
 
       {ruleInfoOpen ? (
-        <ConfirmDialog
-          acknowledgeOnly
-          confirmLabel="Got it"
-          footnote="Please act according to the agreement rule."
-          message={
+        <InfoModal onClose={() => setRuleInfoOpen(false)} title="How it works">
+          <Text style={[type.modalDescription, { color: colors.muted }]}>{
             isEarlyExit
               ? "This is the rule as accepted with the tenant when the agreement was signed. It may differ from any later changes to your agreement settings, which apply only to agreements issued after them."
               : "This is the property's current premature exit policy, shown in open-ended agreements."
-          }
-          onCancel={() => setRuleInfoOpen(false)}
-          onConfirm={() => setRuleInfoOpen(false)}
-          title={isEarlyExit ? "About this rule" : "About this policy"}
-        />
+          }</Text>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>Please act according to the agreement rule.</Text>
+        </InfoModal>
       ) : null}
 
       {depositSheetOpen && deposit ? (
@@ -1357,7 +1353,7 @@ function DepositDeductionSheet({
         </>
       ) : (
         <>
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             Damage charges below are taken from what is left.
           </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -1555,7 +1551,7 @@ function AddDamageChargeSheet({
         value={rupees}
       />
 
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Not pre-agreed in the agreement, so keep evidence of it.
       </Text>
 
@@ -1761,7 +1757,7 @@ function ExitInfoPanel({
             width: 28,
           }}
         >
-          <Info color={colors.muted} size={16} strokeWidth={2.2} />
+        <CircleHelp color={colors.muted} size={16} strokeWidth={2.2} />
         </AnimatedPressable>
       ) : null}
     </View>
@@ -1946,3 +1942,5 @@ function CheckRow({ checked, label, onToggle }: { checked: boolean; label: strin
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
+import { CircleHelp } from "lucide-react-native";
+import { InfoModal } from "@/components/info-modal";

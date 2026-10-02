@@ -43,6 +43,7 @@ export type ServiceBalanceEntry = {
 };
 
 export type ServiceBalance = {
+  walletLockEnabled: boolean;
   availablePaise: number;
   /** Held against checks already asked for. Not spendable, not yet spent. */
   reservedPaise: number;
@@ -104,6 +105,12 @@ export type ServiceBalanceEntryPage = {
 
 export const serviceBalanceApi = api.injectEndpoints({
   endpoints: (builder) => ({
+    setWalletLock: builder.mutation<{ enabled: boolean; token: string | null; expiresAt: string | null }, { enabled: boolean; pin?: string }>({
+      query: (body) => ({ url: "/api/v1/service-balance/wallet-lock", method: "POST", body }),
+    }),
+    unlockWallet: builder.mutation<{ token: string; expiresAt: string }, { pin: string }>({
+      query: (body) => ({ url: "/api/v1/service-balance/unlock", method: "POST", body }),
+    }),
     getServiceBalance: builder.query<ServiceBalance, void>({
       query: () => ({ url: "/api/v1/service-balance" }),
       providesTags: ["ServiceBalance"],
@@ -142,6 +149,8 @@ export const serviceBalanceApi = api.injectEndpoints({
 });
 
 export const {
+  useSetWalletLockMutation,
+  useUnlockWalletMutation,
   useGetServiceBalanceQuery,
   useGetServiceBalanceTopUpQuery,
   useLazyGetServiceBalanceTopUpQuery,

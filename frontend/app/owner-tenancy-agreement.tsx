@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Eye, FileSignature, Plus, X } from "lucide-react-native";
+import { Eye, FileSignature, Info, Plus, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { AgreementMonthDropdown } from "@/components/agreement-month-dropdown";
 import { EmptyState } from "@/components/empty-state";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
@@ -38,7 +39,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const MAX_VALIDITY_MONTHS = 12;
+const MAX_VALIDITY_MONTHS = 11;
 
 /**
  * The property's agreement template: which clauses every deed here carries.
@@ -215,23 +216,13 @@ export default function OwnerTenancyAgreementScreen() {
                 >
                   {fixedTerm ? (
                     <>
-                      <FormInput
+                      <AgreementMonthDropdown
                         disabled={readOnly}
-                        keyboardType="number-pad"
-                        label={`Months (1 to ${MAX_VALIDITY_MONTHS})`}
-                        onChangeText={(text) => {
-                          setMonthsText(text);
-                          const parsed = text.trim() ? Number(text.trim()) : Number.NaN;
-                          setDraft({
-                            ...draft,
-                            defaultValidityMonths:
-                              Number.isFinite(parsed) && parsed >= 1 && parsed <= MAX_VALIDITY_MONTHS
-                                ? Math.floor(parsed)
-                                : draft.defaultValidityMonths,
-                          });
+                        onChange={(months) => {
+                          setMonthsText(String(months));
+                          setDraft({ ...draft, defaultValidityMonths: months });
                         }}
-                        placeholder="11"
-                        value={monthsText}
+                        value={draft.defaultValidityMonths ?? 11}
                       />
                       <FormInput
                         disabled={readOnly}
@@ -255,11 +246,13 @@ export default function OwnerTenancyAgreementScreen() {
                       value={prematureExit}
                     />
                   )}
+                  <View style={{ backgroundColor: colors.warningSoft, borderRadius: 10, flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, padding: spacing.sm }}>
+                    <Info color={colors.warningText} size={18} strokeWidth={2} style={{ marginTop: 2 }} />
+                    <Text style={[type.description, { color: colors.ink, flex: 1 }]}>
+                      Your own words, applied by a person at move-out — never charged automatically.
+                    </Text>
+                  </View>
                 </View>
-
-                <Text style={[type.description, { color: colors.muted }]}>
-                  Your own words, applied by a person at move-out — never charged automatically.
-                </Text>
               </View>
             </Section>
 

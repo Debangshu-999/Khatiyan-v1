@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { X } from "lucide-react-native";
+import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export type HowItWorksStep = {
@@ -38,7 +37,6 @@ export type HowItWorksStep = {
  * the app ends up explaining itself in two different voices.
  */
 export function HowItWorksSheet({
-  eyebrow,
   onClose,
   steps,
   title,
@@ -54,6 +52,7 @@ export function HowItWorksSheet({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <HelpModalClose onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -62,92 +61,43 @@ export function HowItWorksSheet({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
-            maxHeight: "85%",
+            maxHeight: "76%",
             padding: spacing.lg,
           }}
         >
-          <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>{eyebrow}</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
-                {title}
-              </Text>
-            </View>
-            {/* Aligned to the top of the heading block and lifted clear of it.
-                Centred against a two-line title it drifted down beside the
-                words rather than sitting in the corner it belongs in. */}
-            <AnimatedPressable
-              accessibilityLabel={`Close ${title.toLowerCase()}`}
-              accessibilityRole="button"
-              hitSlop={10}
-              onPress={() => dismiss()}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.neutralSoft,
-                borderCurve: "continuous",
-                borderRadius: 999,
-                height: 32,
-                justifyContent: "center",
-                marginTop: -spacing.xs,
-                width: 32,
-              }}
-            >
-              <X color={colors.ink} size={17} strokeWidth={2.4} />
-            </AnimatedPressable>
-          </View>
+          <HelpModalHeader title={title} />
 
-          <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 24, paddingTop: 12, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
             {steps.map((step, index) => (
               <View
                 key={step.title}
-                style={{ backgroundColor: colors.surfaceSunken, borderRadius: radii.card, gap: 4, padding: spacing.md }}
+                style={{ flexDirection: "row", alignItems: "flex-start", gap: 16 }}
               >
-                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                  {/* A step deeper than the card it sits on. `neutralSoft` is
-                      one point off `surfaceSunken`, so the disc was there in
-                      the code and invisible on the screen. */}
                   <View
                     style={{
                       alignItems: "center",
-                      backgroundColor: colors.borderStrong,
+                      backgroundColor: "#F3EDF8",
                       borderRadius: 999,
-                      height: 22,
+                      height: 34,
                       justifyContent: "center",
-                      width: 22,
+                      width: 34,
                     }}
                   >
-                    <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11 }}>
+                    <Text style={{ color: "#70458B", fontFamily: fonts.sansMedium, fontSize: 16 }}>
                       {index + 1}
                     </Text>
                   </View>
-                  <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
-                    {step.title}
-                  </Text>
-                </View>
-                <Text style={[type.description, { color: colors.muted }]}>
+                <View style={{ flex: 1, paddingTop: 3 }}>
+                <Text style={[type.modalDescription, { color: colors.ink }]}>
                   {step.body}
                 </Text>
                 {step.extra ? <View style={{ marginTop: spacing.xs }}>{step.extra}</View> : null}
+                </View>
               </View>
             ))}
           </ScrollView>
 
-          {/* Every info panel ends in an acknowledgement, not just a corner ×. */}
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => dismiss()}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.ink,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              justifyContent: "center",
-              marginTop: spacing.sm,
-              minHeight: 46,
-            }}
-          >
-            <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 15 }}>Got it</Text>
-          </AnimatedPressable>
+
         </View>
       </View>}
     </BottomSheetModal>

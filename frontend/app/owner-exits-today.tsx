@@ -1,3 +1,4 @@
+import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { DoorOpen, LogOut } from "lucide-react-native";
@@ -79,7 +80,7 @@ export default function OwnerExitsTodayScreen() {
       {!requestsQuery.isLoading && leavingToday.length === 0 ? (
         <EmptyState
           description="Tenants with an approved checkout today appear here."
-          icon={DoorOpen}
+          icon={ExitTenancyIcon}
           title="Nobody is moving out today"
         />
       ) : null}
@@ -121,7 +122,7 @@ function MoveOutCard({
             {[roomLabel, request.referenceCode].filter(Boolean).join(" · ")}
           </Text>
         </View>
-        {canEnd ? <ActionButton icon={LogOut} label="End tenancy" onPress={onEnd} variant="danger" /> : null}
+        {canEnd ? <ActionButton icon={ExitTenancyIcon} label="End tenancy" onPress={onEnd} variant="danger" /> : null}
       </View>
     </Card>
   );

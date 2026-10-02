@@ -47,28 +47,28 @@ const UPI_APPS: UpiAppOption[] = [
     androidScheme: "tez://upi/pay",
     key: "GOOGLE_PAY",
     label: "Gpay",
-    logo: require("../../../assets/upi-apps/google-pay.jpg"),
+    logo: require("../../../assets/icons/upi-apps/google-pay.jpg"),
   },
   {
     androidPackage: "com.phonepe.app",
     androidScheme: "phonepe://pay",
     key: "PHONEPE",
     label: "PhonePe",
-    logo: require("../../../assets/upi-apps/phonepe.jpg"),
+    logo: require("../../../assets/icons/upi-apps/phonepe.jpg"),
   },
   {
     androidPackage: "net.one97.paytm",
     androidScheme: "paytmmp://pay",
     key: "PAYTM",
     label: "Paytm",
-    logo: require("../../../assets/upi-apps/paytm.jpg"),
+    logo: require("../../../assets/icons/upi-apps/paytm.jpg"),
   },
   {
     androidPackage: "in.org.npci.upiapp",
     androidScheme: "bhim://upi/pay",
     key: "BHIM",
     label: "BHIM UPI",
-    logo: require("../../../assets/upi-apps/bhim-upi.jpg"),
+    logo: require("../../../assets/icons/upi-apps/bhim-upi.jpg"),
   },
 ];
 
@@ -569,8 +569,8 @@ function DeskTab({ message, method, note }: { message: string; method: "CASH" | 
           accessibilityLabel={method === "CARD" ? "Person paying at a card reader" : "Person handing payment to another person"}
           resizeMode="contain"
           source={method === "CARD"
-            ? require("../../../assets/workspace/payment-card-swiper.png")
-            : require("../../../assets/workspace/payment-cash-handover.png")}
+            ? require("../../../assets/images/workspace/payment-card-swiper.png")
+            : require("../../../assets/images/workspace/payment-cash-handover.png")}
           style={{ height: 100, width: 125 }}
         />
         <View style={{ flex: 1, gap: spacing.xs }}>

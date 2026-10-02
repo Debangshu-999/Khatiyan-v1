@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -5,6 +6,7 @@ import { SlidersHorizontal, X } from "lucide-react-native";
 import { Image, Modal, ScrollView, Text, View } from "react-native";
 
 import { AlertModal } from "@/components/alert-modal";
+import { DeleteIcon } from "@/components/delete-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { MarqueeText } from "@/components/marquee-text";
@@ -203,7 +205,7 @@ export function FoodItemsTab({
 
       {!loading && items.length === 0 ? (
         <EmptyState
-          artwork={require("../../../assets/workspace/food-module-no-items.png")}
+          artwork={require("../../../assets/empty-states/food-module-no-items.png")}
           description="Add what your kitchen cooks, and the unit you measure each one in."
           title="No food items yet"
         />
@@ -324,7 +326,7 @@ function ItemStatusFilterDialog({
 }) {
   const { colors, fonts } = useTheme();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its close button, a choice or the device back button,
           not a tap on the scrim (user, 2026-09-29). */}
       <View
@@ -376,7 +378,7 @@ function ItemStatusFilterDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -486,7 +488,7 @@ function FoodItemRow({
             onPress={onReactivate}
             variant="secondary"
           />
-          <ActionButton compact icon={foodIcon("trash-can-outline")} label="Remove" onPress={onDelete} variant="dangerQuiet" />
+          <ActionButton compact icon={DeleteIcon} label="Remove" onPress={onDelete} variant="dangerQuiet" />
         </View>
       )}
     </View>
@@ -574,7 +576,7 @@ function ClampedDescription({
 function FoodItemDetailDialog({ item, onClose }: { item: FoodItem; onClose: () => void }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -629,7 +631,7 @@ function FoodItemDetailDialog({ item, onClose }: { item: FoodItem; onClose: () =
           </ScrollView>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

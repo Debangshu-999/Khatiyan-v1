@@ -47,8 +47,8 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
-const REQUEST_HISTORY_ILLUSTRATION = require("../assets/workspace/staff-history.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
+const REQUEST_HISTORY_ILLUSTRATION = require("../assets/images/workspace/staff-history.png");
 
 /**
  * The tenant's current request tracker.
@@ -244,6 +244,7 @@ export function ExitCard({ chain, request }: { chain?: ExitRequestChain; request
           <ActionButton
             icon={History}
             label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
+            borderColor={colors.borderStrong}
             onPress={() => setShowTimeline(true)}
             variant="outline"
           />
@@ -299,6 +300,7 @@ export function RoomChangeCard({
   chain?: RoomChangeRequestChain;
   request: TenancyRoomChangeRequest;
 }) {
+  const { colors } = useTheme();
   const [showActions, setShowActions] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const attempts = chain?.links.length ?? 1;
@@ -348,6 +350,7 @@ export function RoomChangeCard({
           <ActionButton
             icon={History}
             label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
+            borderColor={colors.borderStrong}
             onPress={() => setShowTimeline(true)}
             variant="outline"
           />
@@ -505,7 +508,7 @@ function WithdrawExitSheet({
   return (
     <SheetShell onClose={onClose} title="Cancel your exit">
       <View style={{ gap: spacing.md }}>
-        <Text style={[type.description, { color: colors.muted }]}>
+        <Text style={[type.modalDescription, { color: colors.muted }]}>
           You asked to leave on{" "}
           <Text style={{ color: colors.ink, fontWeight: "800" }}>
             {approvedCheckoutDate ? formatDate(approvedCheckoutDate) : "your approved date"}

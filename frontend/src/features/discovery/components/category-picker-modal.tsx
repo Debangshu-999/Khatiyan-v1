@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
 import { Check, ChevronDown, ChevronRight, FolderPlus, Plus, X } from "lucide-react-native";
@@ -97,7 +98,7 @@ export function CategoryPickerModal({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={visible}>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible={visible}>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
@@ -291,7 +292,7 @@ export function CategoryPickerModal({
         </View>
       </View>
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
-    </Modal>
+    </CenterModal>
   );
 }
 

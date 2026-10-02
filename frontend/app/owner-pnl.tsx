@@ -45,12 +45,12 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_EXPENSE_ILLUSTRATION = require("../assets/workspace/No-Expense_512x512.png");
+const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
 const PAGE_SIZE = 20;
-const PNL_HEADER_ILLUSTRATION = require("../assets/workspace/pnl-header.png");
-const PNL_PROFIT_ILLUSTRATION = require("../assets/workspace/pnl-profit.png");
-const PNL_LOSS_ILLUSTRATION = require("../assets/workspace/pnl-loss.png");
+const PNL_HEADER_ILLUSTRATION = require("../assets/images/workspace/pnl-header.png");
+const PNL_PROFIT_ILLUSTRATION = require("../assets/images/workspace/pnl-profit.png");
+const PNL_LOSS_ILLUSTRATION = require("../assets/images/workspace/pnl-loss.png");
 
 export default function OwnerPnlScreen() {
   const router = useGuardedRouter();

@@ -20,7 +20,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_PERSON_ILLUSTRATION = require("../../../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
 /**
  * Who on the team may work the property's tenant conversations.
@@ -115,7 +115,7 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
         {/* One line, said once. Which managers can read tenant messages is the
             question, and the sentence a reader needs is what it does NOT
             touch — their own conversations are not the owner's to hand out. */}
-        <Text style={[type.description, { color: colors.muted }]}>
+        <Text style={[type.modalDescription, { color: colors.muted }]}>
           Managers you add can read and reply in Tenants. Their own chats and enquiries are not affected.
         </Text>
 

@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
-import { Check, Eye, Plus, Trash2 } from "lucide-react-native";
+import { Check, Plus } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Svg, { Circle, Line, Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { DeleteIcon } from "@/components/delete-icon";
 import { SheetShell } from "@/components/sheet-shell";
+import { SectionHeading as ScreenSectionHeading } from "@/components/section-heading";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ConfirmDialog, FormInput } from "@/features/owner/owner-ui";
 import { ClauseBody } from "@/features/compliance/agreement-document";
@@ -71,10 +75,12 @@ export function AgreementTemplateEditor({
           title="Main clauses"
         />
 
-        <View style={{ gap: 8 }}>
+        <ClausePanel>
           {clauses.map((clause, index) => {
             const customIndex = clause.kind === "CUSTOM" ? nextCustom++ : null;
             return (
+              <Fragment key={`${clause.kind}-${clause.mainType ?? clause.heading}-${index}`}>
+              {index > 0 ? <ClauseDivider /> : null}
               <ClauseRow
                 clause={clause}
                 key={`${clause.kind}-${clause.mainType ?? clause.heading}-${index}`}
@@ -94,9 +100,10 @@ export function AgreementTemplateEditor({
                   }
                 }}
               />
+              </Fragment>
             );
           })}
-        </View>
+        </ClausePanel>
 
         {/* Dropped clauses are shown, not hidden. An owner who removed one months
             ago has no other way to discover their deed is missing a term, and a
@@ -134,8 +141,10 @@ export function AgreementTemplateEditor({
           title={`Miscellaneous clauses (${miscOptions.length})`}
         />
 
-        <View style={{ gap: 8 }}>
-          {miscOptions.map((option) => (
+        <ClausePanel>
+          {miscOptions.map((option, index) => (
+            <Fragment key={option.type}>
+            {index > 0 ? <ClauseDivider dotted /> : null}
             <MiscRow
               key={option.type}
               onToggle={() =>
@@ -149,8 +158,9 @@ export function AgreementTemplateEditor({
               option={option}
               ticked={template.miscClauses.includes(option.type)}
             />
+            </Fragment>
           ))}
-        </View>
+        </ClausePanel>
       </View>
     </View>
   );
@@ -164,6 +174,16 @@ export function AgreementTemplateEditor({
  * whether to keep a term needs to read it, and a heading like "Possession" does
  * not say what the clause commits their tenant to.
  */
+function ClausePanel({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
+  return <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radii.card, overflow: "hidden" }}>{children}</View>;
+}
+
+function ClauseDivider({ dotted = false }: { dotted?: boolean }) {
+  const { colors } = useTheme();
+  return <View style={{ marginHorizontal: spacing.md }}><Svg width="100%" height={2}><Line x1="0" y1="1" x2="100%" y2="1" stroke={colors.borderStrong} strokeWidth={1} strokeDasharray={dotted ? "1 5" : undefined} strokeLinecap={dotted ? "round" : "butt"} /></Svg></View>;
+}
+
 function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: () => void }) {
   const { colors, fonts, type } = useTheme();
   const [open, setOpen] = useState(false);
@@ -177,10 +197,6 @@ function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: ()
         style={{
           alignItems: "center",
           backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: radii.card,
-          borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
           paddingHorizontal: spacing.md,
@@ -215,7 +231,10 @@ function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: ()
             width: 30,
           }}
         >
-          <Eye color={colors.inkSoft} size={16} strokeWidth={2.2} />
+          <Svg width={18} height={18} viewBox="0 0 24 24">
+            <Path d="M2 12Q6 5 12 5Q18 5 22 12Q18 19 12 19Q6 19 2 12Z" fill="#FFFFFF" stroke="#000000" strokeWidth={2} />
+            <Circle cx={12} cy={12} r={3} fill="#000000" />
+          </Svg>
         </AnimatedPressable>
 
         <AnimatedPressable
@@ -233,7 +252,7 @@ function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: ()
             width: 30,
           }}
         >
-          <Trash2 color={colors.danger} size={15} strokeWidth={2.2} />
+          <DeleteIcon size={18} />
         </AnimatedPressable>
       </View>
 
@@ -336,10 +355,6 @@ function MiscRow({
       onPress={onToggle}
       style={{
         backgroundColor: colors.surface,
-        borderColor: ticked ? colors.jade : colors.border,
-        borderCurve: "continuous",
-        borderRadius: 12,
-        borderWidth: ticked ? 1.5 : 1,
         flexDirection: "row",
         gap: spacing.sm,
         paddingHorizontal: spacing.md,
@@ -351,7 +366,7 @@ function MiscRow({
           alignItems: "center",
           backgroundColor: ticked ? colors.jade : "transparent",
           borderColor: ticked ? colors.jade : colors.borderStrong,
-          borderRadius: 6,
+          borderRadius: 0,
           borderWidth: 1.5,
           height: 20,
           justifyContent: "center",
@@ -385,16 +400,7 @@ function SectionHeading({
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ gap: 4 }}>
-      <Text
-        style={{
-          color: colors.text,
-          fontFamily: small ? fonts.sansBold : fonts.display,
-          fontSize: small ? 14 : 17,
-          letterSpacing: small ? 0 : -0.2,
-        }}
-      >
-        {title}
-      </Text>
+      <ScreenSectionHeading title={title} />
       <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
     </View>
   );
@@ -492,7 +498,7 @@ export function CustomClauseSheet({
           <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 12.5 }}>
             Adds to the main clause list.
           </Text>
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             The clause takes this number as its position and pushes the rest down. Past the end, it goes last.
           </Text>
         </View>

@@ -1,3 +1,4 @@
+import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useState } from "react";
 import { ActivityIndicator, Platform, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
@@ -54,12 +55,14 @@ export default function TenancyExitRequestScreen() {
         <SkeletonCard />
       ) : !tenancy ? (
         <EmptyState
-          icon={CalendarClock}
+          icon={ExitTenancyIcon}
           title="No current stay"
           description="Exit requests can be raised only from an active tenancy."
         />
       ) : tenancyNotStarted(tenancy.startDate) ? (
-        <EmptyState icon={CalendarClock} title="Your tenancy has not started" description={REQUESTS_NOT_STARTED.exit} />
+        <EmptyState icon={ExitTenancyIcon} title="Your tenancy has not started" description={REQUESTS_NOT_STARTED.exit} />
+      ) : tenancy.agreementValidityMonths === 1 ? (
+        <EmptyState icon={ExitTenancyIcon} title="Early exit unavailable" description="Your tenancy has a 1-month fixed agreement, so an early exit request is not available. Early exit applies only to fixed agreements of 2 months or more. Your stay ends on the agreed checkout date." />
       ) : (
         <ExitRequestGate
           initialReason={firstParam(params.reason)}
@@ -121,7 +124,7 @@ function ExitRequestGate({
   if (reRaiseRequestId) {
     return (
       <EmptyState
-        icon={CalendarClock}
+        icon={ExitTenancyIcon}
         title="Correction window closed"
         description="This exit request can no longer be edited and raised again."
       />
@@ -136,7 +139,7 @@ function ExitRequestGate({
 
   return (
     <EmptyState
-      icon={CalendarClock}
+      icon={ExitTenancyIcon}
       title={requestBlock.title}
       description={`${requestBlock.referenceCode}: ${requestBlock.message}`}
     />
@@ -175,7 +178,7 @@ function ServeNoticeForm({
   if (!windowQuery.data) {
     return (
       <EmptyState
-        icon={CalendarClock}
+        icon={ExitTenancyIcon}
         title="Cannot work out your notice"
         description={
           windowQuery.error
@@ -267,8 +270,11 @@ function NoticeWindowForm({
 
         {!checkoutWindow.prematureExitAllowed && checkoutWindow.restrictionMessage ? (
           <Card tone="sunken">
+            <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
+              Early exit unavailable
+            </Text>
             <Text style={[type.description, { color: colors.muted }]}>
-              {checkoutWindow.restrictionMessage} The earliest selectable date already serves your full notice.
+              {checkoutWindow.restrictionMessage} You can still request an exit by serving your full notice period; the available dates below reflect that.
             </Text>
           </Card>
         ) : null}

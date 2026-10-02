@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -13,10 +14,9 @@ import {
   Repeat2,
   ShieldAlert,
   SlidersHorizontal,
-  Trash2,
   Users,
-  X,
-} from "lucide-react-native";
+  X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -58,7 +58,7 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NOTICE_EMPTY_ILLUSTRATION = require("../assets/workspace/No-Notice_512x512.png");
+const NOTICE_EMPTY_ILLUSTRATION = require("../assets/empty-states/No-Notice_512x512.png");
 
 type NoticeConfirmState =
   | { action: "archive" | "delete"; notice: NoticeSummary }
@@ -695,7 +695,7 @@ function PriorityFilterDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button, a choice or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{
@@ -746,7 +746,7 @@ function PriorityFilterDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

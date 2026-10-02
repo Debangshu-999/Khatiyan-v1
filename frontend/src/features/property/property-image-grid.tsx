@@ -1,5 +1,6 @@
 import { Image, Text, View } from "react-native";
-import { Plus, Star, Trash2 } from "lucide-react-native";
+import { Plus, Star } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";

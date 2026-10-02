@@ -1,6 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 import { setupListeners } from "@reduxjs/toolkit/query";
 import { AppState } from "react-native";
+import { clearWalletAccess } from "@/auth/wallet-access";
 
 import { api } from "@/store/api";
 import { accountReducer } from "@/store/slices/account-slice";
@@ -32,6 +33,15 @@ export const store = configureStore({
       immutableCheck: { ignoredPaths: [api.reducerPath] },
       serializableCheck: { ignoredPaths: [api.reducerPath] },
     }).concat(api.middleware),
+});
+
+let walletSession = store.getState().auth.accessToken;
+store.subscribe(() => {
+  const nextSession = store.getState().auth.accessToken;
+  if (nextSession !== walletSession) {
+    walletSession = nextSession;
+    clearWalletAccess();
+  }
 });
 
 // Wire RTK Query's refetchOnFocus/refetchOnReconnect to React Native's

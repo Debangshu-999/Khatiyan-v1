@@ -1,11 +1,10 @@
+import { CenterModal } from "@/components/center-modal";
 import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import {
   CalendarDays,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   KeyRound,
   ListFilter,
   SlidersHorizontal,
@@ -38,7 +37,7 @@ import { useTheme } from "@/theme/use-theme";
 
 import { ExitCard, RoomChangeCard } from "./tenancy-request-history";
 
-const EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 type HistoricalRequest =
   | { chain?: ExitRequestChain; kind: "EXIT"; request: TenancyExitRequest }
@@ -117,7 +116,7 @@ export default function TenancyPastRequestsScreen() {
 
   const years = useMemo(
     () =>
-      [...new Set(history.map((entry) => historyParts(entry.request).year))]
+      [...new Set([String(new Date().getFullYear()), ...history.map((entry) => historyParts(entry.request).year)])]
         .sort((left, right) => Number(right) - Number(left))
         .map((value) => ({ label: value, value })),
     [history],
@@ -309,7 +308,7 @@ function FilterPickerDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button, a choice or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{
@@ -358,7 +357,7 @@ function FilterPickerDialog({
           </ScrollView>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -385,11 +384,15 @@ function DateFilterDialog({
           value: String(index + 1).padStart(2, "0"),
         })),
       ]
-    : [{ label: "Any year", value: "ALL" }, ...years];
+    : [
+        { label: "Any year", value: "ALL" },
+        { label: String(new Date().getFullYear()), value: String(new Date().getFullYear()) },
+        ...years.filter((option) => option.value !== String(new Date().getFullYear())),
+      ];
   const selectedValue = step === "MONTH" ? month : year;
 
   return (
-    <Modal
+    <CenterModal
       animationType="fade"
       navigationBarTranslucent
       onRequestClose={onClose}
@@ -423,55 +426,26 @@ function DateFilterDialog({
                 minHeight: 36,
               }}
             >
-              {/* Balances the close button on the right, so the title stays centred. */}
-              <View style={{ width: 36 }} />
-              {step === "YEAR" ? (
+              {(["MONTH", "YEAR"] as const).map((tab) => (
                 <Pressable
-                  accessibilityLabel="Back to month"
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setStep("MONTH")}
+                  key={tab}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: step === tab }}
+                  onPress={() => setStep(tab)}
                   style={{
+                    flex: 1,
                     alignItems: "center",
-                    backgroundColor: colors.surfaceSunken,
-                    borderRadius: 999,
-                    height: 32,
                     justifyContent: "center",
-                    width: 32,
+                    minHeight: 42,
+                    borderRadius: 12,
+                    backgroundColor: step === tab ? colors.primarySoft : "transparent",
                   }}
                 >
-                  <ChevronLeft color={colors.ink} size={21} strokeWidth={2.3} />
+                  <Text style={{ color: step === tab ? colors.primary : colors.ink, fontFamily: fonts.sansBold, fontSize: 18 }}>
+                    {tab === "MONTH" ? "Month" : "Year"}
+                  </Text>
                 </Pressable>
-              ) : <View style={{ width: 32 }} />}
-              <Text
-                style={{
-                  color: colors.ink,
-                  flex: 1,
-                  fontFamily: fonts.display,
-                  fontSize: 21,
-                  textAlign: "center",
-                }}
-              >
-                {step === "MONTH" ? "Month" : "Year"}
-              </Text>
-              {step === "MONTH" ? (
-                <Pressable
-                  accessibilityLabel="Choose year"
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setStep("YEAR")}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.surfaceSunken,
-                    borderRadius: 999,
-                    height: 32,
-                    justifyContent: "center",
-                    width: 32,
-                  }}
-                >
-                  <ChevronRight color={colors.ink} size={21} strokeWidth={2.3} />
-                </Pressable>
-              ) : <View style={{ width: 32 }} />}
+              ))}
               {/* The only way out besides the device back button (user, 2026-09-29). */}
               <IconButton accessibilityLabel="Close date filter" filled icon={X} onPress={onClose} />
             </View>
@@ -516,7 +490,7 @@ function DateFilterDialog({
           </ScrollView>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -533,7 +507,7 @@ function DateSelectionChip({
       style={{
         alignItems: "center",
         alignSelf: "flex-start",
-        backgroundColor: colors.primary,
+        backgroundColor: colors.primarySoft,
         borderRadius: 999,
         flexDirection: "row",
         gap: 4,
@@ -541,7 +515,7 @@ function DateSelectionChip({
         paddingHorizontal: spacing.sm,
       }}
     >
-      <Text numberOfLines={1} style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 12 }}>
+      <Text numberOfLines={1} style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>
         {value}
       </Text>
       <Pressable
@@ -551,7 +525,7 @@ function DateSelectionChip({
         onPress={onClear}
         style={{ alignItems: "center", height: 20, justifyContent: "center", width: 20 }}
       >
-        <X color={colors.onPrimary} size={12} strokeWidth={2.5} />
+        <X color={colors.primary} size={12} strokeWidth={2.5} />
       </Pressable>
     </View>
   );

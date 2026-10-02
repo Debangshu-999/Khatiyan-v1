@@ -18,7 +18,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 // Empty-state artwork shown only when the selected month has no claims.
-const PAYMENT_CLAIMS_ILLUSTRATION = require("../assets/workspace/payment_claims1254.png");
+const PAYMENT_CLAIMS_ILLUSTRATION = require("../assets/images/workspace/payment_claims1254.png");
 
 /**
  * Cards mounted per batch. A screenful and a bit on a phone, so reaching the
@@ -168,7 +168,7 @@ export default function OwnerPaymentClaimsScreen() {
           style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
           tapLockMs={0}
         >
-          <Info color={colors.kicker} size={17} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.4} />
         </AnimatedPressable>
       </View>
 
@@ -212,3 +212,4 @@ export default function OwnerPaymentClaimsScreen() {
     </ScreenScrollView>
   );
 }
+import { CircleHelp } from "lucide-react-native";

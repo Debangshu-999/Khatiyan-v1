@@ -60,11 +60,12 @@ export function UnderlineTabs<T extends string>({
    * its label — for a strip that IS the screen's navigation, where the chosen
    * section has to be obvious from across the room rather than merely findable.
    */
-  tone?: "plain" | "soft" | "strong";
+  tone?: "plain" | "soft" | "strong" | "transactions";
 }) {
   const { colors, fonts } = useTheme();
   const strong = tone === "strong";
   const plain = tone === "plain";
+  const transactions = tone === "transactions";
 
   return (
     <View
@@ -107,7 +108,7 @@ export function UnderlineTabs<T extends string>({
                   ? colors.tabSelected
                   : plain
                     ? "transparent"
-                    : colors.jadeSoft
+                    : transactions ? "transparent" : colors.jadeSoft
                 : "transparent",
               flex: 1,
               gap: 5,
@@ -115,10 +116,10 @@ export function UnderlineTabs<T extends string>({
               // navigation and sits alone between two rules, so it has to hold
               // that band; on the soft tone it is one control among the fields
               // of a form and a bigger target would shout over them.
-              paddingBottom: strong || plain ? spacing.md : spacing.sm,
+              paddingBottom: strong || plain || transactions ? spacing.md : spacing.sm,
               // Matches the bottom, so the tinted body is evenly weighted top
               // and bottom and fills the strip rather than sitting low in it.
-              paddingTop: strong || plain ? spacing.md : spacing.sm,
+              paddingTop: strong || plain || transactions ? spacing.md : spacing.sm,
             }}
           >
             {option.icon ? (
@@ -127,7 +128,7 @@ export function UnderlineTabs<T extends string>({
               </View>
             ) : null}
 
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 3, ...(transactions ? { paddingHorizontal: 15, paddingVertical: 7, borderRadius: 10, backgroundColor: selected ? colors.neutralSoft : "transparent", marginVertical: -7 } : {}) }}>
               <Text
                 numberOfLines={1}
                 style={{
@@ -138,8 +139,8 @@ export function UnderlineTabs<T extends string>({
                         ? colors.primary
                         : colors.ink
                     : colors.muted,
-                  fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
-                  fontSize: strong || plain ? 14 : 12,
+                  fontFamily: transactions ? fonts.sansSemiBold : selected ? fonts.sansBold : fonts.sansMedium,
+                  fontSize: strong || plain || transactions ? 14 : 12,
                 }}
               >
                 {option.label}
@@ -151,6 +152,7 @@ export function UnderlineTabs<T extends string>({
                   strokeWidth={2.6}
                 />
               ) : null}
+              {transactions ? <View style={{ position: "absolute", left: 0, right: 0, bottom: -spacing.md + 6, height: 4, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: selected ? colors.ink : "transparent" }} /> : null}
             </View>
 
             <View
@@ -165,7 +167,7 @@ export function UnderlineTabs<T extends string>({
                 // Sits ON the rule and covers it, so the chosen tab breaks the
                 // line rather than perching above it.
                 bottom: strong ? -2 : -1,
-                height: strong || plain ? 3 : 2,
+                height: transactions ? 0 : strong || plain ? 3 : 2,
                 left: 0,
                 position: "absolute",
                 right: 0,

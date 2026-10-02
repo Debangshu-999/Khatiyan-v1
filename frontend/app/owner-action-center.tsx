@@ -1,3 +1,5 @@
+import { ExitTenancyIcon } from "@/components/artwork-icon";
+import { UpcomingExitsIcon } from "@/components/tenancy-line-icons";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useRouteGate } from "@/features/owner/route-gates";
@@ -20,7 +22,7 @@ import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const ALL_CAUGHT_UP_ILLUSTRATION = require("../assets/workspace/All-Caught-Up_512x512.png");
+const ALL_CAUGHT_UP_ILLUSTRATION = require("../assets/empty-states/All-Caught-Up_512x512.png");
 
 type ActionRoute =
   | "/owner-billing"
@@ -178,13 +180,13 @@ function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
     items.push({ badge: String(attention.exitsPastDue), detail: "Checkout date has passed", emphasize: true, icon: CalendarX2, key: "past-due-exits", label: "Exits past due", route: "/owner-tenancy", source: "tenancy", tone: "danger" });
   }
   if (attention.pendingExitRequests > 0) {
-    items.push({ badge: String(attention.pendingExitRequests), detail: "Awaiting your review", emphasize: false, icon: DoorOpen, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", source: "tenancy", tone: "primary" });
+    items.push({ badge: String(attention.pendingExitRequests), detail: "Awaiting your review", emphasize: false, icon: ExitTenancyIcon, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", source: "tenancy", tone: "primary" });
   }
   if (attention.pendingRoomChangeRequests > 0) {
     items.push({ badge: String(attention.pendingRoomChangeRequests), detail: "Awaiting your review", emphasize: false, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", tone: "primary" });
   }
   if (attention.upcomingExits > 0) {
-    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: CalendarClock, key: "upcoming", label: "Upcoming exits", route: "/owner-tenancy?open=upcoming-exits", source: "tenancy", tone: "primary" });
+    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: UpcomingExitsIcon, key: "upcoming", label: "Upcoming exits", route: "/owner-tenancy?open=upcoming-exits", source: "tenancy", tone: "primary" });
   }
   if (attention.tenantsOnNotice > 0) {
     items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });

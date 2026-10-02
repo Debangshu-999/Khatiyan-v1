@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { ImagePlus, QrCode, Trash2 } from "lucide-react-native";
+import { ImagePlus, QrCode } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";

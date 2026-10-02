@@ -2,8 +2,8 @@ import { ActivityIndicator, Image, View, type ImageStyle, type StyleProp } from 
 
 import { useTheme } from "@/theme/use-theme";
 
-const LOGO_LIGHT = require("../../assets/brand/logo-light-trimmed.png");
-const LOGO_DARK = require("../../assets/brand/logo-dark-trimmed.png");
+const LOGO_LIGHT = require("../../assets/icons/brand/logo-light-trimmed.png");
+const LOGO_DARK = require("../../assets/icons/brand/logo-dark-trimmed.png");
 
 /**
  * The logo artwork's own background colours, sampled from the files.

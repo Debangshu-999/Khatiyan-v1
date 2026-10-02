@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
 
@@ -138,7 +139,7 @@ export function PaymentDecisionModal({
   }
 
   return (
-    <Modal
+    <CenterModal
       animationType="fade"
       navigationBarTranslucent
       onRequestClose={goBack}
@@ -247,7 +248,7 @@ export function PaymentDecisionModal({
         ) : (
           <>
             <View style={{ gap: spacing.xs }}>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 UPI reference number / transaction ID
               </Text>
               <AppTextInput
@@ -294,7 +295,7 @@ export function PaymentDecisionModal({
                 nothing filled in. The extra top margin is what stops it and the
                 button crowding the picker above them. */}
             <View style={{ gap: spacing.md, marginTop: spacing.md }}>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Optional, but it helps them find your payment faster.
               </Text>
 
@@ -318,7 +319,7 @@ export function PaymentDecisionModal({
       </KeyboardAvoidingView>
 
       {error ? <AlertModal message={error} onClose={() => setError(null)} /> : null}
-    </Modal>
+    </CenterModal>
   );
 }
 

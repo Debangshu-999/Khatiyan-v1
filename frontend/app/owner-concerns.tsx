@@ -4,6 +4,7 @@ import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useFocusEffect } from "expo-router";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Activity, AlertCircle, ArrowUp, CheckCircle2, ChevronDown, ChevronUp, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
 
 import { Image, type ImageSourcePropType } from "react-native";
@@ -64,10 +65,10 @@ function myTabHeadingText(tab: MyTab) {
   return "Closed by me";
 }
 
-const CONCERN_HEADER_ILLUSTRATION = require("../assets/workspace/concern-header.png");
-const CONCERN_MONITOR_ILLUSTRATION = require("../assets/workspace/concern-monitor.png");
-const CONCERN_HISTORY_ILLUSTRATION = require("../assets/workspace/concern-history.png");
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_HEADER_ILLUSTRATION = require("../assets/images/workspace/concern-header.png");
+const CONCERN_MONITOR_ILLUSTRATION = require("../assets/images/workspace/concern-monitor.png");
+const CONCERN_HISTORY_ILLUSTRATION = require("../assets/images/workspace/concern-history.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 export default function OwnerConcernsScreen() {
   const router = useGuardedRouter();
@@ -221,9 +222,6 @@ export default function OwnerConcernsScreen() {
       {selectedProperty ? (
         <>
           <View style={{ gap: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
-              Concern overview
-            </Text>
             {/* Six tiles, two to a row, each headed by its own glyph. Three
                 across squeezed a two-word label and a count into a third of the
                 screen; two across gives every tile the same width and lets the
@@ -665,10 +663,13 @@ function ConcernRouteCard({
 }
 
 function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
-  const { colors, type } = useTheme();
-  // Escalation is only surfaced while the concern is still open/unassigned; once
-  // it is being worked on (under review / in progress) we show the status instead.
-  const showEscalation = concern.escalationLevel !== "NONE" && concern.status === "OPEN";
+  const { colors, fonts, type } = useTheme();
+  const completed = !concern.reopened && (concern.status === "RESOLVED" || concern.status === "CLOSED");
+  const inProgress = !concern.reopened && concern.status === "IN_PROGRESS";
+  const statusLabel = concern.reopened ? "Reopened" : inProgress ? "In progress" : concern.status === "UNDER_REVIEW" ? "In review" : humanizeToken(concern.status);
+  const statusColor = concern.reopened ? colors.danger : completed ? colors.jade : inProgress ? colors.warningText : colors.primary;
+  const statusFill = concern.reopened ? colors.dangerSoft : completed ? colors.successSoft : inProgress ? colors.warningSoft : colors.primarySoft;
+  const statusIcon = concern.reopened ? "restore" : completed ? "check" : inProgress ? "progress-wrench" : "clipboard-search";
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
@@ -676,19 +677,15 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
           <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
             {concern.referenceCode}
           </Text>
-          <Text style={[type.caption, { color: showEscalation ? colors.danger : colors.muted, fontWeight: "900" }]}>
-            {showEscalation ? humanizeToken(concern.escalationLevel) : humanizeToken(concern.status)}
-          </Text>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 4, backgroundColor: statusFill, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <View style={{ alignItems: "center", justifyContent: "center", backgroundColor: statusColor, borderRadius: 999, height: 14, width: 14 }}>
+              <MaterialCommunityIcons name={statusIcon} color="#FFFFFF" size={10} />
+            </View>
+            <Text style={{ color: statusColor, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 15 }}>{statusLabel}</Text>
+          </View>
         </View>
         <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</Text>
-        <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>{concern.description}</Text>
         <ConcernMetaRow concern={concern} />
-        {concern.statusNote ? (
-          <Text style={[type.caption, { color: colors.primary }]} numberOfLines={1}>Note: {concern.statusNote}</Text>
-        ) : null}
-        {concern.reopened ? (
-          <Text style={[type.caption, { color: colors.danger }]} numberOfLines={1}>Reopened: {concern.reopenReason ?? "No reason provided"}</Text>
-        ) : null}
         <ActionButton icon={actionLabel === "View" ? Eye : Clock3} label={actionLabel} onPress={onPress} variant={actionLabel === "View" ? "primary" : "secondary"} />
       </View>
     </Card>

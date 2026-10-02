@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { CenterModal } from "@/components/center-modal";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -7,7 +8,9 @@ import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 // Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
+import Svg, { Circle, Path } from "react-native-svg";
+import type { LucideProps } from "lucide-react-native";
 import {
   AirVent,
   Bed,
@@ -25,10 +28,9 @@ import {
   Plus,
   RotateCcw,
   Settings2,
-  Trash2,
   Wrench,
-  X,
-} from "lucide-react-native";
+  X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { AlertModal } from "@/components/alert-modal";
@@ -45,12 +47,13 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { OwnerRoomInventorySkeleton, OwnerRoomMetricsSkeleton } from "@/components/skeletons/owner";
-import { RoomCarousel } from "@/features/owner/room-carousel";
+import { ListEnd } from "@/components/list-end";
 import {
   ActionButton,
   ConfirmDialog,
   FormInput,
   IconButton,
+  NoticeBar,
   formatMoneyPaise,
   humanizeToken,
   ViewOnlyChip,
@@ -75,7 +78,36 @@ import { useTheme } from "@/theme/use-theme";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 
-const NO_BEDS_ILLUSTRATION = require("../assets/workspace/No-Beds_512x512.png");
+const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
+
+function RoomsSummaryIcon({ color, size = 22 }: LucideProps) {
+  return <MaterialCommunityIcons name="door-open" color={color as string} size={Number(size)} />;
+}
+
+function BedsSummaryIcon({ color, size = 22 }: LucideProps) {
+  return <MaterialCommunityIcons name="bed-double" color={color as string} size={Number(size)} />;
+}
+
+function InServiceIcon({ color, size = 22 }: LucideProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path fill={color as string} d="M5 3h8v2H7v15h6v2H5V3Zm4 3 10-4v20L9 18V6Z" />
+      <Circle cx={12} cy={12} r={1.1} fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
+function FloorInServiceIcon(props: LucideProps) {
+  return <InServiceIcon {...props} color="#000000" />;
+}
+
+function OccupiedSummaryIcon({ color, size = 22 }: LucideProps) {
+  return <MaterialIcons name="hotel" color={color as string} size={Number(size)} />;
+}
+
+function FloorOccupiedIcon(props: LucideProps) {
+  return <OccupiedSummaryIcon {...props} color="#000000" />;
+}
 
 export default function OwnerRoomsScreen() {
   // Both of these are refused by the server, not by anything on screen.
@@ -139,6 +171,7 @@ export default function OwnerRoomsScreen() {
   const [pendingReactivate, setPendingReactivate] = useState<OwnerRoom | null>(null);
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("active");
+  const [visibleRoomCount, setVisibleRoomCount] = useState(5);
 
   const totalBeds = rooms.reduce((sum, room) => sum + room.capacity, 0);
   const occupiedBeds = rooms.reduce((sum, room) => sum + room.occupiedCount, 0);
@@ -160,6 +193,9 @@ export default function OwnerRoomsScreen() {
   const floorActiveRooms = floorAllRooms.filter((room) => room.active);
   const floorBeds = floorActiveRooms.reduce((sum, room) => sum + room.capacity, 0);
   const floorOccupiedBeds = floorActiveRooms.reduce((sum, room) => sum + room.occupiedCount, 0);
+  useEffect(() => {
+    setVisibleRoomCount(5);
+  }, [activeFloor, roomFilter, selectedProperty?.id]);
 
   function confirmDeactivate() {
     const target = pendingDelete;
@@ -201,7 +237,12 @@ export default function OwnerRoomsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEventThrottle={16} onScroll={({ nativeEvent }) => {
+      const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
+      if (contentSize.height - contentOffset.y - layoutMeasurement.height < 240 && visibleRoomCount < visibleFloorRooms.length) {
+        setVisibleRoomCount(Math.min(visibleRoomCount + 5, visibleFloorRooms.length));
+      }
+    }}>
       <ScreenHeader
         badge={!canManageRooms ? <ViewOnlyChip /> : null}
         title="Rooms"
@@ -221,13 +262,13 @@ export default function OwnerRoomsScreen() {
       {selectedProperty ? (
         <>
           {roomsLoading ? <OwnerRoomMetricsSkeleton /> : <><View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={DoorClosed} iconFilled iconPlacement="side" iconTone="primary" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} />
-            <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="primary" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
+            <MetricTile icon={RoomsSummaryIcon} iconPlacement="side" iconTone="primary" label="Rooms" value={String(rooms.length)} hint={`${floors.length} floor${floors.length === 1 ? "" : "s"}`} />
+            <MetricTile icon={BedsSummaryIcon} iconPlacement="side" iconTone="primary" label="Beds" value={String(totalBeds)} hint={`${occupiedBeds} occupied`} />
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <MetricTile icon={Wrench} iconFilled iconPlacement="side" iconTone="success" label="In service" value={String(rooms.length - maintenanceCount)} hint={`${maintenanceCount} unavailable`} />
-            <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="warning" label="Occupied" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
+            <MetricTile icon={InServiceIcon} iconPlacement="side" iconTone="primary" label="In service" value={String(rooms.length - maintenanceCount)} hint={`${maintenanceCount} unavailable`} />
+            <MetricTile icon={OccupiedSummaryIcon} iconPlacement="side" iconTone="primary" label="Occupied" value={String(occupiedRoomsCount)} hint={`${rooms.length - occupiedRoomsCount} fully vacant`} />
           </View></>}
 
           {/* Both paths kept. One room is the common act and wants one field;
@@ -288,8 +329,8 @@ export default function OwnerRoomsScreen() {
                   }
                 >
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <MetricTile icon={DoorOpen} iconFilled iconPlacement="side" iconTone="success" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} />
-                    <MetricTile icon={BedDouble} iconFilled iconPlacement="side" iconTone="warning" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
+                    <MetricTile icon={FloorInServiceIcon} iconPlacement="side" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} />
+                    <MetricTile icon={FloorOccupiedIcon} iconPlacement="side" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
                   </View>
                   {visibleFloorRooms.length === 0 ? (
                     <EmptyState
@@ -311,10 +352,10 @@ export default function OwnerRoomsScreen() {
                       }
                     />
                   ) : (
-                    <RoomCarousel
-                      rooms={visibleFloorRooms}
-                      renderRoom={(room) => (
+                    <View style={{ gap: spacing.sm }}>
+                      {visibleFloorRooms.slice(0, visibleRoomCount).map((room) => (
                         <RoomCard
+                          key={room.id}
                           canManage={canManageRooms}
                           room={room}
                           occupants={occupantsByRoom.get(room.id) ?? []}
@@ -327,8 +368,11 @@ export default function OwnerRoomsScreen() {
                           onReactivate={() => setPendingReactivate(room)}
                           onStatus={() => setStatusRoom(room)}
                         />
-                      )}
-                    />
+                      ))}
+                      {visibleRoomCount < visibleFloorRooms.length ? (
+                        <ActivityIndicator color={colors.primary} style={{ paddingVertical: spacing.md }} />
+                      ) : <ListEnd />}
+                    </View>
                   )}
                 </Section>
               ) : null}
@@ -482,7 +526,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
       </Pressable>
 
       {open ? (
-        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
+        <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
           {/* Closes by its own close button or the device back button, not a tap
               on the scrim (user, 2026-09-29). */}
           <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
@@ -535,7 +579,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
               </ScrollView>
             </View>
           </View>
-        </Modal>
+        </CenterModal>
       ) : null}
     </View>
   );
@@ -560,34 +604,34 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
   return (
     <View
       style={{
-        alignItems: "center",
-        backgroundColor: occupant ? colors.accentSoft : colors.surfaceSunken,
+        alignItems: "flex-start",
+        backgroundColor: occupant ? "#FFFAE9" : colors.surfaceSunken,
         borderColor: daily ? colors.accent : "transparent",
-        borderRadius: 18,
+        borderRadius: 12,
         borderStyle: daily ? "dashed" : "solid",
         borderWidth: daily ? 1.5 : 1,
-        flexBasis: "22%",
-        flexGrow: 1,
+        flex: 1,
         gap: 6,
-        minWidth: 72,
-        paddingHorizontal: spacing.xs,
-        paddingVertical: spacing.sm,
+        minWidth: 0,
+        paddingHorizontal: 10,
+        paddingVertical: 12,
       }}
     >
       <View
         style={{
           alignItems: "center",
-          backgroundColor: occupant ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.7)",
-          borderRadius: 14,
+          backgroundColor: occupant ? "#FFF2CC" : "rgba(255,255,255,0.7)",
+          borderRadius: 999,
           height: 40,
           justifyContent: "center",
           width: 40,
         }}
       >
-        <Bed color={occupant ? colors.accent : colors.muted} size={20} strokeWidth={2.2} />
+        <Bed color={occupant ? colors.accent : colors.muted} size={22} strokeWidth={2.2} />
       </View>
+      <View style={{ alignSelf: "stretch", minWidth: 0, gap: 5 }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
-        <Text style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontWeight: "800" }]}>
+        <Text numberOfLines={1} style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontSize: 13, fontWeight: "800" }]}>
           Bed {index + 1}
         </Text>
         {daily ? <Clock color={colors.accent} size={11} strokeWidth={2.4} /> : null}
@@ -596,7 +640,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
         <>
           <Text
             numberOfLines={1}
-            style={{ alignSelf: "stretch", color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, textAlign: "center" }}
+            style={{ alignSelf: "stretch", color: colors.ink, fontFamily: fonts.display, fontSize: 18, lineHeight: 24 }}
           >
             {firstName ?? "Tenant"}
           </Text>
@@ -607,10 +651,11 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
           ) : null}
         </>
       ) : (
-        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5, }}>
+        <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 14, }}>
           Vacant
         </Text>
       )}
+      </View>
     </View>
   );
 }
@@ -644,7 +689,7 @@ function RoomCard({
   const occupiedOrHeld = room.occupiedCount + room.reservedCount;
   const isDeactivated = !room.active;
   const isMaintenance = room.active && room.status === "MAINTENANCE";
-  const statusLabel = isDeactivated ? "Deactivated" : humanizeToken(room.status);
+  const statusLabel = isDeactivated ? "Deactivated" : room.status === "PARTIALLY_OCCUPIED" ? "Partial" : humanizeToken(room.status);
   const statusTone = isDeactivated
     ? colors.muted
     : room.status === "OCCUPIED"
@@ -662,18 +707,19 @@ function RoomCard({
   const beds = Array.from({ length: room.capacity }, (_, index) => occupants[index] ?? null);
 
   return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
+    <Card style={{ paddingTop: spacing.md, paddingBottom: spacing.md }}>
+      <View style={{ gap: spacing.sm }}>
         <View style={{ gap: spacing.md, opacity: isDeactivated ? 0.55 : 1 }}>
-          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, paddingTop: 10, position: "relative" }}>
             <View style={{ gap: 2 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -1 }}>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 40, lineHeight: 48, letterSpacing: -1 }}>
                   {room.roomNumber}
                 </Text>
+                <View style={{ gap: 5 }}>
                 <View
                   style={{
                     alignItems: "center",
@@ -701,11 +747,16 @@ function RoomCard({
                     {isAc ? "AC" : "Non-AC"}
                   </Text>
                 </View>
+                <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+                  <Text style={[type.caption, { color: colors.inkSoft }]}>{humanizeToken(room.roomType)} · {room.capacity} bed{room.capacity === 1 ? "" : "s"}</Text>
+                </View>
+                </View>
               </View>
             </View>
-            <View style={{ alignItems: "flex-end", gap: 4 }}>
-              <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
-                <Text style={[type.caption, { color: statusTone, fontWeight: "900" }]}>
+            <View style={{ alignItems: "flex-end", gap: 4, position: "absolute", right: 0, top: 0, maxWidth: "100%" }}>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 5, maxWidth: "100%", backgroundColor: isDeactivated ? colors.neutralSoft : room.status === "OCCUPIED" ? colors.dangerSoft : isMaintenance ? colors.warningSoft : colors.primarySoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: statusTone }} />
+                <Text style={[type.caption, { color: statusTone, flexShrink: 1, fontWeight: "900" }]}>
                   {statusLabel}
                 </Text>
                 {isMaintenance ? (
@@ -719,15 +770,17 @@ function RoomCard({
                   </AnimatedPressable>
                 ) : null}
               </View>
-              <Text style={[type.caption, { color: colors.muted }]}>
-                {humanizeToken(room.roomType)}  -  {room.capacity} bed{room.capacity === 1 ? "" : "s"}
-              </Text>
             </View>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            {beds.map((occupant, index) => (
-              <BedTile index={index} key={index} occupant={occupant} />
+          <View style={{ gap: spacing.sm }}>
+            {Array.from({ length: Math.ceil(beds.length / 2) }, (_, row) => (
+              <View key={row} style={{ flexDirection: "row", gap: spacing.sm }}>
+                <BedTile index={row * 2} occupant={beds[row * 2]} />
+                {row * 2 + 1 < beds.length ? (
+                  <BedTile index={row * 2 + 1} occupant={beds[row * 2 + 1]} />
+                ) : <View style={{ flex: 1, minWidth: 0 }} />}
+              </View>
             ))}
           </View>
 
@@ -737,19 +790,19 @@ function RoomCard({
               least legible of them. The price takes the weight it deserves;
               the vacancy is a pill beside it, green only when there is
               something to let. */}
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md }}>
             {/* Two Texts side by side, not a caption nested in a display line.
                 Nested, the small tail sits on the big line's baseline metrics
                 and Android clips its descenders — the same way "per bed /
                 month" was being cut off on the room type card. */}
-            <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, gap: 4 }}>
+            <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, gap: 0 }}>
               <Text
                 numberOfLines={1}
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.4 }}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -0.4 }}
               >
                 {formatMoneyPaise(room.baseRentPaise)}
               </Text>
-              <Text style={[type.caption, { color: colors.muted }]}>per bed</Text>
+              <Text style={[type.caption, { color: colors.muted }]}>/bed</Text>
             </View>
 
           </View>
@@ -757,9 +810,10 @@ function RoomCard({
           {/* What the room comes with, at a glance. The list already answers
               "how full" and "how much"; this is the third question anybody asks
               about a room and it was only reachable by opening the edit form. */}
-          <RoomAmenityStrip amenities={room.amenities} custom={room.customAmenities} />
+          <RoomAmenityStrip amenities={room.amenities} custom={room.customAmenities} tiles />
         </View>
 
+        <View>
         {isDeactivated ? (
           <View style={{ flexDirection: "row" }}>
             <ActionButton disabled={!canManage} icon={RotateCcw} label="Reactivate" onPress={onReactivate} />
@@ -770,10 +824,7 @@ function RoomCard({
           // the type is what they agreed to rent — so offering them greyed out
           // would be three controls that can never be pressed. The line says
           // what would make them available again.
-          <Text style={[type.description, { color: colors.muted }]}>
-            {occupiedOrHeld} {occupiedOrHeld === 1 ? "bed is" : "beds are"} occupied or reserved. Move or check out
-            the tenants to edit, change status or deactivate this room.
-          </Text>
+          <NoticeBar tone="info" title="Room in use" message={`${occupiedOrHeld} ${occupiedOrHeld === 1 ? "bed is" : "beds are"} occupied or reserved. Move or check out the tenants to edit, change status or deactivate this room.`} />
         ) : (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ActionButton disabled={!canManage} icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
@@ -787,10 +838,11 @@ function RoomCard({
             />
           </View>
         )}
+        </View>
       </View>
 
       {showInfo ? (
-        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setShowInfo(false)} statusBarTranslucent transparent visible>
+        <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={() => setShowInfo(false)} statusBarTranslucent transparent visible>
           {/* Closes by its own close button or the device back button, not a tap
               on the scrim (user, 2026-09-29). */}
           <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
@@ -831,7 +883,7 @@ function RoomCard({
               ) : null}
             </View>
           </View>
-        </Modal>
+        </CenterModal>
       ) : null}
     </Card>
   );

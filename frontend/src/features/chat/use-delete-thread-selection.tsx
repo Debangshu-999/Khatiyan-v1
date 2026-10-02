@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useCallback, useState } from "react";
 import { BackHandler, Modal, Pressable, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
@@ -110,7 +111,7 @@ function ConfirmDeleteThread({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       {/* Cancel or the device back button closes it, not a tap on the scrim (user, 2026-09-29). */}
       <View
         style={{
@@ -136,7 +137,7 @@ function ConfirmDeleteThread({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             Delete conversation
           </Text>
-          <Text style={[type.description, { color: colors.muted, marginTop: spacing.sm }]}>
+          <Text style={[type.modalDescription, { color: colors.muted, marginTop: spacing.sm }]}>
             This removes it from your chats only. The other side keeps everything, and starting
             again opens an empty conversation.
           </Text>
@@ -168,6 +169,6 @@ function ConfirmDeleteThread({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

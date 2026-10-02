@@ -9,7 +9,7 @@ import type { PropertyBoardItem } from "@/store/services/notice-api";
 import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-export const PROPERTY_BOARD_ARTWORK = require("../../../assets/workspace/property-board.jpg");
+export const PROPERTY_BOARD_ARTWORK = require("../../../assets/images/workspace/property-board.jpg");
 
 function PropertyBoardCategoryIcon({ color, size = 22 }: { color: string; size?: number }) {
   return <MaterialCommunityIcons color={color} name="clipboard-text" size={size} />;

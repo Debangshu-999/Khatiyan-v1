@@ -238,7 +238,7 @@ export function NearbySearchSheet({
 
         {nothingYet ? (
           <Text
-            style={[type.description, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}
+            style={[type.modalDescription, { color: colors.muted, paddingVertical: spacing.sm, textAlign: "center" }]}
           >
             {settled.length < MIN_SUGGEST_LENGTH
               ? "Keep typing to see suggestions."

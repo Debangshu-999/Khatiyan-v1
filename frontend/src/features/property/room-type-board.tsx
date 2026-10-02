@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { AirVent, Bed, Fan, Pencil, Plus, Trash2, type LucideProps } from "lucide-react-native";
+import { AirVent, Bed, Fan, Pencil, Plus, type LucideProps } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import type { ComponentType } from "react";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
-import { UnderlineTabs } from "@/components/underline-tabs";
+import { SelectionTabs } from "@/components/selection-tabs";
 import { NoticeBar, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import {
   ROOM_CONDITIONINGS,
@@ -159,7 +160,10 @@ export function RoomTypeBoard({
 
   return (
     <View style={{ gap: spacing.md }}>
-      <UnderlineTabs
+      <SelectionTabs
+        distributed
+        compact
+        gap={0}
         active={tab}
         bleed={tabBleed}
         onChange={setActive}
@@ -168,7 +172,7 @@ export function RoomTypeBoard({
           // as non-AC only, and a tab that never completes reads as an error
           // the owner cannot clear.
           done: ROOM_CONDITIONINGS.some((variant) => slot(option, variant).length > 0),
-          icon: <BedCount occupancy={option} selected={option === tab} />,
+          warning: ROOM_CONDITIONINGS.every((variant) => slot(option, variant).length === 0),
           label: TAB_LABELS[option],
           value: option,
         }))}

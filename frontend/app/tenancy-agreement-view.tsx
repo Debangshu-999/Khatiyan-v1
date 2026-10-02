@@ -12,7 +12,7 @@ import { useGetMyAgreementQuery } from "@/store/services/compliance-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_AGREEMENT_ILLUSTRATION = require("../assets/workspace/No-Agreement_512x512.png");
+const NO_AGREEMENT_ILLUSTRATION = require("../assets/empty-states/No-Agreement_512x512.png");
 
 // Read-only view of the tenant's own accepted agreement — every term they agreed
 // to, in the same grouped layout the acceptance screen used.

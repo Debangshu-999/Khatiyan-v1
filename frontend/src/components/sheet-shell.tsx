@@ -16,6 +16,7 @@ export function SheetShell({
   children,
   dismissOnDrag = false,
   onClose,
+  onEndReached,
   title,
 }: {
   /**
@@ -43,6 +44,7 @@ export function SheetShell({
    */
   dismissOnDrag?: boolean;
   onClose: () => void;
+  onEndReached?: () => void;
   title: string;
 }) {
   const { colors, fonts } = useTheme();
@@ -192,6 +194,8 @@ export function SheetShell({
    * take.
    */
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView> | null>(null);
+  const historyViewportHeight = useRef(0);
+  const historyContentHeight = useRef(0);
 
   // The sheet follows the finger and decides on release. Shared, so the head
   // and the body cannot drift into two different ideas of what a dismissal is.
@@ -399,8 +403,18 @@ export function SheetShell({
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
               keyboardShouldPersistTaps="handled"
               overScrollMode="never"
+              onLayout={(event) => {
+                historyViewportHeight.current = event.nativeEvent.layout.height;
+                if (historyContentHeight.current > 0 && historyContentHeight.current <= historyViewportHeight.current + 240) onEndReached?.();
+              }}
+              onContentSizeChange={(_, height) => {
+                historyContentHeight.current = height;
+                if (historyViewportHeight.current > 0 && height <= historyViewportHeight.current + 240) onEndReached?.();
+              }}
               onScroll={(event) => {
                 scrollTop.current = event.nativeEvent.contentOffset.y;
+                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) onEndReached?.();
               }}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}

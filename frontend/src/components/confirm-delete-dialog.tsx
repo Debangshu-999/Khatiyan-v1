@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { Modal, Pressable, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -38,7 +39,7 @@ export function ConfirmDeleteDialog({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       {/* Cancel or the device back button closes it, not a tap on the scrim (user, 2026-09-29). */}
       <View
         style={{
@@ -64,7 +65,7 @@ export function ConfirmDeleteDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             {title}
           </Text>
-          <Text style={[type.description, { color: colors.muted, marginTop: spacing.sm }]}>
+          <Text style={[type.modalDescription, { color: colors.muted, marginTop: spacing.sm }]}>
             {message}
           </Text>
 
@@ -95,6 +96,6 @@ export function ConfirmDeleteDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

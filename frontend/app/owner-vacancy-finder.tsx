@@ -30,15 +30,11 @@ import { useListPropertyRoomChangeRequestsQuery, useListPropertyTenanciesQuery, 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_BEDS_ILLUSTRATION = require("../assets/workspace/No-Beds_512x512.png");
+const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
 
 type ConditioningFilter = "ANY" | RoomConditioning;
 type RoomTypeFilter = "ANY" | RoomType;
 type UpcomingRoom = { beds: number; date: string; room: OwnerRoom };
-
-// The same file the Home tool card draws, so updating the artwork updates both.
-// They were two different images, and only one of them ever got redrawn.
-const VACANCY_HEADER_ILLUSTRATION = require("../assets/home-tools/vacancy-finder.png");
 
 type SearchCriteria = {
   conditioning: ConditioningFilter;
@@ -258,12 +254,11 @@ export default function OwnerVacancyFinderScreen() {
           />
         </View>
       }
-      contentContainerStyle={{ paddingTop: spacing.xs }}
+      contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.xs }}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
     >
       <ScreenHeader
-        artwork={VACANCY_HEADER_ILLUSTRATION}
         italicTail="finder."
         subtitle={selectedProperty ? `Search available rooms in ${selectedProperty.name}.` : "Select a property on Home first."}
         title="Vacancy"

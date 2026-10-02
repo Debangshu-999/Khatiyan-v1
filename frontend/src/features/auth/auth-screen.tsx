@@ -717,42 +717,14 @@ export function AuthScreen() {
       ) : null}
 
       {activateInfoOpen ? (
-        <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setActivateInfoOpen(false)} statusBarTranslucent transparent visible>
-          {/* Closes by its own close button or the device back button, not a tap
-              on the scrim (user, 2026-09-29). */}
-          <View style={{
-              alignItems: "center",
-              backgroundColor: colors.overlay,
-              flex: 1,
-              justifyContent: "center",
-              padding: spacing.lg,
-            }}>
-            <View style={{
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: 18,
-                borderWidth: 1,
-                gap: spacing.sm,
-                padding: spacing.lg,
-                width: "100%",
-              }}>
-              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>Why set a PIN?</Text>
-                <Pressable accessibilityLabel="Close" hitSlop={8} onPress={() => setActivateInfoOpen(false)}>
-                  <X color={colors.ink} size={18} strokeWidth={2.2} />
-                </Pressable>
-              </View>
-              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+        <InfoModal onClose={() => setActivateInfoOpen(false)} title="How it works"><Text style={{ fontFamily: fonts.sans, fontSize: 15, lineHeight: 20, color: colors.muted }}>
                 If your property owner added you as a tenant or a manager, your account already exists — it just has no
                 PIN yet.
               </Text>
-              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+<Text style={{ fontFamily: fonts.sans, fontSize: 15, lineHeight: 20, color: colors.muted }}>
                 That is why signing up says the account is taken, and signing in says the details are wrong. Confirm the
                 number they registered and we will text you a code to set one.
-              </Text>
-            </View>
-          </View>
-        </Modal>
+              </Text></InfoModal>
       ) : null}
 
       {/* Content sheet: overlaps the band with rounded corners and fills the
@@ -799,7 +771,7 @@ export function AuthScreen() {
                 >
                   {/* A couple of px down: the display face sits high in its line
                       box, so an optically centred icon has to follow it. */}
-                  <Info color={colors.kicker} size={17} strokeWidth={2.2} style={{ marginTop: 3 }} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.2} style={{ marginTop: 3 }} />
                 </AnimatedPressable>
               ) : null}
             </View>
@@ -973,3 +945,5 @@ export function AuthScreen() {
     </ScreenScrollView>
   );
 }
+import { CircleHelp } from "lucide-react-native";
+import { InfoModal } from "@/components/info-modal";

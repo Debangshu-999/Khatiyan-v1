@@ -23,7 +23,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 export default function NotificationsFeedScreen() {
   const router = useGuardedRouter();
@@ -189,7 +189,7 @@ export default function NotificationsFeedScreen() {
             >
               Older notifications
             </Text>
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               {olderCount} older item{olderCount === 1 ? "" : "s"} from your current scope
             </Text>
           </View>

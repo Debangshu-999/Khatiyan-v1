@@ -1,3 +1,4 @@
+import { DigestPaymentsIcon, DigestConcernsIcon, DigestMoveInsIcon, DigestMoveOutsIcon } from "@/components/tenancy-line-icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Image, ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
@@ -21,13 +22,13 @@ import { ActionCard } from "@/components/action-card";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPillRow } from "@/components/filter-bubbles";
-import { GradientCtaCard } from "@/components/gradient-cta-card";
+import { ServicesIcon } from "@/components/services-icon";
 import { HeaderNote } from "@/components/header-note";
 import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { SkeletonCard, SkeletonPills, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
+import { Skeleton, SkeletonCard, SkeletonPills, SkeletonScreen, SkeletonTiles } from "@/components/skeleton";
 import {
   OwnerDashboardDataSkeleton,
   OwnerDigestCardSkeleton,
@@ -94,14 +95,10 @@ import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
 
 const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy", ImageSourcePropType> = {
-  deposit: require("../../assets/home-tools/deposit-manager.png"),
-  expenses: require("../../assets/home-tools/expense-tracker.png"),
-  pnl: require("../../assets/home-tools/profit-loss.png"),
-  // The earlier drawing, kept for the tile: its 450x300 canvas holds a nearly
-  // square 271x282 of ink, so in the `wide` box it lands at about 43x45pt —
-  // the same visual weight as its square neighbours. vacancy-finder.png is
-  // still the screen header's, where it has a 150x100 slot to fill.
-  vacancy: require("../../assets/workspace/vacancy-header.png"),
+  deposit: require("../../assets/icons/home-tools/deposit-manager.png"),
+  expenses: require("../../assets/icons/home-tools/expense-tracker.png"),
+  pnl: require("../../assets/icons/home-tools/profit-loss.png"),
+  vacancy: require("../../assets/icons/home-tools/vacancy-finder-home.png"),
 };
 
 /** How long Home is on screen before the greeting can appear over it. */
@@ -679,14 +676,29 @@ function FadeInUp({ children, style }: { children: ReactNode; style?: StyleProp<
  * the server refuses them anyway, so showing them a balance they cannot read
  * would only be a locked door.
  */
-const SERVICE_BALANCE_ILLUSTRATION = require("../../assets/workspace/payroll-payable-wallet.png");
+const SERVICE_BALANCE_ILLUSTRATION = require("../../assets/images/workspace/service-balance-purple-wallet.png");
 
 function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
   const { colors, fonts, type } = useTheme();
-  const balance = useGetServiceBalanceQuery(undefined, { refetchOnFocus: true }).data;
+  const balanceQuery = useGetServiceBalanceQuery(undefined, { refetchOnFocus: true });
+  const balance = balanceQuery.data;
+  const unlocked = useWalletUnlocked();
+  const [pinOpen, setPinOpen] = useState(false);
+
+  if (!balance && (balanceQuery.isLoading || balanceQuery.isFetching)) return (
+    <View accessibilityLabel="Loading wallet balance" style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+      <Skeleton width={56} height={46} radius={12} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <Skeleton width={110} height={18} />
+        <Skeleton width={80} height={24} />
+      </View>
+      <Skeleton width={14} height={18} radius={5} />
+    </View>
+  );
 
   return (
-    <AnimatedPressable accessibilityRole="button" onPress={onPress}>
+    <>
+    <AnimatedPressable accessibilityRole="button" onPress={() => { if (balance?.walletLockEnabled && !unlocked) setPinOpen(true); else onPress(); }}>
       <View
         style={{
           alignItems: "center",
@@ -701,8 +713,7 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
           paddingVertical: spacing.md,
         }}
       >
-        {/* The payroll wallet artwork, so the two money cards in this app read
-            as the same kind of thing. */}
+        {/* Sized at 3x this display slot for high-density phones. */}
         <Image
           accessibilityIgnoresInvertColors
           resizeMode="contain"
@@ -711,29 +722,30 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
         />
 
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.eyebrow, { color: colors.muted }]}>SERVICE BALANCE</Text>
-          {/* Zero is a real answer, so the figure renders either way rather
-              than holding the row empty until the first read lands. */}
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansSemiBold, fontSize: 13, lineHeight: 18 }}>Service Balance</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
-            {formatMoneyPaise(balance?.availablePaise ?? 0)}
+            {balance ? <><Text style={{ letterSpacing: 3.7 }}>₹</Text>{formatMoneyPaise(balance.availablePaise).replace("₹", "")}</> : "—"}
           </Text>
         </View>
 
         <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
       </View>
     </AnimatedPressable>
+    {pinOpen ? <WalletPinModal onCancel={() => setPinOpen(false)} onUnlocked={() => { setPinOpen(false); onPress(); }} /> : null}
+    </>
   );
 }
 
 function WorkspaceHeroCard({ onPress, role }: { onPress: () => void; role: "Owner" | "Manager" }) {
+  const { colors, fonts } = useTheme();
   return (
-    <GradientCtaCard
-      description="Onboard tenants, manage tenancies, billing, notices, concerns and discovery."
-      icon={PropertyIcon}
-      kicker={`${role} workspace`}
-      onPress={onPress}
-      title="Open workspace"
-    />
+    <AnimatedPressable accessibilityRole="button" accessibilityLabel="View Services" onPress={onPress}>
+      <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 20, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <ServicesIcon />
+        <Text style={{ flex: 1, color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 26 }}>View Services</Text>
+        <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -1282,8 +1294,8 @@ function TenantHome({
   );
 }
 
-const FOOD_PREFERENCE_ARTWORK = require("../../assets/workspace/food-preference-module-card.png");
-const FOOD_PREFERENCE_BACKGROUND = require("../../assets/workspace/tenant-food-card-background.jpg");
+const FOOD_PREFERENCE_ARTWORK = require("../../assets/images/workspace/food-preference-module-card.png");
+const FOOD_PREFERENCE_BACKGROUND = require("../../assets/images/workspace/tenant-food-card-background.jpg");
 const FoodPlanIcon = foodIcon("silverware-fork-knife");
 
 /**
@@ -1611,7 +1623,7 @@ type OwnerTab = "workspace" | "dashboard";
  * <p>Pexels licence — free for commercial use, no attribution required.
  * https://www.pexels.com/photo/aerial-view-of-urban-residential-complex-30353894/
  */
-const PROPERTY_CARD_ART = require("../../assets/workspace/property-card.jpg");
+const PROPERTY_CARD_ART = require("../../assets/images/workspace/property-card.jpg");
 
 function OwnerHome({
   account,
@@ -2403,7 +2415,7 @@ function WorkspaceTab({
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </View>
 
-      <Section title="Tools">
+      <Section title="Property Tools">
         {/* Every tool stays on screen whatever the manager holds. Tapping a
             blocked one refuses with a toast that names it, via the shared route
             gate — unlike a workspace MODULE, which is removed outright. The
@@ -2412,7 +2424,7 @@ function WorkspaceTab({
             looks broken, and leaves the survivors stretched across the row. */}
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} wide />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.expenses} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -2443,7 +2455,7 @@ function WorkspaceTab({
               // ReceiptText, the same mark the owner and tenant bill cards
               // carry. A payment made today is a bill being settled, and this
               // tile opens straight into that list.
-              icon={ReceiptText}
+              icon={DigestPaymentsIcon}
               label="Payments"
               onPress={() => onNavigate("/owner-billing")}
               value={String(today.paymentsMadeToday)}
@@ -2451,7 +2463,7 @@ function WorkspaceTab({
             <DigestTile
               hint="Raised today"
               highlight={today.concernsRaisedToday > 0}
-              icon={AlertCircle}
+              icon={DigestConcernsIcon}
               label="Concerns"
               onPress={() => onNavigate(OWNER_CONCERNS_ROUTE)}
               value={String(today.concernsRaisedToday)}
@@ -2461,7 +2473,7 @@ function WorkspaceTab({
             <DigestTile
               hint="Started today"
               highlight={today.tenanciesStartedToday > 0}
-              icon={UserPlus}
+              icon={DigestMoveInsIcon}
               label="Move-ins"
               onPress={() => onNavigate("/owner-tenancy")}
               value={String(today.tenanciesStartedToday)}
@@ -2469,7 +2481,7 @@ function WorkspaceTab({
             <DigestTile
               hint="Ending today"
               highlight={today.tenanciesEndingToday > 0}
-              icon={LogOut}
+              icon={DigestMoveOutsIcon}
               label="Move-outs"
               // Only the tenants leaving today, each with End tenancy. The exit
               // requests queue buried them among pending and future requests.
@@ -2517,10 +2529,10 @@ function WorkspaceTabLoading({
         <WorkspaceHeroCard onPress={() => onNavigate("/owner")} role={workspaceRole} />
       </View>
 
-      <Section title="Tools">
+      <Section title="Property Tools">
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} wide />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.vacancy} label="Vacancy finder" onPress={() => onNavigate("/owner-vacancy-finder")} />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.expenses} label="Expenses" onPress={() => onNavigate("/owner-expenses")} />
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -2540,21 +2552,11 @@ function HomeToolBox({
   badge,
   label,
   onPress,
-  wide = false,
 }: {
   artwork: ImageSourcePropType;
   badge?: number;
   label: string;
   onPress: () => void;
-  /**
-   * The artwork is landscape rather than square.
-   *
-   * <p>`contain` fits to the narrower side, so a 3:2 image in a 48-square box
-   * renders 48 wide and 32 tall — two thirds the height of its square
-   * neighbours, which is what made one tile look shrunken. Widening the box
-   * lets it reach the same height instead.
-   */
-  wide?: boolean;
 }) {
   const { colors, fonts } = useTheme();
   return (
@@ -2599,7 +2601,7 @@ function HomeToolBox({
         accessibilityIgnoresInvertColors
         resizeMode="contain"
         source={artwork}
-        style={{ height: 48, width: wide ? 72 : 48 }}
+        style={{ height: 48, width: 48 }}
       />
       <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}>
         {label}
@@ -3051,7 +3053,7 @@ function DigestTile({
         {/* Bare on the tile's own white — no chip. The tile is already a
             surface, and a filled square inside it read as a control. */}
         <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
-          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+          <Icon color="#000000" size={40} strokeWidth={2.7} />
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
@@ -3816,3 +3818,4 @@ function initialsFor(name: string) {
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 }
+import { useWalletUnlocked, WalletPinModal } from "@/features/billing/wallet-pin-gate";

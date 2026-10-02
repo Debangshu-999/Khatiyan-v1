@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { SelectionTabs } from "@/components/selection-tabs";
 import { AppBackground } from "@/components/app-background";
 import { EmptyState } from "@/components/empty-state";
 import { MarqueeText } from "@/components/marquee-text";
@@ -808,7 +809,7 @@ function ForecastRow({
 
 /**
  * The meals as a row of bubbles (user, 2026-09-28), chosen the same way as
- * the day strip above them: the picked one filled, the rest outlined.
+ * the transaction filters: a grey selected label and a black underline.
  */
 function MealBubbles({
   active,
@@ -819,45 +820,5 @@ function MealBubbles({
   meals: MealType[];
   onChange: (meal: MealType) => void;
 }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      {meals.map((meal) => {
-        const selected = meal === active;
-        return (
-          <AnimatedPressable
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            key={meal}
-            onPress={() => onChange(meal)}
-            style={{
-              alignItems: "center",
-              backgroundColor: selected ? colors.tabSelected : colors.surface,
-              borderColor: selected ? colors.tabSelectedDeep : colors.border,
-              borderRadius: 999,
-              borderWidth: 1,
-              flex: 1,
-              flexDirection: "row",
-              gap: spacing.xs,
-              justifyContent: "center",
-              minHeight: 40,
-              paddingHorizontal: spacing.sm,
-            }}
-          >
-            <MealGlyph color={selected ? colors.onTabSelected : colors.ink} meal={meal} size={16} />
-            <Text
-              numberOfLines={1}
-              style={{
-                color: selected ? colors.onTabSelected : colors.ink,
-                fontFamily: selected ? fonts.sansBold : fonts.sansMedium,
-                fontSize: 13,
-              }}
-            >
-              {MEAL_LABEL[meal]}
-            </Text>
-          </AnimatedPressable>
-        );
-      })}
-    </View>
-  );
+  return <SelectionTabs active={active} onChange={onChange} distributed gap={spacing.sm} options={meals.map((meal) => ({ value: meal, label: MEAL_LABEL[meal], icon: (color) => <MealGlyph color={color} meal={meal} size={16} /> }))} />;
 }

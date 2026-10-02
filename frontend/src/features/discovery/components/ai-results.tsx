@@ -13,7 +13,7 @@ import type { FilterMatch, MatchStrength } from "../discovery-match";
 import { ListingSortButton, sortListings } from "./listing-sort";
 import { PropertyListingCard } from "./property-listing-card";
 
-const EMPTY_SEARCH_ILLUSTRATION = require("../../../../assets/discovery-empty-search.png");
+const EMPTY_SEARCH_ILLUSTRATION = require("../../../../assets/empty-states/discovery-empty-search.png");
 
 /** The sparkle beside "Found n results". The chips under it indent by this. */
 const HEADER_ICON_SIZE = 16;

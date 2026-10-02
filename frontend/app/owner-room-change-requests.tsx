@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AlertModal } from "@/components/alert-modal";
@@ -47,9 +48,9 @@ import { useTheme } from "@/theme/use-theme";
 import { SearchField } from "@/components/search-field";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 
-const ROOM_CHANGE_ARTWORK = require("../assets/workspace/room-change.png");
+const ROOM_CHANGE_ARTWORK = require("../assets/images/workspace/room-change.png");
 
-const REQUEST_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const REQUEST_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 type ReviewMode = "approve" | "reject";
 
@@ -543,6 +544,7 @@ function RoomChangeCard({
             <ActionButton
               icon={History}
               label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
+              borderColor={colors.borderStrong}
               onPress={() => setShowTimeline(true)}
               variant="outline"
             />
@@ -745,7 +747,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
           width: 26,
         }}
       >
-        <Info color={colors.ink} size={15} strokeWidth={2.3} />
+        <CircleHelp color={colors.ink} size={15} strokeWidth={2.3} />
       </AnimatedPressable>
     </View>
   );
@@ -754,7 +756,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
 function InfoPopover({ onClose, title, value }: { onClose: () => void; title: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
@@ -779,7 +781,7 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
           </Text>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -977,3 +979,4 @@ function StatusBadge({ status }: { status: string }) {
     </View>
   );
 }
+import { CircleHelp } from "lucide-react-native";

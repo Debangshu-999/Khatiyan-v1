@@ -140,6 +140,8 @@ export type TenancySummary = {
   // Agreement-backed tenancies carry stamped lock-in terms and exit premature-only.
   /** True when the agreement runs for a fixed term rather than indefinitely. */
   fixedTerm: boolean;
+  /** Stamped fixed agreement length; null for indefinite, absent on older responses. */
+  agreementValidityMonths?: number | null;
   /** The day a fixed term — and the tenancy — ends. Null when indefinite. */
   agreementEndDate: string | null;
   /** What leaving early costs, in the owner's words. Applied by a person. */
@@ -243,6 +245,7 @@ export type TenancyExitRequest = {
   depositSettlementAmountPaise: number | null;
   decidedByUserId: string | null;
   decidedByName: string | null;
+  decidedByRole?: string | null;
   decidedAt: string | null;
   executedAt: string | null;
   /** The date the notice counts from; inherited from the request this re-raises. */
@@ -254,6 +257,7 @@ export type TenancyExitRequest = {
   withdrawalDecidedAt: string | null;
   withdrawalDecidedByUserId: string | null;
   withdrawalDecidedByName: string | null;
+  withdrawalDecidedByRole?: string | null;
   withdrawalAdminNotes: string | null;
   /** Server-computed: whether the tenant may still ask to undo this approval. */
   withdrawalWindowOpen: boolean;
@@ -340,6 +344,7 @@ export type TenancyRoomChangeRequest = {
   executedRentAmountPaise: number | null;
   decidedByUserId: string | null;
   decidedByName: string | null;
+  decidedByRole?: string | null;
   decidedAt: string | null;
   executedAt: string | null;
   /** When this stops being interactive. */

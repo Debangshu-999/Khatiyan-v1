@@ -36,7 +36,7 @@ export function UploadRulesInfo({
         style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
         tapLockMs={0}
       >
-        <Info color={colors.kicker} size={17} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.4} />
       </AnimatedPressable>
 
       {open ? (
@@ -68,3 +68,4 @@ function Rule({ label, value }: { label: string; value: string }) {
     </View>
   );
 }
+import { CircleHelp } from "lucide-react-native";

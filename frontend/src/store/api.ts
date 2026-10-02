@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 import { deviceLabel, devicePlatform } from "@/auth/device-identity";
+import { clearWalletAccess, walletAccessToken } from "@/auth/wallet-access";
 import { checkResponseShape } from "@/store/response-guards";
 import { sessionExpired } from "@/store/slices/auth-slice";
 import type { RootState } from "@/store/store";
@@ -128,6 +129,8 @@ export const api = createApi({
         if (token) {
           headers.set("Authorization", `Bearer ${token}`);
         }
+        const walletToken = walletAccessToken(token);
+        if (walletToken && ["listServiceBalanceEntries", "startServiceBalanceTopUp", "getServiceBalanceTopUp"].includes(apiContext.endpoint)) headers.set("X-Wallet-Unlock", walletToken);
         // Names this device in the signed-in devices list. Sent on every request
         // rather than only on sign-in: a token is minted by six endpoints, and
         // the server records a session from whichever one was used.
@@ -145,6 +148,7 @@ export const api = createApi({
     }
 
     const result = await baseQuery(args, apiContext, extraOptions);
+    if (result.error?.status === 403 && (result.error.data as { code?: string } | undefined)?.code === "WALLET_LOCKED") clearWalletAccess();
 
     // Dev-only: a failed read otherwise leaves no trace at all. Screens that
     // render nothing when a query fails look exactly like screens whose data is

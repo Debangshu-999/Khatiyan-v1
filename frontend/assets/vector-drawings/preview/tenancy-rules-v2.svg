@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300">
+  <rect width="640" height="300" fill="white"/>
+  <g fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(66 30) scale(3)">
+      <path d="M12 5H36L47 16V40M36 5V16H47M12 5Q8 5 8 9V51Q8 55 12 55H29"/>
+      <path d="M16 23H35M16 30H30M16 37H25M16 47Q20 39 22 45T28 44 M32 47L45 34L51 40L38 53L30 55Z M42 37L48 43"/>
+    </g>
+    <g transform="translate(378 30) scale(3)">
+      <path d="M19 9H12Q8 9 8 13V52Q8 56 12 56H31M34 9H41Q45 9 45 13V29"/>
+      <rect x="18" y="5" width="17" height="9" rx="3"/>
+      <path d="M15 23L18 26L23 20M28 23H37M15 34L18 37L23 31M28 34H31M15 46H25"/>
+      <circle cx="44" cy="45" r="14"/>
+      <path d="M36 45H52M46 39L52 45L46 51"/>
+    </g>
+  </g>
+  <g fill="#111827" font-family="Arial, sans-serif" font-size="22" font-weight="600" text-anchor="middle">
+    <text x="160" y="260">Tenancy agreement</text>
+    <text x="472" y="260">Exit policies</text>
+  </g>
+</svg>

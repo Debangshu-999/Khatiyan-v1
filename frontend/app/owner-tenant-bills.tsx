@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, BackHandler, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, BackHandler, Keyboard, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +21,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { NoticeBar } from "@/features/owner/owner-ui";
-import { ActionButton, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { BillCard, compareByPeriodDesc } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useCreateOneOffBillMutation, useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
@@ -29,9 +29,9 @@ import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/serv
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 const PAGE_SIZE = 8;
 
@@ -258,21 +258,6 @@ function TenantBillsHeader({
   );
 }
 
-function TenantCountHeading({ count }: { count: number }) {
-  const { colors, fonts } = useTheme();
-  const label = `${count} tenant${count === 1 ? "" : "s"}`;
-
-  return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-      <View style={{ gap: 6 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, lineHeight: 27 }}>{label}</Text>
-        <View style={{ backgroundColor: colors.accent, borderRadius: 999, height: 3, width: 24 }} />
-      </View>
-      <View style={{ backgroundColor: colors.borderStrong, flex: 1, height: 1 }} />
-    </View>
-  );
-}
-
 function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySummary) => void; propertyId: string }) {
   const { colors, fonts, type } = useTheme();
   const [search, setSearch] = useState("");
@@ -293,7 +278,6 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
 
   return (
     <View style={{ gap: spacing.md }}>
-      <TenantCountHeading count={tenancies.length} />
       <SearchField onChangeText={setSearch} placeholder="Search by tenant name, phone or tenancy ID" value={search} />
 
       {tenanciesQuery.isFetching && tenancies.length === 0 ? <OwnerTenancyListSkeleton rows={4} /> : null}
@@ -488,9 +472,10 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
   const [createOneOffBill, state] = useCreateOneOffBillMutation();
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const [pendingBill, setPendingBill] = useState<{ amountPaise: number; reason: string } | null>(null);
   const form = useFormErrors<"amount" | "reason">();
 
-  async function submit() {
+  function requestCreate() {
     const trimmedReason = reason.trim();
     const rupees = Number(amount.trim());
     const cleared = form.validate({
@@ -500,9 +485,17 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
     if (!cleared) {
       return;
     }
+    Keyboard.dismiss();
+    setPendingBill({ amountPaise: Math.round(rupees * 100), reason: trimmedReason });
+  }
+
+  async function submit() {
+    if (!pendingBill || state.isLoading) return;
+    const payload = pendingBill;
+    setPendingBill(null);
     try {
       await createOneOffBill({
-        payload: { amountPaise: Math.round(rupees * 100), reason: trimmedReason },
+        payload,
         tenancyId: tenancy.id,
       }).unwrap();
       toast.success("One-off bill raised.");
@@ -563,11 +556,21 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
             disabled={state.isLoading || form.blocked}
             icon={Plus}
             label={state.isLoading ? "Adding…" : "Add bill"}
-            onPress={() => void submit()}
+            onPress={requestCreate}
           />
         </View>
       </SheetShell>
 
+      {pendingBill ? (
+        <ConfirmDialog
+          animatedTransition
+          title="Create one-off bill"
+          message={`Do you want to create a one-off bill of ${formatMoneyPaise(pendingBill.amountPaise)} for ${tenancy.tenantName?.trim() || "this tenant"}?`}
+          confirmLabel="Create bill"
+          onCancel={() => setPendingBill(null)}
+          onConfirm={() => void submit()}
+        />
+      ) : null}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </>
   );

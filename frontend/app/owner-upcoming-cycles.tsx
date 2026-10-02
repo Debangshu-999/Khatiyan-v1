@@ -23,9 +23,9 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
-const BILLING_HEADER_ILLUSTRATION = require("../assets/workspace/billing-header.png");
+const BILLING_HEADER_ILLUSTRATION = require("../assets/images/workspace/billing-header.png");
 
 export default function OwnerUpcomingCyclesScreen() {
 

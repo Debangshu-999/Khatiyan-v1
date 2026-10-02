@@ -32,6 +32,15 @@ export function weekdaysLabel(mask: number) {
   return days.length ? days.join(" ") : "No days";
 }
 
+export function compactWeekdaysLabel(mask: number) {
+  const days = WEEKDAYS.filter(day => hasDay(mask, day.bit));
+  if (days.length === 1) return days[0].label;
+  const continuous = days.every((day, index) => index === 0 || day.bit === days[index - 1].bit + 1);
+  return continuous
+    ? `${days[0].label} - ${days[days.length - 1].label}`
+    : days.map(day => day.label).join(", ");
+}
+
 // Number of working days that fall in the current calendar month.
 export function workingDaysInCurrentMonth(mask: number) {
   const effective = normalizeMask(mask);

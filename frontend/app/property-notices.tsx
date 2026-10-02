@@ -15,7 +15,7 @@ import { useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NOTICE_EMPTY_ILLUSTRATION = require("../assets/workspace/No-Notice_512x512.png");
+const NOTICE_EMPTY_ILLUSTRATION = require("../assets/empty-states/No-Notice_512x512.png");
 
 export default function PropertyNoticesScreen() {
   const { colors, type } = useTheme();

@@ -23,10 +23,9 @@ import {
   Plus,
   Power,
   ShieldCheck,
-  Trash2,
   UserRound,
-  type LucideProps,
-} from "lucide-react-native";
+  type LucideProps } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { clearStoredSession, saveSession } from "@/auth/session-storage";

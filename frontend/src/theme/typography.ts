@@ -139,6 +139,12 @@ export const type = {
     fontSize: 12,
     lineHeight: 16,
   } satisfies TextStyle,
+  /** Modal and bottom-sheet explanations with roomier line spacing. */
+  modalDescription: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    lineHeight: 20,
+  } satisfies TextStyle,
   body: {
     fontFamily: fonts.sans,
     fontSize: 15,

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, ImagePlus, Trash2 } from "lucide-react-native";
+import { Camera, ImagePlus } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";

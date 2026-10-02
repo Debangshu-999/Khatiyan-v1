@@ -256,7 +256,7 @@ export function ReadonlyField({
         ) : null}
         {onInfoPress ? (
           <AnimatedPressable accessibilityLabel={`About ${label.toLowerCase()}`} accessibilityRole="button" hitSlop={10} onPress={onInfoPress}>
-            <Info color={colors.kicker} size={15} strokeWidth={2.2} />
+        <CircleHelp color={colors.kicker} size={15} strokeWidth={2.2} />
           </AnimatedPressable>
         ) : null}
         {onPress ? <ChevronRight color={colors.kicker} size={16} strokeWidth={2.2} /> : null}
@@ -273,3 +273,4 @@ export function ReadonlyField({
     </AnimatedPressable>
   );
 }
+import { CircleHelp } from "lucide-react-native";

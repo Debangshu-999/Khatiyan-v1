@@ -94,7 +94,7 @@ export function FoodProfilesTab({
 
       {!loading && profiles.length === 0 ? (
         <EmptyState
-          artwork={require("../../../assets/workspace/food-module-no-profiles.png")}
+          artwork={require("../../../assets/empty-states/food-module-no-profiles.png")}
           description="Create one profile per diet you cook for, like vegetarian, non-vegetarian or Jain."
           title="No food profiles yet"
         />

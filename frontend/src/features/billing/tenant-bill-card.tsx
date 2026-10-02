@@ -187,7 +187,7 @@ export function TenantBillCard({
               }}
               tapLockMs={0}
             >
-              <Info color={colors.kicker} size={12} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={12} strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
           <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
@@ -437,3 +437,4 @@ function payButtonLabel(cycle: BillingCycle, openAttempt: PaymentIntent | null) 
   }
   return "Pay now";
 }
+import { CircleHelp } from "lucide-react-native";

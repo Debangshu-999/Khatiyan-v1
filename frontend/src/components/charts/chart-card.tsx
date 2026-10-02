@@ -70,7 +70,7 @@ export function ChartCard({
         </GhostText>
         {info && !skeleton ? (
           <AnimatedPressable accessibilityLabel={`About ${title}`} accessibilityRole="button" hitSlop={10} onPress={() => setInfoOpen(true)}>
-            <Info color={colors.muted} size={15} strokeWidth={2} />
+        <CircleHelp color={colors.muted} size={15} strokeWidth={2} />
           </AnimatedPressable>
         ) : null}
         {trailing && !skeleton && status === "OK" ? <View style={{ marginLeft: "auto" }}>{trailing}</View> : null}
@@ -321,3 +321,4 @@ export function ChartToggle<T extends string>({
     </View>
   );
 }
+import { CircleHelp } from "lucide-react-native";

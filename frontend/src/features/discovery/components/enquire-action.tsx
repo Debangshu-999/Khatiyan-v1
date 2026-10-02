@@ -277,7 +277,7 @@ function EnquirySheet({
       {/* Names what was actually consented to rather than assuming phone. Someone
           who declined the call-back should not be told their number is going
           over on the very screen where they send the message. */}
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         {sharedNames.length > 0
           ? `${propertyName} will see your name and ${sharedNames.join(" and ")} so they can reply.`
           : `${propertyName} will only be able to reply in the app.`}

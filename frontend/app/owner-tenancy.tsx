@@ -1,3 +1,7 @@
+import { CenterModal } from "@/components/center-modal";
+import { ExitTenancyIcon } from "@/components/artwork-icon";
+import { TenancyAgreementIcon, ExitPolicyIcon } from "@/components/tenancy-rule-icons";
+import { ActiveTenancyIcon, OnNoticeTenancyIcon, StartedTenancyIcon, EndedTenancyIcon, CreateTenancyIcon, RoomChangeIcon, TenancyHistoryIcon, UpcomingExitsIcon } from "@/components/tenancy-line-icons";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useLocalSearchParams } from "expo-router";
@@ -7,7 +11,7 @@ import { useToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useCancelPendingTenancyMutation } from "@/store/services/compliance-api";
 import { errorMessage } from "@/features/forms/server-error";
-import { Image, Modal, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Text, View } from "react-native";
 import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Bell, FileSignature, History, Lock, LogOut, Minus, SlidersHorizontal, UserMinus, UserPlus, Users, UsersRound, X } from "lucide-react-native";
 
 import { ActionCard } from "@/components/action-card";
@@ -17,7 +21,8 @@ import { useScreenAccessGuard } from "@/features/owner/use-screen-access-guard";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { PaginationBar } from "@/components/pagination-bar";
+import { ListEnd } from "@/components/list-end";
+import { useAccumulatedPages } from "@/hooks/use-accumulated-pages";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -25,6 +30,7 @@ import { SearchField } from "@/components/search-field";
 import { Section } from "@/components/section";
 import {
   OwnerTenancyInitialSkeleton,
+  OwnerTenancyOverviewSkeleton,
   OwnerTenancyListSkeleton,
   OwnerTenancySnapshotSkeleton,
 } from "@/components/skeletons/owner";
@@ -45,13 +51,14 @@ import { metricFontSize } from "@/theme/metric-size";
 
 import { useTheme } from "@/theme/use-theme";
 import { HeaderGradient } from "@/components/header-gradient";
+import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react-native";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
-const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
 const TENANCY_PAGE_SIZE = 10;
-const TENANCY_HEADER_ILLUSTRATION = require("../assets/workspace/tenancy-header.png");
+const TENANCY_HEADER_ILLUSTRATION = require("../assets/images/workspace/tenancy-header.png");
 
 export default function OwnerTenancyWorkspaceScreen() {
   const router = useGuardedRouter();
@@ -60,6 +67,7 @@ export default function OwnerTenancyWorkspaceScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
   // row is about the stays listed in this sheet — not the exit REQUESTS screen,
@@ -86,6 +94,7 @@ export default function OwnerTenancyWorkspaceScreen() {
   const [committedQuery, setCommittedQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StayStatusFilter>("ALL");
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  useEffect(() => { setActivePage(0); setPastPage(0); }, [selectedProperty?.id]);
   // Debounce the search box so each keystroke doesn't fire a request; reset both
   // tabs to the first page whenever the committed query changes.
   useEffect(() => {
@@ -127,9 +136,26 @@ export default function OwnerTenancyWorkspaceScreen() {
     { skip: !selectedProperty || !historyOpen },
   );
 
+  // Fast Refresh preserves RTK Query data (and component state). Refresh the
+  // workspace on entry/reload and keep the complete skeleton until it settles,
+  // rather than treating cached data as an already-loaded opening screen.
+  useEffect(() => {
+    if (!selectedProperty) return;
+    let active = true;
+    setWorkspaceReady(false);
+    void Promise.allSettled([
+      dashboardQuery.refetch(),
+      roomsQuery.refetch(),
+      activeTenanciesQuery.refetch(),
+    ]).then(() => { if (active) setWorkspaceReady(true); });
+    return () => { active = false; };
+    // Entry/property changes only; paging and filtering keep their loaded cards.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProperty?.id]);
+
   const rooms = roomsQuery.data ?? [];
-  const activeTenancies = activeTenanciesQuery.data;
-  const pastTenancies = pastTenanciesQuery.data;
+  const activeTenancies = useAccumulatedPages(`${selectedProperty?.id}:${committedQuery}:${statusFilter}`, activeTenanciesQuery.currentData);
+  const pastTenancies = useAccumulatedPages(`${selectedProperty?.id}:${committedQuery}`, pastTenanciesQuery.currentData);
   // The panel is the live list only; history is a modal of its own.
   const visiblePage = activeTenancies;
   const isLoading = activeTenanciesQuery.isFetching;
@@ -155,7 +181,7 @@ export default function OwnerTenancyWorkspaceScreen() {
       })
       .sort((a, b) => (a.checkoutDate ?? "").localeCompare(b.checkoutDate ?? ""));
   }, [activeTenancies]);
-  const tenancySnapshot = dashboardQuery.data?.tenancy;
+  const tenancySnapshot = dashboardQuery.currentData?.tenancy;
 
   function openActiveTenancy(tenancy: TenancySummary) {
     const roomLabel = rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? "";
@@ -192,6 +218,10 @@ export default function OwnerTenancyWorkspaceScreen() {
       background={<HeaderGradient />}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (canView("TENANCIES") && activeTenanciesQuery.currentData?.hasNext && !isLoading && !isError && contentSize.height - contentOffset.y - layoutMeasurement.height <= 240) setActivePage(activeTenanciesQuery.currentData.page + 1);
+      }}
+      scrollEventThrottle={16}
     >
       {/* Main module screen, so the standalone Back pill and no line header —
           the inline arrow belongs to nested screens, which name their parent
@@ -220,24 +250,21 @@ export default function OwnerTenancyWorkspaceScreen() {
         />
       ) : null}
 
-      {selectedProperty ? (
+      {selectedProperty ? (!workspaceReady ? <OwnerTenancyInitialSkeleton /> : (
         <>
-
+          {dashboardQuery.isFetching && !dashboardQuery.currentData ? <OwnerTenancyOverviewSkeleton /> : <>
           {tenancySnapshot ? (
-            <Section title="Tenancy snapshot">
+            <View style={{ gap: spacing.md }}>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <TenancySnapshotTile
                   delta={{ current: tenancySnapshot.activeTenants, previous: tenancySnapshot.activeTenantsPrevMonth }}
-                  icon={Users}
-                  // "Active" alone: in the rail the label has half a tile
-                  // to share with the glyph, and "Active tenants" ellipsised to
-                  // "Active ten…". The section already says these are tenancies.
+                  icon={ActiveTenancyIcon}
                   label="Active"
                   value={String(tenancySnapshot.activeTenants)}
                 />
                 <TenancySnapshotTile
                   hint="Notice served"
-                  icon={Bell}
+                  icon={OnNoticeTenancyIcon}
                   label="On notice"
                   value={String(tenancySnapshot.onNotice)}
                 />
@@ -245,26 +272,23 @@ export default function OwnerTenancyWorkspaceScreen() {
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <TenancySnapshotTile
                   delta={{ current: tenancySnapshot.startedThisMonth, previous: tenancySnapshot.startedPrevMonth }}
-                  icon={UserPlus}
+                  icon={StartedTenancyIcon}
                   label="Started"
                   value={String(tenancySnapshot.startedThisMonth)}
                 />
                 <TenancySnapshotTile
                   delta={{ current: tenancySnapshot.endedThisMonth, previous: tenancySnapshot.endedPrevMonth }}
-                  icon={UserMinus}
+                  icon={EndedTenancyIcon}
                   label="Ended"
                   lowerIsBetter
                   value={String(tenancySnapshot.endedThisMonth)}
                 />
               </View>
-            </Section>
+            </View>
           ) : dashboardQuery.isFetching ? (
-            // Inside the Section, so the heading stays put and only the tiles
-            // under it are pending — the page does not grow a heading when the
-            // data lands.
-            <Section title="Tenancy snapshot">
+            <View style={{ gap: spacing.md }}>
               <OwnerTenancySnapshotSkeleton />
-            </Section>
+            </View>
           ) : null}
 
           <Section title="Tenancy tools">
@@ -272,21 +296,21 @@ export default function OwnerTenancyWorkspaceScreen() {
               <TenancyToolRow
                 tools={[
                   {
-                    icon: UserPlus,
+                    icon: CreateTenancyIcon,
                     key: "create",
                     label: "Create tenancy",
                     onPress: () => guard("TENANCY_CREATE", "Creating a tenancy", () => router.push("/owner-onboard-tenant")),
                   },
                   {
                     badge: dashboardQuery.data?.attention.pendingExitRequests ?? 0,
-                    icon: LogOut,
+                    icon: ExitTenancyIcon,
                     key: "exit-requests",
                     label: "Exit requests",
                     onPress: () => guard("EXIT_REQUESTS", "Exit requests", () => router.push("/owner-exit-requests")),
                   },
                   {
                     badge: dashboardQuery.data?.attention.pendingRoomChangeRequests ?? 0,
-                    icon: ArrowLeftRight,
+                    icon: RoomChangeIcon,
                     key: "room-change",
                     label: "Room change",
                     onPress: () => guard("ROOM_CHANGES", "Room changes", () => router.push("/owner-room-change-requests")),
@@ -296,14 +320,14 @@ export default function OwnerTenancyWorkspaceScreen() {
               <TenancyToolRow
                 tools={[
                   {
-                    icon: History,
+                    icon: TenancyHistoryIcon,
                     key: "history",
                     label: "Tenancy history",
                     onPress: () => guard("TENANCIES", "Tenancy history", () => setHistoryOpen(true)),
                   },
                   {
                     badge: upcomingExits.length,
-                    icon: LogOut,
+                    icon: UpcomingExitsIcon,
                     key: "upcoming-exits",
                     label: "Upcoming exits",
                     onPress: () => guard("TENANCIES", "Upcoming exits", () => setUpcomingOpen(true)),
@@ -320,20 +344,23 @@ export default function OwnerTenancyWorkspaceScreen() {
           <Section title="Tenancy rules">
             <ActionCard
               borderRadius={radii.card}
-              icon={FileSignature}
+              icon={TenancyAgreementIcon}
+              iconSize={36}
               title="Tenancy agreement"
               description="Choose whether monthly tenancies need an accepted agreement, and author its default terms."
               onPress={() => guard("TENANCY_RULES", "Tenancy agreement", () => router.push("/owner-tenancy-agreement"))}
             />
             <ActionCard
               borderRadius={radii.card}
-              icon={FileSignature}
+              icon={ExitPolicyIcon}
+              iconSize={36}
               title="Exit policies"
               description="Set the damage-charge schedule and move-out checklist used when a tenancy ends and its deposit is settled."
               onPress={() => guard("TENANCY_RULES", "Exit policies", () => router.push("/owner-exit-policies"))}
             />
           </Section>
 
+          </>}
           <Section title="Property stays">
             {!canView("TENANCIES") ? (
               // A panel, not a destination — so it explains rather than refusing
@@ -419,23 +446,13 @@ export default function OwnerTenancyWorkspaceScreen() {
                 );
               })}
 
-              {visiblePage && visiblePage.totalElements > 0 ? (
-                <PaginationBar
-                  hasNext={visiblePage.hasNext}
-                  hasPrevious={visiblePage.hasPrevious}
-                  onNext={() => setActivePage((page) => page + 1)}
-                  onPrevious={() => setActivePage((page) => Math.max(page - 1, 0))}
-                  page={visiblePage.page}
-                  totalElements={visiblePage.totalElements}
-                  totalPages={visiblePage.totalPages}
-                />
-              ) : null}
+              {visiblePage && visiblePage.items.length > 0 && !isError ? (isLoading || visiblePage.hasNext ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />) : null}
             </View>
             )}
           </Section>
 
         </>
-      ) : null}
+      )) : null}
       {accessDialog}
       {statusPickerOpen ? (
         <StayStatusFilterDialog
@@ -485,10 +502,12 @@ export default function OwnerTenancyWorkspaceScreen() {
     </ScreenScrollView>
 
     {historyOpen ? (
-      <SheetShell onClose={() => setHistoryOpen(false)} title="Tenancy history">
+      <SheetShell onClose={() => setHistoryOpen(false)} title="Tenancy history" onEndReached={() => {
+        if (pastTenanciesQuery.currentData?.hasNext && !pastTenanciesQuery.isFetching && !pastTenanciesQuery.isError) setPastPage(pastTenanciesQuery.currentData.page + 1);
+      }}>
         {pastTenanciesQuery.isFetching && !pastTenancies ? <OwnerTenancyListSkeleton rows={3} /> : null}
 
-        {!pastTenanciesQuery.isFetching && (pastTenancies?.items.length ?? 0) === 0 ? (
+        {!pastTenanciesQuery.isFetching && !pastTenanciesQuery.isError && (pastTenancies?.items.length ?? 0) === 0 ? (
           <EmptyState
             artwork={NO_PERSON_ILLUSTRATION}
             title="No past tenancies"
@@ -504,17 +523,8 @@ export default function OwnerTenancyWorkspaceScreen() {
           />
         ))}
 
-        {pastTenancies && pastTenancies.totalElements > 0 ? (
-          <PaginationBar
-            hasNext={pastTenancies.hasNext}
-            hasPrevious={pastTenancies.hasPrevious}
-            onNext={() => setPastPage((page) => page + 1)}
-            onPrevious={() => setPastPage((page) => Math.max(page - 1, 0))}
-            page={pastTenancies.page}
-            totalElements={pastTenancies.totalElements}
-            totalPages={pastTenancies.totalPages}
-          />
-        ) : null}
+        {pastTenanciesQuery.isError ? <EmptyState icon={UsersRound} title="Could not load tenancy history" description="Try again to load the remaining tenancies." action={<AnimatedPressable onPress={() => void pastTenanciesQuery.refetch()}><Text style={{ color: colors.primary }}>Try again</Text></AnimatedPressable>} /> : null}
+        {pastTenancies && pastTenancies.items.length > 0 && !pastTenanciesQuery.isError ? (pastTenanciesQuery.isFetching || pastTenancies.hasNext ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />) : null}
       </SheetShell>
     ) : null}
 
@@ -601,7 +611,7 @@ function TenancySnapshotTile({
           other summary in the app and read as a different kind of thing. */}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
-          <Icon color={colors.ink} size={38} strokeWidth={1.75} />
+          <Icon color="#000000" size={40} strokeWidth={1.75} />
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
@@ -736,7 +746,7 @@ function TenancyToolBox({ badge, icon: Icon, label, onPress }: { badge?: number;
           </Text>
         </View>
       ) : null}
-      <Icon color={colors.primary} size={32} strokeWidth={1.9} />
+      <Icon color="#3F6ED8" size={36} strokeWidth={1.9} />
       <Text
         numberOfLines={2}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
@@ -836,7 +846,7 @@ function StayStatusFilterDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its close button, a choice or the device back button,
           not a tap on the scrim (user, 2026-09-29). */}
       <View
@@ -874,9 +884,11 @@ function StayStatusFilterDialog({
           </View>
 
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
-            {STAY_STATUS_FILTER_OPTIONS.map((option) => (
+            {STAY_STATUS_FILTER_OPTIONS.map((option) => {
+              const Icon = option.value === "ALL" ? null : option.value === "ACTIVE" ? CheckCircle2 : option.value === "PENDING_EXIT" ? AlertTriangle : Clock3;
+              return (
               <PickerOptionRow
-                content={option.chip ? <TenancyStatusChip chip={option.chip} /> : undefined}
+                icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
                 key={option.value}
                 label={option.label}
                 onPress={() => {
@@ -885,10 +897,10 @@ function StayStatusFilterDialog({
                 }}
                 selected={option.value === value}
               />
-            ))}
+            ); })}
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

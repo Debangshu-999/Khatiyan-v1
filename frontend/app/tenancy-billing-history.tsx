@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -21,7 +22,7 @@ import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 /**
  * First screenful, and how many more arrive each time the reader reaches the end.
@@ -281,7 +282,7 @@ function StatusFilterDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button, a choice or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{
@@ -329,7 +330,7 @@ function StatusFilterDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

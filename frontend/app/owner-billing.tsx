@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Animated, Easing, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -12,6 +13,9 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
+import { ActivityIndicator } from "react-native";
+import { ListEnd } from "@/components/list-end";
+import { CircleAlert } from "lucide-react-native";
 import { PickerOptionRow } from "@/components/picker-option-row";
 
 import { StatusPill as Pill } from "@/components/status-pill";
@@ -79,7 +83,7 @@ import {
 import { HeaderGradient } from "@/components/header-gradient";
 import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 type ActionMode = "menu" | "manual-payment" | "discount" | "extra-charge" | "cancel";
 type CycleView = "cycles" | "other";
@@ -126,7 +130,7 @@ const BILLING_STATUS_FILTER_OPTIONS: {
 // can never render larger than the button beside it.
 const BILL_ACTION_ROW_HEIGHT = 48;
 const CYCLE_PAGE_SIZE = 8;
-const BILLING_HEADER_ILLUSTRATION = require("../assets/workspace/billing-header.png");
+const BILLING_HEADER_ILLUSTRATION = require("../assets/images/workspace/billing-header.png");
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Client-side pager: a single month's cycles are bounded, and the summary tiles
@@ -328,6 +332,7 @@ export default function OwnerBillingScreen() {
   const [receiptCycle, setReceiptCycle] = useState<BillingCycle | null>(null);
   const [paymentDetailsCycle, setPaymentDetailsCycle] = useState<BillingCycle | null>(null);
   const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [selectedProperty?.id]);
   const summaryMonth = selectedMonth;
   // Search applies to both bill lists (rent cycles and other bills).
   const cycleSearchQuery = searchQuery;
@@ -378,56 +383,31 @@ export default function OwnerBillingScreen() {
 
   const [exportMonthlyReport, exportState] = useLazyExportPropertyBillingCyclesQuery();
 
-  const visibleCycles = cyclesQuery.data ?? [];
+  const visibleCycles = cyclesQuery.currentData ?? [];
   // isLoading, not isFetching: it means "in flight AND nothing to show". A
   // refetch of a list already on screen must not blank the page the reader is
   // looking at.
   const summaryLoading =
-    (cyclesQuery.isFetching && !cyclesQuery.data) ||
-    (monthSummaryQuery.isFetching && !monthSummaryQuery.data);
-  const cycleListLoading = cyclesQuery.isFetching && !cyclesQuery.data;
+    (cyclesQuery.isFetching && !cyclesQuery.currentData) ||
+    (monthSummaryQuery.isFetching && !monthSummaryQuery.currentData);
+  const cycleListLoading = cyclesQuery.isFetching && !cyclesQuery.currentData;
   // Rent cycles vs one-off bills (penalties, ad-hoc charges) shown as separate
   // segmented lists. The summary filter modal still spans all categories.
   const statusFilteredCycles = filterBillingCyclesByStatus(visibleCycles, billingStatusFilter);
-  const allRentCycles = visibleCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
   const rentCycles = statusFilteredCycles.filter((cycle) => cycle.category === "RENT_CYCLE");
   const oneOffCycles = statusFilteredCycles.filter((cycle) => cycle.category === "ONE_OFF");
   const listedCycles = cycleView === "cycles" ? rentCycles : oneOffCycles;
   const visibleQuery = cycleSearchQuery;
-  // For the current month, cycles are generated lazily on each tenancy's due
-  // date, so the summary can project more cycles than have actually been created.
-  // The gap is how many are still pending generation, used to explain an empty or
-  // short cycle list instead of a misleading "no cycles" message.
-  const monthSummary = monthSummaryQuery.data;
-  // Cycles that exist already — including UPCOMING ones, which are generated
-  // ahead of their due date. Counting only paid/unpaid/overdue told the owner a
-  // cycle was still pending when it was already sitting in the list above.
-  // Suppressed while searching: the list is filtered then, so the projection
-  // (which is property-wide) has nothing to subtract against.
-  const createdRentCycleCount = allRentCycles.filter((cycle) => cycle.status !== "CANCELLED").length;
-  /**
-   * How many of a FUTURE month's cycles are still to be generated.
-   *
-   * <p>The summary projects uncreated cycles for the current month only, so
-   * for next month it counts real rows alone and the gap above always came out
-   * as zero — a month with one bill out of twenty looked complete. The
-   * upcoming list is computed per tenancy for any month, so it is the number
-   * to use. Same arguments as the pill and the upcoming screen, so all three read
-   * one cache entry and cannot disagree.
-   */
-  const viewingFutureMonth = summaryMonth > currentMonth();
+  // The summary includes one-off bills and projections, not just rent cycles.
+  // Use the actual upcoming list for both the pending note and completion card.
   const futureUpcomingQuery = useListUpcomingPropertyCyclesQuery(
     { month: summaryMonth, page: 0, propertyId: selectedProperty?.id ?? "", size: UPCOMING_CYCLES_PAGE_SIZE },
-    { skip: !selectedProperty || !viewingFutureMonth },
+    { skip: !selectedProperty, refetchOnMountOrArgChange: true },
   );
   const notGeneratedCount =
     cycleSearchQuery || billingStatusFilter !== "ALL"
       ? 0
-      : viewingFutureMonth
-        ? futureUpcomingQuery.data?.totalElements ?? 0
-        : monthSummary && summaryMonth === currentMonth()
-          ? Math.max(0, monthSummary.activeCycleCount - createdRentCycleCount)
-          : 0;
+      : futureUpcomingQuery.currentData?.totalElements ?? 0;
 
   function openAction(cycle: BillingCycle, mode: ActionMode) {
     setSelectedCycle(cycle);
@@ -494,6 +474,10 @@ export default function OwnerBillingScreen() {
       background={<HeaderGradient />}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (!cycleListLoading && (page + 1) * CYCLE_PAGE_SIZE < listedCycles.length && contentSize.height - contentOffset.y - layoutMeasurement.height <= 240) setPage(Math.min(page + 1, Math.ceil(listedCycles.length / CYCLE_PAGE_SIZE) - 1));
+      }}
+      scrollEventThrottle={16}
     >
       <ScreenHeader
         artwork={BILLING_HEADER_ILLUSTRATION}
@@ -568,11 +552,11 @@ export default function OwnerBillingScreen() {
             notGeneratedCount={cycleView === "cycles" ? notGeneratedCount : 0}
             canManage={canManageBilling}
             onAction={openAction}
-            onPageChange={setPage}
             page={page}
             query={visibleQuery}
             narrowed={Boolean(visibleQuery) || billingStatusFilter !== "ALL"}
             loading={cycleListLoading}
+            footer={cycleView === "cycles" ? <UpcomingCyclesLink month={summaryMonth} onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-upcoming-cycles" })} propertyId={selectedProperty.id} /> : undefined}
             searchField={
               <SearchField
                 onChangeText={setSearchDraft}
@@ -604,13 +588,6 @@ export default function OwnerBillingScreen() {
             }
           />
 
-          {cycleView === "cycles" ? (
-            <UpcomingCyclesLink
-              month={summaryMonth}
-              onPress={() => router.push({ params: { month: summaryMonth }, pathname: "/owner-upcoming-cycles" })}
-              propertyId={selectedProperty.id}
-            />
-          ) : null}
         </>
       ) : null}
 
@@ -720,14 +697,14 @@ function ActiveSummarySection({
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SummaryTile
               hint="Rent cycles"
-              icon={FileText}
+              icon={BillingCyclesIcon}
               label="Billing cycles"
               onPress={() => onOpenFilter("cycles")}
               value={String(rentCycleCount)}
             />
             <SummaryTile
               hint={formatMoney(summary.overduePaise)}
-              icon={TimerReset}
+              icon={OverdueBillIcon}
               label="Overdue"
               onPress={() => onOpenFilter("overdue")}
               value={String(summary.overdueCount)}
@@ -737,14 +714,14 @@ function ActiveSummarySection({
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SummaryTile
               hint="Bills raised"
-              icon={ReceiptText}
+              icon={OtherBillsIcon}
               label="Other bills"
               onPress={() => onOpenFilter("other")}
               value={String(oneOffCount)}
             />
             <SummaryTile
               hint="Cycles settled"
-              icon={CheckCircle2}
+              icon={PaidBillIcon}
               label="Paid"
               onPress={() => onOpenFilter("paid")}
               value={String(summary.paidCycleCount)}
@@ -754,14 +731,14 @@ function ActiveSummarySection({
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <SummaryTile
               hint="Awaiting payment"
-              icon={WalletCards}
+              icon={UnpaidBillIcon}
               label="Unpaid"
               onPress={() => onOpenFilter("unpaid")}
               value={String(summary.unpaidCycleCount)}
             />
             <SummaryTile
               hint="This month"
-              icon={Percent}
+              icon={DiscountBillIcon}
               label="Discount given"
               onPress={() => onOpenFilter("discount")}
               value={formatMoney(summary.totalDiscountPaise)}
@@ -843,6 +820,7 @@ function PendingGenerationNote({ count }: { count: number }) {
 }
 
 function BillingCyclesSection({
+  footer,
   canManage,
   cycles,
   fallbackLateFeePerDayPaise,
@@ -852,11 +830,11 @@ function BillingCyclesSection({
   noun = "billing cycle",
   notGeneratedCount,
   onAction,
-  onPageChange,
   page,
   query,
   searchField,
 }: {
+  footer?: ReactNode;
   canManage: boolean;
   cycles: BillingCycle[];
   fallbackLateFeePerDayPaise?: number | null;
@@ -866,13 +844,13 @@ function BillingCyclesSection({
   noun?: string;
   notGeneratedCount: number;
   onAction?: (cycle: BillingCycle, mode: ActionMode) => void;
-  onPageChange: (page: number) => void;
   page: number;
   query: string;
   searchField: ReactNode;
 }) {
   const { colors } = useTheme();
-  const paged = paginateArray(cycles, page, CYCLE_PAGE_SIZE);
+  const shownCycles = cycles.slice(0, (page + 1) * CYCLE_PAGE_SIZE);
+  const hasMore = shownCycles.length < cycles.length;
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
@@ -887,7 +865,7 @@ function BillingCyclesSection({
           style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
           tapLockMs={0}
         >
-          <Info color={colors.kicker} size={17} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.4} />
         </AnimatedPressable>
       }
     >
@@ -912,25 +890,17 @@ function BillingCyclesSection({
           <CycleListFrame>
             <CycleCardList
               canManage={canManage}
-              cycles={paged.pageItems}
+              cycles={shownCycles}
               fallbackLateFeePerDayPaise={fallbackLateFeePerDayPaise}
               onAction={onAction}
             />
           </CycleListFrame>
-          {notGeneratedCount > 0 ? <PendingGenerationNote count={notGeneratedCount} /> : null}
-          {paged.totalElements > 0 ? (
-            <PaginationBar
-              hasNext={paged.hasNext}
-              hasPrevious={paged.hasPrevious}
-              onNext={() => onPageChange(paged.page + 1)}
-              onPrevious={() => onPageChange(Math.max(0, paged.page - 1))}
-              page={paged.page}
-              totalElements={paged.totalElements}
-              totalPages={paged.totalPages}
-            />
-          ) : null}
+          {!hasMore ? footer : null}
+          {!hasMore && notGeneratedCount > 0 ? <PendingGenerationNote count={notGeneratedCount} /> : null}
+          {hasMore ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
         </View>
       )}
+      {!loading && cycles.length === 0 ? footer : null}
     </Section>
   );
 }
@@ -947,7 +917,7 @@ function BillingStatusFilterDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its close button, a choice or the device back button,
           not a tap on the scrim (user, 2026-09-29). */}
       <View
@@ -985,9 +955,11 @@ function BillingStatusFilterDialog({
           </View>
 
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
-            {BILLING_STATUS_FILTER_OPTIONS.map((option) => (
+            {BILLING_STATUS_FILTER_OPTIONS.map((option) => {
+              const Icon = option.value === "ALL" ? null : option.value === "UNPAID" ? CircleAlert : option.value === "OVERDUE" ? AlertTriangle : option.value === "PAID" ? CheckCircle2 : Clock3;
+              return (
               <PickerOptionRow
-                content={option.sample ? <BillStatusPill cycle={option.sample as BillingCycle} /> : undefined}
+                icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
                 key={option.value}
                 label={option.label}
                 onPress={() => {
@@ -996,11 +968,11 @@ function BillingStatusFilterDialog({
                 }}
                 selected={option.value === value}
               />
-            ))}
+            ); })}
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -1162,14 +1134,14 @@ function BillToolsGrid({
 }) {
   const { colors } = useTheme();
   const tools: { icon: ComponentType<LucideProps>; key: string; label: string; onPress: () => void }[] = [
-    { icon: History, key: "history", label: "Payment history", onPress: onOpenPaymentHistory },
+    { icon: PaymentHistoryIcon, key: "history", label: "Payment history", onPress: onOpenPaymentHistory },
     // Broken explicitly. "Payment history", "Monthly report" and "Payment
     // setup" all wrap at their space because they are too wide for a quarter
     // tile; "Tenant bills" just fits, so it sat alone on one line with its
     // glyph half a line higher than the other three.
-    { icon: Users, key: "tenant-bills", label: "Tenant\nbills", onPress: onOpenTenantBills },
-    { icon: FileDown, key: "report", label: reportBusy ? "Preparing…" : "Monthly report", onPress: onOpenReport },
-    { icon: Wallet, key: "payment-details", label: "Payment setup", onPress: onOpenPaymentDetails },
+    { icon: TenantBillsIcon, key: "tenant-bills", label: "Tenant\nbills", onPress: onOpenTenantBills },
+    { icon: MonthlyReportIcon, key: "report", label: reportBusy ? "Preparing…" : "Monthly report", onPress: onOpenReport },
+    { icon: PaymentSetupIcon, key: "payment-details", label: "Payment setup", onPress: onOpenPaymentDetails },
   ];
 
   return (
@@ -1277,10 +1249,11 @@ function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onP
   // The upcoming screen's own first page, not a one-row copy of it: a separate
   // entry kept an old "none left" here while the screen it opens showed eight.
   // Refetched on mount because cycles appear on a schedule nothing here hears.
-  const { data } = useListUpcomingPropertyCyclesQuery(
+  const upcomingQuery = useListUpcomingPropertyCyclesQuery(
     { month, page: 0, propertyId, size: UPCOMING_CYCLES_PAGE_SIZE },
     { refetchOnMountOrArgChange: true, skip: !propertyId },
   );
+  const data = upcomingQuery.currentData;
   const hasUpcoming = (data?.totalElements ?? 0) > 0;
   const nudge = useRef(new Animated.Value(0)).current;
 
@@ -1302,6 +1275,9 @@ function UpcomingCyclesLink({ month, onPress, propertyId }: { month: string; onP
 
   const translateX = nudge.interpolate({ inputRange: [0, 1], outputRange: [0, 6] });
   const tint = hasUpcoming ? colors.primary : colors.muted;
+
+  if (!data && upcomingQuery.isFetching) return <ActivityIndicator color={colors.muted} />;
+  if (upcomingQuery.isError) return <AnimatedPressable onPress={() => void upcomingQuery.refetch()} style={{ alignSelf: "center" }}><Text style={{ color: colors.muted }}>Could not check upcoming cycles. Tap to retry</Text></AnimatedPressable>;
 
   return (
     <AnimatedPressable
@@ -1526,7 +1502,7 @@ function BillingCycleCard({
             style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
             tapLockMs={0}
           >
-            <Info color={colors.kicker} size={16} strokeWidth={2.4} />
+        <CircleHelp color={colors.kicker} size={16} strokeWidth={2.4} />
           </AnimatedPressable>
           {/* On every bill, rent cycle or one-off (2026-09-28): this bill's
               payment claims, under the info icon. */}
@@ -2322,7 +2298,7 @@ function BillingActionModal({
                 <ActionButton icon={XCircle} label="Cancel bill" onPress={() => onSelectMode("cancel")} variant="danger" />
               ) : null}
               {canManage && cycle.category === "ONE_OFF" && cycle.status === "CONFIRMATION_PENDING" ? (
-                <Text style={[type.description, { color: colors.muted }]}>
+                <Text style={[type.modalDescription, { color: colors.muted }]}>
                   The tenant has reported paying this bill. Confirm or reject their payment before cancelling it.
                 </Text>
               ) : null}
@@ -2340,7 +2316,7 @@ function BillingActionModal({
 
           {mode === "manual-payment" && !cashCode ? (
             <>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Records the full bill amount {formatMoney(cycle.totalAmountPaise)} as received. Rent is collected
                 outside the app, so this is what marks it settled.
               </Text>
@@ -2508,7 +2484,7 @@ function BillingActionModal({
 
           {mode === "cancel" ? (
             <>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 {cycle.referenceCode} stays on record as Cancelled and stops counting towards what the tenant owes.
                 The tenant is sent a notification with your reason.
               </Text>
@@ -2636,7 +2612,7 @@ function ConfirmDialog({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
@@ -2653,7 +2629,7 @@ function ConfirmDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </Text>
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             {message}
           </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -2694,7 +2670,7 @@ function ConfirmDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -3305,7 +3281,7 @@ function BillHistorySheet({
   return (
     <>
       <SheetShell onClose={onClose} title="Action history">
-        <Text style={[type.description, { color: colors.muted }]}>
+        <Text style={[type.modalDescription, { color: colors.muted }]}>
           Everything added to {cycle.referenceCode} by hand. Reverting sets the line to zero and
           recalculates the bill.
         </Text>
@@ -3413,7 +3389,7 @@ function BillHistorySheet({
         {/* Says why the buttons are missing rather than leaving a list of rows
             that look like they should be actionable. */}
         {!editable ? (
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             This bill is no longer editable, so its actions cannot be reverted.
           </Text>
         ) : null}
@@ -3456,10 +3432,11 @@ function CycleWindowModal({
   const rateIsProvisional = stampedRate == null;
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its × or the device back button, not a tap on the scrim
           (user, 2026-09-29). */}
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <HelpModalClose onClose={onClose} />
         <View
           style={{
             alignSelf: "center",
@@ -3470,21 +3447,12 @@ function CycleWindowModal({
             borderWidth: 1,
             gap: spacing.md,
             maxWidth: DIALOG_MAX_WIDTH,
+            maxHeight: "72%",
             padding: spacing.lg,
             width: "100%",
           }}
         >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                {cycle.referenceCode}
-              </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }}>
-                Payment window
-              </Text>
-            </View>
-            <IconButton accessibilityLabel="Close payment window" filled icon={X} onPress={onClose} />
-          </View>
+          <HelpModalHeader />
 
           {/* The tenant's rows, icon, label and value (user, 2026-09-29). The
               words below stay the owner's own. */}
@@ -3534,14 +3502,14 @@ function CycleWindowModal({
               behaviour and was telling owners the fee came from somewhere it
               no longer comes from. */}
           {cycle.lateFeeAmountPaise > 0 ? (
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on
               this bill as a line item and is recalculated each night it stays overdue.
             </Text>
           ) : null}
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -3740,3 +3708,6 @@ function comparePaymentHistoryCycles(left: BillingCycle, right: BillingCycle) {
 function dateOnlyKey(value: string) {
   return value.slice(0, 10);
 }
+import { BillingCyclesIcon, OverdueBillIcon, OtherBillsIcon, PaidBillIcon, UnpaidBillIcon, DiscountBillIcon, PaymentHistoryIcon, TenantBillsIcon, MonthlyReportIcon, PaymentSetupIcon } from "@/components/billing-vector-icons";
+import { CircleHelp } from "lucide-react-native";
+import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";

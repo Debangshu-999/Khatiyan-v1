@@ -41,7 +41,7 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NOTICE_EMPTY_ILLUSTRATION = require("../assets/workspace/No-Notice_512x512.png");
+const NOTICE_EMPTY_ILLUSTRATION = require("../assets/empty-states/No-Notice_512x512.png");
 
 type UpcomingFilter = "all" | "normal" | "recurring";
 
@@ -111,7 +111,7 @@ export default function OwnerUpcomingNoticesScreen() {
             onPress={() => setInfoOpen(true)}
             style={{ alignItems: "center", height: 30, justifyContent: "center", width: 30 }}
           >
-            <Info color={colors.kicker} size={18} strokeWidth={2.2} />
+        <CircleHelp color={colors.kicker} size={18} strokeWidth={2.2} />
           </Pressable>
         }
       />
@@ -192,16 +192,16 @@ function UpcomingInfoModal({ onClose }: { onClose: () => void }) {
   const { colors, type } = useTheme();
 
   return (
-    <InfoModal onClose={onClose} title="Upcoming notices">
-      <Text style={[type.description, { color: colors.muted }]}>
+    <InfoModal bottomUp onClose={onClose} title="Upcoming notices">
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Every notice publishing in the next three hours — one-off notices you scheduled ahead, and today&apos;s run of
         each recurring notice.
       </Text>
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Edit one to change its wording before tenants see it, or delay it to push the go-live time back. A recurring
         notice gets a fresh copy each day, so edits and delays here apply to today only.
       </Text>
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Deleting a notice stays in the Notices screen.
       </Text>
     </InfoModal>
@@ -480,3 +480,4 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
   }
   return properties.find((property) => property.id === selectedPropertyId) ?? properties[0];
 }
+import { CircleHelp } from "lucide-react-native";

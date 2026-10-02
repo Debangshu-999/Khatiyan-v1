@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 import type { ComponentType } from "react";
 import {
   AlertTriangle,
+  CircleAlert,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -264,13 +265,11 @@ export function BillStatusPill({ cycle }: { cycle: BillingCycle }) {
             ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle }
             // Everything still owing shares the blue, so the ICON is what tells
             // them apart — a clock for a bill whose date has not arrived, a
-            // wallet for one that is waiting to be paid. Both landed on the
-            // wallet before this, which made Upcoming and Unpaid identical
-            // chips. Matches the payment history exactly.
+            // circled exclamation for one that is waiting to be paid.
             : {
                 background: colors.primarySoft,
                 color: colors.primaryDeep,
-                icon: cycle.status === "UPCOMING" ? Clock3 : WalletCards,
+                icon: cycle.status === "UPCOMING" ? Clock3 : CircleAlert,
               };
 
   return (
@@ -337,7 +336,7 @@ export function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
             ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle, label: "Overdue" }
             : state === "CANCELLED"
               ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle, label: "Cancelled" }
-              : { background: colors.primarySoft, color: colors.primaryDeep, icon: WalletCards, label: "Unpaid" };
+              : { background: colors.primarySoft, color: colors.primaryDeep, icon: CircleAlert, label: "Unpaid" };
   return (
     <BillingStatusBadge
       background={display.background}

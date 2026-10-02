@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -39,7 +40,7 @@ import { useTheme } from "@/theme/use-theme";
 // media, live status, notes from the property team and the reopen action.
 export default function ConcernDetailScreen() {
   const router = useGuardedRouter();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const params = useLocalSearchParams<{ concernId?: string }>();
   const concernId = typeof params.concernId === "string" ? params.concernId : "";
 
@@ -125,8 +126,8 @@ export default function ConcernDetailScreen() {
 
           <OwnerStyleConcernDataCard concern={concern} />
 
-          {concern.statusNote ? (
-            <NoteCard title="Status update from the property team" body={concern.statusNote} />
+          {concern.statusNote && !(concern.reopened && concern.statusNote === concern.reopenReason) ? (
+            <NoteCard title="Update from the property team" body={concern.statusNote} />
           ) : null}
 
           {resolved ? (
@@ -153,8 +154,8 @@ export default function ConcernDetailScreen() {
                 paddingHorizontal: spacing.md,
               }}
             >
-              <RotateCcw color={colors.onPrimary} size={16} strokeWidth={2.2} />
-              <Text style={[type.eyebrow, { color: colors.onPrimary }]}>
+              <RotateCcw color={colors.onPrimary} size={18} strokeWidth={3} />
+              <Text style={[type.eyebrow, { color: colors.onPrimary, fontFamily: fonts.sansBold }]}>
                 Reopen concern
               </Text>
             </AnimatedPressable>
@@ -228,7 +229,7 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
           ))}
         </ScrollView>
       ) : null}
-      <Modal animationType="fade" navigationBarTranslucent onRequestClose={() => setExpanded(false)} statusBarTranslucent transparent visible={expanded}>
+      <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={() => setExpanded(false)} statusBarTranslucent transparent visible={expanded}>
         <View style={{ backgroundColor: "rgba(0,0,0,0.92)", flex: 1, justifyContent: "center", padding: spacing.md }}>
           <AnimatedPressable
             accessibilityLabel="Close image"
@@ -242,7 +243,7 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
             {concern.referenceCode}
           </Text>
         </View>
-      </Modal>
+      </CenterModal>
     </View>
   );
 }
@@ -475,7 +476,7 @@ function ReopenConcernModal({
   const keyboardInset = useKeyboardInset();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View
           style={{
@@ -516,7 +517,7 @@ function ReopenConcernModal({
                 >
                   {concern.title}
                 </Text>
-                <Text style={[type.description, { color: colors.muted }]}>
+                <Text style={[type.modalDescription, { color: colors.muted }]}>
                   Tell the property team why this resolution still needs work.
                 </Text>
               </View>
@@ -593,7 +594,7 @@ function ReopenConcernModal({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </CenterModal>
   );
 }
 

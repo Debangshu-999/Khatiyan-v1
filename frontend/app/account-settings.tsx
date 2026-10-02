@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import type { ComponentType, PropsWithChildren, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -563,7 +564,7 @@ function PinVerificationModal({
         : `We'll send an OTP to ${phone} before you choose a fresh PIN.`;
 
   return (
-    <Modal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={resetAndClose}>
+    <CenterModal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={resetAndClose}>
       {/* A plain dim, not a blur — see ProfileEditModal for the reasoning: a
           Modal is its own window on Android, so expo-blur has nothing it is
           allowed to sample. */}
@@ -621,7 +622,7 @@ function PinVerificationModal({
                   >
                     {title}
                   </Text>
-                  <Text style={[type.description, { color: colors.muted }]}>
+                  <Text style={[type.modalDescription, { color: colors.muted }]}>
                     {subtitle}
                   </Text>
                 </View>
@@ -678,7 +679,7 @@ function PinVerificationModal({
           </Card>
         </KeyboardAvoidingView>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

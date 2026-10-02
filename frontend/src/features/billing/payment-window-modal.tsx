@@ -1,4 +1,6 @@
+import { CenterModal } from "@/components/center-modal";
 import type { ComponentType } from "react";
+import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
 import { Modal, Text, View } from "react-native";
 import { CalendarCheck2, CalendarRange, Clock3, X, type LucideProps } from "lucide-react-native";
 
@@ -27,10 +29,11 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
   const rate = cycle.lateFeePerDayPaise;
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its × or the device back button, not a tap on the
           scrim (user, 2026-09-29). */}
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <HelpModalClose onClose={onClose} />
         <View
           style={{
             alignSelf: "center",
@@ -41,17 +44,12 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
             borderWidth: 1,
             gap: spacing.md,
             maxWidth: DIALOG_MAX_WIDTH,
+            maxHeight: "72%",
             padding: spacing.lg,
             width: "100%",
           }}
         >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>{cycle.referenceCode}</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>Payment window</Text>
-            </View>
-            <IconButton accessibilityLabel="Close payment window" icon={X} onPress={onClose} />
-          </View>
+          <HelpModalHeader />
 
           <View style={{ borderTopColor: colors.border, borderTopWidth: 1 }}>
             <PaymentWindowLine
@@ -91,14 +89,14 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
           />
 
           {cycle.lateFeeAmountPaise > 0 ? (
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on this
               bill as a line item and grows each night it stays overdue.
             </Text>
           ) : null}
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

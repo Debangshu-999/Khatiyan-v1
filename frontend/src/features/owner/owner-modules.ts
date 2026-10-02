@@ -47,7 +47,7 @@ export type OwnerModule = {
 // section so they never drift apart.
 export const OWNER_MODULES: OwnerModule[] = [
   {
-    artwork: require("../../../assets/workspace/tenancy-module.png"),
+    artwork: require("../../../assets/images/workspace/tenancy-module.png"),
     description: "Create tenancies, view active stays and review exits.",
     icon: UsersRound,
     key: "tenancy",
@@ -56,7 +56,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Tenancy",
   },
   {
-    artwork: require("../../../assets/workspace/billing-module.png"),
+    artwork: require("../../../assets/images/workspace/billing-module.png"),
     description: "Billing cycles, overdue dues, line items, deposit ledger and payment status.",
     icon: Banknote,
     key: "billing",
@@ -65,7 +65,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Billing",
   },
   {
-    artwork: require("../../../assets/workspace/property-module.png"),
+    artwork: require("../../../assets/images/workspace/property-module.png"),
     description: "Property settings, room inventory (single & bulk), facilities and board.",
     // The property mark, not a spanner. A spanner says "settings", which is one
     // of four things behind this tile — and it is now the Manage tab's own
@@ -77,7 +77,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Property",
   },
   {
-    artwork: require("../../../assets/workspace/food-preference-module-card.png"),
+    artwork: require("../../../assets/images/workspace/food-preference-module-card.png"),
     description: "Food items, meal profiles, weekly menus, subscribers and cooking forecasts.",
     icon: foodIcon("silverware-fork-knife"),
     key: "food",
@@ -86,7 +86,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Food preference",
   },
   {
-    artwork: require("../../../assets/workspace/notice-module.png"),
+    artwork: require("../../../assets/icons/workspace/notice-module.png"),
     description: "Property board, visible notices, recurring notices and archive controls.",
     icon: Megaphone,
     key: "notice",
@@ -95,7 +95,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Notice",
   },
   {
-    artwork: require("../../../assets/workspace/concern-module.png"),
+    artwork: require("../../../assets/images/workspace/concern-module.png"),
     description: "Available, under review, undertaken, escalated and history views.",
     icon: AlertCircle,
     key: "concern",
@@ -104,7 +104,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     title: "Concern",
   },
   {
-    artwork: require("../../../assets/workspace/staff-module.png"),
+    artwork: require("../../../assets/images/workspace/staff-module.png"),
     description: "Managers, staff categories, employment details and manual salary tracking.",
     icon: BriefcaseBusiness,
     key: "staff",

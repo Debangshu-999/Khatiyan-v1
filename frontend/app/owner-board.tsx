@@ -2,7 +2,8 @@ import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ClipboardList, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react-native";
+import { ClipboardList, FolderPlus, Pencil, Plus, X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { Card } from "@/components/card";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -35,7 +36,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_CATEGORY_ILLUSTRATION = require("../assets/workspace/No-Category_512x512.png");
+const NO_CATEGORY_ILLUSTRATION = require("../assets/empty-states/No-Category_512x512.png");
 
 export default function OwnerBoardScreen() {
   const router = useGuardedRouter();

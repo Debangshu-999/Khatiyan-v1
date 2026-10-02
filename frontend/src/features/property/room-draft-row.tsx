@@ -1,5 +1,6 @@
 import { Text, View } from "react-native";
-import { ChevronDown, ChevronUp, Trash2 } from "lucide-react-native";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";

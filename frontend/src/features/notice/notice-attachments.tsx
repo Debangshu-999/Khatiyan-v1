@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -635,7 +636,7 @@ function ImageSlideshowModal({
   const width = Dimensions.get("window").width;
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ backgroundColor: "rgba(8, 12, 20, 0.94)", flex: 1 }}>
         <SafeAreaView edges={["top"]} />
 
@@ -699,6 +700,6 @@ function ImageSlideshowModal({
 
         <SafeAreaView edges={["bottom"]} />
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

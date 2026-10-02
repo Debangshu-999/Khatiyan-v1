@@ -1,3 +1,5 @@
+import { CenterModal } from "@/components/center-modal";
+import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
@@ -51,9 +53,9 @@ import { useTheme } from "@/theme/use-theme";
 import { SearchField } from "@/components/search-field";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 
-const EXIT_REQUEST_ARTWORK = require("../assets/workspace/exit-request.png");
 
-const REQUEST_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const EXIT_REQUEST_ARTWORK = require("../assets/images/workspace/exit-request.png");
+const REQUEST_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 type ReviewMode = "approve" | "reject";
 type WithdrawalDecision = {
@@ -482,7 +484,7 @@ function ExitRequestCard({
                 width: 40,
               }}
             >
-              <LogOut color={colors.ink} size={20} strokeWidth={2.2} />
+              <ExitTenancyIcon color={colors.ink} size={20} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
               <Text
@@ -521,7 +523,7 @@ function ExitRequestCard({
             }}
           >
             <InfoLine
-              icon={LogOut}
+              icon={ExitTenancyIcon}
               label="Exit type"
               value={request.type === "PREMATURE" ? "Premature exit" : "Normal notice"}
             />
@@ -593,6 +595,7 @@ function ExitRequestCard({
             <ActionButton
               icon={History}
               label={attempts > 1 ? `View timeline (${attempts})` : "View timeline"}
+              borderColor={colors.borderStrong}
               onPress={() => setShowTimeline(true)}
               variant="outline"
             />
@@ -760,7 +763,7 @@ function ExitReviewModal({
                   />
 
                   <StatusNote
-                    icon={LogOut}
+                    icon={ExitTenancyIcon}
                     tone={premature ? "warning" : "success"}
                     title={premature ? "Premature exit request" : "Normal exit request"}
                     message={
@@ -893,7 +896,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
           width: 26,
         }}
       >
-        <Info color={colors.ink} size={15} strokeWidth={2.3} />
+        <CircleHelp color={colors.ink} size={15} strokeWidth={2.3} />
       </AnimatedPressable>
     </View>
   );
@@ -902,7 +905,7 @@ function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; la
 function InfoPopover({ onClose, title, value }: { onClose: () => void; title: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
@@ -927,7 +930,7 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
           </Text>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -1190,3 +1193,4 @@ function StatusBadge({ status }: { status: string }) {
     </View>
   );
 }
+import { CircleHelp } from "lucide-react-native";

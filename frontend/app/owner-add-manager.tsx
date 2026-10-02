@@ -218,15 +218,11 @@ export default function OwnerAddManagerScreen() {
       {lookup && !assigned ? (
         <Card>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            {/* Outlined, never filled — the app's icon rule. The glyph says which
-                KIND of person this is, the notice below says whether they can
-                take the job, which is a different question. */}
             <View
               style={{
                 alignItems: "center",
-                borderColor: colors.ink,
+                backgroundColor: colors.neutralSoft,
                 borderRadius: 999,
-                borderWidth: 1.5,
                 height: 46,
                 justifyContent: "center",
                 width: 46,

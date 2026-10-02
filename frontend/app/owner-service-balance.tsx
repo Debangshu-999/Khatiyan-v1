@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { AppState, Linking, Platform, Text, View } from "react-native";
+import { WalletLockCard } from "@/features/billing/wallet-lock-card";
+import { WalletTransactionSkeleton, WalletTransactionsErrorCard } from "@/features/billing/wallet-loading-ui";
+import { WalletPinGate, WalletPinModal } from "@/features/billing/wallet-pin-gate";
+import { saveWalletAccess } from "@/auth/wallet-access";
+import { api } from "@/store/api";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { AppTextInput } from "@/components/app-text-input";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path } from "react-native-svg";
 import {
   ArrowDownToLine,
   ArrowUpRight,
   CalendarDays,
   ChartNoAxesColumnIncreasing,
   CircleAlert,
-  Info,
   Lock,
+  ChevronRight,
   type LucideProps,
 } from "lucide-react-native";
 
@@ -17,15 +25,16 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
-import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SheetShell } from "@/components/sheet-shell";
-import { TabSwitcher } from "@/components/tab-switcher";
+import { ServiceBalanceTransactionRow, TransactionSeparator } from "@/features/billing/service-balance-transaction-row";
+import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useToast } from "@/components/toast";
 import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
-import { ActionButton, FormInput, NoticeBar, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, NoticeBar, formatMoneyPaise } from "@/features/owner/owner-ui";
 import {
   useGetServiceBalanceQuery,
+  useSetWalletLockMutation,
+  useListServiceBalanceEntriesQuery,
   useLazyGetServiceBalanceTopUpQuery,
   useStartServiceBalanceTopUpMutation,
   type ServiceBalanceEntry,
@@ -40,13 +49,6 @@ import { useTheme } from "@/theme/use-theme";
  * owner lands back on this screen without having to find a close button.
  */
 const CHECKOUT_RETURN_URL = "khatiyan://service-balance";
-
-type ActivityTab = "top-ups" | "service-charges";
-
-const ACTIVITY_TABS = [
-  { label: "Top-ups", value: "top-ups" as const },
-  { label: "Service charges", value: "service-charges" as const },
-];
 
 /**
  * Opens the gateway, in the app if the phone can.
@@ -117,8 +119,26 @@ function refusalMessage(error: unknown, fallback: string) {
  * the money — so this screen refreshes on return rather than announcing success.
  */
 export default function OwnerServiceBalanceScreen() {
+  return <WalletPinGate><OwnerServiceBalanceContent /></WalletPinGate>;
+}
+
+function OwnerServiceBalanceContent() {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
+  const dispatch = useAppDispatch();
+  const session = useAppSelector((state) => state.auth.accessToken);
+  const [setWalletLock, lockState] = useSetWalletLockMutation();
+  const [confirmLock, setConfirmLock] = useState(false);
+  const [disableLock, setDisableLock] = useState(false);
+  async function enableLock() {
+    if (!session || lockState.isLoading) return;
+    setConfirmLock(false);
+    try {
+      const result = await setWalletLock({ enabled: true }).unwrap();
+      if (result.token && result.expiresAt) saveWalletAccess(session, result.token, result.expiresAt);
+      dispatch(api.util.invalidateTags(["ServiceBalance"]));
+    } catch (error) { setRefusal(refusalMessage(error, "Could not enable wallet locking")); }
+  }
 
   const balanceQuery = useGetServiceBalanceQuery(undefined, {
     // The balance moves because of a webhook, not because of anything this
@@ -130,12 +150,12 @@ export default function OwnerServiceBalanceScreen() {
   const [startTopUp, startState] = useStartServiceBalanceTopUpMutation();
   const [fetchTopUp] = useLazyGetServiceBalanceTopUpQuery();
 
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [howOpen, setHowOpen] = useState(false);
-  const [activityTab, setActivityTab] = useState<ActivityTab>("top-ups");
+  const router = useGuardedRouter();
+  const transactionsQuery = useListServiceBalanceEntriesQuery({ page: 0, size: 5 }, { refetchOnFocus: true, refetchOnMountOrArgChange: true });
 
   const balance = balanceQuery.data;
   const minRupees = Math.round((balance?.minTopUpPaise ?? 10_000) / 100);
@@ -164,7 +184,8 @@ export default function OwnerServiceBalanceScreen() {
       toast.ok("Money added to your Service balance.");
     }
     void balanceQuery.refetch();
-  }, [balanceQuery, fetchTopUp, toast]);
+    void transactionsQuery.refetch();
+  }, [balanceQuery, transactionsQuery, fetchTopUp, toast]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -193,7 +214,6 @@ export default function OwnerServiceBalanceScreen() {
     try {
       const started = await startTopUp({ amountPaise: Math.round(rupees * 100) }).unwrap();
       pendingTopUpId.current = started.id;
-      setSheetOpen(false);
       setAmount("");
 
       const opened = await openCheckout(started.checkoutUrl);
@@ -218,71 +238,28 @@ export default function OwnerServiceBalanceScreen() {
   // clearing the debt and landing back at zero would just stall again.
   const minimumTopUpPaise = balance?.minTopUpPaise ?? 10_000;
 
-  const entries = balance?.recentEntries ?? [];
-  const topUpEntries = entries.filter((entry) => entry.type === "TOPUP");
-  // Top-ups stay their own tab: money in from a card. What a service did with
-  // it is the other tab's business.
-  //
-  // REFUND and CHARGEBACK rows are listed by NEITHER, by decision. Refunded
-  // money never lands in this balance — it goes back to the card it came from —
-  // and the only refund the product allows runs while the account is being
-  // deleted, so no one is here to read it. The owner learns about a refund from
-  // a notification instead, which is still to be built. A future reader finding
-  // these types unlisted has found the decision, not a bug.
-  const serviceEntries = entries.filter(
-    (entry) => entry.type === "RESERVE" || entry.type === "CHARGE" || entry.type === "RELEASE",
-  );
-  const recentTopUpTotalPaise = topUpEntries.reduce(
-    (total, entry) => total + Math.max(entry.availableDeltaPaise, 0),
-    0,
-  );
-  const updatedOn = formatSummaryDate(
-    balanceQuery.fulfilledTimeStamp ? new Date(balanceQuery.fulfilledTimeStamp) : new Date(),
-  );
-
   return (
-    <ScreenScrollView onRefresh={async () => void (await balanceQuery.refetch())} safeAreaEdges={["top", "bottom"]}>
-      <ScreenHeader
-        // "balance" in the brand italic accent, the same split every other
-        // screen title uses.
-        italicTail="balance."
-        subtitle="Prepaid money for Khatiyan's paid services."
-        title="Service"
-        trailing={
-          <AnimatedPressable
-            accessibilityLabel="How the Service balance works"
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={() => setHowOpen(true)}
-            style={{ alignItems: "center", height: 26, justifyContent: "center", marginTop: spacing.lg, width: 26 }}
-            tapLockMs={0}
-          >
-            <Info color={colors.kicker} size={17} strokeWidth={2.4} />
-          </AnimatedPressable>
-        }
-      />
-
+    <ScreenScrollView scrollOnlyWhenNeeded contentContainerStyle={{ gap: 12, paddingTop: 8, paddingBottom: 12 }} onRefresh={async () => { await Promise.all([balanceQuery.refetch(), transactionsQuery.refetch()]); }} safeAreaEdges={["top", "bottom"]}>
       <View style={{ gap: spacing.sm }}>
         <LinearGradient
-          colors={["#F3F8FF", "#E7F1FF"]}
-          end={{ x: 1, y: 1 }}
-          start={{ x: 0, y: 0 }}
+          colors={["#E7F1FF", "#FFFFFF"]}
+          end={{ x: 0.5, y: 1 }}
+          start={{ x: 0.5, y: 0 }}
           style={{
             borderColor: "#D9E7FB",
             borderCurve: "continuous",
             borderRadius: 18,
             borderWidth: 1,
-            minHeight: 170,
+            minHeight: 88,
             overflow: "hidden",
             position: "relative",
           }}
         >
-          <View pointerEvents="none" style={{ backgroundColor: "#E1EEFF", borderRadius: 110, bottom: -105, height: 180, left: -65, position: "absolute", width: 180 }} />
-          <View pointerEvents="none" style={{ backgroundColor: "#DDEBFF", borderRadius: 105, bottom: -40, height: 185, position: "absolute", right: 16, width: 185 }} />
-          <View pointerEvents="none" style={{ backgroundColor: "#E4F0FF", borderRadius: 100, height: 190, position: "absolute", right: -90, top: -75, width: 190 }} />
-          <BalanceArtwork />
-          <View style={{ gap: 8, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg, zIndex: 1 }}>
-            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1 }}>
+          <AnimatedPressable accessibilityLabel="How the Service balance works" accessibilityRole="button" hitSlop={10} onPress={() => setHowOpen(true)} style={{ position: "absolute", top: 14, right: 14, zIndex: 2, padding: 4 }} tapLockMs={0}>
+            <CircleHelp color={colors.muted} size={20} strokeWidth={2.2} />
+          </AnimatedPressable>
+          <View style={{ alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: spacing.xl, paddingVertical: 12 }}>
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12, letterSpacing: 0.5 }}>
               AVAILABLE BALANCE
             </Text>
             <Text
@@ -292,43 +269,34 @@ export default function OwnerServiceBalanceScreen() {
               style={{
                 color: colors.ink,
                 fontFamily: fonts.display,
-                fontSize: 48,
-                letterSpacing: -1.6,
-                lineHeight: 54,
-                maxWidth: 215,
+                fontSize: 36,
+                letterSpacing: -1,
+                lineHeight: 42,
+                textAlign: "center",
               }}
             >
-              {formatMoneyPaise(balance?.availablePaise ?? 0)}
+              <Text style={{ letterSpacing: 3 }}>₹</Text>{formatMoneyPaise(balance?.availablePaise ?? 0).replace("₹", "")}
             </Text>
-            <View style={{ flexDirection: "row", height: 48, width: 158 }}>
-              <ActionButton
-                disabled={!balance?.topUpEnabled}
-                label="Add money"
-                onPress={() => {
-                  setAmountError(null);
-                  setSheetOpen(true);
-                }}
-              />
-            </View>
           </View>
         </LinearGradient>
-
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <SummaryTile
-            color="#9A670F"
-            icon={CalendarDays}
-            label="Last updated"
-            tint="#FFF9EF"
-            value={updatedOn}
-          />
-          <SummaryTile
-            color={colors.primary}
-            icon={ChartNoAxesColumnIncreasing}
-            label="Recent top-ups"
-            tint="#EFF6FF"
-            value={`${topUpEntries.length} · ${formatMoneyPaise(recentTopUpTotalPaise)}`}
-          />
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 }}>
+          <View style={{ marginTop: 8 }}>
+            <View style={{ borderWidth: 1, borderColor: amountError ? colors.danger : colors.borderStrong, borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, height: 48 }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 20 }}>₹</Text>
+              <AppTextInput accessibilityLabel="Add amount" keyboardType="number-pad" onChangeText={(next) => { setAmount(next.replace(/[^0-9]/g, "")); setAmountError(null); }} placeholder={`${minRupees} to ${maxRupees}`} placeholderTextColor={colors.kicker} value={amount} style={{ flex: 1, color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 15, height: 46, paddingVertical: 10, textAlignVertical: "center" }} />
+            </View>
+            <View pointerEvents="none" style={{ position: "absolute", top: -9, left: 14, backgroundColor: colors.surface, paddingHorizontal: 6 }}>
+              <Text style={{ color: amountError ? colors.danger : colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>Add amount <Text style={{ color: colors.danger }}>*</Text></Text>
+            </View>
+            {amountError ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.danger, marginTop: 5 }]}>{amountError}</Text> : null}
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            {(balance?.quickAmountsPaise ?? []).map((paise) => <QuickAmount key={paise} label={String(Math.round(paise / 100))} onPress={() => { setAmount(String(Math.round(paise / 100))); setAmountError(null); }} selected={amount === String(Math.round(paise / 100))} />)}
+          </View>
+          <ActionButton compact disabled={!balance?.topUpEnabled || startState.isLoading} label={startState.isLoading ? "Opening…" : "Add Balance"} onPress={submitTopUp} variant="dangerFilled" />
+          {outstandingPaise > 0 ? <Text style={[type.caption, { color: colors.muted }]}>Minimum {formatMoneyPaise(minimumTopUpPaise)} — {formatMoneyPaise(outstandingPaise)} clears your pending charges and the rest goes to your balance.</Text> : null}
         </View>
+
       </View>
 
       {(balance?.reservedPaise ?? 0) > 0 ? (
@@ -363,88 +331,27 @@ export default function OwnerServiceBalanceScreen() {
         </Text>
       ) : null}
 
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
-        <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
-        <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>
-          Recent Activity
-        </Text>
-        <View style={{ backgroundColor: colors.border, flex: 1, height: 1 }} />
+      <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 18, overflow: "hidden" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderColor: colors.border }}>
+          <View style={{ width: 34, height: 34, backgroundColor: colors.neutralSoft, borderRadius: 11, alignItems: "center", justifyContent: "center" }}>
+            <Svg width={24} height={27} viewBox="0 0 24 28">
+              <Path d="M5 26V6Q5 2 9 2H17Q21 2 21 6V25Q21 27 19 26L17 24L14 26L11 24L8 26Q5 28 5 26ZM9 8H17M9 12H15" fill="none" stroke={colors.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </View>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, lineHeight: 23 }}>Recent Transactions</Text>
+        </View>
+        <View style={{ paddingHorizontal: 18 }}>
+          {!transactionsQuery.data && (transactionsQuery.isLoading || transactionsQuery.isFetching) ? <WalletTransactionSkeleton /> : transactionsQuery.data?.content.length ? transactionsQuery.data.content.map((entry) => <View key={entry.id}><ServiceBalanceTransactionRow compact entry={entry} /><TransactionSeparator /></View>) : !transactionsQuery.isError ? <Text style={[type.caption, { color: colors.muted, paddingVertical: 20 }]}>No transactions yet</Text> : null}
+          {transactionsQuery.isError && !transactionsQuery.isFetching ? <WalletTransactionsErrorCard onRetry={() => void transactionsQuery.refetch()} /> : null}
+          <AnimatedPressable accessibilityRole="button" accessibilityLabel="See all transactions" onPress={() => router.push("/owner-service-balance-transactions")} style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 4, paddingVertical: 10, minHeight: 40 }}>
+            <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 14 }}>See All</Text><ChevronRight color={colors.danger} size={16} />
+          </AnimatedPressable>
+        </View>
       </View>
 
-      <TabSwitcher active={activityTab} onChange={setActivityTab} options={ACTIVITY_TABS} />
-
-      {activityTab === "top-ups" ? (
-        <EntryList
-          description="Money you add to your Service balance will show up here."
-          entries={topUpEntries}
-          title="No top-ups yet"
-        />
-      ) : (
-        <EntryList
-          description="Holds, charges and released holds for paid Khatiyan services will show up here."
-          entries={serviceEntries}
-          title="No service charges yet"
-        />
-      )}
-
-      {sheetOpen ? (
-        <SheetShell animated onClose={() => setSheetOpen(false)} title="Add money">
-          <View style={{ gap: spacing.lg }}>
-            <View style={{ gap: spacing.sm }}>
-              <Text style={[type.label, { color: colors.muted }]}>Quick select</Text>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                {(balance?.quickAmountsPaise ?? []).map((paise) => (
-                  <QuickAmount
-                    key={paise}
-                    label={formatMoneyPaise(paise)}
-                    onPress={() => {
-                      setAmount(String(Math.round(paise / 100)));
-                      setAmountError(null);
-                    }}
-                    selected={amount === String(Math.round(paise / 100))}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <FormInput
-              error={amountError ?? undefined}
-              keyboardType="number-pad"
-              label="Or enter another amount"
-              onChangeText={(next) => {
-                setAmount(next.replace(/[^0-9]/g, ""));
-                setAmountError(null);
-              }}
-              placeholder={`${minRupees} to ${maxRupees}`}
-              prefix="₹"
-              value={amount}
-            />
-
-            {outstandingPaise > 0 ? (
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <CircleAlert color={colors.warning} size={14} strokeWidth={2.2} />
-                <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
-                  Minimum {formatMoneyPaise(minimumTopUpPaise)} — {formatMoneyPaise(outstandingPaise)} clears your
-                  pending charges and the rest goes to your balance.
-                </Text>
-              </View>
-            ) : null}
-
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Info color={colors.muted} size={14} strokeWidth={2.2} />
-              <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
-                Your balance updates once the payment is confirmed, which can take a moment.
-              </Text>
-            </View>
-
-            <ActionButton
-              disabled={startState.isLoading}
-              label={startState.isLoading ? "Opening…" : "Continue to payment"}
-              onPress={submitTopUp}
-            />
-          </View>
-        </SheetShell>
-      ) : null}
+      <WalletLockCard enabled={Boolean(balance?.walletLockEnabled)} busy={lockState.isLoading} onChange={(enabled) => enabled ? setConfirmLock(true) : setDisableLock(true)} />
+      {confirmLock ? <ConfirmDialog animatedTransition title="Enable wallet locking?" message="Use your account PIN to open the wallet. This can be reversed anytime" confirmLabel="Continue" onCancel={() => setConfirmLock(false)} onConfirm={() => void enableLock()} /> : null}
+      {disableLock ? <WalletPinModal disableLock onCancel={() => setDisableLock(false)} onUnlocked={() => setDisableLock(false)} /> : null}
 
       {howOpen ? (
         <HowItWorksSheet
@@ -452,7 +359,7 @@ export default function OwnerServiceBalanceScreen() {
           onClose={() => setHowOpen(false)}
           steps={[
             {
-              body: "Add money once, then identity checks you request are paid for from this balance.",
+              body: "Add money once, then services you request are paid for from this balance.",
             title: "It is prepaid",
           },
           {
@@ -464,7 +371,7 @@ export default function OwnerServiceBalanceScreen() {
             title: "What it cannot do",
           },
           {
-            body: "It stays on your balance for whenever you need it. If you close your Khatiyan account, whatever is left goes back to the card or UPI app that paid it.",
+            body: "It stays on your balance for whenever you need it. If you close your Khatiyan account, whatever is left goes back to the bank account you paid from.",
             title: "Money you do not use",
           },
           ]}
@@ -732,12 +639,12 @@ function QuickAmount({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: selected ? colors.primary : colors.surfaceSunken,
-        borderColor: selected ? colors.primary : colors.border,
-        borderRadius: radii.pill,
+        backgroundColor: selected ? "#FFF0F3" : colors.surface,
+        borderColor: selected ? colors.danger : colors.border,
+        borderRadius: 12,
         borderWidth: 1,
         flex: 1,
-        height: 42,
+        height: 38,
         justifyContent: "center",
         paddingHorizontal: spacing.sm,
       }}
@@ -745,7 +652,7 @@ function QuickAmount({
       <Text
         numberOfLines={1}
         style={{
-          color: selected ? colors.onPrimary : colors.ink,
+          color: selected ? colors.danger : colors.muted,
           fontFamily: fonts.sansBold,
           fontSize: 13,
           lineHeight: 17,
@@ -757,3 +664,4 @@ function QuickAmount({
     </AnimatedPressable>
   );
 }
+import { CircleHelp } from "lucide-react-native";

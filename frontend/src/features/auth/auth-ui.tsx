@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { ActivityIndicator, Modal, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -92,7 +93,7 @@ export function AuthAlertModal({ message, onClose }: { message: string; onClose:
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
@@ -131,7 +132,7 @@ export function AuthAlertModal({ message, onClose }: { message: string; onClose:
           </AnimatedPressable>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 
@@ -302,7 +303,6 @@ export function PhoneField({
   value,
   onChangeText,
   error,
-  hideErrorText,
 }: {
   label: string;
   value: string;
@@ -340,6 +340,7 @@ export function PhoneField({
           paddingHorizontal: spacing.md,
         }}
       >
+        <BorderError message={error} />
         <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
@@ -384,20 +385,27 @@ export function PhoneField({
           }}
         />
       </View>
-      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }
 
-// Six-digit OTP / PIN entry. The placeholder is a separate overlay because the
-// filled state uses wide letter-spaced mono digits which would distort a hint.
+function BorderError({ message }: { message?: string }) {
+  const { colors, fonts } = useTheme();
+  if (!message) return null;
+  return <Text accessibilityRole="alert" pointerEvents="none" style={{
+    position: "absolute", left: 12, top: -9, maxWidth: "90%",
+    backgroundColor: colors.authSurface, paddingHorizontal: 5,
+    color: colors.danger, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 16,
+  }}>{message.trim().replace(/\.+$/, "")}</Text>;
+}
+
+// Shared six-digit OTP / PIN entry with validation embedded in its border.
 export function CodeField({
   label,
   value,
   onChangeText,
   secureTextEntry,
   error,
-  hideErrorText,
 }: {
   label: string;
   value: string;
@@ -437,7 +445,8 @@ export function CodeField({
           paddingHorizontal: spacing.lg,
         }}
       >
-        <Icon color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
+        <BorderError message={error} />
+        <Icon color={error ? colors.danger : focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
           {/* Placeholder yields as soon as the field is focused, not on typing. */}
           {!value && !focused ? (
@@ -471,11 +480,9 @@ export function CodeField({
             style={{
               backgroundColor: "transparent",
               color: colors.ink,
-              fontFamily: value ? fonts.mono : fonts.sans,
-              fontSize: value ? 21 : 15,
-              fontVariant: ["tabular-nums"],
-              fontWeight: "700",
-              letterSpacing: value ? 9 : 0,
+              fontFamily: fonts.sansBold,
+              fontSize: 16,
+              letterSpacing: 0.6,
               minHeight: 56,
               paddingVertical: 0,
             }}
@@ -497,7 +504,6 @@ export function CodeField({
           </AnimatedPressable>
         ) : null}
       </View>
-      <FieldError message={hideErrorText ? undefined : error} />
     </View>
   );
 }

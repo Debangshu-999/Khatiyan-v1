@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 
@@ -473,7 +474,7 @@ function PriorityPickerModal({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Closes by its own close button, a choice or the device back button, not a tap
           on the scrim (user, 2026-09-29). */}
       <View style={{
@@ -521,7 +522,7 @@ function PriorityPickerModal({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

@@ -18,6 +18,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal } from "@/features/geo/map-location-picker";
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
+import { SectionHeading } from "@/components/section-heading";
 import { FacilitiesField } from "@/features/owner/facilities-field";
 import { StayChoiceSections } from "@/features/property/stay-choice-sections";
 import {
@@ -841,18 +842,10 @@ export default function OwnerRegisterPropertyScreen() {
  * section. The cards inside are the steps' own, matching edit property.
  */
 function FormSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
-  const { colors, fonts } = useTheme();
-
   return (
     <View style={{ gap: spacing.md }}>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
-          {title}
-        </Text>
-        {trailing}
-      </View>
+      <SectionHeading title={title} trailing={trailing} />
       <View style={{ gap: spacing.md }}>{children}</View>
     </View>
   );
 }
-

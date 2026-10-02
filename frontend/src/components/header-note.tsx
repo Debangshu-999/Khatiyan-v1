@@ -36,7 +36,7 @@ export function HeaderNote({ children, delay = 120 }: { children: ReactNode; del
   );
 
   return (
-    <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xxs, maxWidth: 540 }}>
+    <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xxs, maxWidth: 540, width: "92%" }}>
       <Animated.View
         style={{
           backgroundColor: colors.accent,
@@ -59,6 +59,8 @@ export function HeaderNote({ children, delay = 120 }: { children: ReactNode; del
           {
             color: colors.muted,
             flex: 1,
+            fontSize: 13,
+            lineHeight: 18,
             opacity: progress,
             transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
           },

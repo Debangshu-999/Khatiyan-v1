@@ -8,7 +8,7 @@ import { useListBillPaymentClaimsQuery } from "@/store/services/payment-intent-a
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const PAYMENT_CLAIMS_ILLUSTRATION = require("../../../assets/workspace/payment_claims1254.png");
+const PAYMENT_CLAIMS_ILLUSTRATION = require("../../../assets/images/workspace/payment_claims1254.png");
 
 /**
  * One bill's payment claims, from the claims icon on its card (2026-09-28).
@@ -31,7 +31,7 @@ export function BillClaimsSheet({
 
   return (
     <SheetShell onClose={onClose} title="Payment claims">
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         What the tenant said they paid on {cycle.referenceCode}, newest first.
       </Text>
 

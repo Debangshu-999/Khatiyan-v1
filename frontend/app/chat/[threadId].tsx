@@ -26,9 +26,8 @@ import {
   Paperclip,
   Pencil,
   SendHorizontal,
-  Trash2,
-  X,
-} from "lucide-react-native";
+  X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";

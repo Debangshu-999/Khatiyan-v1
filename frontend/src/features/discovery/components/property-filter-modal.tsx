@@ -175,7 +175,7 @@ export function PropertyFilterModal({
               >
                 Property filters
               </Text>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Refine listed PG and hostel profiles
               </Text>
             </View>

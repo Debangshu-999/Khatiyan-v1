@@ -62,13 +62,13 @@ export default function OwnerPropertyVisitsScreen() {
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
         badge={property && !canEdit ? <ViewOnlyChip /> : null}
-        italicTail="visits."
+        italicTail="Hours"
         subtitle={
           property
             ? `When tenants can book a visit to ${property.name}.`
             : "Select a property from Home to set its visit slots."
         }
-        title="Property"
+        title="Visiting"
       />
 
       {!property ? (

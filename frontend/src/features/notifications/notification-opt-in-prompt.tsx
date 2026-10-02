@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { BellRing, X } from "lucide-react-native";
@@ -83,7 +84,7 @@ export function NotificationOptInPrompt() {
   }
 
   return (
-    <Modal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={() => void closePrompt()}>
+    <CenterModal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={() => void closePrompt()}>
       <View
         style={{
           alignItems: "center",
@@ -127,7 +128,7 @@ export function NotificationOptInPrompt() {
               >
                 Enable alerts
               </Text>
-              <Text style={[type.description, { color: colors.muted }]}>
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Get bill, concern, notice and tenancy updates on this device.
               </Text>
             </View>
@@ -189,6 +190,6 @@ export function NotificationOptInPrompt() {
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

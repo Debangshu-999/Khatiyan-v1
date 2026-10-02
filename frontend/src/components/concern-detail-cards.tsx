@@ -14,7 +14,8 @@ export function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
   const statusLabel = concern.reopened ? "Reopened" : concern.status === "UNDER_REVIEW" ? "In review" : humanizeToken(concern.status);
   const statusDescription = concern.reopened ? "The tenant has reopened this issue." : concern.status === "RESOLVED" ? "The issue has been resolved." : concern.status === "CLOSED" ? "The concern has been closed." : concern.status === "IN_PROGRESS" ? "The issue is being handled." : concern.status === "UNDER_REVIEW" ? "The concern is being reviewed." : "The concern is awaiting review.";
   const assignedTo = concern.assignedToName ?? (concern.assignedToUserId ? shortId(concern.assignedToUserId) : "Unassigned");
-  const assignedBy = concern.assignedByName ?? (concern.assignedByUserId ? shortId(concern.assignedByUserId) : null);
+  const selfAssigned = Boolean(concern.assignedByUserId && concern.assignedByUserId === concern.assignedToUserId);
+  const assignedBy = selfAssigned ? "self" : concern.assignedByName ?? (concern.assignedByUserId ? shortId(concern.assignedByUserId) : null);
   const closed = concern.status === "CLOSED";
   const showReopenUntil = !closed && Boolean(concern.reopenUntil);
 
@@ -38,9 +39,16 @@ export function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
           </View>
         </View>
 
-        {/* Three deliberate rows: the tenancy reference is long enough to need
-            the full width, and the two pairs below read as comparisons. */}
-        <FactTile label="Tenancy" tone="neutral" value={concern.tenancyReferenceCode} wide />
+        {concern.reopened ? (
+          <View style={{ backgroundColor: colors.dangerSoft, borderRadius: 14, gap: spacing.xs, padding: spacing.md }}>
+            <Text style={{ fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 17, color: colors.danger }}>Reopened because:</Text>
+            <Text style={[type.description, { color: colors.muted }]}>{concern.reopenReason ?? "No reopen reason provided."}</Text>
+          </View>
+        ) : null}
+        <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 21 }}>{concern.raisedByName ?? "Tenant"}</Text>
+          <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12, lineHeight: 17 }}>{concern.tenancyReferenceCode}</Text>
+        </View>
 
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <FactTile icon="wrench" label="Category" tone="neutral" value={humanizeToken(concern.category)} />
@@ -62,30 +70,23 @@ export function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
             <View style={{ width: 28, alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <MaterialCommunityIcons name="account" size={22} color={colors.muted} />
             </View>
-            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-              <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold }]}>
-                Assigned by: {assignedBy ?? "Not recorded"}
-              </Text>
-              <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold }]}>
-                Assigned at: {concern.assignedAt ? formatDateTime(concern.assignedAt) : "Not recorded"}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-
-        {concern.reopened ? (
-          <View style={{ backgroundColor: colors.dangerSoft, borderColor: colors.danger, borderRadius: 14, borderWidth: 1, gap: spacing.xs, padding: spacing.md }}>
-            <Text style={[type.eyebrow, { color: colors.danger }]}>Reopened</Text>
-            <Text style={[type.body, { color: colors.ink }]}>{concern.reopenReason ?? "No reopen reason provided."}</Text>
+            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold, flex: 1, minWidth: 0 }]}>
+              Assigned by {assignedBy ?? "Not recorded"}{concern.assignedAt ? ` · ${formatDateTime(concern.assignedAt)}` : ""}
+            </Text>
           </View>
         ) : null}
 
         <View style={{ backgroundColor: colors.border, height: 1 }} />
 
         <View>
-          <TimelineRow last={!concern.inProgressAt && !concern.resolvedAt && !showReopenUntil && !closed} label="Raised" value={formatDateTime(concern.createdAt)} />
-          {concern.inProgressAt ? <TimelineRow last={!concern.resolvedAt && !showReopenUntil && !closed} label="In progress" value={formatDateTime(concern.inProgressAt)} /> : null}
-          {concern.resolvedAt ? <TimelineRow resolved={!closed} last={!showReopenUntil && !closed} label="Resolved" value={formatDateTime(concern.resolvedAt)} /> : null}
+          <TimelineRow activeIcon="flag-outline" active={concern.status === "OPEN" && !concern.reopened} last={!concern.assignedAt && !concern.inProgressAt && !concern.resolvedAt && !concern.reopenedAt && !showReopenUntil && !closed} label="Raised" value={formatDateTime(concern.createdAt)} />
+          {concern.assignedAt ? <TimelineRow activeIcon="clipboard-search" dotColor={colors.primary} active={concern.status === "UNDER_REVIEW" && !concern.reopened} last={!concern.inProgressAt && !concern.resolvedAt && !concern.reopenedAt && !showReopenUntil && !closed} label="In review" value={formatDateTime(concern.assignedAt)} /> : null}
+          {concern.inProgressAt ? <TimelineRow dotColor="#F97316" active={concern.status === "IN_PROGRESS" && !concern.reopened} last={!concern.resolvedAt && !concern.reopenedAt && !showReopenUntil && !closed} label="In progress" value={formatDateTime(concern.inProgressAt)} /> : null}
+          {concern.resolvedAt || concern.reopenedAt ? <TimelineRow dotColor={colors.successText} resolved={concern.status === "RESOLVED" && !concern.reopenedAt} last={!concern.reopenedAt && !showReopenUntil && !closed} label="Resolved" value={concern.resolvedAt ? formatDateTime(concern.resolvedAt) : "Date unavailable"} /> : null}
+          {concern.reopenedAt ? <>
+            <TimelineRow dotColor="#EAB308" active={concern.reopened} label="Reopened" value={formatDateTime(concern.reopenedAt)} />
+            <TimelineRow dotColor={colors.successText} label="Reopen resolved" pending={!concern.reopenResolvedAt} resolved={Boolean(concern.reopenResolvedAt) && concern.status === "RESOLVED"} value={concern.reopenResolvedAt ? formatDateTime(concern.reopenResolvedAt) : "Pending"} last={!showReopenUntil && !closed} />
+          </> : null}
           {showReopenUntil && concern.reopenUntil ? <TimelineRow pending last label="Reopen until" value={formatDateTime(concern.reopenUntil)} /> : null}
           {closed ? <TimelineRow completedColor={status.fg} resolved last label="Closed" value={formatDateTime(concern.updatedAt)} /> : null}
         </View>
@@ -129,18 +130,18 @@ function FactTile({ icon, label, tone, value, wide }: { icon?: DetailIconName; l
   );
 }
 
-function TimelineRow({ label, value, last = false, resolved = false, pending = false, completedColor }: { label: string; value: string; last?: boolean; resolved?: boolean; pending?: boolean; completedColor?: string }) {
+function TimelineRow({ label, value, last = false, resolved = false, pending = false, completedColor, dotColor, active = false, activeIcon }: { label: string; value: string; last?: boolean; resolved?: boolean; pending?: boolean; completedColor?: string; dotColor?: string; active?: boolean; activeIcon?: DetailIconName }) {
   const { colors, type } = useTheme();
   const tickColor = completedColor ?? colors.successText;
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 38 }}>
       <View style={{ width: 26, alignSelf: "stretch", alignItems: "center", justifyContent: "center" }}>
         {!last ? <View style={{ position: "absolute", top: "50%", bottom: -19, width: 1, backgroundColor: colors.borderStrong }} /> : null}
-        <View style={{ backgroundColor: resolved ? tickColor : pending ? colors.surface : colors.primarySoft, borderColor: pending ? colors.borderStrong : "transparent", borderWidth: pending ? 1.5 : 0, borderRadius: 13, height: resolved ? 24 : 18, width: resolved ? 24 : 18, alignItems: "center", justifyContent: "center" }}>
-          {resolved ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : !pending ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.muted }} /> : null}
+        <View style={{ backgroundColor: resolved ? tickColor : pending ? colors.surface : active ? dotColor ?? colors.primary : colors.surfaceSunken, borderColor: pending ? colors.borderStrong : "transparent", borderWidth: pending ? 1.5 : 0, borderRadius: 13, height: resolved || active ? 24 : 18, width: resolved || active ? 24 : 18, alignItems: "center", justifyContent: "center" }}>
+          {resolved || active ? <MaterialCommunityIcons name={resolved ? "check" : activeIcon ?? (label === "Reopened" ? "restore" : "progress-wrench")} size={16} color="#FFFFFF" /> : !pending ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.muted }} /> : null}
         </View>
       </View>
-      <Text style={[type.caption, { color: resolved ? tickColor : colors.muted, flex: 1, fontWeight: "700" }]}>{label}</Text>
+      <Text style={[type.caption, { color: resolved ? tickColor : active ? dotColor ?? colors.primary : colors.muted, flex: 1, fontWeight: "700" }]}>{label}</Text>
       <Text style={[type.caption, { color: colors.muted, flexShrink: 1, textAlign: "right" }]}>{value}</Text>
     </View>
   );
@@ -197,5 +198,3 @@ export function NoteCard({ body, title, heading }: { body: string; title: string
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", hour: "numeric", minute: "2-digit", month: "short" }).format(new Date(value));
 }
-
-

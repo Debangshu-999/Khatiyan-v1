@@ -32,7 +32,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../../assets/empty-states/concern-empty_state.png");
 
 /** First screenful, and how many more arrive each time the reader reaches the end. */
 /**

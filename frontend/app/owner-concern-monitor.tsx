@@ -18,7 +18,7 @@ import { type ConcernSummary, useListPropertyConcernMonitorQuery } from "@/store
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 function ReviewIcon({ color, size }: LucideProps) {
   return <MaterialCommunityIcons name="clipboard-search" color={color} size={Number(size ?? 24)} />;
@@ -142,8 +142,6 @@ function MonitorConcernCard({ concern, onOpen }: { concern: ConcernSummary; onOp
           <InfoLine icon="home-outline" label="Room" value={concern.roomNumber} />
           {concern.assignedToName ? <InfoLine icon="account-outline" label="Assigned to" value={concern.assignedToName} /> : null}
           <InfoLine icon="file-document-outline" label="Tenancy" value={concern.tenancyReferenceCode} />
-          {concern.statusNote ? <InfoLine icon="text-box-outline" label="Latest note" value={concern.statusNote} /> : null}
-          {concern.reopenReason ? <InfoLine icon="message-text-outline" label="Reopen reason" value={concern.reopenReason} /> : null}
           {concern.reopenUntil ? <InfoLine highlighted icon="calendar-outline" label="Reopen until" value={formatDateTime(concern.reopenUntil)} /> : null}
           <InfoLine icon="clock-outline" label="Updated" last value={formatDateTime(concern.updatedAt)} />
         </View>
@@ -164,7 +162,7 @@ function InfoLine({ highlighted = false, icon, label, last = false, value }: {
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ borderBottomColor: colors.border, borderBottomWidth: last ? 0 : 1, paddingVertical: 2 }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, backgroundColor: highlighted ? colors.warningSoft : "transparent", borderRadius: 10, paddingVertical: 4, paddingHorizontal: highlighted ? 6 : 0 }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, backgroundColor: highlighted ? colors.warningSoft : "transparent", borderRadius: 10, paddingVertical: 4, paddingHorizontal: 0 }}>
         <View style={{ alignItems: "center", justifyContent: "center", backgroundColor: highlighted ? colors.warningSoft : colors.surfaceSunken, borderRadius: 8, height: 28, width: 28 }}>
           <MaterialCommunityIcons name={icon} color={highlighted ? colors.warningText : colors.muted} size={18} />
         </View>

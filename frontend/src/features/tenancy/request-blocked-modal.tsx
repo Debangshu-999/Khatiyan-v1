@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { Modal, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
@@ -123,7 +124,7 @@ export function RequestBlockedModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal
+    <CenterModal
       animationType="fade"
       navigationBarTranslucent
       onRequestClose={onClose}
@@ -198,7 +199,7 @@ export function RequestBlockedModal({
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
               {block.referenceCode}
             </Text>
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               {block.message}
             </Text>
           </View>
@@ -209,7 +210,7 @@ export function RequestBlockedModal({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

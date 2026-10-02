@@ -38,9 +38,9 @@ import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/p
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
-const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
 type NudgeTab = "send" | "sent";
 

@@ -84,7 +84,7 @@ export function FloatingForecastChef({ viewport }: { viewport: Viewport }) {
             in the hit target so the chef is a useful medium size, not tiny. */}
         <Image
           resizeMode="stretch"
-          source={require("../../../assets/workspace/cooking-forecast-chef-3x.png")}
+          source={require("../../../assets/images/workspace/cooking-forecast-chef-3x.png")}
           style={{ height: CHEF_HEIGHT, left: -14, position: "absolute", top: 0, width: CHEF_IMAGE_WIDTH }}
         />
       </Animated.View>

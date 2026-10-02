@@ -29,6 +29,7 @@ export type ConcernSummary = {
   roomNumber: string;
   tenancyReferenceCode: string;
   raisedByUserId: string;
+  raisedByName?: string | null;
   assignedToUserId: string | null;
   assignedToName: string | null;
   assignedByUserId: string | null;
@@ -49,6 +50,7 @@ export type ConcernSummary = {
   reopened: boolean;
   reopenReason: string | null;
   reopenedAt: string | null;
+  reopenResolvedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   photos: ConcernPhoto[];

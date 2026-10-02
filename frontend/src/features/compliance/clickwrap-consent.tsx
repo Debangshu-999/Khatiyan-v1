@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Check, Expand, X } from "lucide-react-native";
@@ -184,7 +185,7 @@ export function FullDeclarationModal({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -249,6 +250,6 @@ export function FullDeclarationModal({
 
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

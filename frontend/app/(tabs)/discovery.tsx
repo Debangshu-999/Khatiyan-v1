@@ -121,11 +121,11 @@ const AI_WINDOW = 8;
 /** Pixels from the bottom at which the next page is asked for. */
 const LOAD_MORE_SLACK = 700;
 
-const DISCOVERY_HERO = require("../../assets/discovery-hero.png");
-const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/discovery-empty-search.png");
-const LISTING_RESULTS_ILLUSTRATION = require("../../assets/listing-results-illustration.jpg");
-const NO_LOCATION_ILLUSTRATION = require("../../assets/workspace/No-Location_512x512.png");
-const NEARBY_MAP_PREVIEW = require("../../assets/nearby-map-preview.png");
+const DISCOVERY_HERO = require("../../assets/images/discovery-hero.png");
+const EMPTY_SEARCH_ILLUSTRATION = require("../../assets/empty-states/discovery-empty-search.png");
+const LISTING_RESULTS_ILLUSTRATION = require("../../assets/images/listing-results-illustration.jpg");
+const NO_LOCATION_ILLUSTRATION = require("../../assets/empty-states/No-Location_512x512.png");
+const NEARBY_MAP_PREVIEW = require("../../assets/images/nearby-map-preview.png");
 const NearbyMapIcon = foodIcon("map-search-outline");
 
 function NearbyMapCard({ onPress }: { onPress: () => void }) {

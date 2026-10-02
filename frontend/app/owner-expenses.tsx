@@ -60,10 +60,9 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_EXPENSE_ILLUSTRATION = require("../assets/workspace/No-Expense_512x512.png");
+const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
 const PAGE_SIZE = 20;
-const EXPENSE_HEADER_ILLUSTRATION = require("../assets/workspace/expense-header.png");
 
 export default function OwnerExpensesScreen() {
   const { colors } = useTheme();
@@ -132,7 +131,6 @@ export default function OwnerExpensesScreen() {
         surface={colors.surface}
       >
         <ScreenHeader
-          artwork={EXPENSE_HEADER_ILLUSTRATION}
           italicTail="tracker."
           subtitle={property ? `Track spending, budgets and recurring costs for ${property.name}.` : "Select a property from Home to manage expenses."}
           title="Expense"

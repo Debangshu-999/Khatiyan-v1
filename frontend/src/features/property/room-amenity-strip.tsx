@@ -29,9 +29,11 @@ const AMENITY_LABELS: Record<RoomAmenity, string> = {
 export function RoomAmenityStrip({
   amenities,
   custom,
+  tiles = false,
 }: {
   amenities: RoomAmenity[];
   custom: string[];
+  tiles?: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
 
@@ -42,8 +44,8 @@ export function RoomAmenityStrip({
       {ROOM_AMENITIES.map((amenity) => {
         const Icon = ROOM_AMENITY_ICONS[amenity];
         return (
-          <Glyph key={amenity} label={AMENITY_LABELS[amenity]} on={on(amenity)}>
-            <Icon color={on(amenity) ? colors.inkSoft : colors.border} size={17} />
+          <Glyph key={amenity} label={AMENITY_LABELS[amenity]} on={on(amenity)} tiles={tiles}>
+            <Icon color={on(amenity) ? colors.inkSoft : colors.border} size={tiles ? 23 : 17} />
           </Glyph>
         );
       })}
@@ -57,12 +59,13 @@ export function RoomAmenityStrip({
   );
 }
 
-function Glyph({ children, label, on }: { children: React.ReactNode; label: string; on: boolean }) {
+function Glyph({ children, label, on, tiles }: { children: React.ReactNode; label: string; on: boolean; tiles: boolean }) {
+  const { colors } = useTheme();
   return (
     <View
       accessibilityLabel={`${label}: ${on ? "yes" : "no"}`}
       accessible
-      style={{ alignItems: "center", height: 20, justifyContent: "center", width: 20 }}
+      style={{ alignItems: "center", height: tiles ? 38 : 20, justifyContent: "center", width: tiles ? 38 : 20, backgroundColor: tiles ? colors.neutralSoft : undefined, borderRadius: tiles ? 10 : 0 }}
     >
       {children}
     </View>

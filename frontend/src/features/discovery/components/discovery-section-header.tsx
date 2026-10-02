@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { SectionHeading } from "@/components/section-heading";
 
 type DiscoverySectionHeaderProps = {
   title: string;
@@ -19,23 +20,12 @@ export function DiscoverySectionHeader({ eyebrow, subtitle, title }: DiscoverySe
           {eyebrow}
         </Text>
       ) : null}
-      <Text
-        style={{
-          color: colors.ink,
-          fontFamily: fonts.display,
-          fontSize: 24,
-          letterSpacing: -0.4,
-          lineHeight: 28,
-        }}
-      >
-        {title}
-      </Text>
+      <SectionHeading title={title} />
       {subtitle ? (
         <Text style={[type.description, { color: colors.muted }]}>
           {subtitle}
         </Text>
       ) : null}
-      <View style={{ backgroundColor: colors.border, height: 1, marginTop: spacing.xs }} />
     </View>
   );
 }

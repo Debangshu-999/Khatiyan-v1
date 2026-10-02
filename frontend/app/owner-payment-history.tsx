@@ -23,7 +23,7 @@ import { useListPropertyBillingCyclesQuery } from "@/store/services/billing-api"
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 const PAGE_SIZE = 8;
 

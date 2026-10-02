@@ -10,7 +10,7 @@ import { saveHasSeenGetStarted } from "@/config/app-settings-storage";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const WELCOME_ASSET = require("../assets/auth/welcome.png");
+const WELCOME_ASSET = require("../assets/images/auth/welcome.png");
 
 export default function GetStartedScreen() {
   const router = useRouter();

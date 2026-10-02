@@ -4,6 +4,7 @@ import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Archive, CirclePlus, Eye, type LucideProps, X } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -28,7 +29,7 @@ import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/star
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const CONCERN_EMPTY_ILLUSTRATION = require("../assets/workspace/concern-empty_state.png");
+const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 export default function ConcernsScreen() {
   const router = useGuardedRouter();
@@ -183,46 +184,41 @@ function ConcernActionTile({
 // The tenant queue now uses the same compact, information-first card as the
 // owner queue. The detail screen carries the full status and assignment grid.
 function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: () => void }) {
-  const { colors, type } = useTheme();
-  const showEscalation = concern.escalationLevel !== "NONE" && concern.status === "OPEN";
+  const { colors, fonts, type } = useTheme();
+  const completed = !concern.reopened && (concern.status === "RESOLVED" || concern.status === "CLOSED");
+  const inProgress = !concern.reopened && concern.status === "IN_PROGRESS";
+  const statusLabel = concern.reopened ? "Reopened" : inProgress ? "In progress" : concern.status === "UNDER_REVIEW" ? "In review" : humanizeToken(concern.status);
+  const statusColor = concern.reopened ? colors.danger : completed ? colors.jade : inProgress ? colors.warningText : colors.primary;
+  const statusFill = concern.reopened ? colors.dangerSoft : completed ? colors.successSoft : inProgress ? colors.warningSoft : colors.primarySoft;
+  const statusIcon = concern.reopened ? "restore" : completed ? "check" : inProgress ? "progress-wrench" : "clipboard-search";
 
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>{concern.referenceCode}</Text>
-          <Text
-            style={[
-              type.caption,
-              { color: showEscalation ? colors.danger : colors.muted, fontWeight: "900" },
-            ]}
-          >
-            {showEscalation ? humanizeToken(concern.escalationLevel) : humanizeToken(concern.status)}
-          </Text>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 4, backgroundColor: statusFill, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <View style={{ alignItems: "center", justifyContent: "center", backgroundColor: statusColor, borderRadius: 999, height: 14, width: 14 }}>
+              <MaterialCommunityIcons name={statusIcon} color="#FFFFFF" size={10} />
+            </View>
+            <Text style={{ color: statusColor, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 15 }}>{statusLabel}</Text>
+          </View>
         </View>
         <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
           {concern.title}
         </Text>
-        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
-          {concern.description}
-        </Text>
         <ConcernMetaRow concern={concern} />
-        {concern.statusNote ? (
-          <Text numberOfLines={1} style={[type.caption, { color: colors.primary }]}>
-            Note: {concern.statusNote}
-          </Text>
-        ) : null}
         {concern.status === "RESOLVED" && concern.reopenUntil && new Date(concern.reopenUntil).getTime() > Date.now() ? (
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
-            Reopen until {formatDateTime(concern.reopenUntil)}. It closes after that.
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.warningSoft, borderRadius: 10, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
+            <View style={{ width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.warningSoft }}>
+              <MaterialCommunityIcons name="calendar-outline" size={18} color={colors.warningText} />
+            </View>
+            <Text style={[type.caption, { color: colors.warningText, flex: 1 }]}>
+              Reopen until: {formatDateTime(concern.reopenUntil)}
+            </Text>
+          </View>
         ) : null}
-        {concern.reopened ? (
-          <Text numberOfLines={1} style={[type.caption, { color: colors.danger }]}>
-            Reopened: {concern.reopenReason ?? "No reason provided"}
-          </Text>
-        ) : null}
-        <ActionButton icon={Eye} label="View" onPress={onPress} variant="secondary" />
+        <ActionButton icon={Eye} label="View" onPress={onPress} variant="primary" />
       </View>
     </Card>
   );
@@ -270,7 +266,7 @@ function ClosedConcernsModal({
                 Closed concerns
               </Text>
             </View>
-            <IconButton accessibilityLabel="Close concern history" icon={X} onPress={() => dismiss()} />
+            <IconButton accessibilityLabel="Close concern history" filled icon={X} onPress={() => dismiss()} />
           </View>
 
           {loading ? (

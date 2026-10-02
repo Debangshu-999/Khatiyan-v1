@@ -104,7 +104,7 @@ export function authHeroCopy(step: AuthStep, mode: AuthMode, context: { resetPho
   }
 }
 
-const HERO_IMAGE = require("../../../assets/auth/hero-property.jpg");
+const HERO_IMAGE = require("../../../assets/images/auth/hero-property.jpg");
 
 /**
  * Opacity of the tint scrim laid over the photograph.

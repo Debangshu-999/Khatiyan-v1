@@ -60,7 +60,7 @@ export function artworkIcon(source: ImageSourcePropType, inkFill: number) {
 }
 
 /** Rupee notes — the app's mark for money billed, collected or paid out. */
-export const MoneyIcon = artworkIcon(require("../../assets/workspace/money.png"), 0.75);
+export const MoneyIcon = artworkIcon(require("../../assets/icons/workspace/money.png"), 0.75);
 
 /**
  * A property, as artwork.
@@ -71,10 +71,10 @@ export const MoneyIcon = artworkIcon(require("../../assets/workspace/money.png")
  * its own in ink: the Home selector, the floor picker, the property card, the
  * dashboard box.
  */
-export const PropertyArtwork = artworkIcon(require("../../assets/workspace/property.png"), 0.49);
+export const PropertyArtwork = artworkIcon(require("../../assets/icons/workspace/property.png"), 0.49);
 
 /** A payment claim — a tenant saying they have paid, waiting to be checked. */
-export const PaymentClaimsIcon = artworkIcon(require("../../assets/workspace/payment_claims.png"), 0.53);
+export const PaymentClaimsIcon = artworkIcon(require("../../assets/icons/workspace/payment_claims.png"), 0.53);
 
 /**
  * A notice on the property board.
@@ -82,10 +82,10 @@ export const PaymentClaimsIcon = artworkIcon(require("../../assets/workspace/pay
  * <p>The module tile's own artwork, reused at glyph size — 234px of source for
  * a 30pt mark, so there is nothing to gain from a second file.
  */
-export const NoticeIcon = artworkIcon(require("../../assets/workspace/notice-module.png"), 0.64);
+export const NoticeIcon = artworkIcon(require("../../assets/icons/workspace/notice-module.png"), 0.64);
 
 /** Money going out — the budget and what has been spent against it. */
-export const ExpenseIcon = artworkIcon(require("../../assets/workspace/expense_tracker.png"), 0.54);
+export const ExpenseIcon = artworkIcon(require("../../assets/icons/workspace/expense_tracker.png"), 0.54);
 
 /**
  * Line art shaped like a lucide icon — and, unlike {@link artworkIcon}, it
@@ -128,7 +128,7 @@ export function lineArtIcon(source: ImageSourcePropType, inkFill: number) {
  * <p>Distinct from {@link MoneyIcon}, which is a bill: this one is the act of
  * collecting, which is what a collection RATE measures.
  */
-export const CollectionIcon = artworkIcon(require("../../assets/workspace/money-collection.png"), 0.69);
+export const CollectionIcon = artworkIcon(require("../../assets/icons/workspace/money-collection.png"), 0.69);
 
 /**
  * Two banknotes — money that has actually moved, as opposed to money billed.
@@ -137,4 +137,6 @@ export const CollectionIcon = artworkIcon(require("../../assets/workspace/money-
  * alpha channel, so the greys along each stroke are partial alpha rather than a
  * white halo waiting to appear on the first non-white card it lands on.
  */
-export const CollectedIcon = lineArtIcon(require("../../assets/workspace/money_linedraw.png"), 0.76);
+export const CollectedIcon = lineArtIcon(require("../../assets/vector-drawings/raster/money_linedraw.png"), 0.76);
+
+export { ExitTenancyIcon } from "./tenancy-line-icons";

@@ -551,7 +551,7 @@ function CategoryPickerSheet({
 
   return (
     <SheetShell animated onClose={onClose} title="Choose a category">
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Select the closest match. You can explain the full issue in the details section.
       </Text>
       <View

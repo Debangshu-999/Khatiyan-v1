@@ -1,5 +1,5 @@
-import { useState, type ComponentType, type ReactNode } from "react";
-import { Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { Animated, Easing, Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { statusTonePalette, type StatusTone } from "@/components/status-icon";
 import { ArrowLeft, CircleAlert, CircleCheck, Info, X, type LucideProps } from "lucide-react-native";
@@ -107,6 +107,7 @@ export function IconButton({
 }
 
 export function ActionButton({
+  borderColor,
   compact,
   disabled,
   icon: Icon,
@@ -114,6 +115,7 @@ export function ActionButton({
   onPress,
   variant = "primary",
 }: {
+  borderColor?: string;
   /** Tightens padding and type so three buttons fit one row without wrapping. */
   compact?: boolean;
   disabled?: boolean;
@@ -194,7 +196,7 @@ export function ActionButton({
         // read as translucent because nothing marked where it stopped.
         borderColor: isSkeleton
           ? "transparent"
-          : disabled
+          : borderColor ?? (disabled
           ? colors.borderStrong
           : danger || dangerFilled
             ? colors.danger
@@ -202,7 +204,7 @@ export function ActionButton({
               ? colors.ink
               : neutral || dangerQuiet || successQuiet
                 ? colors.borderStrong
-                : "transparent",
+                : "transparent"),
         borderCurve: "continuous",
         // radii.md, the card's own corner. At 14 the buttons were rounder than
         // every card they sit inside, which reads as a pill trying to be a
@@ -574,6 +576,7 @@ export function NoticeBar({
 }
 
 export function ConfirmDialog({
+  animatedTransition = true,
   acknowledgeOnly,
   bullets,
   confirmLabel = "Confirm",
@@ -584,6 +587,7 @@ export function ConfirmDialog({
   onConfirm,
   title,
 }: {
+  animatedTransition?: boolean;
   /**
    * Renders a single dismiss button instead of Cancel + Confirm.
    *
@@ -612,11 +616,25 @@ export function ConfirmDialog({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const transition = useRef(new Animated.Value(animatedTransition ? 0 : 1)).current;
+  const closing = useRef(false);
+  useEffect(() => () => transition.stopAnimation(), [transition]);
+  function open() {
+    if (animatedTransition) Animated.timing(transition, { toValue: 1, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }
+  function finish(action: () => void) {
+    if (!animatedTransition) return action();
+    if (closing.current) return;
+    closing.current = true;
+    Animated.timing(transition, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => { if (finished) action(); });
+  }
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
-      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-        <View
+    <Modal animationType={animatedTransition ? "none" : "fade"} onShow={open} navigationBarTranslucent onRequestClose={() => finish(onCancel)} statusBarTranslucent transparent visible>
+      <Animated.View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        <Animated.View
           style={{
+            opacity: transition,
+            transform: animatedTransition ? [{ translateY: transition.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }, { scale: transition.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] : undefined,
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderRadius: radii.card,
@@ -630,7 +648,7 @@ export function ConfirmDialog({
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </Text>
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             {message}
           </Text>
 
@@ -638,10 +656,10 @@ export function ConfirmDialog({
             <View style={{ gap: spacing.xs }}>
               {bullets.map((bullet) => (
                 <View key={bullet} style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <Text style={[type.description, { color: colors.kicker }]}>
+                  <Text style={[type.modalDescription, { color: colors.kicker }]}>
                     •
                   </Text>
-                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
+                  <Text style={[type.modalDescription, { color: colors.muted, flex: 1 }]}>
                     {bullet}
                   </Text>
                 </View>
@@ -650,21 +668,21 @@ export function ConfirmDialog({
           ) : null}
 
           {footnote ? (
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               {footnote}
             </Text>
           ) : null}
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            {acknowledgeOnly ? null : <ActionButton label="Cancel" onPress={onCancel} variant="secondary" />}
+            {acknowledgeOnly ? null : <ActionButton label="Cancel" onPress={() => finish(onCancel)} variant="secondary" />}
             <ActionButton
               label={confirmLabel}
-              onPress={onConfirm}
+              onPress={() => finish(onConfirm)}
               variant={destructive ? "dangerFilled" : "primary"}
             />
           </View>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }

@@ -27,6 +27,8 @@ const FACILITIES_PER_ROW = 2;
 export function FacilityOverviewGrid({
   collapsedLabel,
   facilities,
+  variant = "grid",
+  collapsible = true,
 }: {
   /**
    * What the expand bar says, given how many are hidden. Defaults to the
@@ -35,24 +37,29 @@ export function FacilityOverviewGrid({
    */
   collapsedLabel?: (hidden: number) => string;
   facilities: string[];
+  variant?: "grid" | "cards";
+  collapsible?: boolean;
 }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const collapsedLimit = COLLAPSED_FACILITY_ROWS * FACILITIES_PER_ROW;
-  const canCollapse = facilities.length > collapsedLimit;
+  const canCollapse = collapsible && facilities.length > collapsedLimit;
   const visibleFacilities = expanded || !canCollapse ? facilities : facilities.slice(0, collapsedLimit);
   const rows = useMemo(() => chunkPairs(visibleFacilities), [visibleFacilities]);
 
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.sm, width: "100%", minWidth: 0 }}>
       <View
         style={{
           // Matches the detail grids on the same screen — the outlined boxes
           // on this page all take the stronger hairline.
           borderColor: colors.borderStrong,
-          borderRadius: 10,
+          borderRadius: variant === "cards" ? 12 : 10,
           borderWidth: 1,
-          overflow: "hidden",
+          backgroundColor: variant === "cards" ? colors.surface : undefined,
+          padding: variant === "cards" ? spacing.sm : 0,
+          gap: variant === "cards" ? spacing.sm : 0,
+          overflow: variant === "cards" ? "visible" : "hidden",
         }}
       >
         {rows.map((row, rowIndex) => (
@@ -60,14 +67,18 @@ export function FacilityOverviewGrid({
             key={row.map((item) => item).join("-")}
             style={{
               borderBottomColor: colors.border,
-              borderBottomWidth: rowIndex === rows.length - 1 ? 0 : 1,
+              borderBottomWidth: variant === "cards" || rowIndex === rows.length - 1 ? 0 : 1,
               flexDirection: "row",
+              alignSelf: "stretch",
+              minWidth: 0,
+              gap: variant === "cards" ? spacing.sm : 0,
               minHeight: 86,
             }}
           >
             {row.map((facility, columnIndex) => (
               <FacilityOverviewCell
                 facility={facility}
+                card={variant === "cards"}
                 key={facility}
                 showDivider={columnIndex === 0 && row.length > 1}
               />
@@ -105,10 +116,10 @@ export function FacilityOverviewGrid({
               <View
                 pointerEvents="none"
                 style={{
-                  backgroundColor: colors.surface,
+                  backgroundColor: colors.neutralSoft,
                   bottom: 0,
                   left: 0,
-                  opacity: 0.9,
+                  opacity: 1,
                   position: "absolute",
                   right: 0,
                   top: 0,
@@ -135,17 +146,29 @@ export function FacilityOverviewGrid({
   );
 }
 
-function FacilityOverviewCell({ facility, showDivider }: { facility: string; showDivider: boolean }) {
-  const { colors } = useTheme();
+function FacilityOverviewCell({ facility, showDivider, card = false }: { facility: string; showDivider: boolean; card?: boolean }) {
+  const { colors, fonts } = useTheme();
   const iconName = iconForFacility(facility);
 
   return (
     <View
       style={{
         alignItems: "center",
-        borderRightColor: colors.border,
-        borderRightWidth: showDivider ? 1 : 0,
+        borderRightColor: card ? colors.borderStrong : colors.border,
+        borderRightWidth: card || showDivider ? 1 : 0,
+        ...(card ? {
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderWidth: 1,
+          borderRadius: 12,
+          elevation: 2,
+          shadowColor: colors.shadow,
+          shadowOffset: { height: 2, width: 0 },
+          shadowOpacity: 1,
+          shadowRadius: 6,
+        } : {}),
         flex: 1,
+        flexBasis: 0,
         flexDirection: "row",
         gap: spacing.sm,
         minWidth: 0,
@@ -156,14 +179,14 @@ function FacilityOverviewCell({ facility, showDivider }: { facility: string; sho
       {/* AC is drawn with lucide's air vent, as everywhere else in the app.
           Material's air-conditioner glyph is a different picture of it. */}
       {facility === "AIR_CONDITIONING" ? (
-        <AirVent color={colors.muted} size={25} strokeWidth={1.9} />
+        <AirVent color={card ? "#000000" : colors.muted} size={card ? 38 : 25} strokeWidth={1.9} />
       ) : (
-        <MaterialCommunityIcons color={colors.muted} name={iconName} size={25} />
+        <MaterialCommunityIcons color={card ? "#000000" : colors.muted} name={iconName} size={card ? 38 : 25} />
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           numberOfLines={2}
-          style={{ color: colors.text, fontSize: 15, fontWeight: "800", lineHeight: 19 }}
+          style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19 }}
         >
           {humanizeToken(facility)}
         </Text>

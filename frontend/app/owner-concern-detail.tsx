@@ -1,5 +1,7 @@
+import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRoundPlus, X } from "lucide-react-native";
@@ -36,7 +38,7 @@ import { useListPropertyManagersQuery, type PropertyManager } from "@/store/serv
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_PERSON_ILLUSTRATION = require("../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
 type DetailMode = "property" | "taken" | "history";
 
@@ -63,6 +65,8 @@ export default function OwnerConcernDetailScreen() {
   const [resolveConcern, resolveState] = useResolveConcernMutation();
   const [statusNote, setStatusNote] = useState("");
   const [resolutionNote, setResolutionNote] = useState("");
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const keyboardInset = useKeyboardInset();
   const [assignOpen, setAssignOpen] = useState(false);
   // Action results route to the global toast; failures/validation read as errors.
   // Failures raised anywhere on this screen; no field owns them.
@@ -109,13 +113,13 @@ export default function OwnerConcernDetailScreen() {
   // works against the current note instead of a blank field.
   useEffect(() => {
     if (mode !== "property" && concern) {
-      setStatusNote(concern.statusNote ?? "");
+      setStatusNote(concern.reopened && concern.statusNote === concern.reopenReason ? "" : concern.statusNote ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [concern?.id]);
 
   const loading = availableQuery.isFetching || escalatedQuery.isFetching || monitorQuery.isFetching || undertakenQuery.isFetching || historyQuery.isFetching;
-  const noteDirty = !!concern && statusNote.trim() !== (concern.statusNote ?? "").trim();
+  const noteDirty = !!concern && statusNote.trim() !== (concern.reopened && concern.statusNote === concern.reopenReason ? "" : concern.statusNote ?? "").trim();
   const canAssignManager = currentUserRole === "OWNER"
     && mode === "property"
     && !!concern
@@ -157,6 +161,7 @@ export default function OwnerConcernDetailScreen() {
     try {
       await resolveConcern({ concernId: concern.id, resolutionNote: resolutionNote.trim(), version: concern.version }).unwrap();
       setResolutionNote("");
+      setResolveOpen(false);
       setMessage("Concern resolved.");
       router.back();
     } catch {
@@ -207,7 +212,7 @@ export default function OwnerConcernDetailScreen() {
                     label="Status note (shared with tenant)"
                     multiline
                     onChangeText={setStatusNote}
-                    placeholder={mode === "property" ? "Add a note before taking this up." : "Update the latest status for the tenant."}
+                    placeholder="Update the tenant about the latest progress"
                     value={statusNote}
                   />
                   {mode !== "property" ? (
@@ -234,20 +239,37 @@ export default function OwnerConcernDetailScreen() {
                   {concern.status === "UNDER_REVIEW" ? (
                     <ActionButton disabled={updateState.isLoading} icon={ShieldAlert} label="Mark in progress" onPress={() => changeStatus("IN_PROGRESS")} />
                   ) : null}
+                  {mode === "taken" && concern.status === "IN_PROGRESS" ? (
+                    <ActionButton icon={CheckCircle2} label="Resolve" onPress={() => { setResolutionNote(""); setResolveOpen(true); }} />
+                  ) : null}
                 </View>
               )}
             </>
-          ) : concern.statusNote ? (
+          ) : concern.statusNote && !(concern.reopened && concern.statusNote === concern.reopenReason) ? (
             <NoteCard title="Status note" body={concern.statusNote} />
           ) : null}
 
-          {canAct && mode === "taken" && concern.status === "IN_PROGRESS" ? (
-            <Card>
+          {resolveOpen && canAct && mode === "taken" && concern.status === "IN_PROGRESS" ? (
+            <CenterModal animationType="fade" transparent visible statusBarTranslucent navigationBarTranslucent onRequestClose={() => { if (!resolveState.isLoading) setResolveOpen(false); }}>
+              <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+              <View style={{ flex: 1, justifyContent: "center", backgroundColor: colors.overlay, padding: spacing.lg, paddingBottom: spacing.lg + keyboardInset }}>
+              <Card style={{ width: "100%", maxWidth: 520, maxHeight: "100%", alignSelf: "center", flexShrink: 1 }}>
+              <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <View style={{ gap: spacing.md }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={[type.display, { color: colors.ink, fontSize: 20 }]}>Resolve concern</Text>
+                  <IconButton filled disabled={resolveState.isLoading} accessibilityLabel="Close resolution" icon={X} onPress={() => setResolveOpen(false)} />
+                </View>
                 <FormInput label="Resolution note" multiline onChangeText={setResolutionNote} placeholder="What was done to resolve this?" value={resolutionNote} />
-                <ActionButton disabled={resolveState.isLoading} icon={CheckCircle2} label={resolveState.isLoading ? "Resolving" : "Resolve concern"} onPress={submitResolution} />
+                <View style={{ flexDirection: "row" }}>
+                  <ActionButton disabled={resolveState.isLoading} icon={CheckCircle2} label={resolveState.isLoading ? "Resolving" : "Resolve concern"} onPress={submitResolution} />
+                </View>
               </View>
-            </Card>
+              </ScrollView>
+              </Card>
+              </View>
+              </KeyboardAvoidingView>
+            </CenterModal>
           ) : null}
 
           {assignOpen && concern ? (

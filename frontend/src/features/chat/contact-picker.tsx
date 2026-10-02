@@ -72,7 +72,7 @@ export function ContactPicker({
       {contactsQuery.isLoading ? <SkeletonCard /> : null}
 
       {!contactsQuery.isLoading && grouped.length === 0 ? (
-        <Text style={[type.description, { color: colors.muted, paddingVertical: spacing.md }]}>
+        <Text style={[type.modalDescription, { color: colors.muted, paddingVertical: spacing.md }]}>
           There is nobody here to start a conversation with yet.
         </Text>
       ) : null}

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="-8 -8 80 80"><defs>
+<g id="receipt"><path d="M10 14H7Q4 14 4 10Q4 6 8 6H44Q48 6 48 10Q48 14 44 14V28M10 14V54L15 51L20 54L25 51L30 54M18 21H35M18 29H32M18 37H25"/></g>
+<g id="cycles"><path d="M7 25A26 26 0 0 1 56 18M56 18V8M56 18H48M57 39A26 26 0 0 1 8 46M8 46V56M8 46H16"/><path d="M23 24H21Q19 24 19 21Q19 18 22 18H41Q44 18 44 21Q44 24 41 24V46L37 43L33 46L29 43L25 46L23 44V24M28 29H36M28 36H36"/></g>
+<g id="overdue"><use href="#receipt"/><circle cx="43" cy="43" r="15"/><path d="M43 34V44L50 48"/></g>
+<g id="other"><path d="M10 25H7Q4 25 4 21Q4 17 8 17H35Q39 17 39 21Q39 25 35 25V56L30 53L25 56L20 53L15 56L10 53V25M16 31H28M16 38H28M16 45H24"/></g>
+<g id="paid"><use href="#receipt"/><circle cx="44" cy="44" r="15"/><path d="M36 44L42 50L52 39"/></g>
+<g id="unpaid"><use href="#receipt"/><circle cx="44" cy="44" r="15"/><path d="M44 35V45"/><circle cx="44" cy="51" r="1" fill="currentColor" stroke="none"/></g>
+<g id="discount"><path d="M32 5L40 10L49 11L53 19L59 26L57 35L57 44L49 49L42 56L32 54L22 56L15 49L7 44L7 35L5 26L11 19L15 11L24 10Z"/><path d="M23 41L41 23"/><circle cx="23" cy="24" r="4"/><circle cx="41" cy="40" r="4"/></g>
+<g id="history"><use href="#receipt"/><path d="M31 40A15 15 0 1 1 30 49M31 40H40M31 40V31M45 36V45L51 49"/></g>
+<g id="bills"><path d="M8 7H48V56L43 53L38 56L33 53L28 56L23 53L18 56L13 53L8 56Z"/><circle cx="28" cy="21" r="6"/><path d="M18 36Q18 29 28 29Q38 29 38 36M17 43H39M17 48H32"/></g>
+<g id="report"><path d="M10 6H36L47 17V53H10Z M36 6V17H47M18 37V31M26 37V27M34 37V23M17 44H39"/></g>
+<g id="setup"><path d="M7 18V11Q7 7 12 7H44V12M7 18H49Q53 18 53 22V27M7 18V50Q7 54 12 54H26M17 29H27"/><path d="M43 29H49L50 33L54 35L58 34L61 39L58 42V46L61 49L58 54L54 53L50 55L49 59H43L42 55L38 53L34 54L31 49L34 46V42L31 39L34 34L38 35L42 33Z"/><circle cx="46" cy="44" r="6"/></g>
+</defs><g fill="none" stroke="currentColor" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" color="#000000"><use href="#cycles"/></g></svg>

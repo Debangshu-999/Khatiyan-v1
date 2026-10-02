@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Modal, Text, View } from "react-native";
 
@@ -60,7 +61,7 @@ export function DepositCorrectionModal({
   }
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <View
           style={{
@@ -115,6 +116,6 @@ export function DepositCorrectionModal({
           {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }

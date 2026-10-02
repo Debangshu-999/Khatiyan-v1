@@ -97,7 +97,7 @@ export function ProvideAttemptsSheet({
   return (
     <SheetShell onClose={onClose} title="Provided verification">
       <View style={{ gap: spacing.md }}>
-        <Text style={[type.description, { color: colors.muted }]}>
+        <Text style={[type.modalDescription, { color: colors.muted }]}>
           Attempts can be added to a check given to this tenant once they have none left.
         </Text>
 
@@ -122,7 +122,7 @@ export function ProvideAttemptsSheet({
             })}
           </View>
         ) : (
-          <Text style={[type.description, { color: colors.muted }]}>No checks were given to this tenant.</Text>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>No checks were given to this tenant.</Text>
         )}
 
         <VerificationOrderSummary onAttemptsChange={setAttempts} order={order} />
@@ -133,7 +133,7 @@ export function ProvideAttemptsSheet({
           onPress={() => void add()}
         />
         {!checksQuery.isLoading && given.length > 0 && !anyToppable ? (
-          <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
+          <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
             No check needs more attempts right now.
           </Text>
         ) : null}

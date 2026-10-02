@@ -1,3 +1,4 @@
+import { CenterModal } from "@/components/center-modal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -75,9 +76,9 @@ const STATUS_OPTIONS: { label: string; value: BillStatusFilter }[] = [
  */
 const BILL_PAGE_SIZE = 5;
 
-const BILLS_HEADER_ILLUSTRATION = require("../assets/workspace/tenant-bills-header.png");
-const BILLING_HISTORY_ILLUSTRATION = require("../assets/workspace/billing-header.png");
-const NO_BILL_ILLUSTRATION = require("../assets/workspace/No-Bill_512x436.png");
+const BILLS_HEADER_ILLUSTRATION = require("../assets/images/workspace/tenant-bills-header.png");
+const BILLING_HISTORY_ILLUSTRATION = require("../assets/images/workspace/billing-header.png");
+const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
 /**
  * Everything a tenant owes on this stay, and the three things they can do
@@ -637,7 +638,7 @@ function StatusFilterDialog({
   const { colors, fonts } = useTheme();
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       {/* Plain Pressables, NOT AnimatedPressable. That component springs a
           scale transform on press, and on a full-screen scrim it scales the
           whole dimmed screen as the modal fades — the backdrop appears to
@@ -690,7 +691,7 @@ function StatusFilterDialog({
           </View>
         </View>
       </View>
-    </Modal>
+    </CenterModal>
   );
 }
 

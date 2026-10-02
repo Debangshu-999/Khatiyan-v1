@@ -8,7 +8,7 @@ import { PinnedFooter, PINNED_FOOTER_CLEARANCE } from "@/components/pinned-foote
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { FoodOverviewSkeleton } from "@/components/skeletons";
-import { UnderlineTabs } from "@/components/underline-tabs";
+import { SelectionTabs } from "@/components/selection-tabs";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { errorMessage } from "@/features/forms/server-error";
@@ -288,7 +288,7 @@ export default function OwnerFoodScreen() {
       ) : (
         <>
           <View style={{ marginTop: -spacing.sm }}>
-            <UnderlineTabs<Tab>
+            <SelectionTabs<Tab>
               active={tab}
               bleed={spacing.lg}
               onChange={selectTab}
@@ -297,7 +297,8 @@ export default function OwnerFoodScreen() {
                 { label: "Items", value: "items" },
                 { label: "Profiles", value: "profiles" },
               ]}
-              tone="plain"
+              distributed
+              topPadding={spacing.md}
             />
           </View>
 

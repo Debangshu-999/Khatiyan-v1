@@ -40,7 +40,7 @@ import type { OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_LOCATION_ILLUSTRATION = require("../assets/workspace/No-Location_512x512.png");
+const NO_LOCATION_ILLUSTRATION = require("../assets/empty-states/No-Location_512x512.png");
 
 export default function OwnerLocalPlacesScreen() {
   // Deleting is refused by the server; there is no field to correct.
@@ -384,7 +384,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
           <Star color={recommended ? colors.accent : colors.kicker} fill={recommended ? colors.accent : "transparent"} size={18} strokeWidth={2.2} />
           <View style={{ flex: 1, gap: 1 }}>
             <Text style={[type.bodyStrong, { color: colors.ink }]}>Owner recommended</Text>
-            <Text style={[type.description, { color: colors.muted }]}>Recommended places rank first in the tenant list.</Text>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>Recommended places rank first in the tenant list.</Text>
           </View>
         </AnimatedPressable>
 

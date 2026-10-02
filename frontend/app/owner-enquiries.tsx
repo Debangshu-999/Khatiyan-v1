@@ -31,7 +31,7 @@ import { useTheme } from "@/theme/use-theme";
 // concerns illustration for the empty state.
 // Shared with the Property workspace card so both entry point and empty state
 // use the same enquiries visual language.
-const ENQUIRIES_ILLUSTRATION = require("../assets/property-control/enquiries.png");
+const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
 
 type EnquiryFilter = "new" | "all";
 
@@ -385,7 +385,7 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
 
   return (
     <SheetShell onClose={onClose} title="Action log">
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Every time someone reached out to {firstName(enquiry.enquirerName)}.
       </Text>
 
@@ -415,7 +415,7 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
             {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
           </Text>
           {response.note ? (
-            <Text style={[type.description, { color: colors.muted, marginTop: 2 }]}>
+            <Text style={[type.modalDescription, { color: colors.muted, marginTop: 2 }]}>
               {response.note}
             </Text>
           ) : null}
@@ -523,7 +523,7 @@ function RespondSheet({
       {/* "nothing is sent from inside the app" went with the dash. It stopped
           being true when chat became a real reply: that one IS sent from in
           here, and the line was promising the opposite directly above it. */}
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Reach them directly through these available channels.
       </Text>
 

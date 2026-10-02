@@ -5,7 +5,8 @@ import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowLeft, ArrowLeftRight, Banknote, BriefcaseBusiness, Building2, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react-native";
+import { ArrowLeft, ArrowLeftRight, Banknote, BriefcaseBusiness, Building2, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, UsersRound, X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { MoneyIcon } from "@/components/artwork-icon";
@@ -31,7 +32,7 @@ import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, Notic
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
-import { ALL_DAYS_MASK, WEEKDAYS, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
+import { ALL_DAYS_MASK, WEEKDAYS, compactWeekdaysLabel, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { MANAGEABLE_MODULES, fullAccessLevels } from "@/features/owner/manager-access-model";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -93,11 +94,11 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_SALARY_ILLUSTRATION = require("../../../assets/workspace/No-Salary_1_512x512.png");
+const NO_SALARY_ILLUSTRATION = require("../../../assets/empty-states/No-Salary_1_512x512.png");
 
-const NO_PERSON_ILLUSTRATION = require("../../../assets/workspace/No-Person_512x512.png");
+const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
-const NO_BILL_ILLUSTRATION = require("../../../assets/workspace/No-Bill_512x436.png");
+const NO_BILL_ILLUSTRATION = require("../../../assets/empty-states/No-Bill_512x436.png");
 
 // Two tabs, not three. History is not a peer of Team and Salary — it is the
 // past tense of each, so it lives as a card at the bottom of whichever tab it
@@ -123,10 +124,9 @@ type EndTarget = {
 // The Manage screen's staff tile artwork, not a header-only variant. Reaching
 // this screen from that card and being met by a different drawing of the same
 // thing read as having arrived somewhere else.
-const STAFF_HEADER_ILLUSTRATION = require("../../../assets/workspace/staff-module.png");
-const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/workspace/staff-history.png");
-const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/workspace/payroll-payment-history.png");
-const PAYROLL_PAYABLE_WALLET_ILLUSTRATION = require("../../../assets/workspace/payroll-payable-wallet.png");
+const STAFF_HEADER_ILLUSTRATION = require("../../../assets/images/workspace/staff-module.png");
+const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/staff-history.png");
+const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/payroll-payment-history.png");
 
 function StaffScreenBackground() {
   const { colors } = useTheme();
@@ -147,21 +147,22 @@ function StaffScreenBackground() {
 function StaffHeader({ propertyName }: { propertyName: string }) {
   return (
     <ScreenHeader
-      italicTail="management."
       subtitle={`Staff workspace for ${propertyName}.`}
       artwork={STAFF_HEADER_ILLUSTRATION}
-      title="Staff"
+      title="Staff Control"
     />
   );
 }
 
 function StaffGroupCard({
   actionLabel,
+  headerAccessory,
   children,
   onAction,
   title,
 }: {
   actionLabel?: string;
+  headerAccessory?: ReactNode;
   children: React.ReactNode;
   onAction?: () => void;
   title: string;
@@ -174,6 +175,7 @@ function StaffGroupCard({
         <Text numberOfLines={1} style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}>
           {title}
         </Text>
+        {headerAccessory}
         {actionLabel && onAction ? (
           <AnimatedPressable
             accessibilityLabel={actionLabel}
@@ -519,7 +521,8 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
                 divided
                 key={member.referenceCode}
                 icon={UsersRound}
-                meta={`${member.referenceCode} · ${humanizeToken(member.categoryName)}`}
+                meta={member.referenceCode}
+                category={humanizeToken(member.categoryName)}
                 title={member.fullName}
                 salary={salaryRateLabel(member.salaryStructure, member.salaryRatePaise)}
                 status={employmentStatus(member)}
@@ -642,6 +645,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
   const [removeAdjustment] = useRemoveSalaryAdjustmentMutation();
   const [selected, setSelected] = useState<SalaryAccountDetail | null>(null);
   const [filter, setFilter] = useState<SalaryFilter>("ALL");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [monthOpen, setMonthOpen] = useState(false);
   const [adjustmentTarget, setAdjustmentTarget] = useState<AdjustmentTarget | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -696,26 +700,19 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
 
   return (
     <View style={{ gap: spacing.lg }}>
-      <StaffGroupCard title="Salary accounts">
-        {!selected ? (
-          <>
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <SalaryFilterButton active={filter === "ALL"} label="All" onPress={() => setFilter("ALL")} />
-              <SalaryFilterButton active={filter === "MANAGER"} label="Managers" onPress={() => setFilter("MANAGER")} />
-              <SalaryFilterButton active={filter === "STAFF"} label="Other staff" onPress={() => setFilter("STAFF")} />
-            </View>
-            {/* The same rule that separates the rows below, so the filters and
-                the list read as one thing. Full bleed, which is why it cancels
-                the card's padding rather than sitting inside it.
-
-                The negative marginTop cancels most of the Card's own gap. A
-                Fragment is not a flex item, so its two children are spaced by
-                the card's 14pt like any other pair — which left the rule
-                floating between the filters and the list instead of closing the
-                filters off. */}
-            <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: -spacing.md, marginTop: -spacing.sm }} />
-          </>
-        ) : null}
+      <StaffGroupCard title="Salary accounts" headerAccessory={!selected ? (
+        <View style={{ zIndex: 10 }}>
+          <AnimatedPressable accessibilityRole="button" accessibilityLabel="Filter salary accounts" onPress={() => setFilterOpen(!filterOpen)} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 12 }}>{filter === "ALL" ? "All" : filter === "MANAGER" ? "Managers" : "Other staff"}</Text>
+            <ChevronDown color={colors.primary} size={14} />
+          </AnimatedPressable>
+          {filterOpen ? <View style={{ position: "absolute", top: 38, right: 0, width: 140, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 5, elevation: 8 }}>
+            {(["ALL", "MANAGER", "STAFF"] as const).map(value => <AnimatedPressable key={value} onPress={() => { setFilter(value); setFilterOpen(false); }} style={{ padding: 10, borderRadius: 8, backgroundColor: filter === value ? colors.primarySoft : "transparent" }}>
+              <Text style={{ color: colors.ink, fontWeight: "600" }}>{value === "ALL" ? "All" : value === "MANAGER" ? "Managers" : "Other staff"}</Text>
+            </AnimatedPressable>)}
+          </View> : null}
+        </View>
+      ) : null}>
         {/* Only when there is nothing to stand in for. Rendering it alongside
             the cards put placeholder rows above real content, which reads as two
             extra accounts rather than as loading. A refetch dims the list
@@ -735,11 +732,13 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
                 key={`${target.kind}-${target.person.referenceCode}`}
                 icon={target.kind === "MANAGER" ? BriefcaseBusiness : UsersRound}
                 meta={target.kind === "MANAGER" ? "Manager" : target.person.categoryName}
+                payStructure="Monthly"
                 title={target.person.fullName}
                 divided
                 subtitle={salaryRateLabel(target.person.salaryStructure, target.person.salaryRatePaise)}
                 // A chip, like every other status on these rows. Appended to the
                 // subtitle it was a fact hiding inside a sentence about pay.
+                compact
                 status={account ? "Account open" : undefined}
                 onPress={() => (isSelected ? setSelected(null) : void selectPerson(target))}
               />
@@ -791,12 +790,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
                 Opened months plus projected pay
               </Text>
             </View>
-            <Image
-              accessibilityIgnoresInvertColors
-              resizeMode="contain"
-              source={PAYROLL_PAYABLE_WALLET_ILLUSTRATION}
-              style={{ height: 84, width: 104 }}
-            />
+            <PayrollPayableVector />
           </View>
         </Card>
       ) : null}
@@ -856,12 +850,14 @@ function SalaryAccountDetailCard({
   // so those actions are blocked until the next month is opened.
   const currentMonthPaid = currentMonth?.paymentStatus === "PAID";
   const [payHistoryOpen, setPayHistoryOpen] = useState(false);
-  const [payHistoryShown, setPayHistoryShown] = useState(PAY_MONTHS_PER_PAGE);
+  const [payHistoryShown, setPayHistoryShown] = useState(6);
   // Client-side: the detail response already carries every month, so this is
   // only about how many land on screen at once.
-  const visibleMonths = months.slice(0, payHistoryShown);
+  const historyMonths = [...months].sort((a, b) => b.payrollMonth.localeCompare(a.payrollMonth));
+  const visibleMonths = historyMonths.slice(0, payHistoryShown);
 
   return (
+    <View style={{ gap: spacing.md }}>
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -909,37 +905,46 @@ function SalaryAccountDetailCard({
         ) : null}
       </View>
 
-      {/* Collapsed by default: the months stack up over a long employment and
-          expanded they bury the actions above. The panel that used to hold
-          them is gone — it inset every month card by its own padding, so the
-          history read as narrower than the account it belongs to. The header
-          rule is the whole affordance now, and the cards run the full width. */}
       <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+        {currentMonth ? <SalaryPayslips months={[currentMonth]} readOnly={readOnly} onEditAdjustment={onEditAdjustment} onDeleteAdjustment={onDeleteAdjustment} /> : null}
+      </View>
+    </Card>
+    <Card>
         <AnimatedPressable
           accessibilityRole="button"
           accessibilityState={{ expanded: payHistoryOpen }}
-          onPress={() => setPayHistoryOpen((current) => !current)}
+          onPress={() => { setPayHistoryShown(6); setPayHistoryOpen(true); }}
           style={{
             alignItems: "center",
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
             flexDirection: "row",
             gap: spacing.sm,
-            paddingTop: spacing.sm,
           }}
         >
           <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
             Pay history
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>{months.length}</Text>
-          {payHistoryOpen ? (
-            <ChevronUp color={colors.inkSoft} size={18} strokeWidth={2.2} />
-          ) : (
-            <ChevronDown color={colors.inkSoft} size={18} strokeWidth={2.2} />
-          )}
+          <Text style={[type.caption, { color: colors.muted }]}>{historyMonths.length}</Text>
+          <ChevronRight color={colors.inkSoft} size={18} strokeWidth={2.2} />
         </AnimatedPressable>
+    </Card>
+    {payHistoryOpen ? <SheetShell onClose={() => setPayHistoryOpen(false)} title="Pay history" onEndReached={() => setPayHistoryShown((current) => Math.min(historyMonths.length, current + 6))}>
+      <SalaryPayslips months={visibleMonths} readOnly={readOnly} onEditAdjustment={onEditAdjustment} onDeleteAdjustment={onDeleteAdjustment} />
+      {historyMonths.length > payHistoryShown ? <ActivityIndicator color={colors.muted} /> : historyMonths.length > 6 ? <ListEnd /> : null}
+      {!historyMonths.length ? <EmptyState description="Payslips will appear here once a payroll month is opened." artwork={NO_SALARY_ILLUSTRATION} title="No pay history yet" /> : null}
+    </SheetShell> : null}
+    </View>
+  );
+}
 
-        {payHistoryOpen ? visibleMonths.map((month) => {
+function SalaryPayslips({ months, readOnly, onEditAdjustment, onDeleteAdjustment }: {
+  months: SalaryMonth[];
+  readOnly: boolean;
+  onEditAdjustment?: (payrollMonth: string, adjustment: SalaryAdjustment) => void;
+  onDeleteAdjustment?: (payrollMonth: string, adjustmentId: string) => void;
+}) {
+  const { colors, fonts, type } = useTheme();
+  return <View style={{ gap: spacing.sm }}>
+        {months.map((month) => {
           const editable = !readOnly && month.paidAmountPaise === 0;
           const lastPayment = month.paymentStatus === "PAID" ? latestPayment(month) : null;
           return (
@@ -956,42 +961,24 @@ function SalaryAccountDetailCard({
               }}
             >
               <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-                <View style={{ gap: 2 }}>
+                <View style={{ gap: 6, flex: 1 }}>
                   <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
                     {formatMonth(month.payrollMonth)}
                   </Text>
-                  <Text style={[type.caption, { color: colors.muted }]}>Opened {formatDayMonth(month.openedOn)}</Text>
                 </View>
                 <View style={{ alignItems: "flex-end", gap: 2 }}>
-                  <Text style={[type.caption, { color: month.paymentStatus === "PAID" ? colors.successText : colors.warningText, fontWeight: "800" }]}>{month.paymentStatus.replaceAll("_", " ")}</Text>
-                  {lastPayment ? (
-                    <View style={{ alignItems: "flex-end" }}>
-                      {/* Weighted, because this is when money left the account —
-                          at caption weight in muted it read as filler beside
-                          the status it sits under. */}
-                      <Text
-                        style={{
-                          color: colors.inkSoft,
-                          fontFamily: fonts.sansSemiBold,
-                          fontSize: 11.5,
-                          textAlign: "right",
-                        }}
-                      >
-                        {paidDateTimeParts(lastPayment).date}
-                      </Text>
-                      <Text
-                        style={{
-                          color: colors.muted,
-                          fontFamily: fonts.sansMedium,
-                          fontSize: 11.5,
-                          textAlign: "right",
-                        }}
-                      >
-                        {paidDateTimeParts(lastPayment).time}
-                      </Text>
-                    </View>
-                  ) : null}
+                  <SalaryPaymentStatus month={month} />
                 </View>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 5, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 }}>
+                  <CalendarCheck color={colors.muted} size={13} strokeWidth={2.2} />
+                  <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Opened {formatDayMonth(month.openedOn)}</Text>
+                </View>
+                {lastPayment ? <View style={{ alignItems: "center", flexDirection: "row", gap: 5, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 }}>
+                  <Clock3 color={colors.muted} size={13} strokeWidth={2.2} />
+                  <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Paid {paidDateTimeParts(lastPayment).date} · {paidDateTimeParts(lastPayment).time}</Text>
+                </View> : null}
               </View>
 
               {/* A receipt, not three tiles. Gross, what was added, what was
@@ -1019,46 +1006,62 @@ function SalaryAccountDetailCard({
               ))}
             </View>
           );
-        }) : null}
-        {payHistoryOpen && !months.length ? (
-          <EmptyState description="Open a payroll month to track additions, deductions, and manual payments." artwork={NO_SALARY_ILLUSTRATION} title="No salary month opened" />
-        ) : null}
-
-        {payHistoryOpen && months.length > payHistoryShown ? (
-          <ListMoreButton
-            label={`Show ${Math.min(months.length - payHistoryShown, PAY_MONTHS_PER_PAGE)} more`}
-            onPress={() => setPayHistoryShown((current) => current + PAY_MONTHS_PER_PAGE)}
-          />
-        ) : null}
-      </View>
-    </Card>
-  );
+        })}
+      </View>;
 }
 
 // Read-only card for a daily-wage employee in the salary tracker: no salary
 // account exists, so we show the running payable for the current month.
+function SalaryPaymentStatus({ month }: { month: SalaryMonth }) {
+  const { colors, fonts } = useTheme();
+  const paid = month.paymentStatus === "PAID";
+  return <View style={{ alignItems: "center", flexDirection: "row", gap: 4, backgroundColor: paid ? colors.successSoft : colors.warningSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 5 }}>
+        {paid ? <CheckCircle2 color={colors.successText} size={13} strokeWidth={2.3} /> : <Clock3 color={colors.warningText} size={13} strokeWidth={2.3} />}
+        <Text style={{ color: paid ? colors.successText : colors.warningText, fontFamily: fonts.sansBold, fontSize: 11 }}>{month.paymentStatus.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())}</Text>
+      </View>;
+}
+
+function PayStructurePill({ label }: { label: "Daily" | "Monthly" }) {
+  const { colors, type } = useTheme();
+  return <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+    <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>{label}</Text>
+  </View>;
+}
+
 function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; person: ManagerEmployment | StaffMember }) {
   const { colors, type } = useTheme();
   // Managers have no weekday pattern yet, so they bill every day of the month.
   const mask = kind === "STAFF_MEMBER" ? (person as StaffMember).workingDaysMask : ALL_DAYS_MASK;
   const days = workingDaysInCurrentMonth(mask);
   const payablePaise = days * person.salaryRatePaise;
-  const Icon = kind === "MANAGER" ? BriefcaseBusiness : UsersRound;
-  const meta = kind === "MANAGER" ? "Manager · Daily" : `${(person as StaffMember).categoryName} · Daily`;
+  const Icon = kind === "MANAGER" ? BriefcaseBusiness : UserRoundCog;
+  const meta = kind === "MANAGER" ? "Manager" : "Staff";
   return (
-    <View style={PERSON_ROW_STYLE}>
+    <View style={[PERSON_ROW_STYLE, { paddingTop: 2, paddingBottom: 8, flexWrap: "wrap" }]}>
       <View style={{ alignItems: "center", borderCurve: "continuous", borderRadius: 13, height: 46, justifyContent: "center", width: 46 }}>
-        <Icon color={colors.ink} size={28} strokeWidth={2.1} />
+        <Icon color={colors.primary} size={28} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
+          <PayStructurePill label="Daily" />
+        </View>
         <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{person.fullName}</Text>
         <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{formatMoneyPaise(person.salaryRatePaise)} / day × {days} days</Text>
-        {kind === "STAFF_MEMBER" ? <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>{weekdaysLabel(mask)}</Text> : null}
       </View>
       <View style={{ alignItems: "flex-end", gap: 2 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]}>Payable</Text>
         <Text style={[type.bodyStrong, { color: colors.ink, fontVariant: ["tabular-nums"] }]}>{formatMoneyPaise(payablePaise)}</Text>
+      </View>
+      <View style={{ width: "100%", paddingLeft: 46 + spacing.sm, flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+        {kind === "STAFF_MEMBER" ? <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Folder color={colors.muted} size={12} />
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>{(person as StaffMember).categoryName}</Text>
+        </View> : null}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <CalendarDays color={colors.muted} size={12} />
+          <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>{compactWeekdaysLabel(mask)}</Text>
+        </View>
       </View>
     </View>
   );
@@ -1229,7 +1232,6 @@ const HISTORY_PER_PAGE = 10;
 // One month per page. Six at a time made the section a long scroll inside a
 // card, and the arrows already exist — stepping through them one at a time is
 // what the pager is for, and it keeps each month's receipt readable in full.
-const PAY_MONTHS_PER_PAGE = 1;
 
 function PayslipList({
   emptyDescription,
@@ -1706,7 +1708,6 @@ function ManagerCard({ entry, onOpen }: { entry: ManagerDirectoryEntry; onOpen: 
             <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>
               {salaryRateLabel(employment.salaryStructure, employment.salaryRatePaise)}
             </Text>
-            <Text style={[type.caption, { color: colors.muted }]}>·</Text>
             <PersonStatusChip label={employmentStatus(employment)} />
           </View>
         ) : (
@@ -1864,6 +1865,9 @@ function staffRoundButtonStyle(_colors: { surface: string; borderStrong: string 
 }
 
 function PersonCard({
+  category,
+  payStructure,
+  compact = false,
   divided = false,
   icon: Icon,
   meta,
@@ -1881,6 +1885,9 @@ function PersonCard({
    * with it.
    */
   divided?: boolean;
+  compact?: boolean;
+  category?: string;
+  payStructure?: "Daily" | "Monthly";
   icon: typeof UsersRound;
   meta: string;
   onPress: () => void;
@@ -1895,16 +1902,21 @@ function PersonCard({
   return (
     <AnimatedPressable
       onPress={onPress}
-      style={divided ? PERSON_ROW_STYLE : [rowCardStyle(colors), { minHeight: 96 }]}
+      style={divided ? [PERSON_ROW_STYLE, compact ? { paddingTop: 2, paddingBottom: 8 } : undefined] : [rowCardStyle(colors), { minHeight: 96 }]}
     >
       <Icon color={colors.primary} size={32} strokeWidth={2} />
       <View style={{ flex: 1, gap: 3 }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
-        <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{title}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+          <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
+          {payStructure ? <PayStructurePill label={payStructure} /> : null}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs, flexWrap: "wrap" }}>
+          <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16, flexShrink: 1 }]} numberOfLines={1}>{title}</Text>
+          {category ? <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}><Folder color={colors.muted} size={12} /><Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>{category}</Text></View> : null}
+        </View>
         {status ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
             <Text style={[type.description, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</Text>
-            <Text style={[type.caption, { color: colors.muted }]}>·</Text>
             <PersonStatusChip label={status} />
           </View>
         ) : (
@@ -2135,7 +2147,7 @@ export function ManagerAccessModal({
         onPress={() => setConfirmFullAccess(true)}
         variant="secondary"
       />
-      <Text style={[type.description, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
         Continuing without configuring gives them full access to every module you can currently manage. You can change it
         any time from their profile.
       </Text>
@@ -2282,7 +2294,7 @@ function StaffMemberModal({ categories, member, onClose, onEnd, propertyId }: { 
         <>
           <WeekdayPicker mask={workingDaysMask} onChange={(next) => { setWorkingDaysMask(next); fieldErrors.clearField("workingDays"); }} />
           <FieldError message={fieldErrors.errors.workingDays} />
-          <Text style={[type.description, { color: colors.muted }]}>
+          <Text style={[type.modalDescription, { color: colors.muted }]}>
             {workingDaysInCurrentMonth(workingDaysMask)} working days this month{dailyEstPaise ? ` · est. ${formatMoneyFull(dailyEstPaise)}` : ""}
           </Text>
         </>
@@ -2505,10 +2517,10 @@ function OpenMonthModal({ account, onClose, onSaved, propertyId }: { account: Sa
       opErrors.failFromServer(errorMessage(error, "Could not open salary month."));
     }
   }
-  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.description, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} />{opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}</Sheet>;
+  return <Sheet onClose={onClose} title="Open salary month"><Text style={[type.modalDescription, { color: colors.muted }]}>Open {formatMonth(firstOfMonth())} for {account.account.holderName}. It will be recorded as opened today.</Text><ActionButton disabled={state.isLoading} label={state.isLoading ? "Opening" : "Open month"} onPress={() => void submit()} />{opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}</Sheet>;
 }
 
-function formatDayMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00`)); }
+function formatDayMonth(value: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00`)).replace(/\bSept\b/g, "Sep"); }
 
 // The completing payment for a paid month — used to show when it was settled.
 function latestPayment(month: SalaryMonth): SalaryPayment | null {
@@ -2531,7 +2543,7 @@ function latestPayment(month: SalaryMonth): SalaryPayment | null {
 function paidDateTimeParts(payment: SalaryPayment) {
   return {
     date: new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" })
-      .format(new Date(`${payment.paidOn}T00:00:00`)),
+      .format(new Date(`${payment.paidOn}T00:00:00`)).replace(/\bSept\b/g, "Sep"),
     time: new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true, minute: "2-digit" })
       .format(new Date(payment.recordedAt)),
   };
@@ -2776,7 +2788,7 @@ function EndEmploymentSheet({
                   <AmountMetric label="Settlement" value={formatMoneyPaise(totalSettlementPaise)} />
                 </View>
               ) : (
-                <Text style={[type.description, { color: colors.muted }]}>No open salary account — record any final payout below.</Text>
+                <Text style={[type.modalDescription, { color: colors.muted }]}>No open salary account — record any final payout below.</Text>
               )}
               <FormInput keyboardType="decimal-pad" label="Additional final amount" onChangeText={setAdditional} placeholder="Optional" prefix="₹" value={additional} />
               {totalSettlementPaise > 0 ? (
@@ -2902,7 +2914,7 @@ function Sheet({
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={2}>{title}</Text>
                 {subtitle ? (
-                  <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
+                  <Text style={[type.modalDescription, { color: colors.muted }]} numberOfLines={2}>
                     {subtitle}
                   </Text>
                 ) : null}
@@ -3089,3 +3101,7 @@ function CategoryRow({
 function monthVersion(months: { payrollMonth: string; version: number }[], payrollMonth: string): number {
   return months.find((month) => month.payrollMonth === payrollMonth)?.version ?? 0;
 }
+import { CalendarDays, Folder, UserRoundCog } from "lucide-react-native";
+import { CheckCircle2 } from "lucide-react-native";
+import { ListEnd } from "@/components/list-end";
+import { PayrollPayableVector } from "@/components/payroll-payable-vector";

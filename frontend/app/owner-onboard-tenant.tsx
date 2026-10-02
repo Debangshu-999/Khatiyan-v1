@@ -5,7 +5,8 @@ import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, Trash2, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
+import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { HeaderNote } from "@/components/header-note";
@@ -51,6 +52,7 @@ import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { AgreementTemplateEditor } from "@/features/compliance/agreement-template-editor";
 import { OnboardingGateBoard } from "@/features/compliance/onboarding-gate-board";
 import { Section } from "@/components/section";
+import { SectionHeading } from "@/components/section-heading";
 import { ActionButton, FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
@@ -972,7 +974,7 @@ export default function OwnerOnboardTenantScreen() {
       surface={colors.formSurface}
     >
       {step === "type" ? (
-        <Card>
+        <Section title="Select a kind">
           {propertiesQuery.isLoading ? <OwnerStayTypeOptionsSkeleton /> : null}
           {!propertiesQuery.isLoading && !selectedProperty ? (
             <EmptyState
@@ -983,9 +985,6 @@ export default function OwnerOnboardTenantScreen() {
           ) : null}
           {selectedProperty ? (
             <>
-              <Text style={[type.description, { color: colors.muted }]}>
-                Choose the kind of stay to start. This decides what is asked for next.
-              </Text>
               <SelectRow
                 title="Monthly tenancy"
                 subtitle="Recurring monthly rent with a security deposit and billing cycles."
@@ -1005,7 +1004,7 @@ export default function OwnerOnboardTenantScreen() {
               />
             </>
           ) : null}
-        </Card>
+        </Section>
       ) : null}
 
       {step === "tenant" ? (
@@ -2615,33 +2614,11 @@ function CollapsibleSection({
         onPress={() => setOpen((current) => !current)}
         style={{ gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
       >
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 21, lineHeight: 26 }]}>
-            {title}
-          </Text>
-          {/* Swapped, never rotated. A transform on a lucide icon goes to an SVG
-              that does not forward style, so a rotated chevron stays pointing
-              down. */}
-          {open ? (
+        <SectionHeading title={title} trailing={open ? (
             <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
           ) : (
             <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
-          )}
-        </View>
-
-        {open ? (
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              gap: spacing.sm,
-              marginTop: spacing.xxs,
-            }}
-          >
-            <View style={{ backgroundColor: colors.accent, borderRadius: 2, height: 2.5, width: 24 }} />
-            <View style={{ backgroundColor: colors.borderStrong, flex: 1, height: 1, opacity: 0.5 }} />
-          </View>
-        ) : null}
+          )} />
 
         {!open && summary ? <HeaderNote>{summary}</HeaderNote> : null}
       </AnimatedPressable>

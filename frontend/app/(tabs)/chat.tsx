@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MessageCircle, MessageCirclePlus, Trash2, UsersRound, type LucideProps } from "lucide-react-native";
+import { MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
+import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 /**
  * Clearance for the floating button: the tab bar's own height plus whatever
@@ -40,7 +41,7 @@ import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const NO_CHATS_ILLUSTRATION = require("../../assets/workspace/No-Chats_512x512.png");
+const NO_CHATS_ILLUSTRATION = require("../../assets/empty-states/No-Chats_512x512.png");
 
 type Section = "TENANTS" | "MINE" | "ENQUIRIES";
 type PersonalSection = "MINE" | "ENQUIRIES";

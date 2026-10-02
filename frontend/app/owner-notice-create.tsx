@@ -875,7 +875,7 @@ function ProjectedDatesSheet({ days, onClose }: { days: number[]; onClose: () =>
   return (
     <SheetShell onClose={onClose} title="Projected dates">
       <View style={{ gap: spacing.sm }}>
-        <Text style={[type.description, { color: colors.muted }]}>
+        <Text style={[type.modalDescription, { color: colors.muted }]}>
           {shiftedCount === 0
             ? "Every month is long enough for these days, so they never move."
             : `${shiftedCount} of the next 12 months are too short, so those dates move back to the month's end.`}

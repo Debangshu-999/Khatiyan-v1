@@ -1,12 +1,12 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Image, Text, View, useWindowDimensions, type ImageSourcePropType } from "react-native";
+import { Image, Text, View, type ImageSourcePropType } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { BedDouble, DoorOpen, MapPin, Pin, UsersRound, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { HeaderNote } from "@/components/header-note";
 import { MetricTile } from "@/components/metric-tile";
@@ -33,11 +33,11 @@ import { useTheme } from "@/theme/use-theme";
  * clip against, and behaves the same on web and native.
  */
 const PIN_TILT = { transform: [{ rotate: "32deg" }] } as const;
-const WORKSPACE_ILLUSTRATION = require("../../assets/workspace/manage-workspace-illustration.png");
+const PROPERTY_CARD_ART = require("../../assets/images/workspace/property-card.jpg");
 export default function OwnerScreen() {
   const router = useGuardedRouter();
   const dispatch = useAppDispatch();
-  const { colors, type } = useTheme();
+  const { colors, fonts, isDark, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
   const user = useAppSelector((state) => state.auth.user);
@@ -108,27 +108,50 @@ export default function OwnerScreen() {
       {properties.length > 0 ? (
         <>
           {selectedProperty ? (
-            <Card>
-              <View style={{ gap: spacing.sm }}>
-                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                  <PropertyArtwork size={24} />
-                  <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 27 }]}>
-                    {selectedProperty.name}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-                  {/* Sized to the description line it sits beside (2026-09-29). */}
-                  <View style={{ alignItems: "center", width: 24 }}>
-                    <MapPin color={colors.muted} size={15} strokeWidth={1.9} />
-                  </View>
-                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
-                    {[selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode]
-                      .filter(Boolean)
-                      .join(", ")}
-                  </Text>
+            <View
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surfaceRaised,
+                borderCurve: "continuous",
+                borderRadius: 18,
+                elevation: 2,
+                flexDirection: "row",
+                gap: spacing.md,
+                minHeight: 72,
+                overflow: "hidden",
+                padding: spacing.md,
+                shadowColor: colors.shadow,
+                shadowOffset: { height: 2, width: 0 },
+                shadowOpacity: 1,
+                shadowRadius: 6,
+              }}
+            >
+              <Image
+                resizeMode="cover"
+                source={PROPERTY_CARD_ART}
+                style={{ bottom: 0, left: 0, opacity: isDark ? 0.1 : 0.16, position: "absolute", right: 0, top: 0 }}
+              />
+              <View style={{ alignItems: "center", alignSelf: "flex-start", marginTop: -3, width: 42 }}>
+                <PropertyArtwork size={36} />
+                <View style={{ height: 18, marginTop: 3, width: 18 }}>
+                  <Ionicons color={colors.primary} name="location-sharp" size={18} />
+                  <View
+                    pointerEvents="none"
+                    style={{ backgroundColor: "#FFFFFF", borderRadius: 3, height: 5, left: 6.5, position: "absolute", top: 4, width: 5 }}
+                  />
                 </View>
               </View>
-            </Card>
+              <View style={{ flex: 1, gap: spacing.xxs }}>
+                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}>
+                  {selectedProperty.name}
+                </Text>
+                <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, fontSize: 11 }]}>
+                  {[selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode]
+                    .filter(Boolean)
+                    .join(", ")}
+                </Text>
+              </View>
+            </View>
           ) : (
             <EmptyState
               icon={PropertyIcon}
@@ -185,37 +208,23 @@ export default function OwnerScreen() {
 
 function ManageHeader() {
   const { colors, type } = useTheme();
-  const { width } = useWindowDimensions();
-  const compact = width < 390;
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
 
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.xs }}>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.62}
         numberOfLines={1}
         style={[type.brand, { color: colors.ink, fontSize: 30, lineHeight: 36 }]}
       >
-        Property
+        {activeAccount === "manager" ? "Manager" : "Owner"}
         <Text style={[type.brandItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]}>
-          {" "}workspace.
+          {" "}Workspace
         </Text>
       </Text>
 
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View style={{ flex: 1 }}>
-          <HeaderNote>Use Home to choose the active property. Each service opens its own focused workspace.</HeaderNote>
-        </View>
-        <View style={{ height: compact ? 76 : 94, width: compact ? 112 : 148 }}>
-          <Image
-            accessibilityIgnoresInvertColors
-            accessible={false}
-            resizeMode="contain"
-            source={WORKSPACE_ILLUSTRATION}
-            style={{ height: "100%", width: "100%" }}
-          />
-        </View>
-      </View>
+      <HeaderNote>Find all services for your property in one place. Each service opens its own focused workspace.</HeaderNote>
     </View>
   );
 }

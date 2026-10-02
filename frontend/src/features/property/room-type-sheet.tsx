@@ -255,7 +255,7 @@ export function RoomTypeSheet({
             {/* Last in the sheet, and the only part that argues for itself. The
                 rest of the form is facts the owner already knows; this one asks
                 for work they can skip, so it has to say what the work buys. */}
-            <Text style={[type.description, { color: colors.muted }]}>
+            <Text style={[type.modalDescription, { color: colors.muted }]}>
               Rooms with photos have higher chances of conversion into a real tenancy. Users prefer to see the
               rooms beforehand. Consider adding room photos.
             </Text>
