@@ -86,14 +86,19 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
       }}
     >
       {showsSentiment ? (
+        // Undecided reads as a question on a grey fill; a decision shows its
+        // thumb in a faded green or red (user, 2026-10-02). "Not decided" in
+        // the sheet takes it back to the question.
         <BarPill
+          filled={sentiment === null}
           icon={sentiment === "INTERESTED" ? ThumbsUp : sentiment === "NOT_INTERESTED" ? ThumbsDown : Smile}
+          iconColor={sentiment === "INTERESTED" ? colors.jade : sentiment === "NOT_INTERESTED" ? colors.danger : undefined}
           label={
             sentiment === "INTERESTED"
               ? "Interested"
               : sentiment === "NOT_INTERESTED"
                 ? "Not interested"
-                : "Enquiry sentiment?"
+                : "Are they interested?"
           }
           onPress={actions.canSetSentiment ? () => setSentimentOpen(true) : undefined}
         />
@@ -106,6 +111,7 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
       {visit ? (
         <BarPill
           icon={CalendarCheck}
+          iconColor={visit.missed ? undefined : colors.jade}
           label={
             visit.missed
               ? `Visit missed: ${formatVisitDay(visit.date)}`
@@ -168,18 +174,29 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
   );
 }
 
+/** Status tints on the bar are softened a touch, so they read as state, not alarm. */
+const STATUS_ICON_OPACITY = 0.75;
+
 /**
- * One action on the bar: outlined, never filled, so the bar reads as a set of
- * options beside the message box and not as a second send button.
+ * One action on the bar: a grey outline (user, 2026-10-02; it was black), so
+ * the bar reads as a set of options beside the message box and not as a
+ * second send button.
+ *
+ * @param filled    a grey fill, for a question still open ("Are they interested?").
+ * @param iconColor a status colour for the glyph, shown slightly faded.
  */
 function BarPill({
   busy = false,
+  filled = false,
   icon: Icon,
+  iconColor,
   label,
   onPress,
 }: {
   busy?: boolean;
+  filled?: boolean;
   icon: ComponentType<LucideProps>;
+  iconColor?: string;
   label: string;
   /** Left out for a pill that only states something, such as a sentiment another manager set. */
   onPress?: () => void;
@@ -197,7 +214,8 @@ function BarPill({
       onPress={onPress}
       style={{
         alignItems: "center",
-        borderColor: quiet ? colors.borderStrong : colors.ink,
+        backgroundColor: filled ? colors.neutralSoft : "transparent",
+        borderColor: colors.borderStrong,
         borderRadius: radii.pill,
         borderWidth: 1,
         flexDirection: "row",
@@ -209,7 +227,12 @@ function BarPill({
       {busy ? (
         <ActivityIndicator color={tint} size="small" />
       ) : (
-        <Icon color={tint} size={14} strokeWidth={2.2} />
+        <Icon
+          color={iconColor ?? tint}
+          size={14}
+          strokeWidth={2.2}
+          style={iconColor ? { opacity: STATUS_ICON_OPACITY } : undefined}
+        />
       )}
       <Text style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12.5 }}>{label}</Text>
     </AnimatedPressable>
