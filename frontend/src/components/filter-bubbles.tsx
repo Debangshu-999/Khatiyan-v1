@@ -76,6 +76,8 @@ export function CountTabPills<T extends string>({
      * label (enquiries, 2026-10-02). Nothing renders at 0.
      */
     badge?: number;
+    /** The badge's fill. Red by default; a list where new is routine can pass its own. */
+    badgeColor?: string;
     chevron?: boolean;
     count?: number;
     label: string;
@@ -103,6 +105,7 @@ export function CountTabPills<T extends string>({
         <CountTabPill
           active={option.value === value}
           badge={option.badge}
+          badgeColor={option.badgeColor}
           chevron={option.chevron}
           compact={compact}
           count={option.count}
@@ -118,6 +121,7 @@ export function CountTabPills<T extends string>({
 function CountTabPill({
   active,
   badge = 0,
+  badgeColor,
   chevron = false,
   compact = false,
   count,
@@ -126,6 +130,7 @@ function CountTabPill({
 }: {
   active: boolean;
   badge?: number;
+  badgeColor?: string;
   chevron?: boolean;
   compact?: boolean;
   count?: number;
@@ -177,7 +182,7 @@ function CountTabPill({
           <View
             style={{
               alignItems: "center",
-              backgroundColor: colors.danger,
+              backgroundColor: badgeColor ?? colors.danger,
               borderRadius: 999,
               height: 16,
               justifyContent: "center",

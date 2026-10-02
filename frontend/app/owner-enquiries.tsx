@@ -207,8 +207,10 @@ export default function OwnerEnquiriesScreen() {
               <CountTabPills
                 onChange={changeTab}
                 options={[
-                  { badge: newInAll, count: unhandled.length, label: "All enquiries", value: "all" as const },
-                  { badge: newInMine, count: mine.length, label: "My enquiries", value: "mine" as const },
+                  // No bracketed totals; the circle carries the news, in the
+                  // Respond button's blue (user, 2026-10-02).
+                  { badge: newInAll, badgeColor: colors.primary, label: "All enquiries", value: "all" as const },
+                  { badge: newInMine, badgeColor: colors.primary, label: "My enquiries", value: "mine" as const },
                 ]}
                 value={effectiveTab}
               />
