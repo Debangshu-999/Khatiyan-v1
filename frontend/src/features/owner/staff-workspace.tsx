@@ -124,17 +124,16 @@ type EndTarget = {
 // The Manage screen's staff tile artwork, not a header-only variant. Reaching
 // this screen from that card and being met by a different drawing of the same
 // thing read as having arrived somewhere else.
-const STAFF_HEADER_ILLUSTRATION = require("../../../assets/images/workspace/staff-module.png");
 const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/staff-history.png");
 const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/payroll-payment-history.png");
 
-// Laid out exactly as the Billing header (user, 2026-10-02): same wash, the
+// Laid out as the Billing header (user, 2026-10-02): same wash, the
 // "control." italic tail, the view-only chip, and a fallback line when no
-// property is selected.
+// property is selected. No artwork, so the description sits close above the
+// tab switcher.
 function StaffHeader({ propertyName, viewOnly = false }: { propertyName?: string; viewOnly?: boolean }) {
   return (
     <ScreenHeader
-      artwork={STAFF_HEADER_ILLUSTRATION}
       badge={viewOnly ? <ViewOnlyChip /> : null}
       italicTail="control."
       subtitle={propertyName ? `Staff workspace for ${propertyName}.` : "Select a property on Home first."}
@@ -277,10 +276,9 @@ export function StaffWorkspace() {
     <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
       <StaffHeader propertyName={property.name} />
 
-      {/* A little clear of the header. The header's artwork hangs below its
-          text, so the container's own gap left the switcher sitting against the
-          illustration rather than under the heading. */}
-      <View style={{ marginTop: spacing.sm }}>
+      {/* Pulled up from the container's gap so the switcher sits close under
+          the description (user, 2026-10-02). */}
+      <View style={{ marginTop: spacing.sm - spacing.lg }}>
         <TabSwitcher
           active={tab}
           onChange={setTab}
