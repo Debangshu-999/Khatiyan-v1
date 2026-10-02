@@ -3,6 +3,7 @@ import { ScrollView, Text, View } from "react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
 import { GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { useToast } from "@/components/toast";
@@ -14,6 +15,7 @@ import {
 } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton } from "@/features/owner/owner-ui";
+import { PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import {
   useGetVisitAvailabilityQuery,
   useRescheduleVisitMutation,
@@ -147,19 +149,21 @@ export function VisitSheet({
         </SkeletonBoundary>
       ) : null}
 
+      {/* No hours set: an empty state carrying the Visiting Hours card's own
+          mark (user, 2026-10-02), so management recognises where to set them. */}
       {!loading && days.length === 0 ? (
-        <View style={{ gap: spacing.xs, paddingVertical: spacing.md }}>
-          <Text style={[type.description, { color: colors.muted }]}>
-            {availability.isError
+        <EmptyState
+          artworkNode={<PropertyVisitsIcon size={64} />}
+          compact
+          description={
+            availability.isError
               ? "Could not load the visit slots. Close this and try again."
-              : "This property has not set its visit hours yet."}
-          </Text>
-          {!availability.isError && viewer !== "ENQUIRER" ? (
-            <Text style={[type.description, { color: colors.muted }]}>
-              Set them in Property workspace, under Property visits.
-            </Text>
-          ) : null}
-        </View>
+              : viewer !== "ENQUIRER"
+                ? "Set them in Property workspace, under Visiting Hours."
+                : "Visits open up here once the property sets its hours."
+          }
+          title={availability.isError ? "Slots unavailable" : "No visiting hours yet"}
+        />
       ) : null}
 
       {!loading && days.length > 0 ? (
@@ -206,6 +210,8 @@ export function VisitSheet({
   );
 }
 
+const DAY_CARD_SIZE = 66;
+
 /** The dates on offer, side by side. A sideways scroll: thirty days do not fit a phone's width. */
 function DayStrip({
   days,
@@ -235,16 +241,19 @@ function DayStrip({
             accessibilityState={{ selected: picked }}
             key={day.date}
             onPress={() => onPick(day.date)}
+            // Square, on a grey fill (user, 2026-10-02). The picked day keeps
+            // its blue edge so the choice still reads at a glance.
             style={{
               alignItems: "center",
-              borderColor: picked ? colors.primary : colors.borderStrong,
+              backgroundColor: colors.neutralSoft,
+              borderColor: picked ? colors.primary : "transparent",
               borderCurve: "continuous",
               borderRadius: radii.card,
-              borderWidth: picked ? 1.5 : 1,
+              borderWidth: 1.5,
               gap: 1,
-              minWidth: 54,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: spacing.xs,
+              height: DAY_CARD_SIZE,
+              justifyContent: "center",
+              width: DAY_CARD_SIZE,
             }}
           >
             <GhostText ghostWidth={26} style={[type.caption, { color: colors.muted }]}>
@@ -287,6 +296,8 @@ function SlotRow({
       onPress={onPick}
       style={{
         alignItems: "center",
+        // A pale blue fill marks the chosen slot (user, 2026-10-02).
+        backgroundColor: selected ? colors.primarySoft : "transparent",
         borderColor: selected ? colors.primary : colors.borderStrong,
         borderCurve: "continuous",
         borderRadius: radii.card,

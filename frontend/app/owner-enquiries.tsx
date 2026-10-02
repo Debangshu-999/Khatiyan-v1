@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
+import { CalendarPlus, History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 import { openDialer } from "@/lib/dial";
 
@@ -8,12 +9,13 @@ import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { CountTabPills } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
+import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
@@ -32,8 +34,6 @@ import { useTheme } from "@/theme/use-theme";
 // Shared with the Property workspace card so both entry point and empty state
 // use the same enquiries visual language.
 const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
-
-type EnquiryFilter = "new" | "all";
 
 const PAGE_SIZE = 6;
 
@@ -55,12 +55,13 @@ export default function OwnerEnquiriesScreen() {
   // the server does not enforce. A ManagerResource lands here when the module
   // is converted, alongside the backend check.
 
-  const [filter, setFilter] = useState<EnquiryFilter>("new");
+  const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   // Pages the RENDER, not the fetch — the list arrives as one payload. Same
   // shape as the notifications feed so both lists end the same way.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [responding, setResponding] = useState<EnquiryDetail | null>(null);
   const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
+  const [scheduling, setScheduling] = useState<EnquiryDetail | null>(null);
 
   /**
    * The conversation to open once the respond sheet has actually gone.
@@ -94,12 +95,13 @@ export default function OwnerEnquiriesScreen() {
   });
 
   const enquiries = useMemo(() => enquiriesQuery.data ?? [], [enquiriesQuery.data]);
-  const openCount = enquiries.filter(awaitingAnswer).length;
-
-  // Unanswered first by default, and "All" when there is nothing waiting —
-  // opening onto an empty filter reads as "no enquiries" when there are plenty.
-  const effectiveFilter: EnquiryFilter = filter === "new" && openCount === 0 ? "all" : filter;
-  const visible = effectiveFilter === "new" ? enquiries.filter(awaitingAnswer) : enquiries;
+  // One list for everything, and above it the ones this person handles
+  // (user, 2026-10-02): the New tab went, its signal moving onto the cards.
+  const mine = useMemo(
+    () => (currentUserId ? enquiries.filter((enquiry) => enquiry.handlerUserId === currentUserId) : []),
+    [currentUserId, enquiries],
+  );
+  const visible = enquiries;
   const shown = visible.slice(0, visibleCount);
   const hasMore = visibleCount < visible.length;
 
@@ -111,11 +113,6 @@ export default function OwnerEnquiriesScreen() {
     if (contentSize.height - contentOffset.y - layoutMeasurement.height <= LOAD_MORE_THRESHOLD_PX) {
       setVisibleCount((current) => Math.min(current + PAGE_SIZE, visible.length));
     }
-  }
-
-  function changeFilter(next: EnquiryFilter) {
-    setFilter(next);
-    setVisibleCount(PAGE_SIZE);
   }
 
   return (
@@ -143,54 +140,53 @@ export default function OwnerEnquiriesScreen() {
       ) : null}
 
       {selectedProperty ? (
-        <View style={{ gap: spacing.md }}>
-          {/* No "n enquiries" heading. It only ever counted the filter already
-              chosen, so the number moved when a tab was tapped and the other
-              tab gave no hint of what it held. The tabs carry their own counts,
-              which is the whole picture on one line. */}
-          <CountTabPills
-            onChange={changeFilter}
-            options={[
-              // All leads, as on every other filter strip in the app — the
-              // widest set first, then the narrowing of it. The screen still
-              // OPENS on New when anything is unanswered; where a tab sits and
-              // which one is selected are separate questions.
-              { count: enquiries.length, label: "All", value: "all" as const },
-              { count: openCount, label: "New", value: "new" as const },
-            ]}
-            value={effectiveFilter}
-          />
+        <View style={{ gap: spacing.lg }}>
           {enquiriesQuery.isFetching && enquiries.length === 0 ? (
-            // Enquiry-shaped: a name row, the message, and the Respond
-            // button — three of them, because one card standing in for a list
-            // reserves a fraction of the height that arrives.
+            // Enquiry-shaped: a name row, the message, and the buttons — three
+            // of them, because one card standing in for a list reserves a
+            // fraction of the height that arrives.
             <OwnerEnquiryListSkeleton />
-          ) : visible.length === 0 ? (
+          ) : enquiries.length === 0 ? (
             <EmptyState
-              description={
-                enquiries.length > 0
-                  ? "Nothing is waiting on you."
-                  : "People who find this property in discovery can ask a question from its profile."
-              }
+              description="People who find this property in discovery can ask a question from its profile."
               artwork={ENQUIRIES_ILLUSTRATION}
               artworkTextGap={-6}
-              title={enquiries.length > 0 ? "All answered" : "No enquiries yet"}
+              title="No enquiries yet"
             />
           ) : (
             <>
-              {shown.map((enquiry) => (
-                <EnquiryCard
-                  enquiry={enquiry}
-                  key={enquiry.id}
-                  onRespond={() => setResponding(enquiry)}
-                  onViewLog={() => setViewingLog(enquiry)}
-                />
-              ))}
-              {/* The list ends by saying so, rather than with a pager whose
-                  numbers nobody was using to navigate. */}
-              {!hasMore ? (
-                <ListEnd />
-              ) : null}
+              <Section title={`My enquiries (${mine.length})`}>
+                {mine.length > 0 ? (
+                  mine.map((enquiry) => (
+                    <EnquiryCard
+                      enquiry={enquiry}
+                      key={enquiry.id}
+                      onRespond={() => setResponding(enquiry)}
+                      onSchedule={() => setScheduling(enquiry)}
+                      onViewLog={() => setViewingLog(enquiry)}
+                    />
+                  ))
+                ) : (
+                  <Text style={[type.description, { color: colors.muted }]}>
+                    Enquiries you become the handler for appear here.
+                  </Text>
+                )}
+              </Section>
+
+              <Section title={`All enquiries (${enquiries.length})`}>
+                {shown.map((enquiry) => (
+                  <EnquiryCard
+                    enquiry={enquiry}
+                    key={enquiry.id}
+                    onRespond={() => setResponding(enquiry)}
+                    onSchedule={() => setScheduling(enquiry)}
+                    onViewLog={() => setViewingLog(enquiry)}
+                  />
+                ))}
+                {/* The list ends by saying so, rather than with a pager whose
+                    numbers nobody was using to navigate. */}
+                {!hasMore ? <ListEnd /> : null}
+              </Section>
             </>
           )}
         </View>
@@ -220,6 +216,16 @@ export default function OwnerEnquiriesScreen() {
       ) : null}
 
       {viewingLog ? <ActionLogSheet enquiry={viewingLog} onClose={() => setViewingLog(null)} /> : null}
+
+      {/* The chat's own visit sheet, opened from the card (user, 2026-10-02). */}
+      {scheduling && selectedProperty ? (
+        <VisitSheet
+          enquiryId={scheduling.id}
+          onClose={() => setScheduling(null)}
+          propertyId={selectedProperty.id}
+          viewer={scheduling.viewerMayAct === false ? "OTHER_MANAGEMENT" : "ACTING_MANAGEMENT"}
+        />
+      ) : null}
     </ScreenScrollView>
   );
 }
@@ -227,17 +233,15 @@ export default function OwnerEnquiriesScreen() {
 function EnquiryCard({
   enquiry,
   onRespond,
+  onSchedule,
   onViewLog,
 }: {
   enquiry: EnquiryDetail;
   onRespond: () => void;
+  onSchedule: () => void;
   onViewLog: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
-  // Status, not `responses.length` — the New filter and both badges count on
-  // status, and a pill disagreeing with the number beside it is worse than
-  // either being wrong on its own.
-  const isNew = awaitingAnswer(enquiry);
   // Greyed and unactionable, but still listed for a day — see the module doc.
   // Nothing should vanish between two glances at the screen.
   //
@@ -248,70 +252,53 @@ function EnquiryCard({
   // enquirer has already been freed to ask again. Only NEW ages out: a
   // RESPONDED enquiry is finished, and the date passing does not un-answer it.
   const isExpired = enquiry.status === "EXPIRED" || hasLapsed(enquiry);
+  const isNew = isNewToday(enquiry) && !isExpired;
+  const canAct = !isExpired && enquiry.viewerMayAct !== false;
 
   return (
-    <Card>
+    <Card style={{ overflow: "hidden" }}>
+      {isNew ? <NewRibbon /> : null}
       {/* Dimmed as a whole rather than restyling every line: an expired enquiry
           is still readable, just plainly no longer something to act on. */}
       <View style={{ gap: spacing.xs, opacity: isExpired ? 0.55 : 1 }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ alignItems: "center", flexDirection: "row", flex: 1, gap: spacing.xs }}>
-            <User color={colors.ink} fill={colors.ink} size={14} />
-            <Text style={[type.display, { color: colors.ink, fontSize: 17, lineHeight: 22 }]} numberOfLines={1}>
-              {enquiry.enquirerName ?? "Someone"}
-            </Text>
-          </View>
-          {isNew ? (
-            <View
-              style={{
-                borderColor: colors.primary,
-                borderRadius: 999,
-                borderWidth: 1,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: 1,
-              }}
-            >
-              <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 10 }}>
-                NEW
-              </Text>
-            </View>
-          ) : null}
-          {/* No EXPIRED pill here. The chip at the foot of the card already
-              says "Expired 24 Aug", which is the same fact and the useful half
-              of it — a bare EXPIRED above it was the word twice. NEW keeps its
-              pill because nothing else on the card carries it. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: isNew ? 44 : 0 }}>
+          <User color={colors.ink} fill={colors.ink} size={14} />
+          <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 17, lineHeight: 22 }]} numberOfLines={1}>
+            {enquiry.enquirerName ?? "Someone"}
+          </Text>
         </View>
 
-        {enquiry.enquirerPhone ? (
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {enquiry.enquirerPhone}
-          </Text>
-        ) : null}
+        {/* When it was asked and when it runs out, both as pills straight
+            under the name (user, 2026-10-02); the phone number went, the
+            respond sheet already carries it. */}
+        <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+          <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10.5 }}>
+              {formatWhen(enquiry.createdAt)}
+            </Text>
+          </View>
+          <ExpiryChip expired={isExpired} expiresAt={enquiry.expiresAt} />
+        </View>
 
-        <Text style={[type.quote, { color: colors.ink, marginTop: 2 }]}>
+        {/* The concern cards' description face, a weight heavier
+            (user, 2026-10-02). */}
+        <Text style={[type.description, { color: colors.ink, fontFamily: fonts.sansSemiBold, marginTop: 2 }]}>
           {enquiry.message}
         </Text>
 
-        {/* Respond takes the row; the log is a square beside it. What was done
-            and by whom lives behind that button rather than on the card — it is
-            history, and history on every card buries the message that matters. */}
+        {/* Respond and Schedule visit share the row; the log is a disc beside
+            them. What was done and by whom lives behind it rather than on the
+            card — history on every card buries the message that matters. */}
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
           <View style={{ flex: 1 }}>
             {/* Blocked once expired, and refused by the server too: the card may
                 have been rendered before the sweep ran. */}
-            <ActionButton disabled={isExpired} label="Respond" onPress={onRespond} />
+            <ActionButton compact disabled={!canAct} label="Respond" onPress={onRespond} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <ActionButton compact disabled={!canAct} icon={CalendarPlus} label="Schedule visit" onPress={onSchedule} variant="secondary" />
           </View>
           <ActionLogButton count={enquiry.responses.length} onPress={onViewLog} />
-        </View>
-
-        {/* When it was asked and when it runs out, on one line each and both on
-            the left — a right-aligned time read as a separate column of numbers
-            rather than as part of the same sentence. */}
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: 2 }}>
-          <Text style={[type.caption, { color: colors.kicker, flex: 1 }]}>
-            {formatWhen(enquiry.createdAt)}
-          </Text>
-          <ExpiryChip expired={isExpired} expiresAt={enquiry.expiresAt} />
         </View>
       </View>
     </Card>
@@ -319,8 +306,50 @@ function EnquiryCard({
 }
 
 /**
+ * Raised today and nobody has claimed it: new (user, 2026-10-02). It drops off
+ * the next calendar day, or the moment a handler takes it on.
+ */
+function isNewToday(enquiry: EnquiryDetail) {
+  return calendarDaysAgo(new Date(enquiry.createdAt)) <= 0 && !enquiry.handlerUserId;
+}
+
+/** Corner of the ribbon box; the band runs across it at 45 degrees. */
+const RIBBON_BOX = 76;
+
+/**
+ * The NEW tag: a red band folded across the card's top-right corner, as on a
+ * sale sticker. The card clips it to its rounded edge.
+ */
+function NewRibbon() {
+  const { colors, fonts } = useTheme();
+  return (
+    <View
+      accessibilityLabel="New enquiry"
+      pointerEvents="none"
+      style={{ height: RIBBON_BOX, overflow: "hidden", position: "absolute", right: 0, top: 0, width: RIBBON_BOX, zIndex: 1 }}
+    >
+      <View
+        style={{
+          backgroundColor: colors.danger,
+          paddingVertical: 3,
+          position: "absolute",
+          right: -30,
+          top: 16,
+          transform: [{ rotate: "45deg" }],
+          width: 110,
+        }}
+      >
+        <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.2, textAlign: "center" }}>
+          NEW
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
  * Opens the action log. Outlined container, ink glyph, no fill — the house icon
- * treatment, matched in height to the Respond button beside it.
+ * treatment, kept small so the two buttons beside it get the width.
  *
  * <p>Greyed with nothing to show rather than hidden: an owner checking "has
  * anyone dealt with this" needs the same control to answer "no" as to answer
@@ -346,12 +375,14 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
         // quiet secondary it is.
         backgroundColor: colors.surfaceSunken,
         borderRadius: 999,
-        height: 48,
+        // Smaller (user, 2026-10-02), so Respond and Schedule visit beside it
+        // get the width.
+        height: 38,
         justifyContent: "center",
-        width: 48,
+        width: 38,
       }}
     >
-      <History color={empty ? colors.muted : colors.ink} size={20} strokeWidth={2} />
+      <History color={empty ? colors.muted : colors.ink} size={17} strokeWidth={2} />
     </AnimatedPressable>
   );
 }
@@ -372,11 +403,6 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
  */
 function hasLapsed(enquiry: EnquiryDetail) {
   return Date.parse(enquiry.expiresAt) <= Date.now();
-}
-
-/** Still genuinely waiting on someone. */
-function awaitingAnswer(enquiry: EnquiryDetail) {
-  return enquiry.status === "NEW" && !hasLapsed(enquiry);
 }
 
 /** What was done, by whom, when — the whole history, newest first. */
@@ -402,8 +428,12 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+            {/* Chat uses the Chats tab's own glyph (user, 2026-10-02); it showed
+                the phone. */}
             {response.channel === "EMAIL" ? (
               <Mail color={colors.jade} size={13} strokeWidth={2.4} />
+            ) : response.channel === "CHAT" ? (
+              <MaterialCommunityIcons color={colors.jade} name="chat-outline" size={14} />
             ) : (
               <Phone color={colors.jade} size={13} strokeWidth={2.4} />
             )}
@@ -601,12 +631,13 @@ function ChannelOption({
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
+      // A grey card, no outline (user, 2026-10-02): the black border made each
+      // option read as a form field.
       style={{
         alignItems: "center",
-        borderColor: colors.ink,
+        backgroundColor: colors.neutralSoft,
         borderCurve: "continuous",
         borderRadius: 14,
-        borderWidth: 1.5,
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,

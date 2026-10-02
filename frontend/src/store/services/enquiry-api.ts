@@ -50,6 +50,12 @@ export type EnquiryDetail = {
   chatThreadId: string | null;
   /** The action log — every response, newest first. Empty while still open. */
   responses: EnquiryResponseView[];
+  /** Who handles it. All null while nobody does. */
+  handlerUserId?: string | null;
+  handlerName?: string | null;
+  handlerAssignedAt?: string | null;
+  /** Whether the person asking may act on it: its handler, the owner, or anyone while unhandled. */
+  viewerMayAct?: boolean;
   /**
    * The row's version (2026-09-29). Sent back as If-Match when a screen acts
    * on it, so a record someone else changed since is refused, not overwritten.
