@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { ChevronRight, MessageSquare } from "lucide-react-native";
+import { CalendarDays, MessageSquare, type LucideProps } from "lucide-react-native";
+import type { ComponentType } from "react";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { AppTextInput } from "@/components/app-text-input";
 import { SheetShell } from "@/components/sheet-shell";
+import { useToast } from "@/components/toast";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { EnquiryConsentModal } from "@/features/discovery/components/enquiry-consent-modal";
 import {
@@ -96,15 +98,7 @@ export function EnquireAction({
   return (
     <View style={{ gap: spacing.xs }}>
       {profileCard ? (
-        <ProfileEnquiryCard
-          enabled={canEnquire}
-          helper={
-            canEnquire
-              ? "Property management can see your name and reply over chat and other channels selected by you."
-              : "The property has received your enquiry."
-          }
-          onPress={startEnquiry}
-        />
+        <ProfileActionRow enabled={canEnquire} onEnquire={startEnquiry} />
       ) : canEnquire ? (
         <ActionButton icon={MessageSquare} label="Enquire about this property" onPress={startEnquiry} />
       ) : (
@@ -164,51 +158,72 @@ export function EnquireAction({
   );
 }
 
-function ProfileEnquiryCard({
-  enabled,
-  helper,
+/**
+ * The profile's two actions side by side, both grey-filled (user, 2026-10-02):
+ * Enquire, and Schedule Visit beside it. They live here together so a viewer
+ * who manages the place, who gets no Enquire, gets no Schedule Visit either.
+ *
+ * <p>Schedule Visit is a placeholder until visit booking exists: it says so
+ * rather than doing nothing on a tap.
+ */
+function ProfileActionRow({ enabled, onEnquire }: { enabled: boolean; onEnquire: () => void }) {
+  const toast = useToast();
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      <GreyActionButton
+        accessibilityLabel={enabled ? "Enquire about this property" : "Enquiry already sent"}
+        disabled={!enabled}
+        icon={MessageSquare}
+        label={enabled ? "Enquire" : "Enquiry sent"}
+        onPress={onEnquire}
+      />
+      <GreyActionButton
+        icon={CalendarDays}
+        label="Schedule Visit"
+        onPress={() => toast.show("Visit scheduling is coming soon.", "info")}
+      />
+    </View>
+  );
+}
+
+function GreyActionButton({
+  accessibilityLabel,
+  disabled = false,
+  icon: Icon,
+  label,
   onPress,
 }: {
-  enabled: boolean;
-  helper: string;
+  accessibilityLabel?: string;
+  disabled?: boolean;
+  icon: ComponentType<LucideProps>;
+  label: string;
   onPress: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-
+  const { colors, fonts } = useTheme();
+  const ink = disabled ? colors.muted : colors.ink;
   return (
     <AnimatedPressable
-      accessibilityLabel={enabled ? "Enquire about this property" : "Enquiry already sent"}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
-      disabled={!enabled}
+      disabled={disabled}
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
+        backgroundColor: colors.neutralSoft,
         borderCurve: "continuous",
         borderRadius: radii.card,
-        borderWidth: 1,
+        flex: 1,
         flexDirection: "row",
-        gap: spacing.md,
-        padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        gap: spacing.sm,
+        justifyContent: "center",
+        minHeight: 52,
+        paddingHorizontal: spacing.md,
       }}
     >
-      <MessageSquare color={colors.inkSoft} size={26} strokeWidth={1.9} />
-      <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-        <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15 }}>
-          Enquire about this property
-        </Text>
-        <Text
-          style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
-        >
-          {helper}
-        </Text>
-      </View>
-      <ChevronRight color={enabled ? colors.primary : colors.kicker} size={21} strokeWidth={2.2} />
+      <Icon color={ink} size={18} strokeWidth={2.2} />
+      <Text numberOfLines={1} style={{ color: ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
+        {label}
+      </Text>
     </AnimatedPressable>
   );
 }

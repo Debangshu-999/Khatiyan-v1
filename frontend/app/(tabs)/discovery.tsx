@@ -242,6 +242,10 @@ export default function DiscoveryScreen() {
   const [manualSelection, setManualSelection] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>(defaultSearch);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  // Where the results list sat when a profile opened. The profile replaces the
+  // list rather than stacking on it, so the list remounts on the way back and
+  // used to start from the top (user, 2026-10-02); this puts it back.
+  const listScrollY = useRef(0);
   const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   // The property profile is a state on this tab, not a route, so the device
@@ -756,6 +760,7 @@ export default function DiscoveryScreen() {
    */
   function handleResultsScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    listScrollY.current = contentOffset.y;
     const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - LOAD_MORE_SLACK;
     if (!atEnd) {
       return;
@@ -869,7 +874,7 @@ export default function DiscoveryScreen() {
   }
 
   return (
-    <ScreenScrollView onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView initialScrollY={listScrollY.current} onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
       <DiscoveryHeader />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
