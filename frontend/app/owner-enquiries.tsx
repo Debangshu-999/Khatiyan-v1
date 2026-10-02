@@ -64,7 +64,8 @@ export default function OwnerEnquiriesScreen() {
   // is converted, alongside the backend check.
 
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
-  const [tab, setTab] = useState<EnquiryTab>("all");
+  // Null until a bubble is tapped: only the opening choice is automatic.
+  const [tab, setTab] = useState<EnquiryTab | null>(null);
   // Pages the RENDER, not the fetch — the list arrives as one payload. Same
   // shape as the notifications feed so both lists end the same way.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -122,8 +123,10 @@ export default function OwnerEnquiriesScreen() {
     [currentUserId, enquiries],
   );
   // Opens on All, unless All is empty and something is in Mine: opening onto
-  // an empty tab reads as "no enquiries" when there are some.
-  const effectiveTab: EnquiryTab = tab === "all" && unhandled.length === 0 && mine.length > 0 ? "mine" : tab;
+  // an empty tab reads as "no enquiries" when there are some. Only the opening
+  // choice: once a bubble is tapped it stays put, an empty All included, where
+  // its empty state says so (user, 2026-10-02).
+  const effectiveTab: EnquiryTab = tab ?? (unhandled.length === 0 && mine.length > 0 ? "mine" : "all");
   const visible = effectiveTab === "all" ? unhandled : mine;
 
   // Red counts for what arrived since each tab was last seen (user,
