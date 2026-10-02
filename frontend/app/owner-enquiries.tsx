@@ -9,9 +9,9 @@ import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { CountTabPills } from "@/components/filter-bubbles";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
@@ -35,6 +35,12 @@ import { useTheme } from "@/theme/use-theme";
 // use the same enquiries visual language.
 const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
 
+/**
+ * All: enquiries nobody handles yet. Mine: the ones the viewer handles. An
+ * enquiry leaves All the moment it gets a handler (user, 2026-10-02).
+ */
+type EnquiryTab = "all" | "mine";
+
 const PAGE_SIZE = 6;
 
 /** How close to the bottom counts as "show me more". Matches the alert feeds. */
@@ -56,6 +62,7 @@ export default function OwnerEnquiriesScreen() {
   // is converted, alongside the backend check.
 
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
+  const [tab, setTab] = useState<EnquiryTab>("all");
   // Pages the RENDER, not the fetch — the list arrives as one payload. Same
   // shape as the notifications feed so both lists end the same way.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -95,15 +102,22 @@ export default function OwnerEnquiriesScreen() {
   });
 
   const enquiries = useMemo(() => enquiriesQuery.data ?? [], [enquiriesQuery.data]);
-  // One list for everything, and above it the ones this person handles
-  // (user, 2026-10-02): the New tab went, its signal moving onto the cards.
+  const unhandled = useMemo(() => enquiries.filter((enquiry) => !enquiry.handlerUserId), [enquiries]);
   const mine = useMemo(
     () => (currentUserId ? enquiries.filter((enquiry) => enquiry.handlerUserId === currentUserId) : []),
     [currentUserId, enquiries],
   );
-  const visible = enquiries;
+  // Opens on All, unless All is empty and something is in Mine: opening onto
+  // an empty tab reads as "no enquiries" when there are some.
+  const effectiveTab: EnquiryTab = tab === "all" && unhandled.length === 0 && mine.length > 0 ? "mine" : tab;
+  const visible = effectiveTab === "all" ? unhandled : mine;
   const shown = visible.slice(0, visibleCount);
   const hasMore = visibleCount < visible.length;
+
+  function changeTab(next: EnquiryTab) {
+    setTab(next);
+    setVisibleCount(PAGE_SIZE);
+  }
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     if (!hasMore) {
@@ -140,7 +154,7 @@ export default function OwnerEnquiriesScreen() {
       ) : null}
 
       {selectedProperty ? (
-        <View style={{ gap: spacing.lg }}>
+        <View style={{ gap: spacing.md }}>
           {enquiriesQuery.isFetching && enquiries.length === 0 ? (
             // Enquiry-shaped: a name row, the message, and the buttons — three
             // of them, because one card standing in for a list reserves a
@@ -155,9 +169,28 @@ export default function OwnerEnquiriesScreen() {
             />
           ) : (
             <>
-              <Section title={`My enquiries (${mine.length})`}>
-                {mine.length > 0 ? (
-                  mine.map((enquiry) => (
+              <CountTabPills
+                onChange={changeTab}
+                options={[
+                  { count: unhandled.length, label: "All", value: "all" as const },
+                  { count: mine.length, label: "My enquiries", value: "mine" as const },
+                ]}
+                value={effectiveTab}
+              />
+              {visible.length === 0 ? (
+                <EmptyState
+                  artwork={ENQUIRIES_ILLUSTRATION}
+                  artworkTextGap={-6}
+                  description={
+                    effectiveTab === "all"
+                      ? "Every enquiry has a handler. Yours are under My enquiries."
+                      : "Enquiries you become the handler for appear here."
+                  }
+                  title={effectiveTab === "all" ? "Nothing unassigned" : "None handled by you"}
+                />
+              ) : (
+                <>
+                  {shown.map((enquiry) => (
                     <EnquiryCard
                       enquiry={enquiry}
                       key={enquiry.id}
@@ -165,28 +198,12 @@ export default function OwnerEnquiriesScreen() {
                       onSchedule={() => setScheduling(enquiry)}
                       onViewLog={() => setViewingLog(enquiry)}
                     />
-                  ))
-                ) : (
-                  <Text style={[type.description, { color: colors.muted }]}>
-                    Enquiries you become the handler for appear here.
-                  </Text>
-                )}
-              </Section>
-
-              <Section title={`All enquiries (${enquiries.length})`}>
-                {shown.map((enquiry) => (
-                  <EnquiryCard
-                    enquiry={enquiry}
-                    key={enquiry.id}
-                    onRespond={() => setResponding(enquiry)}
-                    onSchedule={() => setScheduling(enquiry)}
-                    onViewLog={() => setViewingLog(enquiry)}
-                  />
-                ))}
-                {/* The list ends by saying so, rather than with a pager whose
-                    numbers nobody was using to navigate. */}
-                {!hasMore ? <ListEnd /> : null}
-              </Section>
+                  ))}
+                  {/* The list ends by saying so, rather than with a pager whose
+                      numbers nobody was using to navigate. */}
+                  {!hasMore ? <ListEnd /> : null}
+                </>
+              )}
             </>
           )}
         </View>
@@ -313,27 +330,52 @@ function isNewToday(enquiry: EnquiryDetail) {
   return calendarDaysAgo(new Date(enquiry.createdAt)) <= 0 && !enquiry.handlerUserId;
 }
 
-/** Corner of the ribbon box; the band runs across it at 45 degrees. */
+/** The ribbon's square in the card's corner; the band crosses it at 45 degrees. */
 const RIBBON_BOX = 76;
+/** The darker folds where the band tucks behind the card's two edges. */
+const RIBBON_TAIL = 6;
 
 /**
- * The NEW tag: a red band folded across the card's top-right corner, as on a
- * sale sticker. The card clips it to its rounded edge.
+ * The NEW tag, drawn as the sale sticker it was modelled on (user,
+ * 2026-10-02): a red band across the card's top-right corner, reading down to
+ * the right, with a darker fold at each end where it wraps the edge. The card's
+ * own rounding clips the corner.
+ *
+ * <p>Shown only while {@link isNewToday}: a reply under first-response mode
+ * makes the replier the handler, so an answered enquiry has already lost it.
  */
 function NewRibbon() {
   const { colors, fonts } = useTheme();
+  // Right-angled triangles, square corner up and right: each sits against the
+  // band's outer edge where it meets the card edge, the fold of the wrap.
+  const tail = {
+    borderLeftColor: "transparent",
+    borderLeftWidth: RIBBON_TAIL,
+    borderTopColor: RIBBON_FOLD,
+    borderTopWidth: RIBBON_TAIL,
+    height: 0,
+    position: "absolute" as const,
+    width: 0,
+  };
   return (
     <View
       accessibilityLabel="New enquiry"
       pointerEvents="none"
       style={{ height: RIBBON_BOX, overflow: "hidden", position: "absolute", right: 0, top: 0, width: RIBBON_BOX, zIndex: 1 }}
     >
+      <View style={[tail, { left: 5, top: 0 }]} />
+      <View style={[tail, { left: RIBBON_BOX - RIBBON_TAIL, top: RIBBON_BOX - 11 }]} />
       <View
         style={{
           backgroundColor: colors.danger,
           paddingVertical: 3,
           position: "absolute",
           right: -30,
+          shadowColor: "#000000",
+          shadowOffset: { height: 1, width: 0 },
+          shadowOpacity: 0.18,
+          shadowRadius: 2,
+          elevation: 2,
           top: 16,
           transform: [{ rotate: "45deg" }],
           width: 110,
@@ -346,6 +388,9 @@ function NewRibbon() {
     </View>
   );
 }
+
+/** The underside of the band, seen where it folds back. */
+const RIBBON_FOLD = "#991B1B";
 
 /**
  * Opens the action log. Outlined container, ink glyph, no fill — the house icon

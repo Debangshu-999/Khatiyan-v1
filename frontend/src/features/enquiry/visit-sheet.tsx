@@ -241,15 +241,13 @@ function DayStrip({
             accessibilityState={{ selected: picked }}
             key={day.date}
             onPress={() => onPick(day.date)}
-            // Square, on a grey fill (user, 2026-10-02). The picked day keeps
-            // its blue edge so the choice still reads at a glance.
+            // Square, borderless, on a grey fill; the picked day turns pale
+            // blue like a chosen slot (user, 2026-10-02).
             style={{
               alignItems: "center",
-              backgroundColor: colors.neutralSoft,
-              borderColor: picked ? colors.primary : "transparent",
+              backgroundColor: picked ? colors.primarySoft : colors.neutralSoft,
               borderCurve: "continuous",
               borderRadius: radii.card,
-              borderWidth: 1.5,
               gap: 1,
               height: DAY_CARD_SIZE,
               justifyContent: "center",
@@ -296,12 +294,10 @@ function SlotRow({
       onPress={onPick}
       style={{
         alignItems: "center",
-        // A pale blue fill marks the chosen slot (user, 2026-10-02).
-        backgroundColor: selected ? colors.primarySoft : "transparent",
-        borderColor: selected ? colors.primary : colors.borderStrong,
+        // Borderless: grey, and pale blue once chosen (user, 2026-10-02).
+        backgroundColor: selected ? colors.primarySoft : colors.neutralSoft,
         borderCurve: "continuous",
         borderRadius: radii.card,
-        borderWidth: selected ? 1.5 : 1,
         flexDirection: "row",
         gap: spacing.sm,
         justifyContent: "space-between",
