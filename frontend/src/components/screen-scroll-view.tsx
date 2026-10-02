@@ -45,18 +45,7 @@ type ScreenScrollViewProps = ScrollViewProps & {
   // automatically when it overflows (small/zoomed displays, keyboard open).
   scrollOnlyWhenNeeded?: boolean;
   safeAreaEdges?: Edge[];
-  /**
-   * An offset to come back to on mount, for a screen that swaps itself out
-   * for a detail view and back (Discover's property profile). Applied once
-   * the content is tall enough to reach it, and only in the first moments
-   * after mount, so it never jumps the list after someone has started
-   * scrolling it themselves.
-   */
-  initialScrollY?: number;
 };
-
-/** How long after mount a pending {@code initialScrollY} may still be applied. */
-const RESTORE_WINDOW_MS = 1500;
 
 export function ScreenScrollView({
   children,
@@ -71,7 +60,6 @@ export function ScreenScrollView({
   scrollOnlyWhenNeeded = false,
   safeAreaEdges,
   style,
-  initialScrollY = 0,
   ...props
 }: ScreenScrollViewProps) {
   const { colors } = useTheme();
@@ -102,24 +90,6 @@ export function ScreenScrollView({
   // Where the list currently sits, so the nudge above is relative rather than
   // absolute — scrollTo takes an absolute offset.
   const scrollOffset = useRef(0);
-
-  // initialScrollY: retried on each content growth until the offset is
-  // reachable, since a list renders in passes and scrollTo clamps to the
-  // content height it has at the time.
-  const restorePending = useRef(initialScrollY > 0);
-  const restoreDeadline = useRef(Date.now() + RESTORE_WINDOW_MS);
-  const restoreViewport = useRef(0);
-  function restoreScroll(contentHeight: number) {
-    if (!restorePending.current) return;
-    if (Date.now() > restoreDeadline.current) {
-      restorePending.current = false;
-      return;
-    }
-    scrollRef.current?.scrollTo({ animated: false, y: initialScrollY });
-    if (restoreViewport.current > 0 && contentHeight - restoreViewport.current >= initialScrollY) {
-      restorePending.current = false;
-    }
-  }
   useEffect(() => {
     if (Platform.OS !== "android") {
       return;
@@ -238,14 +208,8 @@ export function ScreenScrollView({
         contentInsetAdjustmentBehavior="never"
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={(_width, height) => {
-          if (scrollOnlyWhenNeeded) setContentHeight(height);
-          restoreScroll(height);
-        }}
-        onLayout={(event) => {
-          restoreViewport.current = event.nativeEvent.layout.height;
-          if (scrollOnlyWhenNeeded) setViewportHeight(event.nativeEvent.layout.height);
-        }}
+        onContentSizeChange={scrollOnlyWhenNeeded ? (_width, height) => setContentHeight(height) : undefined}
+        onLayout={scrollOnlyWhenNeeded ? (event) => setViewportHeight(event.nativeEvent.layout.height) : undefined}
         scrollEnabled={scrollEnabled}
         refreshControl={
           refreshable ? (
