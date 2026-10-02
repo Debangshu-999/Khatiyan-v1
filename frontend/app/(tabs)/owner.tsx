@@ -192,7 +192,7 @@ export default function OwnerScreen() {
                 <MetricTile icon={RoomsTileIcon} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms with space" />
+                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms" />
                 <MetricTile icon={PropertyTileIcon} iconPlacement="side" label="Property" value={selectedProperty.type} hint={selectedProperty.city ?? "Selected"} />
               </View>
             </>
