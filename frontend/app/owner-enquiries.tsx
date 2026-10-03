@@ -656,10 +656,8 @@ function EnquiryCard({
   // Its visit was cancelled and none is booked again: a Visit cancelled tag,
   // and why, under the intent line (owner's design, 2026-10-03).
   const cancelledVisit = !hasVisit && !isExpired && !isClosed ? enquiry.cancelledVisit ?? null : null;
-  const cancelLine = cancelledVisit
-    ? `Visit cancelled by ${cancelledVisit.byTenant ? firstName(enquiry.enquirerName) : "the property"}` +
-      (cancelledVisit.reason ? `: ${cancelledVisit.reason}` : "")
-    : null;
+  // Why the visit was called off, under its own bold label (user, 2026-10-03).
+  const cancelReason = cancelledVisit?.reason?.trim() || null;
   // Interested after a cancelled visit gets the green intent line too, to carry why.
   const showInterested =
     !isExpired && !isClosed && enquiry.sentiment === "INTERESTED" && (changedMind || Boolean(cancelledVisit));
@@ -740,7 +738,6 @@ function EnquiryCard({
               <Text style={{ fontFamily: fonts.sansBold }}>{heldBack ? "Not interested:" : "Not interested"}</Text>
               {heldBack ? ` ${heldBack}` : ""}
             </Text>
-            {cancelLine ? <Text style={[type.caption, { color: colors.danger }]}>{cancelLine}</Text> : null}
           </View>
         ) : null}
 
@@ -756,11 +753,38 @@ function EnquiryCard({
               paddingVertical: spacing.sm,
             }}
           >
+            {/* Still interested after calling the visit off, or after taking
+                back a Not interested: said so beside Interested, with the
+                cancellation's reason in its own yellow box below (user,
+                2026-10-03). */}
             <Text style={[type.description, { color: colors.successText }]}>
-              <Text style={{ fontFamily: fonts.sansBold }}>{changedMind ? "Interested:" : "Interested"}</Text>
-              {changedMind ? " Tenant changed mind" : ""}
+              <Text style={{ fontFamily: fonts.sansBold }}>
+                {changedMind || cancelledVisit?.byTenant ? "Interested:" : "Interested"}
+              </Text>
+              {cancelledVisit?.byTenant
+                ? " Tenant is interested but changed mind"
+                : changedMind
+                  ? " Tenant changed mind"
+                  : ""}
             </Text>
-            {cancelLine ? <Text style={[type.caption, { color: colors.successText }]}>{cancelLine}</Text> : null}
+          </View>
+        ) : null}
+
+        {/* Why the visit was called off: its own yellow box, under the intent
+            box above it (user, 2026-10-03). */}
+        {cancelReason ? (
+          <View
+            style={{
+              backgroundColor: colors.warningSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <Text style={[type.description, { color: colors.warningText }]}>
+              <Text style={{ fontFamily: fonts.sansBold }}>Cancellation reason:</Text> {cancelReason}
+            </Text>
           </View>
         ) : null}
 

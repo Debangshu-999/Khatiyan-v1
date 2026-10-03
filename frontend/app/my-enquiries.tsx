@@ -276,6 +276,9 @@ function MyEnquiryCard({
           </GhostPill>
         ) : null}
         {notInterested && item.notInterestedClosesAt ? <ClosesInChip closesAt={item.notInterestedClosesAt} /> : null}
+        {/* When it runs out, before the visit tag, as on the owner's card
+            (user, 2026-10-03). Past it, the Expired pill below says so. */}
+        {!expired ? <TagPill label={`Expires ${formatDate(item.expiresAt)}`} /> : null}
         {/* Cancelled, and nothing booked since (owner's design, 2026-10-03). */}
         {item.visitCancelledAt ? (
           <TagPill icon={CalendarX} iconColor={colors.danger} iconFaded label="Visit cancelled" />
