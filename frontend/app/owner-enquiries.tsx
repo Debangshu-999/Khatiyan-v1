@@ -674,8 +674,10 @@ function EnquiryCard({
         <CornerRibbon accessibilityLabel="Closed enquiry" band={colors.muted} fold={colors.neutralText} label="CLOSED" />
       ) : null}
       {/* Dimmed as a whole rather than restyling every line: an expired enquiry
-          is still readable, just plainly no longer something to act on. */}
-      <View style={{ gap: spacing.xs, opacity: isExpired || isClosed ? 0.55 : 1 }}>
+          is still readable, just plainly no longer something to act on. Only
+          expired ones (user, 2026-10-03): a closed card keeps full strength,
+          its CLOSED band and disabled buttons saying enough. */}
+      <View style={{ gap: spacing.xs, opacity: isExpired ? 0.55 : 1 }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: isNew || isClosed ? 44 : 0 }}>
           <User color={colors.ink} fill={colors.ink} size={20} />
           <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 28 }]} numberOfLines={1}>
