@@ -1,6 +1,8 @@
 package com.khatiyan.d_modules.enquiry.service;
 
 import java.time.Instant;
+import java.time.Year;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -189,19 +191,20 @@ public class EnquiryService {
 
     /** The enquirer's enquiries at a property that have not expired, newest first. */
     private List<Enquiry> currentAt(UUID enquirerUserId, UUID propertyId) {
-        return enquiryRepository.findVisibleForEnquirer(enquirerUserId, hiddenBefore()).stream()
-                .filter(enquiry -> enquiry.getPropertyId().equals(propertyId) && !enquiry.isExpired())
+        return enquiryRepository.findUnexpiredForEnquirerAtProperty(enquirerUserId, propertyId, Instant.now()).stream()
+                .filter(enquiry -> !enquiry.isExpired())
                 .toList();
     }
 
     /**
-     * The enquirer's own enquiries, newest first, until 30 days past their date
-     * (My enquiries, owner's design 2026-10-03). Three reads however many there
-     * are: the enquiries, their properties, and the visits booked on them.
+     * The enquirer's own enquiries raised this year, newest first, open, closed
+     * and expired alike (My enquiries, user 2026-10-03). Three reads however
+     * many there are: the enquiries, their properties, and the visits booked
+     * on them.
      */
     @Transactional(readOnly = true)
     public List<MyEnquiryItemResponse> myEnquiries(UUID actorUserId) {
-        List<Enquiry> mine = enquiryRepository.findVisibleForEnquirer(actorUserId, hiddenBefore());
+        List<Enquiry> mine = enquiryRepository.findVisibleForEnquirer(actorUserId, shownFrom());
         if (mine.isEmpty()) {
             return List.of();
         }
@@ -340,7 +343,7 @@ public class EnquiryService {
     @Transactional(readOnly = true)
     public List<EnquiryDetailResponse> listForProperty(UUID actorUserId, UUID propertyId) {
         Viewer viewer = viewerOf(actorUserId, propertyId);
-        return describe(enquiryRepository.findVisibleForProperty(propertyId, hiddenBefore()), viewer);
+        return describe(enquiryRepository.findVisibleForProperty(propertyId, shownFrom()), viewer);
     }
 
     /**
@@ -356,8 +359,8 @@ public class EnquiryService {
 
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
         Page<Enquiry> found = scope == EnquiryListScope.MINE
-                ? enquiryRepository.findVisiblePageForHandler(propertyId, actorUserId, hiddenBefore(), pageable)
-                : enquiryRepository.findVisiblePageForProperty(propertyId, hiddenBefore(), pageable);
+                ? enquiryRepository.findVisiblePageForHandler(propertyId, actorUserId, shownFrom(), pageable)
+                : enquiryRepository.findVisiblePageForProperty(propertyId, shownFrom(), pageable);
 
         return new PageResponse<>(
                 describe(found.getContent(), viewer),
@@ -1192,11 +1195,14 @@ public class EnquiryService {
     }
 
     /**
-     * An expired enquiry stays on the list, greyed out, for a day past its date.
-     * This is the date before which it has dropped off.
+     * The start of the current year in India: enquiry lists show everything
+     * raised from then on, whatever its state, and nothing from before
+     * (user, 2026-10-03).
      */
-    private static Instant hiddenBefore() {
-        return Instant.now().minus(Enquiry.VISIBLE_AFTER_EXPIRY);
+    private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Kolkata");
+
+    private static Instant shownFrom() {
+        return Year.now(DISPLAY_ZONE).atDay(1).atStartOfDay(DISPLAY_ZONE).toInstant();
     }
 
     /**

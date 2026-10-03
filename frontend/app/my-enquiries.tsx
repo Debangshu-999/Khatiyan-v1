@@ -157,8 +157,8 @@ export default function MyEnquiriesScreen() {
               filter === "OPEN"
                 ? "Ask a property a question from its page in Discover."
                 : filter === "CLOSED"
-                  ? "Enquiries a property closes stay here for 30 days past their date."
-                  : "Enquiries that run out stay here for 30 days."
+                  ? "Enquiries a property closes this year show here."
+                  : "Enquiries that ran out this year show here."
             }
             title={filter === "OPEN" ? "No open enquiries" : filter === "CLOSED" ? "Nothing closed" : "Nothing expired"}
           />

@@ -48,16 +48,6 @@ public class Enquiry extends BaseEntity {
     public static final Duration LIFETIME = Duration.ofDays(30);
 
     /**
-     * How long an EXPIRED enquiry stays visible after it stopped being
-     * actionable.
-     *
-     * <p>One more day, so nothing vanishes between two glances at the list. The
-     * owner sees it greyed out and unactionable for a day first, which is the
-     * difference between "this closed" and "where did that go".
-     */
-    public static final Duration VISIBLE_AFTER_EXPIRY = Duration.ofDays(30);
-
-    /**
      * How long a Not interested enquiry stays open before it closes by itself
      * (owner's design, 2026-10-03). The enquirer may change their mind in it.
      */
@@ -270,11 +260,6 @@ public class Enquiry extends BaseEntity {
         if (this.status == EnquiryStatus.NEW) {
             this.status = EnquiryStatus.EXPIRED;
         }
-    }
-
-    /** The moment it drops off the owner's list entirely. */
-    public Instant hiddenAt() {
-        return expiresAt.plus(VISIBLE_AFTER_EXPIRY);
     }
 
     /**

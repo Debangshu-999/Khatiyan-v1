@@ -218,7 +218,7 @@ export const enquiryApi = api.injectEndpoints({
       providesTags: ["Enquiry"],
     }),
 
-    /** The enquirer's own enquiries, until 30 days past their date (My enquiries). */
+    /** The enquirer's own enquiries raised this year, in any state (My enquiries). */
     getMyEnquiries: builder.query<MyEnquiryItem[], void>({
       query: () => "/api/v1/enquiries/mine",
       providesTags: ["Enquiry"],

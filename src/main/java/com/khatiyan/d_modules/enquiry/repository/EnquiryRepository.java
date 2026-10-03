@@ -25,19 +25,18 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
     /**
      * The owner's list for the active property, newest first.
      *
-     * <p>Drops enquiries that expired more than a day ago. Expiry alone does not
-     * hide one: an expired enquiry stays on the list, greyed and unactionable,
-     * for a further day, so nothing disappears between two glances at the
-     * screen.
+     * <p>Every enquiry raised on or after {@code shownFrom}, whatever its state:
+     * open, closed and expired alike (user, 2026-10-03). The caller passes the
+     * start of the current year, so the list resets each January.
      */
     @Query("""
             SELECT enquiry
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
-              AND enquiry.expiresAt > :hiddenBefore
+              AND enquiry.createdAt >= :shownFrom
             ORDER BY enquiry.createdAt DESC
             """)
-    List<Enquiry> findVisibleForProperty(UUID propertyId, Instant hiddenBefore);
+    List<Enquiry> findVisibleForProperty(UUID propertyId, Instant shownFrom);
 
     /** Not interested, still open, and marked at or before the cutoff: closed by the sweep. */
     @Query("""
@@ -50,15 +49,30 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     List<UUID> findIdsNotInterestedSince(Instant cutoff, Instant now);
 
-    /** The enquirer's own, newest first, until 30 days past their date (My enquiries). */
+    /** The enquirer's own raised on or after {@code shownFrom}, newest first (My enquiries). */
     @Query("""
             SELECT enquiry
             FROM Enquiry enquiry
             WHERE enquiry.enquirerUserId = :enquirerUserId
-              AND enquiry.expiresAt > :hiddenBefore
+              AND enquiry.createdAt >= :shownFrom
             ORDER BY enquiry.createdAt DESC
             """)
-    List<Enquiry> findVisibleForEnquirer(UUID enquirerUserId, Instant hiddenBefore);
+    List<Enquiry> findVisibleForEnquirer(UUID enquirerUserId, Instant shownFrom);
+
+    /**
+     * The enquirer's enquiries at one property whose date has not passed,
+     * newest first. No year cutoff: a live enquiry raised last December still
+     * blocks a duplicate in January.
+     */
+    @Query("""
+            SELECT enquiry
+            FROM Enquiry enquiry
+            WHERE enquiry.enquirerUserId = :enquirerUserId
+              AND enquiry.propertyId = :propertyId
+              AND enquiry.expiresAt > :now
+            ORDER BY enquiry.createdAt DESC
+            """)
+    List<Enquiry> findUnexpiredForEnquirerAtProperty(UUID enquirerUserId, UUID propertyId, Instant now);
 
     /**
      * Open enquiries whose date has passed, for the sweep that ages them out.
@@ -162,15 +176,15 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     Optional<Enquiry> findByIdForUpdate(UUID enquiryId);
 
-    /** A page of the property's list, newest first. The same visibility rule as the whole list. */
+    /** A page of the property's list, newest first. The same cutoff as the whole list. */
     @Query("""
             SELECT enquiry
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
-              AND enquiry.expiresAt > :hiddenBefore
+              AND enquiry.createdAt >= :shownFrom
             ORDER BY enquiry.createdAt DESC
             """)
-    Page<Enquiry> findVisiblePageForProperty(UUID propertyId, Instant hiddenBefore, Pageable pageable);
+    Page<Enquiry> findVisiblePageForProperty(UUID propertyId, Instant shownFrom, Pageable pageable);
 
     /** A page of the enquiries one person handles on a property: their "My enquiries". */
     @Query("""
@@ -178,11 +192,11 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
               AND enquiry.handlerUserId = :handlerUserId
-              AND enquiry.expiresAt > :hiddenBefore
+              AND enquiry.createdAt >= :shownFrom
             ORDER BY enquiry.createdAt DESC
             """)
     Page<Enquiry> findVisiblePageForHandler(
-            UUID propertyId, UUID handlerUserId, Instant hiddenBefore, Pageable pageable);
+            UUID propertyId, UUID handlerUserId, Instant shownFrom, Pageable pageable);
 
     /**
      * What a person handles on a property that is still inside its window, for
