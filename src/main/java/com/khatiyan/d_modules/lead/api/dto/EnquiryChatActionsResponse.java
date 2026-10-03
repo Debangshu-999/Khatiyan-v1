@@ -31,8 +31,8 @@ public record EnquiryChatActionsResponse(
         boolean canSetSentiment,
         boolean canScheduleVisit,
         boolean canEndConversation,
-        // Management only: the enquirer changed their mind once, so marking
-        // them Not interested again closes the enquiry.
+        // The enquirer changed their mind once, so Not interested again, from
+        // either side, closes the enquiry at once.
         boolean notInterestedCloses,
         VisitResponse visit,
         long enquiryVersion) {

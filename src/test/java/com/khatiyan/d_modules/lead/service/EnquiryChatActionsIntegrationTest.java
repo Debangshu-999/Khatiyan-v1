@@ -858,7 +858,7 @@ class EnquiryChatActionsIntegrationTest {
         EnquiryChatActionsResponse forManager = visits.chatActions(manager, enquiry);
         assertThat(forManager.sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
         assertThat(forManager.notInterestedCloses()).isTrue();
-        assertThat(visits.chatActions(prospect, enquiry).notInterestedCloses()).isFalse();
+        assertThat(visits.chatActions(prospect, enquiry).notInterestedCloses()).isTrue();
         verify(notifications).notifyUser(
                 eq(manager), eq("Interested again"), contains("changed their mind"), any(), any(),
                 eq(NotificationSubtype.ENQUIRY_MIND_CHANGED), eq(enquiry), any(), any());

@@ -53,7 +53,7 @@ export type EnquiryChatActions = {
   canSetSentiment: boolean;
   canScheduleVisit: boolean;
   canEndConversation: boolean;
-  /** Management only: they changed their mind once, so Not interested now closes the enquiry. */
+  /** The enquirer changed their mind once, so Not interested, from either side, now closes the enquiry. */
   notInterestedCloses: boolean;
   /** The visit still to happen, if one is booked. */
   visit: Visit | null;

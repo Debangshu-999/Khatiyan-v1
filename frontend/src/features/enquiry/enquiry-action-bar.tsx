@@ -157,6 +157,7 @@ export function EnquiryActionBar({
       {visitOpen ? (
         <VisitSheet
           enquiryId={actions.enquiryId}
+          notInterestedCloses={actions.notInterestedCloses}
           onClose={() => setVisitOpen(false)}
           personName={counterpartName}
           propertyId={actions.propertyId}

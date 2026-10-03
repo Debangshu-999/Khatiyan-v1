@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { CalendarClock } from "lucide-react-native";
+import { AlertTriangle, CalendarClock } from "lucide-react-native";
 
 import { SegmentedChoice } from "@/components/segmented-choice";
-import { SheetShell } from "@/components/sheet-shell";
 import { ActionButton, FormInput } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -11,18 +10,20 @@ import { useTheme } from "@/theme/use-theme";
 export type CancelVisitAnswer = { reason: string; stillInterested: boolean };
 
 /**
- * Cancelling a visit, stacked on Manage visit (owner's design, 2026-10-03).
- * Asks whether they are still interested, and why, both required.
+ * Cancelling a visit: the body of Manage visit's second step, drawn on the
+ * same sheet rather than stacked on it (user, 2026-10-03). The sheet supplies
+ * the title, the back arrow and the X. Asks whether they are still
+ * interested, and why, both required.
  *
  * <p>Interested: reschedule is offered first, and cancelling anyway keeps the
  * enquiry Interested. Not interested: the enquiry is marked so and closes by
- * itself in 7 days.
+ * itself in 7 days, or at once when the enquirer has already changed their
+ * mind once.
  */
-export function CancelVisitSheet({
+export function CancelVisitForm({
   canReschedule,
   enquirer,
-  onBack,
-  onClose,
+  notInterestedCloses,
   onReschedule,
   onSubmit,
 }: {
@@ -30,8 +31,8 @@ export function CancelVisitSheet({
   canReschedule: boolean;
   /** The enquirer is cancelling their own visit: "Are you still interested?". */
   enquirer: boolean;
-  onBack: () => void;
-  onClose: () => void;
+  /** A second Not interested: the enquiry closes at once instead of in 7 days. */
+  notInterestedCloses: boolean;
   /** Back to the slots, to move the visit instead. */
   onReschedule: () => void;
   onSubmit: (answer: CancelVisitAnswer) => void;
@@ -53,7 +54,7 @@ export function CancelVisitSheet({
   }
 
   return (
-    <SheetShell onBack={onBack} onClose={onClose} title="Cancel visit">
+    <>
       <View style={{ gap: 6 }}>
         <Text style={[type.label, { color: tried && interestError ? colors.danger : colors.muted }]}>
           {enquirer ? "Are you still interested?" : "Are they still interested?"}
@@ -89,12 +90,14 @@ export function CancelVisitSheet({
         </View>
       ) : null}
 
+      {/* A red warning icon before the line (user, 2026-10-03). */}
       {interest === "NO" ? (
-        <Text style={[type.description, { color: colors.danger }]}>
-          {enquirer
-            ? "Your enquiry will be marked not interested and close by itself in 7 days."
-            : "Their enquiry will be marked not interested and close by itself in 7 days."}
-        </Text>
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
+          <AlertTriangle color={colors.danger} size={16} strokeWidth={2.2} style={{ marginTop: 2 }} />
+          <Text style={[type.description, { color: colors.danger, flex: 1 }]}>
+            {notInterestedLine(enquirer, notInterestedCloses)}
+          </Text>
+        </View>
       ) : null}
 
       <View style={{ gap: 6 }}>
@@ -111,6 +114,14 @@ export function CancelVisitSheet({
       </View>
 
       <ActionButton label="Cancel visit" onPress={submit} variant="dangerFilled" />
-    </SheetShell>
+    </>
   );
+}
+
+/** What Not interested does to the enquiry, in the words both steps use. */
+export function notInterestedLine(enquirer: boolean, closesNow: boolean): string {
+  const whose = enquirer ? "Your" : "Their";
+  return closesNow
+    ? `${whose} enquiry will be marked not interested and closed.`
+    : `${whose} enquiry will be marked not interested and close by itself in 7 days.`;
 }

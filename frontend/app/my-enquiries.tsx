@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   CalendarX,
   CheckCircle2,
+  Info,
   MessageSquare,
   MessageSquarePlus,
   type LucideProps,
@@ -319,7 +320,6 @@ function MyEnquiryCard({
         </GhostText>
       </View>
 
-
       {/* Marked not interested and still open, with the way back (owner's
           design, 2026-10-03). How long it has left is the Closes in tag. */}
       {notInterested ? (
@@ -344,10 +344,28 @@ function MyEnquiryCard({
         </View>
       ) : null}
 
+      {/* Behind an info icon, in the same box as the line above (user,
+          2026-10-03). */}
       {closed ? (
-        <GhostText ghostWidth="90%" style={[type.description, { color: colors.muted }]}>
-          This enquiry has been closed. Changed your mind? You can enquire again.
-        </GhostText>
+        <View
+          style={{
+            alignItems: "flex-start",
+            backgroundColor: colors.neutralSoft,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            flexDirection: "row",
+            gap: spacing.sm,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+          }}
+        >
+          <View style={{ paddingTop: 2 }}>
+            <GhostIcon color={colors.muted} icon={Info} size={15} strokeWidth={2.4} />
+          </View>
+          <GhostText ghostWidth="90%" style={[type.description, { color: colors.muted, flex: 1 }]}>
+            This enquiry has been closed. Changed your mind? You can enquire again.
+          </GhostText>
+        </View>
       ) : null}
 
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>

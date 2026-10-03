@@ -238,7 +238,9 @@ public class LeadVisitService {
                 // has passed does not hold the conversation open.
                 acting && !over && (visit == null || !visit.isUpcoming(today))
                         && enquiry.sentiment() == EnquirySentiment.NOT_INTERESTED,
-                !enquirer && enquiry.tenantChangedMindAt() != null,
+                // Both sides: the change of mind is the enquirer's own act, not
+                // the handler's reading, so it is theirs to know about too.
+                enquiry.tenantChangedMindAt() != null,
                 visit == null
                         ? null
                         : VisitResponse.of(

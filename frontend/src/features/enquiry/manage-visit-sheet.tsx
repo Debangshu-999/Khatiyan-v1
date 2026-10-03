@@ -26,6 +26,7 @@ export function ManageVisitSheet({
     <VisitSheet
       enquiryId={enquiryId}
       loadingVisit={actions.isLoading}
+      notInterestedCloses={actions.data?.notInterestedCloses ?? false}
       onClose={onClose}
       personName={personName}
       propertyId={propertyId}

@@ -7,7 +7,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
-import { CancelVisitSheet, type CancelVisitAnswer } from "@/features/enquiry/cancel-visit-sheet";
+import { CancelVisitForm, notInterestedLine, type CancelVisitAnswer } from "@/features/enquiry/cancel-visit-form";
 import { GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { useToast } from "@/components/toast";
 import {
@@ -68,6 +68,7 @@ const SAMPLE_DAYS: Day[] = ["2026-01-04", "2026-01-05", "2026-01-06", "2026-01-0
 export function VisitSheet({
   enquiryId,
   loadingVisit = false,
+  notInterestedCloses = false,
   onClose,
   personName,
   propertyId,
@@ -76,6 +77,8 @@ export function VisitSheet({
   visit,
 }: {
   enquiryId: string;
+  /** The enquirer changed their mind once, so Not interested now closes the enquiry at once. */
+  notInterestedCloses?: boolean;
   onClose: () => void;
   /**
    * Who the visit is for, named in management's confirmations. The enquirer
@@ -113,6 +116,9 @@ export function VisitSheet({
   const [failure, setFailure] = useState<string | null>(null);
 
   const moving = Boolean(visit);
+  // Cancel visit is the sheet's second step, drawn in place of Manage visit
+  // with a back arrow, not a sheet stacked on top (user, 2026-10-03).
+  const cancelStep = cancelling && Boolean(visit);
   const enquirer = viewer === "ENQUIRER";
   // Booking, or a visit that can still be moved. A visit that cannot (its day
   // has come, or the tenant has used both changes) opens here only to be
@@ -231,7 +237,7 @@ export function VisitSheet({
       // Straight under the title, in a grey pill: what may still be done with
       // the visit (user, 2026-10-03).
       belowTitle={
-        visit && (picking || usedUp) && rescheduleLine ? (
+        !cancelStep && visit && (picking || usedUp) && rescheduleLine ? (
           <View
             style={{
               alignSelf: "flex-start",
@@ -245,140 +251,156 @@ export function VisitSheet({
           </View>
         ) : null
       }
+      onBack={cancelStep ? () => setCancelling(false) : undefined}
       onClose={onClose}
-      title={moving || loadingVisit ? "Manage visit" : "Schedule a visit"}
+      title={cancelStep ? "Cancel visit" : moving || loadingVisit ? "Manage visit" : "Schedule a visit"}
     >
-      {visit && !picking && !usedUp ? (
-        <Text style={[type.description, { color: colors.muted }]}>
-          {visit.rescheduleRefusal ?? "This visit can no longer be moved."}
-        </Text>
-      ) : null}
-
-      {/* The visit as it stands, in a grey pill: a calendar, then its day and
-          start. Once a new slot is picked it is struck through, with an arrow
-          to the new one in the same pill (user, 2026-10-03). */}
-      {visit && currentShort ? (
-        <View
-          style={{
-            alignItems: "center",
-            alignSelf: "flex-start",
-            backgroundColor: colors.neutralSoft,
-            borderRadius: radii.pill,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: spacing.xs,
-            paddingHorizontal: spacing.sm + 2,
-            paddingVertical: 6,
+      {cancelStep && visit ? (
+        <CancelVisitForm
+          canReschedule={visit.canReschedule}
+          enquirer={enquirer}
+          notInterestedCloses={notInterestedCloses}
+          onReschedule={() => setCancelling(false)}
+          onSubmit={(answer) => {
+            setCancelAnswer(answer);
+            setConfirming("cancel");
           }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
-            <CalendarDays color={currentTint} size={14} strokeWidth={2.2} />
-            <Text style={{ color: currentTint, fontFamily: fonts.sansBold, fontSize: 13 }}>
-              {visit.missed ? " Missed: " : ": "}
-              <Text style={picking && pickedShort ? { textDecorationLine: "line-through" } : undefined}>
-                {currentShort}
-              </Text>
+        />
+      ) : (
+        <>
+          {visit && !picking && !usedUp ? (
+            <Text style={[type.description, { color: colors.muted }]}>
+              {visit.rescheduleRefusal ?? "This visit can no longer be moved."}
             </Text>
-          </View>
-          {picking && pickedShort ? (
+          ) : null}
+
+          {/* The visit as it stands, in a grey pill: a calendar, then its day and
+              start. Once a new slot is picked it is struck through, with an arrow
+              to the new one in the same pill (user, 2026-10-03). */}
+          {visit && currentShort ? (
+            <View
+              style={{
+                alignItems: "center",
+                alignSelf: "flex-start",
+                backgroundColor: colors.neutralSoft,
+                borderRadius: radii.pill,
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: spacing.xs,
+                paddingHorizontal: spacing.sm + 2,
+                paddingVertical: 6,
+              }}
+            >
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
+                <CalendarDays color={currentTint} size={14} strokeWidth={2.2} />
+                <Text style={{ color: currentTint, fontFamily: fonts.sansBold, fontSize: 13 }}>
+                  {visit.missed ? " Missed: " : ": "}
+                  <Text style={picking && pickedShort ? { textDecorationLine: "line-through" } : undefined}>
+                    {currentShort}
+                  </Text>
+                </Text>
+              </View>
+              {picking && pickedShort ? (
+                <>
+                  <MaterialCommunityIcons color={colors.kicker} name="arrow-right" size={16} />
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{pickedShort}</Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
+          {picking && loading ? (
+            <SkeletonBoundary>
+              <View style={{ gap: spacing.md }}>
+                <DayStrip days={SAMPLE_DAYS} onPick={() => undefined} selected={SAMPLE_DAYS[1].date} />
+                <View style={{ gap: spacing.sm }}>
+                  {SAMPLE_DAYS[0].slots.map((slot) => (
+                    <SlotRow key={slot.startTime} onPick={() => undefined} selected={false} slot={slot} />
+                  ))}
+                </View>
+              </View>
+            </SkeletonBoundary>
+          ) : null}
+
+          {/* No hours set: an empty state carrying the Visiting Hours card's own
+              mark (user, 2026-10-02), so management recognises where to set them. */}
+          {picking && !loading && days.length === 0 ? (
+            <EmptyState
+              artworkNode={<PropertyVisitsIcon size={64} />}
+              compact
+              description={
+                availability.isError
+                  ? "Could not load the visit slots. Close this and try again."
+                  : viewer !== "ENQUIRER"
+                    ? "Set them in Property workspace, under Visiting Hours."
+                    : "Visits open up here once the property sets its hours."
+              }
+              title={availability.isError ? "Slots unavailable" : "No visiting hours yet"}
+            />
+          ) : null}
+
+          {picking && !loading && days.length > 0 ? (
             <>
-              <MaterialCommunityIcons color={colors.kicker} name="arrow-right" size={16} />
-              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{pickedShort}</Text>
+              <DayStrip
+                days={days}
+                onPick={(day) => {
+                  setPickedDate(day);
+                  setSlotStart(null);
+                }}
+                selected={date}
+              />
+
+              <View style={{ gap: spacing.sm }}>
+                {(selectedDay?.slots ?? []).map((slot) => (
+                  <SlotRow
+                    current={Boolean(
+                      visit &&
+                        visit.upcoming &&
+                        selectedDay &&
+                        visit.date === selectedDay.date &&
+                        visit.slotStart === slot.startTime,
+                    )}
+                    key={slot.startTime}
+                    // A second tap on the picked slot unpicks it (user, 2026-10-03).
+                    onPick={() => setSlotStart((chosen) => (chosen === slot.startTime ? null : slot.startTime))}
+                    selected={slotStart === slot.startTime}
+                    slot={slot}
+                  />
+                ))}
+              </View>
+
+              {/* The enquirer can send the pick as a message instead, beside the
+                  button that books it (user, 2026-10-03). */}
+              <View style={{ flexDirection: "row", gap: spacing.sm, paddingTop: spacing.xs }}>
+                {enquirer && threadId ? (
+                  <ActionButton
+                    disabled={!picked || busy}
+                    label="Send as text"
+                    onPress={() => void sendAsText()}
+                    variant="outline"
+                  />
+                ) : null}
+                <ActionButton
+                  disabled={!picked || busy}
+                  label={busy ? "Saving" : moving ? "Reschedule" : "Schedule visit"}
+                  onPress={() => setConfirming("book")}
+                />
+              </View>
             </>
           ) : null}
-        </View>
-      ) : null}
 
-      {picking && loading ? (
-        <SkeletonBoundary>
-          <View style={{ gap: spacing.md }}>
-            <DayStrip days={SAMPLE_DAYS} onPick={() => undefined} selected={SAMPLE_DAYS[1].date} />
-            <View style={{ gap: spacing.sm }}>
-              {SAMPLE_DAYS[0].slots.map((slot) => (
-                <SlotRow key={slot.startTime} onPick={() => undefined} selected={false} slot={slot} />
-              ))}
-            </View>
-          </View>
-        </SkeletonBoundary>
-      ) : null}
-
-      {/* No hours set: an empty state carrying the Visiting Hours card's own
-          mark (user, 2026-10-02), so management recognises where to set them. */}
-      {picking && !loading && days.length === 0 ? (
-        <EmptyState
-          artworkNode={<PropertyVisitsIcon size={64} />}
-          compact
-          description={
-            availability.isError
-              ? "Could not load the visit slots. Close this and try again."
-              : viewer !== "ENQUIRER"
-                ? "Set them in Property workspace, under Visiting Hours."
-                : "Visits open up here once the property sets its hours."
-          }
-          title={availability.isError ? "Slots unavailable" : "No visiting hours yet"}
-        />
-      ) : null}
-
-      {picking && !loading && days.length > 0 ? (
-        <>
-          <DayStrip
-            days={days}
-            onPick={(day) => {
-              setPickedDate(day);
-              setSlotStart(null);
-            }}
-            selected={date}
-          />
-
-          <View style={{ gap: spacing.sm }}>
-            {(selectedDay?.slots ?? []).map((slot) => (
-              <SlotRow
-                current={Boolean(
-                  visit &&
-                    visit.upcoming &&
-                    selectedDay &&
-                    visit.date === selectedDay.date &&
-                    visit.slotStart === slot.startTime,
-                )}
-                key={slot.startTime}
-                // A second tap on the picked slot unpicks it (user, 2026-10-03).
-                onPick={() => setSlotStart((chosen) => (chosen === slot.startTime ? null : slot.startTime))}
-                selected={slotStart === slot.startTime}
-                slot={slot}
-              />
-            ))}
-          </View>
-
-          {/* The enquirer can send the pick as a message instead, beside the
-              button that books it (user, 2026-10-03). */}
-          <View style={{ flexDirection: "row", gap: spacing.sm, paddingTop: spacing.xs }}>
-            {enquirer && threadId ? (
+          {visit?.canCancel ? (
+            <View style={{ flexDirection: "row" }}>
               <ActionButton
-                disabled={!picked || busy}
-                label="Send as text"
-                onPress={() => void sendAsText()}
-                variant="outline"
+                disabled={busy}
+                label="Cancel visit"
+                onPress={() => setCancelling(true)}
+                variant="dangerQuiet"
               />
-            ) : null}
-            <ActionButton
-              disabled={!picked || busy}
-              label={busy ? "Saving" : moving ? "Reschedule" : "Schedule visit"}
-              onPress={() => setConfirming("book")}
-            />
-          </View>
+            </View>
+          ) : null}
         </>
-      ) : null}
-
-      {visit?.canCancel ? (
-        <View style={{ flexDirection: "row" }}>
-          <ActionButton
-            disabled={busy}
-            label="Cancel visit"
-            onPress={() => setCancelling(true)}
-            variant="dangerQuiet"
-          />
-        </View>
-      ) : null}
+      )}
 
       {confirming === "book" && picked ? (
         <ConfirmDialog
@@ -403,20 +425,6 @@ export function VisitSheet({
         />
       ) : null}
 
-      {cancelling && visit ? (
-        <CancelVisitSheet
-          canReschedule={visit.canReschedule}
-          enquirer={enquirer}
-          onBack={() => setCancelling(false)}
-          onClose={onClose}
-          onReschedule={() => setCancelling(false)}
-          onSubmit={(answer) => {
-            setCancelAnswer(answer);
-            setConfirming("cancel");
-          }}
-        />
-      ) : null}
-
       {confirming === "cancel" && current && cancelAnswer ? (
         <ConfirmDialog
           bullets={
@@ -424,9 +432,10 @@ export function VisitSheet({
               ? enquirer
                 ? ["Your place in the slot is freed.", "You can book another visit while your enquiry is open."]
                 : ["Their place in the slot is freed.", "They can book another visit while their enquiry is open."]
-              : enquirer
-                ? ["Your place in the slot is freed.", "Your enquiry is marked not interested and closes by itself in 7 days."]
-                : ["Their place in the slot is freed.", "Their enquiry is marked not interested and closes by itself in 7 days."]
+              : [
+                  enquirer ? "Your place in the slot is freed." : "Their place in the slot is freed.",
+                  notInterestedLine(enquirer, notInterestedCloses),
+                ]
           }
           cancelLabel="Keep visit"
           confirmLabel="Cancel visit"
