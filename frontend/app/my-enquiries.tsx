@@ -58,10 +58,6 @@ const FILTER_HEADINGS: Record<Filter, string> = {
 const OPEN_BAND = "#059669";
 const OPEN_FOLD = "#064E3B";
 
-/** The underside of the EXPIRED band, seen where it folds back. */
-
-/** How long a closed or expired enquiry stays on the list past its date. */
-const SHOWN_AFTER_EXPIRY_DAYS = 30;
 
 const DISPLAY_ZONE = "Asia/Kolkata";
 
@@ -401,11 +397,6 @@ function MyEnquiryCard({
         </View>
       </View>
 
-      {closed || expired ? (
-        <GhostText ghostWidth="35%" style={[type.caption, { color: colors.kicker }]}>
-          Shown until {formatDate(shownUntil(item.expiresAt))}
-        </GhostText>
-      ) : null}
     </Card>
   );
 }
@@ -415,9 +406,6 @@ function HomeMark({ color, size }: LucideProps) {
   return <MaterialCommunityIcons color={color} name="home" size={Number(size ?? 24)} />;
 }
 
-function shownUntil(expiresAt: string) {
-  return new Date(Date.parse(expiresAt) + SHOWN_AFTER_EXPIRY_DAYS * 86_400_000).toISOString();
-}
 
 /** "3 Oct", in India time. */
 function formatDate(value: string) {
