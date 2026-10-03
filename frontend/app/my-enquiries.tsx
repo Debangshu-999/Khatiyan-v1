@@ -24,6 +24,7 @@ import {
   CardRule,
   ClosesInChip,
   CornerRibbon,
+  EXPIRED_FOLD,
   CountPill,
   TagPill,
   clockTime,
@@ -58,7 +59,6 @@ const OPEN_BAND = "#059669";
 const OPEN_FOLD = "#064E3B";
 
 /** The underside of the EXPIRED band, seen where it folds back. */
-const EXPIRED_FOLD = "#78350F";
 
 /** How long a closed or expired enquiry stays on the list past its date. */
 const SHOWN_AFTER_EXPIRY_DAYS = 30;

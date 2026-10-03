@@ -179,6 +179,9 @@ export function CornerRibbon({
 /** The underside of the NEW band, seen where it folds back. */
 export const RIBBON_FOLD = "#991B1B";
 
+/** The EXPIRED band's fold, under its amber band. */
+export const EXPIRED_FOLD = "#78350F";
+
 /**
  * "Closes in 7d": how long a Not interested enquiry has before it closes by
  * itself, as a grey pill with a faded red timer (user, 2026-10-03).

@@ -38,6 +38,7 @@ import {
   ClosesInChip,
   CornerRibbon,
   CountPill,
+  EXPIRED_FOLD,
   RIBBON_FOLD,
   TagPill,
 } from "@/features/enquiry/enquiry-tags";
@@ -52,7 +53,6 @@ import {
 } from "@/features/enquiry/record-response-sheet";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { AlertModal } from "@/components/alert-modal";
-import { StatusPill } from "@/components/status-pill";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -674,6 +674,9 @@ function EnquiryCard({
         <CornerRibbon accessibilityLabel="New enquiry" band={colors.danger} fold={RIBBON_FOLD} label="NEW" />
       ) : isClosed ? (
         <CornerRibbon accessibilityLabel="Closed enquiry" band={colors.muted} fold={colors.neutralText} label="CLOSED" />
+      ) : isExpired ? (
+        // Amber, as on the enquirer's own card (user, 2026-10-03).
+        <CornerRibbon accessibilityLabel="Expired enquiry" band={colors.warningText} fold={EXPIRED_FOLD} label="EXPIRED" />
       ) : null}
       {/* Dimmed as a whole rather than restyling every line: an expired enquiry
           is still readable, just plainly no longer something to act on. Only
@@ -897,9 +900,24 @@ function NotInterestedActionsSheet({
  * Why an expired enquiry ended (owner's design, 2026-10-03). Red where the
  * property let it go or they said no, amber where they never picked up.
  */
+/**
+ * Why an expired enquiry ended, in sentence case like the card's other tags
+ * (user, 2026-10-03); StatusPill's caps read as shouting beside them.
+ */
 function EndReasonPill({ reason }: { reason: EnquiryEndReason }) {
+  const { colors, fonts } = useTheme();
   const { label, tone } = END_REASONS[reason];
-  return <StatusPill label={label} tone={tone} />;
+  const palette = {
+    danger: { background: colors.dangerSoft, text: colors.danger },
+    neutral: { background: colors.neutralSoft, text: colors.neutralText },
+    success: { background: colors.successSoft, text: colors.successText },
+    warning: { background: colors.warningSoft, text: colors.warningText },
+  }[tone];
+  return (
+    <View style={{ backgroundColor: palette.background, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+      <Text style={{ color: palette.text, fontFamily: fonts.sansBold, fontSize: 10.5 }}>{label}</Text>
+    </View>
+  );
 }
 
 const END_REASONS: Record<EnquiryEndReason, { label: string; tone: "danger" | "warning" | "neutral" | "success" }> = {
