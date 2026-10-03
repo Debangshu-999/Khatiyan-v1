@@ -29,6 +29,8 @@ import com.khatiyan.d_modules.enquiry.EnquiryModule;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquirySnapshot;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
+import com.khatiyan.d_modules.lead.api.dto.BookedVisitResponse;
+import com.khatiyan.d_modules.lead.api.dto.CancelVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.ScheduleVisitRequest;
@@ -40,6 +42,7 @@ import com.khatiyan.d_modules.lead.model.LeadActivityType;
 import com.khatiyan.d_modules.lead.model.LeadEnquiry;
 import com.khatiyan.d_modules.lead.model.Visit;
 import com.khatiyan.d_modules.lead.model.VisitBookedBy;
+import com.khatiyan.d_modules.lead.model.VisitStatus;
 import com.khatiyan.d_modules.lead.repository.LeadActivityRepository;
 import com.khatiyan.d_modules.lead.repository.LeadEnquiryRepository;
 import com.khatiyan.d_modules.lead.repository.LeadRepository;
@@ -73,7 +76,11 @@ import lombok.extern.slf4j.Slf4j;
  * expired. Missing the visit does not earn a second one.</li>
  * <li>A visit is moved before its day, or after it was missed. Never on the
  * day itself. A missed visit is given a new date this way, not booked again.</li>
- * <li>The prospect may move theirs twice. After that the property moves it.</li>
+ * <li>The prospect may move theirs twice before its date, and twice more after
+ * missing it. Past either, the property moves it.</li>
+ * <li>Either side cancels, any time before the visit is done, its day
+ * included. The person goes back to Enquired and may book again before the
+ * enquiry expires. If it has expired already, their record ends there.</li>
  * </ul>
  *
  * <p>Two people can go for the last place in a slot at the same moment. Each
@@ -178,6 +185,21 @@ public class LeadVisitService {
         return new VisitAvailabilityResponse(propertyId, true, days);
     }
 
+    /**
+     * Every visit booked on the property's enquiries and not yet done, for the
+     * Enquiries screen. One query, however many cards it serves.
+     */
+    @Transactional(readOnly = true)
+    public List<BookedVisitResponse> bookedVisits(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        LocalDate today = LocalDate.now(IST);
+        return visitRepository
+                .findByPropertyIdAndStatusAndEnquiryIdIsNotNull(propertyId, VisitStatus.SCHEDULED)
+                .stream()
+                .map(visit -> BookedVisitResponse.of(visit, today))
+                .toList();
+    }
+
     /** What the action bar above the enquiry's chat shows for the person reading it. */
     @Transactional(readOnly = true)
     public EnquiryChatActionsResponse chatActions(UUID actorUserId, UUID enquiryId) {
@@ -216,7 +238,12 @@ public class LeadVisitService {
                 // has passed does not hold the conversation open.
                 acting && !over && (visit == null || !visit.isUpcoming(today))
                         && enquiry.sentiment() == EnquirySentiment.NOT_INTERESTED,
-                visit == null ? null : VisitResponse.of(visit, today, moveRefusal(visit, today, enquirer, acting)),
+                !enquirer && enquiry.tenantChangedMindAt() != null,
+                visit == null
+                        ? null
+                        : VisitResponse.of(
+                                visit, today, moveRefusal(visit, today, enquirer, acting),
+                                mayCancel(visit, enquirer, acting)),
                 enquiry.version());
     }
 
@@ -266,7 +293,7 @@ public class LeadVisitService {
         OfferedSlot slot = requireOffered(enquiry.propertyId(), request.date(), request.slotStart());
         takePlace(enquiry.propertyId(), request.date(), slot);
 
-        Visit visit = visitRepository.save(Visit.schedule(
+        Visit booked = Visit.schedule(
                 referenceCodeGenerator.nextCode("VIS"),
                 lead.getId(),
                 enquiry.propertyId(),
@@ -276,7 +303,17 @@ public class LeadVisitService {
                 slot.start(),
                 slot.end(),
                 bookedBy,
-                actorUserId));
+                actorUserId);
+        // Booked again after the tenant cancelled on this enquiry: the
+        // reschedules carry over, so cancelling cannot reset them. After the
+        // property cancelled it starts fresh, that being the property's call.
+        visitRepository.findFirstByEnquiryIdAndStatusOrderByCreatedAtDesc(enquiryId, VisitStatus.CANCELLED)
+                .filter(cancelled -> cancelled.getCancelledBy() == VisitBookedBy.TENANT)
+                .ifPresent(booked::carryTenantCountsFrom);
+        Visit visit = visitRepository.save(booked);
+        // A booked visit settles a call still waiting for its answer as
+        // interested, and marks the enquiry so (owner's rule, 2026-10-03).
+        enquiryModule.visitBooked(enquiryId, actorUserId);
 
         // A visit scheduled by either side is what makes it a lead the owner counts.
         lead.reachEarlyLead(now);
@@ -305,15 +342,7 @@ public class LeadVisitService {
 
         boolean byTenant = actorUserId.equals(visit.getProspectUserId());
         if (!byTenant) {
-            EnquiryParty party = visit.getEnquiryId() == null
-                    ? EnquiryParty.OUTSIDER
-                    : enquiryModule.partyOf(visit.getEnquiryId(), actorUserId);
-            if (party == EnquiryParty.OTHER_MANAGEMENT) {
-                throw new ValidationException("Someone else is handling this enquiry.");
-            }
-            if (party != EnquiryParty.ACTING_MANAGEMENT) {
-                throw new ForbiddenException("You cannot move this visit");
-            }
+            ensureActingManagement(visit, actorUserId, "You cannot move this visit");
         }
         String refusal = moveRefusal(visit, LocalDate.now(IST), byTenant, !byTenant);
         if (refusal != null) {
@@ -328,7 +357,7 @@ public class LeadVisitService {
 
         String from = when(visit);
         if (byTenant) {
-            visit.moveByTenant(request.date(), slot.start(), slot.end());
+            visit.moveByTenant(request.date(), slot.start(), slot.end(), LocalDate.now(IST));
         } else {
             visit.moveByHandler(request.date(), slot.start(), slot.end());
         }
@@ -348,10 +377,86 @@ public class LeadVisitService {
                 visit, lead, enquiry, byTenant ? VisitBookedBy.TENANT : VisitBookedBy.HANDLER,
                 NotificationSubtype.VISIT_RESCHEDULED, "Visit moved");
         log.info("Visit moved visitId={} date={} slotStart={} byTenant={} tenantReschedulesLeft={}",
-                visitId, visit.getVisitDate(), visit.getSlotStart(), byTenant, visit.tenantReschedulesLeft());
+                visitId, visit.getVisitDate(), visit.getSlotStart(), byTenant, visit.tenantReschedulesLeft(LocalDate.now(IST)));
 
         LocalDate today = LocalDate.now(IST);
-        return VisitResponse.of(visit, today, moveRefusal(visit, today, byTenant, !byTenant));
+        return VisitResponse.of(
+                visit, today, moveRefusal(visit, today, byTenant, !byTenant), mayCancel(visit, byTenant, !byTenant));
+    }
+
+    /**
+     * Cancels a visit, from either side.
+     *
+     * <p>The place in the slot is freed and the person is back at Enquired, so
+     * they may book again while the enquiry still runs. When it has already run
+     * out (the visit was booked near its end), their record closes now: the
+     * enquiry ends with the booking.
+     */
+    @Transactional
+    public VisitResponse cancel(UUID actorUserId, UUID visitId, CancelVisitRequest request) {
+        Visit visit = visitRepository.findById(visitId)
+                .orElseThrow(() -> new NotFoundException("Visit", visitId));
+        VersionGuard.claim(visit);
+
+        boolean byTenant = actorUserId.equals(visit.getProspectUserId());
+        if (!byTenant) {
+            ensureActingManagement(visit, actorUserId, "You cannot cancel this visit");
+        }
+        if (!visit.isLive()) {
+            throw new ValidationException("This visit can no longer be cancelled.");
+        }
+
+        // The person's turn at this property, held to the end: the pipeline may
+        // be bringing the same lead level with its enquiry at this moment.
+        if (visit.getEnquiryId() != null) {
+            pipeline.syncFromEnquiry(visit.getEnquiryId(), visit.getPropertyId(), visit.getProspectUserId());
+        }
+
+        visit.cancel(byTenant ? VisitBookedBy.TENANT : VisitBookedBy.HANDLER, Instant.now(), request.reason());
+        visit = visitRepository.saveAndFlush(visit);
+        Lead lead = leadRepository.findById(visit.getLeadId()).orElseThrow();
+        lead.returnToEnquired();
+
+        // Still interested, or not: the enquiry's intent follows the answer
+        // (owner's design, 2026-10-03). Not interested starts its 7 days.
+        if (visit.getEnquiryId() != null) {
+            enquiryModule.visitCancelled(visit.getEnquiryId(), actorUserId, request.stillInterested());
+        }
+
+        Instant now = Instant.now();
+        leadActivityRepository.save(LeadActivity.by(
+                actorUserId, lead.getId(), LeadActivityType.VISIT_CANCELLED, visit.getEnquiryId(), when(visit), now));
+
+        EnquirySnapshot enquiry = visit.getEnquiryId() == null
+                ? null
+                : enquiryModule.findSnapshot(visit.getEnquiryId()).orElse(null);
+        tellTheOtherSide(
+                visit, lead, enquiry, byTenant ? VisitBookedBy.TENANT : VisitBookedBy.HANDLER,
+                NotificationSubtype.VISIT_CANCELLED, "Visit cancelled");
+
+        // Back at Enquired with the enquiry already over: the record ends now.
+        if (visit.getEnquiryId() != null) {
+            pipeline.syncFromEnquiry(visit.getEnquiryId(), visit.getPropertyId(), visit.getProspectUserId());
+        }
+        log.info("Visit cancelled visitId={} byTenant={} leadId={} leadState={}",
+                visitId, byTenant, lead.getId(), lead.getState());
+
+        LocalDate today = LocalDate.now(IST);
+        return VisitResponse.of(
+                visit, today, moveRefusal(visit, today, byTenant, !byTenant), mayCancel(visit, byTenant, !byTenant));
+    }
+
+    /** Refuses anyone in management who is not acting on the visit's enquiry, and anyone outside it. */
+    private void ensureActingManagement(Visit visit, UUID actorUserId, String outsiderMessage) {
+        EnquiryParty party = visit.getEnquiryId() == null
+                ? EnquiryParty.OUTSIDER
+                : enquiryModule.partyOf(visit.getEnquiryId(), actorUserId);
+        if (party == EnquiryParty.OTHER_MANAGEMENT) {
+            throw new ValidationException("Someone else is handling this enquiry.");
+        }
+        if (party != EnquiryParty.ACTING_MANAGEMENT) {
+            throw new ForbiddenException(outsiderMessage);
+        }
     }
 
     // ---- Rules -----------------------------------------------------------
@@ -370,11 +475,14 @@ public class LeadVisitService {
                     : "This visit can no longer be moved.";
         }
         if (enquirer) {
-            return visit.tenantReschedulesLeft() > 0
-                    ? null
-                    : "You have moved this visit twice. Ask the property to move it.";
+            return visit.tenantReschedulesLeft(today) > 0 ? null : Visit.tenantLimitMessage(visit.isMissed(today));
         }
         return acting ? null : "Someone else is handling this enquiry.";
+    }
+
+    /** Either side may cancel a visit that is not yet done. */
+    private static boolean mayCancel(Visit visit, boolean enquirer, boolean acting) {
+        return visit.isLive() && (enquirer || acting);
     }
 
     /**
@@ -389,6 +497,10 @@ public class LeadVisitService {
     private Visit blockingVisit(UUID leadId, LocalDate today) {
         Instant now = Instant.now();
         for (Visit visit : visitRepository.findByLeadIdOrderByCreatedAtDesc(leadId)) {
+            // A cancelled visit frees the enquiry: they may book again.
+            if (visit.getStatus() == VisitStatus.CANCELLED) {
+                continue;
+            }
             if (visit.isUpcoming(today)) {
                 return visit;
             }
@@ -478,6 +590,11 @@ public class LeadVisitService {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("visitId", visit.getId().toString());
         data.put("propertyId", visit.getPropertyId().toString());
+        // What the notification row prints: where, when, and the short code,
+        // never the id.
+        data.put("propertyName", property.name());
+        data.put("visitWhen", when(visit));
+        data.put("visitReferenceCode", visit.getReferenceCode());
         if (visit.getEnquiryId() != null) {
             data.put("enquiryId", visit.getEnquiryId().toString());
         }
@@ -485,6 +602,7 @@ public class LeadVisitService {
             data.put("threadId", enquiry.chatThreadId().toString());
         }
         boolean moved = subtype == NotificationSubtype.VISIT_RESCHEDULED;
+        boolean cancelled = subtype == NotificationSubtype.VISIT_CANCELLED;
 
         if (actedAs == VisitBookedBy.TENANT) {
             UUID recipient = lead.getHandlerUserId() != null ? lead.getHandlerUserId() : property.ownerId();
@@ -494,9 +612,11 @@ public class LeadVisitService {
             notificationModule.notifyUser(
                     recipient,
                     title,
-                    moved
-                            ? who + " moved their visit to " + property.name() + " to " + when(visit) + "."
-                            : who + " booked a visit to " + property.name() + " on " + when(visit) + ".",
+                    cancelled
+                            ? who + " cancelled their visit to " + property.name() + " on " + when(visit) + "."
+                            : moved
+                                    ? who + " moved their visit to " + property.name() + " to " + when(visit) + "."
+                                    : who + " booked a visit to " + property.name() + " on " + when(visit) + ".",
                     NotificationCategory.ENQUIRY,
                     NotificationPriority.HIGH,
                     subtype,
@@ -508,9 +628,11 @@ public class LeadVisitService {
             notificationModule.notifyUser(
                     visit.getProspectUserId(),
                     title,
-                    moved
-                            ? property.name() + " moved your visit to " + when(visit) + "."
-                            : property.name() + " scheduled your visit for " + when(visit) + ".",
+                    cancelled
+                            ? property.name() + " cancelled your visit on " + when(visit) + "."
+                            : moved
+                                    ? property.name() + " moved your visit to " + when(visit) + "."
+                                    : property.name() + " scheduled your visit for " + when(visit) + ".",
                     NotificationCategory.ENQUIRY,
                     NotificationPriority.HIGH,
                     subtype,

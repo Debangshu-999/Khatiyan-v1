@@ -29,6 +29,8 @@ export type Visit = {
   canReschedule: boolean;
   /** Why not, in words to show. Null when they may. */
   rescheduleRefusal: string | null;
+  /** Whether the person reading may cancel it: either side, until it is done, its day included. */
+  canCancel: boolean;
   /** Sent back as If-Match when moving it. */
   version: number;
 };
@@ -51,6 +53,8 @@ export type EnquiryChatActions = {
   canSetSentiment: boolean;
   canScheduleVisit: boolean;
   canEndConversation: boolean;
+  /** Management only: they changed their mind once, so Not interested now closes the enquiry. */
+  notInterestedCloses: boolean;
   /** The visit still to happen, if one is booked. */
   visit: Visit | null;
   /** Sent back as If-Match with the sentiment and with ending. */
@@ -73,8 +77,25 @@ export type VisitAvailability = {
   days: { date: string; slots: VisitSlotAvailability[] }[];
 };
 
+/** A visit booked on one of the property's enquiries and not yet done. */
+export type BookedVisit = {
+  enquiryId: string;
+  visitId: string;
+  date: string;
+  slotStart: string;
+  slotEnd: string;
+  upcoming: boolean;
+  missed: boolean;
+};
+
 export const enquiryChatApi = api.injectEndpoints({
   endpoints: (builder) => ({
+    /** What the Enquiries cards read to say "Manage visit" instead of "Schedule visit". */
+    getBookedVisits: builder.query<BookedVisit[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/booked-visits`,
+      providesTags: ["EnquiryChat"],
+    }),
+
     getEnquiryChatActions: builder.query<EnquiryChatActions, string>({
       query: (enquiryId) => `/api/v1/enquiries/${enquiryId}/chat-actions`,
       providesTags: ["EnquiryChat"],
@@ -127,7 +148,22 @@ export const enquiryChatApi = api.injectEndpoints({
         method: "POST",
         url: `/api/v1/enquiries/${enquiryId}/visits`,
       }),
-      invalidatesTags: ["EnquiryChat"],
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
+    }),
+
+    /** Frees the place and puts them back at Enquired. They may book again while the enquiry is open. */
+    /** Still interested or not, and why, both required (2026-10-03). */
+    cancelVisit: builder.mutation<
+      Visit,
+      { reason: string; stillInterested: boolean; visitId: string; version: number }
+    >({
+      query: ({ reason, stillInterested, version, visitId }) => ({
+        body: { reason, stillInterested },
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/visits/${visitId}/cancel`,
+      }),
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
 
     rescheduleVisit: builder.mutation<
@@ -140,14 +176,16 @@ export const enquiryChatApi = api.injectEndpoints({
         method: "PATCH",
         url: `/api/v1/visits/${visitId}/reschedule`,
       }),
-      invalidatesTags: ["EnquiryChat"],
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
   }),
   overrideExisting: true,
 });
 
 export const {
+  useCancelVisitMutation,
   useEndEnquiryConversationMutation,
+  useGetBookedVisitsQuery,
   useGetEnquiryChatActionsQuery,
   useGetVisitAvailabilityQuery,
   useRescheduleVisitMutation,

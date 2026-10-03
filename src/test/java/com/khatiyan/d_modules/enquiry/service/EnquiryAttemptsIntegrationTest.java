@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -44,13 +45,17 @@ import com.khatiyan.d_modules.enquiry.api.dto.EnquiryCountsResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
+import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
 import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.SettleEnquiryAttemptRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.UpdateEnquiryChannelConsentsRequest;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
 import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
+import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquiryHandlerAssignment;
+import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
+import com.khatiyan.d_modules.enquiry.model.EnquiryCallResult;
 import com.khatiyan.d_modules.enquiry.model.EnquiryHandlerMode;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
@@ -58,6 +63,7 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryResponseRepository;
 import com.khatiyan.d_modules.notification.NotificationModule;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.support.IntegrationTest;
 import com.khatiyan.support.PublishedEvents;
@@ -110,7 +116,7 @@ class EnquiryAttemptsIntegrationTest {
         managerA = manager("Manager A");
         managerB = manager("Manager B");
 
-        when(chat.openEnquiryThread(any(), any(), any(), any())).thenReturn(thread);
+        when(chat.openEnquiryThread(any(), any(), any(), any(), any())).thenReturn(thread);
     }
 
     @AfterEach
@@ -217,6 +223,62 @@ class EnquiryAttemptsIntegrationTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Email is no longer");
         assertThat(attempts.findByEnquiryIdInOrderByCreatedAtDesc(List.of(enquiry))).isEmpty();
+    }
+
+    /**
+     * "Record response": the four answers. The first two fail the call, the
+     * accepted two succeed and set the handler's reading of the enquirer, and
+     * the result and duration are kept for the action log (2026-10-03).
+     */
+    @Test
+    void recordingACallsResponseKeepsHowItWentAndSetsTheSentiment() {
+        UUID enquiry = raise(enquirers.get(0));
+
+        EnquiryDetailResponse first = enquiryService.respond(managerA, enquiry, call(null));
+        EnquiryDetailResponse rejected = enquiryService.settleAttempt(managerA, enquiry, first.callToSettleId(),
+                new SettleEnquiryAttemptRequest(null, null, EnquiryCallResult.REJECTED, null));
+        assertThat(rejected.status()).isEqualTo(EnquiryStatus.NEW);
+        assertThat(rejected.sentiment()).isNull();
+        assertThat(rejected.callToSettleId()).isNull();
+        assertThat(rejected.responses()).singleElement().satisfies(attempt -> {
+            assertThat(attempt.outcome()).isEqualTo(EnquiryAttemptOutcome.FAILED);
+            assertThat(attempt.callResult()).isEqualTo(EnquiryCallResult.REJECTED);
+        });
+
+        // Settled, so they can call again. This time they pick up and are interested.
+        EnquiryDetailResponse second = enquiryService.respond(managerA, enquiry, call(null));
+        EnquiryDetailResponse accepted = enquiryService.settleAttempt(managerA, enquiry, second.callToSettleId(),
+                new SettleEnquiryAttemptRequest(null, "Wants a double AC room", EnquiryCallResult.ACCEPTED_INTERESTED, 750));
+
+        assertThat(accepted.status()).isEqualTo(EnquiryStatus.RESPONDED);
+        assertThat(accepted.respondedAt()).isNotNull();
+        assertThat(accepted.sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
+        assertThat(accepted.responses().get(0)).satisfies(attempt -> {
+            assertThat(attempt.outcome()).isEqualTo(EnquiryAttemptOutcome.SUCCEEDED);
+            assertThat(attempt.callResult()).isEqualTo(EnquiryCallResult.ACCEPTED_INTERESTED);
+            assertThat(attempt.durationSeconds()).isEqualTo(750);
+            assertThat(attempt.note()).isEqualTo("Wants a double AC room");
+        });
+
+        // Accepted but not interested: a success, and the sentiment says so.
+        UUID other = raise(enquirers.get(1));
+        EnquiryDetailResponse third = enquiryService.respond(managerA, other, call(null));
+        EnquiryDetailResponse notInterested = enquiryService.settleAttempt(managerA, other, third.callToSettleId(),
+                new SettleEnquiryAttemptRequest(null, "Budget is lower", EnquiryCallResult.ACCEPTED_NOT_INTERESTED, null));
+        assertThat(notInterested.status()).isEqualTo(EnquiryStatus.RESPONDED);
+        assertThat(notInterested.sentiment()).isEqualTo(EnquirySentiment.NOT_INTERESTED);
+
+        // An answer that contradicts itself, or a call longer than a day, is refused.
+        UUID third2 = raise(enquirers.get(2));
+        EnquiryDetailResponse fourth = enquiryService.respond(managerA, third2, call(null));
+        assertThatThrownBy(() -> enquiryService.settleAttempt(managerA, third2, fourth.callToSettleId(),
+                new SettleEnquiryAttemptRequest(EnquiryAttemptOutcome.FAILED, null, EnquiryCallResult.ACCEPTED_INTERESTED, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("disagree");
+        assertThatThrownBy(() -> enquiryService.settleAttempt(managerA, third2, fourth.callToSettleId(),
+                new SettleEnquiryAttemptRequest(null, null, EnquiryCallResult.ACCEPTED_INTERESTED, 90_000)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("at most 23 hours");
     }
 
     // ---- A chat ----------------------------------------------------------
@@ -383,6 +445,44 @@ class EnquiryAttemptsIntegrationTest {
                 eq(owner), anyString(), anyString(), any(), any(), any(), any(), any(), any());
     }
 
+    /**
+     * Every assignment tells the new handler in-app, however it came about
+     * (owner's rule, 2026-10-03). Taking it by responding first, or the owner
+     * giving it to themselves, is in-app only. Given by someone else, pushed too.
+     */
+    @Test
+    void everyWayAnEnquiryGetsItsHandlerTellsTheHandler() {
+        // First to respond, by a call. A later call is not a new assignment.
+        UUID byCall = raise(enquirers.get(0));
+        reset(notifications);
+        EnquiryDetailResponse called = enquiryService.respond(managerA, byCall, call(null));
+        verifyAssignedNotice(managerA, "since you responded to it first", NotificationDeliveryMode.IN_APP_ONLY);
+        enquiryService.settleAttempt(managerA, byCall, called.callToSettleId(),
+                new SettleEnquiryAttemptRequest(EnquiryAttemptOutcome.FAILED, null));
+        reset(notifications);
+        enquiryService.respond(managerA, byCall, call(null));
+        verifyToldNobody();
+
+        // First to respond, by the first chat message. A repeat delivery tells nobody again.
+        UUID byChat = raise(enquirers.get(1));
+        enquiryService.respond(managerB, byChat, chat());
+        reset(notifications);
+        enquiryService.onChatMessage(message(byChat, managerB));
+        verifyAssignedNotice(managerB, "since you responded to it first", NotificationDeliveryMode.IN_APP_ONLY);
+        reset(notifications);
+        enquiryService.onChatMessage(message(byChat, managerB));
+        verifyToldNobody();
+
+        // The owner giving it to someone else, and then taking it themselves.
+        UUID byOwner = raise(enquirers.get(2));
+        reset(notifications);
+        enquiryService.assign(owner, byOwner, new AssignEnquiryHandlerRequest(managerA));
+        verifyAssignedNotice(managerA, "You now handle", NotificationDeliveryMode.IN_APP_AND_PUSH);
+        reset(notifications);
+        enquiryService.assign(owner, byOwner, new AssignEnquiryHandlerRequest(owner));
+        verifyAssignedNotice(owner, "You now handle", NotificationDeliveryMode.IN_APP_ONLY);
+    }
+
     @Test
     void onlyTheOwnerAssignsAndOnlyToSomeoneInManagement() {
         UUID enquiry = raise(enquirers.get(0));
@@ -463,9 +563,12 @@ class EnquiryAttemptsIntegrationTest {
         jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
                 Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
 
-        expirySweep.expireStaleEnquiries();
+        sweep();
 
         assertThat(enquiries.findById(enquiry).orElseThrow().getStatus()).isEqualTo(EnquiryStatus.EXPIRED);
+        // Tried, never reached: the tenant did not respond.
+        assertThat(enquiries.findById(enquiry).orElseThrow().getEndReason())
+                .isEqualTo(EnquiryEndReason.TENANT_DID_NOT_RESPOND);
         assertThat(attempts.findByEnquiryIdInOrderByCreatedAtDesc(List.of(enquiry)))
                 .hasSize(2)
                 .allSatisfy(attempt -> {
@@ -474,6 +577,41 @@ class EnquiryAttemptsIntegrationTest {
                 });
         // The enquirer is free to ask again.
         assertThat(raise(enquirer)).isNotEqualTo(enquiry);
+    }
+
+    /**
+     * Nobody tried: the handler did not respond. Every enquiry stays listed for
+     * 30 days past its date, on the property's list and the enquirer's own,
+     * then drops off (owner's design, 2026-10-03).
+     */
+    @Test
+    void anUntriedEnquirySaysWhyItRanOutAndStaysListedThirtyDaysPastItsDate() {
+        UUID enquirer = enquirers.get(1);
+        UUID untried = raise(enquirer);
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), untried);
+
+        sweep();
+
+        assertThat(enquiries.findById(untried).orElseThrow().getEndReason())
+                .isEqualTo(EnquiryEndReason.HANDLER_DID_NOT_RESPOND);
+
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minus(Duration.ofDays(29))), untried);
+        assertThat(enquiryService.listForProperty(owner, property))
+                .extracting(EnquiryDetailResponse::id).contains(untried);
+        assertThat(enquiryService.myEnquiries(enquirer))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.id()).isEqualTo(untried);
+                    assertThat(item.state()).isEqualTo(MyEnquiryState.EXPIRED);
+                });
+
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minus(Duration.ofDays(31))), untried);
+        assertThat(enquiryService.listForProperty(owner, property))
+                .extracting(EnquiryDetailResponse::id).doesNotContain(untried);
+        assertThat(enquiryService.myEnquiries(enquirer)).isEmpty();
     }
 
     @Test
@@ -543,6 +681,23 @@ class EnquiryAttemptsIntegrationTest {
     private void verifyToldOnce(UUID user, NotificationSubtype subtype, String bodyPart) {
         verify(notifications, times(1)).notifyUser(
                 eq(user), anyString(), contains(bodyPart), any(), any(), eq(subtype), any(), any(), any());
+    }
+
+    private void verifyAssignedNotice(UUID user, String bodyPart, NotificationDeliveryMode delivery) {
+        verify(notifications, times(1)).notifyUser(
+                eq(user), eq("Enquiry assigned to you"), contains(bodyPart), any(), any(),
+                eq(NotificationSubtype.ENQUIRY_ASSIGNED), any(), any(), eq(delivery));
+    }
+
+    /**
+     * Runs the expiry sweep now. Its ShedLock is held at least 15 seconds, so a
+     * second test calling it inside that would be skipped without a word: the
+     * lock is released first. Released, not deleted: ShedLock remembers the row
+     * exists and only ever updates it.
+     */
+    private void sweep() {
+        jdbc.update("UPDATE public.shedlock SET lock_until = TIMESTAMP '2000-01-01' WHERE name = 'enquiry-expireStale'");
+        expirySweep.expireStaleEnquiries();
     }
 
     private void verifyToldNobody() {

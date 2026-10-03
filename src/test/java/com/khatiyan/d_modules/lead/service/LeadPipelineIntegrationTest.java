@@ -92,7 +92,7 @@ class LeadPipelineIntegrationTest {
         assertThat(prospects).hasSize(3);
         managerA = manager("Manager A");
         managerB = manager("Manager B");
-        when(chat.openEnquiryThread(any(), any(), any(), any())).thenReturn(UUID.randomUUID());
+        when(chat.openEnquiryThread(any(), any(), any(), any(), any())).thenReturn(UUID.randomUUID());
     }
 
     @AfterEach

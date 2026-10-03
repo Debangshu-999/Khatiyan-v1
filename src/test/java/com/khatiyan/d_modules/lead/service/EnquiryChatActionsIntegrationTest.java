@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.lead.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -31,21 +33,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder.Seeded;
 import com.khatiyan.d_modules.chat.ChatModule;
 import com.khatiyan.d_modules.chat.event.ChatMessageSentEvent;
 import com.khatiyan.d_modules.chat.model.ChatThreadOrigin;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
+import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
+import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
 import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.SetEnquirySentimentRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.UpdateEnquiryChannelConsentsRequest;
+import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
 import com.khatiyan.d_modules.enquiry.service.EnquiryChannelConsentService;
+import com.khatiyan.d_modules.enquiry.service.EnquiryExpirySchedulerService;
 import com.khatiyan.d_modules.enquiry.service.EnquiryService;
+import com.khatiyan.d_modules.lead.api.dto.CancelVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.LeadResponse;
 import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
@@ -55,8 +64,10 @@ import com.khatiyan.d_modules.lead.api.dto.VisitResponse;
 import com.khatiyan.d_modules.lead.model.LeadCloseReason;
 import com.khatiyan.d_modules.lead.model.LeadStage;
 import com.khatiyan.d_modules.lead.model.LeadState;
+import com.khatiyan.d_modules.lead.model.VisitStatus;
 import com.khatiyan.d_modules.notification.NotificationModule;
 import com.khatiyan.d_modules.notification.model.NotificationAudience;
+import com.khatiyan.d_modules.notification.model.NotificationDeliveryMode;
 import com.khatiyan.d_modules.notification.model.NotificationSubtype;
 import com.khatiyan.d_modules.property.api.dto.SaveVisitSlotsRequest;
 import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
@@ -84,6 +95,7 @@ class EnquiryChatActionsIntegrationTest {
     @Autowired private PropertyVisitSlotService visitSlots;
     @Autowired private LeadVisitService visits;
     @Autowired private LeadQueryService leads;
+    @Autowired private EnquiryExpirySchedulerService expirySweep;
 
     @MockitoBean private NotificationModule notifications;
     @MockitoBean private ChatModule chat;
@@ -94,6 +106,9 @@ class EnquiryChatActionsIntegrationTest {
     private UUID manager;
     private UUID otherManager;
     private List<UUID> prospects;
+    /** A cancel that keeps them Interested, with a reason. */
+    private static final CancelVisitRequest STILL_INTERESTED = new CancelVisitRequest(true, "Plans changed");
+
     private final UUID thread = UUID.randomUUID();
     private final LocalDate tomorrow = LocalDate.now(IST).plusDays(1);
 
@@ -106,7 +121,7 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(prospects).hasSize(3);
         manager = manager("Manager A");
         otherManager = manager("Manager B");
-        when(chat.openEnquiryThread(any(), any(), any(), any())).thenReturn(thread);
+        when(chat.openEnquiryThread(any(), any(), any(), any(), any())).thenReturn(thread);
 
         visitSlots.create(owner, property, new SaveVisitSlotsRequest(
                 EnumSet.allOf(DayOfWeek.class),
@@ -140,6 +155,8 @@ class EnquiryChatActionsIntegrationTest {
         UUID prospect = prospects.get(0);
         UUID enquiry = raise(prospect);
         enquiryService.respond(manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CHAT, null));
+        // The conversation opens with what they asked, in their name.
+        verify(chat).openEnquiryThread(property, enquiry, prospect, manager, "Is a single room free?");
         enquiryService.onChatMessage(message(enquiry, manager));
 
         EnquiryChatActionsResponse forManager = visits.chatActions(manager, enquiry);
@@ -197,6 +214,41 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
     }
 
+    /** "Not decided" takes the reading back, and with it whatever it had offered. */
+    @Test
+    void notDecidedClearsTheSentimentAndWhatItOffered() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).canScheduleVisit()).isTrue();
+        enquiryService.clearSentiment(manager, enquiry);
+
+        EnquiryChatActionsResponse cleared = visits.chatActions(manager, enquiry);
+        assertThat(cleared.sentiment()).isNull();
+        assertThat(cleared.canSetSentiment()).isTrue();
+        assertThat(cleared.canScheduleVisit()).isFalse();
+        assertThat(cleared.canEndConversation()).isFalse();
+
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        assertThat(visits.chatActions(manager, enquiry).canEndConversation()).isTrue();
+        enquiryService.clearSentiment(manager, enquiry);
+        assertThat(visits.chatActions(manager, enquiry).canEndConversation()).isFalse();
+        // Clearing what is already clear changes nothing.
+        enquiryService.clearSentiment(manager, enquiry);
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isNull();
+
+        // The same gate as setting one: not somebody else's enquiry, and not once it is over.
+        assertThatThrownBy(() -> enquiryService.clearSentiment(otherManager, enquiry))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Someone else is handling");
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        enquiryService.endConversation(manager, enquiry);
+        assertThatThrownBy(() -> enquiryService.clearSentiment(manager, enquiry))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("conversation has ended");
+    }
+
     // ---- Booking ---------------------------------------------------------
 
     @Test
@@ -237,6 +289,28 @@ class EnquiryChatActionsIntegrationTest {
         assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("already scheduled");
+    }
+
+    /** Neither side books before someone has actually reached the enquirer. */
+    @Test
+    void noVisitIsBookedBeforeTheEnquiryHasBeenAnswered() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = raise(prospect);
+        enquiryService.respond(manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CHAT, null));
+        // Written to, not yet answered: the chat is still pending.
+        enquiryService.onChatMessage(message(enquiry, manager));
+
+        for (UUID side : List.of(prospect, manager)) {
+            assertThatThrownBy(() -> visits.schedule(side, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("once this enquiry has been answered");
+        }
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(2);
+
+        // The reply answers it, and either side can book from then.
+        enquiryService.onChatMessage(message(enquiry, prospect));
+        visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR));
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(1);
     }
 
     /** "Just in case someone changes their mind": not interested does not take the prospect's button away. */
@@ -337,13 +411,13 @@ class EnquiryChatActionsIntegrationTest {
                 prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(3), TEN, null));
         assertThat(twice.tenantReschedulesLeft()).isZero();
         assertThat(twice.canReschedule()).isFalse();
-        assertThat(twice.rescheduleRefusal()).contains("moved this visit twice");
+        assertThat(twice.rescheduleRefusal()).contains("rescheduled this visit twice");
         assertThat(visits.chatActions(prospect, enquiry).visit().canReschedule()).isFalse();
 
         assertThatThrownBy(() -> visits.reschedule(
                 prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(4), TEN, null)))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("moved this visit twice");
+                .hasMessageContaining("rescheduled this visit twice");
 
         // The handler still can, and it is not counted against the prospect.
         assertThat(visits.chatActions(manager, enquiry).visit().canReschedule()).isTrue();
@@ -385,6 +459,8 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(forProspect.visit().upcoming()).isFalse();
         assertThat(forProspect.visit().missed()).isTrue();
         assertThat(forProspect.visit().canReschedule()).isTrue();
+        // The after-miss count of its own: two.
+        assertThat(forProspect.visit().tenantReschedulesLeft()).isEqualTo(2);
         assertThat(forProspect.canScheduleVisit()).isFalse();
         assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)))
                 .isInstanceOf(ValidationException.class)
@@ -403,8 +479,12 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(moved.id()).isEqualTo(visit.id());
         assertThat(moved.upcoming()).isTrue();
         assertThat(moved.missed()).isFalse();
-        assertThat(moved.tenantReschedulesLeft()).isEqualTo(1);
+        // Upcoming again, so the before-date count shows, none of it used.
+        assertThat(moved.tenantReschedulesLeft()).isEqualTo(2);
         assertThat(spotsLeft(tomorrow.plusDays(1), TEN)).isEqualTo(1);
+        // Missed again: one left on the after-miss count.
+        setVisitDate(visit.id(), LocalDate.now(IST).minusDays(1));
+        assertThat(visits.chatActions(prospect, enquiry).visit().tenantReschedulesLeft()).isEqualTo(1);
     }
 
     /** Up until the day arrives, and not on it. */
@@ -452,6 +532,150 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(again.visit().id()).isNotEqualTo(visit.id());
         // Still the one record for this person at this property.
         assertThat(onlyLead().stage()).isEqualTo(LeadStage.EARLY_LEAD);
+    }
+
+    // ---- Cancelling ------------------------------------------------------
+
+    /** Either side cancels. They are back at Enquired, the place is freed, and they may book again. */
+    @Test
+    void eitherSideCancelsAndTheyAreBackAtEnquiredFreeToBookAgain() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        assertThat(visit.canCancel()).isTrue();
+        assertThat(onlyLead().stage()).isEqualTo(LeadStage.EARLY_LEAD);
+        // The Enquiries card sees it, and says Manage visit.
+        assertThat(visits.bookedVisits(manager, property)).singleElement().satisfies(booked -> {
+            assertThat(booked.enquiryId()).isEqualTo(enquiry);
+            assertThat(booked.visitId()).isEqualTo(visit.id());
+            assertThat(booked.upcoming()).isTrue();
+        });
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(1);
+
+        reset(notifications);
+        VisitResponse cancelled = visits.cancel(prospect, visit.id(), STILL_INTERESTED);
+
+        assertThat(cancelled.status()).isEqualTo(VisitStatus.CANCELLED);
+        assertThat(cancelled.canCancel()).isFalse();
+        // Back to Schedule visit on the card.
+        assertThat(visits.bookedVisits(manager, property)).isEmpty();
+        // Only the property's management reads the list.
+        assertThatThrownBy(() -> visits.bookedVisits(prospect, property)).isInstanceOf(RuntimeException.class);
+        assertThat(spotsLeft(tomorrow, FOUR)).isEqualTo(2);
+        LeadResponse back = onlyLead();
+        assertThat(back.stage()).isEqualTo(LeadStage.ENQUIRED);
+        assertThat(back.earlyLeadAt()).isNull();
+        assertThat(back.state()).isEqualTo(LeadState.OPEN);
+        verify(notifications, times(1)).notifyUser(
+                eq(manager), eq("Visit cancelled"), contains("cancelled their visit"), any(), any(),
+                eq(NotificationSubtype.VISIT_CANCELLED), any(), any(), any(), eq(NotificationAudience.MANAGEMENT));
+
+        // The bar offers booking again, and does not show the cancelled visit.
+        EnquiryChatActionsResponse after = visits.chatActions(prospect, enquiry);
+        assertThat(after.visit()).isNull();
+        assertThat(after.canScheduleVisit()).isTrue();
+        // A cancelled visit is not cancelled again, or moved.
+        assertThatThrownBy(() -> visits.cancel(prospect, visit.id(), STILL_INTERESTED))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("can no longer be cancelled");
+        assertThatThrownBy(() -> visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(2), TEN, null)))
+                .isInstanceOf(ValidationException.class);
+
+        // They book again on the same enquiry: an early lead again.
+        VisitResponse again = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow.plusDays(1), TEN)).visit();
+        assertThat(again.id()).isNotEqualTo(visit.id());
+        assertThat(onlyLead().stage()).isEqualTo(LeadStage.EARLY_LEAD);
+        assertThat(again.tenantReschedulesLeft()).isEqualTo(2);
+
+        // Nobody else cancels it: not another manager, not an outsider.
+        assertThatThrownBy(() -> visits.cancel(otherManager, again.id(), STILL_INTERESTED))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Someone else is handling");
+        assertThatThrownBy(() -> visits.cancel(prospects.get(1), again.id(), STILL_INTERESTED)).isInstanceOf(RuntimeException.class);
+
+        // The handler cancels too, and on the visit's own day.
+        setVisitDate(again.id(), LocalDate.now(IST));
+        assertThat(visits.chatActions(manager, enquiry).visit().canCancel()).isTrue();
+        reset(notifications);
+        visits.cancel(manager, again.id(), STILL_INTERESTED);
+        verify(notifications, times(1)).notifyUser(
+                eq(prospect), eq("Visit cancelled"), contains("cancelled your visit"), any(), any(),
+                eq(NotificationSubtype.VISIT_CANCELLED), any(), any(), any(), eq(NotificationAudience.TENANT));
+        assertThat(onlyLead().stage()).isEqualTo(LeadStage.ENQUIRED);
+    }
+
+    /**
+     * Cancelling and booking again does not hand the tenant fresh reschedules:
+     * after their own cancel, the rebooked visit starts with what was left.
+     * After the property cancels, it starts fresh (user, 2026-10-03).
+     */
+    @Test
+    void aRebookingAfterTheTenantCancelsKeepsTheirRescheduleCount() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse first = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        visits.reschedule(prospect, first.id(), new RescheduleVisitRequest(tomorrow.plusDays(1), FOUR, null));
+        visits.reschedule(prospect, first.id(), new RescheduleVisitRequest(tomorrow.plusDays(2), FOUR, null));
+        visits.cancel(prospect, first.id(), STILL_INTERESTED);
+
+        VisitResponse second = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)).visit();
+        assertThat(second.tenantReschedulesLeft()).isZero();
+        assertThat(second.canReschedule()).isFalse();
+        assertThat(second.rescheduleRefusal()).contains("rescheduled this visit twice");
+
+        // The property cancels this one: the next booking starts fresh.
+        visits.cancel(manager, second.id(), STILL_INTERESTED);
+        VisitResponse third = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)).visit();
+        assertThat(third.tenantReschedulesLeft()).isEqualTo(2);
+    }
+
+    /** Booked near the end of the enquiry, cancelled after it ran out: the record ends with the booking. */
+    @Test
+    void cancellingAfterTheEnquiryRanOutEndsTheRecord() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+        // A visit still to happen keeps the record going past the enquiry's date.
+        assertThat(onlyLead().state()).isEqualTo(LeadState.OPEN);
+
+        visits.cancel(prospect, visit.id(), STILL_INTERESTED);
+
+        LeadResponse ended = onlyLead();
+        assertThat(ended.state()).isEqualTo(LeadState.CLOSED);
+        assertThat(ended.closeReason()).isEqualTo(LeadCloseReason.VISIT_CANCELLED);
+        assertThat(ended.stage()).isEqualTo(LeadStage.ENQUIRED);
+    }
+
+    /**
+     * Back at (or still at) Enquired after being answered, the record lasts as
+     * long as the enquiry and ends with it, named for why.
+     */
+    @Test
+    void anAnsweredRecordAtEnquiredEndsWhenItsEnquiryRunsOut() {
+        // Answered, never booked.
+        UUID neverBooked = answered(prospects.get(0));
+        // Answered, booked, cancelled.
+        UUID cancelledOne = answered(prospects.get(1));
+        VisitResponse visit = visits.schedule(
+                prospects.get(1), cancelledOne, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+        visits.cancel(prospects.get(1), visit.id(), STILL_INTERESTED);
+
+        for (UUID enquiry : List.of(neverBooked, cancelledOne)) {
+            // Inside its window the sweep has nothing to say.
+            assertThat(enquiryService.closeWindowOfAnswered(enquiry)).isFalse();
+            jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                    Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+            assertThat(enquiryService.closeWindowOfAnswered(enquiry)).isTrue();
+            // Once.
+            assertThat(enquiryService.closeWindowOfAnswered(enquiry)).isFalse();
+        }
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+
+        assertThat(leadOf(prospects.get(0)).closeReason()).isEqualTo(LeadCloseReason.NO_VISIT_BOOKED);
+        assertThat(leadOf(prospects.get(1)).closeReason()).isEqualTo(LeadCloseReason.VISIT_CANCELLED);
     }
 
     // ---- Ending ----------------------------------------------------------
@@ -513,6 +737,223 @@ class EnquiryChatActionsIntegrationTest {
         verify(chat, times(1)).closeEnquiryThread(enquiry);
     }
 
+    // ---- Closing, and why an enquiry ended (2026-10-03) -------------------
+
+    /**
+     * Close enquiry: only once marked not interested. It reads Closed until its
+     * usual date, then Expired. The enquirer is told in neutral words, nothing
+     * more can be done with it, and they may enquire again.
+     */
+    @Test
+    void closingNeedsNotInterestedKeepsTheThirtyDaysAndTellsTheEnquirer() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        assertThatThrownBy(() -> enquiryService.endConversation(manager, enquiry))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("not interested");
+
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        Instant dueAt = expiresAt(enquiry);
+        EnquiryDetailResponse closed = enquiryService.endConversation(manager, enquiry);
+
+        assertThat(closed.endedAt()).isNotNull();
+        assertThat(closed.expiresAt()).isEqualTo(dueAt);
+        assertThat(closed.endReason()).isEqualTo(EnquiryEndReason.NOT_INTERESTED);
+        verify(notifications).notifyUser(
+                eq(prospect), eq("Enquiry closed"), contains("has been closed"), any(), any(),
+                eq(NotificationSubtype.ENQUIRY_CLOSED), eq(enquiry), any(), eq(NotificationDeliveryMode.IN_APP_ONLY));
+        assertThatThrownBy(() -> enquiryService.respond(
+                manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CALL_BACK, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("has been closed");
+
+        // Enquire again: a new enquiry. The closed one stays on their list, saying so.
+        UUID again = raise(prospect);
+        assertThat(enquiryService.myEnquiries(prospect))
+                .extracting(MyEnquiryItemResponse::id, MyEnquiryItemResponse::state)
+                .containsExactly(tuple(again, MyEnquiryState.AWAITING_REPLY), tuple(enquiry, MyEnquiryState.CLOSED));
+
+        // At its usual date it reads Expired, still for the reason it was closed.
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+        assertThat(enquiryService.myEnquiries(prospect))
+                .filteredOn(item -> item.id().equals(enquiry))
+                .singleElement()
+                .satisfies(item -> assertThat(item.state()).isEqualTo(MyEnquiryState.EXPIRED));
+    }
+
+    /**
+     * A booked visit settles a call still waiting for its answer as Accepted:
+     * Interested, and the enquiry reads Interested, whoever booked.
+     */
+    @Test
+    void bookingAVisitSettlesAWaitingCallAsInterested() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        UUID call = enquiryService.respond(
+                manager, enquiry, new RespondToEnquiryRequest(EnquiryResponseChannel.CALL_BACK, null)).callToSettleId();
+        assertThat(call).isNotNull();
+
+        EnquiryChatActionsResponse booked = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR));
+
+        assertThat(jdbc.queryForMap("SELECT outcome, call_result, note FROM enquiry.enquiry_responses WHERE id = ?", call))
+                .containsEntry("outcome", "SUCCEEDED")
+                .containsEntry("call_result", "ACCEPTED_INTERESTED")
+                .containsEntry("note", "Settled when a visit was booked.");
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
+        // The version handed back is the row's own, so the next action is not refused as stale.
+        assertThat(booked.enquiryVersion())
+                .isEqualTo(jdbc.queryForObject("SELECT version FROM enquiry.enquiries WHERE id = ?", Long.class, enquiry));
+    }
+
+    /** An answered enquiry that runs out says why: its reading first, then its visit. */
+    @Test
+    void anAnsweredEnquiryThatRunsOutSaysWhy() {
+        UUID notInterested = answered(prospects.get(0));
+        enquiryService.setSentiment(manager, notInterested, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        UUID booked = answered(prospects.get(1));
+        visits.schedule(prospects.get(1), booked, new ScheduleVisitRequest(tomorrow, FOUR));
+        UUID cancelled = answered(prospects.get(2));
+        VisitResponse visit = visits.schedule(prospects.get(2), cancelled, new ScheduleVisitRequest(tomorrow, TEN)).visit();
+        visits.cancel(prospects.get(2), visit.id(), STILL_INTERESTED);
+
+        for (UUID enquiry : List.of(notInterested, booked, cancelled)) {
+            jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                    Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
+            assertThat(enquiryService.closeWindowOfAnswered(enquiry)).isTrue();
+        }
+
+        assertThat(endReason(notInterested)).isEqualTo("NOT_INTERESTED");
+        assertThat(endReason(booked)).isEqualTo("VISIT_BOOKED");
+        assertThat(endReason(cancelled)).isEqualTo("VISIT_CANCELLED");
+
+        // Answered, nothing booked, no reading: no visit was booked.
+        UUID quiet = answered(prospects.get(0));
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), quiet);
+        enquiryService.closeWindowOfAnswered(quiet);
+        assertThat(endReason(quiet)).isEqualTo("NO_VISIT_BOOKED");
+    }
+
+    /**
+     * Not interested waits 7 days. In them the enquirer may change their mind,
+     * once: Interested again, and the handler is told. Marked Not interested a
+     * second time, it closes at once (owner's design, 2026-10-03).
+     */
+    @Test
+    void theEnquirerMayChangeTheirMindOnceAndASecondNotInterestedCloses() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+
+        MyEnquiryItemResponse marked = enquiryService.myEnquiries(prospect).get(0);
+        assertThat(marked.canChangeMind()).isTrue();
+        assertThat(marked.notInterestedClosesAt()).isAfter(Instant.now().plus(Duration.ofDays(6)));
+
+        reset(notifications);
+        MyEnquiryItemResponse changed = enquiryService.changeMind(prospect, enquiry);
+        assertThat(changed.canChangeMind()).isFalse();
+        assertThat(changed.notInterestedClosesAt()).isNull();
+        EnquiryChatActionsResponse forManager = visits.chatActions(manager, enquiry);
+        assertThat(forManager.sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
+        assertThat(forManager.notInterestedCloses()).isTrue();
+        assertThat(visits.chatActions(prospect, enquiry).notInterestedCloses()).isFalse();
+        verify(notifications).notifyUser(
+                eq(manager), eq("Interested again"), contains("changed their mind"), any(), any(),
+                eq(NotificationSubtype.ENQUIRY_MIND_CHANGED), eq(enquiry), any(), any());
+
+        // Once only, and only their own.
+        assertThatThrownBy(() -> enquiryService.changeMind(prospect, enquiry))
+                .isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> enquiryService.changeMind(prospects.get(1), enquiry))
+                .isInstanceOf(NotFoundException.class);
+
+        EnquiryDetailResponse again = enquiryService.setSentiment(
+                manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        assertThat(again.endedAt()).isNotNull();
+        assertThat(again.endReason()).isEqualTo(EnquiryEndReason.NOT_INTERESTED);
+        verify(chat).closeEnquiryThread(enquiry);
+        assertThat(enquiryService.myEnquiries(prospect).get(0).state()).isEqualTo(MyEnquiryState.CLOSED);
+    }
+
+    /** Left Not interested for 7 days, the hourly sweep closes it, named for whoever marked it. */
+    @Test
+    void aNotInterestedEnquiryNobodyActsOnClosesAfterSevenDays() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        assertThat(enquiryService.closeNotInterestedAfterGrace(enquiry)).isFalse();
+
+        jdbc.update("UPDATE enquiry.enquiries SET sentiment_set_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minus(Duration.ofDays(7)).minusSeconds(60)), enquiry);
+        jdbc.update("UPDATE public.shedlock SET lock_until = TIMESTAMP '2000-01-01' WHERE name = 'enquiry-expireStale'");
+        expirySweep.expireStaleEnquiries();
+
+        assertThat(enquiryService.myEnquiries(prospect).get(0).state()).isEqualTo(MyEnquiryState.CLOSED);
+        assertThat(endReason(enquiry)).isEqualTo("NOT_INTERESTED");
+        assertThat(jdbc.queryForObject(
+                "SELECT ended_by_user_id FROM enquiry.enquiries WHERE id = ?", UUID.class, enquiry)).isEqualTo(manager);
+        verify(chat).closeEnquiryThread(enquiry);
+        assertThat(enquiryService.closeNotInterestedAfterGrace(enquiry)).isFalse();
+    }
+
+    /**
+     * Cancelling asks whether they are still interested, and why (owner's
+     * design, 2026-10-03). Still interested keeps the intent. Not interested
+     * marks it so and starts the 7 days. The owner's card carries the reason.
+     */
+    @Test
+    void cancellingAsksWhetherTheyAreStillInterestedAndWhy() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+
+        assertThatThrownBy(() -> visits.cancel(prospect, visit.id(), new CancelVisitRequest(true, "  ")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("reason");
+
+        // Still interested: Interested stays, and both cards hear of the cancel.
+        visits.cancel(prospect, visit.id(), new CancelVisitRequest(true, "Exams that week"));
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.INTERESTED);
+        assertThat(ownerCard(enquiry).cancelledVisit()).satisfies(cancelled -> {
+            assertThat(cancelled.reason()).isEqualTo("Exams that week");
+            assertThat(cancelled.byTenant()).isTrue();
+        });
+        assertThat(enquiryService.myEnquiries(prospect).get(0).visitCancelledAt()).isNotNull();
+
+        // Booked again: no longer "Visit cancelled" for them. Then the property
+        // cancels it as not interested: Not interested, with its 7 days.
+        VisitResponse again = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, TEN)).visit();
+        assertThat(enquiryService.myEnquiries(prospect).get(0).visitCancelledAt()).isNull();
+        visits.cancel(manager, again.id(), new CancelVisitRequest(false, "Found another place"));
+
+        assertThat(visits.chatActions(manager, enquiry).sentiment()).isEqualTo(EnquirySentiment.NOT_INTERESTED);
+        MyEnquiryItemResponse mine = enquiryService.myEnquiries(prospect).get(0);
+        assertThat(mine.notInterestedClosesAt()).isNotNull();
+        assertThat(mine.canChangeMind()).isTrue();
+        assertThat(ownerCard(enquiry).cancelledVisit()).satisfies(cancelled -> {
+            assertThat(cancelled.reason()).isEqualTo("Found another place");
+            assertThat(cancelled.byTenant()).isFalse();
+        });
+    }
+
+    private EnquiryDetailResponse ownerCard(UUID enquiry) {
+        return enquiryService.listForProperty(owner, property).stream()
+                .filter(card -> card.id().equals(enquiry))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private Instant expiresAt(UUID enquiry) {
+        return jdbc.queryForObject("SELECT expires_at FROM enquiry.enquiries WHERE id = ?", Timestamp.class, enquiry)
+                .toInstant();
+    }
+
+    private String endReason(UUID enquiry) {
+        return jdbc.queryForObject("SELECT end_reason FROM enquiry.enquiries WHERE id = ?", String.class, enquiry);
+    }
+
     // ---- Helpers ---------------------------------------------------------
 
     private UUID raise(UUID prospect) {
@@ -546,6 +987,14 @@ class EnquiryChatActionsIntegrationTest {
                 .findFirst()
                 .orElseThrow()
                 .spotsLeft();
+    }
+
+    private LeadResponse leadOf(UUID prospect) {
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        return leads.pageForProperty(owner, property, null, null, 0, 20).items().stream()
+                .filter(lead -> lead.prospectUserId().equals(prospect))
+                .findFirst()
+                .orElseThrow();
     }
 
     private LeadResponse onlyLead() {

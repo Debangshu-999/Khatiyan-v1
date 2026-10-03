@@ -65,6 +65,15 @@ public class EnquiryResponse extends BaseEntity {
     @Column(name = "settled_at")
     private Instant settledAt;
 
+    /** How a call went, when the handler recorded it in that detail. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "call_result", length = 30)
+    private EnquiryCallResult callResult;
+
+    /** How long an accepted call ran, when the handler said. */
+    @Column(name = "duration_seconds")
+    private Integer durationSeconds;
+
     private EnquiryResponse(UUID enquiryId, EnquiryResponseChannel channel, UUID respondedByUserId) {
         this.id = UUID.randomUUID();
         this.enquiryId = enquiryId;
@@ -123,6 +132,27 @@ public class EnquiryResponse extends BaseEntity {
             this.note = settlingNote;
         }
         this.settledAt = now;
+    }
+
+    /**
+     * Ends a call with how it went: "Record response". The result decides
+     * success or failure.
+     *
+     * @param durationSeconds optional, 0 to 86 399
+     */
+    public void settleCall(EnquiryCallResult result, Integer durationSeconds, String note, Instant now) {
+        if (channel != EnquiryResponseChannel.CALL_BACK) {
+            throw new ValidationException("Only a call is recorded this way.");
+        }
+        if (result == null) {
+            throw new ValidationException("Say how the call went.");
+        }
+        if (durationSeconds != null && (durationSeconds < 0 || durationSeconds > 86_399)) {
+            throw new ValidationException("A call can be at most 23 hours, 59 minutes and 59 seconds.");
+        }
+        settle(result.outcome(), note, now);
+        this.callResult = result;
+        this.durationSeconds = durationSeconds;
     }
 
     private static String clean(String note) {

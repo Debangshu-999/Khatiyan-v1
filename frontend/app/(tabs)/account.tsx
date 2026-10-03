@@ -57,6 +57,7 @@ import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-sli
 import { clearSession, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { spacing } from "@/theme/spacing";
+import { EnquiriesIcon } from "@/features/property/property-control-icons";
 import { useTheme } from "@/theme/use-theme";
 
 /** The pencil beside the profile name, and the spacer that balances it. */
@@ -576,6 +577,16 @@ export default function AccountScreen() {
 
           md, not sm: the box under this heading is bordered, so at sm its top
           edge sat almost on the section rule and read as one doubled line. */}
+      {/* Tenant side only, like the reply settings below: the enquiries this
+          person raised (My enquiries, 2026-10-03). */}
+      {isOwnerAccount ? null : (
+        <View style={{ gap: spacing.sm }}>
+          <SectionTitle title="Enquiries" />
+          {/* The Property screen's own Enquiries mark (user, 2026-10-03). */}
+          <LinkRow icon={EnquiriesIcon} label="My enquiries" onPress={() => router.push("/my-enquiries")} />
+        </View>
+      )}
+
       {isOwnerAccount ? null : (
         <View style={{ gap: spacing.md }}>
           <SectionTitle title="Enquiry replies" />
@@ -1181,6 +1192,41 @@ function AccountRow({ account, active, onPress }: { account: AccountType; active
       ) : (
         <ChevronRight color={colors.kicker} size={20} strokeWidth={2.2} />
       )}
+    </AnimatedPressable>
+  );
+}
+
+/** A row that opens another screen: the account switcher's look, with a chevron. */
+function LinkRow({
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 16,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.md,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
+        <Icon color={colors.ink} size={36} strokeWidth={1.8} />
+      </View>
+      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 16 }}>{label}</Text>
+      <ChevronRight color={colors.kicker} size={20} strokeWidth={2.2} />
     </AnimatedPressable>
   );
 }

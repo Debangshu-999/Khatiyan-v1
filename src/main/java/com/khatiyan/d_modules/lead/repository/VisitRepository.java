@@ -9,12 +9,28 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import com.khatiyan.d_modules.lead.model.Visit;
+import com.khatiyan.d_modules.lead.model.VisitStatus;
 
 @Repository
 public interface VisitRepository extends JpaRepository<Visit, UUID> {
 
-    /** A lead's visits, newest first. A handful at most: one per enquiry the person raised. */
+    /** A lead's visits, newest first. A handful at most: one per enquiry the person raised, plus cancelled ones. */
     List<Visit> findByLeadIdOrderByCreatedAtDesc(UUID leadId);
+
+    /** A property's visits in one state that were booked from an enquiry. */
+    List<Visit> findByPropertyIdAndStatusAndEnquiryIdIsNotNull(UUID propertyId, VisitStatus status);
+
+    /** The latest visit in one state booked on an enquiry. */
+    java.util.Optional<Visit> findFirstByEnquiryIdAndStatusOrderByCreatedAtDesc(UUID enquiryId, VisitStatus status);
+
+    /** Whether an enquiry has a visit in this state. */
+    boolean existsByEnquiryIdAndStatus(UUID enquiryId, VisitStatus status);
+
+    /** The visits in one state on any of these enquiries, in one read. */
+    List<Visit> findByEnquiryIdInAndStatus(java.util.Collection<UUID> enquiryIds, VisitStatus status);
+
+    /** Whether a lead ever had a visit in this state. Used to name why it closed. */
+    boolean existsByLeadIdAndStatus(UUID leadId, VisitStatus status);
 
     /** How many places one slot on one date has taken. */
     @Query("""

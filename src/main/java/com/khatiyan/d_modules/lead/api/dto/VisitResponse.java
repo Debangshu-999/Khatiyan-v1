@@ -13,10 +13,13 @@ import com.khatiyan.d_modules.lead.model.VisitStatus;
  *
  * @param upcoming              whether it is still to happen. False once its date has passed
  * @param missed                whether its date passed without them coming
- * @param tenantReschedulesLeft how many more times the prospect may move it themselves
+ * @param tenantReschedulesLeft how many more times the prospect may move it themselves, from the
+ *                              count that applies today: before its date, or after a miss
  * @param canReschedule         whether the person asking may move it now: before its day, or
  *                              after it was missed, and never on the day
  * @param rescheduleRefusal     why not, in words to show them. Null when they may
+ * @param canCancel             whether the person asking may cancel it: either side, any time before
+ *                              it is done, the day itself included
  * @param version               sent as If-Match when moving it
  */
 public record VisitResponse(
@@ -34,13 +37,14 @@ public record VisitResponse(
         int tenantReschedulesLeft,
         boolean canReschedule,
         String rescheduleRefusal,
+        boolean canCancel,
         long version) {
 
     /**
      * @param rescheduleRefusal why the person asking may not move it, in words
      *                          to show them. Null when they may
      */
-    public static VisitResponse of(Visit visit, LocalDate today, String rescheduleRefusal) {
+    public static VisitResponse of(Visit visit, LocalDate today, String rescheduleRefusal, boolean canCancel) {
         return new VisitResponse(
                 visit.getId(),
                 visit.getReferenceCode(),
@@ -53,9 +57,10 @@ public record VisitResponse(
                 visit.getBookedBy(),
                 visit.isUpcoming(today),
                 visit.isMissed(today),
-                visit.tenantReschedulesLeft(),
+                visit.tenantReschedulesLeft(today),
                 rescheduleRefusal == null,
                 rescheduleRefusal,
+                canCancel,
                 visit.getVersion());
     }
 }

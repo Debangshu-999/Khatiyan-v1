@@ -50,6 +50,8 @@ public enum NotificationAudience {
                     // The enquirer wrote back on the chat the handler was
                     // waiting on. The handler's to read, in their workspace.
                     ENQUIRY_CHAT_REPLIED,
+                    // The enquirer is interested again: the handler's to act on.
+                    ENQUIRY_MIND_CHANGED,
                     // A tenant claiming they paid is a decision the owner has to
                     // make against their bank statement.
                     PAYMENT_CLAIM_RAISED,
@@ -78,6 +80,8 @@ public enum NotificationAudience {
                     // not a tenant yet, but TENANT is the non-management
                     // workspace and that is where they are reading.
                     ENQUIRY_ANSWERED,
+                    // Their enquiry was closed: theirs to read, like the answer.
+                    ENQUIRY_CLOSED,
                     // A meal on the tenant's plan moved. Only tenants on a meal
                     // plan are told, and they read it in their stay.
                     FOOD_MEAL_DELAYED -> TENANT;
@@ -91,7 +95,7 @@ public enum NotificationAudience {
                     CHAT_MESSAGE_RECEIVED,
                     // Dual-audience: a visit is booked or moved by one side and
                     // the other is told. The caller names the audience.
-                    VISIT_SCHEDULED, VISIT_RESCHEDULED,
+                    VISIT_SCHEDULED, VISIT_RESCHEDULED, VISIT_CANCELLED,
                     USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
                     TENANT_ONBOARDED, TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
                     // Dual-audience by definition: whichever side did NOT

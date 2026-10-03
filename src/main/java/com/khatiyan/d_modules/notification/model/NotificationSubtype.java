@@ -135,10 +135,16 @@ public enum NotificationSubtype {
     ENQUIRY_UNASSIGNED,
     /** The enquirer replied on the enquiry chat, which answers the enquiry. Told to its handler. */
     ENQUIRY_CHAT_REPLIED,
+    /** The property closed the enquiry. Told to the enquirer, in neutral words. */
+    ENQUIRY_CLOSED,
+    /** The enquirer took back a Not interested. Told to the handler, or the owner. */
+    ENQUIRY_MIND_CHANGED,
     /** A visit was booked. Sent to whichever side did not book it. */
     VISIT_SCHEDULED,
     /** A visit was moved. Sent to whichever side did not move it. */
     VISIT_RESCHEDULED,
+    /** A visit was cancelled. Sent to whichever side did not cancel it. */
+    VISIT_CANCELLED,
 
     /**
      * Somebody wrote in a conversation.

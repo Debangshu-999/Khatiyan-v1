@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { CalendarDays, MessageSquare, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -45,9 +45,7 @@ export function EnquireAction({
   propertyName: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const [composing, setComposing] = useState(false);
-  const [consenting, setConsenting] = useState(false);
-  const [receipt, setReceipt] = useState<EnquiryReceipt | null>(null);
+  const [enquiring, setEnquiring] = useState(false);
 
   const myEnquiryQuery = useGetMyEnquiryForPropertyQuery(propertyId);
   const myEnquiry = myEnquiryQuery.data;
@@ -57,22 +55,8 @@ export function EnquireAction({
   const consentsQuery = useGetMyEnquiryChannelConsentsQuery();
   const consents = consentsQuery.data;
 
-  /**
-   * The consent modal comes FIRST, before composing.
-   *
-   * <p>Asking at send time would let someone write a message and then be
-   * stopped, which turns a decision into an obstacle. Asked up front it is a
-   * decision about what happens next.
-   *
-   * <p>If the consent check itself failed, go straight to composing and let the
-   * server refuse — same reasoning as `checkFailed` below.
-   */
   function startEnquiry() {
-    if (consents && !consents.anyGranted) {
-      setConsenting(true);
-      return;
-    }
-    setComposing(true);
+    setEnquiring(true);
   }
 
   // Nothing at all while it loads: a button that appears and then disappears
@@ -129,33 +113,72 @@ export function EnquireAction({
         </Text>
       ) : null}
 
-      {consenting && consents ? (
-        <EnquiryConsentModal
-          consents={consents}
-          onClose={() => setConsenting(false)}
-          onGranted={() => {
-            setConsenting(false);
-            setComposing(true);
-          }}
-        />
+      {enquiring ? (
+        <EnquireFlow onDone={() => setEnquiring(false)} propertyId={propertyId} propertyName={propertyName} />
       ) : null}
-
-      {composing ? (
-        <EnquirySheet
-          consents={consents}
-          onClose={() => setComposing(false)}
-          onSent={(sent) => {
-            setComposing(false);
-            setReceipt(sent);
-          }}
-          propertyId={propertyId}
-          propertyName={propertyName}
-        />
-      ) : null}
-
-      {receipt ? <EnquirySentDialog onClose={() => setReceipt(null)} receipt={receipt} /> : null}
     </View>
   );
+}
+
+/**
+ * Enquiring, start to finish: the consent question if nothing is shared yet,
+ * then the message, then the receipt. The profile's Enquire button opens it,
+ * and so does Enquire again on My enquiries (2026-10-03), which raises a new
+ * enquiry rather than reopening the old one.
+ */
+export function EnquireFlow({
+  onDone,
+  propertyId,
+  propertyName,
+}: {
+  /** Called once it is finished or abandoned, at whatever step. */
+  onDone: () => void;
+  propertyId: string;
+  propertyName: string;
+}) {
+  const consentsQuery = useGetMyEnquiryChannelConsentsQuery();
+  const consents = consentsQuery.data;
+  const [step, setStep] = useState<"CONSENT" | "COMPOSE" | null>(null);
+  const [receipt, setReceipt] = useState<EnquiryReceipt | null>(null);
+
+  /**
+   * The consent modal comes FIRST, before composing.
+   *
+   * <p>Asking at send time would let someone write a message and then be
+   * stopped, which turns a decision into an obstacle. Asked up front it is a
+   * decision about what happens next.
+   *
+   * <p>If the consent check itself failed, go straight to composing and let the
+   * server refuse.
+   */
+  useEffect(() => {
+    if (step !== null || receipt || consentsQuery.isLoading) {
+      return;
+    }
+    setStep(consents && !consents.anyGranted ? "CONSENT" : "COMPOSE");
+  }, [consents, consentsQuery.isLoading, receipt, step]);
+
+  if (receipt) {
+    return <EnquirySentDialog onClose={onDone} receipt={receipt} />;
+  }
+  if (step === "CONSENT" && consents) {
+    return <EnquiryConsentModal consents={consents} onClose={onDone} onGranted={() => setStep("COMPOSE")} />;
+  }
+  if (step === "COMPOSE") {
+    return (
+      <EnquirySheet
+        consents={consents}
+        onClose={onDone}
+        onSent={(sent) => {
+          setStep(null);
+          setReceipt(sent);
+        }}
+        propertyId={propertyId}
+        propertyName={propertyName}
+      />
+    );
+  }
+  return null;
 }
 
 /**

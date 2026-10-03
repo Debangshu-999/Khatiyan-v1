@@ -1,5 +1,5 @@
 import { useState, type ComponentType } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import {
   CalendarCheck,
   CalendarPlus,
@@ -41,7 +41,17 @@ import { useTheme } from "@/theme/use-theme";
  * Renders nothing at all when there is nothing to offer, so a chat that has no
  * actions keeps its full height.
  */
-export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
+export function EnquiryActionBar({
+  actions,
+  counterpartName,
+  threadId,
+}: {
+  actions: EnquiryChatActions;
+  /** The other person in the chat: the enquirer, for management. Named in confirmations. */
+  counterpartName?: string | null;
+  /** This chat, so the enquirer can send a visit pick as a message. */
+  threadId?: string | null;
+}) {
   const { colors } = useTheme();
   const [endConversation, endState] = useEndEnquiryConversationMutation();
   const [sentimentOpen, setSentimentOpen] = useState(false);
@@ -72,68 +82,73 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
     }
   }
 
+  // A visit still to happen fixes the reading in place (user, 2026-10-03).
+  // Changing it then would do nothing, so the pill only states it.
+  const sentimentLocked = Boolean(visit?.upcoming);
+
   return (
-    <View
-      style={{
-        backgroundColor: colors.chatSurface,
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.md,
-        paddingTop: spacing.sm,
-      }}
-    >
-      {showsSentiment ? (
-        // Undecided reads as a question on a grey fill; a decision shows its
-        // thumb in a faded green or red (user, 2026-10-02). "Not decided" in
-        // the sheet takes it back to the question.
-        <BarPill
-          filled={sentiment === null}
-          icon={sentiment === "INTERESTED" ? ThumbsUp : sentiment === "NOT_INTERESTED" ? ThumbsDown : Smile}
-          iconColor={sentiment === "INTERESTED" ? colors.jade : sentiment === "NOT_INTERESTED" ? colors.danger : undefined}
-          label={
-            sentiment === "INTERESTED"
-              ? "Interested"
-              : sentiment === "NOT_INTERESTED"
-                ? "Not interested"
-                : "Are they interested?"
-          }
-          onPress={actions.canSetSentiment ? () => setSentimentOpen(true) : undefined}
-        />
-      ) : null}
+    <View style={{ backgroundColor: colors.chatSurface }}>
+      {/* One row that slides sideways (user, 2026-10-03). Wrapping onto a
+          second line pushed the message box up and took space from the chat. */}
+      <ScrollView
+        contentContainerStyle={{ gap: spacing.xs, paddingHorizontal: spacing.md }}
+        horizontal
+        keyboardShouldPersistTaps="handled"
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, paddingTop: spacing.sm }}
+      >
+        {showsSentiment ? (
+          // Undecided reads as a question on a grey fill; a decision shows its
+          // thumb in a faded green or red (user, 2026-10-02). "Not decided" in
+          // the sheet takes it back to the question.
+          <BarPill
+            filled={sentiment === null}
+            icon={sentiment === "INTERESTED" ? ThumbsUp : sentiment === "NOT_INTERESTED" ? ThumbsDown : Smile}
+            iconColor={sentiment === "INTERESTED" ? colors.jade : sentiment === "NOT_INTERESTED" ? colors.danger : undefined}
+            label={
+              sentiment === "INTERESTED"
+                ? "Interested"
+                : sentiment === "NOT_INTERESTED"
+                  ? "Not interested"
+                  : "Are they interested?"
+            }
+            onPress={actions.canSetSentiment && !sentimentLocked ? () => setSentimentOpen(true) : undefined}
+          />
+        ) : null}
 
-      {actions.canScheduleVisit ? (
-        <BarPill icon={CalendarPlus} label="Schedule visit" onPress={() => setVisitOpen(true)} />
-      ) : null}
+        {actions.canScheduleVisit ? (
+          <BarPill icon={CalendarPlus} label="Schedule visit" onPress={() => setVisitOpen(true)} />
+        ) : null}
 
-      {visit ? (
-        <BarPill
-          icon={CalendarCheck}
-          iconColor={visit.missed ? undefined : colors.jade}
-          label={
-            visit.missed
-              ? `Visit missed: ${formatVisitDay(visit.date)}`
-              : `Scheduled: ${formatVisitWhen(visit.date, visit.slotStart)}`
-          }
-          onPress={() =>
-            visit.canReschedule
-              ? setVisitOpen(true)
-              : setNotice({
-                  message: visit.rescheduleRefusal ?? "This visit can no longer be moved.",
-                  tone: "info",
-                })
-          }
-        />
-      ) : null}
+        {visit ? (
+          <BarPill
+            icon={CalendarCheck}
+            iconColor={visit.missed ? undefined : colors.jade}
+            label={
+              visit.missed
+                ? `Visit missed: ${formatVisitDay(visit.date)}`
+                : `Scheduled: ${formatVisitWhen(visit.date, visit.slotStart)}`
+            }
+            onPress={() =>
+              visit.canReschedule || visit.canCancel
+                ? setVisitOpen(true)
+                : setNotice({
+                    message: visit.rescheduleRefusal ?? "This visit can no longer be moved.",
+                    tone: "info",
+                  })
+            }
+          />
+        ) : null}
 
-      {actions.canEndConversation ? (
-        <BarPill
-          busy={endState.isLoading}
-          icon={MessageSquareOff}
-          label="End"
-          onPress={() => setConfirmEnd(true)}
-        />
-      ) : null}
+        {actions.canEndConversation ? (
+          <BarPill
+            busy={endState.isLoading}
+            icon={MessageSquareOff}
+            label="End"
+            onPress={() => setConfirmEnd(true)}
+          />
+        ) : null}
+      </ScrollView>
 
       {sentimentOpen ? (
         <SentimentModal actions={actions} onClose={() => setSentimentOpen(false)} />
@@ -143,7 +158,9 @@ export function EnquiryActionBar({ actions }: { actions: EnquiryChatActions }) {
         <VisitSheet
           enquiryId={actions.enquiryId}
           onClose={() => setVisitOpen(false)}
+          personName={counterpartName}
           propertyId={actions.propertyId}
+          threadId={threadId}
           viewer={actions.viewer}
           visit={visit}
         />
@@ -232,7 +249,9 @@ function BarPill({
           style={iconColor ? { opacity: STATUS_ICON_OPACITY } : undefined}
         />
       )}
-      <Text style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12.5 }}>{label}</Text>
+      <Text numberOfLines={1} style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
+        {label}
+      </Text>
     </AnimatedPressable>
   );
 }
@@ -253,12 +272,20 @@ function SentimentModal({ actions, onClose }: { actions: EnquiryChatActions; onC
   const [clearSentiment, clearState] = useClearEnquirySentimentMutation();
   const [choosing, setChoosing] = useState<SentimentChoice | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // They took a Not interested back once already, so this one closes the
+  // enquiry (owner's design, 2026-10-03). Asked first.
+  const [confirmingClose, setConfirmingClose] = useState(false);
   const busy = setState.isLoading || clearState.isLoading;
 
-  async function choose(choice: SentimentChoice) {
+  async function choose(choice: SentimentChoice, confirmed = false) {
     if (busy) {
       return;
     }
+    if (choice === "NOT_INTERESTED" && actions.notInterestedCloses && !confirmed) {
+      setConfirmingClose(true);
+      return;
+    }
+    setConfirmingClose(false);
     // Choosing what is already chosen changes nothing, so it just closes.
     if (choice === (actions.sentiment ?? "UNDECIDED")) {
       onClose();
@@ -283,6 +310,19 @@ function SentimentModal({ actions, onClose }: { actions: EnquiryChatActions; onC
   // acknowledging it closes both and the bar is read again.
   if (failure) {
     return <AlertModal message={failure} onClose={onClose} />;
+  }
+
+  if (confirmingClose) {
+    return (
+      <ConfirmDialog
+        confirmLabel="Close enquiry"
+        destructive
+        message="They changed their mind once already, so marking them not interested closes this enquiry and its chat."
+        onCancel={() => setConfirmingClose(false)}
+        onConfirm={() => void choose("NOT_INTERESTED", true)}
+        title="Close this enquiry?"
+      />
+    );
   }
 
   return (

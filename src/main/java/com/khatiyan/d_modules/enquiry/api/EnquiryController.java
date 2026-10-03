@@ -31,6 +31,7 @@ import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryReceiptResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryResponse;
+import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.SetEnquirySentimentRequest;
@@ -77,6 +78,21 @@ public class EnquiryController {
      * the consent modal on any property profile and the account settings screen
      * read the same endpoint.
      */
+    /** The enquirer's own enquiries: My enquiries (2026-10-03). */
+    @GetMapping("/enquiries/mine")
+    public List<MyEnquiryItemResponse> myEnquiries(@AuthenticationPrincipal UserPrincipal user) {
+        return enquiryService.myEnquiries(user.userId());
+    }
+
+    /** "Changed your mind?": the enquirer takes back a Not interested, once. */
+    @PostMapping("/enquiries/{enquiryId}/changed-mind")
+    @RequiresVersion
+    public MyEnquiryItemResponse changeMind(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID enquiryId) {
+        return enquiryService.changeMind(user.userId(), enquiryId);
+    }
+
     @GetMapping("/enquiries/channel-consents")
     public EnquiryChannelConsentResponse myChannelConsents(@AuthenticationPrincipal UserPrincipal user) {
         return consentService.myConsents(user.userId());

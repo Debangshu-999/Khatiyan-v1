@@ -14,7 +14,7 @@ import { SafeAreaView, useSafeAreaInsets, type Edge } from "react-native-safe-ar
 import { useSegments } from "expo-router";
 
 import { AppBackground } from "@/components/app-background";
-import { api } from "@/store/api";
+import { API_TAGS, api } from "@/store/api";
 import { useAppDispatch } from "@/store/hooks";
 import { fetchCurrentLocation } from "@/store/slices/location-slice";
 import { spacing } from "@/theme/spacing";
@@ -155,22 +155,11 @@ export function ScreenScrollView({
         await onRefresh();
       } else {
         dispatch(fetchCurrentLocation());
-        dispatch(
-          api.util.invalidateTags([
-            "Profile",
-            "Property",
-            "Tenancy",
-            "BillingCycle",
-            "Concern",
-            "Notice",
-            "Notification",
-            "Discovery",
-            "Payment",
-            "Session",
-            "Staff",
-            "Food",
-          ]),
-        );
+        // Every tag, not a hand-picked few (2026-10-03). The list had fallen
+        // behind: Enquiry, EnquiryChat and every tag added since were missing,
+        // so a pull on those screens reloaded nothing they showed. Only the
+        // queries mounted right now refetch; the rest are just marked stale.
+        dispatch(api.util.invalidateTags([...API_TAGS]));
       }
       await new Promise((resolve) => setTimeout(resolve, 650));
     } finally {

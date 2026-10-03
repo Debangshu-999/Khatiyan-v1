@@ -594,7 +594,9 @@ export default function ChatThreadScreen() {
           </View>
         ) : (
         <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}>
-          {enquiryActions ? <EnquiryActionBar actions={enquiryActions} /> : null}
+          {enquiryActions ? (
+            <EnquiryActionBar actions={enquiryActions} counterpartName={title} threadId={threadId} />
+          ) : null}
           {editing ? (
             <View
               style={{

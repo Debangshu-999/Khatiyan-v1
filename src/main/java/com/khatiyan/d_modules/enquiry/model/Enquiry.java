@@ -55,7 +55,13 @@ public class Enquiry extends BaseEntity {
      * owner sees it greyed out and unactionable for a day first, which is the
      * difference between "this closed" and "where did that go".
      */
-    public static final Duration VISIBLE_AFTER_EXPIRY = Duration.ofDays(1);
+    public static final Duration VISIBLE_AFTER_EXPIRY = Duration.ofDays(30);
+
+    /**
+     * How long a Not interested enquiry stays open before it closes by itself
+     * (owner's design, 2026-10-03). The enquirer may change their mind in it.
+     */
+    public static final Duration NOT_INTERESTED_GRACE = Duration.ofDays(7);
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -166,6 +172,23 @@ public class Enquiry extends BaseEntity {
     /** When its chat was closed, by ending or by the sweep. Null while the chat is open, or there is none. */
     @Column(name = "chat_closed_at")
     private Instant chatClosedAt;
+
+    /**
+     * When the sweep saw an answered enquiry's date pass, and said so. Null
+     * until then, and for the ones that expire unanswered or are ended by hand,
+     * which announce their own end.
+     */
+    @Column(name = "window_closed_at")
+    private Instant windowClosedAt;
+
+    /** When the enquirer answered "Changed your mind?". Once only. */
+    @Column(name = "tenant_changed_mind_at")
+    private Instant tenantChangedMindAt;
+
+    /** Why it ended. Null while it is live. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "end_reason", length = 30)
+    private EnquiryEndReason endReason;
 
     private Enquiry(UUID propertyId, UUID enquirerUserId, String message, Set<EnquiryResponseChannel> sharedChannels) {
         this.id = UUID.randomUUID();
@@ -308,14 +331,22 @@ public class Enquiry extends BaseEntity {
     }
 
     /**
-     * Ends the enquiry now, because the handler ended the conversation.
+     * Whether nothing more can be done with it: closed by the handler, or past
+     * its date.
+     */
+    public boolean isOver() {
+        return isEnded() || isExpired();
+    }
+
+    /**
+     * Closes the enquiry now: the handler marked them not interested and
+     * closed it (Close enquiry on the card, End conversation in the chat).
      *
-     * <p>Its window closes on the spot, so {@link #isExpired()} is true from
-     * here on and nothing more can be done with it. An unanswered one is also
-     * moved to EXPIRED, which is what lets the person ask again. An answered one
-     * keeps saying it was answered: that happened.
+     * <p>Its 30 days are not cut short (owner's rule, 2026-10-03). It reads
+     * Closed until its usual date, then Expired. Only an answered enquiry is
+     * closed, so the status, which records that it was answered, stays.
      *
-     * @return true when it ended now, false when it had ended already
+     * @return true when it closed now, false when it had closed already
      */
     public boolean end(UUID byUserId, Instant now) {
         if (isEnded()) {
@@ -323,16 +354,63 @@ public class Enquiry extends BaseEntity {
         }
         this.endedAt = now;
         this.endedByUserId = byUserId;
-        if (this.expiresAt == null || this.expiresAt.isAfter(now)) {
-            this.expiresAt = now;
-        }
-        expire();
+        recordEndReason(EnquiryEndReason.NOT_INTERESTED);
         return true;
+    }
+
+    /**
+     * When a Not interested enquiry closes by itself, or null when it is not
+     * one that will: not marked so, or already closed.
+     */
+    public Instant notInterestedClosesAt() {
+        if (sentiment != EnquirySentiment.NOT_INTERESTED || isEnded() || sentimentSetAt == null) {
+            return null;
+        }
+        return sentimentSetAt.plus(NOT_INTERESTED_GRACE);
+    }
+
+    /** Whether the enquirer may still answer "Changed your mind?". */
+    public boolean mayChangeMind() {
+        return notInterestedClosesAt() != null && tenantChangedMindAt == null && !isExpired();
+    }
+
+    /**
+     * The enquirer takes back the Not interested: Interested again, set by them.
+     * Once only, so a second Not interested closes the enquiry instead.
+     */
+    public void changeMind(UUID enquirerUserId, Instant now) {
+        if (!mayChangeMind()) {
+            throw new ValidationException(tenantChangedMindAt != null
+                    ? "You have already told the property you are interested."
+                    : "This enquiry is not waiting on that.");
+        }
+        setSentiment(EnquirySentiment.INTERESTED, enquirerUserId, now);
+        this.tenantChangedMindAt = now;
+    }
+
+    /** Keeps the first reason given. An enquiry ends once. */
+    public void recordEndReason(EnquiryEndReason reason) {
+        if (this.endReason == null) {
+            this.endReason = reason;
+        }
     }
 
     /** Whether it has a chat that is still open. */
     public boolean hasOpenChat() {
         return chatThreadId != null && chatClosedAt == null;
+    }
+
+    /**
+     * Records that an answered enquiry's window has closed.
+     *
+     * @return true the first time, false when it was recorded already
+     */
+    public boolean markWindowClosed(Instant now) {
+        if (this.windowClosedAt != null) {
+            return false;
+        }
+        this.windowClosedAt = now;
+        return true;
     }
 
     public void markChatClosed(Instant now) {

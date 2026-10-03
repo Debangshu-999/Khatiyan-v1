@@ -176,6 +176,22 @@ public class Lead extends BaseEntity {
     }
 
     /**
+     * Back to Enquired, because the visit that made it an early lead was
+     * cancelled (owner's rule, 2026-10-03). The early-lead moment is cleared:
+     * it is set again if they book again.
+     *
+     * @return true when it moved back
+     */
+    public boolean returnToEnquired() {
+        if (!isOpen() || stage != LeadStage.EARLY_LEAD) {
+            return false;
+        }
+        this.stage = LeadStage.ENQUIRED;
+        this.earlyLeadAt = null;
+        return true;
+    }
+
+    /**
      * Closes the record, keeping the stage it reached.
      *
      * @return true when it closed, false when it was closed already

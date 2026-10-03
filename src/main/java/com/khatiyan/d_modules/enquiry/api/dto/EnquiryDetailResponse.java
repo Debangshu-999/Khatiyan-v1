@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquiryHandlerAssignment;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
@@ -82,6 +83,14 @@ public record EnquiryDetailResponse(
     EnquirySentiment sentiment,
     // When the handler ended the conversation. Null when nobody did.
     Instant endedAt,
+    // Why it ended, once it has: the pill on an expired card. Null while live.
+    EnquiryEndReason endReason,
+    // The enquirer took back a Not interested: "Interested: Tenant changed mind".
+    Instant tenantChangedMindAt,
+    // When a Not interested enquiry closes by itself, if it is one.
+    Instant notInterestedClosesAt,
+    // Its latest cancelled visit, if any. The screen shows it while none is booked.
+    CancelledVisitView cancelledVisit,
         /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
         long version
 ) {}

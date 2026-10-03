@@ -579,6 +579,7 @@ export function ConfirmDialog({
   animatedTransition = true,
   acknowledgeOnly,
   bullets,
+  cancelLabel = "Cancel",
   confirmLabel = "Confirm",
   destructive,
   footnote,
@@ -600,6 +601,11 @@ export function ConfirmDialog({
   // about to do in a paragraph gets dismissed unread, which defeats the point
   // of asking at all.
   bullets?: string[];
+  /**
+   * The way out, when "Cancel" would be ambiguous: a dialog that confirms
+   * cancelling something reads "Cancel" and "Cancel visit" side by side.
+   */
+  cancelLabel?: string;
   confirmLabel?: string;
   destructive?: boolean;
   // A qualifier that is not itself a consequence — typically what is NOT
@@ -674,7 +680,7 @@ export function ConfirmDialog({
           ) : null}
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            {acknowledgeOnly ? null : <ActionButton label="Cancel" onPress={() => finish(onCancel)} variant="secondary" />}
+            {acknowledgeOnly ? null : <ActionButton label={cancelLabel} onPress={() => finish(onCancel)} variant="secondary" />}
             <ActionButton
               label={confirmLabel}
               onPress={() => finish(onConfirm)}

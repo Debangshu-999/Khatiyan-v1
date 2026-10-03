@@ -13,6 +13,7 @@ const TAB_BAR_HEIGHT_PX = 60;
 
 import { threadRoute } from "@/features/chat/thread-route";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { SectionPill } from "@/components/section-pill";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { ChatThreadListSkeleton } from "@/components/skeletons";
@@ -499,59 +500,6 @@ function emptyCopy(section: Section) {
     return "Start one with the owner, a manager or a tenant using New chat.";
   }
   return "Enquiries answered over chat will appear here.";
-}
-
-function SectionPill({
-  count,
-  label,
-  onPress,
-  selected,
-}: {
-  count: number;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: selected ? colors.ink : colors.surface,
-        borderColor: selected ? colors.ink : colors.border,
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: 6,
-        paddingHorizontal: spacing.sm + 2,
-        paddingVertical: 7,
-      }}
-    >
-      <Text style={{ color: selected ? colors.surface : colors.inkSoft, fontSize: 12, fontWeight: "700" }}>
-        {label}
-      </Text>
-      {count > 0 ? (
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: selected ? colors.surface : colors.primary,
-            borderRadius: 999,
-            minWidth: 17,
-            paddingHorizontal: 5,
-            paddingVertical: 1,
-          }}
-        >
-          <Text style={{ color: selected ? colors.ink : colors.surface, fontSize: 10, fontWeight: "700" }}>
-            {count}
-          </Text>
-        </View>
-      ) : null}
-    </AnimatedPressable>
-  );
 }
 
 // ---------------------------------------------------------------------------

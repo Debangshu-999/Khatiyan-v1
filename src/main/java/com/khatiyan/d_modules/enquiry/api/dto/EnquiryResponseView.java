@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
+import com.khatiyan.d_modules.enquiry.model.EnquiryCallResult;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 
@@ -17,7 +18,10 @@ public record EnquiryResponseView(
     String note,
     Instant respondedAt,
     EnquiryAttemptOutcome outcome,
-    Instant settledAt
+    Instant settledAt,
+    // How a call went and how long it ran, when the handler recorded them.
+    EnquiryCallResult callResult,
+    Integer durationSeconds
 ) {
     public static EnquiryResponseView of(EnquiryResponse response, String respondedByName) {
         return new EnquiryResponseView(
@@ -28,6 +32,8 @@ public record EnquiryResponseView(
                 response.getNote(),
                 response.getCreatedAt(),
                 response.getOutcome(),
-                response.getSettledAt());
+                response.getSettledAt(),
+                response.getCallResult(),
+                response.getDurationSeconds());
     }
 }

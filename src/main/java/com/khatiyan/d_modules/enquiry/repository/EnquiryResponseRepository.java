@@ -26,6 +26,9 @@ public interface EnquiryResponseRepository extends JpaRepository<EnquiryResponse
     List<EnquiryResponse> findByEnquiryIdInOrderByCreatedAtDesc(Collection<UUID> enquiryIds);
 
     /** The attempt still open on one channel of an enquiry. At most one, by a partial unique index. */
+    /** Whether anyone ever tried to reach them on this enquiry. */
+    boolean existsByEnquiryId(UUID enquiryId);
+
     Optional<EnquiryResponse> findByEnquiryIdAndChannelAndOutcome(
             UUID enquiryId, EnquiryResponseChannel channel, EnquiryAttemptOutcome outcome);
 

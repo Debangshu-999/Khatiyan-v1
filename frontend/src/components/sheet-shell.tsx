@@ -13,6 +13,7 @@ import { useTheme } from "@/theme/use-theme";
 // same motion.
 export function SheetShell({
   animated = true,
+  belowTitle,
   children,
   dismissOnDrag = false,
   onBack,
@@ -35,6 +36,12 @@ export function SheetShell({
    * deliberately needs the platform transition instead.
    */
   animated?: boolean;
+  /**
+   * A line that belongs to the title, such as a status pill. Drawn tight under
+   * it, outside the scrolling body, so it is never scrolled away or clipped by
+   * the head of the sheet.
+   */
+  belowTitle?: ReactNode;
   children: ReactNode;
   /**
    * Opt in to a grabber you can actually drag the sheet down by.
@@ -379,7 +386,7 @@ export function SheetShell({
             <View style={{ alignItems: "center", marginTop: -spacing.xs, paddingBottom: spacing.xs, paddingTop: spacing.xs }}>
               <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
             </View>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: belowTitle ? spacing.xs : spacing.md }}>
               {onBack ? (
                 <AnimatedPressable
                   accessibilityLabel="Back"
@@ -418,6 +425,7 @@ export function SheetShell({
                 <X color={colors.ink} size={16} strokeWidth={2.4} />
               </AnimatedPressable>
             </View>
+            {belowTitle ? <View style={{ marginBottom: spacing.md }}>{belowTitle}</View> : null}
           </View>
           <GestureDetector gesture={bodyGesture}>
             <ScrollView

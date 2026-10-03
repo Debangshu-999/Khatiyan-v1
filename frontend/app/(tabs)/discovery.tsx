@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
 import { Animated, Easing, Image, ImageBackground, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { ArrowUpRight, MapPin } from "lucide-react-native";
 
@@ -240,6 +241,18 @@ export default function DiscoveryScreen() {
   // closing it never re-renders the results list underneath.
   const profileLayer = useRef<PropertyProfileLayerHandle>(null);
   const openProfile = useCallback((propertyId: string) => profileLayer.current?.open(propertyId), []);
+
+  // Sent here with a property to show: View property on My enquiries
+  // (2026-10-03). Opened once, then the parameter is cleared so coming back to
+  // the tab does not open it again.
+  const { openPropertyId } = useLocalSearchParams<{ openPropertyId?: string }>();
+  useEffect(() => {
+    if (!openPropertyId) {
+      return;
+    }
+    openProfile(openPropertyId);
+    router.setParams({ openPropertyId: undefined });
+  }, [openPropertyId, openProfile, router]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);

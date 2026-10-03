@@ -19,10 +19,12 @@ import com.khatiyan.d_modules.lead.model.LeadCloseReason;
 import com.khatiyan.d_modules.lead.model.LeadEnquiry;
 import com.khatiyan.d_modules.lead.model.LeadHandlerSource;
 import com.khatiyan.d_modules.lead.model.LeadStage;
+import com.khatiyan.d_modules.lead.model.VisitStatus;
 import com.khatiyan.d_modules.lead.model.LeadState;
 import com.khatiyan.d_modules.lead.repository.LeadActivityRepository;
 import com.khatiyan.d_modules.lead.repository.LeadEnquiryRepository;
 import com.khatiyan.d_modules.lead.repository.LeadRepository;
+import com.khatiyan.d_modules.lead.repository.VisitRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,6 +54,7 @@ public class LeadPipelineService {
     private final LeadRepository leadRepository;
     private final LeadEnquiryRepository leadEnquiryRepository;
     private final LeadActivityRepository leadActivityRepository;
+    private final VisitRepository visitRepository;
     private final EnquiryModule enquiryModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final JdbcTemplate jdbcTemplate;
@@ -60,12 +63,14 @@ public class LeadPipelineService {
             LeadRepository leadRepository,
             LeadEnquiryRepository leadEnquiryRepository,
             LeadActivityRepository leadActivityRepository,
+            VisitRepository visitRepository,
             EnquiryModule enquiryModule,
             ReferenceCodeGenerator referenceCodeGenerator,
             JdbcTemplate jdbcTemplate) {
         this.leadRepository = leadRepository;
         this.leadEnquiryRepository = leadEnquiryRepository;
         this.leadActivityRepository = leadActivityRepository;
+        this.visitRepository = visitRepository;
         this.enquiryModule = enquiryModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.jdbcTemplate = jdbcTemplate;
@@ -112,6 +117,21 @@ public class LeadPipelineService {
             record(lead, LeadActivityType.CLOSED, null, enquiry.id(),
                     LeadCloseReason.NOT_INTERESTED.name(), enquiry.endedAt());
             log.info("Lead closed leadId={} reason=NOT_INTERESTED enquiryId={}", lead.getId(), enquiry.id());
+        }
+
+        // Reached, back at (or still at) Enquired, and every enquiry it had has
+        // run out: nothing is left to book a visit from, so the record ends
+        // (owner's rule, 2026-10-03). Named for why: their visit was cancelled,
+        // or they never booked one.
+        if (lead.isOpen() && lead.getStage() == LeadStage.ENQUIRED && lead.getRespondedAt() != null
+                && enquiry.isOver(Instant.now()) && !enquiryModule.anyLive(enquiryIdsOf(lead))) {
+            LeadCloseReason reason = visitRepository.existsByLeadIdAndStatus(lead.getId(), VisitStatus.CANCELLED)
+                    ? LeadCloseReason.VISIT_CANCELLED
+                    : LeadCloseReason.NO_VISIT_BOOKED;
+            Instant closedAt = Instant.now();
+            lead.close(reason, closedAt);
+            record(lead, LeadActivityType.CLOSED, null, enquiry.id(), reason.name(), closedAt);
+            log.info("Lead closed leadId={} reason={} enquiryId={}", lead.getId(), reason, enquiry.id());
         }
 
         if (enquiry.status() == EnquiryStatus.EXPIRED && lead.awaitsFirstAnswer() && noEnquiryStillWaits(lead)) {
@@ -167,10 +187,13 @@ public class LeadPipelineService {
      * expiry is.
      */
     private boolean noEnquiryStillWaits(Lead lead) {
-        List<UUID> enquiryIds = leadEnquiryRepository.findByLeadId(lead.getId()).stream()
+        return !enquiryModule.anyAwaitingAnswer(enquiryIdsOf(lead));
+    }
+
+    private List<UUID> enquiryIdsOf(Lead lead) {
+        return leadEnquiryRepository.findByLeadId(lead.getId()).stream()
                 .map(LeadEnquiry::getEnquiryId)
                 .toList();
-        return !enquiryModule.anyAwaitingAnswer(enquiryIds);
     }
 
     private static LeadHandlerSource sourceOf(EnquirySnapshot enquiry) {

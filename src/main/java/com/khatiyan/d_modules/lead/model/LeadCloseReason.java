@@ -40,5 +40,12 @@ public enum LeadCloseReason {
     DUPLICATE,
 
     /** They moved in. */
-    CONVERTED
+    CONVERTED,
+
+    /**
+     * Their visit was cancelled and their enquiry's window closed with no
+     * other booked (owner's rule, 2026-10-03). Appended: stored values are
+     * never reordered.
+     */
+    VISIT_CANCELLED
 }

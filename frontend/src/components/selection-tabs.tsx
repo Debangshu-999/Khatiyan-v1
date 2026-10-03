@@ -9,7 +9,8 @@ import { useTheme } from "@/theme/use-theme";
 export function SelectionTabs<T extends string>({ active, onChange, options, distributed = false, bleed = 0, horizontalPadding = 0, topPadding = 0, gap = 12, compact = false }: {
   active: T;
   onChange: (value: T) => void;
-  options: { value: T; label: string; done?: boolean; warning?: boolean; icon?: (color: string) => ReactNode }[];
+  // badge: a count after the label in a blue circle, shown above zero (the Enquiries tabs' "new since seen").
+  options: { value: T; label: string; done?: boolean; warning?: boolean; badge?: number; icon?: (color: string) => ReactNode }[];
   compact?: boolean;
   distributed?: boolean;
   bleed?: number;
@@ -32,6 +33,7 @@ export function SelectionTabs<T extends string>({ active, onChange, options, dis
             <Text numberOfLines={1} style={{ color, fontFamily: fonts.sansSemiBold, fontSize: compact ? 12 : 14 }}>{option.label}</Text>
             {option.done ? <CircleCheck color={colors.jade} size={12} strokeWidth={2.6} /> : null}
             {option.warning ? <CircleAlert accessibilityLabel="No room types created" color={colors.warning} size={12} strokeWidth={2.6} /> : null}
+            {option.badge && option.badge > 0 ? <View style={{ alignItems: "center", backgroundColor: colors.primary, borderRadius: 999, marginLeft: 3, minWidth: 17, paddingHorizontal: 5, paddingVertical: 1 }}><Text style={{ color: colors.surface, fontSize: 10, fontWeight: "700" }}>{option.badge}</Text></View> : null}
           </View>
           <View style={{ height: 4 }}>
             {selected ? <Svg width="100%" height={4}><Rect x={0} y={0} width="100%" height={8} rx={4} ry={4} fill={colors.ink} /></Svg> : null}

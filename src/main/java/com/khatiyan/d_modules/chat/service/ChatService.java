@@ -309,16 +309,38 @@ public class ChatService {
      */
     @Transactional
     public ChatThread openEnquiryThread(
-            UUID propertyId, UUID enquiryId, UUID enquirerUserId, UUID responderUserId) {
+            UUID propertyId, UUID enquiryId, UUID enquirerUserId, UUID responderUserId, String enquiryMessage) {
         return chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiryId)
                 .orElseGet(() -> {
                     ChatThread thread = chatThreadRepository.save(
                             ChatThread.forEnquiry(propertyId, enquiryId));
                     chatThreadMemberRepository.save(ChatThreadMember.of(thread.getId(), enquirerUserId));
                     chatThreadMemberRepository.save(ChatThreadMember.of(thread.getId(), responderUserId));
+                    placeEnquiryFirst(thread, enquirerUserId, enquiryMessage);
                     log.info("Chat enquiry thread opened enquiryId={} threadId={}", enquiryId, thread.getId());
                     return thread;
                 });
+    }
+
+    /**
+     * Opens the conversation with what the enquirer asked, as their own first
+     * message (user, 2026-10-03), so the handler answers it in front of them.
+     *
+     * <p>Written straight to the thread, not sent. Nobody is notified of it,
+     * because nobody has just written it. No event goes out either: the enquiry
+     * module reads every message the enquirer sends as their reply, and this
+     * one is the question, not a reply. They have read their own words, so
+     * their read mark moves past it.
+     */
+    private void placeEnquiryFirst(ChatThread thread, UUID enquirerUserId, String enquiryMessage) {
+        if (enquiryMessage == null || enquiryMessage.isBlank()) {
+            return;
+        }
+        ChatMessage opening = chatMessageRepository.saveAndFlush(
+                ChatMessage.of(thread.getId(), enquirerUserId, enquiryMessage, List.of()));
+        thread.noteLastMessage(
+                opening.getSeq(), opening.getCreatedAt(), opening.preview(), opening.attachmentKind());
+        readStateFor(thread.getId(), enquirerUserId).advanceTo(opening.getSeq());
     }
 
     /**

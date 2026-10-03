@@ -1,22 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { CalendarDays } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
+import { CancelVisitSheet, type CancelVisitAnswer } from "@/features/enquiry/cancel-visit-sheet";
 import { GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { useToast } from "@/components/toast";
 import {
   dayParts,
   formatSlotRange,
   formatSpotsLeft,
-  formatVisitWhen,
+  formatVisitShort,
+  formatVisitSlot,
 } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { PropertyVisitsIcon } from "@/features/property/property-control-icons";
+import { useSendChatMessageMutation } from "@/store/services/chat-api";
 import {
+  useCancelVisitMutation,
   useGetVisitAvailabilityQuery,
   useRescheduleVisitMutation,
   useScheduleVisitMutation,
@@ -46,66 +52,109 @@ const SAMPLE_DAYS: Day[] = ["2026-01-04", "2026-01-05", "2026-01-06", "2026-01-0
 /**
  * Picks a date and one of the property's visit slots on it.
  *
- * <p>One sheet for both booking and moving a visit: the choice is the same, and
- * only the heading, the note under it and the button differ. Pass `visit` to
- * move it.
+ * <p>One sheet for booking a visit and for managing one: the choice is the
+ * same, and only the heading, the line under it and the buttons differ. Pass
+ * `visit` to manage it.
+ *
+ * <p>Nothing is booked, moved or cancelled without a confirmation naming who
+ * and when (user, 2026-10-03). The enquirer can also send their pick to the
+ * property as a chat message instead of booking it.
  *
  * <p>The slots, and the places left in each, are the server's. A full slot is
  * shown and cannot be picked. Two people can still go for the last place at
- * once, so a refusal after tapping is possible, and the list is read again
+ * once, so a refusal after confirming is possible, and the list is read again
  * when it happens.
  */
 export function VisitSheet({
   enquiryId,
+  loadingVisit = false,
   onClose,
+  personName,
   propertyId,
+  threadId,
   viewer,
   visit,
 }: {
   enquiryId: string;
   onClose: () => void;
+  /**
+   * Who the visit is for, named in management's confirmations. The enquirer
+   * reads "your visit" instead.
+   */
+  personName?: string | null;
   propertyId: string;
+  /** The enquiry's conversation: lets the enquirer send their pick as a message. */
+  threadId?: string | null;
   viewer: EnquiryParty;
-  /** The visit being moved. Left out when booking a new one. */
+  /** The visit being managed. Left out when booking a new one. */
   visit?: Visit | null;
+  /**
+   * The visit is being read and has not arrived. The sheet opens as "Manage
+   * visit" with its loading shape, rather than as a booking for a moment.
+   */
+  loadingVisit?: boolean;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const availability = useGetVisitAvailabilityQuery(propertyId, { refetchOnMountOrArgChange: true });
   const [scheduleVisit, scheduleState] = useScheduleVisitMutation();
   const [rescheduleVisit, rescheduleState] = useRescheduleVisitMutation();
-  const [date, setDate] = useState<string | null>(null);
+  const [cancelVisit, cancelState] = useCancelVisitMutation();
+  const [sendMessage, sendState] = useSendChatMessageMutation();
+  const [confirming, setConfirming] = useState<"book" | "cancel" | null>(null);
+  // Cancelling asks first whether they are still interested, and why
+  // (owner's design, 2026-10-03), then confirms.
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelAnswer, setCancelAnswer] = useState<CancelVisitAnswer | null>(null);
+  // The day the person tapped. Null until they tap one, and the default below
+  // stands in.
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
   const [slotStart, setSlotStart] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   const moving = Boolean(visit);
-  const saving = scheduleState.isLoading || rescheduleState.isLoading;
-  const loading = availability.isLoading;
+  const enquirer = viewer === "ENQUIRER";
+  // Booking, or a visit that can still be moved. A visit that cannot (its day
+  // has come, or the tenant has used both changes) opens here only to be
+  // cancelled, with the reason it cannot move in place of the slots.
+  const picking = !visit || visit.canReschedule;
+  const busy = scheduleState.isLoading || rescheduleState.isLoading || cancelState.isLoading || sendState.isLoading;
+  const loading = availability.isLoading || loadingVisit;
   const days = useMemo(() => availability.data?.days ?? [], [availability.data]);
 
   // Opens on the first day that still has a place, so the common case is one
-  // tap on a slot and one on the button.
-  useEffect(() => {
-    if (date || days.length === 0) {
-      return;
-    }
-    const firstOpen = days.find((day) => day.slots.some((slot) => slot.spotsLeft > 0));
-    setDate((firstOpen ?? days[0]).date);
-  }, [date, days]);
+  // tap on a slot and one on the button. Worked out in the render, not set by
+  // an effect: an effect lands one render after the slots do, and that render
+  // drew the sheet with no day and no slots, so on a first open (nothing
+  // cached) the sheet shrank by its slot rows and sprang back (2026-10-03).
+  const defaultDate = useMemo(
+    () => (days.find((day) => day.slots.some((slot) => slot.spotsLeft > 0)) ?? days[0])?.date ?? null,
+    [days],
+  );
+  const date = pickedDate ?? defaultDate;
 
   const selectedDay = days.find((day) => day.date === date) ?? null;
+  const selectedSlot = selectedDay?.slots.find((slot) => slot.startTime === slotStart) ?? null;
+  // Date and slot, the way both lines of the sheet and every confirmation say them.
+  const picked = date && selectedSlot ? formatVisitSlot(date, selectedSlot.startTime, selectedSlot.endTime) : null;
+  const current = visit ? formatVisitSlot(visit.date, visit.slotStart, visit.slotEnd) : null;
+  // The pill under the title says a visit by its day and start alone.
+  const currentShort = visit ? formatVisitShort(visit.date, visit.slotStart) : null;
+  const pickedShort = date && selectedSlot ? formatVisitShort(date, selectedSlot.startTime) : null;
+  const name = personName?.trim() || null;
 
-  async function submit() {
-    if (!date || !slotStart || saving) {
+  async function book() {
+    setConfirming(null);
+    if (!date || !slotStart || !picked || busy) {
       return;
     }
     try {
       if (visit) {
         await rescheduleVisit({ date, slotStart, version: visit.version, visitId: visit.id }).unwrap();
-        toast.success(`Visit moved to ${formatVisitWhen(date, slotStart)}.`);
+        toast.success(`Visit moved to ${picked}.`);
       } else {
         await scheduleVisit({ date, enquiryId, slotStart }).unwrap();
-        toast.success(`Visit scheduled for ${formatVisitWhen(date, slotStart)}.`);
+        toast.success(`Visit scheduled for ${picked}.`);
       }
       onClose();
     } catch (error) {
@@ -116,27 +165,131 @@ export function VisitSheet({
     }
   }
 
-  const note = !visit
+  async function cancel() {
+    setConfirming(null);
+    if (!visit || !cancelAnswer || busy) {
+      return;
+    }
+    try {
+      // No toast: the bar changing back to Schedule visit is the confirmation,
+      // as with ending a conversation.
+      await cancelVisit({
+        reason: cancelAnswer.reason,
+        stillInterested: cancelAnswer.stillInterested,
+        version: visit.version,
+        visitId: visit.id,
+      }).unwrap();
+      onClose();
+    } catch (error) {
+      setFailure(errorMessage(error));
+    }
+  }
+
+  /**
+   * The enquirer's pick, as a message in the enquiry's conversation rather
+   * than a booking (user, 2026-10-03). Nothing is booked: the property reads it
+   * and books, or answers.
+   */
+  async function sendAsText() {
+    if (!threadId || !picked || busy) {
+      return;
+    }
+    try {
+      await sendMessage({
+        body: moving ? `I want to reschedule my visit to ${picked}.` : `I want to schedule my visit on ${picked}.`,
+        threadId,
+      }).unwrap();
+      onClose();
+    } catch (error) {
+      setFailure(errorMessage(error));
+    }
+  }
+
+  // The line under the title (user, 2026-10-03). The tenant has two
+  // reschedules before the visit date and two more after a miss, and the
+  // server sends the count that applies today. The property's side moves a
+  // visit as often as it needs to.
+  const left = visit?.tenantReschedulesLeft ?? 0;
+  // Used up is said in the same pill, in so many words (user, 2026-10-03).
+  const usedUp = Boolean(visit && enquirer && left === 0);
+  const rescheduleLine = !visit
     ? null
-    : visit.missed
-      ? `Missed: ${formatVisitWhen(visit.date, visit.slotStart)}.`
-      : `Now: ${formatVisitWhen(visit.date, visit.slotStart)}.`;
-  const changesLeft =
-    visit && viewer === "ENQUIRER"
-      ? visit.tenantReschedulesLeft === 1
-        ? "1 change left."
-        : `${visit.tenantReschedulesLeft} changes left.`
-      : null;
+    : enquirer
+      ? usedUp
+        ? "No reschedules left"
+        : `${left} ${left === 1 ? "Reschedule" : "Reschedules"} left`
+      : "Can reschedule anytime";
+  // A missed visit's date is shown in red (user, 2026-10-03).
+  const currentTint = visit?.missed ? colors.danger : colors.ink;
+  // Management's confirmations name the person; the enquirer's say "your".
+  const theirVisit = name ? `${name}'s visit` : "their visit";
 
   return (
-    <SheetShell onClose={onClose} title={moving ? "Reschedule visit" : "Schedule a visit"}>
-      {note ? (
+    // "Manage visit", not "Reschedule": it moves the visit and cancels it
+    // (user, 2026-10-03).
+    <SheetShell
+      // Straight under the title, in a grey pill: what may still be done with
+      // the visit (user, 2026-10-03).
+      belowTitle={
+        visit && (picking || usedUp) && rescheduleLine ? (
+          <View
+            style={{
+              alignSelf: "flex-start",
+              backgroundColor: colors.neutralSoft,
+              borderRadius: radii.pill,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 3,
+            }}
+          >
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 11.5 }}>{rescheduleLine}</Text>
+          </View>
+        ) : null
+      }
+      onClose={onClose}
+      title={moving || loadingVisit ? "Manage visit" : "Schedule a visit"}
+    >
+      {visit && !picking && !usedUp ? (
         <Text style={[type.description, { color: colors.muted }]}>
-          {changesLeft ? `${note} ${changesLeft}` : note}
+          {visit.rescheduleRefusal ?? "This visit can no longer be moved."}
         </Text>
       ) : null}
 
-      {loading ? (
+      {/* The visit as it stands, in a grey pill: a calendar, then its day and
+          start. Once a new slot is picked it is struck through, with an arrow
+          to the new one in the same pill (user, 2026-10-03). */}
+      {visit && currentShort ? (
+        <View
+          style={{
+            alignItems: "center",
+            alignSelf: "flex-start",
+            backgroundColor: colors.neutralSoft,
+            borderRadius: radii.pill,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: spacing.xs,
+            paddingHorizontal: spacing.sm + 2,
+            paddingVertical: 6,
+          }}
+        >
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
+            <CalendarDays color={currentTint} size={14} strokeWidth={2.2} />
+            <Text style={{ color: currentTint, fontFamily: fonts.sansBold, fontSize: 13 }}>
+              {visit.missed ? " Missed: " : ": "}
+              <Text style={picking && pickedShort ? { textDecorationLine: "line-through" } : undefined}>
+                {currentShort}
+              </Text>
+            </Text>
+          </View>
+          {picking && pickedShort ? (
+            <>
+              <MaterialCommunityIcons color={colors.kicker} name="arrow-right" size={16} />
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{pickedShort}</Text>
+            </>
+          ) : null}
+        </View>
+      ) : null}
+
+      {picking && loading ? (
         <SkeletonBoundary>
           <View style={{ gap: spacing.md }}>
             <DayStrip days={SAMPLE_DAYS} onPick={() => undefined} selected={SAMPLE_DAYS[1].date} />
@@ -151,7 +304,7 @@ export function VisitSheet({
 
       {/* No hours set: an empty state carrying the Visiting Hours card's own
           mark (user, 2026-10-02), so management recognises where to set them. */}
-      {!loading && days.length === 0 ? (
+      {picking && !loading && days.length === 0 ? (
         <EmptyState
           artworkNode={<PropertyVisitsIcon size={64} />}
           compact
@@ -166,12 +319,12 @@ export function VisitSheet({
         />
       ) : null}
 
-      {!loading && days.length > 0 ? (
+      {picking && !loading && days.length > 0 ? (
         <>
           <DayStrip
             days={days}
-            onPick={(picked) => {
-              setDate(picked);
+            onPick={(day) => {
+              setPickedDate(day);
               setSlotStart(null);
             }}
             selected={date}
@@ -188,21 +341,105 @@ export function VisitSheet({
                     visit.slotStart === slot.startTime,
                 )}
                 key={slot.startTime}
-                onPick={() => setSlotStart(slot.startTime)}
+                // A second tap on the picked slot unpicks it (user, 2026-10-03).
+                onPick={() => setSlotStart((chosen) => (chosen === slot.startTime ? null : slot.startTime))}
                 selected={slotStart === slot.startTime}
                 slot={slot}
               />
             ))}
           </View>
 
-          <View style={{ flexDirection: "row", paddingTop: spacing.xs }}>
+          {/* The enquirer can send the pick as a message instead, beside the
+              button that books it (user, 2026-10-03). */}
+          <View style={{ flexDirection: "row", gap: spacing.sm, paddingTop: spacing.xs }}>
+            {enquirer && threadId ? (
+              <ActionButton
+                disabled={!picked || busy}
+                label="Send as text"
+                onPress={() => void sendAsText()}
+                variant="outline"
+              />
+            ) : null}
             <ActionButton
-              disabled={!date || !slotStart || saving}
-              label={saving ? "Saving" : moving ? "Move visit" : "Schedule visit"}
-              onPress={() => void submit()}
+              disabled={!picked || busy}
+              label={busy ? "Saving" : moving ? "Reschedule" : "Schedule visit"}
+              onPress={() => setConfirming("book")}
             />
           </View>
         </>
+      ) : null}
+
+      {visit?.canCancel ? (
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={busy}
+            label="Cancel visit"
+            onPress={() => setCancelling(true)}
+            variant="dangerQuiet"
+          />
+        </View>
+      ) : null}
+
+      {confirming === "book" && picked ? (
+        <ConfirmDialog
+          bullets={
+            moving && enquirer
+              ? [left === 1 ? "This is your last reschedule." : `This uses one of your ${left} reschedules.`]
+              : undefined
+          }
+          confirmLabel={moving ? "Reschedule" : "Schedule visit"}
+          message={
+            moving
+              ? enquirer
+                ? `Do you want to reschedule your visit to ${picked}?`
+                : `Do you want to reschedule ${theirVisit} to ${picked}?`
+              : enquirer
+                ? `Do you want to schedule your visit on ${picked}?`
+                : `Do you want to schedule a visit for ${name ?? "them"} on ${picked}?`
+          }
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => void book()}
+          title={moving ? "Reschedule visit?" : "Schedule visit?"}
+        />
+      ) : null}
+
+      {cancelling && visit ? (
+        <CancelVisitSheet
+          canReschedule={visit.canReschedule}
+          enquirer={enquirer}
+          onBack={() => setCancelling(false)}
+          onClose={onClose}
+          onReschedule={() => setCancelling(false)}
+          onSubmit={(answer) => {
+            setCancelAnswer(answer);
+            setConfirming("cancel");
+          }}
+        />
+      ) : null}
+
+      {confirming === "cancel" && current && cancelAnswer ? (
+        <ConfirmDialog
+          bullets={
+            cancelAnswer.stillInterested
+              ? enquirer
+                ? ["Your place in the slot is freed.", "You can book another visit while your enquiry is open."]
+                : ["Their place in the slot is freed.", "They can book another visit while their enquiry is open."]
+              : enquirer
+                ? ["Your place in the slot is freed.", "Your enquiry is marked not interested and closes by itself in 7 days."]
+                : ["Their place in the slot is freed.", "Their enquiry is marked not interested and closes by itself in 7 days."]
+          }
+          cancelLabel="Keep visit"
+          confirmLabel="Cancel visit"
+          destructive
+          message={
+            enquirer
+              ? `Do you want to cancel your visit on ${current}?`
+              : `Do you want to cancel ${theirVisit} on ${current}?`
+          }
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => void cancel()}
+          title="Cancel this visit?"
+        />
       ) : null}
 
       {failure ? <AlertModal message={failure} onClose={() => setFailure(null)} /> : null}

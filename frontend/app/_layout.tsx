@@ -118,6 +118,7 @@ function ThemedRootStack() {
             name in it. Without this the stack falls back to the default
             header and titles the screen "chat/[threadId]". */}
         <Stack.Screen name="chat/[threadId]" options={{ headerShown: false }} />
+        <Stack.Screen name="my-enquiries" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />

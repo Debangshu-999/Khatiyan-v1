@@ -173,11 +173,34 @@ class QueriesDoNotGrowWithRowsTest {
                 """, leads);
         jdbc.batchUpdate(
                 "INSERT INTO lead.lead_enquiries (enquiry_id, lead_id, joined_at) VALUES (?, ?, now())", links);
+        // The enquirer's own list grows with them: one person, a closed
+        // enquiry per bed.
+        UUID regular = enquirers.get(0);
+        List<Object[]> closed = new ArrayList<>();
+        for (int i = 0; i < property.beds(); i++) {
+            closed.add(new Object[] {
+                    UUID.randomUUID(), property.propertyId(), regular,
+                    property.ownerId(), property.ownerId(), property.ownerId() });
+        }
+        jdbc.batchUpdate("""
+                INSERT INTO enquiry.enquiries (id, property_id, enquirer_user_id, message, status, expires_at,
+                    handler_user_id, handler_assigned_by, handler_assigned_at, responded_at, sentiment,
+                    sentiment_set_by_user_id, sentiment_set_at, ended_at, ended_by_user_id, end_reason,
+                    created_at, updated_at)
+                VALUES (?, ?, ?, 'Do you have parking?', 'RESPONDED', now() + INTERVAL '10 days',
+                    ?, 'FIRST_RESPONSE', now(), now(), 'NOT_INTERESTED', ?, now(), now(),
+                    ?, 'NOT_INTERESTED', now(), now())
+                """, closed);
         jdbc.batchUpdate("""
                 INSERT INTO lead.visits (id, reference_code, lead_id, property_id, prospect_user_id, enquiry_id,
                     visit_date, slot_start_minute, slot_end_minute, booked_by, booked_by_user_id, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 600, 660, 'TENANT', ?, 'SCHEDULED')
                 """, visits);
+    }
+
+    /** The person seeded with an enquiry per bed. */
+    private static UUID regular(Seeded property) {
+        return property.userIds().stream().filter(id -> !id.equals(property.ownerId())).findFirst().orElseThrow();
     }
 
     /** Every read that must not grow with the rows, by the name a failure will print. */
@@ -216,6 +239,9 @@ class QueriesDoNotGrowWithRowsTest {
                 p -> leadQueryService.pageForProperty(p.ownerId(), p.propertyId(), null, null, 0, 50));
         reads.put("Lead counts", p -> leadQueryService.countsForProperty(p.ownerId(), p.propertyId()));
         reads.put("Visit availability", p -> leadVisitService.availability(p.propertyId()));
+        reads.put("Booked visits", p -> leadVisitService.bookedVisits(p.ownerId(), p.propertyId()));
+        // One person with as many closed enquiries as the property has beds.
+        reads.put("My enquiries", p -> enquiryService.myEnquiries(regular(p)));
         return reads;
     }
 

@@ -59,34 +59,83 @@ class VisitTest {
         assertThat(visit.isMissed(SUNDAY.plusDays(1))).isTrue();
     }
 
-    /** Twice, then the property has to move it. */
+    /** Twice before its date, then the property has to move it. */
     @Test
-    void theProspectMovesItTwiceAndNoMore() {
+    void theProspectMovesItTwiceBeforeItsDate() {
         Visit visit = visit();
+        LocalDate before = SUNDAY.minusDays(3);
 
-        visit.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM);
-        assertThat(visit.tenantReschedulesLeft()).isEqualTo(1);
-        visit.moveByTenant(SUNDAY.plusDays(2), FOUR_PM, FIVE_PM);
-        assertThat(visit.tenantReschedulesLeft()).isZero();
+        visit.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM, before);
+        assertThat(visit.tenantReschedulesLeft(before)).isEqualTo(1);
+        visit.moveByTenant(SUNDAY.plusDays(2), FOUR_PM, FIVE_PM, before);
+        assertThat(visit.tenantReschedulesLeft(before)).isZero();
 
-        assertThatThrownBy(() -> visit.moveByTenant(SUNDAY.plusDays(3), FOUR_PM, FIVE_PM))
+        assertThatThrownBy(() -> visit.moveByTenant(SUNDAY.plusDays(3), FOUR_PM, FIVE_PM, before))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("moved this visit twice");
+                .hasMessageContaining("rescheduled this visit twice");
         assertThat(visit.getVisitDate()).isEqualTo(SUNDAY.plusDays(2));
+    }
+
+    /**
+     * And twice more once it was missed, on a count of its own, so neither
+     * kind of move goes on for ever (owner's rule, 2026-10-03).
+     */
+    @Test
+    void theProspectMovesAMissedVisitTwiceMoreOnItsOwnCount() {
+        Visit visit = visit();
+        LocalDate before = SUNDAY.minusDays(3);
+        visit.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM, before);
+        visit.moveByTenant(SUNDAY.plusDays(2), FOUR_PM, FIVE_PM, before);
+
+        // Missed: the before-date count is used up, the after-miss one is not.
+        LocalDate missed = SUNDAY.plusDays(3);
+        assertThat(visit.isMissed(missed)).isTrue();
+        assertThat(visit.tenantReschedulesLeft(missed)).isEqualTo(2);
+        visit.moveByTenant(SUNDAY.plusDays(5), FOUR_PM, FIVE_PM, missed);
+
+        // Before its new date, the before-date count applies again, and it is used up.
+        assertThat(visit.tenantReschedulesLeft(SUNDAY.plusDays(4))).isZero();
+
+        LocalDate missedAgain = SUNDAY.plusDays(6);
+        assertThat(visit.tenantReschedulesLeft(missedAgain)).isEqualTo(1);
+        visit.moveByTenant(SUNDAY.plusDays(8), FOUR_PM, FIVE_PM, missedAgain);
+
+        LocalDate missedThird = SUNDAY.plusDays(9);
+        assertThat(visit.tenantReschedulesLeft(missedThird)).isZero();
+        assertThatThrownBy(() -> visit.moveByTenant(SUNDAY.plusDays(11), FOUR_PM, FIVE_PM, missedThird))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("missed visit twice");
+    }
+
+    /** A rebooking after the tenant cancelled starts where the cancelled visit left off. */
+    @Test
+    void aRebookingCarriesTheTenantsCountsFromTheVisitTheyCancelled() {
+        Visit cancelled = visit();
+        LocalDate before = SUNDAY.minusDays(3);
+        cancelled.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM, before);
+        cancelled.cancel(VisitBookedBy.TENANT, java.time.Instant.parse("2026-10-03T06:00:00Z"), "Plans changed");
+        assertThat(cancelled.getStatus()).isEqualTo(VisitStatus.CANCELLED);
+        assertThat(cancelled.getCancelledBy()).isEqualTo(VisitBookedBy.TENANT);
+
+        Visit rebooked = visit();
+        rebooked.carryTenantCountsFrom(cancelled);
+
+        assertThat(rebooked.tenantReschedulesLeft(before)).isEqualTo(1);
     }
 
     /** The property's moves are not counted, and are still possible after the prospect's two. */
     @Test
     void theHandlerMovesItWithoutUsingTheProspectsTwo() {
         Visit visit = visit();
-        visit.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM);
-        visit.moveByTenant(SUNDAY.plusDays(2), FOUR_PM, FIVE_PM);
+        LocalDate before = SUNDAY.minusDays(3);
+        visit.moveByTenant(SUNDAY.plusDays(1), FOUR_PM, FIVE_PM, before);
+        visit.moveByTenant(SUNDAY.plusDays(2), FOUR_PM, FIVE_PM, before);
 
         visit.moveByHandler(SUNDAY.plusDays(5), LocalTime.of(10, 0), LocalTime.of(11, 0));
         visit.moveByHandler(SUNDAY.plusDays(6), LocalTime.of(10, 0), LocalTime.of(11, 0));
 
         assertThat(visit.getVisitDate()).isEqualTo(SUNDAY.plusDays(6));
         assertThat(visit.getSlotStart()).isEqualTo(LocalTime.of(10, 0));
-        assertThat(visit.tenantReschedulesLeft()).isZero();
+        assertThat(visit.tenantReschedulesLeft(before)).isZero();
     }
 }

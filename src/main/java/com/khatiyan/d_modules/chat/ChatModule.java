@@ -40,10 +40,15 @@ public class ChatModule {
      * Called inside the caller's transaction, so an enquiry cannot be recorded
      * as answered-by-chat without the thread the answer lives in.
      *
+     * @param enquiryMessage what the enquirer asked. A new conversation opens
+     *                       with it, as their own first message
      * @return the thread id, for the screen that has to open it
      */
-    public UUID openEnquiryThread(UUID propertyId, UUID enquiryId, UUID enquirerUserId, UUID responderUserId) {
-        return chatService.openEnquiryThread(propertyId, enquiryId, enquirerUserId, responderUserId).getId();
+    public UUID openEnquiryThread(
+            UUID propertyId, UUID enquiryId, UUID enquirerUserId, UUID responderUserId, String enquiryMessage) {
+        return chatService
+                .openEnquiryThread(propertyId, enquiryId, enquirerUserId, responderUserId, enquiryMessage)
+                .getId();
     }
 
     /**

@@ -34,11 +34,31 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             SELECT enquiry
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
-              AND (enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
-                   OR enquiry.expiresAt > :hiddenBefore)
+              AND enquiry.expiresAt > :hiddenBefore
             ORDER BY enquiry.createdAt DESC
             """)
     List<Enquiry> findVisibleForProperty(UUID propertyId, Instant hiddenBefore);
+
+    /** Not interested, still open, and marked at or before the cutoff: closed by the sweep. */
+    @Query("""
+            SELECT enquiry.id
+            FROM Enquiry enquiry
+            WHERE enquiry.sentiment = com.khatiyan.d_modules.enquiry.model.EnquirySentiment.NOT_INTERESTED
+              AND enquiry.endedAt IS NULL
+              AND enquiry.sentimentSetAt <= :cutoff
+              AND enquiry.expiresAt > :now
+            """)
+    List<UUID> findIdsNotInterestedSince(Instant cutoff, Instant now);
+
+    /** The enquirer's own, newest first, until 30 days past their date (My enquiries). */
+    @Query("""
+            SELECT enquiry
+            FROM Enquiry enquiry
+            WHERE enquiry.enquirerUserId = :enquirerUserId
+              AND enquiry.expiresAt > :hiddenBefore
+            ORDER BY enquiry.createdAt DESC
+            """)
+    List<Enquiry> findVisibleForEnquirer(UUID enquirerUserId, Instant hiddenBefore);
 
     /**
      * Open enquiries whose date has passed, for the sweep that ages them out.
@@ -82,6 +102,31 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     List<UUID> findIdsWithChatToClose(Instant now);
 
+    /**
+     * Answered enquiries past their date whose window closing has not been
+     * announced yet. Ids only: the sweep handles each in its own transaction.
+     */
+    @Query("""
+            SELECT enquiry.id
+            FROM Enquiry enquiry
+            WHERE enquiry.status = com.khatiyan.d_modules.enquiry.model.EnquiryStatus.RESPONDED
+              AND enquiry.windowClosedAt IS NULL
+              AND enquiry.endedAt IS NULL
+              AND enquiry.expiresAt <= :now
+            """)
+    List<UUID> findIdsAnsweredPastWindow(Instant now);
+
+    /** Whether any of these enquiries is still inside its window: not ended, not expired, not past its date. */
+    @Query("""
+            SELECT COUNT(enquiry) > 0
+            FROM Enquiry enquiry
+            WHERE enquiry.id IN :enquiryIds
+              AND enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
+              AND enquiry.endedAt IS NULL
+              AND enquiry.expiresAt > :now
+            """)
+    boolean existsLiveAmong(Collection<UUID> enquiryIds, Instant now);
+
     /** Whether any of these enquiries is still waiting on an answer, inside its window. */
     @Query("""
             SELECT COUNT(enquiry) > 0
@@ -122,8 +167,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             SELECT enquiry
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
-              AND (enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
-                   OR enquiry.expiresAt > :hiddenBefore)
+              AND enquiry.expiresAt > :hiddenBefore
             ORDER BY enquiry.createdAt DESC
             """)
     Page<Enquiry> findVisiblePageForProperty(UUID propertyId, Instant hiddenBefore, Pageable pageable);
@@ -134,8 +178,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
               AND enquiry.handlerUserId = :handlerUserId
-              AND (enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
-                   OR enquiry.expiresAt > :hiddenBefore)
+              AND enquiry.expiresAt > :hiddenBefore
             ORDER BY enquiry.createdAt DESC
             """)
     Page<Enquiry> findVisiblePageForHandler(

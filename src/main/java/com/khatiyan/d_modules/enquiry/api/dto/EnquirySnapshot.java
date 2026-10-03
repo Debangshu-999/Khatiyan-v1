@@ -33,6 +33,8 @@ public record EnquirySnapshot(
         EnquirySentiment sentiment,
         Instant endedAt,
         UUID chatThreadId,
+        // When the enquirer took back a Not interested. Marking it so again closes it.
+        Instant tenantChangedMindAt,
         long version) {
 
     /** Whether nothing more can be done with it: ended by hand, or past its date. */
@@ -55,6 +57,7 @@ public record EnquirySnapshot(
                 enquiry.getSentiment(),
                 enquiry.getEndedAt(),
                 enquiry.getChatThreadId(),
+                enquiry.getTenantChangedMindAt(),
                 enquiry.getVersion());
     }
 }

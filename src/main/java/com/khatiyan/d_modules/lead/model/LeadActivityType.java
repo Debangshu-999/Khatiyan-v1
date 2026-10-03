@@ -22,5 +22,8 @@ public enum LeadActivityType {
     VISIT_SCHEDULED,
 
     /** A visit was moved. The detail holds where from and where to. */
-    VISIT_RESCHEDULED
+    VISIT_RESCHEDULED,
+
+    /** A visit was cancelled. The detail holds when it was to be. */
+    VISIT_CANCELLED
 }

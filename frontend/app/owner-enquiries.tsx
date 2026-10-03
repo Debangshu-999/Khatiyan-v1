@@ -1,33 +1,75 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { CalendarPlus, History, Mail, MessageSquare, Phone, User } from "lucide-react-native";
+import {
+  CalendarCheck,
+  CalendarPlus,
+  CalendarX,
+  CircleX,
+  Ellipsis,
+  History,
+  Mail,
+  MessageSquare,
+  Phone,
+  RotateCcw,
+  User,
+  UserPlus,
+} from "lucide-react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 import { openDialer } from "@/lib/dial";
 
+import { FilteredQueue } from "@/components/filtered-queue";
 import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { CenterModal } from "@/components/center-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { CountTabPills } from "@/components/filter-bubbles";
+import { SelectionTabs } from "@/components/selection-tabs";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useEnquiryTabsSeen, type EnquiryTabKey } from "@/features/enquiry/use-enquiry-tabs-seen";
+import {
+  CardRule,
+  ClosesInChip,
+  CornerRibbon,
+  CountPill,
+  RIBBON_FOLD,
+  TagPill,
+} from "@/features/enquiry/enquiry-tags";
+import { AssignHandlerSheet } from "@/features/enquiry/assign-handler-sheet";
+import { HandlerModeSheet } from "@/features/enquiry/handler-mode-sheet";
+import { ManageVisitSheet } from "@/features/enquiry/manage-visit-sheet";
+import {
+  describeCallResult,
+  formatCallDuration,
+  formatCallTime,
+  RecordResponseSheet,
+} from "@/features/enquiry/record-response-sheet";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
-import { ActionButton } from "@/features/owner/owner-ui";
+import { AlertModal } from "@/components/alert-modal";
+import { StatusPill } from "@/components/status-pill";
+import { errorMessage } from "@/features/forms/server-error";
+import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
 import {
+  useGetEnquiryHandlerSettingsQuery,
   useListPropertyEnquiriesQuery,
   useRespondToEnquiryMutation,
   type EnquiryDetail,
+  type EnquiryEndReason,
   type EnquiryResponseChannel,
 } from "@/store/services/enquiry-api";
+import {
+  useClearEnquirySentimentMutation,
+  useEndEnquiryConversationMutation,
+  useGetBookedVisitsQuery,
+} from "@/store/services/enquiry-chat-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -45,6 +87,28 @@ const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
 type EnquiryTab = EnquiryTabKey;
 
 const PAGE_SIZE = 6;
+
+type MineFilter = "ALL" | "OPEN" | "SCHEDULED" | "INTERESTED" | "NOT_INTERESTED" | "CLOSED" | "EXPIRED";
+type AllFilter = "ALL" | "NEW" | "OPEN" | "EXPIRED";
+
+/** My enquiries' filter (user, 2026-10-03). */
+const MINE_FILTERS: { label: string; value: MineFilter }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Open", value: "OPEN" },
+  { label: "Scheduled", value: "SCHEDULED" },
+  { label: "Interested", value: "INTERESTED" },
+  { label: "Not interested", value: "NOT_INTERESTED" },
+  { label: "Closed", value: "CLOSED" },
+  { label: "Expired", value: "EXPIRED" },
+];
+
+/** All enquiries' filter (user, 2026-10-03). */
+const ALL_FILTERS: { label: string; value: AllFilter }[] = [
+  { label: "All", value: "ALL" },
+  { label: "New", value: "NEW" },
+  { label: "Open", value: "OPEN" },
+  { label: "Expired", value: "EXPIRED" },
+];
 
 /** How close to the bottom counts as "show me more". Matches the alert feeds. */
 const LOAD_MORE_THRESHOLD_PX = 240;
@@ -65,20 +129,43 @@ export default function OwnerEnquiriesScreen() {
   // is converted, alongside the backend check.
 
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
+  // The gear is the owner's alone: changing the mode is refused to managers.
+  const isPropertyOwner = Boolean(selectedProperty && currentUserId && selectedProperty.ownerId === currentUserId);
+  // Assigned by hand: the owner's All enquiries cards offer Assign (user, 2026-10-03).
+  const handlerSettingsQuery = useGetEnquiryHandlerSettingsQuery(selectedProperty?.id ?? "", {
+    skip: !selectedProperty || !isPropertyOwner,
+  });
+  const ownerAssigns = isPropertyOwner && handlerSettingsQuery.data?.mode === "OWNER_ASSIGNS";
+  const [assigningId, setAssigningId] = useState<string | null>(null);
   // Null until a bubble is tapped: only the opening choice is automatic.
   const [tab, setTab] = useState<EnquiryTab | null>(null);
   // Pages the RENDER, not the fetch — the list arrives as one payload. Same
   // shape as the notifications feed so both lists end the same way.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [responding, setResponding] = useState<EnquiryDetail | null>(null);
+  // Ids, read back from the list: a call started from the sheet comes back as
+  // a call to record, and the sheet has to show that rather than a snapshot.
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [assigningOpen, setAssigningOpen] = useState(false);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [actingOnId, setActingOnId] = useState<string | null>(null);
+  const [clearDecision, clearState] = useClearEnquirySentimentMutation();
+  const [closeRefusal, setCloseRefusal] = useState<string | null>(null);
+  const [endEnquiry, endState] = useEndEnquiryConversationMutation();
   const [viewingLog, setViewingLog] = useState<EnquiryDetail | null>(null);
   const [scheduling, setScheduling] = useState<EnquiryDetail | null>(null);
+  const [managing, setManaging] = useState<EnquiryDetail | null>(null);
   const [visitBlocked, setVisitBlocked] = useState(false);
 
   // Schedule visit stays tappable before a successful response, and explains
   // why it cannot book yet rather than doing nothing (user, 2026-10-02). The
   // server refuses the booking too.
   function startScheduling(enquiry: EnquiryDetail) {
+    // A visit already booked is managed, not booked again (user, 2026-10-03).
+    if (bookedVisitFor(enquiry.id)) {
+      setManaging(enquiry);
+      return;
+    }
     if (!enquiry.respondedAt) {
       setVisitBlocked(true);
       return;
@@ -103,7 +190,7 @@ export default function OwnerEnquiriesScreen() {
    */
   const [pendingChat, setPendingChat] = useState<{ threadId: string; title: string } | null>(null);
   useEffect(() => {
-    if (!pendingChat || responding) {
+    if (!pendingChat || respondingId) {
       return;
     }
     setPendingChat(null);
@@ -111,13 +198,65 @@ export default function OwnerEnquiriesScreen() {
       params: { threadId: pendingChat.threadId, title: pendingChat.title },
       pathname: "/chat/[threadId]",
     });
-  }, [pendingChat, responding, router]);
+  }, [pendingChat, respondingId, router]);
 
   const enquiriesQuery = useListPropertyEnquiriesQuery(selectedProperty?.id ?? "", {
     skip: !selectedProperty,
   });
 
   const enquiries = useMemo(() => enquiriesQuery.data ?? [], [enquiriesQuery.data]);
+  const responding = respondingId ? enquiries.find((enquiry) => enquiry.id === respondingId) ?? null : null;
+  const assigning = assigningId ? enquiries.find((enquiry) => enquiry.id === assigningId) ?? null : null;
+  // How many live enquiries each person holds right now, for the Assign sheet.
+  const openCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const enquiry of enquiries) {
+      if (enquiry.handlerUserId && !isPastDate(enquiry) && !enquiry.endedAt) {
+        counts[enquiry.handlerUserId] = (counts[enquiry.handlerUserId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [enquiries]);
+  const recording = recordingId ? enquiries.find((enquiry) => enquiry.id === recordingId) ?? null : null;
+  const closing = closingId ? enquiries.find((enquiry) => enquiry.id === closingId) ?? null : null;
+  const actingOn = actingOnId ? enquiries.find((enquiry) => enquiry.id === actingOnId) ?? null : null;
+
+  /** Clear decision: takes back the Not interested, so Schedule visit is offered again. */
+  async function clearNotInterested(enquiry: EnquiryDetail) {
+    try {
+      await clearDecision({ enquiryId: enquiry.id, version: enquiry.version }).unwrap();
+      setActingOnId(null);
+      toast.show("Decision cleared.", "success");
+    } catch (error) {
+      setActingOnId(null);
+      setCloseRefusal(errorMessage(error));
+    }
+  }
+
+  /** Close enquiry: ends it now, closes its chat, and tells the enquirer in neutral words. */
+  async function closeEnquiry(enquiry: EnquiryDetail) {
+    try {
+      await endEnquiry({ enquiryId: enquiry.id, version: enquiry.version }).unwrap();
+      setClosingId(null);
+      toast.show("Enquiry closed.", "success");
+    } catch (error) {
+      setClosingId(null);
+      setCloseRefusal(errorMessage(error));
+    }
+  }
+  // Every booked visit on the property in one read, so each card can say
+  // "Manage visit" without asking for its own.
+  // Read fresh on every visit to the screen: the tenant books and cancels from
+  // their side of the chat, which nothing on this device hears about.
+  const bookedVisitsQuery = useGetBookedVisitsQuery(selectedProperty?.id ?? "", {
+    refetchOnMountOrArgChange: true,
+    skip: !selectedProperty,
+  });
+  const bookedByEnquiry = useMemo(
+    () => new Map((bookedVisitsQuery.data ?? []).map((visit) => [visit.enquiryId, visit])),
+    [bookedVisitsQuery.data],
+  );
+  const bookedVisitFor = (enquiryId: string) => bookedByEnquiry.get(enquiryId) ?? null;
   // Newest first in both (user, 2026-10-02), so a new arrival lands at the top
   // with its NEW ribbon: All by when it was asked, Mine by when it was handed
   // to the viewer.
@@ -140,7 +279,48 @@ export default function OwnerEnquiriesScreen() {
   // choice: once a bubble is tapped it stays put, an empty All included, where
   // its empty state says so (user, 2026-10-02).
   const effectiveTab: EnquiryTab = tab ?? (unhandled.length === 0 && mine.length > 0 ? "mine" : "all");
-  const visible = effectiveTab === "all" ? unhandled : mine;
+  // A filter on each tab (user, 2026-10-03), All by default: everything still
+  // listed. Open is every live enquiry, and the rest narrow it down. Closed
+  // (My enquiries only) is closed by the handler, until its date. Expired is
+  // what has run out.
+  // All by default on both tabs, and back to All, with the list closed,
+  // whenever the screen is left (user, 2026-10-03).
+  const [mineFilter, setMineFilter] = useState<MineFilter>("ALL");
+  const [allFilter, setAllFilter] = useState<AllFilter>("ALL");
+  const [filterResets, setFilterResets] = useState(0);
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setMineFilter("ALL");
+        setAllFilter("ALL");
+        setFilterResets((count) => count + 1);
+      },
+      [],
+    ),
+  );
+  const isLive = (enquiry: EnquiryDetail) => !isPastDate(enquiry) && !enquiry.endedAt;
+  const mineBuckets: Record<MineFilter, EnquiryDetail[]> = {
+    ALL: mine,
+    CLOSED: mine.filter((enquiry) => !isPastDate(enquiry) && Boolean(enquiry.endedAt)),
+    EXPIRED: mine.filter(isPastDate),
+    INTERESTED: mine.filter(
+      (enquiry) => isLive(enquiry) && enquiry.sentiment === "INTERESTED" && !bookedVisitFor(enquiry.id),
+    ),
+    NOT_INTERESTED: mine.filter((enquiry) => isLive(enquiry) && enquiry.sentiment === "NOT_INTERESTED"),
+    OPEN: mine.filter(isLive),
+    SCHEDULED: mine.filter((enquiry) => isLive(enquiry) && Boolean(bookedVisitFor(enquiry.id))),
+  };
+  const allBuckets: Record<AllFilter, EnquiryDetail[]> = {
+    ALL: unhandled,
+    EXPIRED: unhandled.filter(isPastDate),
+    NEW: unhandled.filter((enquiry) => isLive(enquiry) && isNewToday(enquiry)),
+    OPEN: unhandled.filter(isLive),
+  };
+  const visible = effectiveTab === "all" ? allBuckets[allFilter] : mineBuckets[mineFilter];
+  const filterLabel =
+    effectiveTab === "all"
+      ? ALL_FILTERS.find((option) => option.value === allFilter)!.label
+      : MINE_FILTERS.find((option) => option.value === mineFilter)!.label;
 
   // Red counts for what arrived since each tab was last seen (user,
   // 2026-10-02): enquiries raised since in All, enquiries handed to the viewer
@@ -191,7 +371,25 @@ export default function OwnerEnquiriesScreen() {
             : "Select a property from Home first."
         }
         title="Enquiries"
+        // How enquiries are assigned, the owner's to choose (user, 2026-10-03).
+        // The Account screen's own gear.
+        trailing={
+          isPropertyOwner ? (
+            <AnimatedPressable
+              accessibilityLabel="How enquiries are assigned"
+              hitSlop={10}
+              onPress={() => setAssigningOpen(true)}
+              style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}
+            >
+              <Ionicons color={colors.ink} name="settings" size={22} />
+            </AnimatedPressable>
+          ) : undefined
+        }
       />
+
+      {assigningOpen && selectedProperty ? (
+        <HandlerModeSheet onClose={() => setAssigningOpen(false)} propertyId={selectedProperty.id} />
+      ) : null}
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
         <EmptyState
@@ -217,34 +415,75 @@ export default function OwnerEnquiriesScreen() {
             />
           ) : (
             <>
-              <CountTabPills
+              {/* Two tabs, the Food preference screen's (user, 2026-10-03). The
+                  blue circle counts what is new since the tab was last seen. */}
+              <SelectionTabs<EnquiryTab>
+                active={effectiveTab}
+                bleed={spacing.lg}
+                distributed
                 onChange={changeTab}
                 options={[
-                  // No bracketed totals; the circle carries the news, in the
-                  // Respond button's blue (user, 2026-10-02).
-                  { badge: newInAll, badgeColor: colors.primary, label: "All enquiries", value: "all" as const },
-                  { badge: newInMine, badgeColor: colors.primary, label: "My enquiries", value: "mine" as const },
+                  { badge: newInAll, label: "All enquiries", value: "all" },
+                  { badge: newInMine, label: "My enquiries", value: "mine" },
                 ]}
-                value={effectiveTab}
               />
+              <FilteredQueue
+                count={visible.length}
+                heading={`${filterLabel} enquiries`}
+                // A new one per tab, and per visit to the screen, so its list
+                // starts closed when the tab is switched (user, 2026-10-03).
+                key={`${effectiveTab}-${filterResets}`}
+                // The tenant screen's count pill (user, 2026-10-03): "2 open enquiries".
+                headingNode={
+                  <CountPill
+                    count={visible.length}
+                    kind={filterLabel === "All" ? undefined : filterLabel.toLowerCase()}
+                  />
+                }
+                onChange={(next: string) => {
+                  if (effectiveTab === "all") {
+                    setAllFilter(next as AllFilter);
+                  } else {
+                    setMineFilter(next as MineFilter);
+                  }
+                  setVisibleCount(PAGE_SIZE);
+                }}
+                options={
+                  effectiveTab === "all"
+                    ? ALL_FILTERS.map((option) => ({ ...option, count: allBuckets[option.value].length }))
+                    : MINE_FILTERS.map((option) => ({ ...option, count: mineBuckets[option.value].length }))
+                }
+                value={effectiveTab === "all" ? allFilter : mineFilter}
+              >
               {visible.length === 0 ? (
                 <EmptyState
                   artwork={ENQUIRIES_ILLUSTRATION}
                   artworkTextGap={-6}
                   description={
-                    effectiveTab === "all"
-                      ? "Every enquiry has a handler. Yours are under My enquiries."
-                      : "Enquiries you become the handler for appear here."
+                    (effectiveTab === "all" ? unhandled : mine).length > 0
+                      ? "Pick another filter to see the rest."
+                      : effectiveTab === "all"
+                        ? "Every enquiry has a handler. Yours are under My enquiries."
+                        : "Enquiries you become the handler for appear here."
                   }
-                  title={effectiveTab === "all" ? "Nothing unassigned" : "None handled by you"}
+                  title={
+                    (effectiveTab === "all" ? unhandled : mine).length > 0
+                      ? `No ${filterLabel.toLowerCase()} enquiries`
+                      : effectiveTab === "all"
+                        ? "Nothing unassigned"
+                        : "None handled by you"
+                  }
                 />
               ) : (
-                <>
+                <View style={{ gap: spacing.md }}>
                   {shown.map((enquiry) => (
                     <EnquiryCard
                       enquiry={enquiry}
+                      hasVisit={Boolean(bookedVisitFor(enquiry.id))}
                       key={enquiry.id}
-                      onRespond={() => setResponding(enquiry)}
+                      onActions={() => setActingOnId(enquiry.id)}
+                      onAssign={effectiveTab === "all" && ownerAssigns ? () => setAssigningId(enquiry.id) : undefined}
+                      onRespond={() => setRespondingId(enquiry.id)}
                       onSchedule={() => startScheduling(enquiry)}
                       onViewLog={() => setViewingLog(enquiry)}
                     />
@@ -252,8 +491,9 @@ export default function OwnerEnquiriesScreen() {
                   {/* The list ends by saying so, rather than with a pager whose
                       numbers nobody was using to navigate. */}
                   {!hasMore ? <ListEnd /> : null}
-                </>
+                </View>
               )}
+              </FilteredQueue>
             </>
           )}
         </View>
@@ -262,9 +502,13 @@ export default function OwnerEnquiriesScreen() {
       {responding ? (
         <RespondSheet
           enquiry={responding}
-          onClose={() => setResponding(null)}
+          onClose={() => setRespondingId(null)}
+          onRecord={() => {
+            setRespondingId(null);
+            setRecordingId(responding.id);
+          }}
           onResponded={(channel, chat) => {
-            setResponding(null);
+            setRespondingId(null);
             // Accurate about what happened: the app handed off to the dialer or
             // mail client. Nothing was sent to the enquirer from in here.
             if (channel === "CHAT") {
@@ -282,7 +526,66 @@ export default function OwnerEnquiriesScreen() {
         />
       ) : null}
 
+      {/* How the last call went (owner's design, 2026-10-03). Only while
+          there is still a call to record: once it is, the card's list no
+          longer carries one and this closes itself. */}
+      {recording?.callToSettleId ? (
+        <RecordResponseSheet
+          enquiry={recording}
+          onClose={() => setRecordingId(null)}
+          onRecorded={(result, detail, scheduleVisit) => {
+            setRecordingId(null);
+            if (scheduleVisit) {
+              // Interested and Yes: straight into booking, which the answer
+              // has just unlocked.
+              startScheduling(detail);
+              return;
+            }
+            toast.show(
+              result === "NO_ANSWER" || result === "REJECTED" ? "Marked as a failed attempt." : "Response recorded.",
+              "success",
+            );
+          }}
+        />
+      ) : null}
+
       {viewingLog ? <ActionLogSheet enquiry={viewingLog} onClose={() => setViewingLog(null)} /> : null}
+
+      {assigning && selectedProperty ? (
+        <AssignHandlerSheet
+          enquiry={assigning}
+          onClose={() => setAssigningId(null)}
+          openCounts={openCounts}
+          propertyId={selectedProperty.id}
+        />
+      ) : null}
+
+      {/* What to do with a Not interested enquiry is the handler's call
+          (owner's design, 2026-10-03). */}
+      {actingOn ? (
+        <NotInterestedActionsSheet
+          busy={clearState.isLoading}
+          enquiry={actingOn}
+          onClear={() => void clearNotInterested(actingOn)}
+          onClose={() => setActingOnId(null)}
+          onCloseEnquiry={() => {
+            setActingOnId(null);
+            setClosingId(actingOn.id);
+          }}
+        />
+      ) : null}
+
+      {closing ? (
+        <ConfirmDialog
+          confirmLabel={endState.isLoading ? "Closing" : "Close enquiry"}
+          destructive
+          message={`It ends now and its chat closes. ${firstName(closing.enquirerName)} can enquire again if they change their mind.`}
+          onCancel={() => setClosingId(null)}
+          onConfirm={() => void closeEnquiry(closing)}
+          title="Close this enquiry?"
+        />
+      ) : null}
+      {closeRefusal ? <AlertModal message={closeRefusal} onClose={() => setCloseRefusal(null)} /> : null}
 
       {visitBlocked ? <VisitBlockedDialog onClose={() => setVisitBlocked(false)} /> : null}
 
@@ -291,8 +594,19 @@ export default function OwnerEnquiriesScreen() {
         <VisitSheet
           enquiryId={scheduling.id}
           onClose={() => setScheduling(null)}
+          personName={scheduling.enquirerName}
           propertyId={selectedProperty.id}
           viewer={scheduling.viewerMayAct === false ? "OTHER_MANAGEMENT" : "ACTING_MANAGEMENT"}
+        />
+      ) : null}
+
+      {/* The same sheet the chat's "Scheduled" pill opens: move or cancel. */}
+      {managing && selectedProperty ? (
+        <ManageVisitSheet
+          enquiryId={managing.id}
+          onClose={() => setManaging(null)}
+          personName={managing.enquirerName}
+          propertyId={selectedProperty.id}
         />
       ) : null}
     </ScreenScrollView>
@@ -301,11 +615,19 @@ export default function OwnerEnquiriesScreen() {
 
 function EnquiryCard({
   enquiry,
+  hasVisit,
+  onActions,
+  onAssign,
   onRespond,
   onSchedule,
   onViewLog,
 }: {
   enquiry: EnquiryDetail;
+  /** A visit is booked on it and not yet done: the button manages it instead. */
+  hasVisit: boolean;
+  onActions: () => void;
+  /** Set when the owner assigns by hand: Assign takes Schedule visit's place. */
+  onAssign?: () => void;
   onRespond: () => void;
   onSchedule: () => void;
   onViewLog: () => void;
@@ -321,21 +643,49 @@ function EnquiryCard({
   // enquirer has already been freed to ask again. Only NEW ages out: a
   // RESPONDED enquiry is finished, and the date passing does not un-answer it.
   const isExpired = enquiry.status === "EXPIRED" || hasLapsed(enquiry);
-  const isNew = isNewToday(enquiry) && !isExpired;
-  const canAct = !isExpired && enquiry.viewerMayAct !== false;
+  // Closed by the handler. It reads so until its usual date, then Expired
+  // (owner's rule, 2026-10-03).
+  const isClosed = !isExpired && Boolean(enquiry.endedAt);
+  const isNew = isNewToday(enquiry) && !isExpired && !isClosed;
+  const canAct = !isExpired && !isClosed && enquiry.viewerMayAct !== false;
+  // Marked not interested with no visit booked: Actions takes Schedule
+  // visit's place, under a red line saying so (owner's design, 2026-10-03).
+  const notInterested = enquiry.sentiment === "NOT_INTERESTED" && !hasVisit;
+  // They took the Not interested back themselves.
+  const changedMind = Boolean(enquiry.tenantChangedMindAt) && enquiry.sentiment === "INTERESTED";
+  // Its visit was cancelled and none is booked again: a Visit cancelled tag,
+  // and why, under the intent line (owner's design, 2026-10-03).
+  const cancelledVisit = !hasVisit && !isExpired && !isClosed ? enquiry.cancelledVisit ?? null : null;
+  const cancelLine = cancelledVisit
+    ? `Visit cancelled by ${cancelledVisit.byTenant ? firstName(enquiry.enquirerName) : "the property"}` +
+      (cancelledVisit.reason ? `: ${cancelledVisit.reason}` : "")
+    : null;
+  // Interested after a cancelled visit gets the green intent line too, to carry why.
+  const showInterested =
+    !isExpired && !isClosed && enquiry.sentiment === "INTERESTED" && (changedMind || Boolean(cancelledVisit));
+  // What held them back, from the call that recorded it, if one did.
+  const heldBack = enquiry.responses.find((response) => response.callResult === "ACCEPTED_NOT_INTERESTED")?.note ?? null;
 
   return (
     <Card style={{ overflow: "hidden" }}>
-      {isNew ? <NewRibbon /> : null}
+      {/* Outside the dimmed body, so a closed card's CLOSED band stays at full
+          strength (user, 2026-10-03). */}
+      {isNew ? (
+        <CornerRibbon accessibilityLabel="New enquiry" band={colors.danger} fold={RIBBON_FOLD} label="NEW" />
+      ) : isClosed ? (
+        <CornerRibbon accessibilityLabel="Closed enquiry" band={colors.muted} fold={colors.neutralText} label="CLOSED" />
+      ) : null}
       {/* Dimmed as a whole rather than restyling every line: an expired enquiry
           is still readable, just plainly no longer something to act on. */}
-      <View style={{ gap: spacing.xs, opacity: isExpired ? 0.55 : 1 }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: isNew ? 44 : 0 }}>
-          <User color={colors.ink} fill={colors.ink} size={14} />
-          <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 17, lineHeight: 22 }]} numberOfLines={1}>
+      <View style={{ gap: spacing.xs, opacity: isExpired || isClosed ? 0.55 : 1 }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: isNew || isClosed ? 44 : 0 }}>
+          <User color={colors.ink} fill={colors.ink} size={20} />
+          <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 28 }]} numberOfLines={1}>
             {enquiry.enquirerName ?? "Someone"}
           </Text>
         </View>
+        {/* Sized like the property name on My enquiries, with a rule under it (user, 2026-10-03). */}
+        <CardRule />
 
         {/* When it was asked and when it runs out, both as pills straight
             under the name (user, 2026-10-02); the phone number went, the
@@ -347,40 +697,199 @@ function EnquiryCard({
             </Text>
           </View>
           <ExpiryChip expired={isExpired} expiresAt={enquiry.expiresAt} />
+          {/* How long a Not interested enquiry has left before it closes by
+              itself, beside its other dates (user, 2026-10-03). */}
+          {notInterested && enquiry.notInterestedClosesAt && !isClosed && !isExpired ? (
+            <ClosesInChip closesAt={enquiry.notInterestedClosesAt} />
+          ) : null}
+          {/* A booked visit, on the card itself (user, 2026-10-03). */}
+          {hasVisit && !isExpired ? (
+            <TagPill icon={CalendarCheck} iconColor={colors.successText} label="Visit scheduled" />
+          ) : null}
+          {cancelledVisit ? (
+            <TagPill icon={CalendarX} iconColor={colors.danger} iconFaded label="Visit cancelled" />
+          ) : null}
+          {isExpired && enquiry.endReason ? <EndReasonPill reason={enquiry.endReason} /> : null}
         </View>
 
         {/* The concern cards' description face, a weight heavier
             (user, 2026-10-02). */}
-        <Text style={[type.description, { color: colors.ink, fontFamily: fonts.sansSemiBold, marginTop: 2 }]}>
-          {enquiry.message}
-        </Text>
+        {/* A message mark before it, with no box, a little below the tags (user, 2026-10-03). */}
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+          <View style={{ paddingTop: 2 }}>
+            <MessageSquare color={colors.muted} size={15} strokeWidth={2.2} />
+          </View>
+          <Text style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold }]}>
+            {enquiry.message}
+          </Text>
+        </View>
+
+        {notInterested && !isExpired ? (
+          <View
+            style={{
+              backgroundColor: colors.dangerSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              // A little below the message, as the message is below the tags (user, 2026-10-03).
+              marginTop: spacing.xs,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <Text style={[type.description, { color: colors.danger }]}>
+              <Text style={{ fontFamily: fonts.sansBold }}>{heldBack ? "Not interested:" : "Not interested"}</Text>
+              {heldBack ? ` ${heldBack}` : ""}
+            </Text>
+            {cancelLine ? <Text style={[type.caption, { color: colors.danger }]}>{cancelLine}</Text> : null}
+          </View>
+        ) : null}
+
+        {showInterested ? (
+          <View
+            style={{
+              backgroundColor: colors.successSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              // A little below the message, as the message is below the tags (user, 2026-10-03).
+              marginTop: spacing.xs,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <Text style={[type.description, { color: colors.successText }]}>
+              <Text style={{ fontFamily: fonts.sansBold }}>{changedMind ? "Interested:" : "Interested"}</Text>
+              {changedMind ? " Tenant changed mind" : ""}
+            </Text>
+            {cancelLine ? <Text style={[type.caption, { color: colors.successText }]}>{cancelLine}</Text> : null}
+          </View>
+        ) : null}
 
         {/* Respond and Schedule visit share the row; the log is a disc beside
             them. What was done and by whom lives behind it rather than on the
             card — history on every card buries the message that matters. */}
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+          {/* Gone while a visit is booked (owner's rule, 2026-10-03): booking
+              settles any waiting call, and the visit is what is left to manage.
+              Back once it is cancelled. */}
+          {hasVisit ? null : (
+            <View style={{ flex: 1 }}>
+              {/* Blocked once expired or closed, and refused by the server too:
+                  the card may have been rendered before the sweep ran. */}
+              <ActionButton
+                compact
+                disabled={!canAct}
+                label={hasReachedOut(enquiry) ? "Follow up" : "Respond"}
+                onPress={onRespond}
+              />
+            </View>
+          )}
           <View style={{ flex: 1 }}>
-            {/* Blocked once expired, and refused by the server too: the card may
-                have been rendered before the sweep ran. */}
-            <ActionButton compact disabled={!canAct} label="Respond" onPress={onRespond} />
-          </View>
-          <View style={{ flex: 1 }}>
-            {/* Tappable before a response, where it explains why it is blocked;
-                the server refuses a booking before that as well. */}
-            <ActionButton
-              compact
-              disabled={!canAct}
-              icon={CalendarPlus}
-              label="Schedule visit"
-              onPress={onSchedule}
-              variant="secondary"
-            />
+            {onAssign ? (
+              <ActionButton
+                compact
+                disabled={!canAct}
+                icon={UserPlus}
+                label="Assign"
+                onPress={onAssign}
+                variant="secondary"
+              />
+            ) : notInterested ? (
+              <ActionButton
+                compact
+                disabled={!canAct}
+                icon={Ellipsis}
+                label="Actions"
+                onPress={onActions}
+                variant="secondary"
+              />
+            ) : (
+              // Tappable before a response, where it explains why it is
+              // blocked. The server refuses a booking before that as well.
+              <ActionButton
+                compact
+                disabled={!canAct}
+                icon={hasVisit ? CalendarCheck : CalendarPlus}
+                label={hasVisit ? "Manage visit" : "Schedule visit"}
+                onPress={onSchedule}
+                variant="secondary"
+              />
+            )}
           </View>
           <ActionLogButton count={enquiry.responses.length} onPress={onViewLog} />
         </View>
       </View>
     </Card>
   );
+}
+
+/**
+ * What the handler may do with a Not interested enquiry (owner's design,
+ * 2026-10-03): take the decision back, or close it. Left alone, it closes by
+ * itself 7 days after it was marked.
+ */
+function NotInterestedActionsSheet({
+  busy,
+  enquiry,
+  onClear,
+  onClose,
+  onCloseEnquiry,
+}: {
+  busy: boolean;
+  enquiry: EnquiryDetail;
+  onClear: () => void;
+  onClose: () => void;
+  onCloseEnquiry: () => void;
+}) {
+  const { colors, type } = useTheme();
+  return (
+    <SheetShell onClose={onClose} title="Actions">
+      <Text style={[type.modalDescription, { color: colors.muted }]}>
+        {enquiry.notInterestedClosesAt
+          ? `${firstName(enquiry.enquirerName)} is marked not interested. It closes by itself on ${formatExpiryDate(enquiry.notInterestedClosesAt)}.`
+          : `${firstName(enquiry.enquirerName)} is marked not interested.`}
+      </Text>
+      <ChannelOption
+        icon={RotateCcw}
+        label={busy ? "Clearing" : "Clear decision"}
+        onPress={onClear}
+        subtitle="Brings Schedule visit back"
+      />
+      <ChannelOption
+        danger
+        icon={CircleX}
+        label="Close enquiry"
+        onPress={onCloseEnquiry}
+        subtitle="Ends it now and closes its chat"
+      />
+    </SheetShell>
+  );
+}
+
+/**
+ * Why an expired enquiry ended (owner's design, 2026-10-03). Red where the
+ * property let it go or they said no, amber where they never picked up.
+ */
+function EndReasonPill({ reason }: { reason: EnquiryEndReason }) {
+  const { label, tone } = END_REASONS[reason];
+  return <StatusPill label={label} tone={tone} />;
+}
+
+const END_REASONS: Record<EnquiryEndReason, { label: string; tone: "danger" | "warning" | "neutral" | "success" }> = {
+  HANDLER_DID_NOT_RESPOND: { label: "Handler didn't respond", tone: "danger" },
+  TENANT_DID_NOT_RESPOND: { label: "Tenant didn't respond", tone: "warning" },
+  NOT_INTERESTED: { label: "Not interested", tone: "danger" },
+  NO_VISIT_BOOKED: { label: "No visit booked", tone: "neutral" },
+  VISIT_CANCELLED: { label: "Visit cancelled", tone: "neutral" },
+  VISIT_BOOKED: { label: "Visit booked", tone: "success" },
+};
+
+/**
+ * Whether someone has already reached out: a chat message sent, or a call made
+ * (owner's rule, 2026-10-03). Each is an attempt in the action log. Opening the
+ * chat without writing in it is not one, so it is still a first response.
+ */
+function hasReachedOut(enquiry: EnquiryDetail) {
+  return enquiry.responses.length > 0;
 }
 
 function newestFirst(list: EnquiryDetail[], when: (enquiry: EnquiryDetail) => string) {
@@ -394,68 +903,6 @@ function newestFirst(list: EnquiryDetail[], when: (enquiry: EnquiryDetail) => st
 function isNewToday(enquiry: EnquiryDetail) {
   return calendarDaysAgo(new Date(enquiry.createdAt)) <= 0 && !enquiry.handlerUserId;
 }
-
-/** The ribbon's square in the card's corner; the band crosses it at 45 degrees. */
-const RIBBON_BOX = 76;
-/** The darker folds where the band tucks behind the card's two edges. */
-const RIBBON_TAIL = 6;
-
-/**
- * The NEW tag, drawn as the sale sticker it was modelled on (user,
- * 2026-10-02): a red band across the card's top-right corner, reading down to
- * the right, with a darker fold at each end where it wraps the edge. The card's
- * own rounding clips the corner.
- *
- * <p>Shown only while {@link isNewToday}: a reply under first-response mode
- * makes the replier the handler, so an answered enquiry has already lost it.
- */
-function NewRibbon() {
-  const { colors, fonts } = useTheme();
-  // Right-angled triangles, square corner up and right: each sits against the
-  // band's outer edge where it meets the card edge, the fold of the wrap.
-  const tail = {
-    borderLeftColor: "transparent",
-    borderLeftWidth: RIBBON_TAIL,
-    borderTopColor: RIBBON_FOLD,
-    borderTopWidth: RIBBON_TAIL,
-    height: 0,
-    position: "absolute" as const,
-    width: 0,
-  };
-  return (
-    <View
-      accessibilityLabel="New enquiry"
-      pointerEvents="none"
-      style={{ height: RIBBON_BOX, overflow: "hidden", position: "absolute", right: 0, top: 0, width: RIBBON_BOX, zIndex: 1 }}
-    >
-      <View style={[tail, { left: 5, top: 0 }]} />
-      <View style={[tail, { left: RIBBON_BOX - RIBBON_TAIL, top: RIBBON_BOX - 11 }]} />
-      <View
-        style={{
-          backgroundColor: colors.danger,
-          paddingVertical: 3,
-          position: "absolute",
-          right: -30,
-          shadowColor: "#000000",
-          shadowOffset: { height: 1, width: 0 },
-          shadowOpacity: 0.18,
-          shadowRadius: 2,
-          elevation: 2,
-          top: 16,
-          transform: [{ rotate: "45deg" }],
-          width: 110,
-        }}
-      >
-        <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.2, textAlign: "center" }}>
-          NEW
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-/** The underside of the band, seen where it folds back. */
-const RIBBON_FOLD = "#991B1B";
 
 /**
  * Why Schedule visit cannot book yet (user, 2026-10-02).
@@ -561,6 +1008,11 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
  * and it read as live because its status was `RESPONDED` rather than `EXPIRED`
  * and nothing was comparing the date.
  */
+/** Past its date by the clock, or recorded as expired by the sweep. */
+function isPastDate(enquiry: EnquiryDetail) {
+  return enquiry.status === "EXPIRED" || hasLapsed(enquiry);
+}
+
 function hasLapsed(enquiry: EnquiryDetail) {
   return Date.parse(enquiry.expiresAt) <= Date.now();
 }
@@ -604,6 +1056,11 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
           <Text style={[type.caption, { color: colors.kicker }]}>
             {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
           </Text>
+          {response.channel === "CALL_BACK" ? (
+            <Text style={[type.caption, { color: response.outcome === "FAILED" ? colors.danger : colors.ink }]}>
+              {describeCallOutcome(response)}
+            </Text>
+          ) : null}
           {response.note ? (
             <Text style={[type.modalDescription, { color: colors.muted, marginTop: 2 }]}>
               {response.note}
@@ -615,13 +1072,28 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
   );
 }
 
+/** "Accepted, interested · 12m 30s", "Rejected call", "Waiting for a response to be recorded". */
+function describeCallOutcome(response: EnquiryDetail["responses"][number]) {
+  if (response.callResult) {
+    const result = describeCallResult(response.callResult);
+    return response.durationSeconds != null ? `${result} · ${formatCallDuration(response.durationSeconds)}` : result;
+  }
+  if (response.outcome === "SUCCEEDED") {
+    return "They responded";
+  }
+  return response.outcome === "FAILED" ? "No response" : "Waiting for a response to be recorded";
+}
+
 function RespondSheet({
   enquiry,
   onClose,
+  onRecord,
   onResponded,
 }: {
   enquiry: EnquiryDetail;
   onClose: () => void;
+  /** The viewer's call is waiting for "Record response": open that sheet instead. */
+  onRecord: () => void;
   /**
    * @param chat the conversation to open, for a chat reply only. Handed up
    *             rather than opened here: this sheet is a modal, and a screen
@@ -635,6 +1107,12 @@ function RespondSheet({
 
   const emailChannel = enquiry.reachableChannels.find((channel) => channel.channel === "EMAIL");
   const callChannel = enquiry.reachableChannels.find((channel) => channel.channel === "CALL_BACK");
+  // A call still waiting for its answer. Nobody can call again until it has
+  // one, so the call row stays on top and asks for it (owner's design,
+  // 2026-10-03). Back to "Call back" once it is recorded.
+  const openCall = enquiry.callToSettleId
+    ? enquiry.responses.find((response) => response.id === enquiry.callToSettleId) ?? null
+    : null;
 
   /**
    * Hands the conversation to the phone, and records that it happened.
@@ -709,7 +1187,14 @@ function RespondSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title={`Respond to ${firstName(enquiry.enquirerName)}`}>
+    <SheetShell
+      onClose={onClose}
+      title={
+        hasReachedOut(enquiry)
+          ? `Follow up with ${firstName(enquiry.enquirerName)}`
+          : `Respond to ${firstName(enquiry.enquirerName)}`
+      }
+    >
       {/* "nothing is sent from inside the app" went with the dash. It stopped
           being true when chat became a real reply: that one IS sent from in
           here, and the line was promising the opposite directly above it. */}
@@ -723,7 +1208,24 @@ function RespondSheet({
           channel someone declined is not management's business and showing it
           invites working around it. Absent says the same thing without either
           problem. */}
-      {callChannel ? (
+      {enquiry.callToSettleId && enquiry.viewerSettlesCall ? (
+        <ChannelOption
+          icon={Phone}
+          label="Record response"
+          onPress={onRecord}
+          subtitle={openCall ? `Your call on ${formatCallTime(openCall.respondedAt)} needs an answer` : "Your call needs an answer"}
+        />
+      ) : enquiry.callToSettleId && callChannel ? (
+        // Someone else's call, not yet recorded: theirs to answer.
+        <ChannelOption
+          icon={Phone}
+          label="Call back"
+          onPress={() =>
+            setError(`Wait for ${openCall?.respondedByName ?? "the caller"} to record how their call went.`)
+          }
+          subtitle={`${openCall?.respondedByName ?? "Someone"}'s call needs an answer first`}
+        />
+      ) : callChannel ? (
         <ChannelOption
           icon={Phone}
           label="Call back"
@@ -775,11 +1277,14 @@ function RespondSheet({
  * `dashed` and `disabled` props that dressed one went with it.
  */
 function ChannelOption({
+  danger = false,
   icon: Icon,
   label,
   onPress,
   subtitle,
 }: {
+  /** Red label and icon, for an option that ends something (Close enquiry). */
+  danger?: boolean;
   icon: typeof Phone;
   label: string;
   onPress: () => void;
@@ -805,9 +1310,9 @@ function ChannelOption({
     >
       {/* Ink, not primary. These are equal choices of how to reach someone —
           blue made each one read as the recommended action, which none is. */}
-      <Icon color={colors.ink} size={18} strokeWidth={2.2} />
+      <Icon color={danger ? colors.danger : colors.ink} size={18} strokeWidth={2.2} />
       <View style={{ flex: 1, gap: 1 }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+        <Text style={{ color: danger ? colors.danger : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {label}
         </Text>
         <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>

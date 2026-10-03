@@ -17,6 +17,7 @@ import com.khatiyan.d_modules.enquiry.event.EnquiryExpiredEvent;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
 import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
+import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryResponseRepository;
@@ -95,6 +96,10 @@ public class EnquiryExpirySchedulerService {
                 return false;
             }
             enquiry.expire();
+            // Why: nobody tried, or the attempts never reached them.
+            enquiry.recordEndReason(enquiryResponseRepository.existsByEnquiryId(id)
+                    ? EnquiryEndReason.TENANT_DID_NOT_RESPOND
+                    : EnquiryEndReason.HANDLER_DID_NOT_RESPOND);
             // Published inside the record's transaction, so the event is stored
             // only if the expiry is.
             eventPublisher.publishEvent(new EnquiryExpiredEvent(
@@ -122,7 +127,21 @@ public class EnquiryExpirySchedulerService {
         int chatsClosed = recordByRecord.run(
                 "enquiry-chat-close", chatsToClose, id -> id, enquiryService::closeChatOfExpired);
 
-        log.info("Enquiry expiry sweep aged out {} unanswered enquiries, closed {} open attempts and {} chats",
-                expired, closed, chatsClosed);
+        // Not interested and left alone for 7 days: closed (owner's design,
+        // 2026-10-03). Before the window close below, so the reason is theirs.
+        List<UUID> notInterested = enquiryRepository.findIdsNotInterestedSince(
+                now.minus(Enquiry.NOT_INTERESTED_GRACE), now);
+        int notInterestedClosed = recordByRecord.run(
+                "enquiry-not-interested-close", notInterested, id -> id, enquiryService::closeNotInterestedAfterGrace);
+
+        // Answered enquiries do not change status when their date passes, so the
+        // pipeline is told here, once each (2026-10-03).
+        List<UUID> answeredPast = enquiryRepository.findIdsAnsweredPastWindow(now);
+        int windowsClosed = recordByRecord.run(
+                "enquiry-window-close", answeredPast, id -> id, enquiryService::closeWindowOfAnswered);
+
+        log.info("Enquiry expiry sweep aged out {} unanswered enquiries, closed {} open attempts and {} chats,"
+                + " closed {} left not interested, and closed the window of {} answered ones",
+                expired, closed, chatsClosed, notInterestedClosed, windowsClosed);
     }
 }

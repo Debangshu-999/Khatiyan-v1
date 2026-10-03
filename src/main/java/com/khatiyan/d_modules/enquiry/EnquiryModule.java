@@ -55,6 +55,30 @@ public class EnquiryModule {
     }
 
     /**
+     * A visit was booked on this enquiry. Settles a call still waiting for its
+     * answer as Accepted: Interested, and marks the enquiry Interested. Runs in
+     * the booking's transaction.
+     */
+    public void visitBooked(UUID enquiryId, UUID bookedByUserId) {
+        enquiryService.onVisitBooked(enquiryId, bookedByUserId);
+    }
+
+    /**
+     * A visit on this enquiry was cancelled. Its intent follows the answer to
+     * "still interested?": Interested, or Not interested with its 7 days. Runs
+     * in the cancel's transaction.
+     */
+    public void visitCancelled(UUID enquiryId, UUID cancelledByUserId, boolean stillInterested) {
+        enquiryService.onVisitCancelled(enquiryId, cancelledByUserId, stillInterested);
+    }
+
+    /** Whether any of these enquiries is still inside its window. */
+    @Transactional(readOnly = true)
+    public boolean anyLive(Collection<UUID> enquiryIds) {
+        return !enquiryIds.isEmpty() && enquiryRepository.existsLiveAmong(enquiryIds, Instant.now());
+    }
+
+    /**
      * Whether any of these enquiries is still waiting on an answer and inside
      * its window. The leads pipeline asks before closing a record as unanswered.
      */

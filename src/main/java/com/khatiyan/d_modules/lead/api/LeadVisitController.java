@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.lead.api;
 
+import com.khatiyan.d_modules.lead.api.dto.CancelVisitRequest;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
+import com.khatiyan.d_modules.lead.api.dto.BookedVisitResponse;
 import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.ScheduleVisitRequest;
@@ -49,6 +52,14 @@ public class LeadVisitController {
         return leadVisitService.chatActions(user.userId(), enquiryId);
     }
 
+    /** The visits booked on the property's enquiries and not yet done: the Enquiries card's "Manage visit". */
+    @GetMapping("/properties/{propertyId}/booked-visits")
+    public List<BookedVisitResponse> bookedVisits(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return leadVisitService.bookedVisits(user.userId(), propertyId);
+    }
+
     /** The dates and slots open for a visit, from tomorrow to 30 days ahead, with the places left. */
     @GetMapping("/properties/{propertyId}/visit-availability")
     public VisitAvailabilityResponse availability(@PathVariable UUID propertyId) {
@@ -64,6 +75,16 @@ public class LeadVisitController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(leadVisitService.schedule(user.userId(), enquiryId, request));
+    }
+
+    /** Cancels a visit, from either side. The person is back at Enquired and may book again. */
+    @PostMapping("/visits/{visitId}/cancel")
+    @RequiresVersion
+    public VisitResponse cancel(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID visitId,
+            @Valid @RequestBody CancelVisitRequest request) {
+        return leadVisitService.cancel(user.userId(), visitId, request);
     }
 
     /** Moves a visit. The prospect may twice. */

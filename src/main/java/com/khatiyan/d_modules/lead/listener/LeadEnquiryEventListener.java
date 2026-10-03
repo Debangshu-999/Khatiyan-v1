@@ -10,12 +10,13 @@ import com.khatiyan.d_modules.enquiry.event.EnquiryExpiredEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryHandlerAssignedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRaisedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRespondedEvent;
+import com.khatiyan.d_modules.enquiry.event.EnquiryWindowClosedEvent;
 import com.khatiyan.d_modules.lead.service.LeadPipelineService;
 
 /**
  * Every change to an enquiry prompts its lead to catch up.
  *
- * <p>All five handlers do the same thing on purpose. Each event says only that
+ * <p>All six handlers do the same thing on purpose. Each event says only that
  * something about the enquiry changed. What changed is read from the enquiry
  * itself, so a repeated or late event cannot leave the lead wrong. See
  * {@link LeadPipelineService}.
@@ -46,6 +47,11 @@ public class LeadEnquiryEventListener {
 
     @ApplicationModuleListener
     public void onEnquiryEnded(EnquiryEndedEvent event) {
+        catchUp(event.enquiryId(), event.propertyId(), event.enquirerUserId());
+    }
+
+    @ApplicationModuleListener
+    public void onEnquiryWindowClosed(EnquiryWindowClosedEvent event) {
         catchUp(event.enquiryId(), event.propertyId(), event.enquirerUserId());
     }
 

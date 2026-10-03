@@ -1,15 +1,21 @@
 package com.khatiyan.d_modules.chat.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -20,7 +26,9 @@ import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.c_shared.rate_limit.RateLimitService;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.chat.api.dto.SendChatMessageRequest;
+import com.khatiyan.d_modules.chat.model.ChatMessage;
 import com.khatiyan.d_modules.chat.model.ChatThread;
+import com.khatiyan.d_modules.chat.model.ChatThreadOrigin;
 import com.khatiyan.d_modules.chat.repository.ChatMessageRepository;
 import com.khatiyan.d_modules.chat.repository.ChatReadStateRepository;
 import com.khatiyan.d_modules.chat.repository.ChatThreadMemberRepository;
@@ -53,6 +61,7 @@ class ChatServiceGuardTest {
     @Mock private PropertyModule propertyModule;
     @Mock private TenancyModule tenancyModule;
     @Mock private AuthModule authModule;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private ChatService chatService;
 
@@ -102,6 +111,50 @@ class ChatServiceGuardTest {
         chatService.closeThread(ACTOR, thread.getId());
 
         assertThatThrownBy(thread::ensureWritable).isInstanceOf(ValidationException.class);
+    }
+
+    /**
+     * A new enquiry conversation opens with what was asked, in the enquirer's
+     * name (user, 2026-10-03). Placed, not sent: nobody is notified, and no
+     * event goes out, because the enquiry module would read it as their reply.
+     */
+    @Test
+    void anEnquiryConversationOpensWithTheEnquirersQuestion() {
+        UUID enquiry = UUID.randomUUID();
+        UUID enquirer = UUID.randomUUID();
+        when(chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiry))
+                .thenReturn(Optional.empty());
+        when(chatThreadRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatMessageRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            ChatMessage saved = spy((ChatMessage) invocation.getArgument(0));
+            doReturn(1L).when(saved).getSeq();
+            return saved;
+        });
+        when(chatReadStateRepository.findByThreadIdAndUserId(any(), any())).thenReturn(Optional.empty());
+        when(chatReadStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatThread thread = chatService.openEnquiryThread(PROPERTY, enquiry, enquirer, ACTOR, "Is a single room free?");
+
+        ArgumentCaptor<ChatMessage> placed = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository).saveAndFlush(placed.capture());
+        assertThat(placed.getValue().getAuthorUserId()).isEqualTo(enquirer);
+        assertThat(placed.getValue().getBody()).isEqualTo("Is a single room free?");
+        assertThat(placed.getValue().getThreadId()).isEqualTo(thread.getId());
+        verify(chatNotifier, never()).announce(any(), any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** Opening it again joins the conversation that exists, and does not repeat the question. */
+    @Test
+    void reopeningAnEnquiryConversationDoesNotRepeatTheQuestion() {
+        UUID enquiry = UUID.randomUUID();
+        ChatThread existing = ChatThread.forEnquiry(PROPERTY, enquiry);
+        when(chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiry))
+                .thenReturn(Optional.of(existing));
+
+        assertThat(chatService.openEnquiryThread(PROPERTY, enquiry, UUID.randomUUID(), ACTOR, "Is a single room free?"))
+                .isSameAs(existing);
+        verify(chatMessageRepository, never()).saveAndFlush(any());
     }
 
     @Test

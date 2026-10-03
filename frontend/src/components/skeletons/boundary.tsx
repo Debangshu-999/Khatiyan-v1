@@ -133,6 +133,21 @@ export function GhostIcon({
 }
 
 /**
+ * A block that fills its row, such as a button, as a rounded bar of its own
+ * height. A pill is short and sized by hand, and a button takes whatever width
+ * its row gives it.
+ */
+export function GhostBlock({ children, height = 40 }: { children: ReactNode; height?: number }) {
+  const isSkeleton = useIsSkeleton();
+
+  if (!isSkeleton) {
+    return <>{children}</>;
+  }
+
+  return <Skeleton height={height} radius={10} width="100%" />;
+}
+
+/**
  * A pill — a status badge, a chip — as a rounded bar of its own height.
  *
  * <p>Wraps rather than replaces, because badges are composed differently in

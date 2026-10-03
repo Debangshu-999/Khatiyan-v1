@@ -19,6 +19,15 @@ export type ReachableChannel = {
   target: string;
 };
 
+/** Whether an attempt reached them. OPEN on a call still waiting for "Record response". */
+export type EnquiryAttemptOutcome = "OPEN" | "SUCCEEDED" | "FAILED";
+
+/**
+ * How a call went, as "Record response" records it (2026-10-03). The first two
+ * fail the call, the accepted two succeed and set the sentiment.
+ */
+export type EnquiryCallResult = "NO_ANSWER" | "REJECTED" | "ACCEPTED_INTERESTED" | "ACCEPTED_NOT_INTERESTED";
+
 export type EnquiryResponseView = {
   id: string;
   channel: EnquiryResponseChannel;
@@ -26,6 +35,62 @@ export type EnquiryResponseView = {
   respondedByName: string | null;
   note: string | null;
   respondedAt: string;
+  outcome: EnquiryAttemptOutcome | null;
+  settledAt: string | null;
+  /** Calls recorded through "Record response" only. */
+  callResult: EnquiryCallResult | null;
+  /** How long an accepted call ran, when the handler said. */
+  durationSeconds: number | null;
+};
+
+/** How a new enquiry finds its handler. */
+export type EnquiryHandlerMode = "SYSTEM_TURNS" | "FIRST_RESPONSE" | "OWNER_ASSIGNS";
+
+/** A property's choice. `configured` is false, and `version` null, until the owner first picks. */
+export type EnquiryHandlerSettings = {
+  propertyId: string;
+  mode: EnquiryHandlerMode;
+  /** Whether the owner takes a turn when the system assigns. */
+  includeOwner: boolean;
+  configured: boolean;
+  version: number | null;
+};
+
+/** Why an enquiry ended (2026-10-03). Stored when it ends. */
+export type EnquiryEndReason =
+  | "HANDLER_DID_NOT_RESPOND"
+  | "TENANT_DID_NOT_RESPOND"
+  | "NOT_INTERESTED"
+  | "NO_VISIT_BOOKED"
+  | "VISIT_CANCELLED"
+  | "VISIT_BOOKED";
+
+/** Where an enquiry stands for the person who raised it. Never the handler's reading. */
+export type MyEnquiryState = "AWAITING_REPLY" | "ANSWERED" | "CLOSED" | "EXPIRED";
+
+/** One row of My enquiries. */
+export type MyEnquiryItem = {
+  id: string;
+  propertyId: string;
+  propertyName: string;
+  message: string;
+  askedAt: string;
+  expiresAt: string;
+  /** When the property first reached them. Null until then. */
+  answeredAt: string | null;
+  state: MyEnquiryState;
+  closedAt: string | null;
+  chatThreadId: string | null;
+  /** The visit still booked on it: "yyyy-mm-dd" and "HH:mm:ss". */
+  visitDate: string | null;
+  visitStart: string | null;
+  /** Its visit was cancelled and none is booked again: "Visit cancelled". */
+  visitCancelledAt: string | null;
+  /** Marked not interested and still open: when it closes by itself. */
+  notInterestedClosesAt: string | null;
+  /** Whether "Changed your mind?" is still on offer. Once only. */
+  canChangeMind: boolean;
+  version: number;
 };
 
 export type EnquiryDetail = {
@@ -34,7 +99,7 @@ export type EnquiryDetail = {
   message: string;
   status: EnquiryStatus;
   createdAt: string;
-  /** Still sent after it has passed — the card shows it for a further day. */
+  /** Still sent after it has passed: the card shows it for 30 more days. */
   expiresAt: string;
   enquirerUserId: string;
   enquirerName: string | null;
@@ -58,6 +123,25 @@ export type EnquiryDetail = {
   respondedAt?: string | null;
   /** Whether the person asking may act on it: its handler, the owner, or anyone while unhandled. */
   viewerMayAct?: boolean;
+  /**
+   * The call still waiting for "Record response", if there is one. A new call
+   * cannot start until it is answered.
+   */
+  callToSettleId?: string | null;
+  /** Whether the person asking is the one to answer it: they made the call. */
+  viewerSettlesCall?: boolean;
+  /** The handler's reading of the enquirer. Never sent to the enquirer. */
+  sentiment?: "INTERESTED" | "NOT_INTERESTED" | null;
+  /** When the handler closed it (Close enquiry, End conversation). It reads Closed until its usual date. */
+  endedAt?: string | null;
+  /** Why it ended, once it has: the pill on an expired card. */
+  endReason?: EnquiryEndReason | null;
+  /** The enquirer took back a Not interested: "Interested: Tenant changed mind". */
+  tenantChangedMindAt?: string | null;
+  /** When a Not interested enquiry closes by itself, if it is one. */
+  notInterestedClosesAt?: string | null;
+  /** Its latest cancelled visit. Shown while no visit is booked again. */
+  cancelledVisit?: { reason: string | null; byTenant: boolean; cancelledAt: string } | null;
   /**
    * The row's version (2026-09-29). Sent back as If-Match when a screen acts
    * on it, so a record someone else changed since is refused, not overwritten.
@@ -124,6 +208,55 @@ export const enquiryApi = api.injectEndpoints({
       providesTags: ["Enquiry"],
     }),
 
+    /** The enquirer's own enquiries, until 30 days past their date (My enquiries). */
+    getMyEnquiries: builder.query<MyEnquiryItem[], void>({
+      query: () => "/api/v1/enquiries/mine",
+      providesTags: ["Enquiry"],
+    }),
+
+    /** "Changed your mind?": takes back a Not interested, once, and tells the handler. */
+    changeEnquiryMind: builder.mutation<MyEnquiryItem, { enquiryId: string; version: number }>({
+      query: ({ enquiryId, version }) => ({
+        headers: ifMatch(version),
+        method: "POST",
+        url: `/api/v1/enquiries/${enquiryId}/changed-mind`,
+      }),
+      invalidatesTags: ["Enquiry", "EnquiryChat"],
+    }),
+
+    /** The owner gives an enquiry to a manager, or to themselves. */
+    assignEnquiryHandler: builder.mutation<EnquiryDetail, { enquiryId: string; handlerUserId: string; version: number }>({
+      query: ({ enquiryId, handlerUserId, version }) => ({
+        body: { handlerUserId },
+        headers: ifMatch(version),
+        method: "PATCH",
+        url: `/api/v1/enquiries/${enquiryId}/handler`,
+      }),
+      invalidatesTags: ["Enquiry", "EnquiryChat"],
+    }),
+
+    getEnquiryHandlerSettings: builder.query<EnquiryHandlerSettings, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/enquiry-handler-settings`,
+      providesTags: ["Enquiry"],
+    }),
+
+    /**
+     * The owner's choice of how enquiries are assigned. The first choice is a
+     * POST, later ones a PUT with If-Match, which the version tells apart.
+     */
+    saveEnquiryHandlerSettings: builder.mutation<
+      EnquiryHandlerSettings,
+      { includeOwner: boolean; mode: EnquiryHandlerMode; propertyId: string; version: number | null }
+    >({
+      query: ({ includeOwner, mode, propertyId, version }) => ({
+        body: { includeOwner, mode },
+        headers: version == null ? undefined : ifMatch(version),
+        method: version == null ? "POST" : "PUT",
+        url: `/api/v1/properties/${propertyId}/enquiry-handler-settings`,
+      }),
+      invalidatesTags: ["Enquiry"],
+    }),
+
     raiseEnquiry: builder.mutation<EnquiryReceipt, { propertyId: string; message: string }>({
       query: ({ message, propertyId }) => ({
         body: { message },
@@ -155,6 +288,31 @@ export const enquiryApi = api.injectEndpoints({
         url: `/api/v1/enquiries/${enquiryId}/respond`,
       }),
       invalidatesTags: ["Enquiry"],
+    }),
+
+    /**
+     * "Record response" for a call (2026-10-03). The result decides success or
+     * failure, and an accepted one sets the sentiment, so the chat's bar is
+     * read again too.
+     */
+    settleEnquiryCall: builder.mutation<
+      EnquiryDetail,
+      {
+        attemptId: string;
+        callResult: EnquiryCallResult;
+        durationSeconds?: number | null;
+        enquiryId: string;
+        note?: string | null;
+        version: number;
+      }
+    >({
+      query: ({ attemptId, callResult, durationSeconds, enquiryId, note, version }) => ({
+        body: { callResult, durationSeconds: durationSeconds ?? null, note: note ?? null },
+        headers: ifMatch(version),
+        method: "PATCH",
+        url: `/api/v1/enquiries/${enquiryId}/attempts/${attemptId}/settle`,
+      }),
+      invalidatesTags: ["Enquiry", "EnquiryChat"],
     }),
 
     getMyEnquiryChannelConsents: builder.query<EnquiryChannelConsents, void>({
@@ -232,6 +390,11 @@ export const enquiryApi = api.injectEndpoints({
 });
 
 export const {
+  useAssignEnquiryHandlerMutation,
+  useChangeEnquiryMindMutation,
+  useGetEnquiryHandlerSettingsQuery,
+  useSaveEnquiryHandlerSettingsMutation,
+  useGetMyEnquiriesQuery,
   useGetMyEnquiryChannelConsentsQuery,
   useGetMyEnquiryForPropertyQuery,
   useGetOpenEnquiryCountQuery,
@@ -239,6 +402,7 @@ export const {
   useRaiseEnquiryMutation,
   useRespondToEnquiryMutation,
   useRevokeEnquiryChannelConsentMutation,
+  useSettleEnquiryCallMutation,
   useUpdateEnquiryChannelConsentsMutation,
 } = enquiryApi;
 

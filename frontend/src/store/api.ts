@@ -30,7 +30,7 @@ function isExpectedFailure(endpoint: string, status: unknown) {
  * Every cache tag, named once so a conflict can throw all of them away
  * (2026-09-28, see STALE below).
  */
-const API_TAGS = [
+export const API_TAGS = [
   "Profile",
   "Property",
   // Its own tag, so saving visit slots does not refetch every property read.

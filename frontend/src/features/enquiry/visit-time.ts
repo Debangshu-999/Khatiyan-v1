@@ -33,6 +33,24 @@ export function formatVisitDay(date: string) {
   return `${parts.weekday} ${parts.day} ${parts.month}`;
 }
 
+/** "11am", "10:30am": a start time with nothing it does not need. */
+export function formatShortTime(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  const suffix = hours >= 12 ? "pm" : "am";
+  return minutes === 0 ? `${hour}${suffix}` : `${hour}:${String(minutes).padStart(2, "0")}${suffix}`;
+}
+
+/** "Wed 7 Oct, 11am": a visit by its day and start, for the visit sheet's pill (user, 2026-10-03). */
+export function formatVisitShort(date: string, startTime: string) {
+  return `${formatVisitDay(date)}, ${formatShortTime(startTime)}`;
+}
+
+/** "Sun 5 Oct, 4:00 pm to 5:00 pm": a visit's date and slot, as the visit sheet says them. */
+export function formatVisitSlot(date: string, startTime: string, endTime: string) {
+  return `${formatVisitDay(date)}, ${formatSlotRange(startTime, endTime)}`;
+}
+
 /** "Sun 5 Oct, 4:00 pm": the same wording the notifications use. */
 export function formatVisitWhen(date: string, slotStart: string) {
   return `${formatVisitDay(date)}, ${formatSlotTime(slotStart)}`;

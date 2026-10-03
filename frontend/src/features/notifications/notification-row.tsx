@@ -271,6 +271,22 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Property", data.propertyName);
       add(details, "Notice", data.noticeTitle);
       break;
+    // Told to the enquirer, in neutral words (2026-10-03).
+    case "ENQUIRY_CLOSED":
+      add(details, "Property", data.propertyName);
+      break;
+    // The enquirer is interested again. Told to the handler (2026-10-03).
+    case "ENQUIRY_MIND_CHANGED":
+      add(details, "Property", data.propertyName);
+      break;
+    // Sent to whichever side did not book, move or cancel it (2026-10-03).
+    case "VISIT_SCHEDULED":
+    case "VISIT_RESCHEDULED":
+    case "VISIT_CANCELLED":
+      add(details, "Property", data.propertyName);
+      add(details, notification.subtype === "VISIT_RESCHEDULED" ? "New time" : "Visit", data.visitWhen);
+      add(details, "Reference", code(data.visitReferenceCode));
+      break;
     case "FOOD_MEAL_DELAYED":
       add(details, "Property", data.propertyName);
       add(details, "Meal", data.mealType ? MEAL_LABEL[data.mealType as MealType] : undefined);
