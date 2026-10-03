@@ -45,6 +45,8 @@ import com.khatiyan.d_modules.enquiry.api.dto.SetEnquirySentimentRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.SettleEnquiryAttemptRequest;
 import com.khatiyan.d_modules.enquiry.event.EnquiryEndedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRaisedEvent;
+import com.khatiyan.d_modules.enquiry.event.EnquiryReopenedEvent;
+import com.khatiyan.d_modules.enquiry.event.EnquiryExpiredEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRespondedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryWindowClosedEvent;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
@@ -171,10 +173,25 @@ public class EnquiryService {
             return MyEnquiryResponse.blocked("This is your property");
         }
 
-        return enquiryRepository
-                .findByPropertyIdAndEnquirerUserIdAndStatus(propertyId, actorUserId, EnquiryStatus.NEW)
-                .map(open -> MyEnquiryResponse.alreadyAsked(open.getId(), open.askedAt()))
+        List<Enquiry> current = currentAt(actorUserId, propertyId);
+        // A live one, answered or not, is the one to use (owner's rule, 2026-10-03).
+        Enquiry live = current.stream().filter(enquiry -> !enquiry.isOver()).findFirst().orElse(null);
+        if (live != null) {
+            return MyEnquiryResponse.alreadyAsked(live.getId(), live.askedAt());
+        }
+        // Closed as not interested with the one reopen left: offer that first.
+        return current.stream()
+                .filter(Enquiry::mayChangeMind)
+                .findFirst()
+                .map(closed -> MyEnquiryResponse.reopenable(closed.getId(), closed.getVersion()))
                 .orElseGet(MyEnquiryResponse::allowed);
+    }
+
+    /** The enquirer's enquiries at a property that have not expired, newest first. */
+    private List<Enquiry> currentAt(UUID enquirerUserId, UUID propertyId) {
+        return enquiryRepository.findVisibleForEnquirer(enquirerUserId, hiddenBefore()).stream()
+                .filter(enquiry -> enquiry.getPropertyId().equals(propertyId) && !enquiry.isExpired())
+                .toList();
     }
 
     /**
@@ -250,12 +267,23 @@ public class EnquiryService {
         if (managesProperty(actorUserId, property)) {
             throw new ValidationException("You cannot enquire about a property you manage.");
         }
-        // Checked here as well as by the partial unique index. The index is the
-        // guarantee; this is the readable message.
-        if (enquiryRepository
-                .findByPropertyIdAndEnquirerUserIdAndStatus(propertyId, actorUserId, EnquiryStatus.NEW)
-                .isPresent()) {
-            throw new ValidationException("You already have an open enquiry with this property.");
+        // One enquiry at a time per property (owner's rule, 2026-10-03). A live
+        // one, answered or not, refuses a second; the partial unique index
+        // guarantees it for unanswered ones, this is the readable message.
+        // Closed ones are expired first, so the fresh enquiry is the only one
+        // left to act on.
+        Instant expiringAt = Instant.now();
+        for (Enquiry existing : currentAt(actorUserId, propertyId)) {
+            if (!existing.isOver()) {
+                throw new ValidationException("You already have an open enquiry with this property.");
+            }
+        }
+        for (Enquiry closed : currentAt(actorUserId, propertyId)) {
+            closed.expireNow(expiringAt);
+            eventPublisher.publishEvent(new EnquiryExpiredEvent(
+                    closed.getId(), closed.getPropertyId(), closed.getEnquirerUserId(), expiringAt));
+            log.info("Closed enquiry expired for a fresh one enquiryId={} propertyId={} enquirerUserId={}",
+                    closed.getId(), propertyId, actorUserId);
         }
 
         UserSummaryResponse enquirer = authModule.findById(actorUserId).orElse(null);
@@ -775,8 +803,17 @@ public class EnquiryService {
         }
         VersionGuard.claim(enquiry);
 
-        enquiry.changeMind(actorUserId, Instant.now());
+        Instant now = Instant.now();
+        boolean reopened = enquiry.changeMind(actorUserId, now);
         enquiryRepository.saveAndFlush(enquiry);
+        if (reopened) {
+            // Its conversation opens again, and its lead catches up.
+            if (enquiry.getChatThreadId() != null) {
+                chatModule.reopenEnquiryThread(enquiry.getId());
+            }
+            eventPublisher.publishEvent(new EnquiryReopenedEvent(
+                    enquiry.getId(), enquiry.getPropertyId(), enquiry.getEnquirerUserId(), now));
+        }
         tellHandlerTheyChangedMind(enquiry);
         log.info("Enquirer changed their mind enquiryId={} byUserId={}", enquiryId, actorUserId);
 

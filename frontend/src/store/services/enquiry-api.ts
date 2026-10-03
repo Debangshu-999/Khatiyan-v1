@@ -169,6 +169,12 @@ export type MyEnquiry = {
   blockedReason: string | null;
   openEnquiryId: string | null;
   openEnquiryAt: string | null;
+  /**
+   * A closed Not interested enquiry they may still reopen, once. Enquire then
+   * offers "Changed your mind?" on it instead of a new enquiry.
+   */
+  reopenableEnquiryId?: string | null;
+  reopenableVersion?: number | null;
 };
 
 /** One row of the consent modal's channel selector. */

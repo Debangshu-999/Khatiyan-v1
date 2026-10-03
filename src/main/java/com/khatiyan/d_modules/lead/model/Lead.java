@@ -196,6 +196,26 @@ public class Lead extends BaseEntity {
      *
      * @return true when it closed, false when it was closed already
      */
+    /**
+     * Open again: its enquiry was reopened by the enquirer after closing as not
+     * interested (owner's rule, 2026-10-03). Keeps the stage it reached.
+     *
+     * @return true when it reopened, false when it was open already
+     */
+    public boolean reopen() {
+        if (isOpen()) {
+            return false;
+        }
+        this.state = LeadState.OPEN;
+        this.closeReason = null;
+        this.closedAt = null;
+        return true;
+    }
+
+    public LeadCloseReason getCloseReasonOrNull() {
+        return closeReason;
+    }
+
     public boolean close(LeadCloseReason reason, Instant at) {
         if (!isOpen()) {
             return false;

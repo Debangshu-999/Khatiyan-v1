@@ -62,6 +62,11 @@ public class ChatModule {
         chatService.closeEnquiryThread(enquiryId);
     }
 
+    /** Opens an enquiry's conversation again, when the enquirer reopens it. */
+    public void reopenEnquiryThread(UUID enquiryId) {
+        chatService.reopenEnquiryThread(enquiryId);
+    }
+
     /**
      * Whether one person has written in a conversation after a moment.
      *

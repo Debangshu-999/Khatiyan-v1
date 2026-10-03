@@ -384,23 +384,60 @@ public class Enquiry extends BaseEntity {
         return sentimentSetAt.plus(NOT_INTERESTED_GRACE);
     }
 
-    /** Whether the enquirer may still answer "Changed your mind?". */
+    /**
+     * Whether the enquirer may still answer "Changed your mind?": while a Not
+     * interested runs its 7 days, or once it has closed as Not interested and
+     * not yet expired (owner's rule, 2026-10-03). Once only, either way.
+     */
     public boolean mayChangeMind() {
-        return notInterestedClosesAt() != null && tenantChangedMindAt == null && !isExpired();
+        if (tenantChangedMindAt != null || isExpired()) {
+            return false;
+        }
+        return notInterestedClosesAt() != null || isClosedAsNotInterested();
+    }
+
+    /** Closed by management, or by the 7-day sweep, as not interested. */
+    public boolean isClosedAsNotInterested() {
+        return isEnded() && endReason == EnquiryEndReason.NOT_INTERESTED;
     }
 
     /**
      * The enquirer takes back the Not interested: Interested again, set by them.
      * Once only, so a second Not interested closes the enquiry instead.
+     *
+     * <p>A closed one is reopened (owner's rule, 2026-10-03): no longer ended,
+     * its chat no longer marked closed. The caller reopens the thread itself.
+     *
+     * @return true when it was closed and is now open again
      */
-    public void changeMind(UUID enquirerUserId, Instant now) {
+    public boolean changeMind(UUID enquirerUserId, Instant now) {
         if (!mayChangeMind()) {
             throw new ValidationException(tenantChangedMindAt != null
                     ? "You have already told the property you are interested."
                     : "This enquiry is not waiting on that.");
         }
+        boolean reopened = isEnded();
+        if (reopened) {
+            this.endedAt = null;
+            this.endedByUserId = null;
+            this.endReason = null;
+            this.chatClosedAt = null;
+        }
         setSentiment(EnquirySentiment.INTERESTED, enquirerUserId, now);
         this.tenantChangedMindAt = now;
+        return reopened;
+    }
+
+    /**
+     * Expires it now, ahead of its date: a closed enquiry the enquirer has
+     * replaced with a fresh one (owner's rule, 2026-10-03). Its end reason stays,
+     * so the expired card still says why it ended.
+     */
+    public void expireNow(Instant now) {
+        if (expiresAt == null || expiresAt.isAfter(now)) {
+            this.expiresAt = now;
+        }
+        expire();
     }
 
     /** Keeps the first reason given. An enquiry ends once. */

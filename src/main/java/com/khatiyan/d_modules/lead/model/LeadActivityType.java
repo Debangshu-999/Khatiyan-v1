@@ -25,5 +25,8 @@ public enum LeadActivityType {
     VISIT_RESCHEDULED,
 
     /** A visit was cancelled. The detail holds when it was to be. */
-    VISIT_CANCELLED
+    VISIT_CANCELLED,
+
+    /** Opened again: its enquiry was reopened after closing as not interested. */
+    REOPENED
 }

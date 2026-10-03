@@ -16,17 +16,29 @@ public record MyEnquiryResponse(
     String blockedReason,
     /** The open enquiry, if one exists. Null otherwise. */
     UUID openEnquiryId,
-    Instant openEnquiryAt
+    Instant openEnquiryAt,
+    /**
+     * A closed Not interested enquiry they may still reopen, once (owner's rule,
+     * 2026-10-03). Enquire then offers "Changed your mind?" on it instead of a
+     * new enquiry. Null when there is none.
+     */
+    UUID reopenableEnquiryId,
+    /** Its version, sent back as If-Match with "Changed your mind?". */
+    Long reopenableVersion
 ) {
     public static MyEnquiryResponse allowed() {
-        return new MyEnquiryResponse(true, null, null, null);
+        return new MyEnquiryResponse(true, null, null, null, null, null);
     }
 
     public static MyEnquiryResponse blocked(String reason) {
-        return new MyEnquiryResponse(false, reason, null, null);
+        return new MyEnquiryResponse(false, reason, null, null, null, null);
     }
 
     public static MyEnquiryResponse alreadyAsked(UUID enquiryId, Instant askedAt) {
-        return new MyEnquiryResponse(false, "Enquiry sent", enquiryId, askedAt);
+        return new MyEnquiryResponse(false, "Enquiry sent", enquiryId, askedAt, null, null);
+    }
+
+    public static MyEnquiryResponse reopenable(UUID enquiryId, long version) {
+        return new MyEnquiryResponse(true, null, null, null, enquiryId, version);
     }
 }

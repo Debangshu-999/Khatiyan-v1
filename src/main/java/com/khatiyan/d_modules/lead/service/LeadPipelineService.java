@@ -98,6 +98,18 @@ public class LeadPipelineService {
 
         Lead lead = leadOf(enquiry);
 
+        // Its enquiry was reopened after closing as not interested: the record
+        // opens again with it (owner's rule, 2026-10-03), unless another of
+        // theirs at this property is open already.
+        if (!lead.isOpen() && lead.getCloseReasonOrNull() == LeadCloseReason.NOT_INTERESTED
+                && enquiry.endedAt() == null && !enquiry.isOver(Instant.now())
+                && leadRepository.findByPropertyIdAndProspectUserIdAndState(
+                        enquiry.propertyId(), enquiry.enquirerUserId(), LeadState.OPEN).isEmpty()
+                && lead.reopen()) {
+            record(lead, LeadActivityType.REOPENED, null, enquiry.id(), null, Instant.now());
+            log.info("Lead reopened leadId={} enquiryId={}", lead.getId(), enquiry.id());
+        }
+
         if (lead.isOpen() && lead.takeHandler(
                 enquiry.handlerUserId(), sourceOf(enquiry), enquiry.handlerAssignedAt())) {
             record(lead, LeadActivityType.HANDLER_ASSIGNED, enquiry.handlerUserId(), enquiry.id(),

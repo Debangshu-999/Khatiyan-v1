@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.enquiry.event.EnquiryEndedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryExpiredEvent;
+import com.khatiyan.d_modules.enquiry.event.EnquiryReopenedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryHandlerAssignedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRaisedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryRespondedEvent;
@@ -57,6 +58,11 @@ public class LeadEnquiryEventListener {
 
     @ApplicationModuleListener
     public void onEnquiryExpired(EnquiryExpiredEvent event) {
+        catchUp(event.enquiryId(), event.propertyId(), event.enquirerUserId());
+    }
+
+    @ApplicationModuleListener
+    public void onEnquiryReopened(EnquiryReopenedEvent event) {
         catchUp(event.enquiryId(), event.propertyId(), event.enquirerUserId());
     }
 

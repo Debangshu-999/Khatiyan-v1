@@ -191,6 +191,11 @@ public class ChatThread extends BaseEntity {
         this.status = ChatThreadStatus.READ_ONLY;
     }
 
+    /** Writable again: an enquiry's conversation, when the enquiry is reopened. */
+    public void reopen() {
+        this.status = ChatThreadStatus.OPEN;
+    }
+
     public boolean isOpen() {
         return this.status == ChatThreadStatus.OPEN;
     }

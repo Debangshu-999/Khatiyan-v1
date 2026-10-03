@@ -355,7 +355,16 @@ function MyEnquiryCard({
       ) : null}
 
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
-        {closed ? (
+        {closed && item.canChangeMind ? (
+          // Closed as not interested, with the one reopen left: that comes
+          // before a fresh enquiry (owner's rule, 2026-10-03).
+          <View style={{ flex: 1 }}>
+            <GhostBlock>
+              <ActionButton compact label="Changed your mind?" onPress={onChangeMind} variant="secondary" />
+            </GhostBlock>
+          </View>
+        ) : closed ? (
+          // A fresh enquiry expires this one first, on the server.
           <View style={{ flex: 1 }}>
             <GhostBlock>
               <ActionButton compact icon={MessageSquarePlus} label="Enquire again" onPress={onEnquireAgain} />

@@ -15,6 +15,7 @@ import {
   describeEmailChannelGap,
   describeReachableChannel,
   ENQUIRY_MESSAGE_MAX_LENGTH,
+  useChangeEnquiryMindMutation,
   useGetMyEnquiryChannelConsentsQuery,
   useGetMyEnquiryForPropertyQuery,
   useRaiseEnquiryMutation,
@@ -46,6 +47,10 @@ export function EnquireAction({
 }) {
   const { colors, fonts, type } = useTheme();
   const [enquiring, setEnquiring] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const [reopenRefusal, setReopenRefusal] = useState<string | null>(null);
+  const [changeMind, changeMindState] = useChangeEnquiryMindMutation();
+  const toast = useToast();
 
   const myEnquiryQuery = useGetMyEnquiryForPropertyQuery(propertyId);
   const myEnquiry = myEnquiryQuery.data;
@@ -56,7 +61,25 @@ export function EnquireAction({
   const consents = consentsQuery.data;
 
   function startEnquiry() {
+    // A closed Not interested enquiry with its one reopen left: offer that
+    // instead of a fresh enquiry (owner's rule, 2026-10-03). Once it is used,
+    // the server expires the closed one when a new enquiry is raised.
+    if (myEnquiry?.reopenableEnquiryId) {
+      setReopening(true);
+      return;
+    }
     setEnquiring(true);
+  }
+
+  async function reopen(enquiryId: string, version: number) {
+    try {
+      await changeMind({ enquiryId, version }).unwrap();
+      setReopening(false);
+      toast.success("Your handler knows you are interested again.");
+    } catch (caught) {
+      setReopening(false);
+      setReopenRefusal(readErrorMessage(caught) ?? "Could not reopen the enquiry. Try again.");
+    }
   }
 
   // Nothing at all while it loads: a button that appears and then disappears
@@ -116,6 +139,22 @@ export function EnquireAction({
       {enquiring ? (
         <EnquireFlow onDone={() => setEnquiring(false)} propertyId={propertyId} propertyName={propertyName} />
       ) : null}
+
+      {/* The same question as My enquiries' "Changed your mind?". */}
+      {reopening && myEnquiry?.reopenableEnquiryId ? (
+        <ConfirmDialog
+          bullets={[
+            "This can only be done once.",
+            "If this enquiry is marked not interested again, it cannot be reverted further.",
+          ]}
+          confirmLabel={changeMindState.isLoading ? "Sending" : "I'm interested"}
+          message="Your earlier enquiry here was closed as not interested. Let your handler know you are interested again."
+          onCancel={() => setReopening(false)}
+          onConfirm={() => void reopen(myEnquiry.reopenableEnquiryId as string, myEnquiry.reopenableVersion ?? 0)}
+          title="Are you interested in this property?"
+        />
+      ) : null}
+      {reopenRefusal ? <AlertModal message={reopenRefusal} onClose={() => setReopenRefusal(null)} /> : null}
     </View>
   );
 }

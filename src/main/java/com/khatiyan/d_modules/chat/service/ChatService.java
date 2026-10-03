@@ -472,6 +472,18 @@ public class ChatService {
         });
     }
 
+    /** Opens an enquiry's conversation again, when the enquirer reopens a closed enquiry. */
+    @Transactional
+    public void reopenEnquiryThread(UUID enquiryId) {
+        chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiryId).ifPresent(thread -> {
+            if (!thread.isOpen()) {
+                thread.reopen();
+                log.info("Chat enquiry thread reopened with its enquiry threadId={} enquiryId={}",
+                        thread.getId(), enquiryId);
+            }
+        });
+    }
+
     @Transactional(readOnly = true)
     public boolean hasWrittenSince(UUID threadId, UUID authorUserId, Instant since) {
         return chatMessageRepository.existsByThreadIdAndAuthorUserIdAndCreatedAtAfter(threadId, authorUserId, since);
