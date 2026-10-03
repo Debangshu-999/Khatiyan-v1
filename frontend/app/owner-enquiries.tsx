@@ -1075,19 +1075,40 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
             ) : (
               <Phone color={colors.jade} size={13} strokeWidth={2.4} />
             )}
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
               {response.channel === "EMAIL" ? "Emailed" : response.channel === "CHAT" ? "Chatted" : "Called"}
             </Text>
+            {/* The call's status, as a grey pill at the row's right end
+                (user, 2026-10-03). */}
+            {response.channel === "CALL_BACK" ? (
+              <View
+                style={{
+                  backgroundColor: colors.neutralSoft,
+                  borderRadius: 999,
+                  flexShrink: 1,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: response.outcome === "FAILED" ? colors.danger : colors.muted,
+                    fontFamily: fonts.sansBold,
+                    fontSize: 11,
+                  }}
+                >
+                  {describeCallOutcome(response)}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <Text style={[type.caption, { color: colors.kicker }]}>
             {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
           </Text>
-          {response.channel === "CALL_BACK" ? (
-            <Text style={[type.caption, { color: response.outcome === "FAILED" ? colors.danger : colors.ink }]}>
-              {describeCallOutcome(response)}
-            </Text>
-          ) : null}
-          {response.note ? (
+          {/* Not for calls (user, 2026-10-03): the message recorded with a call's
+              response stays off the log card. */}
+          {response.note && response.channel !== "CALL_BACK" ? (
             <Text style={[type.modalDescription, { color: colors.muted, marginTop: 2 }]}>
               {response.note}
             </Text>
