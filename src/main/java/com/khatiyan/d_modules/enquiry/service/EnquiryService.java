@@ -1186,6 +1186,9 @@ public class EnquiryService {
             if (enquiry.hasHandler()) {
                 userIds.add(enquiry.getHandlerUserId());
             }
+            if (enquiry.getHandlerReversedByUserId() != null) {
+                userIds.add(enquiry.getHandlerReversedByUserId());
+            }
         }
         attemptsByEnquiry.values().stream()
                 .flatMap(List::stream)
@@ -1223,6 +1226,9 @@ public class EnquiryService {
         attempts.forEach(attempt -> userIds.add(attempt.getRespondedByUserId()));
         if (enquiry.hasHandler()) {
             userIds.add(enquiry.getHandlerUserId());
+        }
+        if (enquiry.getHandlerReversedByUserId() != null) {
+            userIds.add(enquiry.getHandlerReversedByUserId());
         }
         return toDetail(
                 enquiry, enquirer, attempts, authModule.findByIds(userIds),
@@ -1276,6 +1282,11 @@ public class EnquiryService {
                 enquiry.getEndedAt(),
                 enquiry.getEndReason(),
                 enquiry.getTenantChangedMindAt(),
+                enquiry.getHandlerReversedAt(),
+                enquiry.getHandlerReversedByUserId(),
+                enquiry.getHandlerReversedByUserId() != null
+                        ? nameOf(users, enquiry.getHandlerReversedByUserId())
+                        : null,
                 enquiry.notInterestedClosesAt(),
                 cancelledVisit == null
                         ? null

@@ -138,6 +138,10 @@ export type EnquiryDetail = {
   endReason?: EnquiryEndReason | null;
   /** The enquirer took back a Not interested: "Interested: Tenant changed mind". */
   tenantChangedMindAt?: string | null;
+  /** Management's latest turn of a Not interested back to Interested, and who did it. */
+  handlerReversedAt?: string | null;
+  handlerReversedByUserId?: string | null;
+  handlerReversedByName?: string | null;
   /** When a Not interested enquiry closes by itself, if it is one. */
   notInterestedClosesAt?: string | null;
   /** Its latest cancelled visit. Shown while no visit is booked again. */

@@ -185,6 +185,13 @@ public class Enquiry extends BaseEntity {
     @Column(name = "tenant_changed_mind_at")
     private Instant tenantChangedMindAt;
 
+    /** When management last turned a Not interested back to Interested, and who. */
+    @Column(name = "handler_reversed_at")
+    private Instant handlerReversedAt;
+
+    @Column(name = "handler_reversed_by_user_id")
+    private UUID handlerReversedByUserId;
+
     /** Why it ended. Null while it is live. */
     @Enumerated(EnumType.STRING)
     @Column(name = "end_reason", length = 30)
@@ -313,6 +320,14 @@ public class Enquiry extends BaseEntity {
     public void setSentiment(EnquirySentiment sentiment, UUID byUserId, Instant now) {
         if (sentiment == null) {
             throw new ValidationException("Choose Interested or Not interested.");
+        }
+        // Management taking a Not interested back is a reversal worth logging
+        // (owner's design, 2026-10-03). The enquirer's own is tenantChangedMindAt.
+        if (this.sentiment == EnquirySentiment.NOT_INTERESTED
+                && sentiment == EnquirySentiment.INTERESTED
+                && !byUserId.equals(enquirerUserId)) {
+            this.handlerReversedAt = now;
+            this.handlerReversedByUserId = byUserId;
         }
         this.sentiment = sentiment;
         this.sentimentSetByUserId = byUserId;

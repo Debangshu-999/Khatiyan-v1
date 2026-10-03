@@ -549,7 +549,9 @@ export default function OwnerEnquiriesScreen() {
         />
       ) : null}
 
-      {viewingLog ? <ActionLogSheet enquiry={viewingLog} onClose={() => setViewingLog(null)} /> : null}
+      {viewingLog ? (
+        <ActionLogSheet currentUserId={currentUserId} enquiry={viewingLog} onClose={() => setViewingLog(null)} />
+      ) : null}
 
       {assigning && selectedProperty ? (
         <AssignHandlerSheet
@@ -1044,8 +1046,38 @@ function hasLapsed(enquiry: EnquiryDetail) {
 }
 
 /** What was done, by whom, when — the whole history, newest first. */
-function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose: () => void }) {
+function ActionLogSheet({
+  currentUserId,
+  enquiry,
+  onClose,
+}: {
+  currentUserId: string | null;
+  enquiry: EnquiryDetail;
+  onClose: () => void;
+}) {
   const { colors, fonts, type } = useTheme();
+
+  // Reversals of a Not interested join the log beside the contact attempts,
+  // newest first (user, 2026-10-03): the enquirer's own "Changed your mind?",
+  // and management's latest turn back to Interested. Each carries a revert icon.
+  const reversals: { at: string; by: string; id: string }[] = [];
+  if (enquiry.tenantChangedMindAt) {
+    reversals.push({ at: enquiry.tenantChangedMindAt, by: "tenant", id: "reversal-tenant" });
+  }
+  if (enquiry.handlerReversedAt) {
+    reversals.push({
+      at: enquiry.handlerReversedAt,
+      by:
+        enquiry.handlerReversedByUserId && enquiry.handlerReversedByUserId === currentUserId
+          ? "you"
+          : enquiry.handlerReversedByName ?? "the property",
+      id: "reversal-handler",
+    });
+  }
+  const entries = [
+    ...enquiry.responses.map((response) => ({ at: response.respondedAt, kind: "response" as const, response })),
+    ...reversals.map((reversal) => ({ at: reversal.at, kind: "reversal" as const, reversal })),
+  ].sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
 
   return (
     <SheetShell onClose={onClose} title="Action log">
@@ -1053,69 +1085,98 @@ function ActionLogSheet({ enquiry, onClose }: { enquiry: EnquiryDetail; onClose:
         Every time someone reached out to {firstName(enquiry.enquirerName)}.
       </Text>
 
-      {enquiry.responses.map((response) => (
-        <View
-          key={response.id}
-          style={{
-            borderColor: colors.border,
-            borderLeftColor: colors.jade,
-            borderLeftWidth: 4,
-            borderWidth: 1,
-            gap: 3,
-            padding: spacing.md,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            {/* Chat uses the Chats tab's own glyph (user, 2026-10-02); it showed
-                the phone. */}
-            {response.channel === "EMAIL" ? (
-              <Mail color={colors.jade} size={13} strokeWidth={2.4} />
-            ) : response.channel === "CHAT" ? (
-              <MaterialCommunityIcons color={colors.jade} name="chat-outline" size={14} />
-            ) : (
-              <Phone color={colors.jade} size={13} strokeWidth={2.4} />
-            )}
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
-              {response.channel === "EMAIL" ? "Emailed" : response.channel === "CHAT" ? "Chatted" : "Called"}
-            </Text>
-            {/* The call's status, as a grey pill at the row's right end
-                (user, 2026-10-03). */}
-            {response.channel === "CALL_BACK" ? (
-              <View
-                style={{
-                  backgroundColor: colors.neutralSoft,
-                  borderRadius: 999,
-                  flexShrink: 1,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: 2,
-                }}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    color: response.outcome === "FAILED" ? colors.danger : colors.muted,
-                    fontFamily: fonts.sansBold,
-                    fontSize: 11,
-                  }}
-                >
-                  {describeCallOutcome(response)}
-                </Text>
-              </View>
-            ) : null}
+      {entries.map((entry) =>
+        entry.kind === "reversal" ? (
+          <View
+            key={entry.reversal.id}
+            style={{
+              borderColor: colors.border,
+              borderLeftColor: colors.jade,
+              borderLeftWidth: 4,
+              borderWidth: 1,
+              gap: 3,
+              padding: spacing.md,
+            }}
+          >
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+              <RotateCcw color={colors.jade} size={13} strokeWidth={2.4} />
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
+                Decision reversed by {entry.reversal.by}: Interested again
+              </Text>
+            </View>
+            <Text style={[type.caption, { color: colors.kicker }]}>{formatWhen(entry.reversal.at)}</Text>
           </View>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
-          </Text>
-          {/* Not for calls (user, 2026-10-03): the message recorded with a call's
-              response stays off the log card. */}
-          {response.note && response.channel !== "CALL_BACK" ? (
-            <Text style={[type.modalDescription, { color: colors.muted, marginTop: 2 }]}>
-              {response.note}
-            </Text>
-          ) : null}
-        </View>
-      ))}
+        ) : (
+          <ResponseLogCard key={entry.response.id} response={entry.response} />
+        ),
+      )}
     </SheetShell>
+  );
+}
+
+/** One contact attempt in the action log. */
+function ResponseLogCard({ response }: { response: EnquiryDetail["responses"][number] }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View
+      style={{
+        borderColor: colors.border,
+        borderLeftColor: colors.jade,
+        borderLeftWidth: 4,
+        borderWidth: 1,
+        gap: 3,
+        padding: spacing.md,
+      }}
+    >
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        {/* Chat uses the Chats tab's own glyph (user, 2026-10-02); it showed
+            the phone. */}
+        {response.channel === "EMAIL" ? (
+          <Mail color={colors.jade} size={13} strokeWidth={2.4} />
+        ) : response.channel === "CHAT" ? (
+          <MaterialCommunityIcons color={colors.jade} name="chat-outline" size={14} />
+        ) : (
+          <Phone color={colors.jade} size={13} strokeWidth={2.4} />
+        )}
+        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
+          {response.channel === "EMAIL" ? "Emailed" : response.channel === "CHAT" ? "Chatted" : "Called"}
+        </Text>
+        {/* The call's status, as a grey pill at the row's right end
+            (user, 2026-10-03). */}
+        {response.channel === "CALL_BACK" ? (
+          <View
+            style={{
+              backgroundColor: colors.neutralSoft,
+              borderRadius: 999,
+              flexShrink: 1,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 2,
+            }}
+          >
+            <Text
+              numberOfLines={1}
+              style={{
+                color: response.outcome === "FAILED" ? colors.danger : colors.muted,
+                fontFamily: fonts.sansBold,
+                fontSize: 11,
+              }}
+            >
+              {describeCallOutcome(response)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={[type.caption, { color: colors.kicker }]}>
+        {response.respondedByName ?? "Someone"} · {formatWhen(response.respondedAt)}
+      </Text>
+      {/* Not for calls (user, 2026-10-03): the message recorded with a call's
+          response stays off the log card. */}
+      {response.note && response.channel !== "CALL_BACK" ? (
+        <Text style={[type.modalDescription, { color: colors.muted, marginTop: 2 }]}>
+          {response.note}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 

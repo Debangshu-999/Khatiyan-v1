@@ -87,6 +87,10 @@ public record EnquiryDetailResponse(
     EnquiryEndReason endReason,
     // The enquirer took back a Not interested: "Interested: Tenant changed mind".
     Instant tenantChangedMindAt,
+    // Management's latest Not interested -> Interested, for the action log.
+    Instant handlerReversedAt,
+    UUID handlerReversedByUserId,
+    String handlerReversedByName,
     // When a Not interested enquiry closes by itself, if it is one.
     Instant notInterestedClosesAt,
     // Its latest cancelled visit, if any. The screen shows it while none is booked.
