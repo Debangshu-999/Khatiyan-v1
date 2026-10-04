@@ -14,6 +14,9 @@ import {
   MessageSquare,
   Phone,
   RotateCcw,
+  ThumbsDown,
+  ThumbsUp,
+  Timer,
   TimerOff,
   User,
   UserPlus,
@@ -37,13 +40,15 @@ import { OwnerEnquiryListSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useEnquiryTabsSeen, type EnquiryTabKey } from "@/features/enquiry/use-enquiry-tabs-seen";
 import {
-  CardRule,
-  ClosesInChip,
   CornerRibbon,
   CountPill,
   EXPIRED_FOLD,
+  formatClosesIn,
+  InitialsAvatar,
   RIBBON_FOLD,
-  TagPill,
+  StateChip,
+  StatusNote,
+  type Tone,
 } from "@/features/enquiry/enquiry-tags";
 import { AssignHandlerSheet } from "@/features/enquiry/assign-handler-sheet";
 import { HandlerModeSheet } from "@/features/enquiry/handler-mode-sheet";
@@ -55,6 +60,7 @@ import {
   RecordResponseSheet,
 } from "@/features/enquiry/record-response-sheet";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
+import { formatVisitShort } from "@/features/enquiry/visit-time";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
@@ -872,10 +878,20 @@ function EnquiryCard({
   // What held them back, from the call that recorded it, if one did.
   const heldBack = enquiry.responses.find((response) => response.callResult === "ACCEPTED_NOT_INTERESTED")?.note ?? null;
 
+  const closesAt = notInterested && !isClosed && !isExpired ? enquiry.notInterestedClosesAt ?? null : null;
+  const endReason = isExpired && enquiry.endReason ? END_REASONS[enquiry.endReason] : null;
+  // The visit's day and start, beside its state, so the card says when.
+  const visitWhen = visit ? ` · ${formatVisitShort(visit.date, visit.slotStart)}` : "";
+  const showVisited = visit?.state === "VISITED";
+  const showMissed = visit?.state === "MISSED" && !isExpired;
+  const hasStates = Boolean(
+    (visitBooked && !isExpired) || showVisited || showMissed || cancelledVisit || closesAt || endReason || handledBy,
+  );
+  const hasRibbon = isNew || isClosed || isExpired;
+
   return (
-    <Card style={{ overflow: "hidden" }}>
-      {/* Outside the dimmed body, so a closed card's CLOSED band stays at full
-          strength (user, 2026-10-03). */}
+    <Card style={{ gap: 0, overflow: "hidden", padding: 0 }}>
+      {/* Outside the dimmed body, so a band stays at full strength (user, 2026-10-03). */}
       {isNew ? (
         <CornerRibbon accessibilityLabel="New enquiry" band={colors.danger} fold={RIBBON_FOLD} label="NEW" />
       ) : isClosed ? (
@@ -884,143 +900,113 @@ function EnquiryCard({
         // Amber, as on the enquirer's own card (user, 2026-10-03).
         <CornerRibbon accessibilityLabel="Expired enquiry" band={colors.warningText} fold={EXPIRED_FOLD} label="EXPIRED" />
       ) : null}
-      {/* Dimmed as a whole rather than restyling every line: an expired enquiry
-          is still readable, just plainly no longer something to act on. Only
-          expired ones (user, 2026-10-03): a closed card keeps full strength,
-          its CLOSED band and disabled buttons saying enough. */}
-      <View style={{ gap: spacing.xs, opacity: isExpired ? 0.55 : 1 }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: isNew || isClosed ? 44 : 0 }}>
-          <User color={colors.ink} fill={colors.ink} size={20} />
-          <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 28 }]} numberOfLines={1}>
-            {enquiry.enquirerName ?? "Someone"}
-          </Text>
-        </View>
-        {/* Sized like the property name on My enquiries, with a rule under it (user, 2026-10-03). */}
-        <CardRule />
 
-        {/* When it was asked and when it runs out, both as pills straight
-            under the name (user, 2026-10-02); the phone number went, the
-            respond sheet already carries it. */}
-        <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-          <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-            <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10.5 }}>
-              {formatWhen(enquiry.createdAt)}
+      {/* Only an expired card is dimmed (user, 2026-10-03): still readable,
+          plainly no longer something to act on. A closed card keeps full
+          strength, its CLOSED band and disabled buttons saying enough. */}
+      <View style={{ opacity: isExpired ? 0.55 : 1 }}>
+        <View style={{ gap: spacing.md, padding: spacing.lg }}>
+          {/* Who, and when. The line under the name carries both dates, so the
+              chips further down are only ever states. */}
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingRight: hasRibbon ? 40 : 0 }}>
+            <InitialsAvatar name={enquiry.enquirerName} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
+                {enquiry.enquirerName ?? "Someone"}
+              </Text>
+              {/* Wraps rather than truncates: beside a ribbon there is less room. */}
+              <Text style={[type.caption, { color: colors.muted }]}>
+                {formatWhen(enquiry.createdAt)}
+                <Text style={{ color: colors.kicker }}>{"  ·  "}</Text>
+                {/* Non-breaking, so the date never splits across the line. */}
+                {`${isExpired ? "Expired" : "Expires"}\u00A0${formatExpiryDate(enquiry.expiresAt).replace(/ /g, "\u00A0")}`}
+              </Text>
+            </View>
+          </View>
+
+          {/* The question itself, set as a quote: it is what the card is for. */}
+          <View
+            style={{
+              backgroundColor: colors.surfaceSunken,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm + 2,
+            }}
+          >
+            <View style={{ backgroundColor: colors.borderStrong, borderRadius: 2, width: 3 }} />
+            <Text style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansMedium }]}>
+              {enquiry.message}
             </Text>
           </View>
-          <ExpiryChip expired={isExpired} expiresAt={enquiry.expiresAt} />
-          {/* How long a Not interested enquiry has left before it closes by
-              itself, beside its other dates (user, 2026-10-03). */}
-          {notInterested && enquiry.notInterestedClosesAt && !isClosed && !isExpired ? (
-            <ClosesInChip closesAt={enquiry.notInterestedClosesAt} />
+
+          {/* Where it stands, each state in its own colour. */}
+          {hasStates ? (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+              {/* A booked visit, with its day and time (user, 2026-10-03).
+                  "Rescheduled" once it has been moved on or after the day it
+                  was due (user, 2026-10-04). */}
+              {visitBooked && !isExpired ? (
+                <StateChip
+                  icon={CalendarCheck}
+                  label={(visit?.rescheduled ? "Visit rescheduled" : "Visit scheduled") + visitWhen}
+                  tone="success"
+                />
+              ) : null}
+              {/* Checked in at the property, or nobody was (2026-10-04). */}
+              {showVisited ? <StateChip icon={CheckCircle2} label={"Visited" + visitWhen} tone="success" /> : null}
+              {showMissed ? <StateChip icon={CalendarX} label={"Visit missed" + visitWhen} tone="danger" /> : null}
+              {cancelledVisit ? <StateChip icon={CalendarX} label="Visit cancelled" tone="warning" /> : null}
+              {/* How long a Not interested enquiry has before it closes by
+                  itself (user, 2026-10-03). */}
+              {closesAt ? <StateChip icon={Timer} label={formatClosesIn(closesAt)} tone="danger" /> : null}
+              {endReason ? <StateChip label={endReason.label} tone={endReason.tone} /> : null}
+              {handledBy ? <StateChip icon={User} label={`Enquiry handled by ${handledBy}`} tone="neutral" /> : null}
+            </View>
           ) : null}
-          {/* A booked visit, on the card itself (user, 2026-10-03). */}
-          {visitBooked && !isExpired ? (
-            // "Rescheduled" once it has been moved on or after the day it was due (user, 2026-10-04).
-            <TagPill
-              icon={CalendarCheck}
-              iconColor={colors.successText}
-              label={visit?.rescheduled ? "Visit rescheduled" : "Visit scheduled"}
+
+          {notInterested && !isExpired ? (
+            <StatusNote icon={ThumbsDown} label="Not interested" text={heldBack} tone="danger" />
+          ) : null}
+
+          {/* Whenever they are marked interested, a booked visit included
+              (user, 2026-10-04); after a cancelled visit or a change of mind
+              it says so beside Interested (user, 2026-10-03). */}
+          {showInterested ? (
+            <StatusNote
+              icon={ThumbsUp}
+              label="Interested"
+              text={
+                cancelledVisit?.byTenant ? "Tenant is interested but changed mind" : changedMind ? "Tenant changed mind" : null
+              }
+              tone="success"
             />
           ) : null}
-          {/* Checked in at the property, or nobody was (2026-10-04). */}
-          {visit?.state === "VISITED" ? (
-            <TagPill icon={CheckCircle2} iconColor={colors.successText} label="Visited" />
+
+          {/* Why the visit was called off, in its own note (user, 2026-10-03). */}
+          {cancelReason ? (
+            <StatusNote icon={CalendarX} label="Cancellation reason" text={cancelReason} tone="warning" />
           ) : null}
-          {visit?.state === "MISSED" && !isExpired ? (
-            <TagPill icon={CalendarX} iconColor={colors.danger} label="Visit missed" />
-          ) : null}
-          {cancelledVisit ? (
-            <TagPill icon={CalendarX} iconColor={colors.danger} iconFaded label="Visit cancelled" />
-          ) : null}
-          {isExpired && enquiry.endReason ? <EndReasonPill reason={enquiry.endReason} /> : null}
-          {handledBy ? <TagPill icon={User} label={`Enquiry handled by ${handledBy}`} /> : null}
         </View>
 
-        {/* The concern cards' description face, a weight heavier
-            (user, 2026-10-02). */}
-        {/* A message mark before it, with no box, a little below the tags (user, 2026-10-03). */}
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
-          <View style={{ paddingTop: 2 }}>
-            <MessageSquare color={colors.muted} size={15} strokeWidth={2.2} />
-          </View>
-          <Text style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold }]}>
-            {enquiry.message}
-          </Text>
-        </View>
-
-        {notInterested && !isExpired ? (
-          <View
-            style={{
-              backgroundColor: colors.dangerSoft,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              // A little below the message, as the message is below the tags (user, 2026-10-03).
-              marginTop: spacing.xs,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <Text style={[type.description, { color: colors.danger }]}>
-              <Text style={{ fontFamily: fonts.sansBold }}>{heldBack ? "Not interested:" : "Not interested"}</Text>
-              {heldBack ? ` ${heldBack}` : ""}
-            </Text>
-          </View>
-        ) : null}
-
-        {showInterested ? (
-          <View
-            style={{
-              backgroundColor: colors.successSoft,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              // A little below the message, as the message is below the tags (user, 2026-10-03).
-              marginTop: spacing.xs,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            {/* Still interested after calling the visit off, or after taking
-                back a Not interested: said so beside Interested, with the
-                cancellation's reason in its own yellow box below (user,
-                2026-10-03). */}
-            <Text style={[type.description, { color: colors.successText }]}>
-              <Text style={{ fontFamily: fonts.sansBold }}>
-                {changedMind || cancelledVisit?.byTenant ? "Interested:" : "Interested"}
-              </Text>
-              {cancelledVisit?.byTenant
-                ? " Tenant is interested but changed mind"
-                : changedMind
-                  ? " Tenant changed mind"
-                  : ""}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Why the visit was called off: its own yellow box, under the intent
-            box above it (user, 2026-10-03). */}
-        {cancelReason ? (
-          <View
-            style={{
-              backgroundColor: colors.warningSoft,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <Text style={[type.description, { color: colors.warningText }]}>
-              <Text style={{ fontFamily: fonts.sansBold }}>Cancellation reason:</Text> {cancelReason}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Respond and Schedule visit share the row; the log is a disc beside
-            them. What was done and by whom lives behind it rather than on the
-            card — history on every card buries the message that matters. */}
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+        {/* The actions, under a hairline. History on every card would bury the
+            message, so it lives behind the disc at the end. */}
+        <View
+          style={{
+            alignItems: "center",
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+            flexDirection: "row",
+            gap: spacing.sm,
+            paddingHorizontal: spacing.lg,
+            paddingVertical: spacing.md,
+          }}
+        >
           {/* Gone while a visit is booked (owner's rule, 2026-10-03): booking
               settles any waiting call, and the visit is what is left to manage.
-              Back once it is cancelled. */}
+              Back once it is cancelled, or locked inside two hours of its slot. */}
           {visitBooked && !visitLocked ? null : (
             <View style={{ flex: 1 }}>
               {/* Blocked once expired or closed, and refused by the server too:
@@ -1033,31 +1019,20 @@ function EnquiryCard({
               />
             </View>
           )}
-          <View style={{ flex: 1 }}>
-            {onAssign ? (
-              <ActionButton
-                compact
-                disabled={!canAct}
-                icon={UserPlus}
-                label="Assign"
-                onPress={onAssign}
-                variant="secondary"
-              />
-            ) : notInterested ? (
-              <ActionButton
-                compact
-                disabled={!canAct}
-                icon={Ellipsis}
-                label="Actions"
-                onPress={onActions}
-                variant="secondary"
-              />
-            ) : hasVisit && !visitBooked ? null : (
-              // Tappable before a response, where it explains why it is
-              // blocked. The server refuses a booking before that as well.
-              // Disabled inside two hours of the visit's slot, where the
-              // server refuses a move or a cancel too. Not shown once the
-              // visit was attended or missed: there is nothing left to manage.
+          {onAssign ? (
+            <View style={{ flex: 1 }}>
+              <ActionButton compact disabled={!canAct} icon={UserPlus} label="Assign" onPress={onAssign} variant="secondary" />
+            </View>
+          ) : notInterested ? (
+            <View style={{ flex: 1 }}>
+              <ActionButton compact disabled={!canAct} icon={Ellipsis} label="Actions" onPress={onActions} variant="secondary" />
+            </View>
+          ) : hasVisit && !visitBooked ? null : (
+            <View style={{ flex: 1 }}>
+              {/* Tappable before a response, where it explains why it is
+                  blocked. Disabled inside two hours of the visit's slot, where
+                  the server refuses a move or a cancel too. Not shown once the
+                  visit was attended or missed: nothing is left to manage. */}
               <ActionButton
                 compact
                 disabled={!canAct || visitLocked}
@@ -1066,8 +1041,8 @@ function EnquiryCard({
                 onPress={onSchedule}
                 variant="secondary"
               />
-            )}
-          </View>
+            </View>
+          )}
           <ActionLogButton count={actionLogCount(enquiry)} onPress={onViewLog} />
         </View>
       </View>
@@ -1119,30 +1094,15 @@ function NotInterestedActionsSheet({
 }
 
 /**
- * Why an expired enquiry ended (owner's design, 2026-10-03). Red where the
- * property let it go or they said no, amber where they never picked up.
- */
-/**
- * Why an expired enquiry ended, in sentence case like the card's other tags
- * (user, 2026-10-03); StatusPill's caps read as shouting beside them.
+ * Why an expired enquiry ended, in sentence case (user, 2026-10-03). Red where
+ * the property let it go or they said no, amber where they never picked up.
  */
 function EndReasonPill({ reason }: { reason: EnquiryEndReason }) {
-  const { colors, fonts } = useTheme();
   const { label, tone } = END_REASONS[reason];
-  const palette = {
-    danger: { background: colors.dangerSoft, text: colors.danger },
-    neutral: { background: colors.neutralSoft, text: colors.neutralText },
-    success: { background: colors.successSoft, text: colors.successText },
-    warning: { background: colors.warningSoft, text: colors.warningText },
-  }[tone];
-  return (
-    <View style={{ backgroundColor: palette.background, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
-      <Text style={{ color: palette.text, fontFamily: fonts.sansBold, fontSize: 10.5 }}>{label}</Text>
-    </View>
-  );
+  return <StateChip label={label} tone={tone} />;
 }
 
-const END_REASONS: Record<EnquiryEndReason, { label: string; tone: "danger" | "warning" | "neutral" | "success" }> = {
+const END_REASONS: Record<EnquiryEndReason, { label: string; tone: Tone }> = {
   HANDLER_DID_NOT_RESPOND: { label: "Handler didn't respond", tone: "danger" },
   TENANT_DID_NOT_RESPOND: { label: "Tenant didn't respond", tone: "warning" },
   NOT_INTERESTED: { label: "Not interested", tone: "danger" },
@@ -1234,7 +1194,7 @@ function VisitBlockedDialog({ onClose }: { onClose: () => void }) {
  * is there.
  */
 function ActionLogButton({ count, onPress }: { count: number; onPress: () => void }) {
-  const { colors } = useTheme();
+  const { colors, fonts } = useTheme();
   const empty = count === 0;
 
   return (
@@ -1260,6 +1220,27 @@ function ActionLogButton({ count, onPress }: { count: number; onPress: () => voi
       }}
     >
       <History color={empty ? colors.muted : colors.ink} size={17} strokeWidth={2} />
+      {/* How many entries are behind it, so the disc says whether it is worth opening. */}
+      {empty ? null : (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.ink,
+            borderColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 2,
+            height: 18,
+            justifyContent: "center",
+            minWidth: 18,
+            paddingHorizontal: 3,
+            position: "absolute",
+            right: -4,
+            top: -4,
+          }}
+        >
+          <Text style={{ color: colors.surface, fontFamily: fonts.sansBold, fontSize: 9.5 }}>{count > 9 ? "9+" : count}</Text>
+        </View>
+      )}
     </AnimatedPressable>
   );
 }
@@ -1820,31 +1801,6 @@ function formatExpiryDate(value: string) {
     month: "short",
     timeZone: DISPLAY_ZONE,
   }).format(new Date(value));
-}
-
-/**
- * How long is left, or that the window has closed.
- *
- * <p>Present on every card, not only near the end: an owner should not have to
- * learn the seven-day rule by watching an enquiry disappear.
- */
-function ExpiryChip({ expired, expiresAt }: { expired: boolean; expiresAt: string }) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <View
-      style={{
-        backgroundColor: expired ? colors.neutralSoft : colors.surfaceSunken,
-        borderRadius: 999,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 2,
-      }}
-    >
-      <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10.5 }}>
-        {expired ? `Expired ${formatExpiryDate(expiresAt)}` : `Expires ${formatExpiryDate(expiresAt)}`}
-      </Text>
-    </View>
-  );
 }
 
 function readErrorMessage(caught: unknown) {

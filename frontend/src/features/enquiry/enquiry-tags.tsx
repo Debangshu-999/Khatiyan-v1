@@ -2,7 +2,8 @@ import { type ComponentType } from "react";
 import { Text, View } from "react-native";
 import { Timer, type LucideProps } from "lucide-react-native";
 
-import { spacing } from "@/theme/spacing";
+import { GhostPill } from "@/components/skeletons/boundary";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -208,4 +209,116 @@ export function formatClosesIn(closesAt: string) {
   }
   const hour = 3_600_000;
   return left < 24 * hour ? `Closes in ${Math.ceil(left / hour)}h` : `Closes in ${Math.ceil(left / (24 * hour))}d`;
+}
+
+/**
+ * A person's initials in a soft disc: a face for a card without a photo. The
+ * owner's enquiry cards and the VMS visit cards (user, 2026-10-04).
+ */
+export function InitialsAvatar({ name }: { name: string | null }) {
+  const { colors, fonts } = useTheme();
+  const initials =
+    (name ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?";
+  return (
+    <GhostPill height={42} width={42}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.primarySoft,
+          borderRadius: 999,
+          height: 42,
+          justifyContent: "center",
+          width: 42,
+        }}
+      >
+        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.displaySoft, fontSize: 15 }}>{initials}</Text>
+      </View>
+    </GhostPill>
+  );
+}
+
+export type Tone = "danger" | "warning" | "neutral" | "success";
+
+function useTonePalette(): Record<Tone, { background: string; text: string }> {
+  const { colors } = useTheme();
+  return {
+    danger: { background: colors.dangerSoft, text: colors.danger },
+    neutral: { background: colors.neutralSoft, text: colors.neutralText },
+    success: { background: colors.successSoft, text: colors.successText },
+    warning: { background: colors.warningSoft, text: colors.warningText },
+  };
+}
+
+/**
+ * Where an enquiry or a visit stands, as a tinted pill: green for a visit, amber for one
+ * called off, red for a countdown to closing. Sentence case, like the rest of
+ * the card (user, 2026-10-03).
+ */
+export function StateChip({ icon: Icon, label, tone }: { icon?: ComponentType<LucideProps>; label: string; tone: Tone }) {
+  const { fonts } = useTheme();
+  const palette = useTonePalette()[tone];
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: palette.background,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 4,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+      }}
+    >
+      {Icon ? <Icon color={palette.text} size={12} strokeWidth={2.5} /> : null}
+      <Text style={{ color: palette.text, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * The handler's reading, or why a visit was called off: a tinted note with its
+ * mark, a bold label and the detail after it. One shape for all three, so they
+ * read as one family rather than three unrelated boxes.
+ */
+export function StatusNote({
+  icon: Icon,
+  label,
+  text,
+  tone,
+}: {
+  icon: ComponentType<LucideProps>;
+  label: string;
+  text: string | null;
+  tone: Tone;
+}) {
+  const { fonts, type } = useTheme();
+  const palette = useTonePalette()[tone];
+  return (
+    <View
+      style={{
+        alignItems: "flex-start",
+        backgroundColor: palette.background,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        flexDirection: "row",
+        gap: spacing.sm,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      <View style={{ paddingTop: 2 }}>
+        <Icon color={palette.text} size={15} strokeWidth={2.3} />
+      </View>
+      <Text style={[type.description, { color: palette.text, flex: 1 }]}>
+        <Text style={{ fontFamily: fonts.sansBold }}>{text ? `${label}:` : label}</Text>
+        {text ? ` ${text}` : ""}
+      </Text>
+    </View>
+  );
 }

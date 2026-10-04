@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { CalendarClock, ChevronDown, ChevronUp, Clock, Lock, Minus, Plus, Users } from "lucide-react-native";
+import { ArrowRight, CalendarClock, ChevronDown, ChevronUp, Clock, Lock, Minus, Plus, Users } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -108,6 +108,17 @@ const DAY_FULL: Record<VisitDay, string> = {
   THURSDAY: "Thursday",
   TUESDAY: "Tuesday",
   WEDNESDAY: "Wednesday",
+};
+
+/** The day's badge on its card. */
+const DAY_SHORT: Record<VisitDay, string> = {
+  FRIDAY: "FRI",
+  MONDAY: "MON",
+  SATURDAY: "SAT",
+  SUNDAY: "SUN",
+  THURSDAY: "THU",
+  TUESDAY: "TUE",
+  WEDNESDAY: "WED",
 };
 
 const MAX_SLOTS_PER_DAY = 5;
@@ -409,87 +420,173 @@ function VisitSlotsEditor({
         const errors = rowErrors(rows, attemptedDay === day);
         const summary =
           rows.length === 0
-            ? "No visits day"
+            ? "No visits"
             : rows.length +
               (rows.length === 1 ? " slot" : " slots") +
               " · " +
               visitors +
               (visitors === 1 ? " visitor per slot" : " visitors per slot");
         const ToggleIcon = open ? ChevronUp : ChevronDown;
+        const hasSlots = rows.length > 0;
+        // The header's chips, in time order. A slot just added and not yet
+        // timed is counted rather than drawn.
+        const timedRows = rows
+          .filter((row) => row.start != null && row.end != null)
+          .sort((left, right) => (left.start ?? 0) - (right.start ?? 0));
+        const untimed = rows.length - timedRows.length;
 
         return (
-          <Card key={day}>
+          <Card key={day} style={{ gap: 0, overflow: "hidden", padding: 0 }}>
             <Pressable
               accessibilityLabel={DAY_FULL[day] + ", " + summary + (changed ? ", not saved" : "")}
               accessibilityRole="button"
+              accessibilityState={{ expanded: open }}
               onPress={() => setExpandedDay(open ? null : day)}
-              style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+              style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, padding: spacing.lg }}
             >
-              <View style={{ flex: 1, gap: 2 }}>
-                <GhostText ghostWidth="45%" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, lineHeight: 22 }}>
-                  {DAY_FULL[day]}
+              {/* The day as a badge: blue while visits are on, grey on a no-visits day. */}
+              <View
+                style={{
+                  alignItems: "center",
+                  backgroundColor: hasSlots ? colors.primarySoft : colors.neutralSoft,
+                  borderCurve: "continuous",
+                  borderRadius: radii.card,
+                  height: 46,
+                  justifyContent: "center",
+                  width: 46,
+                }}
+              >
+                <GhostText
+                  ghostWidth={28}
+                  style={{
+                    color: hasSlots ? colors.primaryDeep : colors.muted,
+                    fontFamily: fonts.sansBold,
+                    fontSize: 12,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  {DAY_SHORT[day]}
                 </GhostText>
-                <GhostText ghostWidth="70%" style={[type.caption, { color: rows.length === 0 ? colors.muted : colors.primary }]}>
-                  {summary}
-                </GhostText>
-                {/* Said in words, not only by colour: this day's changes are
-                    only on this screen until it is saved. */}
-                {changed ? (
-                  <Text style={[type.caption, { color: colors.warningText, fontFamily: fonts.sansBold }]}>Not saved</Text>
-                ) : null}
               </View>
+
+              <View style={{ flex: 1, gap: spacing.xs }}>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                  <GhostText ghostWidth="45%" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 16, lineHeight: 21 }}>
+                    {DAY_FULL[day]}
+                  </GhostText>
+                  {/* Said in words, not only by colour: this day's changes are
+                      only on this screen until it is saved. */}
+                  {changed ? (
+                    <View
+                      style={{
+                        backgroundColor: colors.warningSoft,
+                        borderRadius: 999,
+                        paddingHorizontal: spacing.xs + 1,
+                        paddingVertical: 1,
+                      }}
+                    >
+                      <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 10.5 }}>Not saved</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {/* When, not only how many: the day's slots at a glance, without
+                    opening it. Open, the rows below say it, so a summary will do. */}
+                {open && hasSlots ? (
+                  <GhostText ghostWidth="70%" style={[type.caption, { color: colors.muted }]}>
+                    {summary}
+                  </GhostText>
+                ) : hasSlots ? (
+                  <>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xxs }}>
+                      {timedRows.map((row) => (
+                        <View
+                          key={row.key}
+                          style={{
+                            backgroundColor: colors.surfaceSunken,
+                            borderRadius: 999,
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: 2,
+                          }}
+                        >
+                          <GhostText ghostWidth={52} style={{ color: colors.inkSoft, fontFamily: fonts.sansSemiBold, fontSize: 11.5 }}>
+                            {formatRange(row.start ?? 0, row.end ?? 0)}
+                          </GhostText>
+                        </View>
+                      ))}
+                      {untimed > 0 ? (
+                        <Text style={{ color: colors.muted, fontFamily: fonts.sansSemiBold, fontSize: 11.5, paddingVertical: 2 }}>
+                          {untimed === 1 ? "1 slot to time" : `${untimed} slots to time`}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                      <GhostIcon color={colors.muted} icon={Users} size={12} strokeWidth={2.4} />
+                      <GhostText ghostWidth="40%" style={[type.caption, { color: colors.muted }]}>
+                        {visitors + (visitors === 1 ? " visitor per slot" : " visitors per slot")}
+                      </GhostText>
+                    </View>
+                  </>
+                ) : (
+                  <GhostText ghostWidth="30%" style={[type.caption, { color: colors.muted }]}>
+                    No visits
+                  </GhostText>
+                )}
+              </View>
+
               <View
                 style={{
                   alignItems: "center",
                   backgroundColor: colors.surfaceSunken,
                   borderRadius: 999,
-                  height: 34,
+                  height: 32,
                   justifyContent: "center",
-                  width: 34,
+                  width: 32,
                 }}
               >
-                <GhostIcon color={colors.ink} icon={ToggleIcon} size={17} strokeWidth={2.3} />
+                <GhostIcon color={colors.ink} icon={ToggleIcon} size={16} strokeWidth={2.3} />
               </View>
             </Pressable>
 
             {open ? (
-              <View style={{ gap: spacing.sm }}>
+              <View
+                style={{
+                  borderTopColor: colors.border,
+                  borderTopWidth: 1,
+                  gap: spacing.md,
+                  padding: spacing.lg,
+                }}
+              >
+                {/* Both of the day's settings in one panel, a hairline between them. */}
                 {canEdit ? (
                   <View
                     style={{
-                      backgroundColor: colors.surface,
                       borderColor: colors.border,
                       borderCurve: "continuous",
                       borderRadius: radii.card,
                       borderWidth: 1,
-                      padding: spacing.md,
                     }}
                   >
-                    <Stepper
-                      label="Number of slots"
-                      max={MAX_SLOTS_PER_DAY}
-                      min={0}
-                      onChange={(count) => setCount(day, count)}
-                      value={rows.length}
-                      valueLabel={rows.length === 0 ? "No visits" : String(rows.length)}
-                    />
-                  </View>
-                ) : null}
-
-                {rows.length > 0 ? (
-                  <>
-                    {canEdit ? (
+                    <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+                      <Stepper
+                        label="Number of slots"
+                        max={MAX_SLOTS_PER_DAY}
+                        min={0}
+                        onChange={(count) => setCount(day, count)}
+                        value={rows.length}
+                        valueLabel={rows.length === 0 ? "No visits" : String(rows.length)}
+                      />
+                    </View>
+                    {hasSlots ? (
                       <View
                         style={{
-                          backgroundColor: colors.surface,
-                          borderColor: colors.border,
-                          borderCurve: "continuous",
-                          borderRadius: radii.card,
-                          borderWidth: 1,
-                          padding: spacing.md,
+                          borderTopColor: colors.border,
+                          borderTopWidth: 1,
+                          paddingHorizontal: spacing.md,
+                          paddingVertical: spacing.sm,
                         }}
                       >
                         <Stepper
+                          hint="Same for every slot"
                           label="Visitors per slot"
                           max={MAX_VISITORS_PER_SLOT}
                           min={1}
@@ -498,88 +595,59 @@ function VisitSlotsEditor({
                         />
                       </View>
                     ) : null}
+                  </View>
+                ) : null}
 
-                    {/* Grey, not pale blue, and an outlined icon rather than a
-                        tinted disc: the app's rules for fills and icons. */}
-                    <View
-                      style={{
-                        alignItems: "flex-start",
-                        backgroundColor: colors.surfaceSunken,
-                        borderCurve: "continuous",
-                        borderRadius: radii.card,
-                        flexDirection: "row",
-                        gap: spacing.sm,
-                        padding: spacing.md,
-                      }}
-                    >
-                      <View
-                        style={{
-                          alignItems: "center",
-                          borderColor: colors.ink,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          height: 36,
-                          justifyContent: "center",
-                          width: 36,
-                        }}
-                      >
-                        <Users color={colors.ink} size={18} strokeWidth={2.2} />
-                      </View>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
-                          {visitors + (visitors === 1 ? " visitor per slot" : " visitors per slot")}
-                        </Text>
-                        <Text style={[type.caption, { color: colors.muted }]}>
-                          {"Applies to all " + DAY_FULL[day] + " slots."}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={{ gap: spacing.sm }}>
-                      {rows.map((row, index) => (
+                {hasSlots ? (
+                  <View style={{ gap: spacing.sm }}>
+                    {rows.map((row, index) => {
+                      const duration = formatDuration(row.start, row.end);
+                      return (
                         <View
                           key={row.key}
                           style={{
-                            backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            backgroundColor: colors.surfaceSunken,
                             borderCurve: "continuous",
                             borderRadius: radii.card,
-                            borderWidth: 1,
                             gap: spacing.sm,
                             padding: spacing.md,
                           }}
                         >
                           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16, lineHeight: 21 }}>
-                              {"SLOT " + (index + 1)}
+                            {/* Numbered by start time, as the server names them. */}
+                            <View
+                              style={{
+                                alignItems: "center",
+                                backgroundColor: colors.surface,
+                                borderColor: colors.borderStrong,
+                                borderRadius: 999,
+                                borderWidth: 1,
+                                height: 24,
+                                justifyContent: "center",
+                                width: 24,
+                              }}
+                            >
+                              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 11.5 }}>{index + 1}</Text>
+                            </View>
+                            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
+                              {"Slot " + (index + 1)}
                             </Text>
-                            {formatDuration(row.start, row.end) ? (
-                              <View
-                                style={{
-                                  alignItems: "center",
-                                  backgroundColor: colors.surfaceSunken,
-                                  borderRadius: 999,
-                                  flexDirection: "row",
-                                  gap: 4,
-                                  paddingHorizontal: spacing.sm,
-                                  paddingVertical: 4,
-                                }}
-                              >
-                                <Clock color={colors.muted} size={14} />
-                                <Text style={[type.caption, { color: colors.inkSoft, fontFamily: fonts.sansMedium }]}>
-                                  {formatDuration(row.start, row.end)}
-                                </Text>
+                            {duration ? (
+                              <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                                <Clock color={colors.muted} size={13} strokeWidth={2.2} />
+                                <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansMedium }]}>{duration}</Text>
                               </View>
                             ) : null}
                           </View>
                           {canEdit ? (
                             <>
-                              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
                                 <SlotTimeField
                                   label="Starts"
                                   onChange={(minutes) => setTime(day, row.key, "start", minutes)}
                                   value={row.start}
                                 />
+                                <ArrowRight color={colors.kicker} size={16} strokeWidth={2.2} />
                                 <SlotTimeField
                                   label="Ends"
                                   onChange={(minutes) => setTime(day, row.key, "end", minutes)}
@@ -589,14 +657,14 @@ function VisitSlotsEditor({
                               <FieldError message={errors[index] ?? undefined} />
                             </>
                           ) : (
-                            <Text style={[type.description, { color: colors.inkSoft }]}>
+                            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansSemiBold, fontSize: 15, paddingLeft: 32 }}>
                               {formatRange(row.start ?? 0, row.end ?? 0)}
                             </Text>
                           )}
                         </View>
-                      ))}
-                    </View>
-                  </>
+                      );
+                    })}
+                  </View>
                 ) : (
                   <Text style={[type.description, { color: colors.muted }]}>
                     Interested people will not be able to book a visit on this day.
@@ -628,6 +696,7 @@ function VisitSlotsEditor({
 
 /** A count set with − and +, inside its limits. */
 function Stepper({
+  hint,
   label,
   max,
   min,
@@ -635,6 +704,8 @@ function Stepper({
   value,
   valueLabel,
 }: {
+  /** A line under the label: what the count applies to. */
+  hint?: string;
   label: string;
   max: number;
   min: number;
@@ -669,7 +740,10 @@ function Stepper({
   };
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 14 }}>{label}</Text>
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 14 }}>{label}</Text>
+        {hint ? <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>{hint}</Text> : null}
+      </View>
       {button(Minus, value - 1, value > min, `Fewer, ${label.toLowerCase()}`)}
       <Text
         style={{

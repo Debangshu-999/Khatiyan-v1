@@ -4,7 +4,6 @@ import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AlarmClock,
-  CalendarCheck,
   CalendarClock,
   CalendarX,
   CheckCheck,
@@ -18,7 +17,6 @@ import {
   ClipboardPenLine,
   ClockAlert,
   Hourglass,
-  User,
   UserCheck,
 } from "lucide-react-native";
 import type { ReactNode } from "react";
@@ -31,9 +29,9 @@ import { FilteredQueue } from "@/components/filtered-queue";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SelectionTabs } from "@/components/selection-tabs";
-import { GhostBlock, GhostIcon, GhostPill, GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
+import { GhostBlock, GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { useToast } from "@/components/toast";
-import { CountPill, TagPill, clockTime, daysAgo } from "@/features/enquiry/enquiry-tags";
+import { CountPill, InitialsAvatar, StateChip, clockTime, daysAgo } from "@/features/enquiry/enquiry-tags";
 import { formatSlotRange, formatVisitShort } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
@@ -616,148 +614,169 @@ function VisitCardView({
   const visitHandledBy =
     visit.checkedInByUserId && visit.checkedInByUserId === currentUserId ? "you" : visit.checkedInByName ?? null;
 
+  // The line under the name: the pass's code, and when, where no slot heading
+  // above the card says it already.
+  const when = showSlot
+    ? formatSlotRange(visit.slotStart, visit.slotEnd)
+    : onToday
+      ? null
+      : formatVisitShort(visit.date, visit.slotStart);
+  const movedTo =
+    rescheduled && visit.rescheduledToDate && visit.rescheduledToSlotStart
+      ? formatVisitShort(visit.rescheduledToDate, visit.rescheduledToSlotStart)
+      : null;
+  const checkedIn = visited && visit.checkedInAt ? visit.checkedInAt : null;
+  // Whoever checked them in handled the visit (user, 2026-10-04). Who handles
+  // its enquiry is on the enquiry's own card, behind View enquiry.
+  const handledBy = visited && visitHandledBy && visit.checkInMethod !== "OWNER" ? visitHandledBy : null;
+  // They said "I'm on my way" (user, 2026-10-04).
+  const runningLate = scheduled ? visit.runningLateAt : null;
+  const missedTab = tab === "missed";
+  const hasStates = Boolean(missedTab || movedTo || checkedIn || handledBy || runningLate);
+  const formPoints = visited ? visitFormPoints(visit) : [];
+  // Missed cards carry nothing to press: a missed visit is the visitor's to move.
+  const ownerMissedCheckIn = unmarked && viewerIsOwner && onMissedCheckIn;
+  const hasActions = !missedTab || Boolean(ownerMissedCheckIn);
+
   return (
-    <Card style={{ gap: spacing.xs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        {/* Solid, as on the enquiry's own card (user, 2026-10-04). */}
-        <GhostIcon color={colors.ink} fill={colors.ink} icon={User} size={22} />
-        <GhostText
-          ghostWidth="50%"
-          numberOfLines={1}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20, lineHeight: 26 }}
-        >
-          {visit.prospectName ?? "Visitor"}
-        </GhostText>
-        {/* Where the visit stands, large, beside the name (user, 2026-10-04).
-            Today only: on the other tabs the tab itself says it. */}
-        {onToday ? <VisitStateChip {...todayStatus(visit, now)} /> : null}
-      </View>
-      {/* No rule under the name (user, 2026-10-04): the pills follow it directly. */}
-
-      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {showSlot ? <TagPill icon={Clock} label={formatSlotRange(visit.slotStart, visit.slotEnd)} /> : null}
-        {tab === "missed" ? (
-          <TagPill icon={CalendarX} iconColor={colors.danger} label={`No visit ${daysAgo(visit.noVisitAt ?? visit.slotEndsAt)}`} />
-        ) : null}
-        {/* Not on Today, where the slot's own heading gives the time. */}
-        {onToday ? null : (
-          <GhostPill height={18} width={120}>
-            <TagPill icon={CalendarCheck} iconColor={colors.successText} label={formatVisitShort(visit.date, visit.slotStart)} />
-          </GhostPill>
-        )}
-        {rescheduled && visit.rescheduledToDate && visit.rescheduledToSlotStart ? (
-          <TagPill
-            icon={CalendarCheck}
-            iconColor={colors.successText}
-            label={`Moved to ${formatVisitShort(visit.rescheduledToDate, visit.rescheduledToSlotStart)}`}
-          />
-        ) : null}
-        <GhostPill height={18} width={84}>
-          <TagPill label={visit.referenceCode} />
-        </GhostPill>
-        {visited && visit.checkedInAt ? (
-          <TagPill
-            icon={CheckCircle2}
-            iconColor={colors.successText}
-            label={
-              visit.checkInMethod === "OWNER"
-                ? "Marked attended by the owner"
-                : `Checked in ${clockTime(visit.checkedInAt)}, ${visit.late ? "late" : "on time"}`
-            }
-          />
-        ) : null}
-        {/* Whoever checked them in handled the visit (user, 2026-10-04). Who
-            handles its enquiry is on the enquiry's own card, behind View enquiry. */}
-        {visited && visitHandledBy && visit.checkInMethod !== "OWNER" ? (
-          <TagPill icon={UserCheck} label={`Visit handled by ${visitHandledBy}`} />
-        ) : null}
-        {/* They said "I'm on my way" (user, 2026-10-04). */}
-        {scheduled && visit.runningLateAt ? (
-          <TagPill icon={Clock} iconColor={colors.danger} label={`Running late, said ${clockTime(visit.runningLateAt)}`} />
-        ) : null}
-      </View>
-
-      {/* What the visit form recorded, in one grey box under the tags: a form
-          mark at the start, then each thing as its own point in a heavier
-          grey (user, 2026-10-04). Only what was filled in: the form is optional. */}
-      {visited && (visit.partySize || visit.impression) ? (
-        <View
-          style={{
-            alignItems: "flex-start",
-            backgroundColor: colors.neutralSoft,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            flexDirection: "row",
-            gap: spacing.sm,
-            marginTop: 2,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-          }}
-        >
-          <View style={{ paddingTop: 1 }}>
-            <ClipboardPenLine color={colors.neutralText} size={15} strokeWidth={2.2} />
-          </View>
+    <Card style={{ gap: 0, overflow: "hidden", padding: 0 }}>
+      <View style={{ gap: spacing.md, padding: spacing.lg }}>
+        {/* Who is coming, and their pass. Where the visit stands sits beside
+            the name on Today; on the other tabs the tab itself says it. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <InitialsAvatar name={visit.prospectName} />
           <View style={{ flex: 1, gap: 2 }}>
-            {visitFormPoints(visit).map((point) => (
-              <View key={point} style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
-                <Text style={{ color: colors.neutralText, fontFamily: fonts.sansSemiBold, fontSize: 12.5, lineHeight: 17 }}>
-                  {"\u2022"}
-                </Text>
-                <Text
-                  style={{ color: colors.neutralText, flex: 1, fontFamily: fonts.sansSemiBold, fontSize: 12.5, lineHeight: 17 }}
-                >
-                  {point}
-                </Text>
-              </View>
-            ))}
+            <GhostText
+              ghostWidth="60%"
+              numberOfLines={1}
+              style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}
+            >
+              {visit.prospectName ?? "Visitor"}
+            </GhostText>
+            <GhostText ghostWidth="75%" style={[type.caption, { color: colors.muted }]}>
+              {visit.referenceCode}
+              {when ? <Text style={{ color: colors.kicker }}>{"  ·  "}</Text> : null}
+              {when ?? ""}
+            </GhostText>
           </View>
+          {onToday ? <VisitStateChip {...todayStatus(visit, now)} /> : null}
         </View>
-      ) : null}
 
-      {/* The yellow notice, the app's own (user, 2026-10-04). It was loose red
-          text, then a red box: neither was the notice bar. */}
-      {unmarked ? (
-        <View style={{ marginTop: 2 }}>
+        {/* Each state in its own colour, as on the enquiry's card. */}
+        {hasStates ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+            {missedTab ? (
+              <StateChip icon={CalendarX} label={`No visit ${daysAgo(visit.noVisitAt ?? visit.slotEndsAt)}`} tone="danger" />
+            ) : null}
+            {movedTo ? <StateChip icon={CalendarClock} label={`Moved to ${movedTo}`} tone="neutral" /> : null}
+            {checkedIn ? (
+              <StateChip
+                icon={CheckCircle2}
+                label={
+                  visit.checkInMethod === "OWNER"
+                    ? "Marked attended by the owner"
+                    : `Checked in ${clockTime(checkedIn)}, ${visit.late ? "late" : "on time"}`
+                }
+                tone={visit.late ? "warning" : "success"}
+              />
+            ) : null}
+            {handledBy ? <StateChip icon={UserCheck} label={`Visit handled by ${handledBy}`} tone="neutral" /> : null}
+            {runningLate ? (
+              <StateChip icon={Clock} label={`Running late, said ${clockTime(runningLate)}`} tone="danger" />
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* What the visit form recorded, each thing as its own point (user,
+            2026-10-04). Only what was filled in: the form is optional. */}
+        {formPoints.length > 0 ? (
+          <View
+            style={{
+              alignItems: "flex-start",
+              backgroundColor: colors.neutralSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <View style={{ paddingTop: 2 }}>
+              <ClipboardPenLine color={colors.neutralText} size={15} strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={{ color: colors.neutralText, fontFamily: fonts.sansBold, fontSize: 12.5, lineHeight: 17 }}>
+                Visit form
+              </Text>
+              {formPoints.map((point) => (
+                <View key={point} style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
+                  <Text style={{ color: colors.neutralText, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 17 }}>
+                    {"•"}
+                  </Text>
+                  <Text
+                    style={{ color: colors.neutralText, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 17 }}
+                  >
+                    {point}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {/* The yellow notice, the app's own (user, 2026-10-04). */}
+        {unmarked ? (
           <NoticeBar
             message="Their pass can still be scanned today. It will be marked No visit after midnight."
             title="Not checked in"
             tone="warning"
           />
-        </View>
-      ) : null}
+        ) : null}
+      </View>
 
-      {/* Missed cards carry nothing to press: a missed visit is the visitor's to move.
-          The buttons stand clear of the grey pills above them (user, 2026-10-04). */}
-      {tab === "missed" ? null : (
-        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
-          <View style={{ flex: 1 }}>
-            <GhostBlock>
-              {/* A grey border and blue text (user, 2026-10-04). */}
-              <ActionButton compact label="View enquiry" onPress={onViewEnquiry} variant="primaryQuiet" />
-            </GhostBlock>
-          </View>
-          {canMark && onMarkAttendance ? (
-            <View style={{ flex: 1 }}>
-              <ActionButton compact label="Mark attendance" onPress={onMarkAttendance} />
+      {/* The actions, under a hairline, as on the enquiry's card. */}
+      {hasActions ? (
+        <View
+          style={{
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+            gap: spacing.sm,
+            paddingHorizontal: spacing.lg,
+            paddingVertical: spacing.md,
+          }}
+        >
+          {missedTab ? null : (
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <GhostBlock>
+                  {/* A grey border and blue text (user, 2026-10-04). */}
+                  <ActionButton compact label="View enquiry" onPress={onViewEnquiry} variant="primaryQuiet" />
+                </GhostBlock>
+              </View>
+              {canMark && onMarkAttendance ? (
+                <View style={{ flex: 1 }}>
+                  <ActionButton compact label="Mark attendance" onPress={onMarkAttendance} />
+                </View>
+              ) : null}
+              {onToday && visited && visit.viewerFillsForm && onComplete ? (
+                <View style={{ flex: 1 }}>
+                  <ActionButton
+                    compact
+                    label={visit.formCompleted ? "Edit visit form" : "Complete visit"}
+                    onPress={onComplete}
+                    variant={visit.formCompleted ? "outline" : "primary"}
+                  />
+                </View>
+              ) : null}
             </View>
-          ) : null}
-          {onToday && visited && visit.viewerFillsForm && onComplete ? (
-            <View style={{ flex: 1 }}>
-              <ActionButton
-                compact
-                label={visit.formCompleted ? "Edit visit form" : "Complete visit"}
-                onPress={onComplete}
-                variant={visit.formCompleted ? "outline" : "primary"}
-              />
-            </View>
+          )}
+          {/* The owner's own, on a row to itself: three buttons side by side
+              do not fit a phone. The soft grey edge (user, 2026-10-04). */}
+          {ownerMissedCheckIn ? (
+            <ActionButton compact label="Missed check-in" onPress={onMissedCheckIn} variant="secondary" />
           ) : null}
         </View>
-      )}
-      {/* The owner's own, on a row to itself under the other two: three
-          buttons side by side do not fit a phone. */}
-      {unmarked && viewerIsOwner && onMissedCheckIn ? (
-        // The soft grey edge, not the ink outline (user, 2026-10-04).
-        <ActionButton compact label="Missed check-in" onPress={onMissedCheckIn} variant="secondary" />
       ) : null}
     </Card>
   );

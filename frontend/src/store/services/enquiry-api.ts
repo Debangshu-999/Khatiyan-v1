@@ -141,7 +141,7 @@ export type EnquiryDetail = {
   message: string;
   status: EnquiryStatus;
   createdAt: string;
-  /** Still sent after it has passed: the card shows it for 30 more days. */
+  /** Still sent after it has passed: the card shows it as Expired, as long as it was raised this year. */
   expiresAt: string;
   enquirerUserId: string;
   enquirerName: string | null;
