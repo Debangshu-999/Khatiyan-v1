@@ -41,6 +41,8 @@ import com.khatiyan.d_modules.chat.ChatModule;
 import com.khatiyan.d_modules.chat.event.ChatMessageSentEvent;
 import com.khatiyan.d_modules.chat.model.ChatThreadOrigin;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryEndingKind;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryEndingView;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
@@ -487,27 +489,10 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(visits.chatActions(prospect, enquiry).visit().tenantReschedulesLeft()).isEqualTo(1);
     }
 
-    /** Up until the day arrives, and not on it. */
-    @Test
-    void aVisitIsNotMovedOnItsOwnDay() {
-        UUID prospect = prospects.get(0);
-        UUID enquiry = answered(prospect);
-        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
-        assertThat(visit.canReschedule()).isTrue();
-
-        setVisitDate(visit.id(), LocalDate.now(IST));
-
-        for (UUID viewer : List.of(prospect, manager)) {
-            VisitResponse today = visits.chatActions(viewer, enquiry).visit();
-            assertThat(today.upcoming()).isTrue();
-            assertThat(today.canReschedule()).isFalse();
-            assertThat(today.rescheduleRefusal()).contains("The visit is today");
-            assertThatThrownBy(() -> visits.reschedule(
-                    viewer, visit.id(), new RescheduleVisitRequest(tomorrow.plusDays(1), TEN, null)))
-                    .isInstanceOf(ValidationException.class)
-                    .hasMessageContaining("The visit is today");
-        }
-    }
+    // What may be done on the visit's own day turns on the hour since
+    // 2026-10-04 (the property until two hours before the slot, the visitor by
+    // their window). It is checked in VisitDayIntegrationTest, whose clock is
+    // set, not here on the real one.
 
     /** One visit per enquiry: a new one is booked only on the person's next enquiry. */
     @Test
@@ -594,8 +579,8 @@ class EnquiryChatActionsIntegrationTest {
                 .hasMessageContaining("Someone else is handling");
         assertThatThrownBy(() -> visits.cancel(prospects.get(1), again.id(), STILL_INTERESTED)).isInstanceOf(RuntimeException.class);
 
-        // The handler cancels too, and on the visit's own day.
-        setVisitDate(again.id(), LocalDate.now(IST));
+        // The handler cancels too, until two hours before the slot. This one is
+        // tomorrow's, so it is well inside that whatever hour the build runs at.
         assertThat(visits.chatActions(manager, enquiry).visit().canCancel()).isTrue();
         reset(notifications);
         visits.cancel(manager, again.id(), STILL_INTERESTED);
@@ -759,6 +744,10 @@ class EnquiryChatActionsIntegrationTest {
         assertThat(closed.endedAt()).isNotNull();
         assertThat(closed.expiresAt()).isEqualTo(dueAt);
         assertThat(closed.endReason()).isEqualTo(EnquiryEndReason.NOT_INTERESTED);
+        // The action log says who closed it.
+        assertThat(closed.endings())
+                .extracting(EnquiryEndingView::kind, EnquiryEndingView::byUserId, EnquiryEndingView::automatic)
+                .containsExactly(tuple(EnquiryEndingKind.CLOSED, manager, false));
         verify(notifications).notifyUser(
                 eq(prospect), eq("Enquiry closed"), contains("has been closed"), any(), any(),
                 eq(NotificationSubtype.ENQUIRY_CLOSED), eq(enquiry), any(), eq(NotificationDeliveryMode.IN_APP_ONLY));
@@ -767,19 +756,22 @@ class EnquiryChatActionsIntegrationTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("has been closed");
 
-        // Enquire again: a new enquiry. The closed one stays on their list, saying so.
+        // Closed, it reads so on their list until something else happens to it.
+        assertThat(enquiryService.myEnquiries(prospect))
+                .extracting(MyEnquiryItemResponse::id, MyEnquiryItemResponse::state)
+                .containsExactly(tuple(enquiry, MyEnquiryState.CLOSED));
+
+        // A new enquiry first expires the closed one: one current enquiry per
+        // tenant per property (user's fix, 2026-10-03).
         UUID again = raise(prospect);
         assertThat(enquiryService.myEnquiries(prospect))
                 .extracting(MyEnquiryItemResponse::id, MyEnquiryItemResponse::state)
-                .containsExactly(tuple(again, MyEnquiryState.AWAITING_REPLY), tuple(enquiry, MyEnquiryState.CLOSED));
-
-        // At its usual date it reads Expired, still for the reason it was closed.
-        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
-                Timestamp.from(Instant.now().minusSeconds(60)), enquiry);
-        assertThat(enquiryService.myEnquiries(prospect))
-                .filteredOn(item -> item.id().equals(enquiry))
-                .singleElement()
-                .satisfies(item -> assertThat(item.state()).isEqualTo(MyEnquiryState.EXPIRED));
+                .containsExactly(tuple(again, MyEnquiryState.AWAITING_REPLY), tuple(enquiry, MyEnquiryState.EXPIRED));
+        // Its log says so: expired by a duplicate request, after it was closed.
+        assertThat(ownerCard(enquiry).endings())
+                .extracting(EnquiryEndingView::kind)
+                .containsExactly(EnquiryEndingKind.EXPIRED_BY_DUPLICATE, EnquiryEndingKind.CLOSED);
+        assertThat(ownerCard(again).endings()).isEmpty();
     }
 
     /**
@@ -834,6 +826,10 @@ class EnquiryChatActionsIntegrationTest {
                 Timestamp.from(Instant.now().minusSeconds(60)), quiet);
         enquiryService.closeWindowOfAnswered(quiet);
         assertThat(endReason(quiet)).isEqualTo("NO_VISIT_BOOKED");
+        // The action log carries the expiry, with the same reason.
+        assertThat(ownerCard(quiet).endings())
+                .extracting(EnquiryEndingView::kind, EnquiryEndingView::reason)
+                .containsExactly(tuple(EnquiryEndingKind.EXPIRED, EnquiryEndReason.NO_VISIT_BOOKED));
     }
 
     /**
@@ -896,6 +892,40 @@ class EnquiryChatActionsIntegrationTest {
                 "SELECT ended_by_user_id FROM enquiry.enquiries WHERE id = ?", UUID.class, enquiry)).isEqualTo(manager);
         verify(chat).closeEnquiryThread(enquiry);
         assertThat(enquiryService.closeNotInterestedAfterGrace(enquiry)).isFalse();
+        // Nobody pressed anything, and the action log says so.
+        assertThat(ownerCard(enquiry).endings())
+                .extracting(EnquiryEndingView::kind, EnquiryEndingView::automatic)
+                .containsExactly(tuple(EnquiryEndingKind.CLOSED, true));
+    }
+
+    /**
+     * A closing the enquirer's change of mind undid stays in the action log
+     * (user, 2026-10-03), under the closing that followed it.
+     */
+    @Test
+    void aClosingUndoneByAChangeOfMindStaysInTheActionLog() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        enquiryService.setSentiment(manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        enquiryService.endConversation(manager, enquiry);
+        // Read back, so it carries the precision the database keeps.
+        Instant firstClosing = ownerCard(enquiry).endedAt();
+
+        enquiryService.changeMind(prospect, enquiry);
+        EnquiryDetailResponse reopened = ownerCard(enquiry);
+        assertThat(reopened.endedAt()).isNull();
+        assertThat(reopened.endings())
+                .extracting(EnquiryEndingView::kind, EnquiryEndingView::at, EnquiryEndingView::byUserId)
+                .containsExactly(tuple(EnquiryEndingKind.CLOSED, firstClosing, manager));
+
+        // Not interested again closes it at once: both closings, newest first.
+        EnquiryDetailResponse again = enquiryService.setSentiment(
+                manager, enquiry, new SetEnquirySentimentRequest(EnquirySentiment.NOT_INTERESTED));
+        assertThat(again.endings())
+                .extracting(EnquiryEndingView::kind, EnquiryEndingView::at)
+                .containsExactly(
+                        tuple(EnquiryEndingKind.CLOSED, again.endedAt()),
+                        tuple(EnquiryEndingKind.CLOSED, firstClosing));
     }
 
     /**

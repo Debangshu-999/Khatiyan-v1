@@ -63,7 +63,47 @@ export type EnquiryEndReason =
   | "NOT_INTERESTED"
   | "NO_VISIT_BOOKED"
   | "VISIT_CANCELLED"
-  | "VISIT_BOOKED";
+  | "VISIT_BOOKED"
+  | "VISIT_MISSED"
+  | "VISITED";
+
+/**
+ * The enquirer's visit on their own card (2026-10-04). The moments are
+ * instants, compared with this device's clock: when the pass opens, when they
+ * are running late, and for a No visit, until when they may still move it.
+ */
+export type MyEnquiryVisit = {
+  visitId: string;
+  state: "SCHEDULED" | "VISITED" | "MISSED";
+  date: string;
+  slotStart: string;
+  slotEnd: string;
+  passOpensAt: string;
+  slotStartsAt: string;
+  runningLateFrom: string;
+  slotEndsAt: string;
+  checkedInAt: string | null;
+  noVisitAt: string | null;
+  /** For a No visit: "Are you still interested?" is open until then. */
+  answerBy: string | null;
+  version: number;
+};
+
+/**
+ * One way an enquiry ended, for the action log (2026-10-03): closed, expired,
+ * or expired because the enquirer raised a new enquiry for the property.
+ */
+export type EnquiryEnding = {
+  kind: "CLOSED" | "EXPIRED" | "EXPIRED_BY_DUPLICATE";
+  at: string;
+  /** Who closed it, null for an expiry. The enquirer when their second Not interested closed it. */
+  byUserId: string | null;
+  byName: string | null;
+  /** The 7-day close: nobody pressed anything. */
+  automatic: boolean;
+  /** Why it ran out, as on the expired card. Null for a closing. */
+  reason: EnquiryEndReason | null;
+};
 
 /** Where an enquiry stands for the person who raised it. Never the handler's reading. */
 export type MyEnquiryState = "AWAITING_REPLY" | "ANSWERED" | "CLOSED" | "EXPIRED";
@@ -90,6 +130,8 @@ export type MyEnquiryItem = {
   notInterestedClosesAt: string | null;
   /** Whether "Changed your mind?" is still on offer. Once only. */
   canChangeMind: boolean;
+  /** The visit that stands on it: booked, attended or missed. Null once the enquiry is over. */
+  visit?: MyEnquiryVisit | null;
   version: number;
 };
 
@@ -146,6 +188,8 @@ export type EnquiryDetail = {
   notInterestedClosesAt?: string | null;
   /** Its latest cancelled visit. Shown while no visit is booked again. */
   cancelledVisit?: { reason: string | null; byTenant: boolean; cancelledAt: string } | null;
+  /** How it ended, newest first, for the action log. Empty while it is live. */
+  endings?: EnquiryEnding[];
   /**
    * The row's version (2026-09-29). Sent back as If-Match when a screen acts
    * on it, so a record someone else changed since is refused, not overwritten.

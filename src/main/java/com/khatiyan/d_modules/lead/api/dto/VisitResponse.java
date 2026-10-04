@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.lead.api.dto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.UUID;
 
@@ -44,7 +45,8 @@ public record VisitResponse(
      * @param rescheduleRefusal why the person asking may not move it, in words
      *                          to show them. Null when they may
      */
-    public static VisitResponse of(Visit visit, LocalDate today, String rescheduleRefusal, boolean canCancel) {
+    public static VisitResponse of(Visit visit, LocalDateTime now, String rescheduleRefusal, boolean canCancel) {
+        LocalDate today = now.toLocalDate();
         return new VisitResponse(
                 visit.getId(),
                 visit.getReferenceCode(),
@@ -57,7 +59,7 @@ public record VisitResponse(
                 visit.getBookedBy(),
                 visit.isUpcoming(today),
                 visit.isMissed(today),
-                visit.tenantReschedulesLeft(today),
+                visit.tenantReschedulesLeft(now),
                 rescheduleRefusal == null,
                 rescheduleRefusal,
                 canCancel,

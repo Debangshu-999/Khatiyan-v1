@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "r
 import { ArrowLeft, X } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
+import { useLeavableSurface } from "@/components/leave-on-stale";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
@@ -64,6 +65,8 @@ export function PaymentDecisionModal({
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const keyboardInset = useKeyboardInset();
+  // A form in a dialog: a "data has changed" refusal closes it (2026-10-04).
+  useLeavableSurface(onClose);
   const [cancelIntent, cancelState] = useCancelMyPaymentIntentMutation();
   const [confirmIntent, confirmState] = useConfirmMyPaymentIntentMutation();
 

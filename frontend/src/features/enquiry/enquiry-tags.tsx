@@ -54,8 +54,17 @@ export function TagPill({
  * both of the owner's Enquiries tabs.
  *
  * @param kind the filter, in words ("open", "not interested"), or nothing for all of them
+ * @param noun what is counted, singular then plural. Enquiries unless told otherwise (visits, 2026-10-04)
  */
-export function CountPill({ count, kind }: { count: number; kind?: string }) {
+export function CountPill({
+  count,
+  kind,
+  noun = ["enquiry", "enquiries"],
+}: {
+  count: number;
+  kind?: string;
+  noun?: [string, string];
+}) {
   const { colors, fonts } = useTheme();
   // Nothing at all for none: the list's empty state already says so (user, 2026-10-03).
   if (count === 0) {
@@ -72,7 +81,7 @@ export function CountPill({ count, kind }: { count: number; kind?: string }) {
       }}
     >
       <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {[String(count), kind, count === 1 ? "enquiry" : "enquiries"].filter(Boolean).join(" ")}
+        {[String(count), kind, count === 1 ? noun[0] : noun[1]].filter(Boolean).join(" ")}
       </Text>
     </View>
   );

@@ -35,6 +35,7 @@ import com.khatiyan.d_modules.enquiry.api.dto.EmailChannelState;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryCallToSettleResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryCountsResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryDetailResponse;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryEndingView;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryReceiptResponse;
@@ -55,8 +56,11 @@ import com.khatiyan.d_modules.enquiry.model.Enquiry;
 import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
 import com.khatiyan.d_modules.enquiry.EnquiryVisitLookup;
 import com.khatiyan.d_modules.enquiry.api.dto.CancelledVisitView;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
+import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryVisitView;
 import com.khatiyan.d_modules.enquiry.model.EnquiryCallResult;
 import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
@@ -216,19 +220,40 @@ public class EnquiryService {
                 visitLookup.bookedOn(mine.stream().map(Enquiry::getId).toList());
         Map<UUID, EnquiryVisitLookup.CancelledVisit> cancelled =
                 visitLookup.lastCancelledOn(mine.stream().map(Enquiry::getId).toList());
+        Map<UUID, Instant> firstResponses = firstResponsesOf(mine.stream().map(Enquiry::getId).toList());
+        Map<UUID, EnquiryVisitLookup.StandingVisit> standing =
+                visitLookup.standingOn(mine.stream().map(Enquiry::getId).toList());
 
         return mine.stream()
                 // A property that is gone takes its enquiries off the list.
                 .filter(enquiry -> propertyNames.containsKey(enquiry.getPropertyId()))
                 .map(enquiry -> itemFor(
                         enquiry, propertyNames.get(enquiry.getPropertyId()), visits.get(enquiry.getId()),
-                        cancelled.get(enquiry.getId())))
+                        cancelled.get(enquiry.getId()), firstResponses.get(enquiry.getId()),
+                        standing.get(enquiry.getId())))
                 .toList();
+    }
+
+    /**
+     * When the property first responded to each enquiry: its first attempt, a
+     * chat message sent or a call made (user, 2026-10-03). The Answered tag
+     * dates from it, not from the enquirer's reply. One read for all of them.
+     */
+    private Map<UUID, Instant> firstResponsesOf(List<UUID> enquiryIds) {
+        if (enquiryIds.isEmpty()) {
+            return Map.of();
+        }
+        return enquiryResponseRepository.findByEnquiryIdInOrderByCreatedAtDesc(enquiryIds).stream()
+                .collect(Collectors.toMap(
+                        EnquiryResponse::getEnquiryId,
+                        EnquiryResponse::getCreatedAt,
+                        (one, other) -> one.isBefore(other) ? one : other));
     }
 
     private static MyEnquiryItemResponse itemFor(
             Enquiry enquiry, String propertyName, EnquiryVisitLookup.BookedVisit booked,
-            EnquiryVisitLookup.CancelledVisit cancelled) {
+            EnquiryVisitLookup.CancelledVisit cancelled, Instant firstResponseAt,
+            EnquiryVisitLookup.StandingVisit standing) {
         EnquiryVisitLookup.BookedVisit visit = enquiry.isOver() ? null : booked;
         // Cancelled, and nothing booked since: "Visit cancelled" on their card.
         Instant visitCancelledAt = !enquiry.isOver() && booked == null && cancelled != null
@@ -241,7 +266,7 @@ public class EnquiryService {
                 enquiry.getMessage(),
                 enquiry.askedAt(),
                 enquiry.getExpiresAt(),
-                enquiry.getRespondedAt(),
+                firstResponseAt,
                 stateFor(enquiry),
                 enquiry.getEndedAt(),
                 enquiry.getChatThreadId(),
@@ -250,6 +275,8 @@ public class EnquiryService {
                 visitCancelledAt,
                 enquiry.isExpired() ? null : enquiry.notInterestedClosesAt(),
                 enquiry.mayChangeMind(),
+                // Nothing to do with a visit once the enquiry is over.
+                enquiry.isOver() ? null : MyEnquiryVisitView.of(standing),
                 enquiry.getVersion());
     }
 
@@ -699,7 +726,7 @@ public class EnquiryService {
             }
         }
 
-        closeNow(enquiry, actorUserId, Instant.now());
+        closeNow(enquiry, actorUserId, Instant.now(), false);
 
         UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
         return describeOne(enquiry, enquirer, viewer);
@@ -749,8 +776,8 @@ public class EnquiryService {
      * the enquirer are told. Shared by Close enquiry, the 7-day close and a
      * second Not interested. Doing it twice is harmless.
      */
-    private void closeNow(Enquiry enquiry, UUID byUserId, Instant now) {
-        if (!enquiry.end(byUserId, now)) {
+    private void closeNow(Enquiry enquiry, UUID byUserId, Instant now, boolean automatic) {
+        if (!enquiry.end(byUserId, now, automatic)) {
             return;
         }
         for (EnquiryResponse attempt : enquiryResponseRepository.findByEnquiryIdAndOutcome(
@@ -771,7 +798,7 @@ public class EnquiryService {
      */
     private void closeIfNotInterestedAgain(Enquiry enquiry, UUID byUserId, Instant now) {
         if (enquiry.getSentiment() == EnquirySentiment.NOT_INTERESTED && enquiry.getTenantChangedMindAt() != null) {
-            closeNow(enquiry, byUserId, now);
+            closeNow(enquiry, byUserId, now, false);
         }
     }
 
@@ -789,7 +816,7 @@ public class EnquiryService {
                 || now.isBefore(enquiry.notInterestedClosesAt()) || enquiry.isExpired()) {
             return false;
         }
-        closeNow(enquiry, enquiry.getSentimentSetByUserId(), now);
+        closeNow(enquiry, enquiry.getSentimentSetByUserId(), now, true);
         return true;
     }
 
@@ -822,7 +849,9 @@ public class EnquiryService {
 
         PropertyResponse property = propertyModule.getActiveProperty(enquiry.getPropertyId());
         EnquiryVisitLookup.BookedVisit visit = visitLookup.bookedOn(List.of(enquiryId)).get(enquiryId);
-        return itemFor(enquiry, property.name(), visit, visitLookup.lastCancelledOn(List.of(enquiryId)).get(enquiryId));
+        return itemFor(enquiry, property.name(), visit, visitLookup.lastCancelledOn(List.of(enquiryId)).get(enquiryId),
+                firstResponsesOf(List.of(enquiryId)).get(enquiryId),
+                visitLookup.standingOn(List.of(enquiryId)).get(enquiryId));
     }
 
     /** The handler, or the owner while nobody handles it, hears they are interested again. */
@@ -854,8 +883,38 @@ public class EnquiryService {
         return switch (visitLookup.stateOf(enquiry.getId())) {
             case SCHEDULED -> EnquiryEndReason.VISIT_BOOKED;
             case CANCELLED -> EnquiryEndReason.VISIT_CANCELLED;
+            case VISITED -> EnquiryEndReason.VISITED;
+            case MISSED -> EnquiryEndReason.VISIT_MISSED;
             case NONE -> EnquiryEndReason.NO_VISIT_BOOKED;
         };
+    }
+
+    /**
+     * Expires an enquiry whose visit became No visit: the visitor said they
+     * were no longer interested, or did not answer within the week (user,
+     * 2026-10-04). Its chat closes and the pipeline is told, as for any
+     * answered enquiry whose date passes.
+     *
+     * @return true when it expired now, false when it already had
+     */
+    @Transactional
+    public boolean expireForMissedVisit(UUID enquiryId) {
+        Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
+        if (enquiry == null || enquiry.isExpired()) {
+            return false;
+        }
+        Instant now = Instant.now();
+        enquiry.cutShort(now);
+        closeChatOf(enquiry, now);
+        if (!enquiry.isEnded()) {
+            enquiry.recordEndReason(EnquiryEndReason.VISIT_MISSED);
+            if (enquiry.getStatus() == EnquiryStatus.RESPONDED && enquiry.markWindowClosed(now)) {
+                eventPublisher.publishEvent(new EnquiryWindowClosedEvent(
+                        enquiryId, enquiry.getPropertyId(), enquiry.getEnquirerUserId(), now));
+            }
+        }
+        log.info("Enquiry expired after a missed visit enquiryId={}", enquiryId);
+        return true;
     }
 
     /**
@@ -904,6 +963,51 @@ public class EnquiryService {
             closeIfNotInterestedAgain(enquiry, cancelledByUserId, now);
         }
         enquiryRepository.saveAndFlush(enquiry);
+    }
+
+    /**
+     * The owner's first choice of how enquiries are assigned. Choosing Auto
+     * assigned hands out the enquiries already waiting (user, 2026-10-03).
+     */
+    @Transactional
+    public EnquiryHandlerSettingsResponse chooseHandlerSettings(
+            UUID actorUserId, UUID propertyId, EnquiryHandlerSettingsRequest request) {
+        EnquiryHandlerSettingsResponse settings = handlerService.choose(actorUserId, propertyId, request);
+        handOutWaiting(actorUserId, propertyId);
+        return settings;
+    }
+
+    /** Changes how enquiries are assigned. Switching to Auto assigned hands out the ones waiting. */
+    @Transactional
+    public EnquiryHandlerSettingsResponse changeHandlerSettings(
+            UUID actorUserId, UUID propertyId, EnquiryHandlerSettingsRequest request) {
+        EnquiryHandlerSettingsResponse settings = handlerService.change(actorUserId, propertyId, request);
+        handOutWaiting(actorUserId, propertyId);
+        return settings;
+    }
+
+    /**
+     * Gives each waiting enquiry its handler, in turn, and tells them, as an
+     * enquiry the system assigns on arrival is told. The owner, who just made
+     * the switch, is told in-app only.
+     */
+    private void handOutWaiting(UUID actorUserId, UUID propertyId) {
+        PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        List<Enquiry> handedOut = handlerService.handOutWaiting(property, Instant.now());
+        if (handedOut.isEmpty()) {
+            return;
+        }
+        Map<UUID, UserSummaryResponse> enquirers = authModule.findByIds(
+                handedOut.stream().map(Enquiry::getEnquirerUserId).collect(Collectors.toSet()));
+        for (Enquiry enquiry : handedOut) {
+            tellHandlerOfAssignment(
+                    enquiry.getHandlerUserId(), property, enquiry,
+                    whoAsked(enquirers.get(enquiry.getEnquirerUserId())) + " asked about " + property.name()
+                            + ". The system gave this enquiry to you.",
+                    enquiry.getHandlerUserId().equals(actorUserId)
+                            ? NotificationDeliveryMode.IN_APP_ONLY
+                            : NotificationDeliveryMode.IN_APP_AND_PUSH);
+        }
     }
 
     /** The note on a call settled because a visit was booked, so the log says why. */
@@ -1232,6 +1336,7 @@ public class EnquiryService {
             if (enquiry.getHandlerReversedByUserId() != null) {
                 userIds.add(enquiry.getHandlerReversedByUserId());
             }
+            addClosers(userIds, enquiry);
         }
         attemptsByEnquiry.values().stream()
                 .flatMap(List::stream)
@@ -1273,6 +1378,7 @@ public class EnquiryService {
         if (enquiry.getHandlerReversedByUserId() != null) {
             userIds.add(enquiry.getHandlerReversedByUserId());
         }
+        addClosers(userIds, enquiry);
         return toDetail(
                 enquiry, enquirer, attempts, authModule.findByIds(userIds),
                 visitLookup.lastCancelledOn(List.of(enquiry.getId())).get(enquiry.getId()), viewer);
@@ -1335,7 +1441,43 @@ public class EnquiryService {
                         ? null
                         : new CancelledVisitView(
                                 cancelledVisit.reason(), cancelledVisit.byTenant(), cancelledVisit.cancelledAt()),
+                endingsOf(enquiry, users),
                 enquiry.getVersion());
+    }
+
+    /** Whoever closed it, now or before a change of mind reopened it, for the names in the log. */
+    private static void addClosers(Set<UUID> userIds, Enquiry enquiry) {
+        if (enquiry.getEndedByUserId() != null) {
+            userIds.add(enquiry.getEndedByUserId());
+        }
+        if (enquiry.getFirstEndedByUserId() != null) {
+            userIds.add(enquiry.getFirstEndedByUserId());
+        }
+    }
+
+    /**
+     * How it ended, newest first, for the action log (user, 2026-10-03): its
+     * expiry, then each closing, the one a change of mind undid included. An
+     * expiry brought on by the enquirer's fresh enquiry is its own kind.
+     */
+    private static List<EnquiryEndingView> endingsOf(Enquiry enquiry, Map<UUID, UserSummaryResponse> users) {
+        List<EnquiryEndingView> endings = new ArrayList<>();
+        if (enquiry.isExpired() && enquiry.getReplacedAt() != null) {
+            endings.add(EnquiryEndingView.expiredByDuplicate(enquiry.getReplacedAt()));
+        } else if (enquiry.isExpired() && enquiry.getExpiresAt() != null) {
+            endings.add(EnquiryEndingView.expired(enquiry.getExpiresAt(), enquiry.getEndReason()));
+        }
+        if (enquiry.isEnded()) {
+            endings.add(EnquiryEndingView.closed(
+                    enquiry.getEndedAt(), enquiry.getEndedByUserId(),
+                    nameOf(users, enquiry.getEndedByUserId()), enquiry.isEndedAutomatically()));
+        }
+        if (enquiry.getFirstEndedAt() != null) {
+            endings.add(EnquiryEndingView.closed(
+                    enquiry.getFirstEndedAt(), enquiry.getFirstEndedByUserId(),
+                    nameOf(users, enquiry.getFirstEndedByUserId()), enquiry.isFirstEndedAutomatically()));
+        }
+        return endings;
     }
 
     private static String targetOf(List<ReachableChannelResponse> reachable, EnquiryResponseChannel channel) {

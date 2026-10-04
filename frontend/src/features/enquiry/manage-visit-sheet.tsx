@@ -10,11 +10,14 @@ import { useGetEnquiryChatActionsQuery } from "@/store/services/enquiry-chat-api
  */
 export function ManageVisitSheet({
   enquiryId,
+  onBack,
   onClose,
   personName,
   propertyId,
 }: {
   enquiryId: string;
+  /** Stacked on another sheet: back returns to it. See `VisitSheet`. */
+  onBack?: () => void;
   onClose: () => void;
   /** The enquirer, named in the confirmations. */
   personName?: string | null;
@@ -27,6 +30,7 @@ export function ManageVisitSheet({
       enquiryId={enquiryId}
       loadingVisit={actions.isLoading}
       notInterestedCloses={actions.data?.notInterestedCloses ?? false}
+      onBack={onBack}
       onClose={onClose}
       personName={personName}
       propertyId={propertyId}

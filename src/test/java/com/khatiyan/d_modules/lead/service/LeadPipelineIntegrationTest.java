@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder.Seeded;
@@ -195,6 +196,16 @@ class LeadPipelineIntegrationTest {
         assertThat(page(LeadState.CLOSED, null).items()).extracting(LeadResponse::id).containsExactly(closed.id());
     }
 
+    /**
+     * One current enquiry per person per property (owner's rule, 2026-10-03),
+     * so a second one is only raised once the first is over. When the record
+     * is still open at that moment, the second joins it: same person, same
+     * property, one record.
+     *
+     * <p>Here the first was answered and its date has passed, and the hourly
+     * sweep has not told the pipeline yet. Until 2026-10-03 this test raised
+     * the second while the first was still open, which is now refused.
+     */
     @Test
     void aSecondEnquiryFromTheSamePersonJoinsTheirOpenLead() {
         UUID prospect = prospects.get(0);
@@ -204,19 +215,31 @@ class LeadPipelineIntegrationTest {
         act(() -> enquiryService.settleAttempt(managerA, first, called.callToSettleId(),
                 new SettleEnquiryAttemptRequest(EnquiryAttemptOutcome.SUCCEEDED, null)));
 
-        // Answered, so they may ask again. It is the same person at the same property: one record.
+        // While the first is open, a second is refused.
+        assertThatThrownBy(() -> raise(prospect))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("already have an open enquiry");
+
+        // The first runs out. Its record is still open: nothing has closed it yet.
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minusSeconds(60)), first);
         UUID second = raise(prospect);
 
         LeadResponse lead = onlyLead();
         assertThat(lead.enquiryId()).isEqualTo(first);
+        assertThat(lead.state()).isEqualTo(LeadState.OPEN);
         assertThat(types(lead.id())).contains(LeadActivityType.ENQUIRY_JOINED);
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM lead.lead_enquiries WHERE lead_id = ?", Long.class, lead.id())).isEqualTo(2);
 
-        // The second one expiring unanswered does not close a lead that was already reached.
+        // The second one expiring unanswered does not close it as unanswered:
+        // they were reached on the first. With nothing left to book a visit
+        // from, it ends as no visit booked.
         expire(second, prospect);
 
-        assertThat(onlyLead().state()).isEqualTo(LeadState.OPEN);
+        LeadResponse ended = onlyLead();
+        assertThat(ended.state()).isEqualTo(LeadState.CLOSED);
+        assertThat(ended.closeReason()).isEqualTo(LeadCloseReason.NO_VISIT_BOOKED);
     }
 
     /**

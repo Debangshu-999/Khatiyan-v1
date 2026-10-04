@@ -10,5 +10,11 @@ public enum EnquiryVisitState {
     SCHEDULED,
 
     /** Its visit was cancelled, and none is booked now. */
-    CANCELLED
+    CANCELLED,
+
+    /** Its visitor was checked in at the property (2026-10-04). */
+    VISITED,
+
+    /** Nobody checked them in by midnight: No visit (2026-10-04). */
+    MISSED
 }

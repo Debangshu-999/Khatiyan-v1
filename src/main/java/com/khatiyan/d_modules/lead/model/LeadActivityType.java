@@ -28,5 +28,11 @@ public enum LeadActivityType {
     VISIT_CANCELLED,
 
     /** Opened again: its enquiry was reopened after closing as not interested. */
-    REOPENED
+    REOPENED,
+
+    /** The visitor was checked in at the property. The detail holds the date and slot. */
+    VISIT_ATTENDED,
+
+    /** Nobody checked them in by midnight: No visit. The detail holds the date and slot. */
+    VISIT_MISSED
 }

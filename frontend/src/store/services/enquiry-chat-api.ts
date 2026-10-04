@@ -25,11 +25,11 @@ export type Visit = {
   missed: boolean;
   /** How many more times the prospect may move it themselves. */
   tenantReschedulesLeft: number;
-  /** Whether the person reading may move it now: before its day, or after a miss. */
+  /** Whether the person reading may move it now. The property: until two hours before its slot. */
   canReschedule: boolean;
   /** Why not, in words to show. Null when they may. */
   rescheduleRefusal: string | null;
-  /** Whether the person reading may cancel it: either side, until it is done, its day included. */
+  /** Whether the person reading may cancel it. The visitor until it is done, the property until two hours before its slot. */
   canCancel: boolean;
   /** Sent back as If-Match when moving it. */
   version: number;
@@ -77,7 +77,14 @@ export type VisitAvailability = {
   days: { date: string; slots: VisitSlotAvailability[] }[];
 };
 
-/** A visit booked on one of the property's enquiries and not yet done. */
+/**
+ * What a visit card says about its visit. A cancelled one is never listed.
+ * RESCHEDULED is only on the list of the day a visit was moved off: the visit
+ * itself is in Upcoming, as SCHEDULED.
+ */
+export type VisitCardState = "SCHEDULED" | "VISITED" | "MISSED" | "RESCHEDULED";
+
+/** The visit that stands on one of the property's enquiries: booked, attended or missed. */
 export type BookedVisit = {
   enquiryId: string;
   visitId: string;
@@ -86,6 +93,131 @@ export type BookedVisit = {
   slotEnd: string;
   upcoming: boolean;
   missed: boolean;
+  state: VisitCardState;
+  /** Moved on or after the day it was due: the card reads "Visit rescheduled". */
+  rescheduled: boolean;
+  /** Whether the property may still move or cancel it: until two hours before its slot. */
+  managementMayChange: boolean;
+};
+
+export type VisitImpression = "LIKED" | "OKAY" | "DISLIKED";
+
+/** One visit on the Manage Visits screen (2026-10-04). */
+export type VisitCard = {
+  visitId: string;
+  /** The short code shown to people, never the id. */
+  referenceCode: string;
+  enquiryId: string;
+  prospectName: string | null;
+  date: string;
+  slotStart: string;
+  slotEnd: string;
+  /** The slot as instants, so Mark attendance opens and closes by this device's own clock. */
+  slotStartsAt: string;
+  slotEndsAt: string;
+  state: VisitCardState;
+  checkedInAt: string | null;
+  /** Who checked them in, so the card says "you" to that person. */
+  checkedInByUserId: string | null;
+  checkedInByName: string | null;
+  checkInMethod: "QR" | "CODE" | "OWNER" | null;
+  /** Past half the slot at check-in. Null until then, and when the owner marked it afterwards. */
+  late: boolean | null;
+  formCompleted: boolean;
+  /** The person reading checked them in, or owns the property: the visit form is theirs. */
+  viewerFillsForm: boolean;
+  departedAt: string | null;
+  partySize: number | null;
+  impression: VisitImpression | null;
+  handlerUserId: string | null;
+  handlerName: string | null;
+  noVisitAt: string | null;
+  /** When the visitor said they are running late. */
+  runningLateAt: string | null;
+  /** On a RESCHEDULED card: where the visit went. Its own date and slot are the ones it left. */
+  rescheduledToDate: string | null;
+  rescheduledToSlotStart: string | null;
+  /** When it took the date and slot it has now: booked, or last moved. */
+  placedAt: string;
+  version: number;
+};
+
+/** The Manage Visits screen's three tabs. */
+export type PropertyVisits = {
+  /** Only the owner marks a missed check-in. */
+  viewerIsOwner: boolean;
+  /** Every slot the property offers today, in order, whether or not anyone is coming in it. */
+  todaySlots: { start: string; end: string; startsAt: string; endsAt: string; capacity: number | null }[];
+  today: VisitCard[];
+  upcoming: VisitCard[];
+  /** No visits whose enquiry is still open. Nothing here can be acted on by the property. */
+  missed: VisitCard[];
+};
+
+/** One of the visitor's own visits, on My visits (2026-10-04). */
+export type MyVisit = {
+  visitId: string;
+  referenceCode: string;
+  enquiryId: string | null;
+  propertyId: string;
+  propertyName: string;
+  /** Google Maps directions to the property, from wherever the visitor is. Null when it has no address or pin. */
+  directionsUrl: string | null;
+  date: string;
+  slotStart: string;
+  slotEnd: string;
+  state: VisitCardState;
+  /** Instants, compared with this device's own clock. */
+  passOpensAt: string;
+  /** Midnight at the end of the visit's day: the pass shows until then. */
+  passClosesAt: string;
+  slotStartsAt: string;
+  runningLateFrom: string;
+  slotEndsAt: string;
+  checkedInAt: string | null;
+  /** Who received them at the property, once checked in. */
+  checkedInByName: string | null;
+  checkInMethod: "QR" | "CODE" | "OWNER" | null;
+  /** Past half the slot at check-in. Null until then, and when the owner marked it afterwards. */
+  late: boolean | null;
+  noVisitAt: string | null;
+  /** For a No visit: "Are you still interested?" is open until then. */
+  answerBy: string | null;
+  /** When they said "I'm on my way". The screen stops asking then. */
+  runningLateAt: string | null;
+  /** Once its enquiry is over, nothing more can be done with the visit. */
+  enquiryOpen: boolean;
+  version: number;
+};
+
+/** The visitor's pass for their slot: what the QR holds, and the code under it. */
+export type VisitPass = {
+  visitId: string;
+  referenceCode: string;
+  propertyName: string;
+  date: string;
+  slotStart: string;
+  slotEnd: string;
+  token: string;
+  code: string;
+  validUntil: string;
+};
+
+/** Where a visit stands for the visitor, by the clock. */
+export type VisitWindow = "BEFORE_DAY" | "DAY_BEFORE_SLOT" | "IN_SLOT" | "RUNNING_LATE" | "MISSED" | "CLOSED";
+
+/** Where a visit may be moved to right now. The screen offers exactly these. */
+export type VisitMoveOptions = {
+  visitId: string;
+  window: VisitWindow;
+  /** Why it cannot be moved, in words to show. Null when it can. */
+  refusal: string | null;
+  /** Why it cannot go to another day, when only its own day is left to it. Null when another day is on offer. */
+  anotherDayRefusal: string | null;
+  /** A slot on the visit day itself costs the visitor nothing. */
+  todayIsFree: boolean;
+  reschedulesLeft: number;
+  days: { date: string; slots: VisitSlotAvailability[] }[];
 };
 
 export const enquiryChatApi = api.injectEndpoints({
@@ -99,6 +231,70 @@ export const enquiryChatApi = api.injectEndpoints({
     getEnquiryChatActions: builder.query<EnquiryChatActions, string>({
       query: (enquiryId) => `/api/v1/enquiries/${enquiryId}/chat-actions`,
       providesTags: ["EnquiryChat"],
+    }),
+
+    /** The Manage Visits screen: today, upcoming and missed, in one read. */
+    getPropertyVisits: builder.query<PropertyVisits, string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/visits`,
+      providesTags: ["EnquiryChat"],
+    }),
+
+    /** The visitor's own visits, at any property. */
+    getMyVisits: builder.query<MyVisit[], void>({
+      query: () => "/api/v1/visits/mine",
+      providesTags: ["EnquiryChat"],
+    }),
+
+    /** The visitor's own pass. Refused until an hour before the slot. */
+    getVisitPass: builder.query<VisitPass, string>({
+      query: (visitId) => `/api/v1/visits/${visitId}/pass`,
+      providesTags: ["EnquiryChat"],
+    }),
+
+    getVisitMoveOptions: builder.query<VisitMoveOptions, string>({
+      query: (visitId) => `/api/v1/visits/${visitId}/move-options`,
+      providesTags: ["EnquiryChat"],
+    }),
+
+    /** Marks attendance with the scanned pass or the code on it. */
+    checkInVisit: builder.mutation<VisitCard, { visitId: string; token?: string; code?: string }>({
+      query: ({ code, token, visitId }) => ({
+        body: { code: code ?? null, token: token ?? null },
+        method: "POST",
+        url: `/api/v1/visits/${visitId}/check-in`,
+      }),
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
+    }),
+
+    /** The owner marks a visitor nobody scanned, after the slot and before midnight. */
+    markMissedCheckIn: builder.mutation<VisitCard, string>({
+      query: (visitId) => ({ method: "POST", url: `/api/v1/visits/${visitId}/missed-check-in` }),
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
+    }),
+
+    /** Each part is optional. What is left out stays blank, and the leaving time becomes the slot's end overnight. */
+    completeVisitForm: builder.mutation<
+      VisitCard,
+      { visitId: string; departedAt: string | null; partySize: number | null; impression: VisitImpression | null }
+    >({
+      query: ({ departedAt, impression, partySize, visitId }) => ({
+        body: { departedAt, impression, partySize },
+        method: "PUT",
+        url: `/api/v1/visits/${visitId}/form`,
+      }),
+      invalidatesTags: ["EnquiryChat"],
+    }),
+
+    /** "I'm on my way", past half the slot: the owner and every manager are told, once. */
+    markRunningLate: builder.mutation<void, string>({
+      query: (visitId) => ({ method: "POST", url: `/api/v1/visits/${visitId}/running-late` }),
+      invalidatesTags: ["EnquiryChat"],
+    }),
+
+    /** "Are you still interested?" answered No: the enquiry expires. */
+    declineMissedVisit: builder.mutation<void, string>({
+      query: (visitId) => ({ method: "POST", url: `/api/v1/visits/${visitId}/not-interested` }),
+      invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
 
     getVisitAvailability: builder.query<VisitAvailability, string>({
@@ -184,7 +380,16 @@ export const enquiryChatApi = api.injectEndpoints({
 
 export const {
   useCancelVisitMutation,
+  useCheckInVisitMutation,
+  useCompleteVisitFormMutation,
+  useDeclineMissedVisitMutation,
   useEndEnquiryConversationMutation,
+  useGetMyVisitsQuery,
+  useGetPropertyVisitsQuery,
+  useGetVisitMoveOptionsQuery,
+  useGetVisitPassQuery,
+  useMarkMissedCheckInMutation,
+  useMarkRunningLateMutation,
   useGetBookedVisitsQuery,
   useGetEnquiryChatActionsQuery,
   useGetVisitAvailabilityQuery,

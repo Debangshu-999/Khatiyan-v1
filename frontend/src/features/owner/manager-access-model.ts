@@ -58,7 +58,7 @@ export type AccessModule = {
 export const ACCESS_MODULES: AccessModule[] = [
   {
     key: "food",
-    label: "Food preference",
+    label: "Meal management",
     description: "Food items, profiles, weekly menus, subscribers and cooking forecasts.",
     manageable: true,
     sections: [

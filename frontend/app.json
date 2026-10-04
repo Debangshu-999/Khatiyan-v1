@@ -61,7 +61,14 @@
         }
       ],
       "./plugins/with-mappls-sdk",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan a visitor's pass.",
+          "recordAudioAndroid": false
+        }
+      ]
     ]
   }
 }

@@ -114,11 +114,14 @@ export function GhostImage({ style, ...rest }: ImageProps) {
  */
 export function GhostIcon({
   color,
+  fill,
   icon: Icon,
   size = 24,
   strokeWidth,
 }: {
   color: string;
+  /** For a mark drawn solid, such as the person beside a name. */
+  fill?: string;
   icon: React.ComponentType<LucideProps>;
   size?: number;
   strokeWidth?: number;
@@ -126,7 +129,7 @@ export function GhostIcon({
   const isSkeleton = useIsSkeleton();
 
   if (!isSkeleton) {
-    return <Icon color={color} size={size} strokeWidth={strokeWidth} />;
+    return <Icon color={color} fill={fill} size={size} strokeWidth={strokeWidth} />;
   }
 
   return <Skeleton height={size} radius={Math.round(size / 3)} width={size} />;

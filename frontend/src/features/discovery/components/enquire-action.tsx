@@ -12,8 +12,6 @@ import { useToast } from "@/components/toast";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { EnquiryConsentModal } from "@/features/discovery/components/enquiry-consent-modal";
 import {
-  describeEmailChannelGap,
-  describeReachableChannel,
   ENQUIRY_MESSAGE_MAX_LENGTH,
   useChangeEnquiryMindMutation,
   useGetMyEnquiryChannelConsentsQuery,
@@ -177,8 +175,8 @@ export function EnquireFlow({
 }) {
   const consentsQuery = useGetMyEnquiryChannelConsentsQuery();
   const consents = consentsQuery.data;
+  const toast = useToast();
   const [step, setStep] = useState<"CONSENT" | "COMPOSE" | null>(null);
-  const [receipt, setReceipt] = useState<EnquiryReceipt | null>(null);
 
   /**
    * The consent modal comes FIRST, before composing.
@@ -191,15 +189,12 @@ export function EnquireFlow({
    * server refuse.
    */
   useEffect(() => {
-    if (step !== null || receipt || consentsQuery.isLoading) {
+    if (step !== null || consentsQuery.isLoading) {
       return;
     }
     setStep(consents && !consents.anyGranted ? "CONSENT" : "COMPOSE");
-  }, [consents, consentsQuery.isLoading, receipt, step]);
+  }, [consents, consentsQuery.isLoading, step]);
 
-  if (receipt) {
-    return <EnquirySentDialog onClose={onDone} receipt={receipt} />;
-  }
   if (step === "CONSENT" && consents) {
     return <EnquiryConsentModal consents={consents} onClose={onDone} onGranted={() => setStep("COMPOSE")} />;
   }
@@ -208,9 +203,11 @@ export function EnquireFlow({
       <EnquirySheet
         consents={consents}
         onClose={onDone}
-        onSent={(sent) => {
-          setStep(null);
-          setReceipt(sent);
+        // Asked first in "Send enquiry?", so sent needs only a toast
+        // (user, 2026-10-03).
+        onSent={() => {
+          toast.show("Enquiry sent.", "success");
+          onDone();
         }}
         propertyId={propertyId}
         propertyName={propertyName}
@@ -333,14 +330,26 @@ function EnquirySheet({
   const [message, setMessage] = useState("");
   const form = useFormErrors<"message">();
   const [raiseEnquiry, raiseState] = useRaiseEnquiryMutation();
+  // "Send enquiry?" before it goes (user, 2026-10-03). Cancel only closes the
+  // question: the message stays in the field, and nothing is sent.
+  const [confirming, setConfirming] = useState(false);
 
   const sharedNames = sharedDetailNames(consents);
   const trimmed = message.trim();
+  // The number a call back would go to, when they agreed to one.
+  const callBack = consents?.channels.find(
+    (option) => option.channel === "CALL_BACK" && option.granted && option.available && option.target,
+  );
 
-  async function submit() {
+  function askFirst() {
     if (!form.validate(trimmed ? {} : { message: "Write what you would like to ask." })) {
       return;
     }
+    setConfirming(true);
+  }
+
+  async function submit() {
+    setConfirming(false);
     try {
       onSent(await raiseEnquiry({ message: trimmed, propertyId }).unwrap());
     } catch (caught) {
@@ -403,32 +412,30 @@ function EnquirySheet({
         disabled={raiseState.isLoading || !trimmed || form.blocked}
         icon={MessageSquare}
         label={raiseState.isLoading ? "Sending…" : "Send enquiry"}
-        onPress={() => void submit()}
+        onPress={askFirst}
       />
+      {/* One paragraph, no points (user, 2026-10-03). Chat always works. A
+          call back is named only when they agreed to one. Email is no longer a
+          way to reply, so nothing is said about verifying one. */}
+      {confirming ? (
+        <ConfirmDialog
+          cancelLabel="Cancel"
+          confirmLabel="Send enquiry"
+          message={
+            callBack
+              ? `${propertyName} management will reach out to you soon, over chat here in the app or with a call back on ${callBack.target}.`
+              : `${propertyName} management will reach out to you soon over chat here in the app.`
+          }
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void submit()}
+          title="Send enquiry?"
+        />
+      ) : null}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );
 }
 
-/**
- * Confirms the enquiry landed and, more usefully, tells them how they will be
- * contacted — from the server's own list, so it cannot promise a channel the
- * owner is not allowed to pick.
- */
-function EnquirySentDialog({ onClose, receipt }: { onClose: () => void; receipt: EnquiryReceipt }) {
-  return (
-    <ConfirmDialog
-      acknowledgeOnly
-      bullets={receipt.reachableChannels.map(describeReachableChannel)}
-      confirmLabel="Got it"
-      footnote={describeEmailChannelGap(receipt.emailChannelState) ?? undefined}
-      message={`${receipt.propertyName} management will reach out to you soon.`}
-      onCancel={onClose}
-      onConfirm={onClose}
-      title="Enquiry sent"
-    />
-  );
-}
 
 function formatWhen(value: string) {
   return new Intl.DateTimeFormat("en-IN", {

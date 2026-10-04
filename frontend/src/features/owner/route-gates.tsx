@@ -22,7 +22,7 @@ export const ROUTE_GATES: Record<string, { label: string; resource: ManagerResou
   "/owner-board": { label: "Property board", resource: "PROPERTY_BOARD" },
   "/owner-deposit-history": { label: "Deposits", resource: "DEPOSITS" },
   "/owner-expenses": { label: "Expenses", resource: "EXPENSES" },
-  "/owner-food": { label: "Food preference", resource: "FOOD" },
+  "/owner-food": { label: "Meal management", resource: "FOOD" },
   "/owner-food-menu": { label: "Weekly food menu", resource: "FOOD" },
   "/owner-food-forecast": { label: "Cooking forecast", resource: "FOOD" },
   "/owner-deposit-manager": { label: "Deposits", resource: "DEPOSITS" },

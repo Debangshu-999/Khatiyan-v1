@@ -145,6 +145,20 @@ public enum NotificationSubtype {
     VISIT_RESCHEDULED,
     /** A visit was cancelled. Sent to whichever side did not cancel it. */
     VISIT_CANCELLED,
+    /** To the visitor at 10 am the day before: they can still reschedule today (2026-10-04). */
+    VISIT_REMINDER_DAY_BEFORE,
+    /** To the visitor two hours before their slot: they can still change slots. */
+    VISIT_REMINDER_TODAY,
+    /** To the owner and every manager at 7 am: how many people are visiting today. */
+    VISITORS_TODAY,
+    /** To the owner and every manager 15 minutes before a slot: who is coming, mark their attendance. */
+    VISIT_SLOT_STARTING,
+    /** To the owner and every manager: a visitor said they are running late. */
+    VISITOR_RUNNING_LATE,
+    /** To the owner and every manager when a slot ends: attendance was not marked for some visitors. */
+    VISIT_ATTENDANCE_NOT_MARKED,
+    /** A visitor was checked in. Told to the visitor, the owner and every manager, each in their own words. */
+    VISIT_CHECKED_IN,
 
     /**
      * Somebody wrote in a conversation.

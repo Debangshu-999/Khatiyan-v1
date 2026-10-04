@@ -23,6 +23,16 @@ export type OwnerModule = {
   artworkVariant?: "compact" | "large" | "wide";
   key: OwnerModuleKey;
   title: string;
+  /** A shorter name for the Pinned Services tile on Home, where the full one is too long. */
+  pinnedTitle?: string;
+  /**
+   * What the module is for and what it holds, in a couple of short sentences
+   * that fill two or three lines beside the artwork (user, 2026-10-04). Not a
+   * bare comma list of its screens, and not a one-line slogan either: the
+   * first version listed everything and the second said too little, leaving
+   * agreements out of Tenancy. About 95 to 110 characters. The card grows
+   * with it.
+   */
   description: string;
   icon: ComponentType<LucideProps>;
   route: OwnerModuleRoute;
@@ -48,7 +58,7 @@ export type OwnerModule = {
 export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/tenancy-module.png"),
-    description: "Create tenancies, view active stays and review exits.",
+    description: "Move tenants in and see them out. Their stays, agreements, rules and exit requests all live here.",
     icon: UsersRound,
     key: "tenancy",
     resources: ["TENANCIES", "TENANCY_CREATE", "EXIT_REQUESTS", "ROOM_CHANGES", "TENANCY_RULES"],
@@ -57,7 +67,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     artwork: require("../../../assets/images/workspace/billing-module.png"),
-    description: "Billing cycles, overdue dues, line items, deposit ledger and payment status.",
+    description: "Rent, extra charges and deposits in one place. See what is paid, what is due and what has gone late.",
     icon: Banknote,
     key: "billing",
     resources: ["BILLING_CYCLES", "DEPOSITS"],
@@ -66,7 +76,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     artwork: require("../../../assets/images/workspace/property-module.png"),
-    description: "Property settings, room inventory (single & bulk), facilities and board.",
+    description: "Everything about the place itself. Rooms and beds, your listing, the board and visiting hours.",
     // The property mark, not a spanner. A spanner says "settings", which is one
     // of four things behind this tile — and it is now the Manage tab's own
     // icon, so the module and the tab it lives in were wearing the same glyph.
@@ -78,16 +88,18 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     artwork: require("../../../assets/images/workspace/food-preference-module-card.png"),
-    description: "Food items, meal profiles, weekly menus, subscribers and cooking forecasts.",
+    description: "Set the week's menu and who eats what. Know how many plates to cook before every meal.",
     icon: foodIcon("silverware-fork-knife"),
     key: "food",
     resources: ["FOOD"],
+    // "Meals" once pinned (user, 2026-10-04). It was "Food preference".
+    pinnedTitle: "Meals",
     route: "/owner-food",
-    title: "Food preference",
+    title: "Meal management",
   },
   {
     artwork: require("../../../assets/icons/workspace/notice-module.png"),
-    description: "Property board, visible notices, recurring notices and archive controls.",
+    description: "Tell the whole property at once. Post a notice now, schedule it for later, or set it to repeat.",
     icon: Megaphone,
     key: "notice",
     resources: ["NOTICES"],
@@ -96,7 +108,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     artwork: require("../../../assets/images/workspace/concern-module.png"),
-    description: "Available, under review, undertaken, escalated and history views.",
+    description: "Everything your tenants raise, from open to resolved. See who has taken each one up and what is stuck.",
     icon: AlertCircle,
     key: "concern",
     resources: ["CONCERNS"],
@@ -105,7 +117,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   },
   {
     artwork: require("../../../assets/images/workspace/staff-module.png"),
-    description: "Managers, staff categories, employment details and manual salary tracking.",
+    description: "Your managers and staff in one place. Keep their details, their pay and every salary you have given.",
     icon: BriefcaseBusiness,
     key: "staff",
     ownerOnly: true,

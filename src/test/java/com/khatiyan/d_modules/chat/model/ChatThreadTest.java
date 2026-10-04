@@ -144,4 +144,26 @@ class ChatThreadTest {
 
         assertThat(thread.getLastMessageKind()).isEqualTo("IMAGE");
     }
+
+    /**
+     * An older enquiry chat holds its question as a message too. Only that
+     * message is the placed question: same place, same author, same words. The
+     * backfill marked the first message of every older chat, and on some that
+     * is somebody's real text, which must stay readable.
+     */
+    @Test
+    void onlyTheQuestionItselfCountsAsThePlacedOpening() {
+        UUID enquirer = UUID.randomUUID();
+        ChatThread thread = ChatThread.forEnquiry(PROPERTY, UUID.randomUUID());
+        thread.rememberOpening("Is a single room free?", enquirer);
+
+        // Nothing was ever placed on a chat opened since.
+        assertThat(thread.isPlacedOpening(1L, enquirer, "Is a single room free?")).isFalse();
+
+        org.springframework.test.util.ReflectionTestUtils.setField(thread, "openingMessageSeq", 7L);
+        assertThat(thread.isPlacedOpening(7L, enquirer, "Is a single room free?")).isTrue();
+        assertThat(thread.isPlacedOpening(8L, enquirer, "Is a single room free?")).isFalse();
+        assertThat(thread.isPlacedOpening(7L, UUID.randomUUID(), "Is a single room free?")).isFalse();
+        assertThat(thread.isPlacedOpening(7L, enquirer, "Yes, from the 1st.")).isFalse();
+    }
 }

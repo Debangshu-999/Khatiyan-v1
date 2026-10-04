@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useLeavableSurface } from "@/components/leave-on-stale";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -192,6 +193,9 @@ export function SheetShell({
   // dismiss through a ref instead of capturing the first one it ever saw.
   const dismissRef = useRef(dismiss);
   dismissRef.current = dismiss;
+  // A "data has changed" refusal raised while this sheet is on top closes it
+  // (2026-10-04): it is opened again on the new data.
+  useLeavableSurface(() => dismissRef.current());
 
   /**
    * How far the body has scrolled, read by the gesture rather than by React.

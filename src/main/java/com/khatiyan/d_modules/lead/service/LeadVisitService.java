@@ -1,8 +1,10 @@
 package com.khatiyan.d_modules.lead.service;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -35,6 +37,7 @@ import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.ScheduleVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.VisitAvailabilityResponse;
+import com.khatiyan.d_modules.lead.api.dto.VisitMoveOptionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.VisitResponse;
 import com.khatiyan.d_modules.lead.model.Lead;
 import com.khatiyan.d_modules.lead.model.LeadActivity;
@@ -43,6 +46,7 @@ import com.khatiyan.d_modules.lead.model.LeadEnquiry;
 import com.khatiyan.d_modules.lead.model.Visit;
 import com.khatiyan.d_modules.lead.model.VisitBookedBy;
 import com.khatiyan.d_modules.lead.model.VisitStatus;
+import com.khatiyan.d_modules.lead.model.VisitWindow;
 import com.khatiyan.d_modules.lead.repository.LeadActivityRepository;
 import com.khatiyan.d_modules.lead.repository.LeadEnquiryRepository;
 import com.khatiyan.d_modules.lead.repository.LeadRepository;
@@ -74,13 +78,17 @@ import lombok.extern.slf4j.Slf4j;
  * <li>One visit per enquiry. A person cannot book another at the property
  * while one is still to happen, or until the enquiry it was booked on has
  * expired. Missing the visit does not earn a second one.</li>
- * <li>A visit is moved before its day, or after it was missed. Never on the
- * day itself. A missed visit is given a new date this way, not booked again.</li>
- * <li>The prospect may move theirs twice before its date, and twice more after
- * missing it. Past either, the property moves it.</li>
- * <li>Either side cancels, any time before the visit is done, its day
- * included. The person goes back to Enquired and may book again before the
- * enquiry expires. If it has expired already, their record ends there.</li>
+ * <li>The property moves or cancels a visit until two hours before its slot
+ * (user, 2026-10-04). After that, and for a missed one, only the visitor can.</li>
+ * <li>The prospect moves theirs twice before its day. On the day, before their
+ * slot starts, another slot that day is free. Once the slot has started they
+ * cannot move it, until half of it has gone with nobody checking them in: then
+ * they are running late, and a later slot that day is free. Another day is
+ * offered only when no slot is left, and is one of their two missed moves.</li>
+ * <li>A No visit is moved by the visitor only, twice, on the missed count.</li>
+ * <li>The visitor cancels any time before the visit is done. The person goes
+ * back to Enquired and may book again before the enquiry expires. If it has
+ * expired already, their record ends there.</li>
  * </ul>
  *
  * <p>Two people can go for the last place in a slot at the same moment. Each
@@ -110,6 +118,7 @@ public class LeadVisitService {
     private final NotificationModule notificationModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final JdbcTemplate jdbcTemplate;
+    private final Clock clock;
 
     public LeadVisitService(
             VisitRepository visitRepository,
@@ -122,7 +131,8 @@ public class LeadVisitService {
             AuthModule authModule,
             NotificationModule notificationModule,
             ReferenceCodeGenerator referenceCodeGenerator,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            Clock clock) {
         this.visitRepository = visitRepository;
         this.leadRepository = leadRepository;
         this.leadEnquiryRepository = leadEnquiryRepository;
@@ -134,6 +144,12 @@ public class LeadVisitService {
         this.notificationModule = notificationModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.jdbcTemplate = jdbcTemplate;
+        this.clock = clock;
+    }
+
+    /** The time in India. Every rule that turns on the hour reads it here, so a test can set it. */
+    LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), IST);
     }
 
     /** One of the property's slots on one date, with how many visits it takes. */
@@ -186,18 +202,86 @@ public class LeadVisitService {
     }
 
     /**
-     * Every visit booked on the property's enquiries and not yet done, for the
-     * Enquiries screen. One query, however many cards it serves.
+     * Every visit that stands on the property's enquiries, booked, attended or
+     * missed, for the Enquiries screen. One query, however many cards it serves.
      */
     @Transactional(readOnly = true)
     public List<BookedVisitResponse> bookedVisits(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
-        LocalDate today = LocalDate.now(IST);
+        LocalDateTime now = now();
         return visitRepository
-                .findByPropertyIdAndStatusAndEnquiryIdIsNotNull(propertyId, VisitStatus.SCHEDULED)
+                .findByPropertyIdAndStatusNotAndEnquiryIdIsNotNull(propertyId, VisitStatus.CANCELLED)
                 .stream()
-                .map(visit -> BookedVisitResponse.of(visit, today))
+                .map(visit -> BookedVisitResponse.of(visit, now, IST))
                 .toList();
+    }
+
+    /**
+     * Where a visit may be moved to right now, for whoever is asking. Today's
+     * later slots come first when the visitor may take one for free. Another
+     * day is on offer to them as long as a counted move is left, a later slot
+     * being free today or not (user, 2026-10-04).
+     */
+    @Transactional(readOnly = true)
+    public VisitMoveOptionsResponse moveOptions(UUID actorUserId, UUID visitId) {
+        Visit visit = visitRepository.findById(visitId)
+                .orElseThrow(() -> new NotFoundException("Visit", visitId));
+        boolean byTenant = actorUserId.equals(visit.getProspectUserId());
+        if (!byTenant) {
+            ensureActingManagement(visit, actorUserId, "You cannot move this visit");
+        }
+        LocalDateTime now = now();
+        VisitWindow window = visit.prospectWindow(now);
+        int left = visit.tenantReschedulesLeft(now);
+        String refusal = moveRefusal(visit, now, byTenant, !byTenant);
+        if (refusal != null) {
+            return new VisitMoveOptionsResponse(visitId, window, refusal, refusal, false, left, List.of());
+        }
+
+        boolean sameDay = byTenant && window.onTheDay();
+        List<VisitAvailabilityResponse.Slot> laterToday = sameDay ? laterSlotsToday(visit, now) : List.of();
+        List<VisitAvailabilityResponse.Day> days = new ArrayList<>();
+        if (!laterToday.isEmpty()) {
+            days.add(new VisitAvailabilityResponse.Day(now.toLocalDate(), laterToday));
+        }
+        boolean anotherDay = !byTenant || left > 0;
+        if (anotherDay) {
+            days.addAll(availability(visit.getPropertyId()).days());
+        }
+        String limit = Visit.tenantLimitMessage(window == VisitWindow.RUNNING_LATE);
+        return new VisitMoveOptionsResponse(
+                visitId, window,
+                days.isEmpty()
+                        ? (left == 0 ? limit : "The property has no slot left to move this visit to.")
+                        : null,
+                anotherDay ? null : limit,
+                sameDay, left, days);
+    }
+
+    /** Today's slots that start after now and still have a place, other than the visit's own. */
+    private List<VisitAvailabilityResponse.Slot> laterSlotsToday(Visit visit, LocalDateTime now) {
+        LocalDate today = now.toLocalDate();
+        PropertyVisitSlotsResponse offered = propertyModule.findVisitSlots(visit.getPropertyId());
+        Map<Integer, Long> taken = new HashMap<>();
+        for (SlotTaken slot : visitRepository.countScheduledBySlot(visit.getPropertyId(), today, today)) {
+            taken.put(slot.getSlotStartMinute(), slot.getTaken());
+        }
+        List<VisitAvailabilityResponse.Slot> later = new ArrayList<>();
+        for (PropertyVisitSlotsResponse.VisitDay day : offered.days()) {
+            if (day.day() != today.getDayOfWeek() || day.visitorsPerSlot() == null) {
+                continue;
+            }
+            for (PropertyVisitSlotsResponse.Slot slot : day.slots()) {
+                int spotsLeft = (int) Math.max(
+                        0, day.visitorsPerSlot() - taken.getOrDefault(minuteOf(slot.startTime()), 0L));
+                if (today.atTime(slot.startTime()).isAfter(now) && spotsLeft > 0
+                        && !visit.isIn(today, slot.startTime())) {
+                    later.add(new VisitAvailabilityResponse.Slot(
+                            slot.startTime(), slot.endTime(), day.visitorsPerSlot(), spotsLeft));
+                }
+            }
+        }
+        return later;
     }
 
     /** What the action bar above the enquiry's chat shows for the person reading it. */
@@ -214,7 +298,8 @@ public class LeadVisitService {
         boolean answered = enquiry.respondedAt() != null;
         boolean acting = party == EnquiryParty.ACTING_MANAGEMENT;
         boolean enquirer = party == EnquiryParty.ENQUIRER;
-        LocalDate today = LocalDate.now(IST);
+        LocalDateTime clockNow = now();
+        LocalDate today = clockNow.toLocalDate();
         Visit visit = leadEnquiryRepository.findById(enquiryId)
                 .map(link -> blockingVisit(link.getLeadId(), today))
                 .orElse(null);
@@ -244,8 +329,8 @@ public class LeadVisitService {
                 visit == null
                         ? null
                         : VisitResponse.of(
-                                visit, today, moveRefusal(visit, today, enquirer, acting),
-                                mayCancel(visit, enquirer, acting)),
+                                visit, clockNow, moveRefusal(visit, clockNow, enquirer, acting),
+                                mayCancel(visit, enquirer, acting, clockNow)),
                 enquiry.version());
     }
 
@@ -333,8 +418,8 @@ public class LeadVisitService {
     /**
      * Moves a visit to another date or slot.
      *
-     * <p>The prospect may twice. The handler and the owner may as often as
-     * needed, and theirs are not counted.
+     * <p>The prospect by the rules of {@link Visit#moveByTenant}. The handler
+     * and the owner until two hours before the slot, and theirs are not counted.
      */
     @Transactional
     public VisitResponse reschedule(UUID actorUserId, UUID visitId, RescheduleVisitRequest request) {
@@ -346,22 +431,25 @@ public class LeadVisitService {
         if (!byTenant) {
             ensureActingManagement(visit, actorUserId, "You cannot move this visit");
         }
-        String refusal = moveRefusal(visit, LocalDate.now(IST), byTenant, !byTenant);
+        LocalDateTime clockNow = now();
+        String refusal = moveRefusal(visit, clockNow, byTenant, !byTenant);
         if (refusal != null) {
             throw new ValidationException(refusal);
         }
-        if (visit.isIn(request.date(), request.slotStart())) {
+        if (visit.isLive() && visit.isIn(request.date(), request.slotStart())) {
             throw new ValidationException("That is the slot it is already in. Pick another.");
         }
 
-        OfferedSlot slot = requireOffered(visit.getPropertyId(), request.date(), request.slotStart());
+        OfferedSlot slot = byTenant
+                ? requireOfferedToVisitor(visit, clockNow, request.date(), request.slotStart())
+                : requireOffered(visit.getPropertyId(), request.date(), request.slotStart());
         takePlace(visit.getPropertyId(), request.date(), slot);
 
         String from = when(visit);
         if (byTenant) {
-            visit.moveByTenant(request.date(), slot.start(), slot.end(), LocalDate.now(IST));
+            visit.moveByTenant(request.date(), slot.start(), slot.end(), clockNow);
         } else {
-            visit.moveByHandler(request.date(), slot.start(), slot.end());
+            visit.moveByHandler(request.date(), slot.start(), slot.end(), clockNow);
         }
         visit = visitRepository.saveAndFlush(visit);
 
@@ -379,11 +467,11 @@ public class LeadVisitService {
                 visit, lead, enquiry, byTenant ? VisitBookedBy.TENANT : VisitBookedBy.HANDLER,
                 NotificationSubtype.VISIT_RESCHEDULED, "Visit moved");
         log.info("Visit moved visitId={} date={} slotStart={} byTenant={} tenantReschedulesLeft={}",
-                visitId, visit.getVisitDate(), visit.getSlotStart(), byTenant, visit.tenantReschedulesLeft(LocalDate.now(IST)));
+                visitId, visit.getVisitDate(), visit.getSlotStart(), byTenant, visit.tenantReschedulesLeft(clockNow));
 
-        LocalDate today = LocalDate.now(IST);
         return VisitResponse.of(
-                visit, today, moveRefusal(visit, today, byTenant, !byTenant), mayCancel(visit, byTenant, !byTenant));
+                visit, clockNow, moveRefusal(visit, clockNow, byTenant, !byTenant),
+                mayCancel(visit, byTenant, !byTenant, clockNow));
     }
 
     /**
@@ -406,6 +494,13 @@ public class LeadVisitService {
         }
         if (!visit.isLive()) {
             throw new ValidationException("This visit can no longer be cancelled.");
+        }
+        LocalDateTime clockNow = now();
+        if (!byTenant) {
+            String refusal = visit.managementRefusal(clockNow, "cancelled");
+            if (refusal != null) {
+                throw new ValidationException(refusal);
+            }
         }
 
         // The person's turn at this property, held to the end: the pipeline may
@@ -443,9 +538,9 @@ public class LeadVisitService {
         log.info("Visit cancelled visitId={} byTenant={} leadId={} leadState={}",
                 visitId, byTenant, lead.getId(), lead.getState());
 
-        LocalDate today = LocalDate.now(IST);
         return VisitResponse.of(
-                visit, today, moveRefusal(visit, today, byTenant, !byTenant), mayCancel(visit, byTenant, !byTenant));
+                visit, clockNow, moveRefusal(visit, clockNow, byTenant, !byTenant),
+                mayCancel(visit, byTenant, !byTenant, clockNow));
     }
 
     /** Refuses anyone in management who is not acting on the visit's enquiry, and anyone outside it. */
@@ -470,21 +565,26 @@ public class LeadVisitService {
      * <p>One place decides it, for the bar and for the move itself, so the bar
      * never offers what the move would refuse.
      */
-    static String moveRefusal(Visit visit, LocalDate today, boolean enquirer, boolean acting) {
-        if (!visit.canBeMoved(today)) {
-            return visit.isLive()
-                    ? "The visit is today, so it can no longer be moved."
-                    : "This visit can no longer be moved.";
-        }
+    static String moveRefusal(Visit visit, LocalDateTime now, boolean enquirer, boolean acting) {
         if (enquirer) {
-            return visit.tenantReschedulesLeft(today) > 0 ? null : Visit.tenantLimitMessage(visit.isMissed(today));
+            return switch (visit.prospectWindow(now)) {
+                case CLOSED -> "This visit can no longer be moved.";
+                // Another slot the same day costs nothing, so the count does not
+                // refuse it. Their slot having started does not either (user, 2026-10-04).
+                case DAY_BEFORE_SLOT, IN_SLOT, RUNNING_LATE -> null;
+                case BEFORE_DAY -> visit.tenantReschedulesLeft(now) > 0 ? null : Visit.tenantLimitMessage(false);
+                case MISSED -> visit.tenantReschedulesLeft(now) > 0 ? null : Visit.tenantLimitMessage(true);
+            };
         }
-        return acting ? null : "Someone else is handling this enquiry.";
+        if (!acting) {
+            return "Someone else is handling this enquiry.";
+        }
+        return visit.managementRefusal(now, "moved");
     }
 
-    /** Either side may cancel a visit that is not yet done. */
-    private static boolean mayCancel(Visit visit, boolean enquirer, boolean acting) {
-        return visit.isLive() && (enquirer || acting);
+    /** The visitor cancels any time before the visit is done. The property until two hours before its slot. */
+    private static boolean mayCancel(Visit visit, boolean enquirer, boolean acting, LocalDateTime now) {
+        return visit.isLive() && (enquirer || (acting && visit.managementMayChange(now)));
     }
 
     /**
@@ -533,6 +633,31 @@ public class LeadVisitService {
         if (date.isAfter(lastBookableDate())) {
             throw new ValidationException("A visit can be booked up to " + BOOK_AHEAD_DAYS + " days ahead.");
         }
+        return offeredSlot(propertyId, date, slotStart);
+    }
+
+    /**
+     * The slot a visitor may move to. Another slot on the visit day itself is
+     * allowed for as long as the visit is still to happen, provided that slot
+     * has not started. Another day is never refused for a later slot being
+     * free today (user, 2026-10-04): the count is what limits it.
+     */
+    private OfferedSlot requireOfferedToVisitor(Visit visit, LocalDateTime now, LocalDate date, LocalTime slotStart) {
+        VisitWindow window = visit.prospectWindow(now);
+        if (date.equals(now.toLocalDate())) {
+            if (!window.onTheDay()) {
+                throw new ValidationException("A visit can be booked from tomorrow onwards.");
+            }
+            OfferedSlot slot = offeredSlot(visit.getPropertyId(), date, slotStart);
+            if (!date.atTime(slot.start()).isAfter(now)) {
+                throw new ValidationException("That slot has already started. Pick a later one.");
+            }
+            return slot;
+        }
+        return requireOffered(visit.getPropertyId(), date, slotStart);
+    }
+
+    private OfferedSlot offeredSlot(UUID propertyId, LocalDate date, LocalTime slotStart) {
         PropertyVisitSlotsResponse offered = propertyModule.findVisitSlots(propertyId);
         for (PropertyVisitSlotsResponse.VisitDay day : offered.days()) {
             if (day.day() != date.getDayOfWeek() || day.visitorsPerSlot() == null) {

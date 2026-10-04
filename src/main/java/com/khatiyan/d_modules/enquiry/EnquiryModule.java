@@ -2,14 +2,17 @@ package com.khatiyan.d_modules.enquiry;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquirySnapshot;
+import com.khatiyan.d_modules.enquiry.model.Enquiry;
 import com.khatiyan.d_modules.enquiry.repository.EnquiryRepository;
 import com.khatiyan.d_modules.enquiry.service.EnquiryService;
 
@@ -52,6 +55,25 @@ public class EnquiryModule {
     @Transactional(readOnly = true)
     public Optional<EnquirySnapshot> findSnapshot(UUID enquiryId) {
         return enquiryRepository.findById(enquiryId).map(EnquirySnapshot::of);
+    }
+
+    /** Several enquiries as they stand now, in one read. Ones that no longer exist are left out. */
+    @Transactional(readOnly = true)
+    public Map<UUID, EnquirySnapshot> findSnapshots(Collection<UUID> enquiryIds) {
+        if (enquiryIds.isEmpty()) {
+            return Map.of();
+        }
+        return enquiryRepository.findAllById(enquiryIds).stream()
+                .collect(Collectors.toMap(Enquiry::getId, EnquirySnapshot::of));
+    }
+
+    /**
+     * The enquiry's visit became No visit, and the visitor is no longer
+     * interested or did not say within the week: it expires now. Runs in the
+     * caller's transaction.
+     */
+    public boolean expireForMissedVisit(UUID enquiryId) {
+        return enquiryService.expireForMissedVisit(enquiryId);
     }
 
     /**

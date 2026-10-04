@@ -93,11 +93,13 @@ import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
 
-const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy", ImageSourcePropType> = {
+const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy" | "visits", ImageSourcePropType> = {
   deposit: require("../../assets/icons/home-tools/deposit-manager.png"),
   expenses: require("../../assets/icons/home-tools/expense-tracker.png"),
   pnl: require("../../assets/icons/home-tools/profit-loss.png"),
   vacancy: require("../../assets/icons/home-tools/vacancy-finder-home.png"),
+  // The user's own artwork for the Visitor Management System, once Manage Visits (2026-10-04).
+  visits: require("../../assets/images/workspace/manage_visits.png"),
 };
 
 /** How long Home is on screen before the greeting can appear over it. */
@@ -1581,7 +1583,8 @@ type OwnerRoute =
   | "/owner-expenses"
   | "/owner-service-balance"
   | "/owner-food"
-  | "/owner-pnl";
+  | "/owner-pnl"
+  | "/owner-visits";
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
 
@@ -2334,7 +2337,7 @@ function FrequentlyVisited({
                           }}
                           numberOfLines={2}
                         >
-                          {module.title}
+                          {module.pinnedTitle ?? module.title}
                         </Text>
                       </AnimatedPressable>
                     </View>
@@ -2420,6 +2423,21 @@ function WorkspaceTab({
               onPress={() => onNavigate("/owner-deposit-manager")}
             />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
+          </View>
+          {/* A fifth tool, half width with the place beside it left empty
+              (user, 2026-10-04). Open to every manager, like Enquiries. */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox
+              artwork={HOME_TOOL_ARTWORK.visits}
+              // A scene, not a single object, so it is drawn a little larger
+              // than the other tools to read at this size (user, 2026-10-04).
+              artworkSize={60}
+              // The Visitor Management System, by its initials: the full
+              // name does not fit a tool box (user, 2026-10-04).
+              label="VMS"
+              onPress={() => onNavigate("/owner-visits")}
+            />
+            <View style={{ flex: 1 }} />
           </View>
         </View>
       </Section>
@@ -2523,6 +2541,21 @@ function WorkspaceTabLoading({
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.deposit} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
           </View>
+          {/* A fifth tool, half width with the place beside it left empty
+              (user, 2026-10-04). Open to every manager, like Enquiries. */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <HomeToolBox
+              artwork={HOME_TOOL_ARTWORK.visits}
+              // A scene, not a single object, so it is drawn a little larger
+              // than the other tools to read at this size (user, 2026-10-04).
+              artworkSize={60}
+              // The Visitor Management System, by its initials: the full
+              // name does not fit a tool box (user, 2026-10-04).
+              label="VMS"
+              onPress={() => onNavigate("/owner-visits")}
+            />
+            <View style={{ flex: 1 }} />
+          </View>
         </View>
       </Section>
 
@@ -2533,11 +2566,14 @@ function WorkspaceTabLoading({
 
 function HomeToolBox({
   artwork,
+  artworkSize = 48,
   badge,
   label,
   onPress,
 }: {
   artwork: ImageSourcePropType;
+  /** The artwork's side. 48 unless a tool's picture needs more room to read. */
+  artworkSize?: number;
   badge?: number;
   label: string;
   onPress: () => void;
@@ -2585,7 +2621,7 @@ function HomeToolBox({
         accessibilityIgnoresInvertColors
         resizeMode="contain"
         source={artwork}
-        style={{ height: 48, width: 48 }}
+        style={{ height: artworkSize, width: artworkSize }}
       />
       <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}>
         {label}

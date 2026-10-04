@@ -95,6 +95,9 @@ public record EnquiryDetailResponse(
     Instant notInterestedClosesAt,
     // Its latest cancelled visit, if any. The screen shows it while none is booked.
     CancelledVisitView cancelledVisit,
+    // How it ended, newest first, for the action log: each closing, then its
+    // expiry, or its expiry by a duplicate request. Empty while it is live.
+    List<EnquiryEndingView> endings,
         /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
         long version
 ) {}

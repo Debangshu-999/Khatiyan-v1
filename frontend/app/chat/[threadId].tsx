@@ -36,10 +36,12 @@ import { Lightbox } from "@/components/image-carousel";
 import { ChatMessagesSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useHardwareBack } from "@/components/use-hardware-back";
 import { dayDivider } from "@/features/chat/chat-time";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
 import { MessageBubble, type MessageAnchor } from "@/features/chat/message-bubble";
 import { EnquiryActionBar } from "@/features/enquiry/enquiry-action-bar";
+import { EnquiryMessageRow } from "@/features/chat/enquiry-message-bubble";
 import {
   AttachmentError,
   openFileWithApp,
@@ -122,6 +124,15 @@ export default function ChatThreadScreen() {
 
   const { pickFiles, pickImages, uploading } = useChatAttachments();
   const [attachOpen, setAttachOpen] = useState(false);
+  // The pinned "View enquiry message" row (user, 2026-10-03): open, how tall
+  // its question is, and a back press closes it first.
+  const [enquiryOpen, setEnquiryOpen] = useState(false);
+  const [enquiryPanelHeight, setEnquiryPanelHeight] = useState(0);
+  const closeEnquiryOnBack = useCallback(() => {
+    setEnquiryOpen(false);
+    return true;
+  }, []);
+  useHardwareBack(closeEnquiryOnBack, enquiryOpen);
   // Measured rather than assumed: the composer grows with a multi-line draft,
   // and the popover has to stay pinned just above whatever height it is now.
   const [composerHeight, setComposerHeight] = useState(0);
@@ -451,6 +462,17 @@ export default function ChatThreadScreen() {
         </View>
       </View>
 
+      {/* Pinned under the header, the messages scrolling beneath it (user,
+          2026-10-03). */}
+      {thread?.enquiryMessage ? (
+        <EnquiryMessageRow
+          message={thread.enquiryMessage}
+          onPanelHeight={setEnquiryPanelHeight}
+          onToggle={() => setEnquiryOpen((current) => !current)}
+          open={enquiryOpen}
+        />
+      ) : null}
+
       <KeyboardAvoidingView
         // Match the app's input modals: iOS uses padding, while Android uses
         // the measured keyboard inset instead of a sticky height mode.
@@ -502,9 +524,20 @@ export default function ChatThreadScreen() {
             </View>
           ) : null}
 
+          {/* On every chat, enquiry chats included: their question has its own
+              pinned row above (user, 2026-10-03). */}
           {!loading && messages.length === 0 ? (
             <Text
-              style={[type.description, { color: colors.muted, paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, textAlign: "center" },
+              style={[
+                type.description,
+                {
+                  color: colors.muted,
+                  paddingHorizontal: spacing.xl,
+                  paddingVertical: spacing.xl,
+                  // Below the open question rather than under it (user, 2026-10-03).
+                  paddingTop: spacing.xl + (enquiryOpen ? enquiryPanelHeight : 0),
+                  textAlign: "center",
+                },
               ]}
             >
               No messages yet. Say hello.
@@ -727,6 +760,15 @@ export default function ChatThreadScreen() {
         </View>
         </View>
         )}
+        {/* Dims the conversation while the question is open. A tap closes it.
+            Inside this area, not the row, so Android delivers the tap. */}
+        {enquiryOpen ? (
+          <Pressable
+            accessibilityLabel="Close enquiry message"
+            onPress={() => setEnquiryOpen(false)}
+            style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
+          />
+        ) : null}
       </KeyboardAvoidingView>
 
       {/* Both live at screen level rather than inside the composer. Nested

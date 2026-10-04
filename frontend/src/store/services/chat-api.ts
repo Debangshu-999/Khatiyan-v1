@@ -96,6 +96,8 @@ export type ChatThread = {
    * still unsigned. Always false for the tenant themselves.
    */
   pendingAgreement: boolean;
+  /** An enquiry chat's question, for "View enquiry message" when it is empty. Null on other chats. */
+  enquiryMessage: string | null;
 };
 
 export type ChatContact = {

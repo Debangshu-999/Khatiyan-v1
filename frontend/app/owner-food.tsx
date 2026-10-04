@@ -167,9 +167,10 @@ export default function OwnerFoodScreen() {
   const header = (
     <ScreenHeader
       badge={readOnly ? <ViewOnlyChip /> : null}
-      italicTail="preference."
+      // "Meal management", once "Food preference" (user, 2026-10-04).
+      italicTail="management."
       subtitle={property ? [property.name, property.area].filter(Boolean).join(", ") : undefined}
-      title="Food"
+      title="Meal"
     />
   );
 

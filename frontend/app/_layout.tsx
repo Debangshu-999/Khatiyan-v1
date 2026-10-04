@@ -119,6 +119,7 @@ function ThemedRootStack() {
             header and titles the screen "chat/[threadId]". */}
         <Stack.Screen name="chat/[threadId]" options={{ headerShown: false }} />
         <Stack.Screen name="my-enquiries" options={{ headerShown: false }} />
+        <Stack.Screen name="my-visits" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
@@ -166,6 +167,8 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-nudges" options={{ headerShown: false }} />
         <Stack.Screen name="nudges" options={{ headerShown: false }} />
         <Stack.Screen name="owner-enquiries" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-visits" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-visits-earlier" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notice-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notice-create" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />

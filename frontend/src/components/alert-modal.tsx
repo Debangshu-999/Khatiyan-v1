@@ -1,8 +1,12 @@
+import { useRef } from "react";
+import { usePathname, useRouter } from "expo-router";
 import { CenterModal } from "@/components/center-modal";
 import { Modal, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { FORM_ROUTES, leaveTopSurface } from "@/components/leave-on-stale";
 import { StatusIcon } from "@/components/status-icon";
+import { isStaleRefusal } from "@/store/stale-refusal";
 import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -24,6 +28,12 @@ import { useTheme } from "@/theme/use-theme";
  *
  * <p>No title, though. "Could not continue" over "Room number already exists"
  * is the same sentence twice.
+ *
+ * <p>One refusal does more than close (user, 2026-10-04): "The data has
+ * changed since you opened it." Closing that one also closes the sheet it was
+ * raised in, or goes back a screen when the screen is a form, so what was
+ * typed against the old record is not saved over the other person's change.
+ * A list stays where it is. See `leave-on-stale`.
  */
 export function AlertModal({
   message,
@@ -39,9 +49,23 @@ export function AlertModal({
   tone?: "error" | "info" | "warning";
 }) {
   const { colors, fonts, type } = useTheme();
+  const pathname = usePathname();
+  const router = useRouter();
+  // Decided as the dialog opens: by the time it is closed the refusal is old.
+  const stale = useRef(isStaleRefusal(message)).current;
+
+  function close() {
+    onClose();
+    if (!stale || leaveTopSurface()) {
+      return;
+    }
+    if (FORM_ROUTES.has(pathname) && router.canGoBack()) {
+      router.back();
+    }
+  }
 
   return (
-    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
+    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={close} statusBarTranslucent transparent visible>
       <View
         style={{
           alignItems: "center",
@@ -73,7 +97,7 @@ export function AlertModal({
           </Text>
           <AnimatedPressable
             accessibilityRole="button"
-            onPress={onClose}
+            onPress={close}
             style={{
               alignItems: "center",
               alignSelf: "stretch",

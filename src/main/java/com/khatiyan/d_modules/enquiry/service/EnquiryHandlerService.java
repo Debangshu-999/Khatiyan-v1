@@ -251,6 +251,32 @@ public class EnquiryHandlerService {
                 enquiry.getId(), handlerUserId, how);
     }
 
+    /**
+     * Hands out the enquiries still waiting for a handler, in turn, once the
+     * system takes turns (user, 2026-10-03): switching Auto assigned on picks
+     * up what is already in All enquiries, not only what arrives next. Oldest
+     * first. With no managers the owner takes every turn.
+     *
+     * @return the enquiries given out, for the caller to tell their handlers
+     */
+    @Transactional
+    public List<Enquiry> handOutWaiting(PropertyResponse property, Instant now) {
+        EnquiryHandlerSettings settings = settingsRepository.findByPropertyIdForUpdate(property.id()).orElse(null);
+        if (settings == null || settings.getMode() != EnquiryHandlerMode.SYSTEM_TURNS) {
+            return List.of();
+        }
+        List<Enquiry> waiting = enquiryRepository.findLiveUnassigned(property.id(), now);
+        if (waiting.isEmpty()) {
+            return waiting;
+        }
+        List<UUID> order = turnOrder(property, settings.isIncludeOwner());
+        for (Enquiry enquiry : waiting) {
+            give(enquiry, settings.takeNextTurn(order), EnquiryHandlerAssignment.SYSTEM, null, now);
+        }
+        log.info("Waiting enquiries handed out propertyId={} count={}", property.id(), waiting.size());
+        return waiting;
+    }
+
     // ---- A manager leaves ------------------------------------------------
 
     /**

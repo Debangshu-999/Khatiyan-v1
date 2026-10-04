@@ -57,7 +57,7 @@ import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-sli
 import { clearSession, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { spacing } from "@/theme/spacing";
-import { EnquiriesIcon } from "@/features/property/property-control-icons";
+import { EnquiriesIcon, PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import { useTheme } from "@/theme/use-theme";
 
 /** The pencil beside the profile name, and the spacer that balances it. */
@@ -581,9 +581,12 @@ export default function AccountScreen() {
           person raised (My enquiries, 2026-10-03). */}
       {isOwnerAccount ? null : (
         <View style={{ gap: spacing.sm }}>
-          <SectionTitle title="Enquiries" />
+          <SectionTitle title="Enquiries, Visits & Bookings" />
           {/* The Property screen's own Enquiries mark (user, 2026-10-03). */}
           <LinkRow icon={EnquiriesIcon} label="My enquiries" onPress={() => router.push("/my-enquiries")} />
+          {/* Their visits, with the pass on the day, under the Property
+              screen's own Visiting Hours mark (user, 2026-10-04). */}
+          <LinkRow icon={PropertyVisitsIcon} label="My visits" onPress={() => router.push("/my-visits")} />
         </View>
       )}
 

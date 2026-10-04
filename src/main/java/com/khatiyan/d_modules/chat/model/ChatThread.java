@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.chat.model;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -74,6 +75,25 @@ public class ChatThread extends BaseEntity {
     @Column(name = "last_message_kind")
     private String lastMessageKind;
 
+    /**
+     * An enquiry chat's question, shown behind "View enquiry message" above
+     * its messages (user, 2026-10-03). Held here and never a message of its
+     * own. Null on other chats.
+     */
+    @Column(name = "opening_message", length = 1000)
+    private String openingMessage;
+
+    /** Whose words the question is: the enquirer's. */
+    @Column(name = "opening_author_user_id")
+    private UUID openingAuthorUserId;
+
+    /**
+     * Where the question sits as a message, on chats from the day it was still
+     * placed as one. Nothing writes it any more. See {@link #isPlacedOpening}.
+     */
+    @Column(name = "opening_message_seq")
+    private Long openingMessageSeq;
+
     private ChatThread(
             UUID propertyId,
             ChatThreadKind kind,
@@ -142,6 +162,31 @@ public class ChatThread extends BaseEntity {
      * unread against a seq that a reader has already passed: 812 would sit
      * unread in a thread that looks read.
      */
+    /** Holds an enquiry's question for the row pinned above its messages. */
+    public void rememberOpening(String message, UUID authorUserId) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        this.openingMessage = message;
+        this.openingAuthorUserId = authorUserId;
+    }
+
+    /**
+     * Whether a message is this chat's question, placed among its messages
+     * before the pinned row carried it. Such a message is left out when the
+     * chat is read, or the question would show twice.
+     *
+     * <p>Matched on its author and words as well as its place: the backfill
+     * (V6200) marked the first message of every older chat, and on the ones
+     * older than the placing that is somebody's real text.
+     */
+    public boolean isPlacedOpening(Long seq, UUID authorUserId, String body) {
+        return openingMessageSeq != null
+                && openingMessageSeq.equals(seq)
+                && Objects.equals(openingAuthorUserId, authorUserId)
+                && Objects.equals(openingMessage, body);
+    }
+
     public void noteLastMessage(long seq, Instant sentAt, String preview, ChatAttachmentKind attachmentKind) {
         if (this.lastMessageSeq != null && this.lastMessageSeq >= seq) {
             return;

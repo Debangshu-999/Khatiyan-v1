@@ -3,6 +3,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { CircleCheckbox } from "@/features/enquiry/handler-mode-sheet";
@@ -12,6 +13,9 @@ import { useAssignEnquiryHandlerMutation, type EnquiryDetail } from "@/store/ser
 import { useListPropertyManagersQuery } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+/** The Staff screen's no-managers artwork. */
+const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
 /**
  * Assign: the owner gives an unassigned enquiry to a manager, when enquiries
@@ -32,7 +36,7 @@ export function AssignHandlerSheet({
   openCounts: Record<string, number>;
   propertyId: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
   const toast = useToast();
   const managersQuery = useListPropertyManagersQuery(propertyId);
   const [assign, assignState] = useAssignEnquiryHandlerMutation();
@@ -41,7 +45,6 @@ export function AssignHandlerSheet({
 
   const managers = (managersQuery.data ?? []).filter((manager) => manager.active);
   const pickedManager = managers.find((manager) => manager.managerUserId === picked) ?? null;
-  const who = enquiry.enquirerName?.trim() || "this person";
 
   async function submit() {
     if (!pickedManager || assignState.isLoading) {
@@ -62,14 +65,16 @@ export function AssignHandlerSheet({
 
   return (
     <SheetShell onClose={onClose} title="Assign enquiry">
-      <Text style={[type.modalDescription, { color: colors.muted }]}>Choose a manager to handle {who}'s enquiry.</Text>
-
       {managersQuery.isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ paddingVertical: spacing.lg }} />
       ) : managers.length === 0 ? (
-        <Text style={[type.description, { color: colors.muted }]}>
-          No managers yet. Add one from the Property screen, or respond to it yourself.
-        </Text>
+        // The Staff screen's own empty state (user, 2026-10-03).
+        <EmptyState
+          artwork={NO_PERSON_ILLUSTRATION}
+          compact
+          description="Assign a real app user as a manager for this property."
+          title="No managers assigned"
+        />
       ) : (
         managers.map((manager) => {
           const open = openCounts[manager.managerUserId] ?? 0;
@@ -85,11 +90,13 @@ export function AssignHandlerSheet({
         })
       )}
 
-      <ActionButton
-        disabled={!pickedManager || assignState.isLoading}
-        label={assignState.isLoading ? "Assigning" : "Assign"}
-        onPress={() => void submit()}
-      />
+      {managers.length > 0 ? (
+        <ActionButton
+          disabled={!pickedManager || assignState.isLoading}
+          label={assignState.isLoading ? "Assigning" : "Assign"}
+          onPress={() => void submit()}
+        />
+      ) : null}
     </SheetShell>
   );
 }

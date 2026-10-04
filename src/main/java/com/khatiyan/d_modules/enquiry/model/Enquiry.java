@@ -159,6 +159,31 @@ public class Enquiry extends BaseEntity {
     @Column(name = "ended_by_user_id")
     private UUID endedByUserId;
 
+    /**
+     * Whether it closed by itself: the 7-day close of a Not interested nobody
+     * acted on. That close is still named for whoever marked it, so the name
+     * alone does not say.
+     */
+    @Column(name = "ended_automatically", nullable = false)
+    private boolean endedAutomatically;
+
+    /**
+     * The closing a change of mind undid, kept for the action log: reopening
+     * clears the closing itself. At most one, since they change their mind once.
+     */
+    @Column(name = "first_ended_at")
+    private Instant firstEndedAt;
+
+    @Column(name = "first_ended_by_user_id")
+    private UUID firstEndedByUserId;
+
+    @Column(name = "first_ended_automatically", nullable = false)
+    private boolean firstEndedAutomatically;
+
+    /** When a fresh enquiry from the same enquirer expired this one. Null otherwise. */
+    @Column(name = "replaced_at")
+    private Instant replacedAt;
+
     /** When its chat was closed, by ending or by the sweep. Null while the chat is open, or there is none. */
     @Column(name = "chat_closed_at")
     private Instant chatClosedAt;
@@ -346,14 +371,17 @@ public class Enquiry extends BaseEntity {
      * Closed until its usual date, then Expired. Only an answered enquiry is
      * closed, so the status, which records that it was answered, stays.
      *
+     * @param automatic the 7-day close, which nobody pressed. It is still
+     *                  named for whoever marked it Not interested.
      * @return true when it closed now, false when it had closed already
      */
-    public boolean end(UUID byUserId, Instant now) {
+    public boolean end(UUID byUserId, Instant now, boolean automatic) {
         if (isEnded()) {
             return false;
         }
         this.endedAt = now;
         this.endedByUserId = byUserId;
+        this.endedAutomatically = automatic;
         recordEndReason(EnquiryEndReason.NOT_INTERESTED);
         return true;
     }
@@ -403,8 +431,13 @@ public class Enquiry extends BaseEntity {
         }
         boolean reopened = isEnded();
         if (reopened) {
+            // The action log still says it was closed.
+            this.firstEndedAt = this.endedAt;
+            this.firstEndedByUserId = this.endedByUserId;
+            this.firstEndedAutomatically = this.endedAutomatically;
             this.endedAt = null;
             this.endedByUserId = null;
+            this.endedAutomatically = false;
             this.endReason = null;
             this.chatClosedAt = null;
         }
@@ -416,9 +449,23 @@ public class Enquiry extends BaseEntity {
     /**
      * Expires it now, ahead of its date: a closed enquiry the enquirer has
      * replaced with a fresh one (owner's rule, 2026-10-03). Its end reason stays,
-     * so the expired card still says why it ended.
+     * so the expired card still says why it ended, and {@code replacedAt} is
+     * what tells the action log it was expired by a duplicate request.
      */
     public void expireNow(Instant now) {
+        if (expiresAt == null || expiresAt.isAfter(now)) {
+            this.expiresAt = now;
+        }
+        this.replacedAt = now;
+        expire();
+    }
+
+    /**
+     * Brings its date forward to now: its visit became No visit and the
+     * visitor is no longer interested, or never said (user, 2026-10-04). Not a
+     * replacement by a fresh enquiry, so {@code replacedAt} stays empty.
+     */
+    public void cutShort(Instant now) {
         if (expiresAt == null || expiresAt.isAfter(now)) {
             this.expiresAt = now;
         }

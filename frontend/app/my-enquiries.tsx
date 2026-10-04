@@ -47,9 +47,10 @@ import { useTheme } from "@/theme/use-theme";
 /** The owner's Enquiries screen uses the same artwork for its empty state. */
 const ENQUIRIES_ILLUSTRATION = require("../assets/empty-states/enquiries.png");
 
-type Filter = "OPEN" | "CLOSED" | "EXPIRED";
+type Filter = "ALL" | "OPEN" | "CLOSED" | "EXPIRED";
 
 const FILTER_HEADINGS: Record<Filter, string> = {
+  ALL: "All enquiries",
   CLOSED: "Closed enquiries",
   EXPIRED: "Expired enquiries",
   OPEN: "Open enquiries",
@@ -64,16 +65,17 @@ const DISPLAY_ZONE = "Asia/Kolkata";
 
 /**
  * The enquiries this person raised (owner's design, 2026-10-03), opened from
- * the Account tab. A filter picks Open (waiting or answered), Closed (closed by
- * the property, with Enquire again, which raises a new enquiry) or Expired
- * (past its date, with View property). Closed and expired ones stay for 30
- * days past their date.
+ * the Account tab. A filter picks All (the default, as on the owner's
+ * screen), Open (waiting or answered), Closed (closed by the property) or
+ * Expired (past its date, with View property). The list holds everything
+ * raised this year.
  */
 export default function MyEnquiriesScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
   const query = useGetMyEnquiriesQuery(undefined, { refetchOnMountOrArgChange: true });
-  const [filter, setFilter] = useState<Filter>("OPEN");
+  // All by default, as on the owner's Enquiries screen (user, 2026-10-03).
+  const [filter, setFilter] = useState<Filter>("ALL");
   const [enquiringAbout, setEnquiringAbout] = useState<{ propertyId: string; propertyName: string } | null>(null);
   const [changingMindId, setChangingMindId] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export default function MyEnquiriesScreen() {
 
   const items = query.data ?? [];
   const byFilter: Record<Filter, MyEnquiryItem[]> = {
+    ALL: items,
     CLOSED: items.filter((item) => item.state === "CLOSED"),
     EXPIRED: items.filter((item) => item.state === "EXPIRED"),
     OPEN: items.filter((item) => item.state === "AWAITING_REPLY" || item.state === "ANSWERED"),
@@ -123,9 +126,10 @@ export default function MyEnquiriesScreen() {
         count={query.isLoading ? undefined : visible.length}
         heading={FILTER_HEADINGS[filter]}
         // "1 open enquiry" on a pale blue pill (user, 2026-10-03).
-        headingNode={query.isLoading ? undefined : <CountPill count={visible.length} kind={filter.toLowerCase()} />}
+        headingNode={query.isLoading ? undefined : <CountPill count={visible.length} kind={filter === "ALL" ? undefined : filter.toLowerCase()} />}
         onChange={setFilter}
         options={[
+          { count: byFilter.ALL.length, label: "All", value: "ALL" },
           { count: byFilter.OPEN.length, label: "Open", value: "OPEN" },
           { count: byFilter.CLOSED.length, label: "Closed", value: "CLOSED" },
           { count: byFilter.EXPIRED.length, label: "Expired", value: "EXPIRED" },
@@ -155,13 +159,21 @@ export default function MyEnquiriesScreen() {
             artwork={ENQUIRIES_ILLUSTRATION}
             artworkTextGap={-6}
             description={
-              filter === "OPEN"
+              filter === "OPEN" || filter === "ALL"
                 ? "Ask a property a question from its page in Discover."
                 : filter === "CLOSED"
                   ? "Enquiries a property closes this year show here."
                   : "Enquiries that ran out this year show here."
             }
-            title={filter === "OPEN" ? "No open enquiries" : filter === "CLOSED" ? "Nothing closed" : "Nothing expired"}
+            title={
+              filter === "ALL"
+                ? "No enquiries yet"
+                : filter === "OPEN"
+                  ? "No open enquiries"
+                  : filter === "CLOSED"
+                    ? "Nothing closed"
+                    : "Nothing expired"
+            }
           />
         ) : (
           <View style={{ gap: spacing.md }}>
@@ -249,104 +261,55 @@ function MyEnquiryCard({
         <CornerRibbon accessibilityLabel="Open enquiry" band={OPEN_BAND} fold={OPEN_FOLD} label="OPEN" />
       )}
 
-      {/* The property's mark, its name, and a rule under them (user, 2026-10-03). */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: 44 }}>
-        <GhostIcon color={colors.ink} icon={HomeMark} size={24} />
-        <GhostText
-          ghostWidth="55%"
-          numberOfLines={1}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, lineHeight: 28 }}
-        >
-          {item.propertyName}
-        </GhostText>
-      </View>
-      <CardRule />
-
-      {/* When it was raised and answered, as grey tags (user, 2026-10-03). */}
-      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        <GhostPill height={18} width={126}>
-          <TagPill label={`Raised ${daysAgo(item.askedAt)}, ${clockTime(item.askedAt)}`} />
-        </GhostPill>
-        {item.answeredAt ? (
-          <GhostPill height={18} width={96}>
-            <TagPill icon={CheckCircle2} iconColor={colors.successText} label={`Answered ${daysAgo(item.answeredAt)}`} />
-          </GhostPill>
-        ) : null}
-        {notInterested && item.notInterestedClosesAt ? <ClosesInChip closesAt={item.notInterestedClosesAt} /> : null}
-        {/* When it runs out, before the visit tag, as on the owner's card
-            (user, 2026-10-03). Past it, the Expired pill below says so. */}
-        {!expired ? <TagPill label={`Expires ${formatDate(item.expiresAt)}`} /> : null}
-        {/* Cancelled, and nothing booked since (owner's design, 2026-10-03). */}
-        {item.visitCancelledAt ? (
-          <TagPill icon={CalendarX} iconColor={colors.danger} iconFaded label="Visit cancelled" />
-        ) : null}
-        {/* The booked visit's day, date and start (user, 2026-10-03). */}
-        {item.visitDate && item.visitStart ? (
-          <GhostPill height={18} width={120}>
-            <TagPill
-              icon={CalendarCheck}
-              iconColor={colors.successText}
-              label={`Visit: ${formatVisitShort(item.visitDate, item.visitStart)}`}
-            />
-          </GhostPill>
-        ) : null}
-        {expired ? <TagPill label={`Expired ${formatDate(item.expiresAt)}`} /> : null}
-      </View>
-
-      {/* Their question, in a grey box behind a message mark (user, 2026-10-03). */}
-      <View
-        style={{
-          alignItems: "flex-start",
-          backgroundColor: colors.neutralSoft,
-          borderCurve: "continuous",
-          borderRadius: radii.card,
-          flexDirection: "row",
-          gap: spacing.sm,
-          marginTop: 2,
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-        }}
-      >
-        <View style={{ paddingTop: 2 }}>
-          <GhostIcon color={colors.muted} icon={MessageSquare} size={15} strokeWidth={2.2} />
-        </View>
-        {/* The owner card's message face (user, 2026-10-03). */}
-        <GhostText
-          ghostWidth="85%"
-          numberOfLines={3}
-          style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold }]}
-        >
-          {item.message}
-        </GhostText>
-      </View>
-
-      {/* Marked not interested and still open, with the way back (owner's
-          design, 2026-10-03). How long it has left is the Closes in tag. */}
-      {notInterested ? (
-        <View
-          style={{
-            alignItems: "flex-start",
-            backgroundColor: colors.dangerSoft,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            flexDirection: "row",
-            gap: spacing.sm,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-          }}
-        >
-          <View style={{ paddingTop: 2 }}>
-            <GhostIcon color={colors.danger} icon={AlertCircle} size={15} strokeWidth={2.4} />
-          </View>
-          <GhostText ghostWidth="90%" style={[type.description, { color: colors.danger, flex: 1 }]}>
-            This enquiry has been marked not interested by your handler as per your decision.
+      {/* Greyed out once closed or expired, as on the owner's card (user,
+          2026-10-03). The ribbon and the buttons stay at full strength: the
+          buttons still work. */}
+      <View style={{ gap: spacing.xs, opacity: closed || expired ? 0.55 : 1 }}>
+        {/* The property's mark, its name, and a rule under them (user, 2026-10-03). */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingRight: 44 }}>
+          <GhostIcon color={colors.ink} icon={HomeMark} size={24} />
+          <GhostText
+            ghostWidth="55%"
+            numberOfLines={1}
+            style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, lineHeight: 28 }}
+          >
+            {item.propertyName}
           </GhostText>
         </View>
-      ) : null}
+        <CardRule />
 
-      {/* Behind an info icon, in the same box as the line above (user,
-          2026-10-03). */}
-      {closed ? (
+        {/* When it was raised and answered, as grey tags (user, 2026-10-03). */}
+        <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+          <GhostPill height={18} width={126}>
+            <TagPill label={`Raised ${daysAgo(item.askedAt)}, ${clockTime(item.askedAt)}`} />
+          </GhostPill>
+          {item.answeredAt ? (
+            <GhostPill height={18} width={96}>
+              <TagPill icon={CheckCircle2} iconColor={colors.successText} label={`Answered ${daysAgo(item.answeredAt)}`} />
+            </GhostPill>
+          ) : null}
+          {notInterested && item.notInterestedClosesAt ? <ClosesInChip closesAt={item.notInterestedClosesAt} /> : null}
+          {/* When it runs out, before the visit tag, as on the owner's card
+              (user, 2026-10-03). Past it, the Expired pill below says so. */}
+          {!expired ? <TagPill label={`Expires ${formatDate(item.expiresAt)}`} /> : null}
+          {/* Cancelled, and nothing booked since (owner's design, 2026-10-03). */}
+          {item.visitCancelledAt ? (
+            <TagPill icon={CalendarX} iconColor={colors.danger} iconFaded label="Visit cancelled" />
+          ) : null}
+          {/* The booked visit's day, date and start (user, 2026-10-03). */}
+          {item.visitDate && item.visitStart ? (
+            <GhostPill height={18} width={120}>
+              <TagPill
+                icon={CalendarCheck}
+                iconColor={colors.successText}
+                label={`Visit: ${formatVisitShort(item.visitDate, item.visitStart)}`}
+              />
+            </GhostPill>
+          ) : null}
+          {expired ? <TagPill label={`Expired ${formatDate(item.expiresAt)}`} /> : null}
+        </View>
+
+        {/* Their question, in a grey box behind a message mark (user, 2026-10-03). */}
         <View
           style={{
             alignItems: "flex-start",
@@ -355,18 +318,72 @@ function MyEnquiryCard({
             borderRadius: radii.card,
             flexDirection: "row",
             gap: spacing.sm,
+            marginTop: 2,
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.sm,
           }}
         >
           <View style={{ paddingTop: 2 }}>
-            <GhostIcon color={colors.muted} icon={Info} size={15} strokeWidth={2.4} />
+            <GhostIcon color={colors.muted} icon={MessageSquare} size={15} strokeWidth={2.2} />
           </View>
-          <GhostText ghostWidth="90%" style={[type.description, { color: colors.muted, flex: 1 }]}>
-            This enquiry has been closed. Changed your mind? You can enquire again.
+          {/* The owner card's message face (user, 2026-10-03). */}
+          <GhostText
+            ghostWidth="85%"
+            numberOfLines={3}
+            style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold }]}
+          >
+            {item.message}
           </GhostText>
         </View>
-      ) : null}
+
+        {/* Marked not interested and still open, with the way back (owner's
+            design, 2026-10-03). How long it has left is the Closes in tag. */}
+        {notInterested ? (
+          <View
+            style={{
+              alignItems: "flex-start",
+              backgroundColor: colors.dangerSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <View style={{ paddingTop: 2 }}>
+              <GhostIcon color={colors.danger} icon={AlertCircle} size={15} strokeWidth={2.4} />
+            </View>
+            <GhostText ghostWidth="90%" style={[type.description, { color: colors.danger, flex: 1 }]}>
+              This enquiry has been marked not interested by your handler as per your decision.
+            </GhostText>
+          </View>
+        ) : null}
+
+        {/* Behind an info icon, in the same box as the line above (user,
+            2026-10-03). */}
+        {closed ? (
+          <View
+            style={{
+              alignItems: "flex-start",
+              backgroundColor: colors.neutralSoft,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <View style={{ paddingTop: 2 }}>
+              <GhostIcon color={colors.muted} icon={Info} size={15} strokeWidth={2.4} />
+            </View>
+            <GhostText ghostWidth="90%" style={[type.description, { color: colors.muted, flex: 1 }]}>
+              This enquiry has been closed. Changed your mind? You can enquire again.
+            </GhostText>
+          </View>
+        ) : null}
+      </View>
 
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
         {closed && item.canChangeMind ? (

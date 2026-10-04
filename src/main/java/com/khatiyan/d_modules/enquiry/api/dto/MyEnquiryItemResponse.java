@@ -13,7 +13,8 @@ public record MyEnquiryItemResponse(
         String message,
         Instant askedAt,
         Instant expiresAt,
-        // When the property first reached them: the Answered tag. Null until then.
+        // When the property first responded, a chat sent or a call made: the
+        // Answered tag (2026-10-03). Null until then.
         Instant answeredAt,
         MyEnquiryState state,
         // When the property closed it. Null unless it did.
@@ -29,6 +30,9 @@ public record MyEnquiryItemResponse(
         // whether they may still say they changed their mind.
         Instant notInterestedClosesAt,
         boolean canChangeMind,
+        // The visit that stands on it: booked, attended or missed. With the
+        // moments the screen needs for the pass and for running late (2026-10-04).
+        MyEnquiryVisitView visit,
         // Sent back as If-Match with "Changed your mind?".
         long version) {
 }

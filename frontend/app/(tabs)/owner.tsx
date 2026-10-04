@@ -1,20 +1,28 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Image, Text, View, type ImageSourcePropType } from "react-native";
+import { Image, Text, View, type GestureResponderHandlers, type ImageSourcePropType } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Pin, type LucideProps } from "lucide-react-native";
-import type { ComponentType } from "react";
+import { ArrowUpDown, Check, Menu, Pin, X, type LucideProps } from "lucide-react-native";
+import { useState, type ComponentType } from "react";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { SectionWithDropdown } from "@/components/filtered-queue";
 import { EmptyState } from "@/components/empty-state";
 import { HeaderNote } from "@/components/header-note";
 import { MetricTile } from "@/components/metric-tile";
+import { ReorderableList } from "@/components/reorderable-list";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { OwnerManageMetricsSkeleton, OwnerManagePropertySkeleton } from "@/components/skeletons/owner";
-import { visibleOwnerModules, type OwnerModuleRoute } from "@/features/owner/owner-modules";
+import { visibleOwnerModules, type OwnerModule, type OwnerModuleRoute } from "@/features/owner/owner-modules";
+import { useWorkspaceSort } from "@/features/owner/use-workspace-sort";
+import {
+  WORKSPACE_SORT_OPTIONS,
+  pendingByModule,
+  sortWorkspaceModules,
+  type WorkspaceSortMode,
+} from "@/features/owner/workspace-sort";
 import { InServiceIcon, RoomsSummaryIcon } from "@/features/property/room-summary-icons";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { savePinnedOwnerModulesForUser } from "@/config/app-settings-storage";
@@ -77,7 +85,7 @@ export default function OwnerScreen() {
   const { canView, owner: isOwner } = usePropertyPermissions(selectedProperty?.id);
   // Sections a manager has no access to are removed, not disabled — a greyed
   // card invites a tap and explains nothing.
-  const modules = visibleOwnerModules(canView, isOwner);
+  const visibleModules = visibleOwnerModules(canView, isOwner);
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   // Unassigned + escalated: the two states where a concern is sitting with
   // nobody working it. Anything already taken up is somebody's job and does not
@@ -86,11 +94,89 @@ export default function OwnerScreen() {
     refetchOnMountOrArgChange: true,
     skip: !selectedProperty,
   });
-  // `open` is the unassigned queue — a concern leaves OPEN the moment someone
-  // takes it up. `escalated` is counted separately because an escalated concern
-  // may already be assigned and still needs the owner.
-  const concernAttention =
-    (dashboardQuery.data?.concerns?.open ?? 0) + (dashboardQuery.data?.concerns?.escalated ?? 0);
+  // What is waiting on the owner in each module. A card shows a dot for it, not
+  // a number (user, 2026-10-04), and Dynamic sorts by it. For concerns that is
+  // the unassigned queue plus the escalated ones: a concern leaves OPEN the
+  // moment someone takes it up, and an escalated one may already be assigned
+  // and still needs the owner.
+  const pending = dashboardQuery.data ? pendingByModule(dashboardQuery.data) : null;
+  // The order of the cards on this tab, chosen beside "Open workspace" (user,
+  // 2026-10-04). The shared module list keeps its own order, which Home's
+  // pinned tiles and Frequently visited read.
+  const workspaceSort = useWorkspaceSort(user?.id ?? null, selectedProperty?.id ?? null, pending);
+  const modules = sortWorkspaceModules(
+    visibleModules,
+    workspaceSort.mode,
+    workspaceSort.customOrder,
+    workspaceSort.marks,
+    selectedProperty?.id ?? null,
+  );
+  const custom = workspaceSort.mode === "CUSTOM";
+  // Custom has two states (user, 2026-10-04). Arranging: the pins give way to
+  // bars, the cards are moved by them, and the sort gives way to a tick and a
+  // cross. The tick keeps the new order and the cross puts back the one it
+  // started from. Either ends it and the pins come back. It starts the first
+  // time Custom is chosen, and after that from Change on the Custom row.
+  // Holds the order to go back to, for as long as the cards are being arranged.
+  const [orderBeforeArranging, setOrderBeforeArranging] = useState<string[] | null>(null);
+  const arranging = custom && orderBeforeArranging !== null;
+
+  /** Into Custom with the bars showing. What the cross goes back to is the order in force now. */
+  function startArranging() {
+    const shown = modules.map((module) => module.key);
+    setOrderBeforeArranging(workspaceSort.customOrder.length > 0 ? workspaceSort.customOrder : shown);
+    workspaceSort.setMode("CUSTOM", shown);
+  }
+
+  function chooseSort(mode: WorkspaceSortMode) {
+    // Nothing to put the cards back into yet: Custom opens ready to arrange.
+    if (mode === "CUSTOM" && workspaceSort.customOrder.length === 0) {
+      startArranging();
+      return;
+    }
+    setOrderBeforeArranging(null);
+    workspaceSort.setMode(mode, modules.map((module) => module.key));
+  }
+
+  function keepArrangement() {
+    setOrderBeforeArranging(null);
+  }
+
+  function cancelArrangement() {
+    if (orderBeforeArranging) {
+      workspaceSort.setCustomOrder(orderBeforeArranging);
+    }
+    setOrderBeforeArranging(null);
+  }
+
+  // Once an order of their own exists, the Custom row offers Change, which
+  // opens the arranging again.
+  const sortOptions = WORKSPACE_SORT_OPTIONS.map((option) =>
+    option.value === "CUSTOM" && workspaceSort.customOrder.length > 0
+      ? { ...option, action: { label: "Change", onPress: startArranging } }
+      : option,
+  );
+  // A card is in the hand: the page holds still under it.
+  const [dragging, setDragging] = useState(false);
+
+  function renderServiceCard(module: OwnerModule, handle?: GestureResponderHandlers, held = false) {
+    return (
+      <ServiceCard
+        artwork={module.artwork}
+        artworkVariant={module.artworkVariant}
+        description={module.description}
+        handle={handle}
+        held={held}
+        icon={module.icon}
+        key={module.key}
+        onPress={() => open(module.route)}
+        onTogglePin={() => togglePin(module.key)}
+        pending={(pending?.[module.key] ?? 0) > 0}
+        pinned={pinnedKeys.includes(module.key)}
+        title={module.title}
+      />
+    );
+  }
   const tenanciesQuery = useListPropertyTenanciesQuery(
     { includePast: false, propertyId: selectedProperty?.id ?? "" },
     { skip: !selectedProperty },
@@ -110,7 +196,7 @@ export default function OwnerScreen() {
   const vacantRooms = rooms.filter((room) => room.availableVacancies > 0).length;
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.surface}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEnabled={!dragging} surface={colors.surface}>
       <ManageHeader />
 
       {/* Header and workspace actions are static. The property summary and
@@ -191,37 +277,49 @@ export default function OwnerScreen() {
           {selectedProperty && !tilesLoading ? (
             <>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenancies" value={String(activeTenancies.length)} hint="Active stays" tone="primary" />
+                {/* "Tenants", in ink (user, 2026-10-04). It was "Tenancies", in green. */}
+                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenants" value={String(activeTenancies.length)} hint="Active stays" />
                 <MetricTile icon={RoomsTileIcon} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms" />
+                {/* The green is here now: rooms to let are the number to act on. "primary" is the tile's green. */}
+                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms" tone="primary" />
                 <MetricTile icon={PropertyTileIcon} iconPlacement="side" label="Property" value={selectedProperty.type} hint={selectedProperty.city ?? "Selected"} />
               </View>
             </>
           ) : null}
 
-          <Section title="Open workspace">
-            <View style={{ gap: spacing.sm }}>
-              {modules.map((module) => (
-                <ServiceCard
-                  key={module.key}
-                  badge={module.key === "concern" ? concernAttention : undefined}
-                  artwork={module.artwork}
-                  artworkVariant={module.artworkVariant}
-                  icon={module.icon}
-                  title={module.title}
-                  description={module.description}
-                  pinned={pinnedKeys.includes(module.key)}
-                  onPress={() => open(module.route)}
-                  onTogglePin={() => togglePin(module.key)}
-                />
-              ))}
-            </View>
+          <SectionWithDropdown<WorkspaceSortMode>
+            icon={ArrowUpDown}
+            onChange={chooseSort}
+            options={sortOptions}
+            purpose="Sort"
+            // While arranging, the sort itself gives way to the tick and the
+            // cross: no line of its own above the cards (user, 2026-10-04).
+            replacement={arranging ? <ArrangeActions onCancel={cancelArrangement} onKeep={keepArrangement} /> : undefined}
+            title="Open workspace"
+            value={workspaceSort.mode}
+          >
+            {arranging ? (
+              // The pin gives way to three bars, held and moved to rearrange
+              // the cards (user, 2026-10-04).
+              <ReorderableList
+                gap={spacing.sm}
+                items={modules}
+                keyOf={(module) => module.key}
+                onDraggingChange={setDragging}
+                onReorder={(next) => workspaceSort.setCustomOrder(next.map((module) => module.key))}
+                renderItem={renderServiceCard}
+              />
+            ) : (
+              <View style={{ gap: spacing.sm }}>{modules.map((module) => renderServiceCard(module))}</View>
+            )}
             <Text style={[type.caption, { color: colors.kicker }]}>
-              Tap the pin on a service to add it to "Pinned Services" on Home.
+              {arranging
+                ? "Hold the bars on a service and move it. The tick keeps the order, the cross cancels."
+                : 'Tap the pin on a service to add it to "Pinned Services".'}
             </Text>
-          </Section>
+          </SectionWithDropdown>
         </>
       ) : null}
     </ScreenScrollView>
@@ -253,38 +351,50 @@ function ManageHeader() {
 function ServiceCard({
   artwork,
   artworkVariant,
-  badge,
   description,
+  handle,
+  held = false,
   icon: Icon,
   onPress,
   onTogglePin,
+  pending,
   pinned,
   title,
 }: {
   artwork?: ImageSourcePropType;
   artworkVariant?: "compact" | "large" | "wide";
-  /** Work waiting inside this module. Hidden at zero. */
-  badge?: number;
   description: string;
+  /**
+   * Given while the cards are being arranged by hand: the pin gives way to
+   * three bars that carry these handlers, held and moved to rearrange.
+   */
+  handle?: GestureResponderHandlers;
+  /** This card is the one in the hand. */
+  held?: boolean;
   icon: ComponentType<LucideProps>;
   onPress: () => void;
   onTogglePin: () => void;
+  /** Something is waiting inside this module: a red dot, never a number (user, 2026-10-04). */
+  pending: boolean;
   pinned: boolean;
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  // Small enough that the words decide the card's height, not the picture
+  // (user, 2026-10-04): at its old 82 the artwork was taller than three lines
+  // of description, so every card came out the same height whatever it said.
   const artworkFrame = artworkVariant === "wide"
-    ? { height: 82, width: 108 }
+    ? { height: 64, width: 84 }
     : artworkVariant === "large"
-      ? { height: 86, width: 86 }
-      : { height: 82, width: 82 };
+      ? { height: 66, width: 66 }
+      : { height: 64, width: 64 };
   const artworkImage = artworkVariant === "wide"
-    ? { height: 78, width: 106 }
+    ? { height: 61, width: 83 }
     : artworkVariant === "large"
-      ? { height: 84, width: 84 }
+      ? { height: 65, width: 65 }
       : artworkVariant === "compact"
-        ? { height: 70, width: 70 }
-        : { height: 78, width: 78 };
+        ? { height: 55, width: 55 }
+        : { height: 61, width: 61 };
 
   // The pin remains a sibling overlay rather than a nested pressable, keeping
   // the whole module card tappable while preserving a separate pin action.
@@ -295,12 +405,15 @@ function ServiceCard({
         onPress={onPress}
         style={{
           backgroundColor: colors.surface,
-          borderColor: colors.borderStrong,
+          // The card in the hand is outlined in ink, so it reads as lifted.
+          borderColor: held ? colors.ink : colors.borderStrong,
           borderCurve: "continuous",
-          borderRadius: 22,
+          // The four tiles' own corner, so the tab reads as one set of cards (user, 2026-10-04). It was 22.
+          borderRadius: 12,
           borderWidth: 1,
           elevation: 2,
-          minHeight: 116,
+          // No fixed height: a two-line description makes a shorter card than
+          // a three-line one.
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.md,
           shadowColor: colors.shadow,
@@ -345,22 +458,12 @@ function ServiceCard({
               >
                 {title}
               </Text>
-              {badge && badge > 0 ? (
+              {pending ? (
                 <View
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.danger,
-                    borderRadius: 999,
-                    justifyContent: "center",
-                    minWidth: 22,
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                  }}
-                >
-                  <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 12 }}>
-                    {badge > 99 ? "99+" : badge}
-                  </Text>
-                </View>
+                  accessibilityLabel="Something is waiting here"
+                  accessible
+                  style={{ backgroundColor: colors.danger, borderRadius: 999, height: 9, width: 9 }}
+                />
               ) : null}
             </View>
             <Text style={[type.description, { color: colors.muted }]}>
@@ -370,34 +473,98 @@ function ServiceCard({
         </View>
       </AnimatedPressable>
 
-      <AnimatedPressable
-        accessibilityLabel={pinned ? `Unpin ${title}` : `Pin ${title}`}
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onTogglePin}
-        style={{
-          alignItems: "center",
-          height: 44,
-          justifyContent: "center",
-          marginTop: -22,
-          position: "absolute",
-          right: spacing.sm,
-          top: "50%",
-          width: 44,
-        }}
-      >
-        <View style={PIN_TILT}>
-          <Pin
-            color={colors.primary}
-            fill={pinned ? colors.primary : "transparent"}
-            size={21}
-            strokeWidth={2.1}
-          />
+      {handle ? (
+        // In the pin's own place, and as large a target: held and moved, it
+        // carries the card with it.
+        <View
+          accessibilityHint="Hold and move to rearrange"
+          accessibilityLabel={`Move ${title}`}
+          {...handle}
+          style={{
+            alignItems: "center",
+            height: 44,
+            justifyContent: "center",
+            marginTop: -22,
+            position: "absolute",
+            right: spacing.sm,
+            top: "50%",
+            width: 44,
+          }}
+        >
+          <Menu color={colors.ink} size={22} strokeWidth={2.4} />
         </View>
+      ) : (
+        <AnimatedPressable
+          accessibilityLabel={pinned ? `Unpin ${title}` : `Pin ${title}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onTogglePin}
+          style={{
+            alignItems: "center",
+            height: 44,
+            justifyContent: "center",
+            marginTop: -22,
+            position: "absolute",
+            right: spacing.sm,
+            top: "50%",
+            width: 44,
+          }}
+        >
+          <View style={PIN_TILT}>
+            <Pin
+              color={colors.primary}
+              fill={pinned ? colors.primary : "transparent"}
+              size={21}
+              strokeWidth={2.1}
+            />
+          </View>
+        </AnimatedPressable>
+      )}
+    </View>
+  );
+}
+/**
+ * A tick and a cross in one pill with a rule between them (user, 2026-10-04),
+ * in the sort's own place while the cards are being arranged. The tick keeps
+ * the new order, the cross puts back the old one, and either ends the
+ * arranging.
+ */
+function ArrangeActions({ onCancel, onKeep }: { onCancel: () => void; onKeep: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+      }}
+    >
+      <AnimatedPressable
+        accessibilityLabel="Keep this order"
+        accessibilityRole="button"
+        hitSlop={6}
+        onPress={onKeep}
+        style={{ paddingHorizontal: spacing.md, paddingVertical: 6 }}
+      >
+        <Check color={colors.successText} size={18} strokeWidth={2.8} />
+      </AnimatedPressable>
+      <View style={{ backgroundColor: colors.borderStrong, height: 18, width: 1 }} />
+      <AnimatedPressable
+        accessibilityLabel="Cancel rearranging"
+        accessibilityRole="button"
+        hitSlop={6}
+        onPress={onCancel}
+        style={{ paddingHorizontal: spacing.md, paddingVertical: 6 }}
+      >
+        <X color={colors.danger} size={18} strokeWidth={2.8} />
       </AnimatedPressable>
     </View>
   );
 }
+
 function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId: string | null) {
   if (selectedPropertyId) {
     return properties.find((property) => property.id === selectedPropertyId) ?? null;

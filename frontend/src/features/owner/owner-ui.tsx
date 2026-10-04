@@ -127,9 +127,20 @@ export function ActionButton({
    * among others and must not shout. "dangerFilled" is for a confirmation
    * dialog, where it is the answer to a question already asked and the weight
    * is the point. "dangerQuiet" has red content on a white surface with a
-   * neutral border for quieter inline destructive actions.
+   * neutral border for quieter inline destructive actions. "primaryQuiet" is
+   * the same in blue: a grey border and blue text, for a second action that
+   * should read as a link to more (user, 2026-10-04).
    */
-  variant?: "primary" | "secondary" | "danger" | "dangerQuiet" | "outline" | "dangerFilled" | "success" | "successQuiet";
+  variant?:
+    | "primary"
+    | "primaryQuiet"
+    | "secondary"
+    | "danger"
+    | "dangerQuiet"
+    | "outline"
+    | "dangerFilled"
+    | "success"
+    | "successQuiet";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
@@ -140,6 +151,8 @@ export function ActionButton({
   const successQuiet = variant === "successQuiet";
   const danger = variant === "danger";
   const dangerQuiet = variant === "dangerQuiet";
+  // Blue text on white, the quiet counterpart of primary.
+  const primaryQuiet = variant === "primaryQuiet";
   const neutral = variant === "secondary";
   // Outlined: no fill at all and a full-strength ink border, matching the
   // outlined-container/ink-glyph treatment used for icons. "secondary" sits on
@@ -172,7 +185,7 @@ export function ActionButton({
         ? colors.primary
         : outline
         ? "transparent"
-        : danger || dangerQuiet || neutral || successQuiet
+        : danger || dangerQuiet || neutral || successQuiet || primaryQuiet
           ? colors.surface
           : colors.primarySoft;
   return (
@@ -202,7 +215,7 @@ export function ActionButton({
             ? colors.danger
             : outline
               ? colors.ink
-              : neutral || dangerQuiet || successQuiet
+              : neutral || dangerQuiet || successQuiet || primaryQuiet
                 ? colors.borderStrong
                 : "transparent"),
         borderCurve: "continuous",

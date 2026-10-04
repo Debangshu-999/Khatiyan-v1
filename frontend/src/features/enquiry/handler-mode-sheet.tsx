@@ -19,7 +19,9 @@ import { useTheme } from "@/theme/use-theme";
 
 const MODES: { description: string; label: string; suggested?: boolean; value: EnquiryHandlerMode }[] = [
   {
-    description: "Each new enquiry goes to the next manager in turn, so everyone gets an even share.",
+    // The server gives the owner every turn while there are no managers.
+    description:
+      "Each new enquiry goes to the next manager in turn, so everyone gets an even share. With no managers, it comes to you.",
     label: "Auto assigned",
     suggested: true,
     value: "SYSTEM_TURNS",
@@ -96,7 +98,7 @@ export function HandlerModeSheet({ onClose, propertyId }: { onClose: () => void;
         />
       ))}
 
-      <Text style={[type.caption, { color: colors.kicker }]}>Enquiries that already have a handler keep them.</Text>
+      <Text style={[type.caption, { color: colors.kicker }]}>Enquiries that already have a handler keep them. Auto assigned also hands out the ones waiting now.</Text>
 
       <ActionButton disabled={!dirty || saveState.isLoading} label={saveState.isLoading ? "Saving" : "Save"} onPress={() => void submit()} />
     </SheetShell>

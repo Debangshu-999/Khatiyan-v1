@@ -52,6 +52,10 @@ public enum NotificationAudience {
                     ENQUIRY_CHAT_REPLIED,
                     // The enquirer is interested again: the handler's to act on.
                     ENQUIRY_MIND_CHANGED,
+                    // Who is coming today and in the next slot, who is running
+                    // late, and whose attendance was not marked: the owner's
+                    // and every manager's, who receive visitors (2026-10-04).
+                    VISITORS_TODAY, VISIT_SLOT_STARTING, VISITOR_RUNNING_LATE, VISIT_ATTENDANCE_NOT_MARKED,
                     // A tenant claiming they paid is a decision the owner has to
                     // make against their bank statement.
                     PAYMENT_CLAIM_RAISED,
@@ -82,6 +86,8 @@ public enum NotificationAudience {
                     ENQUIRY_ANSWERED,
                     // Their enquiry was closed: theirs to read, like the answer.
                     ENQUIRY_CLOSED,
+                    // Reminders of the visit they booked (2026-10-04).
+                    VISIT_REMINDER_DAY_BEFORE, VISIT_REMINDER_TODAY,
                     // A meal on the tenant's plan moved. Only tenants on a meal
                     // plan are told, and they read it in their stay.
                     FOOD_MEAL_DELAYED -> TENANT;
@@ -96,6 +102,8 @@ public enum NotificationAudience {
                     // Dual-audience: a visit is booked or moved by one side and
                     // the other is told. The caller names the audience.
                     VISIT_SCHEDULED, VISIT_RESCHEDULED, VISIT_CANCELLED,
+                    // A check-in is told to the visitor and to the property alike.
+                    VISIT_CHECKED_IN,
                     USER_REGISTERED, PIN_CHANGED, NEW_DEVICE_SIGNED_IN,
                     TENANT_ONBOARDED, TENANCY_STARTED, TENANCY_ENDED, TENANCY_ROOM_TRANSFERRED,
                     // Dual-audience by definition: whichever side did NOT

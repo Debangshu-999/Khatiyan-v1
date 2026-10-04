@@ -4,6 +4,7 @@ import { deviceLabel, devicePlatform } from "@/auth/device-identity";
 import { clearWalletAccess, walletAccessToken } from "@/auth/wallet-access";
 import { checkResponseShape } from "@/store/response-guards";
 import { sessionExpired } from "@/store/slices/auth-slice";
+import { noteStaleRefusal } from "@/store/stale-refusal";
 import type { RootState } from "@/store/store";
 
 /**
@@ -184,8 +185,14 @@ export const api = createApi({
     // Someone else changed this since the screen loaded it (2026-09-28). Every
     // cached read is thrown away, so each screen on show refetches the latest,
     // and the caller shows the server's message in its usual refusal dialog.
+    // The message is noted, so that dialog knows to leave the form or sheet it
+    // was raised in once it is closed (2026-10-04).
     if (result.error?.status === 409 && isStaleConflict(result.error.data)) {
       apiContext.dispatch(api.util.invalidateTags([...API_TAGS]));
+      const message = (result.error.data as { message?: unknown }).message;
+      if (typeof message === "string") {
+        noteStaleRefusal(message);
+      }
     }
 
     // Verify what actually arrived against the shape the client claims. Dev-only

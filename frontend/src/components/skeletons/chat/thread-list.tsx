@@ -44,6 +44,7 @@ const SAMPLE_ROWS: Array<[string, string]> = [
 const SAMPLE_THREADS: ChatThread[] = SAMPLE_ROWS.map(([title, preview], index) => ({
   counterpartLastReadSeq: 0,
   pendingAgreement: false,
+  enquiryMessage: null,
   counterpartPhotoUrl: null,
   counterpartUserId: `sample-${index}`,
   id: null,

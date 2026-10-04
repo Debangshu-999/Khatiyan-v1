@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 import type { AccountType } from "@/features/account/accounts";
+import type { PendingMarks, WorkspaceSortMode } from "@/features/owner/workspace-sort";
 import type { ThemeMode } from "@/theme/colors";
 
 const APP_SETTINGS_KEY = "khatiyan.appSettings.v1";
@@ -18,7 +19,12 @@ type StoredAppSettings = {
   hasSeenGetStarted?: boolean;
   // The analytics period each user last picked. Presets only, never a custom range.
   analyticsPresetByUserId?: Record<string, string>;
+  // How each user orders the Manage tab's cards (2026-10-04).
+  workspaceSortByUserId?: Record<string, StoredWorkspaceSort>;
 };
+
+/** The Manage tab's sort: the mode, the dragged order, and when each module last got something waiting. */
+export type StoredWorkspaceSort = { customOrder: string[]; marks: PendingMarks; mode: WorkspaceSortMode };
 
 /**
  * Every setting lives in ONE stored blob, and every save used to read it,
@@ -115,6 +121,18 @@ export async function saveAnalyticsPresetForUser(userId: string, preset: string)
   return updateSettings((current) => ({
     ...current,
     analyticsPresetByUserId: { ...(current.analyticsPresetByUserId ?? {}), [userId]: preset },
+  }));
+}
+
+export async function loadWorkspaceSortForUser(userId: string): Promise<Partial<StoredWorkspaceSort> | undefined> {
+  const currentSettings = await loadAppSettings();
+  return currentSettings.workspaceSortByUserId?.[userId];
+}
+
+export async function saveWorkspaceSortForUser(userId: string, sort: StoredWorkspaceSort) {
+  return updateSettings((current) => ({
+    ...current,
+    workspaceSortByUserId: { ...(current.workspaceSortByUserId ?? {}), [userId]: sort },
   }));
 }
 

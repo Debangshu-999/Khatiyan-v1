@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
-import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { ChevronDown, ChevronUp, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
+import { SectionHeading } from "@/components/section-heading";
 import { useHardwareBack } from "@/components/use-hardware-back";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -125,19 +126,158 @@ export function FilteredQueue<T extends string>({
 }
 
 /**
+ * A section whose heading band carries a choice at its right, such as how the
+ * cards under it are sorted (user, 2026-10-04). The same bubble and the same
+ * list as {@link FilteredQueue}: the list opens straight under the bubble,
+ * inside this wrapper, floating over the cards rather than pushing them down.
+ *
+ * <p>A row may carry an action of its own at its right, such as Change on the
+ * Manage tab's Custom row. And the bubble may be replaced for a while by
+ * something else, as it is by the tick and cross while cards are being
+ * arranged: the list cannot be opened then.
+ */
+export function SectionWithDropdown<T extends string>({
+  children,
+  icon,
+  onChange,
+  options,
+  purpose,
+  replacement,
+  title,
+  value,
+}: {
+  children: ReactNode;
+  /** A mark before the chosen label, saying what the list is for. */
+  icon?: ComponentType<LucideProps>;
+  onChange: (value: T) => void;
+  options: { action?: { label: string; onPress: () => void }; label: string; value: T }[];
+  /** What the choice is, for a screen reader: "Sort", say. */
+  purpose: string;
+  /** Drawn in place of the bubble. */
+  replacement?: ReactNode;
+  title: string;
+  value: T;
+}) {
+  const { colors, fonts } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [menuHeight, setMenuHeight] = useState(0);
+  const chosen = options.find((option) => option.value === value) ?? options[0];
+  const menuTop = headerHeight + spacing.xs;
+
+  const closeOnBack = useCallback(() => {
+    setOpen(false);
+    return true;
+  }, []);
+  useHardwareBack(closeOnBack, open);
+
+  return (
+    <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
+      <View onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}>
+        <SectionHeading
+          title={title}
+          trailing={
+            replacement ?? (
+              <FilterBubble
+                blink={false}
+                icon={icon}
+                label={chosen.label}
+                onPress={() => setOpen((current) => !current)}
+                open={open}
+                purpose={purpose}
+              />
+            )
+          }
+        />
+      </View>
+      {children}
+      {open && !replacement ? (
+        <>
+          {/* Clear, so a tap anywhere closes the list instead of opening the
+              card under it. A sibling of the list, never its parent. */}
+          <Pressable accessibilityLabel={`Close ${purpose.toLowerCase()}`} onPress={() => setOpen(false)} style={StyleSheet.absoluteFill} />
+          <View
+            onLayout={(event) => setMenuHeight(event.nativeEvent.layout.height)}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              borderWidth: 1,
+              elevation: 12,
+              padding: spacing.xs,
+              position: "absolute",
+              right: 0,
+              shadowColor: colors.shadow,
+              shadowOffset: { height: 6, width: 0 },
+              shadowOpacity: 0.16,
+              shadowRadius: 14,
+              top: menuTop,
+              width: 200,
+              zIndex: 20,
+            }}
+          >
+            {options.map((option) => (
+              <PickerOptionRow
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                selected={option.value === value}
+                trailing={
+                  option.action ? (
+                    <AnimatedPressable
+                      accessibilityLabel={`${option.action.label} ${option.label}`}
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => {
+                        setOpen(false);
+                        option.action?.onPress();
+                      }}
+                      style={{
+                        backgroundColor: colors.surface,
+                        borderColor: colors.borderStrong,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        paddingHorizontal: spacing.sm,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>
+                        {option.action.label}
+                      </Text>
+                    </AnimatedPressable>
+                  ) : undefined
+                }
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * The bubble that opens a queue's filter. It blinks a red ring while escalated
  * concerns are waiting, as the Escalated chip it replaced did.
  */
 function FilterBubble({
   blink,
+  icon: Icon,
   label,
   onPress,
   open,
+  purpose = "Filter",
 }: {
   blink: boolean;
+  icon?: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
   open: boolean;
+  purpose?: string;
 }) {
   const { colors, fonts } = useTheme();
   const pulse = useRef(new Animated.Value(0)).current;
@@ -158,7 +298,7 @@ function FilterBubble({
 
   return (
     <AnimatedPressable
-      accessibilityLabel={`Filter: ${label}`}
+      accessibilityLabel={`${purpose}: ${label}`}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       onPress={onPress}
@@ -192,6 +332,7 @@ function FilterBubble({
           }}
         />
       ) : null}
+      {Icon ? <Icon color={colors.ink} size={14} strokeWidth={2.3} /> : null}
       <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{label}</Text>
       {open ? (
         <ChevronUp color={colors.inkSoft} size={16} strokeWidth={2.4} />

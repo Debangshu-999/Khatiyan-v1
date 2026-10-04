@@ -46,10 +46,14 @@ export function LoginStep({
         <PhoneField label="Phone number" value={phone} onChangeText={onPhoneChange} error={phoneError} />
         <AuthChipLink align="auto" icon={Mail} label="Use verified email" onPress={onEmailLogin} />
       </FieldWithLink>
-      <FieldWithLink>
-        <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry error={pinError} />
-        <AuthChipLink align="auto" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
-      </FieldWithLink>
+      {/* A little lower (user, 2026-10-04): its label sits in the field's top
+          border, so at the sheet's own gap it rode up against the chip above. */}
+      <View style={{ marginTop: spacing.sm }}>
+        <FieldWithLink>
+          <CodeField label="PIN" value={pin} onChangeText={onPinChange} secureTextEntry error={pinError} />
+          <AuthChipLink align="auto" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
+        </FieldWithLink>
+      </View>
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
         <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
         {/* Both are ways OUT of this form, so they sit together on one row

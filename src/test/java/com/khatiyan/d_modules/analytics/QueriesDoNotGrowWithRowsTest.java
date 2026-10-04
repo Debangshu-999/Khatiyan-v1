@@ -31,6 +31,7 @@ import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
 import com.khatiyan.d_modules.enquiry.service.EnquiryService;
 import com.khatiyan.d_modules.lead.service.LeadQueryService;
 import com.khatiyan.d_modules.lead.service.LeadVisitService;
+import com.khatiyan.d_modules.lead.service.VisitDayService;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.SaveVisitSlotsRequest;
 import com.khatiyan.d_modules.property.service.PropertyVisitSlotService;
@@ -80,6 +81,7 @@ class QueriesDoNotGrowWithRowsTest {
     @Autowired private EnquiryService enquiryService;
     @Autowired private LeadQueryService leadQueryService;
     @Autowired private LeadVisitService leadVisitService;
+    @Autowired private VisitDayService visitDayService;
     @Autowired private PropertyVisitSlotService visitSlots;
 
     private final LocalDate today = LocalDate.now(IST);
@@ -240,6 +242,9 @@ class QueriesDoNotGrowWithRowsTest {
         reads.put("Lead counts", p -> leadQueryService.countsForProperty(p.ownerId(), p.propertyId()));
         reads.put("Visit availability", p -> leadVisitService.availability(p.propertyId()));
         reads.put("Booked visits", p -> leadVisitService.bookedVisits(p.ownerId(), p.propertyId()));
+        // The Manage Visits screen and the visitor's own list (2026-10-04).
+        reads.put("Manage visits", p -> visitDayService.propertyVisits(p.ownerId(), p.propertyId()));
+        reads.put("My visits", p -> visitDayService.myVisits(regular(p)));
         // One person with as many closed enquiries as the property has beds.
         reads.put("My enquiries", p -> enquiryService.myEnquiries(regular(p)));
         return reads;

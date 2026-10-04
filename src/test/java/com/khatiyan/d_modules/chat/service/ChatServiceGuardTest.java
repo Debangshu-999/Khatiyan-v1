@@ -6,9 +6,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -114,17 +116,35 @@ class ChatServiceGuardTest {
     }
 
     /**
-     * A new enquiry conversation opens with what was asked, in the enquirer's
-     * name (user, 2026-10-03). Placed, not sent: nobody is notified, and no
-     * event goes out, because the enquiry module would read it as their reply.
+     * A new enquiry chat holds the question for its pinned row and writes no
+     * message (user, 2026-10-03): it does not exist for anyone until its
+     * first text.
      */
     @Test
-    void anEnquiryConversationOpensWithTheEnquirersQuestion() {
+    void anEnquiryChatHoldsTheQuestionAndWritesNoMessage() {
         UUID enquiry = UUID.randomUUID();
         UUID enquirer = UUID.randomUUID();
         when(chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiry))
                 .thenReturn(Optional.empty());
         when(chatThreadRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatThread thread = chatService.openEnquiryThread(PROPERTY, enquiry, enquirer, ACTOR, "Is a single room free?");
+
+        verify(chatMessageRepository, never()).saveAndFlush(any());
+        assertThat(thread.getOpeningMessage()).isEqualTo("Is a single room free?");
+        assertThat(thread.getLastMessageSeq()).isNull();
+    }
+
+    /**
+     * The first text is the only message written (user, 2026-10-03). The
+     * question is not placed above it: the pinned row already shows it.
+     */
+    @Test
+    void theFirstTextIsTheOnlyMessageWritten() {
+        UUID enquirer = UUID.randomUUID();
+        ChatThread thread = ChatThread.forEnquiry(PROPERTY, UUID.randomUUID());
+        thread.rememberOpening("Is a single room free?", enquirer);
+        when(chatAccessService.requireReadable(ACTOR, thread.getId())).thenReturn(thread);
         when(chatMessageRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             ChatMessage saved = spy((ChatMessage) invocation.getArgument(0));
             doReturn(1L).when(saved).getSeq();
@@ -133,15 +153,17 @@ class ChatServiceGuardTest {
         when(chatReadStateRepository.findByThreadIdAndUserId(any(), any())).thenReturn(Optional.empty());
         when(chatReadStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ChatThread thread = chatService.openEnquiryThread(PROPERTY, enquiry, enquirer, ACTOR, "Is a single room free?");
+        chatService.send(ACTOR, thread.getId(), new SendChatMessageRequest("Yes, from the 1st.", List.of()));
 
-        ArgumentCaptor<ChatMessage> placed = ArgumentCaptor.forClass(ChatMessage.class);
-        verify(chatMessageRepository).saveAndFlush(placed.capture());
-        assertThat(placed.getValue().getAuthorUserId()).isEqualTo(enquirer);
-        assertThat(placed.getValue().getBody()).isEqualTo("Is a single room free?");
-        assertThat(placed.getValue().getThreadId()).isEqualTo(thread.getId());
-        verify(chatNotifier, never()).announce(any(), any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
+        ArgumentCaptor<ChatMessage> saved = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, times(1)).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getAuthorUserId()).isEqualTo(ACTOR);
+        assertThat(saved.getValue().getBody()).isEqualTo("Yes, from the 1st.");
+        assertThat(thread.getOpeningMessage()).isEqualTo("Is a single room free?");
+        assertThat(thread.getLastMessageSeq()).isEqualTo(1L);
+        verify(chatNotifier, times(1)).announce(any(), any(), any());
+        // Object, not any(): publishEvent is overloaded and the event is a record.
+        verify(eventPublisher, times(1)).publishEvent(any(Object.class));
     }
 
     /** Opening it again joins the conversation that exists, and does not repeat the question. */

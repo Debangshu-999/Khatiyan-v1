@@ -287,6 +287,29 @@ function notificationDetails(notification: NotificationItem) {
       add(details, notification.subtype === "VISIT_RESCHEDULED" ? "New time" : "Visit", data.visitWhen);
       add(details, "Reference", code(data.visitReferenceCode));
       break;
+    // Reminders to the visitor, and a visitor running late told to the property (2026-10-04).
+    case "VISIT_REMINDER_DAY_BEFORE":
+    case "VISIT_REMINDER_TODAY":
+    case "VISITOR_RUNNING_LATE":
+      add(details, "Property", data.propertyName);
+      add(details, "Visit", data.visitWhen);
+      add(details, "Reference", code(data.visitReferenceCode));
+      break;
+    // A check-in, told to the visitor, the owner and every manager (2026-10-04).
+    case "VISIT_CHECKED_IN":
+      add(details, "Property", data.propertyName);
+      add(details, "Visit", data.visitWhen);
+      add(details, "Checked in", data.checkedInAt);
+      add(details, "Reference", code(data.visitReferenceCode));
+      break;
+    // The property's own notices about a day or a slot of it (2026-10-04).
+    case "VISITORS_TODAY":
+    case "VISIT_SLOT_STARTING":
+    case "VISIT_ATTENDANCE_NOT_MARKED":
+      add(details, "Property", data.propertyName);
+      add(details, "Slot", data.visitSlot);
+      add(details, "Visitors", data.visitorCount);
+      break;
     case "FOOD_MEAL_DELAYED":
       add(details, "Property", data.propertyName);
       add(details, "Meal", data.mealType ? MEAL_LABEL[data.mealType as MealType] : undefined);

@@ -24,6 +24,7 @@ import { useSendChatMessageMutation } from "@/store/services/chat-api";
 import {
   useCancelVisitMutation,
   useGetVisitAvailabilityQuery,
+  useGetVisitMoveOptionsQuery,
   useRescheduleVisitMutation,
   useScheduleVisitMutation,
   type EnquiryParty,
@@ -69,6 +70,7 @@ export function VisitSheet({
   enquiryId,
   loadingVisit = false,
   notInterestedCloses = false,
+  onBack,
   onClose,
   personName,
   propertyId,
@@ -79,6 +81,12 @@ export function VisitSheet({
   enquiryId: string;
   /** The enquirer changed their mind once, so Not interested now closes the enquiry at once. */
   notInterestedCloses?: boolean;
+  /**
+   * Set when this sheet is stacked on another, such as Running late (user,
+   * 2026-10-04): a back arrow, and the device's back button, return to the
+   * sheet underneath. The X still closes.
+   */
+  onBack?: () => void;
   onClose: () => void;
   /**
    * Who the visit is for, named in management's confirmations. The enquirer
@@ -99,7 +107,17 @@ export function VisitSheet({
 }) {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
-  const availability = useGetVisitAvailabilityQuery(propertyId, { refetchOnMountOrArgChange: true });
+  // Booking reads the property's open slots. Moving reads where THIS visit
+  // may go right now (2026-10-04): on its own day that includes later slots
+  // today, and running late it may be those alone. The server decides.
+  const availability = useGetVisitAvailabilityQuery(propertyId, {
+    refetchOnMountOrArgChange: true,
+    skip: Boolean(visit),
+  });
+  const moveOptions = useGetVisitMoveOptionsQuery(visit?.id ?? "", {
+    refetchOnMountOrArgChange: true,
+    skip: !visit,
+  });
   const [scheduleVisit, scheduleState] = useScheduleVisitMutation();
   const [rescheduleVisit, rescheduleState] = useRescheduleVisitMutation();
   const [cancelVisit, cancelState] = useCancelVisitMutation();
@@ -125,8 +143,11 @@ export function VisitSheet({
   // cancelled, with the reason it cannot move in place of the slots.
   const picking = !visit || visit.canReschedule;
   const busy = scheduleState.isLoading || rescheduleState.isLoading || cancelState.isLoading || sendState.isLoading;
-  const loading = availability.isLoading || loadingVisit;
-  const days = useMemo(() => availability.data?.days ?? [], [availability.data]);
+  const loading = (visit ? moveOptions.isLoading : availability.isLoading) || loadingVisit;
+  const days = useMemo(
+    () => (visit ? moveOptions.data?.days : availability.data?.days) ?? [],
+    [availability.data, moveOptions.data, visit],
+  );
 
   // Opens on the first day that still has a place, so the common case is one
   // tap on a slot and one on the button. Worked out in the render, not set by
@@ -167,7 +188,11 @@ export function VisitSheet({
       setFailure(errorMessage(error));
       // Most refusals here are a slot that filled up a moment ago. Show what is left now.
       setSlotStart(null);
-      void availability.refetch();
+      if (visit) {
+        void moveOptions.refetch();
+      } else {
+        void availability.refetch();
+      }
     }
   }
 
@@ -251,7 +276,7 @@ export function VisitSheet({
           </View>
         ) : null
       }
-      onBack={cancelStep ? () => setCancelling(false) : undefined}
+      onBack={cancelStep ? () => setCancelling(false) : onBack}
       onClose={onClose}
       title={cancelStep ? "Cancel visit" : moving || loadingVisit ? "Manage visit" : "Schedule a visit"}
     >
@@ -329,13 +354,22 @@ export function VisitSheet({
               artworkNode={<PropertyVisitsIcon size={64} />}
               compact
               description={
-                availability.isError
+                (visit ? moveOptions.isError : availability.isError)
                   ? "Could not load the visit slots. Close this and try again."
-                  : viewer !== "ENQUIRER"
-                    ? "Set them in Property workspace, under Visiting Hours."
-                    : "Visits open up here once the property sets its hours."
+                  : visit
+                    ? // Moving, and the server offers nowhere to move it to right now.
+                      moveOptions.data?.refusal ?? "There is no slot to move this visit to right now."
+                    : viewer !== "ENQUIRER"
+                      ? "Set them in Property workspace, under Visiting Hours."
+                      : "Visits open up here once the property sets its hours."
               }
-              title={availability.isError ? "Slots unavailable" : "No visiting hours yet"}
+              title={
+                (visit ? moveOptions.isError : availability.isError)
+                  ? "Slots unavailable"
+                  : visit
+                    ? "No slot to move to"
+                    : "No visiting hours yet"
+              }
             />
           ) : null}
 

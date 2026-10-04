@@ -22,5 +22,14 @@ public enum EnquiryEndReason {
     VISIT_CANCELLED,
 
     /** Answered, and ran out with a visit still booked. */
-    VISIT_BOOKED
+    VISIT_BOOKED,
+
+    /**
+     * Their visit became No visit, and they said they were no longer
+     * interested or did not answer within the week (user, 2026-10-04).
+     */
+    VISIT_MISSED,
+
+    /** They came, and the enquiry then ran out. */
+    VISITED
 }

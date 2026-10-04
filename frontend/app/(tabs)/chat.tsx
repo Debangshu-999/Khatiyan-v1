@@ -547,6 +547,7 @@ function PersonalChats() {
       ? {
           counterpartLastReadSeq: 0,
           pendingAgreement: false,
+          enquiryMessage: null,
           counterpartPhotoUrl: null,
           counterpartUserId: null,
           id: null,

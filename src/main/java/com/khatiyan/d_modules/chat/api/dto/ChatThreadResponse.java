@@ -48,5 +48,11 @@ public record ChatThreadResponse(
      * is still unsigned. The owner sees a warning beside the name and a note
      * at the top of the conversation. Always false for the tenant themselves.
      */
-    boolean pendingAgreement
+    boolean pendingAgreement,
+    /**
+     * An enquiry chat's question (user, 2026-10-03). An empty enquiry chat,
+     * just opened or deleted by its reader, shows it behind "View enquiry
+     * message" instead of "No messages yet". Null on other chats.
+     */
+    String enquiryMessage
 ) {}

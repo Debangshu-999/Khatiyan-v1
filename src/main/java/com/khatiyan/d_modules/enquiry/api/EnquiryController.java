@@ -267,7 +267,7 @@ public class EnquiryController {
             @Valid @RequestBody EnquiryHandlerSettingsRequest request) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(handlerService.choose(user.userId(), propertyId, request));
+                .body(enquiryService.chooseHandlerSettings(user.userId(), propertyId, request));
     }
 
     @PutMapping("/properties/{propertyId}/enquiry-handler-settings")
@@ -276,6 +276,6 @@ public class EnquiryController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @Valid @RequestBody EnquiryHandlerSettingsRequest request) {
-        return handlerService.change(user.userId(), propertyId, request);
+        return enquiryService.changeHandlerSettings(user.userId(), propertyId, request);
     }
 }

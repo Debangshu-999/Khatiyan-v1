@@ -316,31 +316,13 @@ public class ChatService {
                             ChatThread.forEnquiry(propertyId, enquiryId));
                     chatThreadMemberRepository.save(ChatThreadMember.of(thread.getId(), enquirerUserId));
                     chatThreadMemberRepository.save(ChatThreadMember.of(thread.getId(), responderUserId));
-                    placeEnquiryFirst(thread, enquirerUserId, enquiryMessage);
+                    // Held on the thread for the row pinned above its
+                    // messages, never a message of its own. The chat is not
+                    // listed until its first text (user, 2026-10-03).
+                    thread.rememberOpening(enquiryMessage, enquirerUserId);
                     log.info("Chat enquiry thread opened enquiryId={} threadId={}", enquiryId, thread.getId());
                     return thread;
                 });
-    }
-
-    /**
-     * Opens the conversation with what the enquirer asked, as their own first
-     * message (user, 2026-10-03), so the handler answers it in front of them.
-     *
-     * <p>Written straight to the thread, not sent. Nobody is notified of it,
-     * because nobody has just written it. No event goes out either: the enquiry
-     * module reads every message the enquirer sends as their reply, and this
-     * one is the question, not a reply. They have read their own words, so
-     * their read mark moves past it.
-     */
-    private void placeEnquiryFirst(ChatThread thread, UUID enquirerUserId, String enquiryMessage) {
-        if (enquiryMessage == null || enquiryMessage.isBlank()) {
-            return;
-        }
-        ChatMessage opening = chatMessageRepository.saveAndFlush(
-                ChatMessage.of(thread.getId(), enquirerUserId, enquiryMessage, List.of()));
-        thread.noteLastMessage(
-                opening.getSeq(), opening.getCreatedAt(), opening.preview(), opening.attachmentKind());
-        readStateFor(thread.getId(), enquirerUserId).advanceTo(opening.getSeq());
     }
 
     /**
@@ -429,6 +411,13 @@ public class ChatService {
             // rather than the oldest fifty; the screen wants them the other way.
             messages.sort(Comparator.comparing(ChatMessage::getSeq));
         }
+        // An enquiry's question shows in the row pinned above the messages
+        // (user, 2026-10-03). Older chats also hold it as their first message,
+        // from when it was placed as one: left out here, or it shows twice.
+        messages = messages.stream()
+                .filter(message -> !thread.isPlacedOpening(
+                        message.getSeq(), message.getAuthorUserId(), message.getBody()))
+                .toList();
 
         Map<UUID, UserSummaryResponse> authors = authModule.findByIds(
                 messages.stream().map(ChatMessage::getAuthorUserId).collect(Collectors.toSet()));
@@ -711,6 +700,9 @@ public class ChatService {
 
         Map<UUID, Long> cleared = clearedPositionsFor(actorUserId, threads);
         return threads.stream()
+                // An enquiry chat does not exist for anyone until its first
+                // text (user, 2026-10-03).
+                .filter(thread -> !(thread.getOrigin() == ChatThreadOrigin.ENQUIRY && thread.getLastMessageSeq() == null))
                 .filter(thread -> !isCleared(thread, cleared.getOrDefault(thread.getId(), 0L)))
                 .toList();
     }
@@ -982,7 +974,8 @@ public class ChatService {
                     thread.getLastMessageSeq() == null ? 0L : thread.getLastMessageSeq(),
                     isUnread(thread, positions),
                     receipts.getOrDefault(thread.getId(), 0L),
-                    pendingAgreementFor(thread, stays, actorUserId)));
+                    pendingAgreementFor(thread, stays, actorUserId),
+                    enquiryMessageOf(thread)));
         }
         return rows;
     }
@@ -1037,7 +1030,7 @@ public class ChatService {
             return new ChatThreadResponse(
                     null, kind, origin, originId, propertyId,
                     com.khatiyan.d_modules.chat.model.ChatThreadStatus.OPEN,
-                    title, counterpartUserId, counterpartPhotoUrl, null, null, null, 0L, false, 0L, pendingAgreement);
+                    title, counterpartUserId, counterpartPhotoUrl, null, null, null, 0L, false, 0L, pendingAgreement, null);
         }
         return new ChatThreadResponse(
                 thread.getId(), thread.getKind(), thread.getOrigin(), thread.getOriginId(),
@@ -1047,7 +1040,13 @@ public class ChatService {
                 thread.getLastMessageSeq() == null ? 0L : thread.getLastMessageSeq(),
                 isUnread(thread, positions),
                 receipts.getOrDefault(thread.getId(), 0L),
-                pendingAgreement);
+                pendingAgreement,
+                enquiryMessageOf(thread));
+    }
+
+    /** The question behind an enquiry chat, for its "View enquiry message". */
+    private static String enquiryMessageOf(ChatThread thread) {
+        return thread.getOrigin() == ChatThreadOrigin.ENQUIRY ? thread.getOpeningMessage() : null;
     }
 
     /** Null unless they have actually uploaded one; initials stand in otherwise. */

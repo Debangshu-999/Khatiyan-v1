@@ -703,7 +703,10 @@ function RoomCard({
                 Room
               </Text>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 40, lineHeight: 48, letterSpacing: -1 }}>
+                {/* In the app's blue, so it does not read as a second ink
+                    number beside the rent (user, 2026-10-04). The header's
+                    brown was tried first and turned down. */}
+                <Text style={{ color: colors.primary, fontFamily: fonts.display, fontSize: 40, lineHeight: 48, letterSpacing: -1 }}>
                   {room.roomNumber}
                 </Text>
                 <View style={{ gap: 5 }}>
@@ -785,7 +788,10 @@ function RoomCard({
             <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, gap: 0 }}>
               <Text
                 numberOfLines={1}
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -0.4 }}
+                // Well under the room number, and a weight lighter (user,
+                // 2026-10-04): two big numbers on one card looked off. Bold
+                // at 20, where it was extra bold at 30.
+                style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 20, letterSpacing: -0.2 }}
               >
                 {formatMoneyPaise(room.baseRentPaise)}
               </Text>

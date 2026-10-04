@@ -483,6 +483,49 @@ class EnquiryAttemptsIntegrationTest {
         verifyAssignedNotice(owner, "You now handle", NotificationDeliveryMode.IN_APP_ONLY);
     }
 
+    /**
+     * Switching Auto assigned on hands out what is already waiting, in turn,
+     * and tells each handler (user, 2026-10-03). Before, only new arrivals got
+     * one, and the waiting ones sat in All enquiries.
+     */
+    @Test
+    void switchingAutoAssignOnHandsOutTheEnquiriesAlreadyWaiting() {
+        enquiryService.chooseHandlerSettings(
+                owner, property, new EnquiryHandlerSettingsRequest(EnquiryHandlerMode.OWNER_ASSIGNS, false));
+        UUID first = raise(enquirers.get(0));
+        UUID second = raise(enquirers.get(1));
+        assertThat(enquiries.findById(first).orElseThrow().hasHandler()).isFalse();
+
+        reset(notifications);
+        enquiryService.changeHandlerSettings(
+                owner, property, new EnquiryHandlerSettingsRequest(EnquiryHandlerMode.SYSTEM_TURNS, false));
+
+        Enquiry firstNow = enquiries.findById(first).orElseThrow();
+        Enquiry secondNow = enquiries.findById(second).orElseThrow();
+        assertThat(List.of(firstNow.getHandlerUserId(), secondNow.getHandlerUserId()))
+                .containsExactlyInAnyOrder(managerA, managerB);
+        assertThat(firstNow.getHandlerAssignedBy()).isEqualTo(EnquiryHandlerAssignment.SYSTEM);
+        verify(notifications, times(2)).notifyUser(
+                any(), eq("Enquiry assigned to you"), contains("The system gave this enquiry to you"), any(), any(),
+                eq(NotificationSubtype.ENQUIRY_ASSIGNED), any(), any(), eq(NotificationDeliveryMode.IN_APP_AND_PUSH));
+    }
+
+    /** With no managers, the owner takes everything waiting, told in-app only: they made the switch. */
+    @Test
+    void withNoManagersTheOwnerTakesWhatIsWaiting() {
+        UUID waiting = raise(enquirers.get(0));
+        jdbc.update("UPDATE property.property_managers SET is_active = false WHERE property_id = ?", property);
+
+        reset(notifications);
+        enquiryService.chooseHandlerSettings(
+                owner, property, new EnquiryHandlerSettingsRequest(EnquiryHandlerMode.SYSTEM_TURNS, false));
+
+        assertThat(enquiries.findById(waiting).orElseThrow().getHandlerUserId()).isEqualTo(owner);
+        verify(notifications).notifyUser(
+                eq(owner), eq("Enquiry assigned to you"), contains("The system gave this enquiry to you"), any(), any(),
+                eq(NotificationSubtype.ENQUIRY_ASSIGNED), eq(waiting), any(), eq(NotificationDeliveryMode.IN_APP_ONLY));
+    }
+
     @Test
     void onlyTheOwnerAssignsAndOnlyToSomeoneInManagement() {
         UUID enquiry = raise(enquirers.get(0));
@@ -581,11 +624,11 @@ class EnquiryAttemptsIntegrationTest {
 
     /**
      * Nobody tried: the handler did not respond. Every enquiry stays listed for
-     * 30 days past its date, on the property's list and the enquirer's own,
-     * then drops off (owner's design, 2026-10-03).
+     * the year it was raised in, on the property's list and the enquirer's own
+     * (user, 2026-10-03).
      */
     @Test
-    void anUntriedEnquirySaysWhyItRanOutAndStaysListedThirtyDaysPastItsDate() {
+    void anUntriedEnquirySaysWhyItRanOutAndStaysListedForTheYear() {
         UUID enquirer = enquirers.get(1);
         UUID untried = raise(enquirer);
         jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
@@ -596,8 +639,10 @@ class EnquiryAttemptsIntegrationTest {
         assertThat(enquiries.findById(untried).orElseThrow().getEndReason())
                 .isEqualTo(EnquiryEndReason.HANDLER_DID_NOT_RESPOND);
 
+        // Listed for the rest of the year it was raised in, however long past
+        // its date (user, 2026-10-03), on the property's list and their own.
         jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
-                Timestamp.from(Instant.now().minus(Duration.ofDays(29))), untried);
+                Timestamp.from(Instant.now().minus(Duration.ofDays(31))), untried);
         assertThat(enquiryService.listForProperty(owner, property))
                 .extracting(EnquiryDetailResponse::id).contains(untried);
         assertThat(enquiryService.myEnquiries(enquirer))
@@ -607,8 +652,11 @@ class EnquiryAttemptsIntegrationTest {
                     assertThat(item.state()).isEqualTo(MyEnquiryState.EXPIRED);
                 });
 
-        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
-                Timestamp.from(Instant.now().minus(Duration.ofDays(31))), untried);
+        // Raised last year: gone from both.
+        jdbc.update("UPDATE enquiry.enquiries SET created_at = ? WHERE id = ?",
+                Timestamp.from(java.time.Year.now(java.time.ZoneId.of("Asia/Kolkata")).atDay(1)
+                        .atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toInstant().minus(Duration.ofDays(1))),
+                untried);
         assertThat(enquiryService.listForProperty(owner, property))
                 .extracting(EnquiryDetailResponse::id).doesNotContain(untried);
         assertThat(enquiryService.myEnquiries(enquirer)).isEmpty();

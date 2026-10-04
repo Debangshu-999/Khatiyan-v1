@@ -25,7 +25,34 @@ public interface EnquiryVisitLookup {
     /** The latest cancelled visit on each of these enquiries, if any. One read for all of them. */
     Map<UUID, CancelledVisit> lastCancelledOn(Collection<UUID> enquiryIds);
 
+    /**
+     * The visit that stands on each of these enquiries, if any: booked,
+     * attended or missed, never a cancelled one. One read for all of them. For
+     * the enquirer's own list, which shows their pass and what to do next.
+     */
+    Map<UUID, StandingVisit> standingOn(Collection<UUID> enquiryIds);
+
     record BookedVisit(LocalDate date, LocalTime start) {}
+
+    /**
+     * @param passOpensAt     from when the visitor's pass shows
+     * @param runningLateFrom half the slot gone: from here, unchecked, they are running late
+     * @param answerBy        for a No visit, until when they may still move it. Null otherwise
+     */
+    record StandingVisit(
+            UUID visitId,
+            EnquiryVisitState state,
+            LocalDate date,
+            LocalTime start,
+            LocalTime end,
+            Instant passOpensAt,
+            Instant slotStartsAt,
+            Instant runningLateFrom,
+            Instant slotEndsAt,
+            Instant checkedInAt,
+            Instant noVisitAt,
+            Instant answerBy,
+            long version) {}
 
     /** @param reason null on visits cancelled before reasons were asked for */
     record CancelledVisit(String reason, boolean byTenant, Instant cancelledAt) {}

@@ -216,6 +216,19 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     List<Enquiry> findLiveHandledBy(UUID propertyId, UUID handlerUserId, Instant now);
 
+    /** Live enquiries nobody handles yet, oldest first: what Auto assigned hands out when switched on. */
+    @Query("""
+            SELECT enquiry
+            FROM Enquiry enquiry
+            WHERE enquiry.propertyId = :propertyId
+              AND enquiry.handlerUserId IS NULL
+              AND enquiry.endedAt IS NULL
+              AND enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
+              AND enquiry.expiresAt > :now
+            ORDER BY enquiry.createdAt ASC
+            """)
+    List<Enquiry> findLiveUnassigned(UUID propertyId, Instant now);
+
     /**
      * The three badges of the enquiries screen, in one query: everything still
      * waiting on an answer, the part of it the viewer handles, and the part
