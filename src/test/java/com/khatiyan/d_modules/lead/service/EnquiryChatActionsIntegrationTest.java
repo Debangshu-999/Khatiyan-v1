@@ -34,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.khatiyan.c_shared.exception.NotFoundException;
+import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder.Seeded;
@@ -365,6 +366,10 @@ class EnquiryChatActionsIntegrationTest {
         UUID prospect = prospects.get(0);
         UUID enquiry = answered(prospect);
         LocalDate today = LocalDate.now(IST);
+        // Its own window well past 30 days, so this is the 30-day limit alone:
+        // the enquiry's end is the next test's.
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().plus(Duration.ofDays(60))), enquiry);
 
         assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(today, FOUR)))
                 .isInstanceOf(ValidationException.class).hasMessageContaining("from tomorrow");
@@ -384,6 +389,46 @@ class EnquiryChatActionsIntegrationTest {
 
         visits.schedule(prospect, enquiry, new ScheduleVisitRequest(today.plusDays(30), TEN));
         assertThat(spotsLeft(today.plusDays(30), TEN)).isEqualTo(1);
+    }
+
+    @Test
+    void aVisitIsBookedAndMovedOnlyWhileItsEnquiryIsLive() {
+        UUID prospect = prospects.get(0);
+        UUID enquiry = answered(prospect);
+        LocalDate dayAfter = tomorrow.plusDays(1);
+        // The enquiry ends the day after tomorrow, at noon.
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(dayAfter.atTime(12, 0).atZone(IST).toInstant()), enquiry);
+
+        // The day strip stops there, and that day keeps only the slot before noon.
+        VisitAvailabilityResponse open = visits.availabilityForEnquiry(prospect, property, enquiry);
+        assertThat(open.days()).extracting(VisitAvailabilityResponse.Day::date).containsExactly(tomorrow, dayAfter);
+        assertThat(open.days().get(1).slots()).extracting(VisitAvailabilityResponse.Slot::startTime)
+                .containsExactly(TEN);
+
+        assertThatThrownBy(() -> visits.schedule(prospect, enquiry, new ScheduleVisitRequest(dayAfter, FOUR)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("before this enquiry ends");
+        assertThatThrownBy(() -> visits.schedule(
+                prospect, enquiry, new ScheduleVisitRequest(dayAfter.plusDays(1), TEN)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("before this enquiry ends");
+        VisitResponse visit = visits.schedule(prospect, enquiry, new ScheduleVisitRequest(tomorrow, FOUR)).visit();
+
+        // Neither side can move it past the enquiry's end, and neither is offered a slot there.
+        assertThatThrownBy(() -> visits.reschedule(
+                prospect, visit.id(), new RescheduleVisitRequest(dayAfter, FOUR, null)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("before this enquiry ends");
+        assertThatThrownBy(() -> visits.reschedule(
+                manager, visit.id(), new RescheduleVisitRequest(dayAfter.plusDays(2), TEN, null)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("before this enquiry ends");
+        assertThat(visits.moveOptions(manager, visit.id()).days())
+                .allSatisfy(day -> assertThat(day.date()).isBeforeOrEqualTo(dayAfter));
+
+        VisitResponse moved = visits.reschedule(prospect, visit.id(), new RescheduleVisitRequest(dayAfter, TEN, null));
+        assertThat(moved.date()).isEqualTo(dayAfter);
+
+        // Someone outside the enquiry is told nothing about it.
+        assertThatThrownBy(() -> visits.availabilityForEnquiry(prospects.get(1), property, enquiry))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     // ---- Moving ----------------------------------------------------------

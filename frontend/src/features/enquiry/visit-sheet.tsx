@@ -109,8 +109,9 @@ export function VisitSheet({
   const toast = useToast();
   // Booking reads the property's open slots. Moving reads where THIS visit
   // may go right now (2026-10-04): on its own day that includes later slots
-  // today, and running late it may be those alone. The server decides.
-  const availability = useGetVisitAvailabilityQuery(propertyId, {
+  // today, and running late it may be those alone. The server decides, and
+  // neither goes past the day the enquiry ends (2026-10-07).
+  const availability = useGetVisitAvailabilityQuery({ enquiryId, propertyId }, {
     refetchOnMountOrArgChange: true,
     skip: Boolean(visit),
   });
@@ -359,16 +360,21 @@ export function VisitSheet({
                   : visit
                     ? // Moving, and the server offers nowhere to move it to right now.
                       moveOptions.data?.refusal ?? "There is no slot to move this visit to right now."
-                    : viewer !== "ENQUIRER"
-                      ? "Set them in Property workspace, under Visiting Hours."
-                      : "Visits open up here once the property sets its hours."
+                    : availability.data?.configured
+                      ? // Hours are set, but no slot is left before the enquiry ends (2026-10-07).
+                        "A visit has to take place before this enquiry ends, and no slot is left before then."
+                      : viewer !== "ENQUIRER"
+                        ? "Set them in Property workspace, under Visiting Hours."
+                        : "Visits open up here once the property sets its hours."
               }
               title={
                 (visit ? moveOptions.isError : availability.isError)
                   ? "Slots unavailable"
                   : visit
                     ? "No slot to move to"
-                    : "No visiting hours yet"
+                    : availability.data?.configured
+                      ? "No slot before the enquiry ends"
+                      : "No visiting hours yet"
               }
             />
           ) : null}

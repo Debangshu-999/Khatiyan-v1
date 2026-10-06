@@ -73,7 +73,7 @@ export type VisitAvailability = {
   propertyId: string;
   /** False when the owner has not set any visit slots yet. */
   configured: boolean;
-  /** From tomorrow to 30 days ahead. Only dates the property offers a slot on. */
+  /** From tomorrow to 30 days ahead, never past the enquiry's end. Only dates the property offers a slot on. */
   days: { date: string; slots: VisitSlotAvailability[] }[];
 };
 
@@ -297,8 +297,13 @@ export const enquiryChatApi = api.injectEndpoints({
       invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
 
-    getVisitAvailability: builder.query<VisitAvailability, string>({
-      query: (propertyId) => `/api/v1/properties/${propertyId}/visit-availability`,
+    /**
+     * Open slots for a visit from this enquiry: only those before the enquiry
+     * ends (2026-10-07), since a visit has to happen inside its 30 days.
+     */
+    getVisitAvailability: builder.query<VisitAvailability, { propertyId: string; enquiryId: string }>({
+      query: ({ propertyId, enquiryId }) =>
+        `/api/v1/properties/${propertyId}/visit-availability?enquiryId=${encodeURIComponent(enquiryId)}`,
       providesTags: ["EnquiryChat"],
     }),
 

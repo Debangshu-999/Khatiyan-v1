@@ -104,6 +104,10 @@ public class LeadVisitService {
     /** How far ahead a visit can be booked. From tomorrow: there are no same-day visits. */
     static final int BOOK_AHEAD_DAYS = 30;
 
+    /** "5 Nov, 2:30 pm": when an enquiry ends, as the refusals say it. */
+    private static final DateTimeFormatter ENQUIRY_END =
+            DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.ENGLISH);
+
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH);
 
@@ -166,6 +170,32 @@ public class LeadVisitService {
      */
     @Transactional(readOnly = true)
     public VisitAvailabilityResponse availability(UUID propertyId) {
+        return availability(propertyId, null);
+    }
+
+    /**
+     * The slots open for a visit from an enquiry: no later than the enquiry's
+     * own window (user, 2026-10-07). A visit is only booked while the enquiry
+     * that asked for it is still live, so the day strip stops where it ends.
+     * Asked by the enquirer or by management of the property; anyone else
+     * sees nothing about the enquiry.
+     */
+    @Transactional(readOnly = true)
+    public VisitAvailabilityResponse availabilityForEnquiry(UUID actorUserId, UUID propertyId, UUID enquiryId) {
+        EnquirySnapshot enquiry = enquiryModule.findSnapshot(enquiryId)
+                .filter(found -> found.propertyId().equals(propertyId))
+                .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
+        if (enquiryModule.partyOf(enquiryId, actorUserId) == EnquiryParty.OUTSIDER) {
+            throw new ForbiddenException("You are not part of this enquiry");
+        }
+        return availability(propertyId, enquiry.expiresAt());
+    }
+
+    /**
+     * The slots open from tomorrow, up to 30 days ahead or, when {@code until}
+     * is given, only those starting before it.
+     */
+    private VisitAvailabilityResponse availability(UUID propertyId, Instant until) {
         propertyModule.getActiveProperty(propertyId);
         PropertyVisitSlotsResponse offered = propertyModule.findVisitSlots(propertyId);
         if (!offered.configured()) {
@@ -173,7 +203,7 @@ public class LeadVisitService {
         }
 
         LocalDate first = firstBookableDate();
-        LocalDate last = lastBookableDate();
+        LocalDate last = lastBookableDate(until);
         Map<String, Long> taken = new HashMap<>();
         for (SlotTaken slot : visitRepository.countScheduledBySlot(propertyId, first, last)) {
             taken.put(slot.getVisitDate() + "@" + slot.getSlotStartMinute(), slot.getTaken());
@@ -189,6 +219,9 @@ public class LeadVisitService {
             }
             List<VisitAvailabilityResponse.Slot> slots = new ArrayList<>();
             for (PropertyVisitSlotsResponse.Slot slot : day.slots()) {
+                if (!startsBefore(date, slot.startTime(), until)) {
+                    continue;
+                }
                 long booked = taken.getOrDefault(date + "@" + minuteOf(slot.startTime()), 0L);
                 slots.add(new VisitAvailabilityResponse.Slot(
                         slot.startTime(),
@@ -196,7 +229,9 @@ public class LeadVisitService {
                         day.visitorsPerSlot(),
                         (int) Math.max(0, day.visitorsPerSlot() - booked)));
             }
-            days.add(new VisitAvailabilityResponse.Day(date, slots));
+            if (!slots.isEmpty()) {
+                days.add(new VisitAvailabilityResponse.Day(date, slots));
+            }
         }
         return new VisitAvailabilityResponse(propertyId, true, days);
     }
@@ -239,20 +274,25 @@ public class LeadVisitService {
         }
 
         boolean sameDay = byTenant && window.onTheDay();
-        List<VisitAvailabilityResponse.Slot> laterToday = sameDay ? laterSlotsToday(visit, now) : List.of();
+        Instant enquiryEnds = enquiryEndsAt(visit);
+        List<VisitAvailabilityResponse.Slot> laterToday = sameDay
+                ? laterSlotsToday(visit, now).stream()
+                        .filter(slot -> startsBefore(now.toLocalDate(), slot.startTime(), enquiryEnds))
+                        .toList()
+                : List.of();
         List<VisitAvailabilityResponse.Day> days = new ArrayList<>();
         if (!laterToday.isEmpty()) {
             days.add(new VisitAvailabilityResponse.Day(now.toLocalDate(), laterToday));
         }
         boolean anotherDay = !byTenant || left > 0;
         if (anotherDay) {
-            days.addAll(availability(visit.getPropertyId()).days());
+            days.addAll(availability(visit.getPropertyId(), enquiryEnds).days());
         }
         String limit = Visit.tenantLimitMessage(window == VisitWindow.RUNNING_LATE);
         return new VisitMoveOptionsResponse(
                 visitId, window,
                 days.isEmpty()
-                        ? (left == 0 ? limit : "The property has no slot left to move this visit to.")
+                        ? (left == 0 ? limit : noSlotLeftMessage(enquiryEnds))
                         : null,
                 anotherDay ? null : limit,
                 sameDay, left, days);
@@ -378,6 +418,7 @@ public class LeadVisitService {
         }
 
         OfferedSlot slot = requireOffered(enquiry.propertyId(), request.date(), request.slotStart());
+        requireWithinEnquiry(request.date(), slot.start(), enquiry.expiresAt());
         takePlace(enquiry.propertyId(), request.date(), slot);
 
         Visit booked = Visit.schedule(
@@ -443,6 +484,7 @@ public class LeadVisitService {
         OfferedSlot slot = byTenant
                 ? requireOfferedToVisitor(visit, clockNow, request.date(), request.slotStart())
                 : requireOffered(visit.getPropertyId(), request.date(), request.slotStart());
+        requireWithinEnquiry(request.date(), slot.start(), enquiryEndsAt(visit));
         takePlace(visit.getPropertyId(), request.date(), slot);
 
         String from = when(visit);
@@ -623,6 +665,49 @@ public class LeadVisitService {
 
     static LocalDate lastBookableDate() {
         return LocalDate.now(IST).plusDays(BOOK_AHEAD_DAYS);
+    }
+
+    /** The last day a slot can be on: 30 days ahead, or the enquiry's last day if that comes sooner. */
+    static LocalDate lastBookableDate(Instant until) {
+        LocalDate last = lastBookableDate();
+        if (until == null) {
+            return last;
+        }
+        LocalDate enquiryLast = until.atZone(IST).toLocalDate();
+        return enquiryLast.isBefore(last) ? enquiryLast : last;
+    }
+
+    /** Whether a slot on that date starts before {@code until}; always, when there is no limit. */
+    static boolean startsBefore(LocalDate date, LocalTime slotStart, Instant until) {
+        return until == null || date.atTime(slotStart).atZone(IST).toInstant().isBefore(until);
+    }
+
+    /**
+     * Refuses a slot that starts once the enquiry has ended (user, 2026-10-07).
+     * A visit is part of its enquiry, so it has to happen inside the enquiry's
+     * 30 days: booked, or moved, by either side.
+     */
+    static void requireWithinEnquiry(LocalDate date, LocalTime slotStart, Instant enquiryEndsAt) {
+        if (!startsBefore(date, slotStart, enquiryEndsAt)) {
+            throw new ValidationException("A visit has to take place before this enquiry ends on "
+                    + ENQUIRY_END.format(enquiryEndsAt.atZone(IST)) + ". Pick an earlier slot.");
+        }
+    }
+
+    /** What moving a visit says when no slot is left: why, when it is the enquiry's end. */
+    private static String noSlotLeftMessage(Instant enquiryEndsAt) {
+        return enquiryEndsAt == null
+                ? "The property has no slot left to move this visit to."
+                : "The property has no slot left to move this visit to before this enquiry ends on "
+                        + ENQUIRY_END.format(enquiryEndsAt.atZone(IST)) + ".";
+    }
+
+    /** When the visit's enquiry ends, or null for a visit that has none. */
+    private Instant enquiryEndsAt(Visit visit) {
+        if (visit.getEnquiryId() == null) {
+            return null;
+        }
+        return enquiryModule.findSnapshot(visit.getEnquiryId()).map(EnquirySnapshot::expiresAt).orElse(null);
     }
 
     /** The slot the property offers at that start time on that date, or a refusal. */

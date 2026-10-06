@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.concurrency.RequiresVersion;
@@ -138,10 +139,19 @@ public class LeadVisitController {
         return leadVisitService.bookedVisits(user.userId(), propertyId);
     }
 
-    /** The dates and slots open for a visit, from tomorrow to 30 days ahead, with the places left. */
+    /**
+     * The dates and slots open for a visit, from tomorrow to 30 days ahead, with
+     * the places left. Given the enquiry it is for, only those before that
+     * enquiry ends (user, 2026-10-07).
+     */
     @GetMapping("/properties/{propertyId}/visit-availability")
-    public VisitAvailabilityResponse availability(@PathVariable UUID propertyId) {
-        return leadVisitService.availability(propertyId);
+    public VisitAvailabilityResponse availability(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) UUID enquiryId) {
+        return enquiryId == null
+                ? leadVisitService.availability(propertyId)
+                : leadVisitService.availabilityForEnquiry(user.userId(), propertyId, enquiryId);
     }
 
     /** Books a visit from an enquiry, by the prospect or by its handler. */
